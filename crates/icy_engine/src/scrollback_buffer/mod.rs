@@ -1,5 +1,5 @@
 use crate::{
-    AttributedChar, BitFont, Caret, EngineResult, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, SaveOptions, Screen, Selection,
+    AttributedChar, BitFont, Caret, Result, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, SaveOptions, Screen, Selection,
     SelectionMask, Size, TerminalState, TextPane, bgi::MouseField,
 };
 
@@ -368,13 +368,13 @@ impl Screen for ScrollbackBuffer {
         &self.selection_mask
     }
 
-    fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
+    fn set_selection(&mut self, sel: Selection) -> Result<()> {
         self.selection = Some(sel);
         self.version += 1;
         Ok(())
     }
 
-    fn clear_selection(&mut self) -> EngineResult<()> {
+    fn clear_selection(&mut self) -> Result<()> {
         self.selection = None;
         self.version += 1;
         Ok(())
@@ -388,7 +388,7 @@ impl Screen for ScrollbackBuffer {
         &self.caret
     }
 
-    fn to_bytes(&mut self, _extension: &str, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&mut self, _extension: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
         Ok(Vec::new())
     }
 

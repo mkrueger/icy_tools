@@ -20,3 +20,6 @@ parking_lot = { workspace = true }
 
 lazy_static = { workspace = true }
 log = { workspace = true }
+
+[lints]
+workspace = true

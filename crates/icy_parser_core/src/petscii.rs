@@ -71,8 +71,7 @@ impl PetsciiParser {
             0x20..=0x3F => code,
             0x40..=0x5F => code - 0x40,
             0x60..=0x7F => code - 0x20, // Lowercase/graphics range
-            0xA0 => return None,        // Special: inverted space, handled separately
-            0xA1..=0xBF => code - 0x40,
+            0xA0..=0xBF => code - 0x40,
             0xC0..=0xFE => code - 0x80,
             0xFF => 0x5E, // PI character
             _ => return None,
@@ -82,11 +81,6 @@ impl PetsciiParser {
 
     /// Emit a printable character with current modes applied
     fn emit_char(&self, sink: &mut dyn CommandSink, byte: u8) {
-        // Special case: 0xA0 is inverted space
-        if byte == 0xA0 {
-            sink.print(&[0x20 | 0x80]); // Space with reverse bit
-            return;
-        }
         if let Some(tch) = self.petscii_to_internal(byte) {
             let tch = self.apply_reverse(tch);
             sink.print(&[tch]);
@@ -141,9 +135,8 @@ impl PetsciiParser {
             0x9D => "Cursor LEFT",
             0x9E => "Set foreground YELLOW",
             0x9F => "Set foreground CYAN",
-            0xA0 => "Inverted space (reverse video space)",
             0xFF => "Printable PI character",
-            b if matches!(b, 0x20..=0x7F | 0xA1..=0xBF | 0xC0..=0xFE) => {
+            b if matches!(b, 0x20..=0x7F | 0xA0..=0xBF | 0xC0..=0xFE) => {
                 // Attempt mapping to internal code to show transformed character
                 match self.petscii_to_internal(byte) {
                     Some(mapped) => {

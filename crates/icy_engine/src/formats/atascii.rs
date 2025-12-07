@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{LoadData, SaveOptions};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EditableScreen, EngineResult, OutputFormat, Palette, Position, TextPane, TextScreen};
+use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EditableScreen, Result, OutputFormat, Palette, Position, TextPane, TextScreen};
 
 #[derive(Default)]
 pub(super) struct Atascii {}
@@ -19,9 +19,9 @@ impl OutputFormat for Atascii {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Atascii {
-            return Err(anyhow::anyhow!("Buffer is not an Atascii buffer!"));
+            return Err(crate::EngineError::BufferTypeMismatch { expected: "Atascii".to_string() });
         }
 
         let mut result = Vec::new();
@@ -58,7 +58,7 @@ impl OutputFormat for Atascii {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextScreen::new((40, 24));
 
         result.buffer.clear_font_table();

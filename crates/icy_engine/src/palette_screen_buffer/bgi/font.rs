@@ -3,7 +3,7 @@ use std::io;
 use std::io::Cursor;
 use std::io::prelude::*;
 
-use crate::{EditableScreen, EngineResult, Size};
+use crate::{EditableScreen, Result, Size};
 
 use super::Bgi;
 use super::Direction;
@@ -35,7 +35,7 @@ impl Font {
         self.org_to_cap.abs() as i32 + self.org_to_dec.abs() as i32
     }
 
-    pub fn load(buf: &[u8]) -> EngineResult<Self> {
+    pub fn load(buf: &[u8]) -> Result<Self> {
         let mut br = Cursor::new(buf);
 
         // skip header
@@ -167,7 +167,7 @@ impl Font {
         })
     }
 
-    pub fn from_file(file: &str) -> EngineResult<Self> {
+    pub fn from_file(file: &str) -> Result<Self> {
         let mut file = std::fs::File::open(file)?;
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf)?;

@@ -81,12 +81,16 @@ pub use selection_mask::*;
 mod parser_sink;
 pub use parser_sink::*;
 
-pub type EngineResult<T> = anyhow::Result<T>;
+mod error;
+pub use error::{EngineError, Result, FontError, LoadingError, ParserError, SavingError};
 
 pub mod overlay_mask;
 
 pub mod screen;
 pub use screen::*;
+
+mod shared_text_screen;
+pub use shared_text_screen::*;
 
 pub mod clipboard;
 

@@ -3,9 +3,9 @@ use base64::{Engine, engine::general_purpose};
 use lazy_static::lazy_static;
 use libyaff::{GlyphDefinition, YaffFont};
 
-use crate::EngineResult;
+use crate::{EngineError, FontError, ParserError};
 use parking_lot::Mutex;
-use std::{collections::HashMap, error::Error, path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 
 use super::Size;
 
@@ -257,7 +257,7 @@ impl BitFont {
     }
 
     /// Convert to PSF2 bytes format
-    pub fn to_psf2_bytes(&self) -> EngineResult<Vec<u8>> {
+    pub fn to_psf2_bytes(&self) -> crate::Result<Vec<u8>> {
         // Use libyaff to convert to PSF2 format
         Ok(libyaff::psf::to_psf2_bytes(&self.yaff_font)?)
     }
@@ -265,7 +265,7 @@ impl BitFont {
     /// Clone this font with a different line height using Atari-style row replication.
     /// This uses a Bresenham-like error accumulator so small size changes (e.g. 8->9)
     /// keep consistent baseline & stroke thickness, closer to original VDI behaviour.
-    pub fn scale_to_height(&self, new_height: i32) -> EngineResult<Self> {
+    pub fn scale_to_height(&self, new_height: i32) -> crate::Result<Self> {
         use libyaff::Bitmap;
         if new_height == self.size().height {
             return Ok(self.clone());
@@ -317,7 +317,7 @@ impl BitFont {
 
 impl BitFont {
     /// Load font from bytes (PSF1, PSF2, or plain format)
-    pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> EngineResult<Self> {
+    pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> crate::Result<Self> {
         // Try to parse as YaffFont first (handles PSF1, PSF2)
         match YaffFont::from_bytes(data) {
             Ok(mut yaff_font) => {
@@ -474,7 +474,7 @@ impl BitFont {
 }
 
 impl FromStr for BitFont {
-    type Err = anyhow::Error;
+    type Err = EngineError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Try to load from file path or font name
@@ -499,7 +499,7 @@ macro_rules! fonts {
             /// # Errors
             ///
             /// This function will return an error if .
-            pub fn from_ansi_font_page(font_page: usize) -> EngineResult<Self> {
+            pub fn from_ansi_font_page(font_page: usize) -> crate::Result<Self> {
                 match font_page {
                     $(
                         $( $font_slot => {BitFont::from_bytes($name, $i)}  )?
@@ -695,7 +695,7 @@ macro_rules! sauce_fonts {
             /// # Errors
             ///
             /// This function will return an error if .
-            pub fn from_sauce_name(sauce_name: &str) -> EngineResult<Self> {
+            pub fn from_sauce_name(sauce_name: &str) -> crate::Result<Self> {
                 match sauce_name {
                     $(
                         $name => {BitFont::from_bytes($name, $i)}
@@ -817,76 +817,3 @@ amiga_fonts![
     (AMIGA_COURIER_36, "workbench-3.1/Courier_36.yaff", "Courier.font", 36),
 ];
 
-#[derive(Debug, Clone)]
-pub enum FontError {
-    FontNotFound,
-    MagicNumberMismatch,
-    UnsupportedVersion(u32),
-    LengthMismatch(usize, usize),
-    UnknownFontFormat(usize),
-}
-
-impl std::fmt::Display for FontError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FontError::FontNotFound => write!(f, "font not found."),
-            FontError::MagicNumberMismatch => write!(f, "not a valid .psf file."),
-            FontError::UnsupportedVersion(ver) => write!(f, "version {ver} not supported"),
-            FontError::LengthMismatch(actual, calculated) => {
-                write!(f, "length should be {calculated} was {actual}")
-            }
-            FontError::UnknownFontFormat(size) => {
-                let sizes = [8, 14, 16, 19];
-                let list = sizes.iter().fold(String::new(), |a, &b| {
-                    let empty = a.is_empty();
-                    a + &format!("{}{} height ({} bytes)", if empty { "" } else { ", " }, b, &(b * 256))
-                });
-
-                write!(f, "Unknown binary font format {size} bytes not supported. Valid format heights are: {list}")
-            }
-        }
-    }
-}
-
-impl Error for FontError {
-    fn description(&self) -> &str {
-        "use std::display"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        self.source()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ParserError {
-    UnsupportedFont(usize),
-    UnsupportedSauceFont(String),
-}
-
-impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParserError::UnsupportedFont(code) => write!(f, "font {} not supported", *code),
-            ParserError::UnsupportedSauceFont(name) => write!(f, "font {name} not supported"),
-        }
-    }
-}
-
-impl std::error::Error for ParserError {
-    fn description(&self) -> &str {
-        "use std::display"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        self.source()
-    }
-}

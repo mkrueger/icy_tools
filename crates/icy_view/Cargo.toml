@@ -55,3 +55,6 @@ assets = [
 
 [patch.crates-io]
 iced.git = "https://github.com/iced-rs/iced.git"
+
+[lints]
+workspace = true

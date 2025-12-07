@@ -1,6 +1,6 @@
 mod ansi;
 
-use std::{error::Error, path::Path};
+use std::path::Path;
 
 pub use ansi::*;
 
@@ -45,7 +45,7 @@ mod renegade;
 mod seq;
 pub use seq::seq_prepare;
 
-use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, EngineResult, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
+use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, Result, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
 use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
@@ -267,14 +267,14 @@ pub trait OutputFormat: Send + Sync {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>>;
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>>;
 
     /// .
     ///
     /// # Errors
     ///
     /// This function will return an error if .
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::TextBuffer>;
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer>;
 }
 
 lazy_static::lazy_static! {
@@ -301,7 +301,7 @@ lazy_static::lazy_static! {
 /// # Errors
 ///
 /// Returns an error if sixel processing fails
-pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool, min_height: i32) -> EngineResult<()> {
+pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool, min_height: i32) -> Result<()> {
     use crate::ScreenSink;
 
     // Stop at EOF marker (Ctrl-Z)
@@ -361,90 +361,6 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
         }
     }
     Ok(())
-}
-
-#[derive(Debug, Clone)]
-pub enum LoadingError {
-    OpenFileError(String),
-    Error(String),
-    ReadFileError(String),
-    FileTooShort,
-    IcyDrawUnsupportedLayerMode(u8),
-    InvalidPng(String),
-    UnsupportedADFVersion(u8),
-    FileLengthNeedsToBeEven,
-    IDMismatch,
-    OutOfBounds,
-}
-
-impl std::fmt::Display for LoadingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LoadingError::Error(err) => write!(f, "Error while loading: {err}"),
-            LoadingError::OpenFileError(err) => write!(f, "Error while opening file: {err}"),
-            LoadingError::ReadFileError(err) => write!(f, "Error while reading file: {err}"),
-            LoadingError::FileTooShort => write!(f, "File too short"),
-            LoadingError::UnsupportedADFVersion(version) => {
-                write!(f, "Unsupported ADF version: {version}")
-            }
-            LoadingError::IcyDrawUnsupportedLayerMode(mode) => {
-                write!(f, "Unsupported layer mode: {mode}")
-            }
-            LoadingError::InvalidPng(err) => write!(f, "Error decoding PNG: {err}"),
-            LoadingError::FileLengthNeedsToBeEven => write!(f, "File length needs to be even"),
-            LoadingError::IDMismatch => write!(f, "ID mismatch"),
-            LoadingError::OutOfBounds => write!(f, "Out of bounds"),
-        }
-    }
-}
-
-impl Error for LoadingError {
-    fn description(&self) -> &str {
-        "use std::display"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        self.source()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum SavingError {
-    NoFontFound,
-    Only8x16FontsSupported,
-    InvalidXBinFont,
-    Only8BitCharactersSupported,
-}
-
-impl std::fmt::Display for SavingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SavingError::NoFontFound => write!(f, "No font found"),
-            SavingError::Only8x16FontsSupported => write!(f, "Only 8x16 fonts are supported by this format."),
-            SavingError::InvalidXBinFont => write!(
-                f,
-                "font not supported by the .xb format only fonts with 8px width and a height from 1 to 32 are supported."
-            ),
-            SavingError::Only8BitCharactersSupported => write!(f, "Only 8 bit characters are supported by this format."),
-        }
-    }
-}
-impl Error for SavingError {
-    fn description(&self) -> &str {
-        "use std::display"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        self.source()
-    }
 }
 
 /// Prepare data for parsing.

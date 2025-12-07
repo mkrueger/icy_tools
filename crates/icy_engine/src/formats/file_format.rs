@@ -26,7 +26,7 @@ use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
 use unarc_rs::unified::ArchiveFormat;
 
-use crate::{BufferType, ScreenMode, TextBuffer};
+use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer};
 
 use super::{FORMATS, ImageFormat, LoadData, OutputFormat, SaveOptions};
 
@@ -760,11 +760,11 @@ impl FileFormat {
     ///
     /// # Errors
     /// Returns an error if the format doesn't support loading or if loading fails.
-    pub fn load_buffer(&self, file_name: &Path, data: &[u8], load_data: Option<LoadData>) -> anyhow::Result<TextBuffer> {
+    pub fn load_buffer(&self, file_name: &Path, data: &[u8], load_data: Option<LoadData>) -> Result<TextBuffer> {
         if let Some(output_format) = self.output_format() {
             output_format.load_buffer(file_name, data, load_data)
         } else {
-            anyhow::bail!("Format '{}' does not support loading via OutputFormat", self.name())
+            Err(EngineError::FormatNotSupported { name: self.name().to_string(), operation: "loading via OutputFormat".to_string() })
         }
     }
 
@@ -780,17 +780,17 @@ impl FileFormat {
     /// # Errors
     /// Returns an error if the format doesn't support saving or if saving fails.
     /// Note: Image formats require `save_to_file` instead as they need a file path.
-    pub fn to_bytes(&self, buffer: &mut TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
+    pub fn to_bytes(&self, buffer: &mut TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if let FileFormat::Image(img) = self {
-            anyhow::bail!(
-                "Image format '{}' does not support to_bytes(). Use ImageFormat::save_buffer() with a file path instead.",
-                img.name()
-            )
+            return Err(EngineError::FormatNotSupported {
+                name: img.name().to_string(),
+                operation: "to_bytes() - use ImageFormat::save_buffer() with a file path".to_string(),
+            });
         }
         if let Some(output_format) = self.output_format() {
             output_format.to_bytes(buffer, options)
         } else {
-            anyhow::bail!("Format '{}' does not support saving", self.name())
+            Err(EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
         }
     }
 

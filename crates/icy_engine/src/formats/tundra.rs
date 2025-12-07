@@ -2,7 +2,7 @@ use std::{collections::HashSet, io, path::Path};
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BufferFeatures, BufferType, EngineResult, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextBuffer, TextPane,
+    AttributedChar, BufferFeatures, BufferType, Result, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextBuffer, TextPane,
     analyze_font_usage,
 };
 
@@ -34,7 +34,7 @@ impl OutputFormat for TundraDraw {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         let mut result = vec![TUNDRA_VER]; // version
         result.extend(TUNDRA_HEADER);
         let mut attr = TextAttribute::from_u8(0, buf.ice_mode);
@@ -43,7 +43,7 @@ impl OutputFormat for TundraDraw {
 
         let fonts = analyze_font_usage(buf);
         if fonts.len() > 1 {
-            return Err(anyhow::anyhow!("Only single font files are supported by this format."));
+            return Err(crate::EngineError::OnlySingleFontSupported);
         }
 
         for y in 0..buf.get_height() {
@@ -149,7 +149,7 @@ impl OutputFormat for TundraDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
@@ -211,11 +211,13 @@ impl OutputFormat for TundraDraw {
                 o += 4;
                 pos.x = to_u32(&data[o..]);
                 if pos.x >= result.get_width() {
-                    return Err(anyhow::anyhow!(
-                        "Invalid Tundra Draw file.\nJump x position {} out of bounds (width is {})",
-                        pos.x,
-                        result.get_width()
-                    ));
+                    return Err(crate::EngineError::InvalidBounds {
+                        message: format!(
+                            "Invalid Tundra Draw file. Jump x position {} out of bounds (width is {})",
+                            pos.x,
+                            result.get_width()
+                        ),
+                    });
                 }
                 o += 4;
                 continue;

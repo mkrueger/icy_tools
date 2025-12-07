@@ -305,7 +305,7 @@ mod tests {
     enum TestMessage {
         New,
         Open,
-        Save,
+        _Save,
         Undo,
         Redo,
     }

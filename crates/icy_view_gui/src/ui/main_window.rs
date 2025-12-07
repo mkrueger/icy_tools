@@ -961,7 +961,7 @@ impl MainWindow {
                         };
                         let toast = Toast::info(toast_msg);
                         return Task::done(Message::ShowToast(toast));
-                    }
+                    } 
                     StatusBarMessage::SetBaudRateOff => {
                         // Set baud rate to Off (max speed, index 0)
                         self.preview.set_baud_emulation(icy_parser_core::BaudEmulation::Off);
@@ -1604,7 +1604,7 @@ impl MainWindow {
                     // Only invalidate once after processing all results to avoid cache thrashing
                     if let Some(ref mut rx) = self.sauce_rx {
                         let mut received_any = false;
-                        while let Ok(result) = rx.try_recv() {
+                        while let Ok(_result) = rx.try_recv() {
                             received_any = true;
                         }
                         if received_any {

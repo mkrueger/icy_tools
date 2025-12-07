@@ -1,10 +1,10 @@
-use std::{error::Error, fmt::Alignment, path::Path};
+use std::{fmt::Alignment, path::Path};
 
 use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
-use crate::{BitFont, Color, EngineResult, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextBuffer, TextPane, attribute};
+use crate::{BitFont, Color, Result, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextBuffer, TextPane, attribute};
 
 use super::LoadData;
 
@@ -38,7 +38,7 @@ impl OutputFormat for IcyDraw {
         "Iced"
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         let mut result = Vec::new();
 
         let font_dims = buf.get_font_dimensions();
@@ -381,7 +381,7 @@ impl OutputFormat for IcyDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
@@ -421,7 +421,7 @@ impl OutputFormat for IcyDraw {
                                 "ICED" => {
                                     let mut o: usize = 0;
                                     if bytes.len() != constants::ICED_HEADER_SIZE {
-                                        return Err(anyhow::anyhow!("unsupported header size {}", bytes.len()));
+                                        return Err(crate::EngineError::UnsupportedFormat { description: format!("unsupported header size {}", bytes.len()) });
                                     }
                                     o += 2; // skip version
                                     // TODO: read type ATM only 1 type is generated.
@@ -479,7 +479,7 @@ impl OutputFormat for IcyDraw {
                                             1 => Alignment::Center,
                                             2 => Alignment::Right,
                                             _ => {
-                                                return Err(anyhow::anyhow!("unsupported alignment"));
+                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported alignment".to_string() });
                                             }
                                         };
                                         bytes = &bytes[1..];
@@ -487,7 +487,7 @@ impl OutputFormat for IcyDraw {
                                             0 => crate::TagPlacement::InText,
                                             1 => crate::TagPlacement::WithGotoXY,
                                             _ => {
-                                                return Err(anyhow::anyhow!("unsupported tag placement"));
+                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported tag placement".to_string() });
                                             }
                                         };
                                         bytes = &bytes[1..];
@@ -496,7 +496,7 @@ impl OutputFormat for IcyDraw {
                                             0 => crate::TagRole::Displaycode,
                                             1 => crate::TagRole::Hyperlink,
                                             _ => {
-                                                return Err(anyhow::anyhow!("unsupported tag role"));
+                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported tag role".to_string() });
                                             }
                                         };
 
@@ -726,7 +726,7 @@ impl OutputFormat for IcyDraw {
                                         result.layers.push(layer);
                                     } else {
                                         if bytes.len() < o + length {
-                                            return Err(anyhow::anyhow!("data length out ouf bounds {} data lenth: {}", o + length, bytes.len()));
+                                            return Err(crate::EngineError::OutOfBounds { offset: o + length });
                                         }
                                         for y in 0..height {
                                             if o >= bytes.len() {
@@ -735,7 +735,7 @@ impl OutputFormat for IcyDraw {
                                             }
                                             for x in 0..width {
                                                 if o + 2 > bytes.len() {
-                                                    return Err(anyhow::anyhow!("data length out ouf bounds"));
+                                                    return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
                                                 }
                                                 let mut attr = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
                                                 o += 2;
@@ -758,7 +758,7 @@ impl OutputFormat for IcyDraw {
 
                                                 let (ch, fg, bg, font_page) = if is_short {
                                                     if o + 3 > bytes.len() {
-                                                        return Err(anyhow::anyhow!("data length out ouf bounds"));
+                                                        return Err(crate::EngineError::OutOfBounds { offset: o + 3 });
                                                     }
 
                                                     let ch = bytes[o] as u32;
@@ -772,7 +772,7 @@ impl OutputFormat for IcyDraw {
                                                     (ch, fg, bg, font_page)
                                                 } else {
                                                     if o + 14 > bytes.len() {
-                                                        return Err(anyhow::anyhow!("data length out ouf bounds"));
+                                                        return Err(crate::EngineError::OutOfBounds { offset: o + 14 });
                                                     }
 
                                                     let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
@@ -861,35 +861,16 @@ impl TextBuffer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum IcedError {
+    #[error("Error while encoding ztext chunk: {0}")]
     ErrorEncodingZText(String),
+    #[error("Error while parsing font slot: {0}")]
     ErrorParsingFontSlot(String),
 }
 
-impl std::fmt::Display for IcedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IcedError::ErrorEncodingZText(err) => {
-                write!(f, "Error while encoding ztext chunk: {err}")
-            }
-            IcedError::ErrorParsingFontSlot(err) => {
-                write!(f, "Error while parsing font slot: {err}")
-            }
-        }
-    }
-}
-
-impl Error for IcedError {
-    fn description(&self) -> &str {
-        "use std::display"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-
-    fn cause(&self) -> Option<&dyn Error> {
-        self.source()
+impl From<IcedError> for crate::EngineError {
+    fn from(err: IcedError) -> Self {
+        crate::EngineError::Generic(err.to_string())
     }
 }

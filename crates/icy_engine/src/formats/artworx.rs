@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, BufferType, Color, EGA_PALETTE, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, SavingError,
+    AttributedChar, BitFont, BufferFeatures, BufferType, Color, EGA_PALETTE, Result, FontMode, IceMode, LoadingError, OutputFormat, Palette, SavingError,
     TextBuffer, TextPane, analyze_font_usage, guess_font_name,
 };
 
@@ -35,20 +35,20 @@ impl OutputFormat for Artworx {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.ice_mode != IceMode::Ice {
-            return Err(anyhow::anyhow!("Only ice mode files are supported by this format."));
+            return Err(crate::EngineError::OnlyIceModeSupported);
         }
         if buf.get_width() != 80 {
-            return Err(anyhow::anyhow!("Only width==80 files are supported by this format."));
+            return Err(crate::EngineError::WidthNotSupported { width: 80 });
         }
         if buf.palette.len() != 16 {
-            return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
+            return Err(crate::EngineError::Only16ColorPalettesSupported);
         }
 
         let fonts = analyze_font_usage(buf);
         if fonts.len() > 1 {
-            return Err(anyhow::anyhow!("Only single font files are supported by this format."));
+            return Err(crate::EngineError::OnlySingleFontSupported);
         }
 
         let mut result = vec![1]; // version
@@ -81,7 +81,7 @@ impl OutputFormat for Artworx {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());

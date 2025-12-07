@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
-use crate::{AttributedChar, BufferFeatures, EngineResult, OutputFormat, TextBuffer, TextPane};
+use crate::{AttributedChar, BufferFeatures, Result, OutputFormat, TextBuffer, TextPane};
 
 #[derive(Default)]
 pub(super) struct Bin {}
@@ -19,7 +19,7 @@ impl OutputFormat for Bin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         let mut result = Vec::new();
 
         for y in 0..buf.get_height() {
@@ -35,7 +35,7 @@ impl OutputFormat for Bin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((160, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());

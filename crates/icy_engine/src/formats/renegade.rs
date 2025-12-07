@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TextAttribute, TextPane, TextScreen};
+use crate::{BufferFeatures, EditableScreen, Result, OutputFormat, Position, TextAttribute, TextPane, TextScreen};
 
 use super::{LoadData, SaveOptions};
 
@@ -33,9 +33,9 @@ impl OutputFormat for Renegade {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.palette.len() != 16 {
-            return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
+            return Err(crate::EngineError::Only16ColorPalettesSupported);
         }
         let mut result = Vec::new();
         let mut last_attr = TextAttribute::default();
@@ -73,7 +73,7 @@ impl OutputFormat for Renegade {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));

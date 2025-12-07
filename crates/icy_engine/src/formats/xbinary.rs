@@ -1,5 +1,5 @@
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, EngineResult, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
+    AttributedChar, BitFont, BufferFeatures, Result, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
     TextBuffer, TextPane, analyze_font_usage, attribute, guess_font_name,
 };
 use std::path::Path;
@@ -110,7 +110,7 @@ impl OutputFormat for XBin {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         let mut result = Vec::new();
 
         result.extend_from_slice(b"XBIN");
@@ -127,11 +127,11 @@ impl OutputFormat for XBin {
             return Err(SavingError::NoFontFound.into());
         };
         if font.length() != 256 {
-            return Err(anyhow::anyhow!("File needs 1st font to be 256 chars long."));
+            return Err(crate::EngineError::InvalidXBin { message: "1st font must be 256 chars long".to_string() });
         }
 
         if fonts.len() > 2 {
-            return Err(anyhow::anyhow!("Only up to 2 fonts are supported by this format."));
+            return Err(crate::EngineError::InvalidXBin { message: "Only up to 2 fonts are supported".to_string() });
         }
 
         if font.size().width != 8 || font.size().height < 1 || font.size().height > 32 {
@@ -166,11 +166,9 @@ impl OutputFormat for XBin {
             pal.fill_to_16();
             let palette_data = pal.as_vec_63();
             if palette_data.len() != XBIN_PALETTE_LENGTH {
-                return Err(anyhow::anyhow!(
-                    "Invalid palette data length was {} should be {}.",
-                    palette_data.len(),
-                    XBIN_PALETTE_LENGTH
-                ));
+                return Err(crate::EngineError::InvalidXBin {
+                    message: format!("Invalid palette data length was {} should be {}", palette_data.len(), XBIN_PALETTE_LENGTH),
+                });
             }
             result.extend(palette_data);
         }
@@ -178,25 +176,25 @@ impl OutputFormat for XBin {
             let font_data = font.convert_to_u8_data();
             let font_len = font_data.len();
             if font_len != 256 * font.size().height as usize {
-                return Err(anyhow::anyhow!("Invalid font len."));
+                return Err(crate::EngineError::InvalidXBin { message: "Invalid font length".to_string() });
             }
             result.extend(font_data);
             if flags & FLAG_512CHAR_MODE == FLAG_512CHAR_MODE {
                 if fonts.len() != 2 {
-                    return Err(anyhow::anyhow!("File needs 2 fonts for this save mode."));
+                    return Err(crate::EngineError::InvalidXBin { message: "File needs 2 fonts for 512 char mode".to_string() });
                 }
                 if let Some(ext_font) = buf.get_font(fonts[1]) {
                     if ext_font.length() != 256 {
-                        return Err(anyhow::anyhow!("File needs 2nd font to be 256 chars long."));
+                        return Err(crate::EngineError::InvalidXBin { message: "2nd font must be 256 chars long".to_string() });
                     }
 
                     let ext_font_data = ext_font.convert_to_u8_data();
                     if ext_font_data.len() != font_len {
-                        return Err(anyhow::anyhow!("File needs 2nd font to be same height as 1st font."));
+                        return Err(crate::EngineError::InvalidXBin { message: "2nd font must be same height as 1st font".to_string() });
                     }
                     result.extend(ext_font_data);
                 } else {
-                    return Err(anyhow::anyhow!("Can't get second font."));
+                    return Err(crate::EngineError::InvalidXBin { message: "Can't get second font".to_string() });
                 }
             }
         }
@@ -223,7 +221,7 @@ impl OutputFormat for XBin {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.terminal_state.is_terminal_buffer = false;
         result.file_name = Some(file_name.into());
@@ -246,7 +244,7 @@ impl OutputFormat for XBin {
         o += 1;
         let width = data[o] as i32 + ((data[o + 1] as i32) << 8);
         if !(1..=4096).contains(&width) {
-            return Err(anyhow::anyhow!("Invalid XBin. Width out of range: {width} (1-4096)."));
+            return Err(crate::EngineError::InvalidXBin { message: format!("Width out of range: {} (1-4096)", width) });
         }
         result.set_width(width);
         o += 2;
@@ -264,7 +262,7 @@ impl OutputFormat for XBin {
             font_size = 16;
         }
         if font_size > 32 {
-            return Err(anyhow::anyhow!("Invalid XBin. Font height too large: {font_size} (32 max)."));
+            return Err(crate::EngineError::InvalidXBin { message: format!("Font height too large: {} (32 max)", font_size) });
         }
         o += 1;
         let flags = data[o];
@@ -330,7 +328,7 @@ fn select_attr_table(result: &TextBuffer) -> &'static [TextAttribute; 256] {
     }
 }
 
-fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
+fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool> {
     let mut pos = Position::default();
     let width = result.get_width();
     let height = result.get_height();
@@ -446,7 +444,7 @@ fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
     }
 }
 
-fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> EngineResult<bool> {
+fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool> {
     let width = result.get_width();
     let height = result.get_height();
     let attr_table = select_attr_table(result);
@@ -571,7 +569,7 @@ fn count_length(
     count
 }
 
-fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[usize]) -> EngineResult<()> {
+fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[usize]) -> Result<()> {
     for y in 0..buffer.get_height() {
         let mut run_buf = Vec::new();
         let mut run_mode = Compression::Off;

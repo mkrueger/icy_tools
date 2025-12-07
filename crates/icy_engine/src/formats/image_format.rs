@@ -20,7 +20,7 @@
 
 use std::path::Path;
 
-use crate::{EngineResult, Rectangle, RenderOptions, Screen, TextBuffer, TextPane};
+use crate::{Result, Rectangle, RenderOptions, Screen, TextBuffer, TextPane};
 
 /// Image export formats for ANSI art.
 ///
@@ -115,7 +115,7 @@ impl ImageFormat {
     ///
     /// # Returns
     /// `Ok(())` on success, or an error if rendering/saving fails.
-    pub fn save_screen(&self, screen: &dyn Screen, path: &Path) -> EngineResult<()> {
+    pub fn save_screen(&self, screen: &dyn Screen, path: &Path) -> Result<()> {
         let size = screen.get_size();
         let rect = Rectangle::from(0, 0, size.width, size.height);
 
@@ -123,23 +123,23 @@ impl ImageFormat {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
             ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                anyhow::bail!("Saving to {} is not supported", self.name())
+                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
             }
         }
     }
 
     /// Save a region of a Screen to an image file.
-    pub fn save_screen_region(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> EngineResult<()> {
+    pub fn save_screen_region(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> Result<()> {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
             ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                anyhow::bail!("Saving to {} is not supported", self.name())
+                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
             }
         }
     }
 
-    fn save_screen_png(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> EngineResult<()> {
+    fn save_screen_png(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> Result<()> {
         let options = RenderOptions {
             rect: region.into(),
             blink_on: true,
@@ -149,14 +149,14 @@ impl ImageFormat {
         let (size, pixels) = screen.render_to_rgba(&options);
 
         let img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-            image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels).ok_or_else(|| anyhow::anyhow!("Failed to create image buffer"))?;
+            image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels).ok_or(crate::EngineError::ImageBufferCreationFailed)?;
 
-        img.save(path).map_err(|e| anyhow::anyhow!("Failed to save PNG: {}", e))?;
+        img.save(path).map_err(|e| crate::EngineError::ImageSaveFailed { message: e.to_string() })?;
 
         Ok(())
     }
 
-    fn save_screen_gif(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> EngineResult<()> {
+    fn save_screen_gif(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> Result<()> {
         use gifski::{Repeat, progress::NoProgress};
 
         let size = screen.get_size();
@@ -209,7 +209,7 @@ impl ImageFormat {
         collector.add_frame_rgba(1, img2, blink_rate_secs)?;
 
         drop(collector);
-        writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
+        writer_handle.join().map_err(|_| crate::EngineError::GifWriterPanicked)?;
         Ok(())
     }
 
@@ -224,14 +224,14 @@ impl ImageFormat {
     ///
     /// # Returns
     /// `Ok(())` on success, or an error if rendering/saving fails.
-    pub fn save_buffer(&self, buffer: &TextBuffer, path: &Path) -> EngineResult<()> {
+    pub fn save_buffer(&self, buffer: &TextBuffer, path: &Path) -> Result<()> {
         let rect = Rectangle::from(0, 0, buffer.get_width(), buffer.get_height());
 
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
             ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                anyhow::bail!("Saving to {} is not supported", self.name())
+                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
             }
         }
     }
@@ -242,17 +242,17 @@ impl ImageFormat {
     /// * `buffer` - The text buffer to render
     /// * `path` - Output file path
     /// * `region` - The rectangular region to export
-    pub fn save_buffer_region(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> EngineResult<()> {
+    pub fn save_buffer_region(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> Result<()> {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
             ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                anyhow::bail!("Saving to {} is not supported", self.name())
+                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
             }
         }
     }
 
-    fn save_png(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> EngineResult<()> {
+    fn save_png(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> Result<()> {
         let options = RenderOptions {
             rect: region.into(),
             blink_on: true,
@@ -264,14 +264,14 @@ impl ImageFormat {
 
         // Create image buffer and save
         let img: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-            image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels).ok_or_else(|| anyhow::anyhow!("Failed to create image buffer"))?;
+            image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels).ok_or(crate::EngineError::ImageBufferCreationFailed)?;
 
-        img.save(path).map_err(|e| anyhow::anyhow!("Failed to save PNG: {}", e))?;
+        img.save(path).map_err(|e| crate::EngineError::ImageSaveFailed { message: e.to_string() })?;
 
         Ok(())
     }
 
-    fn save_gif(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> EngineResult<()> {
+    fn save_gif(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> Result<()> {
         use gifski::{Repeat, progress::NoProgress};
 
         let size = buffer.get_size();
@@ -329,7 +329,7 @@ impl ImageFormat {
         drop(collector);
 
         // Wait for writer to finish
-        writer_handle.join().map_err(|_| anyhow::anyhow!("GIF writer thread panicked"))?;
+        writer_handle.join().map_err(|_| crate::EngineError::GifWriterPanicked)?;
         Ok(())
     }
 

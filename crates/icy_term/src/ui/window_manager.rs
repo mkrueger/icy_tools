@@ -354,7 +354,7 @@ impl WindowManager {
                     _ => None,
                 }
             }),
-            iced::time::every(std::time::Duration::from_millis(120)).map(|_| WindowManagerMessage::UpdateBuffers),
+            iced::time::every(std::time::Duration::from_millis(160)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
 
         // Only subscribe to ViewportTick if any window needs animation (viewport or scrollbar)

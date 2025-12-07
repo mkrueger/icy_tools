@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{BufferFeatures, EditableScreen, EngineResult, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen};
+use crate::{BufferFeatures, EditableScreen, Result, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen};
 use icy_parser_core::{ctrla_bg, ctrla_fg};
 
 use super::{LoadData, SaveOptions};
@@ -21,9 +21,9 @@ impl OutputFormat for CtrlA {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.palette.len() != 16 {
-            return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
+            return Err(crate::EngineError::Only16ColorPalettesSupported);
         }
         let mut result = Vec::new();
         let mut last_attr = TextAttribute::default();
@@ -187,7 +187,7 @@ impl OutputFormat for CtrlA {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextScreen::new((80, 25));
 
         result.terminal_state_mut().is_terminal_buffer = false;

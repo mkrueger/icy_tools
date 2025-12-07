@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, EngineResult, OutputFormat, Palette, TextScreen,
+    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Result, OutputFormat, Palette, TextScreen,
 };
 
 #[derive(Default)]
@@ -21,15 +21,15 @@ impl OutputFormat for Seq {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Petscii {
-            return Err(anyhow::anyhow!("Buffer is not a Petscii buffer!"));
+            return Err(crate::EngineError::BufferTypeMismatch { expected: "Petscii".to_string() });
         }
 
-        Err(anyhow::anyhow!("not implemented!"))
+        Err(crate::EngineError::not_implemented("Seq export"))
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextScreen::new((40, 25));
 
         result.buffer.clear_font_table();

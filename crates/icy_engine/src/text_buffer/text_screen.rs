@@ -5,7 +5,7 @@ use std::{sync::Arc, u32};
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, EngineResult, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
+    AttributedChar, BitFont, Caret, EditableScreen, Result, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
 };
 
@@ -32,6 +32,21 @@ impl TextScreen {
         Self {
             caret: Caret::default(),
             buffer: TextBuffer::new(size),
+            current_layer: 0,
+            selection_opt: None,
+            selection_mask: SelectionMask::default(),
+            mouse_fields: Vec::new(),
+            saved_caret_pos: Position::default(),
+            saved_caret_state: SavedCaretState::default(),
+            scan_lines: false,
+            scrollback_buffer: ScrollbackBuffer::new(),
+        }
+    }
+
+    pub fn from_buffer(buffer: TextBuffer) -> Self {
+        Self {
+            caret: Caret::default(),
+            buffer,
             current_layer: 0,
             selection_opt: None,
             selection_mask: SelectionMask::default(),
@@ -139,7 +154,7 @@ impl Screen for TextScreen {
         &self.buffer.layers[self.current_layer].hyperlinks
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
         self.buffer.to_bytes(extension, options)
     }
 
@@ -201,13 +216,13 @@ impl Screen for TextScreen {
         self.scrollback_buffer.set_buffer_size(buffer_size);
     }
 
-    fn set_selection(&mut self, sel: Selection) -> EngineResult<()> {
+    fn set_selection(&mut self, sel: Selection) -> Result<()> {
         self.selection_opt = Some(sel);
         self.mark_dirty();
         Ok(())
     }
 
-    fn clear_selection(&mut self) -> EngineResult<()> {
+    fn clear_selection(&mut self) -> Result<()> {
         self.selection_opt = None;
         self.mark_dirty();
         Ok(())
@@ -683,12 +698,12 @@ impl EditableScreen for TextScreen {
         self.current_layer
     }
 
-    fn set_current_layer(&mut self, layer: usize) -> EngineResult<()> {
+    fn set_current_layer(&mut self, layer: usize) -> Result<()> {
         if layer < self.buffer.layers.len() {
             self.current_layer = layer;
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Layer {} out of range (0..{})", layer, self.buffer.layers.len()).into())
+            Err(crate::EngineError::LayerOutOfRange { layer, max: self.buffer.layers.len() })
         }
     }
 

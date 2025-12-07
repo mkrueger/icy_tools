@@ -6,11 +6,11 @@ use std::{
 use i18n_embed_fl::fl;
 
 use crate::{
-    AddType, AttributedChar, BitFont, EngineResult, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, Tag,
+    AddType, AttributedChar, BitFont, Result, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, Tag,
     TextPane,
 };
 
-use super::{EditState, EditorError, OperationType, UndoOperation};
+use super::{EditState, OperationType, UndoOperation};
 
 pub(crate) struct AtomicUndo {
     description: String,
@@ -46,14 +46,14 @@ impl UndoOperation for AtomicUndo {
         self.operation_type
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         for op in self.stack.lock().unwrap().iter_mut().rev() {
             op.undo(edit_state)?;
         }
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         for op in self.stack.lock().unwrap().iter_mut() {
             op.redo(edit_state)?;
         }
@@ -77,13 +77,13 @@ impl UndoOperation for UndoSetChar {
         fl!(crate::LANGUAGE_LOADER, "undo-set_char")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers[self.layer].set_char(self.pos, self.old);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers[self.layer].set_char(self.pos, self.old);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers[self.layer].set_char(self.pos, self.new);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers[self.layer].set_char(self.pos, self.new);
         Ok(())
     }
 }
@@ -98,13 +98,13 @@ impl UndoOperation for UndoSwapChar {
         String::new() // No stand alone operation.
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers[self.layer].swap_char(self.pos1, self.pos2);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers[self.layer].swap_char(self.pos1, self.pos2);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers[self.layer].swap_char(self.pos1, self.pos2);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers[self.layer].swap_char(self.pos1, self.pos2);
         Ok(())
     }
 }
@@ -126,15 +126,15 @@ impl UndoOperation for AddLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-add_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        self.layer = Some(edit_state.buffer.layers.remove(self.index));
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        self.layer = Some(edit_state.screen.buffer.layers.remove(self.index));
         edit_state.clamp_current_layer();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = self.layer.take() {
-            edit_state.buffer.layers.insert(self.index, layer);
+            edit_state.screen.buffer.layers.insert(self.index, layer);
         }
         Ok(())
     }
@@ -157,20 +157,20 @@ impl UndoOperation for RemoveLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-remove_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = self.layer.take() {
-            edit_state.buffer.layers.insert(self.layer_index, layer);
+            edit_state.screen.buffer.layers.insert(self.layer_index, layer);
         }
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if self.layer_index < edit_state.buffer.layers.len() {
-            self.layer = Some(edit_state.buffer.layers.remove(self.layer_index));
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if self.layer_index < edit_state.screen.buffer.layers.len() {
+            self.layer = Some(edit_state.screen.buffer.layers.remove(self.layer_index));
             edit_state.clamp_current_layer();
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer_index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer_index)))
         }
     }
 }
@@ -191,13 +191,13 @@ impl UndoOperation for RaiseLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-raise_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers.swap(self.layer_index, self.layer_index + 1);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers.swap(self.layer_index, self.layer_index + 1);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers.swap(self.layer_index, self.layer_index + 1);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers.swap(self.layer_index, self.layer_index + 1);
         Ok(())
     }
 }
@@ -218,13 +218,13 @@ impl UndoOperation for LowerLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-lower_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers.swap(self.layer_index, self.layer_index - 1);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers.swap(self.layer_index, self.layer_index - 1);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers.swap(self.layer_index, self.layer_index - 1);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers.swap(self.layer_index, self.layer_index - 1);
         Ok(())
     }
 }
@@ -251,28 +251,28 @@ impl UndoOperation for MergeLayerDown {
         fl!(crate::LANGUAGE_LOADER, "undo-merge_down_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(mut orig_layers) = self.orig_layers.take() {
             while let Some(layer) = orig_layers.pop() {
-                edit_state.buffer.layers.insert(self.index - 1, layer);
+                edit_state.screen.buffer.layers.insert(self.index - 1, layer);
             }
-            self.merged_layer = Some(edit_state.buffer.layers.remove(self.index + 1));
+            self.merged_layer = Some(edit_state.screen.buffer.layers.remove(self.index + 1));
             edit_state.set_current_layer(self.index);
             edit_state.clamp_current_layer();
             Ok(())
         } else {
-            Err(EditorError::MergeLayerDownHasNoMergeLayer.into())
+            Err(crate::EngineError::Generic("Merge layer down has no merge layer".to_string()))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = self.merged_layer.take() {
-            self.orig_layers = Some(edit_state.buffer.layers.drain((self.index - 1)..=self.index).collect());
-            edit_state.buffer.layers.insert(self.index - 1, layer);
+            self.orig_layers = Some(edit_state.screen.buffer.layers.drain((self.index - 1)..=self.index).collect());
+            edit_state.screen.buffer.layers.insert(self.index - 1, layer);
             edit_state.set_current_layer(self.index - 1);
             Ok(())
         } else {
-            Err(EditorError::MergeLayerDownHasNoMergeLayer.into())
+            Err(crate::EngineError::Generic("Merge layer down has no merge layer".to_string()))
         }
     }
 }
@@ -293,21 +293,21 @@ impl UndoOperation for ToggleLayerVisibility {
         fl!(crate::LANGUAGE_LOADER, "undo-toggle_layer_visibility")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.properties.is_visible = !layer.properties.is_visible;
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.properties.is_visible = !layer.properties.is_visible;
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 }
@@ -330,21 +330,21 @@ impl UndoOperation for MoveLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-move_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.set_offset(self.from);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.set_offset(self.to);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 }
@@ -367,22 +367,22 @@ impl UndoOperation for SetLayerSize {
         fl!(crate::LANGUAGE_LOADER, "undo-set_layer_size")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.set_size(self.from);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             self.from = layer.get_size();
             layer.set_size(self.to);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 }
@@ -407,17 +407,17 @@ impl UndoOperation for Paste {
         fl!(crate::LANGUAGE_LOADER, "undo-paste")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        self.layer = Some(edit_state.buffer.layers.remove(self.current_layer + 1));
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        self.layer = Some(edit_state.screen.buffer.layers.remove(self.current_layer + 1));
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = self.layer.take() {
-            edit_state.buffer.layers.insert(self.current_layer + 1, layer);
+            edit_state.screen.buffer.layers.insert(self.current_layer + 1, layer);
             Ok(())
         } else {
-            Err(EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 }
@@ -438,8 +438,8 @@ impl UndoOperation for AddFloatingLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-add_floating_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.current_layer) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.current_layer) {
             if matches!(layer.role, crate::Role::Image) {
                 layer.role = crate::Role::PasteImage;
             } else {
@@ -450,8 +450,8 @@ impl UndoOperation for AddFloatingLayer {
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.current_layer) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.current_layer) {
             if matches!(layer.role, crate::Role::PasteImage) {
                 layer.role = crate::Role::Image;
             } else {
@@ -483,13 +483,13 @@ impl UndoOperation for ResizeBuffer {
         fl!(crate::LANGUAGE_LOADER, "undo-resize_buffer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_size(self.orig_size);
         edit_state.set_mask_size();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_size(self.size);
         edit_state.set_mask_size();
         Ok(())
@@ -520,8 +520,8 @@ impl UndoOperation for UndoLayerChange {
         String::new() // No stand alone operation.
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.layer) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.layer) {
             if layer.get_size() == self.old_chars.get_size() {
                 layer.lines = self.old_chars.lines.clone();
             } else {
@@ -529,12 +529,12 @@ impl UndoOperation for UndoLayerChange {
             }
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.layer) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.layer) {
             if layer.get_size() == self.new_chars.get_size() {
                 layer.lines = self.new_chars.lines.clone();
             } else {
@@ -542,7 +542,7 @@ impl UndoOperation for UndoLayerChange {
             }
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 }
@@ -569,14 +569,14 @@ impl UndoOperation for Crop {
         fl!(crate::LANGUAGE_LOADER, "undo-crop")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_size(self.orig_size);
         edit_state.set_mask_size();
         mem::swap(&mut edit_state.get_buffer_mut().layers, &mut self.layers);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_size(self.size);
         edit_state.set_mask_size();
         mem::swap(&mut edit_state.get_buffer_mut().layers, &mut self.layers);
@@ -606,7 +606,7 @@ impl UndoOperation for DeleteRow {
         fl!(crate::LANGUAGE_LOADER, "undo-delete_row")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let mut deleted_row = Line::default();
             mem::swap(&mut self.deleted_row, &mut deleted_row);
@@ -614,11 +614,11 @@ impl UndoOperation for DeleteRow {
             layer.set_height(layer.get_height() + 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             if layer.lines.len() < self.line as usize + 1 {
                 layer.lines.resize(self.line as usize + 1, Line::default());
@@ -627,7 +627,7 @@ impl UndoOperation for DeleteRow {
             layer.set_height(layer.get_height() - 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 }
@@ -654,17 +654,17 @@ impl UndoOperation for InsertRow {
         fl!(crate::LANGUAGE_LOADER, "undo-insert_row")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             self.inserted_row = layer.lines.remove(self.line as usize);
             layer.set_height(layer.get_height() - 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let mut insert_row = Line::default();
             mem::swap(&mut self.inserted_row, &mut insert_row);
@@ -675,7 +675,7 @@ impl UndoOperation for InsertRow {
             layer.set_height(layer.get_height() + 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 }
@@ -702,7 +702,7 @@ impl UndoOperation for DeleteColumn {
         fl!(crate::LANGUAGE_LOADER, "undo-delete_column")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let offset: usize = self.column as usize;
             for (i, ch) in self.deleted_chars.iter().enumerate() {
@@ -713,11 +713,11 @@ impl UndoOperation for DeleteColumn {
             layer.set_width(layer.get_width() + 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let mut deleted_row = Vec::new();
             let offset: usize = self.column as usize;
@@ -732,7 +732,7 @@ impl UndoOperation for DeleteColumn {
             layer.set_width(layer.get_width() - 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 }
@@ -754,7 +754,7 @@ impl UndoOperation for InsertColumn {
         fl!(crate::LANGUAGE_LOADER, "undo-insert_column")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let offset: usize = self.column as usize;
             for line in &mut layer.lines {
@@ -765,11 +765,11 @@ impl UndoOperation for InsertColumn {
             layer.set_width(layer.get_width() - 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let offset: usize = self.column as usize;
             for line in &mut layer.lines {
@@ -780,24 +780,24 @@ impl UndoOperation for InsertColumn {
             layer.set_width(layer.get_width() + 1);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
         }
     }
 }
 
 mod scroll_util {
-    use crate::{EngineResult, editor::EditorError};
+    use crate::Result;
 
-    pub(crate) fn scroll_layer_up(edit_state: &mut crate::editor::EditState, layer: usize) -> EngineResult<()> {
+    pub(crate) fn scroll_layer_up(edit_state: &mut crate::editor::EditState, layer: usize) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(layer) {
             let lines = layer.lines.remove(0);
             layer.lines.push(lines);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", layer)))
         }
     }
-    pub(crate) fn scroll_layer_down(edit_state: &mut crate::editor::EditState, layer: usize) -> EngineResult<()> {
+    pub(crate) fn scroll_layer_down(edit_state: &mut crate::editor::EditState, layer: usize) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(layer) {
             if let Some(lines) = layer.lines.pop() {
                 layer.lines.insert(0, lines);
@@ -806,7 +806,7 @@ mod scroll_util {
             }
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(layer).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", layer)))
         }
     }
 }
@@ -827,11 +827,11 @@ impl UndoOperation for UndoScrollWholeLayerUp {
         fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_up")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         scroll_util::scroll_layer_down(edit_state, self.layer)
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         scroll_util::scroll_layer_up(edit_state, self.layer)
     }
 }
@@ -852,11 +852,11 @@ impl UndoOperation for UndoScrollWholeLayerDown {
         fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_down")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         scroll_util::scroll_layer_up(edit_state, self.layer)
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         scroll_util::scroll_layer_down(edit_state, self.layer)
     }
 }
@@ -879,7 +879,7 @@ impl UndoOperation for RotateLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let size = layer.get_size();
             layer.set_size((size.height, size.width));
@@ -888,7 +888,7 @@ impl UndoOperation for RotateLayer {
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             let size = layer.get_size();
             layer.set_size((size.height, size.width));
@@ -923,11 +923,11 @@ impl UndoOperation for ReversedUndo {
         self.operation_type
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         self.op.redo(edit_state)
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         self.op.undo(edit_state)
     }
 }
@@ -948,14 +948,14 @@ impl UndoOperation for ReverseCaretPosition {
         "Reverse caret position".into()
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        self.old_pos = edit_state.caret.position();
-        edit_state.caret.set_position(self.pos);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        self.old_pos = edit_state.screen.caret.position();
+        edit_state.screen.caret.set_position(self.pos);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.caret.set_position(self.old_pos);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.caret.set_position(self.old_pos);
         Ok(())
     }
 }
@@ -980,16 +980,16 @@ impl UndoOperation for ClearLayer {
         fl!(crate::LANGUAGE_LOADER, "undo-clear_layer")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         self.redo(edit_state)
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if self.layer_index < edit_state.buffer.layers.len() {
-            mem::swap(&mut self.layer, &mut edit_state.buffer.layers[self.layer_index].lines);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if self.layer_index < edit_state.screen.buffer.layers.len() {
+            mem::swap(&mut self.layer, &mut edit_state.screen.buffer.layers[self.layer_index].lines);
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.layer_index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer_index)))
         }
     }
 }
@@ -1014,14 +1014,14 @@ impl UndoOperation for Deselect {
         false
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = Some(self.sel);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = Some(self.sel);
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = None;
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = None;
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1048,16 +1048,16 @@ impl UndoOperation for SelectNothing {
         false
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = self.sel;
-        edit_state.selection_mask = self.mask.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = self.sel;
+        edit_state.screen.selection_mask = self.mask.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = None;
-        edit_state.selection_mask.clear();
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = None;
+        edit_state.screen.selection_mask.clear();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1084,14 +1084,14 @@ impl UndoOperation for SetSelection {
         false
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = self.old;
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = self.old;
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = self.new;
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = self.new;
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1119,14 +1119,14 @@ impl UndoOperation for SetSelectionMask {
         false
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_mask = self.old.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_mask = self.old.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_mask = self.new.clone();
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_mask = self.new.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1149,8 +1149,8 @@ impl UndoOperation for AddSelectionToMask {
         fl!(crate::LANGUAGE_LOADER, "undo-set_selection")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_mask = self.old.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_mask = self.old.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1159,13 +1159,13 @@ impl UndoOperation for AddSelectionToMask {
         false
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         match self.selection.add_type {
             AddType::Default | AddType::Add => {
-                edit_state.selection_mask.add_selection(self.selection);
+                edit_state.screen.selection_mask.add_selection(self.selection);
             }
             AddType::Subtract => {
-                edit_state.selection_mask.remove_selection(self.selection);
+                edit_state.screen.selection_mask.remove_selection(self.selection);
             }
         }
         edit_state.set_is_buffer_dirty();
@@ -1195,16 +1195,16 @@ impl UndoOperation for InverseSelection {
         false
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = self.sel;
-        edit_state.selection_mask = self.old.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = self.sel;
+        edit_state.screen.selection_mask = self.old.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.selection_opt = None;
-        edit_state.selection_mask = self.new.clone();
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.selection_opt = None;
+        edit_state.screen.selection_mask = self.new.clone();
         edit_state.set_is_buffer_dirty();
         Ok(())
     }
@@ -1226,13 +1226,13 @@ impl UndoOperation for SwitchPalettte {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_palette")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         mem::swap(&mut edit_state.get_buffer_mut().palette, &mut self.pal);
         edit_state.is_palette_dirty = true;
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         mem::swap(&mut edit_state.get_buffer_mut().palette, &mut self.pal);
         edit_state.is_palette_dirty = true;
         Ok(())
@@ -1256,12 +1256,12 @@ impl UndoOperation for SetSauceData {
         fl!(crate::LANGUAGE_LOADER, "undo-change_sauce")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.set_sauce_meta(self.old.clone());
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.set_sauce_meta(self.new.clone());
         Ok(())
     }
@@ -1284,13 +1284,13 @@ impl UndoOperation for SwitchToFontPage {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.caret.set_font_page(self.old);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.caret.set_font_page(self.old);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.caret.set_font_page(self.new);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.caret.set_font_page(self.new);
         Ok(())
     }
 }
@@ -1313,12 +1313,12 @@ impl UndoOperation for SetFont {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_font(self.font_page, self.old.clone());
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.get_buffer_mut().set_font(self.font_page, self.new.clone());
         Ok(())
     }
@@ -1346,15 +1346,15 @@ impl UndoOperation for AddFont {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.remove_font(self.new_font_page);
-        edit_state.caret.set_font_page(self.old_font_page);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.remove_font(self.new_font_page);
+        edit_state.screen.caret.set_font_page(self.old_font_page);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_font(self.new_font_page, self.font.clone());
-        edit_state.caret.set_font_page(self.new_font_page);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.set_font(self.new_font_page, self.font.clone());
+        edit_state.screen.caret.set_font_page(self.new_font_page);
         Ok(())
     }
 }
@@ -1395,18 +1395,18 @@ impl UndoOperation for SwitchPalette {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_palette_mode")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.palette = self.old_palette.clone();
-        edit_state.buffer.palette_mode = self.old_mode;
-        edit_state.buffer.layers = self.old_layers.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.palette = self.old_palette.clone();
+        edit_state.screen.buffer.palette_mode = self.old_mode;
+        edit_state.screen.buffer.layers = self.old_layers.clone();
         edit_state.is_palette_dirty = true;
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.palette = self.new_palette.clone();
-        edit_state.buffer.palette_mode = self.new_mode;
-        edit_state.buffer.layers = self.new_layers.clone();
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.palette = self.new_palette.clone();
+        edit_state.screen.buffer.palette_mode = self.new_mode;
+        edit_state.screen.buffer.layers = self.new_layers.clone();
         edit_state.is_palette_dirty = true;
         Ok(())
     }
@@ -1435,15 +1435,15 @@ impl UndoOperation for SetIceMode {
         fl!(crate::LANGUAGE_LOADER, "undo-switch_ice_mode")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers = self.old_layers.clone();
-        edit_state.buffer.ice_mode = self.old_mode;
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers = self.old_layers.clone();
+        edit_state.screen.buffer.ice_mode = self.old_mode;
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers = self.new_layers.clone();
-        edit_state.buffer.ice_mode = self.new_mode;
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers = self.new_layers.clone();
+        edit_state.screen.buffer.ice_mode = self.new_mode;
         Ok(())
     }
 }
@@ -1471,14 +1471,14 @@ impl UndoOperation for ReplaceFontUsage {
         fl!(crate::LANGUAGE_LOADER, "undo-replace_font")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers = self.old_layers.clone();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers = self.old_layers.clone();
         edit_state.get_caret_mut().set_font_page(self.old_caret_page);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.layers = self.new_layers.clone();
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.layers = self.new_layers.clone();
         edit_state.get_caret_mut().set_font_page(self.new_caret_page);
         Ok(())
     }
@@ -1500,21 +1500,21 @@ impl UndoOperation for RemoveFont {
         fl!(crate::LANGUAGE_LOADER, "undo-remove_font")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(font) = self.font.take() {
-            edit_state.buffer.set_font(self.font_slot, font);
+            edit_state.screen.buffer.set_font(self.font_slot, font);
             Ok(())
         } else {
-            Err(anyhow::anyhow!("no font for RemoveFont undo."))
+            Err(crate::EngineError::Generic("no font for RemoveFont undo.".to_string()))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        self.font = edit_state.buffer.remove_font(self.font_slot);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        self.font = edit_state.screen.buffer.remove_font(self.font_slot);
         if self.font.is_some() {
             Ok(())
         } else {
-            Err(anyhow::anyhow!("empty font slot."))
+            Err(crate::EngineError::Generic("empty font slot.".to_string()))
         }
     }
 }
@@ -1535,23 +1535,23 @@ impl UndoOperation for ChangeFontSlot {
         fl!(crate::LANGUAGE_LOADER, "undo-change_font_slot")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        let font = edit_state.buffer.remove_font(self.to);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        let font = edit_state.screen.buffer.remove_font(self.to);
         if let Some(font) = font {
-            edit_state.buffer.set_font(self.from, font);
+            edit_state.screen.buffer.set_font(self.from, font);
             Ok(())
         } else {
-            Err(anyhow::anyhow!("empty font slot."))
+            Err(crate::EngineError::Generic("empty font slot.".to_string()))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        let font = edit_state.buffer.remove_font(self.from);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        let font = edit_state.screen.buffer.remove_font(self.from);
         if let Some(font) = font {
-            edit_state.buffer.set_font(self.to, font);
+            edit_state.screen.buffer.set_font(self.to, font);
             Ok(())
         } else {
-            Err(anyhow::anyhow!("empty font slot."))
+            Err(crate::EngineError::Generic("empty font slot.".to_string()))
         }
     }
 }
@@ -1577,21 +1577,21 @@ impl UndoOperation for UpdateLayerProperties {
         fl!(crate::LANGUAGE_LOADER, "undo-update_layer_properties")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.properties = self.old_properties.clone();
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(layer) = edit_state.buffer.layers.get_mut(self.index) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
             layer.properties = self.new_properties.clone();
             Ok(())
         } else {
-            Err(EditorError::InvalidLayer(self.index).into())
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.index)))
         }
     }
 }
@@ -1611,13 +1611,13 @@ impl UndoOperation for SetUseLetterSpacing {
         fl!(crate::LANGUAGE_LOADER, "undo-set_use_letter_spacing")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_letter_spacing(!self.new_ls);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.set_use_letter_spacing(!self.new_ls);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_letter_spacing(self.new_ls);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.set_use_letter_spacing(self.new_ls);
         Ok(())
     }
 }
@@ -1637,13 +1637,13 @@ impl UndoOperation for SetUseAspectRatio {
         fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_aspect_ratio(!self.new_ar);
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.set_use_aspect_ratio(!self.new_ar);
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.set_use_aspect_ratio(self.new_ar);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.set_use_aspect_ratio(self.new_ar);
         Ok(())
     }
 }
@@ -1668,13 +1668,13 @@ impl UndoOperation for AddTag {
         }
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.tags.pop();
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.tags.pop();
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.tags.push(self.new_tag.clone());
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.tags.push(self.new_tag.clone());
         Ok(())
     }
 }
@@ -1696,21 +1696,21 @@ impl UndoOperation for EditTag {
         fl!(crate::LANGUAGE_LOADER, "undo-edit-tag")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag_index) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(tag) = edit_state.screen.buffer.tags.get_mut(self.tag_index) {
             *tag = self.old_tag.clone();
             Ok(())
         } else {
-            Err(anyhow::anyhow!("tag not found"))
+            Err(crate::EngineError::Generic("tag not found".to_string()))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag_index) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(tag) = edit_state.screen.buffer.tags.get_mut(self.tag_index) {
             *tag = self.new_tag.clone();
             Ok(())
         } else {
-            Err(anyhow::anyhow!("tag not found"))
+            Err(crate::EngineError::Generic("tag not found".to_string()))
         }
     }
 }
@@ -1732,21 +1732,21 @@ impl UndoOperation for MoveTag {
         fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag) {
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(tag) = edit_state.screen.buffer.tags.get_mut(self.tag) {
             tag.position = self.old_pos;
             Ok(())
         } else {
-            Err(anyhow::anyhow!("tag not found"))
+            Err(crate::EngineError::Generic("tag not found".to_string()))
         }
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        if let Some(tag) = edit_state.buffer.tags.get_mut(self.tag) {
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        if let Some(tag) = edit_state.screen.buffer.tags.get_mut(self.tag) {
             tag.position = self.new_pos;
             Ok(())
         } else {
-            Err(anyhow::anyhow!("tag not found"))
+            Err(crate::EngineError::Generic("tag not found".to_string()))
         }
     }
 }
@@ -1767,13 +1767,13 @@ impl UndoOperation for RemoveTag {
         fl!(crate::LANGUAGE_LOADER, "undo-remove-tag")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.tags.insert(self.tag_index, self.tag.clone());
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.tags.insert(self.tag_index, self.tag.clone());
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.tags.remove(self.tag_index);
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.tags.remove(self.tag_index);
         Ok(())
     }
 }
@@ -1793,13 +1793,13 @@ impl UndoOperation for ShowTags {
         fl!(crate::LANGUAGE_LOADER, "undo-show-tags")
     }
 
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.show_tags = !self.show;
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.show_tags = !self.show;
         Ok(())
     }
 
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()> {
-        edit_state.buffer.show_tags = self.show;
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        edit_state.screen.buffer.show_tags = self.show;
         Ok(())
     }
 }

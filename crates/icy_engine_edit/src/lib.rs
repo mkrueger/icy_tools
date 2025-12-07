@@ -15,7 +15,7 @@ use rust_embed::RustEmbed;
 
 // Re-export all necessary types from icy_engine
 pub use icy_engine::{
-    AddType, AttributedChar, BitFont, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineResult, FontMode, IceMode, Layer, Line, Palette, PaletteMode, Position,
+    AddType, AttributedChar, BitFont, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineError, Result, FontMode, IceMode, Layer, Line, Palette, PaletteMode, Position,
     Properties, Rectangle, Role, Selection, SelectionMask, Sixel, Size, Tag, TextAttribute, TextBuffer, TextPane, TextScreen, clipboard, load_with_parser,
     overlay_mask, parsers,
 };

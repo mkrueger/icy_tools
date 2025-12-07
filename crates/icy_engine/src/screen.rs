@@ -5,7 +5,7 @@ use std::{cmp::max, sync::Arc};
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, EngineResult, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection,
+    AttributedChar, BitFont, Result, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, SaveOptions, Selection,
     Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret, limits,
 };
 
@@ -111,8 +111,8 @@ pub trait Screen: TextPane + Send + Sync {
     fn selection_mask(&self) -> &crate::SelectionMask;
 
     // Selection management (mutable)
-    fn set_selection(&mut self, sel: Selection) -> EngineResult<()>;
-    fn clear_selection(&mut self) -> EngineResult<()>;
+    fn set_selection(&mut self, sel: Selection) -> Result<()>;
+    fn clear_selection(&mut self) -> Result<()>;
 
     // Terminal state (read-only for viewing)
     fn terminal_state(&self) -> &TerminalState;
@@ -122,7 +122,7 @@ pub trait Screen: TextPane + Send + Sync {
         self.caret().position()
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>>;
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>>;
 
     /// Whether to use 9px font (letter spacing) - from SAUCE data
     fn use_letter_spacing(&self) -> bool {
@@ -315,7 +315,7 @@ pub trait EditableScreen: Screen {
     }
 
     /// Sets the current layer index
-    fn set_current_layer(&mut self, _layer: usize) -> EngineResult<()> {
+    fn set_current_layer(&mut self, _layer: usize) -> Result<()> {
         Ok(()) // Default: no-op (single layer)
     }
 

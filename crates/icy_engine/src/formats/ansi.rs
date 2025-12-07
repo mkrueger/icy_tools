@@ -48,7 +48,7 @@ impl OutputFormat for Ansi {
         String::new()
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> anyhow::Result<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> crate::Result<Vec<u8>> {
         let mut result: Vec<u8> = Vec::new();
 
         let mut str_gen = StringGenerator::new(options.clone());
@@ -66,7 +66,7 @@ impl OutputFormat for Ansi {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> anyhow::Result<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> crate::Result<crate::TextBuffer> {
         let load_data = load_data_opt.unwrap_or_default();
         let width = load_data.default_terminal_width.unwrap_or(80);
         let mut result = TextScreen::new((width, 25));

@@ -13,6 +13,16 @@ members = [
 	"crates/icy_mail",
 	"crates/icy_parser_core",
 ]
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
 [workspace.package]
 version = "0.3.0"
 edition = "2024"
@@ -24,19 +34,19 @@ icy_engine = { path = "crates/icy_engine" }
 icy_parser_core = { path = "crates/icy_parser_core"} 
 icy_engine_scripting = { path = "crates/icy_engine_scripting"} 
 
-icy_sauce = "0.3.4"
+icy_sauce = "0.3.5"
 #icy_sauce = { path = "../icy_sauce" }
 icy_sixel = "0.3.0"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
-unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
-retrofont =  { git = "https://github.com/mkrueger/retrofont" }
+unarc-rs = "0.5.1"
+retrofont = "0.2.1"
 
 #icy_view_gui = { path = "crates/icy_view_gui" }
 icy_view_gui = { path = "crates/icy_view_gui" }
 icy_engine_gui = { path = "crates/icy_engine_gui" } 
-icy_engine_edit = { path = "crates/icy_engin_edit" }
+icy_engine_edit = { path = "crates/icy_engine_edit" }
 
 #libyaff = { path = "../libyaff" }
 libyaff = { git = "https://github.com/mkrueger/libyaff" }
@@ -105,3 +115,4 @@ strip = true        # Strip symbols from binary*
 inherits = "release"
 debug = true
 strip = false
+

@@ -1,4 +1,4 @@
-use crate::EngineResult;
+use crate::Result;
 
 use super::EditState;
 
@@ -10,7 +10,7 @@ pub trait UndoState {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn undo(&mut self) -> EngineResult<()>;
+    fn undo(&mut self) -> Result<()>;
 
     fn redo_description(&self) -> Option<String>;
     fn can_redo(&self) -> bool;
@@ -19,7 +19,7 @@ pub trait UndoState {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn redo(&mut self) -> EngineResult<()>;
+    fn redo(&mut self) -> Result<()>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,14 +37,14 @@ pub trait UndoOperation: Send + Sync {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn undo(&mut self, edit_state: &mut EditState) -> EngineResult<()>;
+    fn undo(&mut self, edit_state: &mut EditState) -> Result<()>;
 
     /// .
     ///
     /// # Errors
     ///
     /// This function will return an error if .
-    fn redo(&mut self, edit_state: &mut EditState) -> EngineResult<()>;
+    fn redo(&mut self, edit_state: &mut EditState) -> Result<()>;
 
     fn get_operation_type(&self) -> OperationType {
         OperationType::Unknown

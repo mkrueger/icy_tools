@@ -2,62 +2,62 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, EngineResult, IceMode, Layer, Palette, PaletteMode, TextAttribute, TextPane};
+use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, Result, IceMode, Layer, Palette, PaletteMode, TextAttribute, TextPane};
 
 use super::EditState;
 
 impl EditState {
-    pub fn switch_to_font_page(&mut self, page: usize) -> EngineResult<()> {
-        let op = super::undo_operations::SwitchToFontPage::new(self.caret.font_page(), page);
+    pub fn switch_to_font_page(&mut self, page: usize) -> Result<()> {
+        let op = super::undo_operations::SwitchToFontPage::new(self.screen.caret.font_page(), page);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn set_use_letter_spacing(&mut self, ls: bool) -> EngineResult<()> {
+    pub fn set_use_letter_spacing(&mut self, ls: bool) -> Result<()> {
         let op = super::undo_operations::SetUseLetterSpacing::new(ls);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn set_use_aspect_ratio(&mut self, ar: bool) -> EngineResult<()> {
+    pub fn set_use_aspect_ratio(&mut self, ar: bool) -> Result<()> {
         let op = super::undo_operations::SetUseAspectRatio::new(ar);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn add_ansi_font(&mut self, page: usize) -> EngineResult<()> {
+    pub fn add_ansi_font(&mut self, page: usize) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
-                let op = super::undo_operations::AddFont::new(self.caret.font_page(), page, new_font);
+                let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
-            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(anyhow::anyhow!("Not supported for this buffer type.")),
+            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string())),
         }
     }
 
-    pub fn set_ansi_font(&mut self, page: usize) -> EngineResult<()> {
+    pub fn set_ansi_font(&mut self, page: usize) -> Result<()> {
         match self.get_buffer().font_mode {
-            crate::FontMode::Sauce => Err(anyhow::anyhow!("Not supported for sauce buffers.")),
+            crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
                 if let Some(font) = self.get_buffer().get_font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
         }
     }
 
-    pub fn set_sauce_font(&mut self, name: &str) -> EngineResult<()> {
+    pub fn set_sauce_font(&mut self, name: &str) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce | crate::FontMode::Single => {
                 let new_font = BitFont::from_sauce_name(name)?;
@@ -65,22 +65,22 @@ impl EditState {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_sauce_name(name)?;
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
         }
     }
 
-    pub fn add_font(&mut self, new_font: BitFont) -> EngineResult<()> {
+    pub fn add_font(&mut self, new_font: BitFont) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
                 let mut page = 100;
@@ -91,36 +91,36 @@ impl EditState {
                     }
                 }
 
-                let op = super::undo_operations::AddFont::new(self.caret.font_page(), page, new_font);
+                let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
-            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(anyhow::anyhow!("Not supported for this buffer type.")),
+            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string())),
         }
     }
 
-    pub fn set_font(&mut self, new_font: BitFont) -> EngineResult<()> {
+    pub fn set_font(&mut self, new_font: BitFont) -> Result<()> {
         match self.get_buffer().font_mode {
-            crate::FontMode::Sauce => Err(anyhow::anyhow!("Not supported for sauce buffers.")),
+            crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
                 if let Some(font) = self.get_buffer().get_font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 if let Some(font) = self.get_buffer().get_font(0) {
-                    let op = super::undo_operations::SetFont::new(self.caret.font_page(), font.clone(), new_font);
+                    let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
-                    Err(anyhow::anyhow!("No font found in buffer."))
+                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
         }
     }
 
-    pub fn set_palette_mode(&mut self, mode: PaletteMode) -> EngineResult<()> {
+    pub fn set_palette_mode(&mut self, mode: PaletteMode) -> Result<()> {
         let old_palette = self.get_buffer().palette.clone();
         let old_mode = self.get_buffer().palette_mode;
         let old_layers = self.get_buffer().layers.clone();
@@ -171,7 +171,7 @@ impl EditState {
         }
     }
 
-    pub fn set_ice_mode(&mut self, mode: IceMode) -> EngineResult<()> {
+    pub fn set_ice_mode(&mut self, mode: IceMode) -> Result<()> {
         let old_layers = self.get_buffer().layers.clone();
         let old_mode = self.get_buffer().ice_mode;
 
@@ -179,9 +179,9 @@ impl EditState {
         match mode {
             IceMode::Unlimited => { /* no conversion needed */ }
             IceMode::Blink => {
-                if self.caret.attribute.get_background() > 7 {
-                    self.caret.attribute.set_is_blinking(true);
-                    self.caret.attribute.set_background(self.caret.attribute.get_background() - 8);
+                if self.screen.caret.attribute.get_background() > 7 {
+                    self.screen.caret.attribute.set_is_blinking(true);
+                    self.screen.caret.attribute.set_background(self.screen.caret.attribute.get_background() - 8);
                 }
 
                 for layer in &mut new_layers {
@@ -195,10 +195,10 @@ impl EditState {
                 }
             }
             IceMode::Ice => {
-                if self.caret.attribute.is_blinking() {
-                    self.caret.attribute.set_is_blinking(false);
-                    if self.caret.attribute.get_background() < 8 {
-                        self.caret.attribute.set_background(self.caret.attribute.get_background() + 8);
+                if self.screen.caret.attribute.is_blinking() {
+                    self.screen.caret.attribute.set_is_blinking(false);
+                    if self.screen.caret.attribute.get_background() < 8 {
+                        self.screen.caret.attribute.set_background(self.screen.caret.attribute.get_background() + 8);
                     }
                 }
 
@@ -221,7 +221,7 @@ impl EditState {
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn replace_font_usage(&mut self, from: usize, to: usize) -> EngineResult<()> {
+    pub fn replace_font_usage(&mut self, from: usize, to: usize) -> Result<()> {
         let old_layers = self.get_buffer().layers.clone();
         let old_font_page = self.get_caret().font_page();
         if old_font_page == from {
@@ -245,7 +245,7 @@ impl EditState {
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn change_font_slot(&mut self, from: usize, to: usize) -> EngineResult<()> {
+    pub fn change_font_slot(&mut self, from: usize, to: usize) -> Result<()> {
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-change_font_slot"));
         let res = {
             let op = super::undo_operations::ChangeFontSlot::new(from, to);
@@ -257,7 +257,7 @@ impl EditState {
         res
     }
 
-    pub fn remove_font(&mut self, font: usize) -> EngineResult<()> {
+    pub fn remove_font(&mut self, font: usize) -> Result<()> {
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-remove_font"));
         let res = {
             let _ = self.replace_font_usage(font, 0);

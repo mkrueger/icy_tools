@@ -5,7 +5,7 @@ use std::mem;
 use i18n_embed_fl::fl;
 
 use crate::{
-    AnsiParser, AttributedChar, EditableScreen, EngineResult, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
+    AnsiParser, AttributedChar, EditableScreen, Result, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
 };
 
 use super::{
@@ -14,7 +14,7 @@ use super::{
 };
 
 impl EditState {
-    pub fn set_char(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> EngineResult<()> {
+    pub fn set_char(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-set_char"));
 
         if let Some(layer) = self.get_cur_layer() {
@@ -39,11 +39,11 @@ impl EditState {
                 new: attributed_char,
             }))
         } else {
-            Err(anyhow::anyhow!("Current layer is invalid"))
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) -> EngineResult<()> {
+    pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) -> Result<()> {
         let pos1 = pos1.into();
         let pos2 = pos2.into();
         let layer = self.get_current_layer()?;
@@ -56,16 +56,16 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn paste_clipboard_data(&mut self, data: &[u8]) -> EngineResult<()> {
+    pub fn paste_clipboard_data(&mut self, data: &[u8]) -> Result<()> {
         if let Some(layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
             let op = Paste::new(self.get_current_layer()?, layer);
             self.push_undo_action(Box::new(op))?;
         }
-        self.selection_opt = None;
+        self.screen.selection_opt = None;
         Ok(())
     }
 
-    pub fn paste_sixel(&mut self, sixel: Sixel) -> EngineResult<()> {
+    pub fn paste_sixel(&mut self, sixel: Sixel) -> Result<()> {
         let dims = self.get_buffer().get_font_dimensions();
 
         let mut layer = Layer::new(
@@ -81,13 +81,13 @@ impl EditState {
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;
-        self.selection_opt = None;
+        self.screen.selection_opt = None;
         Ok(())
     }
 
-    pub fn paste_text(&mut self, text: &str) -> EngineResult<()> {
-        let x = self.caret.position().x;
-        let y = self.caret.position().y;
+    pub fn paste_text(&mut self, text: &str) -> Result<()> {
+        let x = self.screen.caret.position().x;
+        let y = self.screen.caret.position().y;
 
         let width = self.get_buffer().get_size().width - x;
         let mut result = crate::TextScreen::new((width, 25));
@@ -95,7 +95,7 @@ impl EditState {
 
         let mut parser = AnsiParser::new();
 
-        let text = text.chars().map(|ch| self.buffer.buffer_type.convert_from_unicode(ch)).collect::<String>();
+        let text = text.chars().map(|ch| self.screen.buffer.buffer_type.convert_from_unicode(ch)).collect::<String>();
         load_with_parser(&mut result, &mut parser, text.as_bytes(), true, 0)?;
 
         let mut layer: Layer = result.buffer.layers.remove(0);
@@ -105,7 +105,7 @@ impl EditState {
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;
-        self.selection_opt = None;
+        self.screen.selection_opt = None;
         Ok(())
     }
 
@@ -118,7 +118,7 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn resize_buffer(&mut self, resize_layer: bool, size: impl Into<Size>) -> EngineResult<()> {
+    pub fn resize_buffer(&mut self, resize_layer: bool, size: impl Into<Size>) -> Result<()> {
         if resize_layer {
             let size = size.into();
             let rect = Rectangle::from_min_size(Position::default(), size);
@@ -161,139 +161,139 @@ impl EditState {
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn center_line(&mut self) -> EngineResult<()> {
+    pub fn center_line(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
-        let y = self.caret.position().y + offset;
+        let y = self.screen.caret.position().y + offset;
         self.set_selection(Rectangle::from_coords(-1_000_000, y, 1_000_000, y + 1))?;
         let res = self.center();
         self.clear_selection()?;
         res
     }
 
-    pub fn justify_line_left(&mut self) -> EngineResult<()> {
+    pub fn justify_line_left(&mut self) -> Result<()> {
         let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
-        let y = self.caret.position().y + offset;
+        let y = self.screen.caret.position().y + offset;
         self.set_selection(Rectangle::from_coords(-1_000_000, y, 1_000_000, y + 1))?;
         let res = self.justify_left();
         self.clear_selection()?;
         res
     }
 
-    pub fn justify_line_right(&mut self) -> EngineResult<()> {
+    pub fn justify_line_right(&mut self) -> Result<()> {
         let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
-        let y = self.caret.position().y + offset;
+        let y = self.screen.caret.position().y + offset;
         self.set_selection(Rectangle::from_coords(-1_000_000, y, 1_000_000, y + 1))?;
         let res = self.justify_right();
         self.clear_selection()?;
         res
     }
 
-    pub fn delete_row(&mut self) -> EngineResult<()> {
-        let y = self.caret.position().y;
+    pub fn delete_row(&mut self) -> Result<()> {
+        let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
         let op = super::undo_operations::DeleteRow::new(layer, y);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn insert_row(&mut self) -> EngineResult<()> {
-        let y = self.caret.position().y;
+    pub fn insert_row(&mut self) -> Result<()> {
+        let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
         let op = super::undo_operations::InsertRow::new(layer, y);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn insert_column(&mut self) -> EngineResult<()> {
-        let x = self.caret.position().x;
+    pub fn insert_column(&mut self) -> Result<()> {
+        let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
         let op = super::undo_operations::InsertColumn::new(layer, x);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn delete_column(&mut self) -> EngineResult<()> {
-        let x = self.caret.position().x;
+    pub fn delete_column(&mut self) -> Result<()> {
+        let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
         let op = super::undo_operations::DeleteColumn::new(layer, x);
         self.push_undo_action(Box::new(op))
     }
 
-    pub fn erase_row(&mut self) -> EngineResult<()> {
+    pub fn erase_row(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
-        let y = self.caret.position().y + offset;
+        let y = self.screen.caret.position().y + offset;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         self.set_selection(Rectangle::from_coords(-1_000_000, y, 1_000_000, y + 1))?;
         self.erase_selection()
     }
 
-    pub fn erase_row_to_start(&mut self) -> EngineResult<()> {
+    pub fn erase_row_to_start(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
             layer.get_offset()
         } else {
             Position::default()
         };
-        let y = self.caret.position().y + offset.y;
-        let x = self.caret.position().x + offset.x;
+        let y = self.screen.caret.position().y + offset.y;
+        let x = self.screen.caret.position().x + offset.x;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         self.set_selection(Rectangle::from_coords(-1_000_000, y, x, y + 1))?;
         self.erase_selection()
     }
 
-    pub fn erase_row_to_end(&mut self) -> EngineResult<()> {
+    pub fn erase_row_to_end(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
             layer.get_offset()
         } else {
             Position::default()
         };
-        let y = self.caret.position().y + offset.y;
-        let x = self.caret.position().x + offset.x;
+        let y = self.screen.caret.position().y + offset.y;
+        let x = self.screen.caret.position().x + offset.x;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         self.set_selection(Rectangle::from_coords(x, y, 1_000_000, y + 1))?;
         self.erase_selection()
     }
 
-    pub fn erase_column(&mut self) -> EngineResult<()> {
+    pub fn erase_column(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
             layer.get_offset()
         } else {
             Position::default()
         };
-        let x = self.caret.position().x + offset.x;
+        let x = self.screen.caret.position().x + offset.x;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         self.set_selection(Rectangle::from_coords(x, -1_000_000, x, 1_000_000))?;
         self.erase_selection()
     }
 
-    pub fn erase_column_to_start(&mut self) -> EngineResult<()> {
+    pub fn erase_column_to_start(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
             layer.get_offset()
         } else {
             Position::default()
         };
-        let y = self.caret.position().y + offset.y;
-        let x = self.caret.position().x + offset.x;
+        let y = self.screen.caret.position().y + offset.y;
+        let x = self.screen.caret.position().x + offset.x;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         self.set_selection(Rectangle::from_coords(x, -1_000_000, x, y))?;
         self.erase_selection()
     }
 
-    pub fn erase_column_to_end(&mut self) -> EngineResult<()> {
+    pub fn erase_column_to_end(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
             layer.get_offset()
         } else {
             Position::default()
         };
-        let y = self.caret.position().y + offset.y;
-        let x = self.caret.position().x + offset.x;
+        let y = self.screen.caret.position().y + offset.y;
+        let x = self.screen.caret.position().x + offset.x;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
         self.set_selection(Rectangle::from_coords(x, y, x, 1_000_000))?;
         self.erase_selection()
@@ -308,7 +308,7 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn push_reverse_undo(&mut self, description: impl Into<String>, op: Box<dyn UndoOperation>, operation_type: OperationType) -> EngineResult<()> {
+    pub fn push_reverse_undo(&mut self, description: impl Into<String>, op: Box<dyn UndoOperation>, operation_type: OperationType) -> Result<()> {
         self.push_undo_action(Box::new(ReversedUndo::new(description.into(), op, operation_type)))
     }
 
@@ -321,20 +321,20 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn undo_caret_position(&mut self) -> EngineResult<()> {
-        let op = ReverseCaretPosition::new(self.caret.position());
+    pub fn undo_caret_position(&mut self) -> Result<()> {
+        let op = ReverseCaretPosition::new(self.screen.caret.position());
         self.redo_stack.clear();
         self.undo_stack.lock().unwrap().push(Box::new(op));
         Ok(())
     }
 
-    pub fn switch_to_palette(&mut self, pal: Palette) -> EngineResult<()> {
+    pub fn switch_to_palette(&mut self, pal: Palette) -> Result<()> {
         let op = super::undo_operations::SwitchPalettte::new(pal);
         self.push_undo_action(Box::new(op))
     }
 
     /// Update SAUCE metadata with undo support
-    pub fn update_sauce_data(&mut self, sauce: crate::SauceMetaData) -> EngineResult<()> {
+    pub fn update_sauce_data(&mut self, sauce: crate::SauceMetaData) -> Result<()> {
         let op = super::undo_operations::SetSauceData::new(sauce, self.sauce_meta.clone());
         self.push_undo_action(Box::new(op))
     }

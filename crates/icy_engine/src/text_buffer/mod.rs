@@ -25,7 +25,7 @@ mod buffer_type;
 pub use buffer_type::*;
 
 use crate::{
-    Color, EngineResult, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute,
+    Color, Result, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute,
 };
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
@@ -793,7 +793,7 @@ impl TextBuffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> EngineResult<TextBuffer> {
+    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> Result<TextBuffer> {
         let mut f = match File::open(file_name) {
             Ok(f) => f,
             Err(err) => {
@@ -813,7 +813,7 @@ impl TextBuffer {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    pub fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
         let extension = extension.to_ascii_lowercase();
         for fmt in &*crate::FORMATS {
             if fmt.get_file_extension() == extension || fmt.get_alt_extensions().contains(&extension) {
@@ -829,7 +829,7 @@ impl TextBuffer {
                 return res;
             }
         }
-        Err(anyhow::anyhow!("Unknown format"))
+        Err(crate::EngineError::UnsupportedFormat { description: format!("Unknown format for file: {:?}", self.file_name) })
     }
 
     /// .
@@ -847,7 +847,7 @@ impl TextBuffer {
         bytes: &[u8],
         ansi_music: Option<MusicOption>,
         default_terminal_width: Option<usize>,
-    ) -> EngineResult<TextBuffer> {
+    ) -> Result<TextBuffer> {
         let ext = file_name.extension().unwrap_or_default().to_string_lossy();
         let mut len = bytes.len();
         let sauce_data = match SauceRecord::from_bytes(bytes) {

@@ -7,9 +7,9 @@ use std::{
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, EngineResult, Position, Rectangle, Selection, TextPane};
+use crate::{AttributedChar, Result, Position, Rectangle, Selection, TextPane};
 
-use super::{EditState, EditorError};
+use super::EditState;
 
 fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
     if let Some(selection) = sel {
@@ -21,7 +21,7 @@ fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
 }
 
 impl EditState {
-    pub fn justify_left(&mut self) -> EngineResult<()> {
+    pub fn justify_left(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -53,11 +53,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(super::EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn center(&mut self) -> EngineResult<()> {
+    pub fn center(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-center"));
         let sel = self.get_selection();
         self.justify_left()?;
@@ -93,11 +93,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn justify_right(&mut self) -> EngineResult<()> {
+    pub fn justify_right(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-right"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -131,16 +131,16 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn flip_x(&mut self) -> EngineResult<()> {
+    pub fn flip_x(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
         let sel = self.get_selection();
         let mut flip_tables = HashMap::new();
 
-        self.buffer.font_iter().for_each(|(page, font)| {
+        self.screen.buffer.font_iter().for_each(|(page, font)| {
             flip_tables.insert(*page, generate_flipx_table(font));
         });
 
@@ -166,17 +166,17 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn flip_y(&mut self) -> EngineResult<()> {
+    pub fn flip_y(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
         let sel = self.get_selection();
 
         let mut flip_tables = HashMap::new();
 
-        self.buffer.font_iter().for_each(|(page, font)| {
+        self.screen.buffer.font_iter().for_each(|(page, font)| {
             flip_tables.insert(*page, generate_flipy_table(font));
         });
 
@@ -201,11 +201,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn crop(&mut self) -> EngineResult<()> {
+    pub fn crop(&mut self) -> Result<()> {
         if let Some(sel) = self.get_selection() {
             let sel = sel.as_rectangle();
             self.crop_rect(sel)
@@ -214,7 +214,7 @@ impl EditState {
         }
     }
 
-    pub fn crop_rect(&mut self, rect: Rectangle) -> EngineResult<()> {
+    pub fn crop_rect(&mut self, rect: Rectangle) -> Result<()> {
         let old_size = self.get_buffer().get_size();
         let mut old_layers = Vec::new();
         mem::swap(&mut self.get_buffer_mut().layers, &mut old_layers);
@@ -250,33 +250,33 @@ impl EditState {
     /// # Panics
     ///
     /// Panics if .
-    pub fn erase_selection(&mut self) -> EngineResult<()> {
+    pub fn erase_selection(&mut self) -> Result<()> {
         if !self.is_something_selected() {
             return Ok(());
         }
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
         let layer_idx = self.get_current_layer()?;
-        let (area, old_layer) = if let Some(layer) = self.buffer.layers.get_mut(layer_idx) {
+        let (area, old_layer) = if let Some(layer) = self.screen.buffer.layers.get_mut(layer_idx) {
             (layer.get_rectangle(), layer.clone())
         } else {
-            return Err(EditorError::CurrentLayerInvalid.into());
+            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
         };
 
         for y in 0..area.get_height() {
             for x in 0..area.get_width() {
                 let pos = Position::new(x, y);
                 if self.get_is_selected(pos + area.start) {
-                    self.buffer.layers.get_mut(layer_idx).unwrap().set_char(pos, AttributedChar::invisible());
+                    self.screen.buffer.layers.get_mut(layer_idx).unwrap().set_char(pos, AttributedChar::invisible());
                 }
             }
         }
-        let new_layer = self.buffer.layers.get_mut(layer_idx).unwrap().clone();
+        let new_layer = self.screen.buffer.layers.get_mut(layer_idx).unwrap().clone();
         let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
         let _ = self.push_plain_undo(Box::new(op));
         self.clear_selection()
     }
 
-    pub fn scroll_area_up(&mut self) -> EngineResult<()> {
+    pub fn scroll_area_up(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -313,11 +313,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(super::EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn scroll_area_down(&mut self) -> EngineResult<()> {
+    pub fn scroll_area_down(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -353,11 +353,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(super::EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn scroll_area_left(&mut self) -> EngineResult<()> {
+    pub fn scroll_area_left(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -378,11 +378,11 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(super::EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 
-    pub fn scroll_area_right(&mut self) -> EngineResult<()> {
+    pub fn scroll_area_right(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.get_selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -403,7 +403,7 @@ impl EditState {
             let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
             self.push_plain_undo(Box::new(op))
         } else {
-            Err(super::EditorError::CurrentLayerInvalid.into())
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
     }
 }

@@ -1,7 +1,7 @@
 use byteorder::ReadBytesExt;
 use std::io::Cursor;
 
-use crate::EngineResult;
+use crate::Result;
 
 use super::font::Font;
 use crate::EditableScreen;
@@ -19,7 +19,7 @@ pub struct Stroke {
 }
 
 impl Stroke {
-    pub fn load(br: &mut Cursor<&[u8]>) -> EngineResult<Self> {
+    pub fn load(br: &mut Cursor<&[u8]>) -> Result<Self> {
         let byte1 = br.read_u8()?;
         let byte2 = br.read_u8()?;
 
@@ -95,7 +95,7 @@ impl Character {
         }
     }
 
-    pub fn load(br: &mut Cursor<&[u8]>, width: i32) -> EngineResult<Self> {
+    pub fn load(br: &mut Cursor<&[u8]>, width: i32) -> Result<Self> {
         let mut strokes = Vec::new();
 
         loop {

@@ -19,7 +19,6 @@ chrono = { workspace = true }
 png = "0.18.0"
 regex = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 byteorder = "1"
 bstr = { workspace = true }
@@ -59,3 +58,5 @@ harness = false
 [[bench]]
 name = "xbin_loading"
 harness = false
+[lints]
+workspace = true

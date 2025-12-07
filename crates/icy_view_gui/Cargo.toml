@@ -52,3 +52,5 @@ futures = "0.3"
 
 [patch.crates-io]
 iced.git = "https://github.com/iced-rs/iced.git"
+[lints]
+workspace = true

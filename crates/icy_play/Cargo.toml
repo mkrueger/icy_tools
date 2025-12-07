@@ -17,3 +17,5 @@ icy_engine_scripting = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 crc32fast = "1.5.0"
+[lints]
+workspace = true

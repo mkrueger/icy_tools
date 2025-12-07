@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    BitFont, EditableScreen, EngineResult, Position, Size,
+    BitFont, EditableScreen, Result, Position, Size,
     bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode},
 };
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -594,7 +594,7 @@ fn parse_host_command(split: &str) -> Option<String> {
     Some(res)
 }
 
-fn lookup_cache_file(bgi: &mut Bgi, search_file: &str) -> EngineResult<path::PathBuf> {
+fn lookup_cache_file(bgi: &mut Bgi, search_file: &str) -> Result<path::PathBuf> {
     let mut search_file = search_file.to_uppercase();
     let has_extension = search_file.contains('.');
     if !has_extension {

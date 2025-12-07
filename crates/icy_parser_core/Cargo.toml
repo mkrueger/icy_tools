@@ -20,6 +20,7 @@ lazy_static = { workspace = true }
 serde = { workspace = true }
 bitflags = { workspace = true }
 fastrand = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }
@@ -60,3 +61,6 @@ harness = false
 [[bench]]
 name = "skypix"
 harness = false
+
+[lints]
+workspace = true

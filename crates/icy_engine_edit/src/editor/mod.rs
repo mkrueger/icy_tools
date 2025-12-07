@@ -17,16 +17,12 @@ mod font_operations;
 mod selection_operations;
 mod tag_operations;
 
-use crate::{Caret, EngineResult, Layer, SauceMetaData, Selection, SelectionMask, TextBuffer, TextPane, clipboard, overlay_mask::OverlayMask};
+use crate::{Caret, Result, Layer, SauceMetaData, TextBuffer, TextPane, TextScreen, clipboard, overlay_mask::OverlayMask};
 
 pub struct EditState {
-    buffer: TextBuffer,
-    caret: Caret,
-    selection_opt: Option<Selection>,
-    selection_mask: SelectionMask,
+    screen: TextScreen,
     tool_overlay_mask: OverlayMask,
 
-    current_layer: usize,
     current_tag: usize,
 
     outline_style: usize,
@@ -88,23 +84,17 @@ impl Drop for AtomicUndoGuard {
 
 impl Default for EditState {
     fn default() -> Self {
-        let buffer = TextBuffer::default();
-        let mut selection_mask = SelectionMask::default();
-        selection_mask.set_size(buffer.get_size());
+        let screen = TextScreen::default();
         let mut tool_overlay_mask = OverlayMask::default();
-        tool_overlay_mask.set_size(buffer.get_size());
+        tool_overlay_mask.set_size(screen.buffer.get_size());
 
         Self {
-            buffer,
-            caret: Caret::default(),
-            selection_opt: None,
+            screen,
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Vec::new(),
-            current_layer: 0,
             current_tag: 0,
             outline_style: 0,
             mirror_mode: false,
-            selection_mask,
             tool_overlay_mask,
             is_palette_dirty: false,
             is_buffer_dirty: false,
@@ -115,27 +105,25 @@ impl Default for EditState {
 
 impl EditState {
     pub fn from_buffer(buffer: TextBuffer) -> Self {
-        let mut selection_mask = SelectionMask::default();
-        selection_mask.set_size(buffer.get_size());
+        let screen = TextScreen::from_buffer(buffer);
         let mut tool_overlay_mask = OverlayMask::default();
-        tool_overlay_mask.set_size(buffer.get_size());
+        tool_overlay_mask.set_size(screen.buffer.get_size());
 
         Self {
-            buffer,
-            selection_mask,
+            screen,
             tool_overlay_mask,
             ..Default::default()
         }
     }
 
     pub fn set_buffer(&mut self, buffer: TextBuffer) {
-        self.buffer = buffer;
+        self.screen.buffer = buffer;
         self.set_mask_size();
     }
 
     pub fn set_mask_size(&mut self) {
-        self.selection_mask.set_size(self.buffer.get_size());
-        self.tool_overlay_mask.set_size(self.buffer.get_size());
+        self.screen.selection_mask.set_size(self.screen.buffer.get_size());
+        self.tool_overlay_mask.set_size(self.screen.buffer.get_size());
     }
 
     pub fn get_tool_overlay_mask(&self) -> &OverlayMask {
@@ -147,11 +135,11 @@ impl EditState {
     }
 
     pub fn get_buffer(&self) -> &TextBuffer {
-        &self.buffer
+        &self.screen.buffer
     }
 
     pub fn get_buffer_mut(&mut self) -> &mut TextBuffer {
-        &mut self.buffer
+        &mut self.screen.buffer
     }
 
     pub fn is_buffer_dirty(&self) -> bool {
@@ -183,7 +171,7 @@ impl EditState {
 
     pub fn get_cur_layer(&self) -> Option<&Layer> {
         if let Ok(layer) = self.get_current_layer() {
-            self.buffer.layers.get(layer)
+            self.screen.buffer.layers.get(layer)
         } else {
             None
         }
@@ -191,7 +179,7 @@ impl EditState {
 
     pub fn get_cur_display_layer(&self) -> Option<&Layer> {
         if let Ok(layer) = self.get_current_layer() {
-            self.buffer.layers.get(layer)
+            self.screen.buffer.layers.get(layer)
         } else {
             None
         }
@@ -199,33 +187,33 @@ impl EditState {
 
     pub fn get_cur_layer_mut(&mut self) -> Option<&mut Layer> {
         if let Ok(layer) = self.get_current_layer() {
-            self.buffer.layers.get_mut(layer)
+            self.screen.buffer.layers.get_mut(layer)
         } else {
             None
         }
     }
 
     pub fn get_caret(&self) -> &Caret {
-        &self.caret
+        &self.screen.caret
     }
 
     pub fn get_caret_mut(&mut self) -> &mut Caret {
-        &mut self.caret
+        &mut self.screen.caret
     }
 
     pub fn get_buffer_and_caret_mut(&mut self) -> (&mut TextBuffer, &mut Caret) {
-        (&mut self.buffer, &mut self.caret)
+        (&mut self.screen.buffer, &mut self.screen.caret)
     }
 
     pub fn get_copy_text(&self) -> Option<String> {
-        let Some(selection) = &self.selection_opt else {
+        let Some(selection) = &self.screen.selection_opt else {
             return None;
         };
-        clipboard::get_text(&self.buffer, self.buffer.buffer_type, selection)
+        clipboard::get_text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
     }
 
     pub fn get_overlay_layer(&mut self, cur_layer: usize) -> &mut Layer {
-        self.buffer.get_overlay_layer(cur_layer)
+        self.screen.buffer.get_overlay_layer(cur_layer)
     }
 
     /// Returns the get current layer of this [`EditState`].
@@ -233,28 +221,28 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn get_current_layer(&self) -> EngineResult<usize> {
-        let len = self.buffer.layers.len();
+    pub fn get_current_layer(&self) -> Result<usize> {
+        let len = self.screen.buffer.layers.len();
         if len > 0 {
-            Ok(self.current_layer.clamp(0, len - 1))
+            Ok(self.screen.current_layer.clamp(0, len - 1))
         } else {
-            Err(anyhow::anyhow!("No layers"))
+            Err(crate::EngineError::Generic("No layers".to_string()))
         }
     }
 
     pub fn set_current_layer(&mut self, layer: usize) {
-        self.current_layer = layer.clamp(0, self.buffer.layers.len().saturating_sub(1));
+        self.screen.current_layer = layer.clamp(0, self.screen.buffer.layers.len().saturating_sub(1));
     }
 
-    pub fn get_current_tag(&self) -> EngineResult<usize> {
-        let len = self.buffer.tags.len();
+    pub fn get_current_tag(&self) -> Result<usize> {
+        let len = self.screen.buffer.tags.len();
         if len > 0 { Ok(self.current_tag.clamp(0, len - 1)) } else { Ok(0) }
     }
 
     pub fn set_current_tag(&mut self, tag: usize) {
-        let len = self.buffer.tags.len();
+        let len = self.screen.buffer.tags.len();
         self.current_tag = tag.clamp(0, len.saturating_sub(1));
-        self.caret.attribute = self.buffer.tags[self.current_tag].attribute;
+        self.screen.caret.attribute = self.screen.buffer.tags[self.current_tag].attribute;
     }
 
     pub fn get_outline_style(&self) -> usize {
@@ -277,20 +265,20 @@ impl EditState {
     }
 
     fn clamp_current_layer(&mut self) {
-        self.current_layer = self.current_layer.clamp(0, self.buffer.layers.len().saturating_sub(1));
+        self.screen.current_layer = self.screen.current_layer.clamp(0, self.screen.buffer.layers.len().saturating_sub(1));
     }
 
-    fn push_undo_action(&mut self, mut op: Box<dyn UndoOperation>) -> EngineResult<()> {
+    fn push_undo_action(&mut self, mut op: Box<dyn UndoOperation>) -> Result<()> {
         op.redo(self)?;
         self.push_plain_undo(op)
     }
 
-    fn push_plain_undo(&mut self, op: Box<dyn UndoOperation>) -> EngineResult<()> {
+    fn push_plain_undo(&mut self, op: Box<dyn UndoOperation>) -> Result<()> {
         if op.changes_data() {
             self.set_is_buffer_dirty();
         }
         let Ok(mut stack) = self.undo_stack.lock() else {
-            return Err(anyhow::anyhow!("Failed to lock undo stack"));
+            return Err(crate::EngineError::Generic("Failed to lock undo stack".to_string()));
         };
         stack.push(op);
         self.redo_stack.clear();
@@ -311,7 +299,7 @@ impl EditState {
     }
 
     pub fn has_floating_layer(&self) -> bool {
-        for layer in &self.buffer.layers {
+        for layer in &self.screen.buffer.layers {
             if layer.role.is_paste() {
                 return true;
             }
@@ -337,7 +325,7 @@ impl UndoState for EditState {
         !self.undo_stack.lock().unwrap().is_empty()
     }
 
-    fn undo(&mut self) -> EngineResult<()> {
+    fn undo(&mut self) -> Result<()> {
         let Some(mut op) = self.undo_stack.lock().unwrap().pop() else {
             return Ok(());
         };
@@ -358,7 +346,7 @@ impl UndoState for EditState {
         !self.redo_stack.is_empty()
     }
 
-    fn redo(&mut self) -> EngineResult<()> {
+    fn redo(&mut self) -> Result<()> {
         if let Some(mut op) = self.redo_stack.pop() {
             if op.changes_data() {
                 self.set_is_buffer_dirty();

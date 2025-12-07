@@ -65,7 +65,7 @@ impl Color {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn from_hex(hex: &str) -> anyhow::Result<Self> {
+    pub fn from_hex(hex: &str) -> crate::Result<Self> {
         if let Some(cap) = ICE_COLOR_REGEX.captures(hex) {
             let (_, [r, g, b]) = cap.extract();
             let r = u32::from_str_radix(r, 16)?;
@@ -73,7 +73,7 @@ impl Color {
             let b = u32::from_str_radix(b, 16)?;
             Ok(Color::new(r as u8, g as u8, b as u8))
         } else {
-            Err(anyhow::anyhow!("Invalid hex color: {hex}"))
+            Err(crate::EngineError::InvalidHexColor { value: hex.to_string() })
         }
     }
 }
@@ -260,7 +260,7 @@ impl Palette {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn load_palette(format: &PaletteFormat, bytes: &[u8]) -> anyhow::Result<Self> {
+    pub fn load_palette(format: &PaletteFormat, bytes: &[u8]) -> crate::Result<Self> {
         let mut colors = Vec::new();
         let mut title = String::new();
         let mut author = String::new();
@@ -275,7 +275,7 @@ impl Palette {
                         colors.push(Color::new(r as u8, g as u8, b as u8));
                     }
                 }
-                Err(err) => return Err(anyhow::anyhow!("Invalid input: {err}")),
+                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
             },
             PaletteFormat::Pal => {
                 match String::from_utf8(bytes.to_vec()) {
@@ -284,7 +284,7 @@ impl Palette {
                             match i {
                                 0 => {
                                     if line != "JASC-PAL" {
-                                        return Err(anyhow::anyhow!("Only JASC-PAL supported: {line}"));
+                                        return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "JASC-PAL".to_string() });
                                     }
                                 }
                                 1 | 2 => {
@@ -301,7 +301,7 @@ impl Palette {
                             }
                         }
                     }
-                    Err(err) => return Err(anyhow::anyhow!("Invalid input: {err}")),
+                    Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
                 }
             }
             PaletteFormat::Gpl => match String::from_utf8(bytes.to_vec()) {
@@ -310,7 +310,7 @@ impl Palette {
                         match i {
                             0 => {
                                 if line != "GIMP Palette" {
-                                    return Err(anyhow::anyhow!("Only GIMP Palette supported: {line}"));
+                                    return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "GIMP Palette".to_string() });
                                 }
                             }
                             _ => {
@@ -341,7 +341,7 @@ impl Palette {
                         }
                     }
                 }
-                Err(err) => return Err(anyhow::anyhow!("Invalid input: {err}")),
+                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
             },
             PaletteFormat::Ice => match String::from_utf8(bytes.to_vec()) {
                 Ok(data) => {
@@ -350,7 +350,7 @@ impl Palette {
                         match i {
                             0 => {
                                 if line != "ICE Palette" {
-                                    return Err(anyhow::anyhow!("Only ICE Palette supported: {line}"));
+                                    return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "ICE Palette".to_string() });
                                 }
                             }
                             _ => {
@@ -391,7 +391,7 @@ impl Palette {
                         }
                     }
                 }
-                Err(err) => return Err(anyhow::anyhow!("Invalid input: {err}")),
+                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
             },
 
             PaletteFormat::Txt => match String::from_utf8(bytes.to_vec()) {
@@ -418,7 +418,7 @@ impl Palette {
                         }
                     }
                 }
-                Err(err) => return Err(anyhow::anyhow!("Invalid input: {err}")),
+                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
             },
             PaletteFormat::Ase => todo!(),
         }
@@ -439,13 +439,13 @@ impl Palette {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn import_palette(file_name: &Path, bytes: &[u8]) -> anyhow::Result<Self> {
+    pub fn import_palette(file_name: &Path, bytes: &[u8]) -> crate::Result<Self> {
         let Some(ext) = file_name.extension() else {
-            return Err(anyhow::anyhow!("No file extension"));
+            return Err(crate::EngineError::InvalidPaletteFormat { message: "No file extension".to_string() });
         };
         let ascii_lowercase = &ext.to_ascii_lowercase();
         let Some(ext) = ascii_lowercase.to_str() else {
-            return Err(anyhow::anyhow!("Error in string conversion."));
+            return Err(crate::EngineError::InvalidPaletteFormat { message: "Error in string conversion".to_string() });
         };
 
         match ext {
@@ -453,7 +453,7 @@ impl Palette {
             "gpl" => Palette::load_palette(&PaletteFormat::Gpl, bytes),
             "txt" => Palette::load_palette(&PaletteFormat::Txt, bytes),
             "hex" => Palette::load_palette(&PaletteFormat::Hex, bytes),
-            _ => Err(anyhow::anyhow!("Unsupported file extension: {ext}")),
+            _ => Err(crate::EngineError::UnsupportedPaletteFormat { expected: format!("pal, gpl, txt, or hex (got: {})", ext) }),
         }
     }
 

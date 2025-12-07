@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, EngineResult, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError, Size, TextBuffer, TextPane, analyze_font_usage,
+    AttributedChar, BitFont, Result, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError, Size, TextBuffer, TextPane, analyze_font_usage,
     guess_font_name,
 };
 
@@ -30,20 +30,20 @@ impl OutputFormat for IceDraw {
         "IceDraw"
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> EngineResult<Vec<u8>> {
+    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.ice_mode != IceMode::Ice {
-            return Err(anyhow::anyhow!("Only ice mode files are supported by this format."));
+            return Err(crate::EngineError::OnlyIceModeSupported);
         }
 
         if buf.get_height() > 200 {
-            return Err(anyhow::anyhow!("Only up do 200 lines are supported by this format."));
+            return Err(crate::EngineError::TooManyLines { max_lines: 200 });
         }
         let fonts = analyze_font_usage(buf);
         if fonts.len() > 1 {
-            return Err(anyhow::anyhow!("Only single font files are supported by this format."));
+            return Err(crate::EngineError::OnlySingleFontSupported);
         }
         if buf.palette.len() != 16 {
-            return Err(anyhow::anyhow!("Only 16 color palettes are supported by this format."));
+            return Err(crate::EngineError::Only16ColorPalettesSupported);
         }
 
         let mut result = IDF_V1_4_HEADER.to_vec();
@@ -120,7 +120,7 @@ impl OutputFormat for IceDraw {
         Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> EngineResult<crate::TextBuffer> {
+    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
         let mut result = TextBuffer::new((80, 25));
         result.ice_mode = IceMode::Ice;
         result.terminal_state.is_terminal_buffer = false;
@@ -148,7 +148,7 @@ impl OutputFormat for IceDraw {
         o += 2;
 
         if x2 < x1 {
-            return Err(anyhow::anyhow!("invalid bounds for idf width needs to be >=0."));
+            return Err(crate::EngineError::InvalidBounds { message: "IDF width needs to be >= 0".to_string() });
         }
 
         result.set_width(x2 - x1 + 1);
