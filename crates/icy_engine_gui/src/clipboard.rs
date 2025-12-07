@@ -18,6 +18,34 @@ use image::DynamicImage;
 /// Clipboard type identifier for ICY binary format
 pub const ICY_CLIPBOARD_TYPE: &str = "application/x-icy-buffer";
 
+/// Options for clipboard copy operations
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CopyOptions {
+    /// Use 9px font width (legacy DOS mode)
+    pub use_9px_font: bool,
+    /// Apply aspect ratio correction
+    pub aspect_ratio: bool,
+}
+
+impl CopyOptions {
+    /// Create new copy options with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set 9px font mode
+    pub fn with_9px_font(mut self, use_9px_font: bool) -> Self {
+        self.use_9px_font = use_9px_font;
+        self
+    }
+
+    /// Set aspect ratio correction
+    pub fn with_aspect_ratio(mut self, aspect_ratio: bool) -> Self {
+        self.aspect_ratio = aspect_ratio;
+        self
+    }
+}
+
 /// Error type for clipboard operations
 #[derive(Debug)]
 pub enum ClipboardError {
@@ -52,6 +80,7 @@ impl std::error::Error for ClipboardError {}
 /// # Arguments
 /// * `screen` - The screen/buffer containing the selection
 /// * `clipboard` - The clipboard context to write to
+/// * `options` - Rendering options for the image copy (9px font, aspect ratio)
 ///
 /// # Returns
 /// * `Ok(())` - Selection was copied successfully
@@ -61,7 +90,11 @@ impl std::error::Error for ClipboardError {}
 /// # Platform Notes
 /// On Windows, the order of clipboard contents matters - text must be last
 /// to be properly recognized by other applications.
-pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipboard: &C) -> Result<(), ClipboardError> {
+pub fn copy_selection_to_clipboard<C: Clipboard>(
+    screen: &mut dyn Screen,
+    clipboard: &C,
+    options: CopyOptions,
+) -> Result<(), ClipboardError> {
     // Get plain text first - if no text, nothing to copy
     let text = match screen.get_copy_text() {
         Some(t) => t,
@@ -85,6 +118,8 @@ pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipbo
             selection_fg: None,
             selection_bg: None,
             override_scan_lines: None,
+            use_9px_font: options.use_9px_font,
+            aspect_ratio: options.aspect_ratio,
         });
 
         if size.width > 0 && size.height > 0 {

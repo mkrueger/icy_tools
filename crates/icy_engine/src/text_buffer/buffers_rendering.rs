@@ -2,6 +2,41 @@ use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane};
 
 use super::Size;
 
+/// Scale an RGBA image vertically by a factor (e.g., 1.2 for VGA aspect ratio correction)
+/// Uses bilinear interpolation for smooth scaling
+fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) -> (i32, Vec<u8>) {
+    let new_height = (height as f32 * scale).round() as i32;
+    if new_height <= 0 || width <= 0 {
+        return (height, pixels);
+    }
+
+    let stride = width as usize * 4;
+    let mut scaled = vec![0u8; stride * new_height as usize];
+
+    for new_y in 0..new_height {
+        // Map new_y back to original image coordinate
+        let src_y = new_y as f32 / scale;
+        let src_y0 = (src_y.floor() as i32).clamp(0, height - 1) as usize;
+        let src_y1 = (src_y0 + 1).min(height as usize - 1);
+        let t = src_y.fract();
+
+        let dst_row = new_y as usize * stride;
+        let src_row0 = src_y0 * stride;
+        let src_row1 = src_y1 * stride;
+
+        for x in 0..width as usize {
+            let px = x * 4;
+            for c in 0..4 {
+                let v0 = pixels[src_row0 + px + c] as f32;
+                let v1 = pixels[src_row1 + px + c] as f32;
+                scaled[dst_row + px + c] = (v0 + (v1 - v0) * t).round() as u8;
+            }
+        }
+    }
+
+    (new_height, scaled)
+}
+
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         let Some(font) = self.get_font(0) else {
@@ -75,7 +110,14 @@ impl TextBuffer {
             std::mem::forget(pixels_u32);
             Vec::from_raw_parts(ptr, len, cap)
         };
-        (Size::new(px_width, out_height), pixels)
+
+        // Apply aspect ratio correction if enabled (VGA pixel aspect ratio ~1.2)
+        if options.aspect_ratio {
+            let (scaled_height, scaled_pixels) = scale_image_vertical(pixels, px_width, out_height, 1.2);
+            (Size::new(px_width, scaled_height), scaled_pixels)
+        } else {
+            (Size::new(px_width, out_height), pixels)
+        }
     }
 
     /// Render only a specific pixel region (for viewport-based rendering)
@@ -132,6 +174,8 @@ impl TextBuffer {
             selection_fg: options.selection_fg.clone(),
             selection_bg: options.selection_bg.clone(),
             override_scan_lines: None,
+            use_9px_font: options.use_9px_font,
+            aspect_ratio: options.aspect_ratio,
         };
 
         // Render the character region

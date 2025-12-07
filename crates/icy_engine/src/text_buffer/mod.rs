@@ -434,6 +434,10 @@ pub struct RenderOptions {
     /// Whether blinking characters should be shown (true) or hidden (false)
     pub blink_on: bool,
 
+    pub use_9px_font: bool,
+
+    pub aspect_ratio: bool,
+
     /// Optional selection to highlight with custom colors
     /// If Some, cells within this selection will be rendered with selection colors
     pub selection: Option<crate::Selection>,
