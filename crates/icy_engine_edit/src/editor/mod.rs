@@ -17,7 +17,13 @@ mod font_operations;
 mod selection_operations;
 mod tag_operations;
 
-use crate::{Caret, Result, Layer, SauceMetaData, TextBuffer, TextPane, TextScreen, clipboard, overlay_mask::OverlayMask};
+use crate::{
+    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SavedCaretState, 
+    SaveOptions, SauceMetaData, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, 
+    clipboard, overlay_mask::OverlayMask,
+};
+use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
+use parking_lot::Mutex as ParkingMutex;
 
 pub struct EditState {
     screen: TextScreen,
@@ -358,3 +364,393 @@ impl UndoState for EditState {
         Ok(())
     }
 }
+
+// Delegate TextPane to inner screen
+impl TextPane for EditState {
+    fn get_char(&self, pos: Position) -> AttributedChar {
+        self.screen.get_char(pos)
+    }
+
+    fn get_line_count(&self) -> i32 {
+        self.screen.get_line_count()
+    }
+
+    fn get_width(&self) -> i32 {
+        self.screen.get_width()
+    }
+
+    fn get_height(&self) -> i32 {
+        self.screen.get_height()
+    }
+
+    fn get_line_length(&self, line: i32) -> i32 {
+        self.screen.get_line_length(line)
+    }
+
+    fn get_rectangle(&self) -> Rectangle {
+        self.screen.get_rectangle()
+    }
+
+    fn get_size(&self) -> Size {
+        self.screen.get_size()
+    }
+}
+
+// Delegate Screen to inner screen
+impl Screen for EditState {
+    fn buffer_type(&self) -> crate::BufferType {
+        self.screen.buffer_type()
+    }
+
+    fn use_letter_spacing(&self) -> bool {
+        self.screen.use_letter_spacing()
+    }
+
+    fn use_aspect_ratio(&self) -> bool {
+        self.screen.use_aspect_ratio()
+    }
+
+    fn scan_lines(&self) -> bool {
+        self.screen.scan_lines()
+    }
+
+    fn ice_mode(&self) -> IceMode {
+        self.screen.ice_mode()
+    }
+
+    fn caret(&self) -> &Caret {
+        self.screen.caret()
+    }
+
+    fn terminal_state(&self) -> &TerminalState {
+        self.screen.terminal_state()
+    }
+
+    fn palette(&self) -> &Palette {
+        self.screen.palette()
+    }
+
+    fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.screen.render_to_rgba(options)
+    }
+
+    fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.screen.render_region_to_rgba(px_region, options)
+    }
+
+    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+        self.screen.get_font(font_number)
+    }
+
+    fn font_count(&self) -> usize {
+        self.screen.font_count()
+    }
+
+    fn get_font_dimensions(&self) -> Size {
+        self.screen.get_font_dimensions()
+    }
+
+    fn get_selection(&self) -> Option<Selection> {
+        self.screen.get_selection()
+    }
+
+    fn selection_mask(&self) -> &SelectionMask {
+        self.screen.selection_mask()
+    }
+
+    fn hyperlinks(&self) -> &Vec<HyperLink> {
+        self.screen.hyperlinks()
+    }
+
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
+        self.screen.to_bytes(extension, options)
+    }
+
+    fn get_copy_text(&self) -> Option<String> {
+        self.screen.get_copy_text()
+    }
+
+    fn get_copy_rich_text(&self) -> Option<String> {
+        self.screen.get_copy_rich_text()
+    }
+
+    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
+        self.screen.get_clipboard_data()
+    }
+
+    fn mouse_fields(&self) -> &Vec<MouseField> {
+        self.screen.mouse_fields()
+    }
+
+    fn get_version(&self) -> u64 {
+        self.screen.get_version()
+    }
+
+    fn default_foreground_color(&self) -> u32 {
+        self.screen.default_foreground_color()
+    }
+
+    fn max_base_colors(&self) -> u32 {
+        self.screen.max_base_colors()
+    }
+
+    fn get_resolution(&self) -> Size {
+        self.screen.get_resolution()
+    }
+
+    fn virtual_size(&self) -> Size {
+        self.screen.virtual_size()
+    }
+
+    fn screen(&self) -> &[u8] {
+        self.screen.screen()
+    }
+
+    fn set_scrollback_buffer_size(&mut self, buffer_size: usize) {
+        self.screen.set_scrollback_buffer_size(buffer_size)
+    }
+
+    fn set_selection(&mut self, sel: Selection) -> Result<()> {
+        self.screen.set_selection(sel)
+    }
+
+    fn clear_selection(&mut self) -> Result<()> {
+        self.screen.clear_selection()
+    }
+
+    fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
+        Some(self)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Screen> {
+        self.screen.clone_box()
+    }
+}
+
+// Delegate EditableScreen to inner screen
+impl EditableScreen for EditState {
+    fn snapshot_scrollback(&mut self) -> Option<std::sync::Arc<ParkingMutex<Box<dyn Screen>>>> {
+        self.screen.snapshot_scrollback()
+    }
+
+    fn get_first_visible_line(&self) -> i32 {
+        self.screen.get_first_visible_line()
+    }
+
+    fn get_last_visible_line(&self) -> i32 {
+        self.screen.get_last_visible_line()
+    }
+
+    fn get_first_editable_line(&self) -> i32 {
+        self.screen.get_first_editable_line()
+    }
+
+    fn get_last_editable_line(&self) -> i32 {
+        self.screen.get_last_editable_line()
+    }
+
+    fn get_first_editable_column(&self) -> i32 {
+        self.screen.get_first_editable_column()
+    }
+
+    fn get_last_editable_column(&self) -> i32 {
+        self.screen.get_last_editable_column()
+    }
+
+    fn get_line(&self, line: usize) -> Option<&Line> {
+        self.screen.get_line(line)
+    }
+
+    fn line_count(&self) -> usize {
+        self.screen.line_count()
+    }
+
+    fn set_resolution(&mut self, size: Size) {
+        self.screen.set_resolution(size)
+    }
+
+    fn screen_mut(&mut self) -> &mut Vec<u8> {
+        self.screen.screen_mut()
+    }
+
+    fn set_graphics_type(&mut self, graphics_type: crate::GraphicsType) {
+        self.screen.set_graphics_type(graphics_type)
+    }
+
+    fn update_hyperlinks(&mut self) {
+        self.screen.update_hyperlinks()
+    }
+
+    fn clear_line(&mut self) {
+        self.screen.clear_line()
+    }
+
+    fn clear_line_end(&mut self) {
+        self.screen.clear_line_end()
+    }
+
+    fn clear_line_start(&mut self) {
+        self.screen.clear_line_start()
+    }
+
+    fn clear_mouse_fields(&mut self) {
+        self.screen.clear_mouse_fields()
+    }
+
+    fn add_mouse_field(&mut self, mouse_field: MouseField) {
+        self.screen.add_mouse_field(mouse_field)
+    }
+
+    fn ice_mode_mut(&mut self) -> &mut IceMode {
+        self.screen.ice_mode_mut()
+    }
+
+    fn buffer_type_mut(&mut self) -> &mut crate::BufferType {
+        self.screen.buffer_type_mut()
+    }
+
+    fn caret_mut(&mut self) -> &mut Caret {
+        self.screen.caret_mut()
+    }
+
+    fn palette_mut(&mut self) -> &mut Palette {
+        self.screen.palette_mut()
+    }
+
+    fn terminal_state_mut(&mut self) -> &mut TerminalState {
+        self.screen.terminal_state_mut()
+    }
+
+    fn reset_terminal(&mut self) {
+        self.screen.reset_terminal()
+    }
+
+    fn set_char(&mut self, pos: Position, ch: AttributedChar) {
+        self.screen.set_char(pos, ch)
+    }
+
+    fn set_size(&mut self, size: Size) {
+        self.screen.set_size(size)
+    }
+
+    fn scroll_up(&mut self) {
+        self.screen.scroll_up()
+    }
+
+    fn scroll_down(&mut self) {
+        self.screen.scroll_down()
+    }
+
+    fn scroll_left(&mut self) {
+        self.screen.scroll_left()
+    }
+
+    fn scroll_right(&mut self) {
+        self.screen.scroll_right()
+    }
+
+    fn add_sixel(&mut self, pos: Position, sixel: Sixel) {
+        self.screen.add_sixel(pos, sixel)
+    }
+
+    fn insert_line(&mut self, line: usize, new_line: Line) {
+        self.screen.insert_line(line, new_line)
+    }
+
+    fn set_width(&mut self, width: i32) {
+        self.screen.set_width(width)
+    }
+
+    fn set_height(&mut self, height: i32) {
+        self.screen.set_height(height)
+    }
+
+    fn add_hyperlink(&mut self, link: HyperLink) {
+        self.screen.add_hyperlink(link)
+    }
+
+    fn set_font(&mut self, font_number: usize, font: BitFont) {
+        self.screen.set_font(font_number, font)
+    }
+
+    fn remove_font(&mut self, font_number: usize) -> Option<BitFont> {
+        self.screen.remove_font(font_number)
+    }
+
+    fn clear_font_table(&mut self) {
+        self.screen.clear_font_table()
+    }
+
+    fn clear_scrollback(&mut self) {
+        self.screen.clear_scrollback()
+    }
+
+    fn remove_terminal_line(&mut self, line: i32) {
+        self.screen.remove_terminal_line(line)
+    }
+
+    fn insert_terminal_line(&mut self, line: i32) {
+        self.screen.insert_terminal_line(line)
+    }
+
+    fn clear_screen(&mut self) {
+        self.screen.clear_screen()
+    }
+
+    fn mark_dirty(&self) {
+        self.screen.mark_dirty()
+    }
+
+    fn layer_count(&self) -> usize {
+        self.screen.layer_count()
+    }
+
+    fn get_current_layer(&self) -> usize {
+        self.screen.get_current_layer()
+    }
+
+    fn set_current_layer(&mut self, layer: usize) -> Result<()> {
+        self.screen.set_current_layer(layer)
+    }
+
+    fn get_layer(&self, layer: usize) -> Option<&Layer> {
+        self.screen.get_layer(layer)
+    }
+
+    fn get_layer_mut(&mut self, layer: usize) -> Option<&mut Layer> {
+        self.screen.get_layer_mut(layer)
+    }
+
+    fn saved_caret_pos(&mut self) -> &mut Position {
+        self.screen.saved_caret_pos()
+    }
+
+    fn saved_cursor_state(&mut self) -> &mut SavedCaretState {
+        self.screen.saved_cursor_state()
+    }
+
+    fn handle_rip_command(&mut self, cmd: RipCommand) {
+        self.screen.handle_rip_command(cmd)
+    }
+
+    fn handle_skypix_command(&mut self, cmd: SkypixCommand) {
+        self.screen.handle_skypix_command(cmd)
+    }
+
+    fn handle_igs_command(&mut self, cmd: IgsCommand) {
+        self.screen.handle_igs_command(cmd)
+    }
+
+    fn set_aspect_ratio(&mut self, enabled: bool) {
+        self.screen.set_aspect_ratio(enabled)
+    }
+
+    fn set_letter_spacing(&mut self, enabled: bool) {
+        self.screen.set_letter_spacing(enabled)
+    }
+}
+

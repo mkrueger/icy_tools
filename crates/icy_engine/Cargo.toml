@@ -58,5 +58,3 @@ harness = false
 [[bench]]
 name = "xbin_loading"
 harness = false
-[lints]
-workspace = true

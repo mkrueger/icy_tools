@@ -24,6 +24,7 @@ github_release_check = "0.2.1"
 
 # Core icy_* crates
 icy_engine = { workspace = true }
+icy_engine_edit = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
@@ -52,6 +53,7 @@ image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga
 walkdir = { workspace = true }
 zip = { workspace = true }
 notify = { workspace = true }
+rfd = { workspace = true }
 
 # Clipboard
 clipboard-rs = { workspace = true }

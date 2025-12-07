@@ -4,6 +4,8 @@ pub use editor::*;
 mod layer_utils;
 pub use layer_utils::{layer_from_area, stamp_layer};
 
+pub mod tools;
+
 #[cfg(feature = "collaboration")]
 pub mod collaboration;
 
@@ -15,9 +17,10 @@ use rust_embed::RustEmbed;
 
 // Re-export all necessary types from icy_engine
 pub use icy_engine::{
-    AddType, AttributedChar, BitFont, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineError, Result, FontMode, IceMode, Layer, Line, Palette, PaletteMode, Position,
-    Properties, Rectangle, Role, Selection, SelectionMask, Sixel, Size, Tag, TextAttribute, TextBuffer, TextPane, TextScreen, clipboard, load_with_parser,
-    overlay_mask, parsers,
+    AddType, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineError, FontMode, GraphicsType, 
+    HyperLink, IceMode, Layer, Line, MouseField, Palette, PaletteMode, Position, Properties, Rectangle, RenderOptions, Result, Role, 
+    SavedCaretState, SaveOptions, Screen, Selection, SelectionMask, Sixel, Size, Tag, TerminalState, TextAttribute, 
+    TextBuffer, TextPane, TextScreen, clipboard, load_with_parser, overlay_mask, parsers,
 };
 
 // Re-export AnsiParser directly for convenient use

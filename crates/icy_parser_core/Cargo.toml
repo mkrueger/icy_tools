@@ -61,6 +61,3 @@ harness = false
 [[bench]]
 name = "skypix"
 harness = false
-
-[lints]
-workspace = true

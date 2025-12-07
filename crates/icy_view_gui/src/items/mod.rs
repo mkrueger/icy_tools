@@ -255,11 +255,18 @@ where
 }
 
 /// Load subitems asynchronously using Iced's Task system.
-pub fn load_subitems<M>(item: Box<dyn Item>, cancel_token: CancellationToken, on_complete: impl FnOnce(SubitemsResult) -> M + Send + 'static) -> Task<M>
+pub fn load_subitems<M>(
+    item: Box<dyn Item>,
+    cancel_token: CancellationToken,
+    on_complete: impl FnOnce(SubitemsResult) -> M + Send + 'static,
+) -> Task<M>
 where
     M: Send + 'static,
 {
-    Task::perform(async move { item.get_subitems(&cancel_token).await }, on_complete)
+    Task::perform(
+        async move { item.get_subitems(&cancel_token).await },
+        on_complete,
+    )
 }
 
 pub fn sort_folder(directories: &mut Vec<Box<dyn Item>>) {

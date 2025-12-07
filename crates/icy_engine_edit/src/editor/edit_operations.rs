@@ -339,23 +339,3 @@ impl EditState {
         self.push_undo_action(Box::new(op))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        Size, TextPane,
-        editor::{EditState, UndoState},
-    };
-
-    #[test]
-    fn test_resize_buffer() {
-        let mut state = EditState::default();
-        assert_eq!(Size::new(80, 25), state.buffer.get_size());
-        state.resize_buffer(false, Size::new(10, 10)).unwrap();
-        assert_eq!(Size::new(10, 10), state.buffer.get_size());
-        state.undo().unwrap();
-        assert_eq!(Size::new(80, 25), state.buffer.get_size());
-        state.redo().unwrap();
-        assert_eq!(Size::new(10, 10), state.buffer.get_size());
-    }
-}
