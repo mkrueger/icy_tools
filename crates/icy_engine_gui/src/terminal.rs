@@ -23,9 +23,6 @@ pub struct Terminal {
     pub id: widget::Id,
     pub has_focus: bool,
     pub background_color: Arc<RwLock<[f32; 4]>>,
-    
-    pub use_9px_font: bool,
-    pub aspect_ratio: bool,
 }
 
 impl Terminal {
@@ -52,8 +49,6 @@ impl Terminal {
             id: widget::Id::unique(),
             has_focus: false,
             background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default dark background
-            use_9px_font: false,
-            aspect_ratio: false,
         }
     }
 

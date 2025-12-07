@@ -212,6 +212,8 @@ pub struct TextBuffer {
     overlay_layer: Option<Layer>,
 
     font_table: HashMap<usize, BitFont>,
+    /// Cache for 9px converted fonts (lazily populated when use_letter_spacing is true)
+    font_table_9px: HashMap<usize, BitFont>,
     is_font_table_dirty: bool,
     pub layers: Vec<Layer>,
 
@@ -277,6 +279,7 @@ impl Clone for TextBuffer {
             overlay_index: self.overlay_index,
             overlay_layer: self.overlay_layer.clone(),
             font_table: self.font_table.clone(),
+            font_table_9px: self.font_table_9px.clone(),
             is_font_table_dirty: self.is_font_table_dirty,
             layers: self.layers.clone(),
             use_letter_spacing: self.use_letter_spacing,
@@ -434,10 +437,6 @@ pub struct RenderOptions {
     /// Whether blinking characters should be shown (true) or hidden (false)
     pub blink_on: bool,
 
-    pub use_9px_font: bool,
-
-    pub aspect_ratio: bool,
-
     /// Optional selection to highlight with custom colors
     /// If Some, cells within this selection will be rendered with selection colors
     pub selection: Option<crate::Selection>,
@@ -482,6 +481,7 @@ impl TextBuffer {
             palette: Palette::dos_default(),
 
             font_table,
+            font_table_9px: HashMap::new(),
             is_font_table_dirty: false,
             overlay_index: 0,
             overlay_layer: None,
@@ -523,6 +523,7 @@ impl TextBuffer {
 
     pub fn clear_font_table(&mut self) {
         self.font_table.clear();
+        self.font_table_9px.clear();
         self.is_font_table_dirty = true;
     }
 
@@ -564,12 +565,65 @@ impl TextBuffer {
         self.font_table.get(&font_number)
     }
 
+    /// Get the appropriate font for rendering, considering letter spacing setting.
+    /// Returns the 9px version if use_letter_spacing is true and cached, otherwise the original.
+    /// For use during rendering (immutable access).
+    pub fn get_font_for_render(&self, font_number: usize) -> Option<&BitFont> {
+        if self.use_letter_spacing {
+            // Try to get cached 9px font first
+            if let Some(font) = self.font_table_9px.get(&font_number) {
+                return Some(font);
+            }
+        }
+        // Fall back to original font
+        self.font_table.get(&font_number)
+    }
+
+    /// Get the appropriate font for rendering, considering letter spacing setting.
+    /// Returns the 9px version if use_letter_spacing is true, otherwise the original.
+    /// Note: This requires mutable access because it may lazily create the 9px font.
+    pub fn get_render_font(&mut self, font_number: usize) -> Option<&BitFont> {
+        if self.use_letter_spacing {
+            // Lazily create 9px font if not cached
+            if !self.font_table_9px.contains_key(&font_number) {
+                if let Some(font) = self.font_table.get(&font_number) {
+                    let font_9px = font.to_9px_font();
+                    self.font_table_9px.insert(font_number, font_9px);
+                }
+            }
+            self.font_table_9px.get(&font_number)
+        } else {
+            self.font_table.get(&font_number)
+        }
+    }
+
+    /// Ensure 9px font cache is up to date for all fonts.
+    /// Call this when use_letter_spacing changes to true for immediate cache population.
+    pub fn update_9px_font_cache(&mut self) {
+        if !self.use_letter_spacing {
+            return;
+        }
+
+        // Convert any fonts that aren't cached yet
+        let font_nums: Vec<usize> = self.font_table.keys().copied().collect();
+        for font_num in font_nums {
+            if !self.font_table_9px.contains_key(&font_num) {
+                if let Some(font) = self.font_table.get(&font_num) {
+                    let font_9px = font.to_9px_font();
+                    self.font_table_9px.insert(font_num, font_9px);
+                }
+            }
+        }
+    }
+
     pub fn set_font(&mut self, font_number: usize, font: BitFont) {
         self.font_table.insert(font_number, font);
+        self.font_table_9px.remove(&font_number); // Invalidate 9px cache for this font
         self.is_font_table_dirty = true;
     }
 
     pub fn remove_font(&mut self, font_number: usize) -> Option<BitFont> {
+        self.font_table_9px.remove(&font_number); // Also remove from 9px cache
         self.font_table.remove(&font_number)
     }
 
@@ -583,6 +637,7 @@ impl TextBuffer {
 
     pub fn set_font_table(&mut self, font_table: HashMap<usize, BitFont>) {
         self.font_table = font_table;
+        self.font_table_9px.clear(); // Invalidate entire 9px cache
     }
 
     pub fn append_font(&mut self, font: BitFont) -> usize {
@@ -591,6 +646,7 @@ impl TextBuffer {
             i += 1;
         }
         self.font_table.insert(i, font);
+        self.font_table_9px.remove(&i); // Invalidate 9px cache for this slot
         i
     }
 
@@ -831,8 +887,15 @@ impl TextBuffer {
     }
 
     pub fn set_use_letter_spacing(&mut self, use_letter_spacing: bool) {
-        self.use_letter_spacing = use_letter_spacing;
-        self.is_font_table_dirty = true;
+        if self.use_letter_spacing != use_letter_spacing {
+            self.use_letter_spacing = use_letter_spacing;
+            self.is_font_table_dirty = true;
+
+            // Pre-populate 9px font cache when enabling letter spacing
+            if use_letter_spacing {
+                self.update_9px_font_cache();
+            }
+        }
     }
 
     pub fn use_aspect_ratio(&self) -> bool {

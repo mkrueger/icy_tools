@@ -401,6 +401,76 @@ impl BitFont {
             font_type: self.font_type,
         }
     }
+
+    /// Convert this 8px wide font to a 9px wide font for VGA letter spacing mode.
+    /// For box-drawing characters (CP437 0xC0-0xDF), the 8th pixel is extended to the 9th.
+    /// For all other characters, the 9th pixel remains empty (background color).
+    /// This matches the VGA hardware behavior and Moebius implementation.
+    pub fn to_9px_font(&self) -> Self {
+        use libyaff::Bitmap;
+
+        let old_size = self.size();
+
+        // Only convert 8px wide fonts
+        if old_size.width != 8 {
+            return self.clone();
+        }
+
+        // Build a new glyph lookup table with 9px wide glyphs
+        // The key insight: glyph_lookup[i] contains the glyph for CP437 codepoint i
+        // So we can directly check if i is in the range 0xC0-0xDF
+        let mut new_glyph_lookup: [Option<libyaff::GlyphDefinition>; 256] = std::array::from_fn(|_| None);
+
+        for cp437_code in 0..256 {
+            if let Some(glyph) = &self.glyph_lookup[cp437_code] {
+                let old_pixels = &glyph.bitmap.pixels;
+                let old_h = glyph.bitmap.height;
+
+                // Check if this is a box-drawing character (CP437 0xC0-0xDF)
+                // These characters should have their 8th pixel extended to the 9th
+                // This matches the original logic from the OpenGL renderer
+                let extend_to_9th = (0xC0..=0xDF).contains(&cp437_code);
+
+                let new_pixels: Vec<Vec<bool>> = old_pixels
+                    .iter()
+                    .map(|row| {
+                        // Create a 9-element row initialized to false
+                        let mut new_row = vec![false; 9];
+                        // Copy the original pixels (up to 8)
+                        let copy_len = row.len().min(8);
+                        new_row[..copy_len].copy_from_slice(&row[..copy_len]);
+                        // Add the 9th pixel: extend from 8th for box-drawing characters
+                        // Only if the 8th pixel (index 7) is set
+                        if extend_to_9th && row.len() >= 8 && row[7] {
+                            new_row[8] = true;
+                        }
+                        new_row
+                    })
+                    .collect();
+
+                let mut new_glyph = glyph.clone();
+                new_glyph.bitmap = Bitmap {
+                    width: 9,
+                    height: old_h,
+                    pixels: new_pixels,
+                };
+                new_glyph_lookup[cp437_code] = Some(new_glyph);
+            }
+        }
+
+        // Also update the yaff_font for consistency (though we mainly use glyph_lookup)
+        let mut yaff_font = self.yaff_font.clone();
+        yaff_font.bounding_box = Some((9, old_size.height as u32));
+        yaff_font.cell_size = Some((9, old_size.height as u32));
+
+        Self {
+            yaff_font,
+            glyph_cache: Mutex::new(HashMap::new()),
+            glyph_lookup: Arc::new(new_glyph_lookup),
+            path_opt: None,
+            font_type: self.font_type,
+        }
+    }
 }
 
 impl FromStr for BitFont {

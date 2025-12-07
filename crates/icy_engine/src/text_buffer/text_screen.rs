@@ -79,6 +79,14 @@ impl Screen for TextScreen {
         self.buffer.buffer_type
     }
 
+    fn use_letter_spacing(&self) -> bool {
+        self.buffer.use_letter_spacing()
+    }
+
+    fn use_aspect_ratio(&self) -> bool {
+        self.buffer.use_aspect_ratio()
+    }
+
     fn scan_lines(&self) -> bool {
         self.scan_lines
     }
@@ -710,5 +718,13 @@ impl EditableScreen for TextScreen {
 
     fn handle_igs_command(&mut self, _cmd: icy_parser_core::IgsCommand) {
         panic!("IGS not supported for text screens.");
+    }
+
+    fn set_aspect_ratio(&mut self, enabled: bool) {
+        self.buffer.use_aspect_ratio = enabled;
+    }
+
+    fn set_letter_spacing(&mut self, enabled: bool) {
+        self.buffer.use_letter_spacing = enabled;
     }
 }

@@ -1,4 +1,4 @@
-use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane};
+use crate::{BufferType, Position, Rectangle, RenderOptions, TextBuffer, TextPane};
 
 use super::Size;
 
@@ -39,7 +39,8 @@ fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) ->
 
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
-        let Some(font) = self.get_font(0) else {
+        // Use get_font_for_render to get the correct font (9px if letter spacing is enabled)
+        let Some(font) = self.get_font_for_render(0) else {
             log::error!("render_to_rgba: no font available");
             return (Size::new(0, 0), Vec::new());
         };
@@ -111,9 +112,46 @@ impl TextBuffer {
             Vec::from_raw_parts(ptr, len, cap)
         };
 
-        // Apply aspect ratio correction if enabled (VGA pixel aspect ratio ~1.2)
-        if options.aspect_ratio {
-            let (scaled_height, scaled_pixels) = scale_image_vertical(pixels, px_width, out_height, 1.2);
+        // Apply aspect ratio correction if enabled (VGA pixel aspect ratio correction)
+        if self.use_aspect_ratio {
+            // From Sauce spec:
+            // M VGA 	9×16  	720×400 	4:3 	20:27 (1:1.35) 	35% 	Standard hardware font on VGA cards for 80×25 text mode (code page 437)
+            //          8×16 	640×400 	4:3 	6:5 (1:1.2) 	20% 	Modified stats when using an 8 pixel wide version of "IBM VGA" or code page variant.
+            // C64 PETSCII unshifted 	8×8 [10] 	320×200 	4:3 	5:6 (1:1.2) 	20% 	Original Commodore PETSCII font (PET, VIC-20, C64, CBM-II, Plus/4, C16, C116 and C128) in the unshifted mode. Unshifted mode (graphics) only has uppercase letters and additional graphic characters. This is the normal boot font.
+            // C64 PETSCII shifted 	    8×8 [10] 	320×200 	4:3 	5:6 (1:1.2) 	20% 	Original PETSCII font in shifted mode. Shifted mode (text) has both uppercase and lowercase letters. This mode is actuated by pressing Shift+Commodore key.
+            // Atari ATASCII 	8×8  	320×192 	4:3 	4:5 (1:1.25) 	25% 	Original ATASCII font (Atari 400, 800, XL, XE)
+
+            // From what I can see for the rest all 9x fonts have 1.35 - all 8px 1.2
+            // Only exception are the Amiga fonts with 1.40
+            let stretch_factor = match self.buffer_type {
+                BufferType::Petscii => 1.2,
+                BufferType::Atascii => 1.25,
+
+                _ => {
+                    let mut res = if self.use_letter_spacing { 1.35 } else { 1.2 };
+                    if let Some(font) = self.get_font(0) {
+                        // This only works for SAUCE originated fonts but that's where AR matters most
+                        if font.name().starts_with("IBM EGA") {
+                            res = 1.3714;
+                        }
+                        if font.name().starts_with("IBM VGA25G") {
+                            res = 0.0;
+                        }
+                        if font.name().starts_with("Amiga") {
+                            res = 1.4;
+                        }
+                        if font.name().starts_with("C64") {
+                            res = 1.2;
+                        }
+                        if font.name().starts_with("Atari ATASCII") {
+                            res = 1.25;
+                        }
+                    }
+                    res
+                }
+            };
+
+            let (scaled_height, scaled_pixels) = scale_image_vertical(pixels, px_width, out_height, stretch_factor);
             (Size::new(px_width, scaled_height), scaled_pixels)
         } else {
             (Size::new(px_width, out_height), pixels)
@@ -125,7 +163,7 @@ impl TextBuffer {
     /// Render only a specific pixel region (for viewport-based rendering)
     /// Renders the character region and crops to exact pixel bounds
     pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
-        let Some(font) = self.get_font(0) else {
+        let Some(font) = self.get_font_for_render(0) else {
             log::error!("render_region_to_rgba: no font available");
             return (Size::new(0, 0), Vec::new());
         };
@@ -174,8 +212,6 @@ impl TextBuffer {
             selection_fg: options.selection_fg.clone(),
             selection_bg: options.selection_bg.clone(),
             override_scan_lines: None,
-            use_9px_font: options.use_9px_font,
-            aspect_ratio: options.aspect_ratio,
         };
 
         // Render the character region
@@ -307,8 +343,10 @@ impl TextBuffer {
                 let pos = Position::new(x + rect.start.x, y + rect.start.y);
                 let ch = self.get_char(pos);
 
-                // Resolve font
-                let font = self.get_font(ch.get_font_page()).unwrap_or_else(|| self.get_font(0).unwrap());
+                // Resolve font - use get_font_for_render for 9px font support
+                let font = self
+                    .get_font_for_render(ch.get_font_page())
+                    .unwrap_or_else(|| self.get_font_for_render(0).unwrap());
 
                 // Foreground index (apply bold high bit)
                 let mut fg = ch.attribute.get_foreground();
@@ -364,7 +402,7 @@ impl TextBuffer {
                         for cy in 0..max_cy {
                             let row = glyph.bitmap.pixels.get_unchecked(cy);
                             let line_offset = (cy as i32 * line_width + base_px) as usize;
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
                                 if *row.get_unchecked(cx) {
                                     *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                                 }
@@ -516,7 +554,9 @@ impl TextBuffer {
             };
 
             // Resolve font
-            let font = self.get_font(render_ch.get_font_page()).unwrap_or_else(|| self.get_font(0).unwrap());
+            let font = self
+                .get_font_for_render(render_ch.get_font_page())
+                .unwrap_or_else(|| self.get_font_for_render(0).unwrap());
 
             // Foreground index (apply bold high bit)
             let mut fg = render_ch.attribute.get_foreground();
@@ -609,7 +649,7 @@ impl TextBuffer {
                             let row = glyph.bitmap.pixels.get_unchecked(source_y);
                             let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
 
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
                                 if *row.get_unchecked(cx) {
                                     *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                                 }
@@ -626,7 +666,7 @@ impl TextBuffer {
                             let row = glyph.bitmap.pixels.get_unchecked(cy);
                             let line_start = ((base_pixel_y + cy as i32) * line_width + base_pixel_x) as usize;
 
-                            for cx in 0..cell_pixel_w.min(8).min(row.len() as i32) as usize {
+                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
                                 if *row.get_unchecked(cx) {
                                     *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                                 }

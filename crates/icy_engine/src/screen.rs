@@ -1,4 +1,4 @@
-use icy_sauce::{BinaryCapabilities, Capabilities, CharacterCapabilities, SauceRecord};
+use icy_sauce::{AspectRatio, BinaryCapabilities, Capabilities, CharacterCapabilities, LetterSpacing, SauceRecord};
 use parking_lot::Mutex;
 use std::{cmp::max, sync::Arc};
 
@@ -124,6 +124,16 @@ pub trait Screen: TextPane + Send + Sync {
 
     fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> EngineResult<Vec<u8>>;
 
+    /// Whether to use 9px font (letter spacing) - from SAUCE data
+    fn use_letter_spacing(&self) -> bool {
+        false
+    }
+
+    /// Whether to use legacy aspect ratio correction - from SAUCE data
+    fn use_aspect_ratio(&self) -> bool {
+        false
+    }
+
     // Access to editor if this screen is editable
     fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {
         None
@@ -220,6 +230,10 @@ pub trait EditableScreen: Screen {
     fn set_width(&mut self, width: i32);
     fn set_height(&mut self, height: i32);
 
+    // Letter spacing (9px font) and aspect ratio settings
+    fn set_letter_spacing(&mut self, _use_letter_spacing: bool) {}
+    fn set_aspect_ratio(&mut self, _use_aspect_ratio: bool) {}
+
     // Change tracking
     fn mark_dirty(&self);
 
@@ -241,6 +255,8 @@ pub trait EditableScreen: Screen {
                 lines,
                 font_opt,
                 ice_colors,
+                letter_spacing,
+                aspect_ratio,
                 ..
             }))
             | Some(Capabilities::Binary(BinaryCapabilities {
@@ -248,6 +264,8 @@ pub trait EditableScreen: Screen {
                 lines,
                 font_opt,
                 ice_colors,
+                letter_spacing,
+                aspect_ratio,
                 ..
             })) => {
                 // Apply buffer size (clamped to reasonable limits)
@@ -274,6 +292,8 @@ pub trait EditableScreen: Screen {
                     *self.ice_mode_mut() = IceMode::Ice;
                 }
                 self.terminal_state_mut().ice_colors = ice_colors;
+                self.set_aspect_ratio(aspect_ratio == AspectRatio::LegacyDevice);
+                self.set_letter_spacing(letter_spacing == LetterSpacing::NinePixel);
                 return (columns, lines);
             }
             _ => {

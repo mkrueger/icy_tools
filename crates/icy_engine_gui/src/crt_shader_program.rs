@@ -532,8 +532,6 @@ impl<'a> CRTShaderProgram<'a> {
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
                         override_scan_lines: None,
-                        use_9px_font: self.term.use_9px_font,
-                        aspect_ratio: self.term.aspect_ratio,
                     };
 
                     let render_on = screen.render_region_to_rgba(viewport_region, &base_options);
@@ -549,8 +547,6 @@ impl<'a> CRTShaderProgram<'a> {
                         selection_fg: Some(fg_sel.clone()),
                         selection_bg: Some(bg_sel.clone()),
                         override_scan_lines: None,
-                        use_9px_font: self.term.use_9px_font,
-                        aspect_ratio: self.term.aspect_ratio,
                     };
 
                     let render_off = screen.render_region_to_rgba(viewport_region, &base_options_off);

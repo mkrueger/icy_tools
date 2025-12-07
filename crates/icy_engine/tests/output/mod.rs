@@ -13,6 +13,8 @@ mod skypix;
 mod view_data;
 mod vt52;
 
+mod ar9px;
+
 pub fn run_parser_compare(screen: &mut (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>), src_file: &Path, data: &[u8]) {
     let screen_ptr = &mut *screen.0;
     let mut sink = ScreenSink::new(screen_ptr);

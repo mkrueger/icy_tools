@@ -64,6 +64,19 @@ pub fn compare_buffer_output(buffer: &TextBuffer, src_file: &Path) {
     compare_rendered_output(&rendered_size, &rendered_data, src_file);
 }
 
+/// Compare buffer output with custom settings for testing aspect_ratio and use_letter_spacing flags
+/// This modifies the buffer's settings temporarily for rendering
+pub fn compare_buffer_output_with_options(buffer: &mut TextBuffer, src_file: &Path, use_letter_spacing: bool, use_aspect_ratio: bool) {
+    // Set the buffer's rendering flags
+    buffer.set_use_letter_spacing(use_letter_spacing);
+    buffer.set_use_aspect_ratio(use_aspect_ratio);
+
+    let rect: Rectangle = Rectangle::from(0, 0, buffer.get_width(), buffer.get_height());
+    let opts = RenderOptions::from(rect);
+    let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
+    compare_rendered_output(&rendered_size, &rendered_data, src_file);
+}
+
 fn compare_rendered_output(rendered_size: &icy_engine::Size, rendered_data: &[u8], src_file: &Path) {
     let filename = src_file.file_name().unwrap().to_string_lossy().to_string();
     let png_file = src_file.with_extension("png");

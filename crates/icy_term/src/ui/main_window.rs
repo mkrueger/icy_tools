@@ -724,7 +724,7 @@ impl MainWindow {
             Message::Copy => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Err(err) = icy_engine_gui::copy_selection_to_clipboard(&mut **screen, &*crate::CLIPBOARD_CONTEXT, icy_engine_gui::CopyOptions::default()) {
+                    if let Err(err) = icy_engine_gui::copy_selection_to_clipboard(&mut **screen, &*crate::CLIPBOARD_CONTEXT) {
                         log::error!("Failed to copy: {err}");
                     }
                     self.shift_pressed_during_selection = false;
