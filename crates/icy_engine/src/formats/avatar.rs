@@ -2,7 +2,7 @@ use std::path::Path;
 
 use icy_parser_core::avatar_constants;
 
-use crate::{BufferFeatures, EditableScreen, Result, OutputFormat, Position, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
+use crate::{BufferFeatures, EditableScreen, OutputFormat, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
 use super::{LoadData, SaveOptions};
 

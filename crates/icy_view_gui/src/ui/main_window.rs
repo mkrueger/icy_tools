@@ -961,7 +961,7 @@ impl MainWindow {
                         };
                         let toast = Toast::info(toast_msg);
                         return Task::done(Message::ShowToast(toast));
-                    } 
+                    }
                     StatusBarMessage::SetBaudRateOff => {
                         // Set baud rate to Off (max speed, index 0)
                         self.preview.set_baud_emulation(icy_parser_core::BaudEmulation::Off);

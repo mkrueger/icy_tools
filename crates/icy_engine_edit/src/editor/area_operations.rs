@@ -7,7 +7,7 @@ use std::{
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, Result, Position, Rectangle, Selection, TextPane};
+use crate::{AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
 use super::EditState;
 

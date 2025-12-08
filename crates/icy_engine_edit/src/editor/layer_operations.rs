@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, Result, Layer, Position, Properties, Role, Size, TextAttribute, TextPane};
+use crate::{AttributedChar, Layer, Position, Properties, Result, Role, Size, TextAttribute, TextPane};
 
 use super::{EditState, undo_operations};
 

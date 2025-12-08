@@ -4,7 +4,11 @@
 
 use std::sync::Arc;
 
-use iced::{Element, Length, Task, widget::{button, column, row, text}};
+use iced::{
+    Element, Length, Task,
+    widget::{button, column, row, text},
+};
+use icy_engine::Screen;
 use icy_engine_edit::EditState;
 use parking_lot::Mutex;
 
@@ -54,25 +58,26 @@ impl ChannelsView {
     }
 
     /// Render the channels view
-    pub fn view<'a>(&'a self, edit_state: &'a Arc<Mutex<EditState>>) -> Element<'a, ChannelsMessage> {
-        let state = edit_state.lock();
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>) -> Element<'a, ChannelsMessage> {
+        let mut screen_guard = screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
         let caret = state.get_caret();
         let fg_color = caret.attribute.get_foreground();
         let bg_color = caret.attribute.get_background();
-        
+
         row![
             column![
                 button(text(format!("FG {}", if self.use_foreground { "✓" } else { "○" })).size(10))
-                .on_press(ChannelsMessage::ToggleForeground)
-                .padding(2),
+                    .on_press(ChannelsMessage::ToggleForeground)
+                    .padding(2),
                 text(format!("{}", fg_color)).size(10),
             ]
             .spacing(2)
             .width(Length::FillPortion(1)),
             column![
                 button(text(format!("BG {}", if self.use_background { "✓" } else { "○" })).size(10))
-                .on_press(ChannelsMessage::ToggleBackground)
-                .padding(2),
+                    .on_press(ChannelsMessage::ToggleBackground)
+                    .padding(2),
                 text(format!("{}", bg_color)).size(10),
             ]
             .spacing(2)

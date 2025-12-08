@@ -178,9 +178,7 @@ pub type Result<T> = std::result::Result<T, EngineError>;
 impl EngineError {
     /// Create an error for unsupported features
     pub fn not_implemented(feature: impl Into<String>) -> Self {
-        Self::NotImplemented {
-            feature: feature.into(),
-        }
+        Self::NotImplemented { feature: feature.into() }
     }
 
     /// Create a generic error from any displayable type

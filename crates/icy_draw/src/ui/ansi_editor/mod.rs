@@ -8,24 +8,27 @@
 
 mod canvas_view;
 mod channels_view;
-mod color_switcher;
+mod color_switcher_gpu;
+pub mod constants;
 mod layer_view;
 mod minimap_view;
 mod palette_grid;
 mod right_panel;
 mod tool_panel;
+mod tool_panel_gpu;
 mod top_toolbar;
 
 pub use canvas_view::*;
 pub use channels_view::*;
-pub use color_switcher::*;
-use icy_engine_edit::tools::{self, Tool, ToolEvent};
+pub use color_switcher_gpu::*;
 use icy_engine_edit::EditState;
+use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
 pub use minimap_view::*;
 pub use palette_grid::*;
 pub use right_panel::*;
-pub use tool_panel::*;
+// Use GPU-accelerated tool panel
+pub use tool_panel_gpu::{ToolPanel, ToolPanelMessage};
 pub use top_toolbar::*;
 
 use std::path::PathBuf;
@@ -33,10 +36,10 @@ use std::sync::Arc;
 
 use iced::{
     Element, Length, Task,
-    widget::{column, container, row, rule, scrollable},
+    widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{TextBuffer, TextPane};
+use icy_engine::{Screen, TextBuffer, TextPane};
 use parking_lot::Mutex;
 
 use crate::ui::SharedOptions;
@@ -95,8 +98,9 @@ pub struct AnsiEditor {
     pub id: u64,
     /// File path (if saved)
     pub file_path: Option<PathBuf>,
-    /// The edit state (wraps buffer, caret, undo stack, etc.)
-    pub edit_state: Arc<Mutex<EditState>>,
+    /// The screen (contains EditState which wraps buffer, caret, undo stack, etc.)
+    /// Use screen.lock().as_any_mut().downcast_mut::<EditState>() to access EditState methods
+    pub screen: Arc<Mutex<Box<dyn Screen>>>,
     /// Tool panel state (left sidebar icons)
     pub tool_panel: ToolPanel,
     /// Current active tool
@@ -156,25 +160,31 @@ impl AnsiEditor {
 
         // Clone the palette before moving buffer into EditState
         let palette = buffer.palette.clone();
-        let edit_state = Arc::new(Mutex::new(EditState::from_buffer(buffer)));
+
+        // Create EditState and wrap as Box<dyn Screen> for Terminal compatibility
+        let edit_state = EditState::from_buffer(buffer);
+        let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(edit_state)));
 
         // Create palette components with synced palette
         let mut palette_grid = PaletteGrid::new();
         palette_grid.sync_palette(&palette);
-        
+
         let mut color_switcher = ColorSwitcher::new();
         color_switcher.sync_palette(&palette);
+
+        // Create canvas with cloned Arc to screen
+        let canvas = CanvasView::new(screen.clone());
 
         Self {
             id,
             file_path,
-            edit_state,
+            screen,
             tool_panel: ToolPanel::new(),
             current_tool: Tool::Click,
             top_toolbar: TopToolbar::new(),
             color_switcher,
             palette_grid,
-            canvas: CanvasView::new(),
+            canvas,
             right_panel: RightPanel::new(),
             options,
             is_modified: false,
@@ -194,39 +204,77 @@ impl AnsiEditor {
         format!("{}{}", file_name, modified)
     }
 
+    /// Access the EditState via downcast from the Screen trait object
+    /// Panics if the screen is not an EditState (should never happen in AnsiEditor)
+    fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
+        let mut screen = self.screen.lock();
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .expect("AnsiEditor screen should always be EditState");
+        f(edit_state)
+    }
+
+    /// Check if this editor needs animation updates (for smooth animations)
+    pub fn needs_animation(&self) -> bool {
+        self.color_switcher.needs_animation() || self.tool_panel.needs_animation()
+    }
+
     /// Update the editor state
     pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
         match message {
             AnsiEditorMessage::ToolPanel(msg) => {
-                // Handle tool panel messages - this updates current_tool via toggle
-                let ToolPanelMessage::ClickSlot(_) = &msg;
-                // After the tool panel updates, sync our current_tool
-                let _ = self.tool_panel.update(msg.clone());
-                self.current_tool = self.tool_panel.current_tool();
+                // Handle tool panel messages
+                match &msg {
+                    ToolPanelMessage::ClickSlot(_) => {
+                        // After the tool panel updates, sync our current_tool
+                        let _ = self.tool_panel.update(msg.clone());
+                        self.current_tool = self.tool_panel.current_tool();
+                    }
+                    ToolPanelMessage::Tick(delta) => {
+                        self.tool_panel.tick(*delta);
+                    }
+                }
                 Task::none()
             }
-            AnsiEditorMessage::Canvas(msg) => self.canvas.update(msg, &self.edit_state).map(AnsiEditorMessage::Canvas),
+            AnsiEditorMessage::Canvas(msg) => self.canvas.update(msg).map(AnsiEditorMessage::Canvas),
             AnsiEditorMessage::RightPanel(msg) => self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel),
             AnsiEditorMessage::TopToolbar(msg) => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
             AnsiEditorMessage::ColorSwitcher(msg) => {
                 match msg {
                     ColorSwitcherMessage::SwapColors => {
-                        let mut state = self.edit_state.lock();
-                        let caret = state.get_caret_mut();
-                        let fg = caret.attribute.get_foreground();
-                        let bg = caret.attribute.get_background();
-                        caret.attribute.set_foreground(bg);
-                        caret.attribute.set_background(fg);
-                        self.palette_grid.set_foreground(bg);
-                        self.palette_grid.set_background(fg);
+                        // Just start the animation, don't swap yet
+                        self.color_switcher.start_swap_animation();
+                    }
+                    ColorSwitcherMessage::AnimationComplete => {
+                        // Animation finished - now actually swap the colors
+                        let (fg, bg) = self.with_edit_state(|state| {
+                            let caret: &mut icy_engine::Caret = state.get_caret_mut();
+                            let fg = caret.attribute.get_foreground();
+                            let bg = caret.attribute.get_background();
+                            caret.attribute.set_foreground(bg);
+                            caret.attribute.set_background(fg);
+                            (bg, fg)
+                        });
+                        self.palette_grid.set_foreground(fg);
+                        self.palette_grid.set_background(bg);
+                        // Confirm the swap so the shader resets to normal display
+                        self.color_switcher.confirm_swap();
                     }
                     ColorSwitcherMessage::ResetToDefault => {
-                        let mut state = self.edit_state.lock();
-                        let caret = state.get_caret_mut();
-                        caret.attribute.set_foreground(7);
-                        caret.attribute.set_background(0);
+                        self.with_edit_state(|state| {
+                            let caret = state.get_caret_mut();
+                            caret.attribute.set_foreground(7);
+                            caret.attribute.set_background(0);
+                        });
                         self.palette_grid.set_foreground(7);
                         self.palette_grid.set_background(0);
+                    }
+                    ColorSwitcherMessage::Tick(delta) => {
+                        if self.color_switcher.tick(delta) {
+                            // Animation completed - trigger the actual color swap
+                            return Task::done(AnsiEditorMessage::ColorSwitcher(ColorSwitcherMessage::AnimationComplete));
+                        }
                     }
                 }
                 Task::none()
@@ -234,13 +282,15 @@ impl AnsiEditor {
             AnsiEditorMessage::PaletteGrid(msg) => {
                 match msg {
                     PaletteGridMessage::SetForeground(color) => {
-                        let mut state = self.edit_state.lock();
-                        state.get_caret_mut().attribute.set_foreground(color);
+                        self.with_edit_state(|state| {
+                            state.get_caret_mut().attribute.set_foreground(color);
+                        });
                         self.palette_grid.set_foreground(color);
                     }
                     PaletteGridMessage::SetBackground(color) => {
-                        let mut state = self.edit_state.lock();
-                        state.get_caret_mut().attribute.set_background(color);
+                        self.with_edit_state(|state| {
+                            state.get_caret_mut().attribute.set_background(color);
+                        });
                         self.palette_grid.set_background(color);
                     }
                 }
@@ -253,14 +303,19 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::SelectLayer(idx) => {
-                let mut state = self.edit_state.lock();
-                state.set_current_layer(idx);
+                self.with_edit_state(|state| state.set_current_layer(idx));
                 Task::none()
             }
             AnsiEditorMessage::ToggleLayerVisibility(idx) => {
-                let mut state = self.edit_state.lock();
-                if let Some(layer) = state.get_buffer_mut().layers.get_mut(idx) {
-                    layer.set_is_visible(!layer.get_is_visible());
+                let modified = self.with_edit_state(|state| {
+                    if let Some(layer) = state.get_buffer_mut().layers.get_mut(idx) {
+                        layer.set_is_visible(!layer.get_is_visible());
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if modified {
                     self.is_modified = true;
                 }
                 Task::none()
@@ -271,34 +326,52 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::RemoveLayer(idx) => {
-                let mut state = self.edit_state.lock();
-                let layer_count = state.get_buffer().layers.len();
-                if layer_count > 1 && idx < layer_count {
-                    state.get_buffer_mut().layers.remove(idx);
-                    let new_layer_count = state.get_buffer().layers.len();
-                    let current = state.get_current_layer().unwrap_or(0);
-                    if current >= new_layer_count {
-                        state.set_current_layer(new_layer_count.saturating_sub(1));
+                let modified = self.with_edit_state(|state| {
+                    let layer_count = state.get_buffer().layers.len();
+                    if layer_count > 1 && idx < layer_count {
+                        state.get_buffer_mut().layers.remove(idx);
+                        let new_layer_count = state.get_buffer().layers.len();
+                        let current = state.get_current_layer().unwrap_or(0);
+                        if current >= new_layer_count {
+                            state.set_current_layer(new_layer_count.saturating_sub(1));
+                        }
+                        true
+                    } else {
+                        false
                     }
+                });
+                if modified {
                     self.is_modified = true;
                 }
                 Task::none()
             }
             AnsiEditorMessage::MoveLayerUp(idx) => {
-                let mut state = self.edit_state.lock();
-                let layer_count = state.get_buffer().layers.len();
-                if idx + 1 < layer_count {
-                    state.get_buffer_mut().layers.swap(idx, idx + 1);
-                    state.set_current_layer(idx + 1);
+                let modified = self.with_edit_state(|state| {
+                    let layer_count = state.get_buffer().layers.len();
+                    if idx + 1 < layer_count {
+                        state.get_buffer_mut().layers.swap(idx, idx + 1);
+                        state.set_current_layer(idx + 1);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if modified {
                     self.is_modified = true;
                 }
                 Task::none()
             }
             AnsiEditorMessage::MoveLayerDown(idx) => {
-                let mut state = self.edit_state.lock();
-                if idx > 0 {
-                    state.get_buffer_mut().layers.swap(idx, idx - 1);
-                    state.set_current_layer(idx - 1);
+                let modified = self.with_edit_state(|state| {
+                    if idx > 0 {
+                        state.get_buffer_mut().layers.swap(idx, idx - 1);
+                        state.set_current_layer(idx - 1);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if modified {
                     self.is_modified = true;
                 }
                 Task::none()
@@ -369,20 +442,21 @@ impl AnsiEditor {
                         }
                     }
                     iced::keyboard::Key::Named(named) => {
-                        let mut state = self.edit_state.lock();
-                        let buffer_width = state.get_buffer().get_width();
-                        let caret = state.get_caret_mut();
-                        match named {
-                            Named::ArrowUp => caret.y = (caret.y - 1).max(0),
-                            Named::ArrowDown => caret.y += 1,
-                            Named::ArrowLeft => caret.x = (caret.x - 1).max(0),
-                            Named::ArrowRight => caret.x += 1,
-                            Named::Home => caret.x = 0,
-                            Named::End => caret.x = buffer_width - 1,
-                            Named::PageUp => caret.y = (caret.y - 24).max(0),
-                            Named::PageDown => caret.y += 24,
-                            _ => {}
-                        }
+                        self.with_edit_state(|state| {
+                            let buffer_width = state.get_buffer().get_width();
+                            let caret = state.get_caret_mut();
+                            match named {
+                                Named::ArrowUp => caret.y = (caret.y - 1).max(0),
+                                Named::ArrowDown => caret.y += 1,
+                                Named::ArrowLeft => caret.x = (caret.x - 1).max(0),
+                                Named::ArrowRight => caret.x += 1,
+                                Named::Home => caret.x = 0,
+                                Named::End => caret.x = buffer_width - 1,
+                                Named::PageUp => caret.y = (caret.y - 24).max(0),
+                                Named::PageDown => caret.y += 24,
+                                _ => {}
+                            }
+                        });
                         return ToolEvent::Redraw;
                     }
                     _ => {}
@@ -438,10 +512,11 @@ impl AnsiEditor {
         match self.current_tool {
             Tool::Click => {
                 // Move cursor to clicked position
-                let mut state = self.edit_state.lock();
-                let caret = state.get_caret_mut();
-                caret.x = pos.x;
-                caret.y = pos.y;
+                self.with_edit_state(|state| {
+                    let caret = state.get_caret_mut();
+                    caret.x = pos.x;
+                    caret.y = pos.y;
+                });
                 ToolEvent::Redraw
             }
             Tool::Select => {
@@ -469,9 +544,7 @@ impl AnsiEditor {
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position) -> ToolEvent {
         match self.current_tool {
-            Tool::Select => {
-                ToolEvent::Redraw
-            }
+            Tool::Select => ToolEvent::Redraw,
             Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Commit the drawn shape
                 ToolEvent::Commit(format!("{} drawn", self.current_tool.name()))
@@ -483,7 +556,15 @@ impl AnsiEditor {
     /// Handle mouse move based on current tool
     fn handle_tool_mouse_move(&mut self, _pos: icy_engine::Position) -> ToolEvent {
         match self.current_tool {
-            Tool::Select | Tool::Pencil | Tool::Brush | Tool::Erase | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+            Tool::Select
+            | Tool::Pencil
+            | Tool::Brush
+            | Tool::Erase
+            | Tool::Line
+            | Tool::RectangleOutline
+            | Tool::RectangleFilled
+            | Tool::EllipseOutline
+            | Tool::EllipseFilled => {
                 // TODO: Update preview/drawing
                 ToolEvent::Redraw
             }
@@ -517,40 +598,45 @@ impl AnsiEditor {
     /// - Right panel: Minimap, Layers, Channels
     pub fn view(&self) -> Element<'_, AnsiEditorMessage> {
         // === LEFT SIDEBAR ===
-        // Palette grid (vertical for small palettes)
-        let palette_width = self.palette_grid.cached_palette_width();
-        let palette_view = self.palette_grid.view().map(AnsiEditorMessage::PaletteGrid);
+        // Fixed sidebar width - palette and tool panel adapt to this
+        let sidebar_width = 64.0; // Fixed width for sidebar
 
-        // Tool panel (9 icons)
-        let tool_panel = self.tool_panel.view().map(AnsiEditorMessage::ToolPanel);
+        // Palette grid - adapts to sidebar width
+        let palette_view = self.palette_grid.view_with_width(sidebar_width).map(AnsiEditorMessage::PaletteGrid);
 
-        // Calculate sidebar width based on palette
-        let sidebar_width = palette_width.max(38.0) + 8.0;
+        // Tool panel - calculate columns based on sidebar width
+        // Use background.weakest color approximation for dark theme
+        let bg_weakest = iced::Color::from_rgb(0.14, 0.14, 0.16);
+        let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
 
-        let left_sidebar = column![scrollable(palette_view).height(Length::Fill), tool_panel,].spacing(0);
+        let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = column![palette_view, tool_panel,].spacing(4);
 
         // === TOP TOOLBAR (with color switcher on the left) ===
+        // Get caret colors from the edit state
+        let (caret_fg, caret_bg) = {
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let caret = state.get_caret();
+            (caret.attribute.get_foreground(), caret.attribute.get_background())
+        };
+
         // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
-        let color_switcher = self
-            .color_switcher
-            .view()
-            .map(AnsiEditorMessage::ColorSwitcher);
+        let color_switcher = self.color_switcher.view(caret_fg, caret_bg).map(AnsiEditorMessage::ColorSwitcher);
 
         let top_toolbar_content = self.top_toolbar.view(self.current_tool).map(AnsiEditorMessage::TopToolbar);
 
-        // Toolbar height matches color switcher size + padding
-        let toolbar_height = 32.0 + 8.0;
+        let toolbar_height = SWITCHER_SIZE;
 
-        let top_toolbar = row![container(color_switcher).padding(4), rule::vertical(1), top_toolbar_content,].spacing(4);
+        let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4);
 
         // === CENTER: Canvas ===
-        let canvas = self.canvas.view(&self.edit_state).map(AnsiEditorMessage::Canvas);
+        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
 
         // === RIGHT PANEL ===
-        let right_panel = self
-            .right_panel
-            .view(&self.edit_state, self.current_tool)
-            .map(AnsiEditorMessage::RightPanel);
+        let right_panel = self.right_panel.view(&self.screen, self.current_tool).map(AnsiEditorMessage::RightPanel);
 
         // Main layout:
         // Top row: Full-width toolbar (with color switcher)
@@ -581,19 +667,22 @@ impl AnsiEditor {
     /// Sync UI components with the current edit state
     /// Call this after operations that may change the palette
     pub fn sync_ui(&mut self) {
-        let state = self.edit_state.lock();
-        let buffer = state.get_buffer();
-        self.palette_grid.sync_palette(&buffer.palette);
-        self.color_switcher.sync_palette(&buffer.palette);
+        let palette = self.with_edit_state(|state| state.get_buffer().palette.clone());
+        self.palette_grid.sync_palette(&palette);
+        self.color_switcher.sync_palette(&palette);
     }
 
     /// Get status bar information for this editor
     pub fn status_info(&self) -> AnsiStatusInfo {
-        let state = self.edit_state.lock();
+        let mut screen = self.screen.lock();
+        let state = screen
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .expect("AnsiEditor screen should always be EditState");
         let buffer = state.get_buffer();
         let caret = state.get_caret();
         let current_layer = state.get_current_layer().unwrap_or(0);
-        
+
         AnsiStatusInfo {
             cursor_position: (caret.x, caret.y),
             buffer_size: (buffer.get_width(), buffer.get_height()),

@@ -2,6 +2,12 @@
 //!
 //! Shows foreground/background color rectangles with swap functionality.
 //! Ported from egui palette_switcher.
+//!
+//! Layout (like Photoshop color picker):
+//! - Large foreground rectangle (top-left, overlapping)
+//! - Large background rectangle (bottom-right, behind foreground)
+//! - Small default color rectangles (bottom-left corner)
+//! - Swap icon (top-right corner)
 
 use iced::{
     Color, Element, Length, Point, Rectangle, Size, Theme,
@@ -9,9 +15,8 @@ use iced::{
 };
 use icy_engine::{Palette, TextAttribute};
 
-/// Size of the color switcher widget (horizontal version for toolbar)
-pub const SWITCHER_WIDTH: f32 = 70.0;
-pub const SWITCHER_HEIGHT: f32 = 32.0;
+/// Size of the color switcher widget (square like in egui version)
+pub const SWITCHER_SIZE: f32 = 62.0;
 
 /// Messages from the color switcher
 #[derive(Clone, Debug)]
@@ -65,21 +70,18 @@ impl ColorSwitcher {
 
     /// Sync palette from edit state
     pub fn sync_palette(&mut self, palette: &Palette) {
-        // Only clone if different
-        if self.cached_palette.len() != palette.len() {
-            self.cached_palette = palette.clone();
-        }
+        self.cached_palette = palette.clone();
     }
 
-    /// Render the color switcher (horizontal layout for toolbar)
-    pub fn view(&self) -> Element<'_, ColorSwitcherMessage> {
+    /// Render the color switcher with the given foreground and background colors
+    pub fn view(&self, foreground: u32, background: u32) -> Element<'_, ColorSwitcherMessage> {
         Canvas::new(ColorSwitcherProgram {
-            foreground: self.foreground,
-            background: self.background,
+            foreground,
+            background,
             cached_palette: self.cached_palette.clone(),
         })
-        .width(Length::Fixed(SWITCHER_WIDTH))
-        .height(Length::Fixed(SWITCHER_HEIGHT))
+        .width(Length::Fixed(SWITCHER_SIZE))
+        .height(Length::Fixed(SWITCHER_SIZE))
         .into()
     }
 }
@@ -89,6 +91,47 @@ struct ColorSwitcherProgram {
     foreground: u32,
     background: u32,
     cached_palette: Palette,
+}
+
+impl ColorSwitcherProgram {
+    /// Draw a color rectangle with black and white borders
+    fn draw_color_rect(frame: &mut Frame, x: f32, y: f32, size: f32, color: Color) {
+        // Black outer border
+        frame.fill_rectangle(
+            Point::new(x, y),
+            Size::new(size, size),
+            Color::BLACK,
+        );
+        // White inner border
+        frame.fill_rectangle(
+            Point::new(x + 1.0, y + 1.0),
+            Size::new(size - 2.0, size - 2.0),
+            Color::WHITE,
+        );
+        // Color fill
+        frame.fill_rectangle(
+            Point::new(x + 2.0, y + 2.0),
+            Size::new(size - 4.0, size - 4.0),
+            color,
+        );
+    }
+
+    /// Draw a small default color rectangle
+    fn draw_small_rect(frame: &mut Frame, x: f32, y: f32, size: f32, color: Color) {
+        let [r, g, b, _] = color.into_rgba8();
+        // Inverted color border
+        frame.fill_rectangle(
+            Point::new(x, y),
+            Size::new(size, size),
+            Color::from_rgb8(r ^ 0xFF, g ^ 0xFF, b ^ 0xFF),
+        );
+        // Color fill
+        frame.fill_rectangle(
+            Point::new(x + 1.0, y + 1.0),
+            Size::new(size - 2.0, size - 2.0),
+            color,
+        );
+    }
 }
 
 impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
@@ -103,85 +146,89 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
+        let height = SWITCHER_SIZE;
         
-        // Horizontal layout: [FG rect][BG rect][swap icon]
-        let rect_size = SWITCHER_HEIGHT - 4.0;
-        let spacing = 2.0;
+        // Main color rectangle size (golden ratio based)
+        let rect_height = height * 0.618;
         
-        // Foreground color rectangle (left)
-        let fg_x = 2.0;
-        let fg_y = 2.0;
-        
-        // Black border
-        frame.fill_rectangle(
-            Point::new(fg_x, fg_y),
-            Size::new(rect_size, rect_size),
-            Color::BLACK,
-        );
-        
-        // White inner border
-        frame.fill_rectangle(
-            Point::new(fg_x + 1.0, fg_y + 1.0),
-            Size::new(rect_size - 2.0, rect_size - 2.0),
-            Color::WHITE,
-        );
-        
-        // Foreground color fill
-        let (r, g, b) = self.cached_palette.get_rgb(self.foreground);
-        frame.fill_rectangle(
-            Point::new(fg_x + 2.0, fg_y + 2.0),
-            Size::new(rect_size - 4.0, rect_size - 4.0),
-            Color::from_rgb8(r, g, b),
-        );
-
-        // Background color rectangle (right of foreground)
-        let bg_x = fg_x + rect_size + spacing;
-        let bg_y = 2.0;
-        
-        // Black border
-        frame.fill_rectangle(
-            Point::new(bg_x, bg_y),
-            Size::new(rect_size, rect_size),
-            Color::BLACK,
-        );
-        
-        // White inner border
-        frame.fill_rectangle(
-            Point::new(bg_x + 1.0, bg_y + 1.0),
-            Size::new(rect_size - 2.0, rect_size - 2.0),
-            Color::WHITE,
-        );
-        
-        // Background color fill
+        // Background color rectangle (bottom-right, drawn first so FG overlaps)
         let (r, g, b) = self.cached_palette.get_rgb(self.background);
-        frame.fill_rectangle(
-            Point::new(bg_x + 2.0, bg_y + 2.0),
-            Size::new(rect_size - 4.0, rect_size - 4.0),
+        Self::draw_color_rect(
+            &mut frame,
+            height - rect_height,
+            height - rect_height,
+            rect_height,
             Color::from_rgb8(r, g, b),
         );
 
-        // Swap icon (double arrow between the boxes)
-        let swap_x = bg_x + rect_size + spacing + 2.0;
-        let swap_y = SWITCHER_HEIGHT / 2.0;
-        let arrow_len = 8.0;
+        // Foreground color rectangle (top-left, overlaps background)
+        let (r, g, b) = self.cached_palette.get_rgb(self.foreground);
+        Self::draw_color_rect(
+            &mut frame,
+            0.0,
+            0.0,
+            rect_height,
+            Color::from_rgb8(r, g, b),
+        );
+
+        // Small default color rectangles (bottom-left corner)
+        let s_rect_height = height * 0.382;
+        let rh = s_rect_height / 1.8;
+        let overlap = 2.0;
+
+        // Default foreground (white/color 7) - bottom small rect
+        let (r, g, b) = self.cached_palette.get_rgb(7);
+        Self::draw_small_rect(
+            &mut frame,
+            rh - overlap,
+            height - rh - overlap,
+            rh,
+            Color::from_rgb8(r, g, b),
+        );
+
+        // Default background (black/color 0) - top small rect
+        let (r, g, b) = self.cached_palette.get_rgb(0);
+        Self::draw_small_rect(
+            &mut frame,
+            overlap,
+            height - 2.0 * rh + 2.0 + overlap,
+            rh,
+            Color::from_rgb8(r, g, b),
+        );
+
+        // Swap icon (top-right corner) - draw arrows
+        let swap_x = rect_height + 4.0;
+        let swap_y = 2.0;
+        let arrow_size = s_rect_height * 0.6;
         
-        // Draw swap arrows (horizontal double arrow)
+        // Draw curved double arrow for swap
         let arrow_path = Path::new(|builder| {
-            // Left arrow
-            builder.move_to(Point::new(swap_x + arrow_len, swap_y - 3.0));
-            builder.line_to(Point::new(swap_x, swap_y));
-            builder.line_to(Point::new(swap_x + arrow_len, swap_y + 3.0));
+            let cx = swap_x + arrow_size / 2.0;
+            let cy = swap_y + arrow_size / 2.0;
+            let r = arrow_size / 3.0;
             
-            // Right arrow
-            builder.move_to(Point::new(swap_x + arrow_len + 4.0, swap_y - 3.0));
-            builder.line_to(Point::new(swap_x + arrow_len * 2.0 + 4.0, swap_y));
-            builder.line_to(Point::new(swap_x + arrow_len + 4.0, swap_y + 3.0));
+            // Upper-right arrow (curved)
+            builder.move_to(Point::new(cx + r, cy - r * 0.5));
+            builder.line_to(Point::new(cx + r + 3.0, cy - r * 0.5 - 3.0));
+            builder.move_to(Point::new(cx + r, cy - r * 0.5));
+            builder.line_to(Point::new(cx + r - 3.0, cy - r * 0.5 - 3.0));
+            
+            // Arc line
+            builder.move_to(Point::new(cx - r, cy + r * 0.5));
+            builder.line_to(Point::new(cx, cy));
+            builder.line_to(Point::new(cx + r, cy - r * 0.5));
+            
+            // Lower-left arrow
+            builder.move_to(Point::new(cx - r, cy + r * 0.5));
+            builder.line_to(Point::new(cx - r - 3.0, cy + r * 0.5 + 3.0));
+            builder.move_to(Point::new(cx - r, cy + r * 0.5));
+            builder.line_to(Point::new(cx - r + 3.0, cy + r * 0.5 + 3.0));
         });
         
         frame.stroke(
             &arrow_path,
             Stroke::default()
-                .with_color(Color::from_rgb8(180, 180, 180))
+                .with_color(Color::WHITE)
                 .with_width(1.5),
         );
 
@@ -195,15 +242,19 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<Action<ColorSwitcherMessage>> {
-        let rect_size = SWITCHER_HEIGHT - 4.0;
-        let spacing = 2.0;
-        let swap_x = 2.0 + rect_size + spacing + rect_size + spacing;
+        let height = SWITCHER_SIZE;
+        let rect_height = height * 0.618;
 
         if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
             if let Some(pos) = cursor.position_in(bounds) {
-                // Check if clicked on swap area (right side)
-                if pos.x > swap_x {
+                // Check if clicked on swap area (top-right)
+                if pos.x > rect_height && pos.y < rect_height {
                     return Some(Action::publish(ColorSwitcherMessage::SwapColors));
+                }
+                
+                // Check if clicked on default colors area (bottom-left)
+                if pos.x < rect_height && pos.y > rect_height {
+                    return Some(Action::publish(ColorSwitcherMessage::ResetToDefault));
                 }
             }
         }

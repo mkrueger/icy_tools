@@ -1,4 +1,4 @@
-use crate::{Result, Position, Rectangle, Size};
+use crate::{Position, Rectangle, Result, Size};
 
 #[derive(Clone, Debug, Copy)]
 pub enum SixelState {
@@ -69,8 +69,8 @@ impl Sixel {
     ///
     /// This function will return an error if .
     pub fn parse_from(aspect_ratio: Option<u16>, zero_color: Option<u16>, grid_size: Option<u16>, sixel_data: &[u8]) -> Result<Self> {
-        let (picture_data, width, height) =
-            icy_sixel::sixel_decode_from_dcs(aspect_ratio, zero_color, grid_size, sixel_data).map_err(|e| crate::EngineError::SixelDecodeError { message: e.to_string() })?;
+        let (picture_data, width, height) = icy_sixel::sixel_decode_from_dcs(aspect_ratio, zero_color, grid_size, sixel_data)
+            .map_err(|e| crate::EngineError::SixelDecodeError { message: e.to_string() })?;
 
         Ok(Sixel {
             position: Position::default(),

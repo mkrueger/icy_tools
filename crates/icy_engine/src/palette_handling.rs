@@ -284,7 +284,9 @@ impl Palette {
                             match i {
                                 0 => {
                                     if line != "JASC-PAL" {
-                                        return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "JASC-PAL".to_string() });
+                                        return Err(crate::EngineError::UnsupportedPaletteFormat {
+                                            expected: "JASC-PAL".to_string(),
+                                        });
                                     }
                                 }
                                 1 | 2 => {
@@ -310,7 +312,9 @@ impl Palette {
                         match i {
                             0 => {
                                 if line != "GIMP Palette" {
-                                    return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "GIMP Palette".to_string() });
+                                    return Err(crate::EngineError::UnsupportedPaletteFormat {
+                                        expected: "GIMP Palette".to_string(),
+                                    });
                                 }
                             }
                             _ => {
@@ -350,7 +354,9 @@ impl Palette {
                         match i {
                             0 => {
                                 if line != "ICE Palette" {
-                                    return Err(crate::EngineError::UnsupportedPaletteFormat { expected: "ICE Palette".to_string() });
+                                    return Err(crate::EngineError::UnsupportedPaletteFormat {
+                                        expected: "ICE Palette".to_string(),
+                                    });
                                 }
                             }
                             _ => {
@@ -441,11 +447,15 @@ impl Palette {
     /// This function will return an error if .
     pub fn import_palette(file_name: &Path, bytes: &[u8]) -> crate::Result<Self> {
         let Some(ext) = file_name.extension() else {
-            return Err(crate::EngineError::InvalidPaletteFormat { message: "No file extension".to_string() });
+            return Err(crate::EngineError::InvalidPaletteFormat {
+                message: "No file extension".to_string(),
+            });
         };
         let ascii_lowercase = &ext.to_ascii_lowercase();
         let Some(ext) = ascii_lowercase.to_str() else {
-            return Err(crate::EngineError::InvalidPaletteFormat { message: "Error in string conversion".to_string() });
+            return Err(crate::EngineError::InvalidPaletteFormat {
+                message: "Error in string conversion".to_string(),
+            });
         };
 
         match ext {
@@ -453,7 +463,9 @@ impl Palette {
             "gpl" => Palette::load_palette(&PaletteFormat::Gpl, bytes),
             "txt" => Palette::load_palette(&PaletteFormat::Txt, bytes),
             "hex" => Palette::load_palette(&PaletteFormat::Hex, bytes),
-            _ => Err(crate::EngineError::UnsupportedPaletteFormat { expected: format!("pal, gpl, txt, or hex (got: {})", ext) }),
+            _ => Err(crate::EngineError::UnsupportedPaletteFormat {
+                expected: format!("pal, gpl, txt, or hex (got: {})", ext),
+            }),
         }
     }
 

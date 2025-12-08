@@ -45,7 +45,7 @@ mod renegade;
 mod seq;
 pub use seq::seq_prepare;
 
-use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, Result, Layer, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
+use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, Layer, Result, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
 use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};

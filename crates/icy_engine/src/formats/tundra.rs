@@ -2,7 +2,7 @@ use std::{collections::HashSet, io, path::Path};
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BufferFeatures, BufferType, Result, IceMode, LoadingError, OutputFormat, PaletteMode, Position, SavingError, TextBuffer, TextPane,
+    AttributedChar, BufferFeatures, BufferType, IceMode, LoadingError, OutputFormat, PaletteMode, Position, Result, SavingError, TextBuffer, TextPane,
     analyze_font_usage,
 };
 

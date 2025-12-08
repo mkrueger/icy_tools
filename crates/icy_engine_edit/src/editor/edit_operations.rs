@@ -5,7 +5,7 @@ use std::mem;
 use i18n_embed_fl::fl;
 
 use crate::{
-    AnsiParser, AttributedChar, EditableScreen, Result, Layer, Palette, Position, Rectangle, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
+    AnsiParser, AttributedChar, EditableScreen, Layer, Palette, Position, Rectangle, Result, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
 };
 
 use super::{
@@ -95,7 +95,10 @@ impl EditState {
 
         let mut parser = AnsiParser::new();
 
-        let text = text.chars().map(|ch| self.screen.buffer.buffer_type.convert_from_unicode(ch)).collect::<String>();
+        let text = text
+            .chars()
+            .map(|ch| self.screen.buffer.buffer_type.convert_from_unicode(ch))
+            .collect::<String>();
         load_with_parser(&mut result, &mut parser, text.as_bytes(), true, 0)?;
 
         let mut layer: Layer = result.buffer.layers.remove(0);

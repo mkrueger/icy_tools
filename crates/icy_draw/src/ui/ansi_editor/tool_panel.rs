@@ -5,10 +5,10 @@
 //! switches to its partner.
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme,
-    mouse, widget::canvas::{Canvas, Frame, Geometry, Path, Program, Stroke, Action},
+    Color, Element, Length, Point, Rectangle, Size, Theme, mouse,
+    widget::canvas::{Action, Canvas, Frame, Geometry, Path, Program, Stroke},
 };
-use icy_engine_edit::tools::{Tool, TOOL_SLOTS, get_slot_display_tool, click_tool_slot};
+use icy_engine_edit::tools::{TOOL_SLOTS, Tool, click_tool_slot, get_slot_display_tool};
 
 /// Size of each tool icon
 const ICON_SIZE: f32 = 24.0;
@@ -40,9 +40,7 @@ impl Default for ToolPanel {
 
 impl ToolPanel {
     pub fn new() -> Self {
-        Self {
-            current_tool: Tool::Click,
-        }
+        Self { current_tool: Tool::Click }
     }
 
     /// Get the current tool
@@ -87,23 +85,16 @@ struct ToolPanelProgram {
 impl Program<ToolPanelMessage> for ToolPanelProgram {
     type State = Option<usize>;
 
-    fn draw(
-        &self,
-        state: &Self::State,
-        renderer: &iced::Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         for slot_idx in 0..TOOL_SLOTS.len() {
             let row = slot_idx / COLS;
             let col = slot_idx % COLS;
-            
+
             let x = ICON_PADDING + col as f32 * (ICON_SIZE + ICON_PADDING);
             let y = ICON_PADDING + row as f32 * (ICON_SIZE + ICON_PADDING);
-            
+
             let display_tool = get_slot_display_tool(slot_idx, self.current_tool);
             let is_selected = TOOL_SLOTS[slot_idx].contains(self.current_tool);
             let is_hovered = *state == Some(slot_idx);
@@ -117,11 +108,7 @@ impl Program<ToolPanelMessage> for ToolPanelProgram {
                 Color::from_rgb8(50, 50, 60)
             };
 
-            frame.fill_rectangle(
-                Point::new(x, y),
-                Size::new(ICON_SIZE, ICON_SIZE),
-                bg_color,
-            );
+            frame.fill_rectangle(Point::new(x, y), Size::new(ICON_SIZE, ICON_SIZE), bg_color);
 
             // Draw border
             let border_color = if is_selected {
@@ -130,17 +117,9 @@ impl Program<ToolPanelMessage> for ToolPanelProgram {
                 Color::from_rgb8(80, 80, 90)
             };
 
-            let border_path = Path::rectangle(
-                Point::new(x, y),
-                Size::new(ICON_SIZE, ICON_SIZE),
-            );
+            let border_path = Path::rectangle(Point::new(x, y), Size::new(ICON_SIZE, ICON_SIZE));
 
-            frame.stroke(
-                &border_path,
-                Stroke::default()
-                    .with_color(border_color)
-                    .with_width(1.0),
-            );
+            frame.stroke(&border_path, Stroke::default().with_color(border_color).with_width(1.0));
 
             // Draw icon representation (simple text for now)
             // In a real implementation, you'd load SVG icons here
@@ -163,11 +142,7 @@ impl Program<ToolPanelMessage> for ToolPanelProgram {
             };
 
             // Draw centered text
-            let text_color = if is_selected {
-                Color::WHITE
-            } else {
-                Color::from_rgb8(200, 200, 200)
-            };
+            let text_color = if is_selected { Color::WHITE } else { Color::from_rgb8(200, 200, 200) };
 
             frame.fill_text(iced::widget::canvas::Text {
                 content: icon_char.to_string(),
@@ -181,19 +156,13 @@ impl Program<ToolPanelMessage> for ToolPanelProgram {
         vec![frame.into_geometry()]
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<Action<ToolPanelMessage>> {
+    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<Action<ToolPanelMessage>> {
         match event {
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let col = ((pos.x - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)) as usize;
                     let row = ((pos.y - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)) as usize;
-                    
+
                     if col < COLS && row < ROWS {
                         let slot = row * COLS + col;
                         if slot < TOOL_SLOTS.len() {
@@ -209,7 +178,7 @@ impl Program<ToolPanelMessage> for ToolPanelProgram {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let col = ((pos.x - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)) as usize;
                     let row = ((pos.y - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)) as usize;
-                    
+
                     if col < COLS && row < ROWS {
                         let slot = row * COLS + col;
                         if slot < TOOL_SLOTS.len() {

@@ -65,18 +65,11 @@ pub enum ParseError {
 
     /// Unsupported feature or command (not an error, but worth reporting)
     #[error("[info] Unsupported feature: {description}")]
-    UnsupportedFeature { 
-        description: &'static str,
-    },
+    UnsupportedFeature { description: &'static str },
 
     /// Out of range value that was clamped or ignored
     #[error("[warning] Parameter '{parameter}' value {value} out of range [{min}, {max}]")]
-    OutOfRange { 
-        parameter: &'static str, 
-        value: i32, 
-        min: i32, 
-        max: i32,
-    },
+    OutOfRange { parameter: &'static str, value: i32, min: i32, max: i32 },
 }
 
 impl ParseError {

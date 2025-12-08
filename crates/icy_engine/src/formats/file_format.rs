@@ -764,7 +764,10 @@ impl FileFormat {
         if let Some(output_format) = self.output_format() {
             output_format.load_buffer(file_name, data, load_data)
         } else {
-            Err(EngineError::FormatNotSupported { name: self.name().to_string(), operation: "loading via OutputFormat".to_string() })
+            Err(EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "loading via OutputFormat".to_string(),
+            })
         }
     }
 
@@ -790,7 +793,10 @@ impl FileFormat {
         if let Some(output_format) = self.output_format() {
             output_format.to_bytes(buffer, options)
         } else {
-            Err(EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
+            Err(EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "saving".to_string(),
+            })
         }
     }
 

@@ -2,7 +2,7 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, Result, IceMode, Layer, Palette, PaletteMode, TextAttribute, TextPane};
+use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, IceMode, Layer, Palette, PaletteMode, Result, TextAttribute, TextPane};
 
 use super::EditState;
 
@@ -29,7 +29,9 @@ impl EditState {
                 let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
-            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string())),
+            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => {
+                Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string()))
+            }
         }
     }
 
@@ -94,7 +96,9 @@ impl EditState {
                 let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
-            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string())),
+            crate::FontMode::Sauce | crate::FontMode::Single | crate::FontMode::FixedSize => {
+                Err(crate::EngineError::Generic("Not supported for this buffer type.".to_string()))
+            }
         }
     }
 

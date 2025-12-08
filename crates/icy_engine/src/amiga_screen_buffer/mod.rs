@@ -6,8 +6,8 @@ pub mod skypix_impl;
 use libyaff::GlyphDefinition;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, Result, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
-    Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
+    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
     TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs, limits,

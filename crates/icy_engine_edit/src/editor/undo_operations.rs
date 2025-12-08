@@ -6,8 +6,7 @@ use std::{
 use i18n_embed_fl::fl;
 
 use crate::{
-    AddType, AttributedChar, BitFont, Result, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Selection, SelectionMask, Size, Tag,
-    TextPane,
+    AddType, AttributedChar, BitFont, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Result, Selection, SelectionMask, Size, Tag, TextPane,
 };
 
 use super::{EditState, OperationType, UndoOperation};

@@ -24,9 +24,7 @@ pub use layer::*;
 mod buffer_type;
 pub use buffer_type::*;
 
-use crate::{
-    Color, Result, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute,
-};
+use crate::{Color, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, Result, TerminalState, TextAttribute, TextPane, attribute};
 
 use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
 
@@ -829,7 +827,9 @@ impl TextBuffer {
                 return res;
             }
         }
-        Err(crate::EngineError::UnsupportedFormat { description: format!("Unknown format for file: {:?}", self.file_name) })
+        Err(crate::EngineError::UnsupportedFormat {
+            description: format!("Unknown format for file: {:?}", self.file_name),
+        })
     }
 
     /// .

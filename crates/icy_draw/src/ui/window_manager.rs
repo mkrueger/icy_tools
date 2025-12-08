@@ -49,6 +49,7 @@ pub enum WindowManagerMessage {
     WindowClosed(window::Id),
     WindowMessage(window::Id, super::main_window::Message),
     Event(window::Id, iced::Event),
+    AnimationTick,
 }
 
 const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
@@ -163,6 +164,21 @@ impl WindowManager {
                 }
                 Task::none()
             }
+
+            WindowManagerMessage::AnimationTick => {
+                // Send tick to all windows that need animation
+                let tasks: Vec<_> = self
+                    .windows
+                    .iter_mut()
+                    .filter(|(_, w)| w.needs_animation())
+                    .map(|(id, w)| {
+                        let id = *id;
+                        w.update(super::main_window::Message::AnimationTick)
+                            .map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
+                    })
+                    .collect();
+                Task::batch(tasks)
+            }
         }
     }
 
@@ -180,7 +196,9 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        Subscription::batch(vec![
+        let needs_animation = self.windows.values().any(|w| w.needs_animation());
+
+        let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
@@ -215,7 +233,14 @@ impl WindowManager {
                     _ => None,
                 }
             }),
-        ])
+        ];
+
+        // Add animation tick subscription when any window needs animation
+        if needs_animation {
+            subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
+        }
+
+        Subscription::batch(subs)
     }
 
     fn find_next_id(&self) -> usize {

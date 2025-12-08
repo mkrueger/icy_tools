@@ -11,8 +11,19 @@ repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
 # UI Framework - iced based
-iced = { workspace = true }
+iced = { workspace = true, features = ["wgpu"] }
 iced_aw = { workspace = true }
+
+# GPU/Shader support
+bytemuck = { version = "1.0", features = ["derive"] }
+
+# Layout engine
+cascada = { workspace = true }
+
+# SVG rendering for icons
+resvg = "0.45"
+tiny-skia = "0.11"
+usvg = "0.45"
 
 # Logging
 log = { workspace = true }

@@ -2,7 +2,7 @@
 use i18n_embed_fl::fl;
 
 use super::{EditState, undo_operations};
-use crate::{AddType, AttributedChar, Result, Position, Rectangle, Selection, TextPane};
+use crate::{AddType, AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
 impl EditState {
     pub fn get_selection(&self) -> Option<Selection> {
@@ -60,7 +60,10 @@ impl EditState {
 
     pub fn add_selection_to_mask(&mut self) -> Result<()> {
         if let Some(selection) = self.screen.selection_opt {
-            self.push_undo_action(Box::new(undo_operations::AddSelectionToMask::new(self.screen.selection_mask.clone(), selection)))
+            self.push_undo_action(Box::new(undo_operations::AddSelectionToMask::new(
+                self.screen.selection_mask.clone(),
+                selection,
+            )))
         } else {
             Ok(())
         }

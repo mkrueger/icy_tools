@@ -9,8 +9,8 @@ use iced::{
     widget::{column, container, rule, scrollable, text},
 };
 
+use icy_engine::Screen;
 use icy_engine_edit::tools::Tool;
-use icy_engine_edit::EditState;
 use parking_lot::Mutex;
 
 use crate::ui::{ChannelsMessage, ChannelsView, LayerMessage, LayerView, MinimapMessage, MinimapView};
@@ -70,7 +70,7 @@ impl RightPanel {
     }
 
     /// Render the right panel
-    pub fn view<'a>(&'a self, edit_state: &'a Arc<Mutex<EditState>>, current_tool: Tool) -> Element<'a, RightPanelMessage> {
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, current_tool: Tool) -> Element<'a, RightPanelMessage> {
         if self.is_collapsed {
             // Show minimal collapsed bar
             return container(text("▶").size(16)).width(Length::Fixed(20.0)).height(Length::Fill).into();
@@ -79,15 +79,15 @@ impl RightPanel {
         // Tool info section (show current tool name)
         let tool_info: Element<'_, RightPanelMessage> =
             container(column![text(current_tool.name()).size(12), text(current_tool.tooltip()).size(10),].spacing(2))
-        .padding(4)
-        .height(Length::Shrink)
-        .into();
+                .padding(4)
+                .height(Length::Shrink)
+                .into();
         // Full panel with Tool Info, Minimap, Layers, Channels
-        let minimap = self.minimap.view(edit_state).map(RightPanelMessage::Minimap);
+        let minimap = self.minimap.view(screen).map(RightPanelMessage::Minimap);
 
-        let layers = self.layers.view(edit_state).map(RightPanelMessage::Layers);
+        let layers = self.layers.view(screen).map(RightPanelMessage::Layers);
 
-        let channels = self.channels.view(edit_state).map(RightPanelMessage::Channels);
+        let channels = self.channels.view(screen).map(RightPanelMessage::Channels);
 
         let content = column![
             // Tool info section

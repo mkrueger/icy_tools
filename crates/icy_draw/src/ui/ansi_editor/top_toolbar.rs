@@ -5,7 +5,7 @@
 
 use iced::{
     Element, Length, Task,
-    widget::{button, container, row, text, toggler, Space},
+    widget::{Space, button, container, row, text, toggler},
 };
 
 use super::tools::Tool;
@@ -114,8 +114,7 @@ impl TopToolbar {
                 self.select_options.current_fkey_page = (self.select_options.current_fkey_page + 1) % 10;
             }
             TopToolbarMessage::PrevFKeyPage => {
-                self.select_options.current_fkey_page = 
-                    (self.select_options.current_fkey_page + 9) % 10;
+                self.select_options.current_fkey_page = (self.select_options.current_fkey_page + 9) % 10;
             }
         }
         Task::none()
@@ -150,10 +149,8 @@ impl TopToolbar {
             .map(|i| {
                 let label = format!("F{}", i);
                 let is_selected = self.select_options.selected_fkey == i - 1;
-                let btn = button(text(label).size(11))
-                    .on_press(TopToolbarMessage::SelectFKeySlot(i - 1))
-                    .padding(2);
-                
+                let btn = button(text(label).size(11)).on_press(TopToolbarMessage::SelectFKeySlot(i - 1)).padding(2);
+
                 if is_selected {
                     btn.style(iced::widget::button::primary).into()
                 } else {
@@ -163,23 +160,15 @@ impl TopToolbar {
             .collect();
 
         let page_nav = row![
-            button(text("<").size(12))
-                .on_press(TopToolbarMessage::PrevFKeyPage)
-                .padding(2),
+            button(text("<").size(12)).on_press(TopToolbarMessage::PrevFKeyPage).padding(2),
             text(format!("{}", self.select_options.current_fkey_page)).size(12),
-            button(text(">").size(12))
-                .on_press(TopToolbarMessage::NextFKeyPage)
-                .padding(2),
+            button(text(">").size(12)).on_press(TopToolbarMessage::NextFKeyPage).padding(2),
         ]
         .spacing(4);
 
-        row![
-            row(fkey_buttons).spacing(2),
-            Space::new().width(Length::Fixed(16.0)),
-            page_nav,
-        ]
-        .spacing(8)
-        .into()
+        row![row(fkey_buttons).spacing(2), Space::new().width(Length::Fixed(16.0)), page_nav,]
+            .spacing(8)
+            .into()
     }
 
     /// Brush tool panel
@@ -207,13 +196,9 @@ impl TopToolbar {
                 .text_size(11),
             Space::new().width(Length::Fixed(16.0)),
             text("Size:").size(11),
-            button(text("-").size(12))
-                .on_press(TopToolbarMessage::DecrementBrushSize)
-                .padding(2),
+            button(text("-").size(12)).on_press(TopToolbarMessage::DecrementBrushSize).padding(2),
             text(format!("{}", self.brush_options.brush_size)).size(12),
-            button(text("+").size(12))
-                .on_press(TopToolbarMessage::IncrementBrushSize)
-                .padding(2),
+            button(text("+").size(12)).on_press(TopToolbarMessage::IncrementBrushSize).padding(2),
         ]
         .spacing(8)
         .into()
@@ -235,10 +220,7 @@ impl TopToolbar {
         row![
             text(shape_name).size(12),
             Space::new().width(Length::Fixed(16.0)),
-            toggler(self.filled)
-                .label("Filled")
-                .on_toggle(TopToolbarMessage::ToggleFilled)
-                .text_size(11),
+            toggler(self.filled).label("Filled").on_toggle(TopToolbarMessage::ToggleFilled).text_size(11),
             Space::new().width(Length::Fixed(16.0)),
             text("Shift: Square/Circle").size(10),
         ]

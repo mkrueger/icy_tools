@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, Result, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, SavingError,
-    TextBuffer, TextPane, analyze_font_usage, attribute, guess_font_name,
+    AttributedChar, BitFont, BufferFeatures, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, Result, SavingError, TextBuffer,
+    TextPane, analyze_font_usage, attribute, guess_font_name,
 };
 use std::path::Path;
 
@@ -127,11 +127,15 @@ impl OutputFormat for XBin {
             return Err(SavingError::NoFontFound.into());
         };
         if font.length() != 256 {
-            return Err(crate::EngineError::InvalidXBin { message: "1st font must be 256 chars long".to_string() });
+            return Err(crate::EngineError::InvalidXBin {
+                message: "1st font must be 256 chars long".to_string(),
+            });
         }
 
         if fonts.len() > 2 {
-            return Err(crate::EngineError::InvalidXBin { message: "Only up to 2 fonts are supported".to_string() });
+            return Err(crate::EngineError::InvalidXBin {
+                message: "Only up to 2 fonts are supported".to_string(),
+            });
         }
 
         if font.size().width != 8 || font.size().height < 1 || font.size().height > 32 {
@@ -176,25 +180,35 @@ impl OutputFormat for XBin {
             let font_data = font.convert_to_u8_data();
             let font_len = font_data.len();
             if font_len != 256 * font.size().height as usize {
-                return Err(crate::EngineError::InvalidXBin { message: "Invalid font length".to_string() });
+                return Err(crate::EngineError::InvalidXBin {
+                    message: "Invalid font length".to_string(),
+                });
             }
             result.extend(font_data);
             if flags & FLAG_512CHAR_MODE == FLAG_512CHAR_MODE {
                 if fonts.len() != 2 {
-                    return Err(crate::EngineError::InvalidXBin { message: "File needs 2 fonts for 512 char mode".to_string() });
+                    return Err(crate::EngineError::InvalidXBin {
+                        message: "File needs 2 fonts for 512 char mode".to_string(),
+                    });
                 }
                 if let Some(ext_font) = buf.get_font(fonts[1]) {
                     if ext_font.length() != 256 {
-                        return Err(crate::EngineError::InvalidXBin { message: "2nd font must be 256 chars long".to_string() });
+                        return Err(crate::EngineError::InvalidXBin {
+                            message: "2nd font must be 256 chars long".to_string(),
+                        });
                     }
 
                     let ext_font_data = ext_font.convert_to_u8_data();
                     if ext_font_data.len() != font_len {
-                        return Err(crate::EngineError::InvalidXBin { message: "2nd font must be same height as 1st font".to_string() });
+                        return Err(crate::EngineError::InvalidXBin {
+                            message: "2nd font must be same height as 1st font".to_string(),
+                        });
                     }
                     result.extend(ext_font_data);
                 } else {
-                    return Err(crate::EngineError::InvalidXBin { message: "Can't get second font".to_string() });
+                    return Err(crate::EngineError::InvalidXBin {
+                        message: "Can't get second font".to_string(),
+                    });
                 }
             }
         }
@@ -244,7 +258,9 @@ impl OutputFormat for XBin {
         o += 1;
         let width = data[o] as i32 + ((data[o + 1] as i32) << 8);
         if !(1..=4096).contains(&width) {
-            return Err(crate::EngineError::InvalidXBin { message: format!("Width out of range: {} (1-4096)", width) });
+            return Err(crate::EngineError::InvalidXBin {
+                message: format!("Width out of range: {} (1-4096)", width),
+            });
         }
         result.set_width(width);
         o += 2;
@@ -262,7 +278,9 @@ impl OutputFormat for XBin {
             font_size = 16;
         }
         if font_size > 32 {
-            return Err(crate::EngineError::InvalidXBin { message: format!("Font height too large: {} (32 max)", font_size) });
+            return Err(crate::EngineError::InvalidXBin {
+                message: format!("Font height too large: {} (32 max)", font_size),
+            });
         }
         o += 1;
         let flags = data[o];

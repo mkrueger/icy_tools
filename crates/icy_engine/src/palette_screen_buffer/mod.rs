@@ -7,8 +7,8 @@ pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, Result, GraphicsType, HyperLink, IceMode, Line, Palette, Position,
-    Rectangle, RenderOptions, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
+    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     limits,

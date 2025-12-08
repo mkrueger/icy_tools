@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, Position, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, BufferType, Color, EGA_PALETTE, Result, FontMode, IceMode, LoadingError, OutputFormat, Palette, SavingError,
+    AttributedChar, BitFont, BufferFeatures, BufferType, Color, EGA_PALETTE, FontMode, IceMode, LoadingError, OutputFormat, Palette, Result, SavingError,
     TextBuffer, TextPane, analyze_font_usage, guess_font_name,
 };
 

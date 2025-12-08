@@ -82,7 +82,7 @@ mod parser_sink;
 pub use parser_sink::*;
 
 mod error;
-pub use error::{EngineError, Result, FontError, LoadingError, ParserError, SavingError};
+pub use error::{EngineError, FontError, LoadingError, ParserError, Result, SavingError};
 
 pub mod overlay_mask;
 

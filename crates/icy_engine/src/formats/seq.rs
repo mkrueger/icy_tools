@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Result, OutputFormat, Palette, TextScreen,
+    AttributedChar, BitFont, BufferFeatures, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, OutputFormat, Palette, Result, TextScreen,
 };
 
 #[derive(Default)]
@@ -23,7 +23,9 @@ impl OutputFormat for Seq {
 
     fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Petscii {
-            return Err(crate::EngineError::BufferTypeMismatch { expected: "Petscii".to_string() });
+            return Err(crate::EngineError::BufferTypeMismatch {
+                expected: "Petscii".to_string(),
+            });
         }
 
         Err(crate::EngineError::not_implemented("Seq export"))

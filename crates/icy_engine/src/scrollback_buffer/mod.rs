@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, Caret, Result, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, SaveOptions, Screen, Selection,
-    SelectionMask, Size, TerminalState, TextPane, bgi::MouseField,
+    AttributedChar, BitFont, Caret, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Screen, Selection, SelectionMask,
+    Size, TerminalState, TextPane, bgi::MouseField,
 };
 
 /// Render a region from (0,0) with specified height for scrollback buffer.

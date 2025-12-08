@@ -4,7 +4,7 @@ use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
-use crate::{BitFont, Color, Result, Layer, LoadingError, OutputFormat, Palette, Position, SaveOptions, Sixel, Size, TextBuffer, TextPane, attribute};
+use crate::{BitFont, Color, Layer, LoadingError, OutputFormat, Palette, Position, Result, SaveOptions, Sixel, Size, TextBuffer, TextPane, attribute};
 
 use super::LoadData;
 
@@ -421,7 +421,9 @@ impl OutputFormat for IcyDraw {
                                 "ICED" => {
                                     let mut o: usize = 0;
                                     if bytes.len() != constants::ICED_HEADER_SIZE {
-                                        return Err(crate::EngineError::UnsupportedFormat { description: format!("unsupported header size {}", bytes.len()) });
+                                        return Err(crate::EngineError::UnsupportedFormat {
+                                            description: format!("unsupported header size {}", bytes.len()),
+                                        });
                                     }
                                     o += 2; // skip version
                                     // TODO: read type ATM only 1 type is generated.
@@ -479,7 +481,9 @@ impl OutputFormat for IcyDraw {
                                             1 => Alignment::Center,
                                             2 => Alignment::Right,
                                             _ => {
-                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported alignment".to_string() });
+                                                return Err(crate::EngineError::UnsupportedFormat {
+                                                    description: "unsupported alignment".to_string(),
+                                                });
                                             }
                                         };
                                         bytes = &bytes[1..];
@@ -487,7 +491,9 @@ impl OutputFormat for IcyDraw {
                                             0 => crate::TagPlacement::InText,
                                             1 => crate::TagPlacement::WithGotoXY,
                                             _ => {
-                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported tag placement".to_string() });
+                                                return Err(crate::EngineError::UnsupportedFormat {
+                                                    description: "unsupported tag placement".to_string(),
+                                                });
                                             }
                                         };
                                         bytes = &bytes[1..];
@@ -496,7 +502,9 @@ impl OutputFormat for IcyDraw {
                                             0 => crate::TagRole::Displaycode,
                                             1 => crate::TagRole::Hyperlink,
                                             _ => {
-                                                return Err(crate::EngineError::UnsupportedFormat { description: "unsupported tag role".to_string() });
+                                                return Err(crate::EngineError::UnsupportedFormat {
+                                                    description: "unsupported tag role".to_string(),
+                                                });
                                             }
                                         };
 

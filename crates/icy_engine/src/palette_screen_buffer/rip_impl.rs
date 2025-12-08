@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    BitFont, EditableScreen, Result, Position, Size,
+    BitFont, EditableScreen, Position, Result, Size,
     bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode},
 };
 use byteorder::{LittleEndian, ReadBytesExt};

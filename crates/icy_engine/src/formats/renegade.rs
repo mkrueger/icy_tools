@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{BufferFeatures, EditableScreen, Result, OutputFormat, Position, TextAttribute, TextPane, TextScreen};
+use crate::{BufferFeatures, EditableScreen, OutputFormat, Position, Result, TextAttribute, TextPane, TextScreen};
 
 use super::{LoadData, SaveOptions};
 

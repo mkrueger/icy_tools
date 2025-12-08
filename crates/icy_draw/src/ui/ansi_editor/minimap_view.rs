@@ -4,8 +4,11 @@
 
 use std::sync::Arc;
 
-use iced::{Element, Length, Task, widget::{container, text}};
-use icy_engine::TextPane;
+use iced::{
+    Element, Length, Task,
+    widget::{container, text},
+};
+use icy_engine::{Screen, TextPane};
 use icy_engine_edit::EditState;
 use parking_lot::Mutex;
 
@@ -60,22 +63,20 @@ impl MinimapView {
     }
 
     /// Render the minimap view
-    pub fn view<'a>(&'a self, edit_state: &'a Arc<Mutex<EditState>>) -> Element<'a, MinimapMessage> {
-        let state = edit_state.lock();
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>) -> Element<'a, MinimapMessage> {
+        let mut screen_guard = screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
         let buffer = state.get_buffer();
-        
+
         // TODO: Render actual minimap using buffer.render_to_rgba()
         // For now, show placeholder
-        
-        container(
-            text(format!("{}×{}", buffer.get_width(), buffer.get_height()))
-                .size(10)
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(container::bordered_box)
-        .into()
+
+        container(text(format!("{}×{}", buffer.get_width(), buffer.get_height())).size(10))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .style(container::bordered_box)
+            .into()
     }
 }

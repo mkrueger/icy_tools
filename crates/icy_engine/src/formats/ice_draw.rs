@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{LoadData, SaveOptions, TextAttribute};
 use crate::{
-    AttributedChar, BitFont, Result, IceMode, LoadingError, OutputFormat, Palette, Position, SavingError, Size, TextBuffer, TextPane, analyze_font_usage,
+    AttributedChar, BitFont, IceMode, LoadingError, OutputFormat, Palette, Position, Result, SavingError, Size, TextBuffer, TextPane, analyze_font_usage,
     guess_font_name,
 };
 
@@ -148,7 +148,9 @@ impl OutputFormat for IceDraw {
         o += 2;
 
         if x2 < x1 {
-            return Err(crate::EngineError::InvalidBounds { message: "IDF width needs to be >= 0".to_string() });
+            return Err(crate::EngineError::InvalidBounds {
+                message: "IDF width needs to be >= 0".to_string(),
+            });
         }
 
         result.set_width(x2 - x1 + 1);

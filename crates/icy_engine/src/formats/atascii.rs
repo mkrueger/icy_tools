@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{LoadData, SaveOptions};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EditableScreen, Result, OutputFormat, Palette, Position, TextPane, TextScreen};
+use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, BufferFeatures, EditableScreen, OutputFormat, Palette, Position, Result, TextPane, TextScreen};
 
 #[derive(Default)]
 pub(super) struct Atascii {}
@@ -21,7 +21,9 @@ impl OutputFormat for Atascii {
 
     fn to_bytes(&self, buf: &mut crate::TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
         if buf.buffer_type != crate::BufferType::Atascii {
-            return Err(crate::EngineError::BufferTypeMismatch { expected: "Atascii".to_string() });
+            return Err(crate::EngineError::BufferTypeMismatch {
+                expected: "Atascii".to_string(),
+            });
         }
 
         let mut result = Vec::new();

@@ -1,5 +1,5 @@
 #![allow(clippy::missing_errors_doc)]
-use crate::{Result, Position, Tag};
+use crate::{Position, Result, Tag};
 
 use super::{EditState, undo_operations};
 

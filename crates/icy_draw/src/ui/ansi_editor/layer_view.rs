@@ -4,8 +4,12 @@
 
 use std::sync::Arc;
 
-use iced::{Element, Length, Task, widget::{button, column, container, row, text}};
+use iced::{
+    Element, Length, Task,
+    widget::{button, column, container, row, text},
+};
 
+use icy_engine::Screen;
 use icy_engine_edit::EditState;
 use parking_lot::Mutex;
 
@@ -51,12 +55,14 @@ impl LayerView {
     }
 
     /// Render the layer view
-    pub fn view<'a>(&'a self, edit_state: &'a Arc<Mutex<EditState>>) -> Element<'a, LayerMessage> {
-        let state = edit_state.lock();
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>) -> Element<'a, LayerMessage> {
+        let mut screen_guard = screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
         let buffer = state.get_buffer();
         let current_layer = state.get_current_layer().unwrap_or(0);
 
-        let layers: Vec<Element<'_, LayerMessage>> = buffer.layers
+        let layers: Vec<Element<'_, LayerMessage>> = buffer
+            .layers
             .iter()
             .enumerate()
             .rev() // Show top layer first
@@ -67,36 +73,24 @@ impl LayerView {
 
                 let layer_row = row![
                     // Visibility toggle (using button instead of checkbox)
-                    button(
-                        text(if is_visible { "👁" } else { "○" }).size(12)
-                    )
-                    .on_press(LayerMessage::ToggleVisibility(idx))
-                    .width(Length::Fixed(24.0))
-                    .padding(2),
-                    
+                    button(text(if is_visible { "👁" } else { "○" }).size(12))
+                        .on_press(LayerMessage::ToggleVisibility(idx))
+                        .width(Length::Fixed(24.0))
+                        .padding(2),
                     // Layer name (clickable to select)
-                    button(
-                        text(if title.is_empty() { 
-                            format!("Layer {}", idx + 1) 
-                        } else { 
-                            title.to_string() 
+                    button(text(if title.is_empty() { format!("Layer {}", idx + 1) } else { title.to_string() }).size(12))
+                        .on_press(LayerMessage::Select(idx))
+                        .style(if is_selected {
+                            iced::widget::button::primary
+                        } else {
+                            iced::widget::button::text
                         })
-                        .size(12)
-                    )
-                    .on_press(LayerMessage::Select(idx))
-                    .style(if is_selected {
-                        iced::widget::button::primary
-                    } else {
-                        iced::widget::button::text
-                    })
-                    .width(Length::Fill),
+                        .width(Length::Fill),
                 ]
                 .spacing(4)
                 .align_y(iced::Alignment::Center);
 
-                container(layer_row)
-                    .padding(2)
-                    .into()
+                container(layer_row).padding(2).into()
             })
             .collect();
 
@@ -105,26 +99,13 @@ impl LayerView {
 
         // Control buttons at bottom
         let controls = row![
-            button(text("+").size(14))
-                .on_press(LayerMessage::Add)
-                .padding(4),
-            button(text("▲").size(14))
-                .on_press(LayerMessage::MoveUp(current_layer))
-                .padding(4),
-            button(text("▼").size(14))
-                .on_press(LayerMessage::MoveDown(current_layer))
-                .padding(4),
-            button(text("−").size(14))
-                .on_press(LayerMessage::Remove(current_layer))
-                .padding(4),
+            button(text("+").size(14)).on_press(LayerMessage::Add).padding(4),
+            button(text("▲").size(14)).on_press(LayerMessage::MoveUp(current_layer)).padding(4),
+            button(text("▼").size(14)).on_press(LayerMessage::MoveDown(current_layer)).padding(4),
+            button(text("−").size(14)).on_press(LayerMessage::Remove(current_layer)).padding(4),
         ]
         .spacing(4);
 
-        column![
-            layer_list,
-            controls,
-        ]
-        .spacing(8)
-        .into()
+        column![layer_list, controls,].spacing(8).into()
     }
 }

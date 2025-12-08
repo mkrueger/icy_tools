@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{BufferFeatures, EditableScreen, Result, OutputFormat, Position, TagPlacement, TextAttribute, TextPane, TextScreen};
+use crate::{BufferFeatures, EditableScreen, OutputFormat, Position, Result, TagPlacement, TextAttribute, TextPane, TextScreen};
 use icy_parser_core::{ctrla_bg, ctrla_fg};
 
 use super::{LoadData, SaveOptions};

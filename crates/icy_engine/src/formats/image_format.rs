@@ -20,7 +20,7 @@
 
 use std::path::Path;
 
-use crate::{Result, Rectangle, RenderOptions, Screen, TextBuffer, TextPane};
+use crate::{Rectangle, RenderOptions, Result, Screen, TextBuffer, TextPane};
 
 /// Image export formats for ANSI art.
 ///
@@ -122,9 +122,10 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
-            }
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "saving".to_string(),
+            }),
         }
     }
 
@@ -133,9 +134,10 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
-            }
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "saving".to_string(),
+            }),
         }
     }
 
@@ -230,9 +232,10 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
-            }
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "saving".to_string(),
+            }),
         }
     }
 
@@ -246,9 +249,10 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => {
-                Err(crate::EngineError::FormatNotSupported { name: self.name().to_string(), operation: "saving".to_string() })
-            }
+            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "saving".to_string(),
+            }),
         }
     }
 

@@ -6,8 +6,7 @@
 use std::sync::Arc;
 
 use iced::{Element, Length, Task, widget::container};
-use icy_engine::{Screen, Size, TextBuffer, TextPane, TextScreen};
-use icy_engine_edit::EditState;
+use icy_engine::Screen;
 use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
 use parking_lot::Mutex;
 
@@ -38,78 +37,23 @@ pub enum CanvasMessage {
 pub struct CanvasView {
     /// Terminal widget for rendering
     pub terminal: Terminal,
-    /// Screen for the terminal (wraps the buffer)
-    screen: Arc<Mutex<Box<dyn Screen>>>,
     /// Monitor settings for CRT effects
     pub monitor_settings: MonitorSettings,
     /// Current zoom level (1.0 = 100%)
     pub zoom: f32,
-    /// Whether to show grid
-    pub show_grid: bool,
-    /// Whether to show guides
-    pub show_guides: bool,
-    /// Reference image (optional)
-    pub reference_image: Option<Vec<u8>>,
-}
-
-impl Default for CanvasView {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl CanvasView {
-    pub fn new() -> Self {
-        // Create a default screen (80x25 terminal)
-        let screen: Box<dyn Screen> = Box::new(TextScreen::new(Size::new(80, 25)));
-        let screen = Arc::new(Mutex::new(screen));
-        
+    /// Create a new canvas view with a screen
+    /// The screen should be an EditState wrapped as Box<dyn Screen>
+    pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
         // Create terminal widget
-        let terminal = Terminal::new(screen.clone());
-        
+        let terminal = Terminal::new(screen);
+
         Self {
             terminal,
-            screen,
             monitor_settings: MonitorSettings::default(),
             zoom: 1.0,
-            show_grid: false,
-            show_guides: false,
-            reference_image: None,
-        }
-    }
-
-    /// Initialize or re-initialize the terminal with a buffer's dimensions
-    pub fn init_from_buffer(&mut self, buffer: &TextBuffer) {
-        // Create a new TextScreen from the buffer dimensions
-        let screen: Box<dyn Screen> = Box::new(TextScreen::new(Size::new(
-            buffer.get_width(),
-            buffer.get_height(),
-        )));
-        let screen = Arc::new(Mutex::new(screen));
-        
-        // Create terminal widget
-        let terminal = Terminal::new(screen.clone());
-        
-        self.screen = screen;
-        self.terminal = terminal;
-    }
-
-    /// Sync the screen with the buffer contents
-    /// This should be called when the buffer changes
-    pub fn sync_with_buffer(&mut self, buffer: &TextBuffer) {
-        // Update the screen with buffer data
-        let mut screen = self.screen.lock();
-        
-        // Downcast to TextScreen to access buffer
-        if let Some(text_screen) = screen.as_any_mut().downcast_mut::<TextScreen>() {
-            // Copy buffer contents
-            // For now just sync the dimensions
-            if text_screen.buffer.get_width() != buffer.get_width() 
-                || text_screen.buffer.get_height() != buffer.get_height() 
-            {
-                drop(screen);
-                self.init_from_buffer(buffer);
-            }
         }
     }
 
@@ -127,14 +71,9 @@ impl CanvasView {
         self.terminal.sync_scrollbar_with_viewport();
     }
 
-    /// Update animations (called rrom ViewportTick)
+    /// Update animations (called from ViewportTick)
     pub fn update_animations(&mut self) {
         self.terminal.update_animations();
-    }
-
-    /// Chlck if animations are active
-    pub fn needs_animation(&self) -> bool {
-        self.terminal.needs_animation()
     }
 
     /// Set zoom level
@@ -143,7 +82,7 @@ impl CanvasView {
     }
 
     /// Update the canvas view state
-    pub fn update(&mut self, message: CanvasMessage, _edit_state: &Arc<Mutex<EditState>>) -> Task<CanvasMessage> {
+    pub fn update(&mut self, message: CanvasMessage) -> Task<CanvasMessage> {
         match message {
             CanvasMessage::ViewportTick => {
                 self.update_animations();
@@ -169,12 +108,8 @@ impl CanvasView {
                 // TODO: Forward to active tool
                 Task::none()
             }
-            CanvasMessage::MouseRelease(_pos, _button) => {
-                Task::none()
-            }
-            CanvasMessage::MouseMove(_pos) => {
-                Task::none()
-            }
+            CanvasMessage::MouseRelease(_pos, _button) => Task::none(),
+            CanvasMessage::MouseMove(_pos) => Task::none(),
             CanvasMessage::MouseScroll(dx, dy) => {
                 self.scroll_by(dx, dy);
                 Task::none()
@@ -183,12 +118,15 @@ impl CanvasView {
     }
 
     /// Render the canvas view
-    pub fn view<'a>(&'a self, _edit_state: &'a Arc<Mutex<EditState>>) -> Element<'a, CanvasMessage> {
+    pub fn view(&self) -> Element<'_, CanvasMessage> {
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone())
-            .map(CanvasMessage::TerminalMessage);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone()).map(CanvasMessage::TerminalMessage);
 
         container(terminal_view)
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.extended_palette().background.weaker.color)),
+                ..Default::default()
+            })
             .width(Length::Fill)
             .height(Length::Fill)
             .into()

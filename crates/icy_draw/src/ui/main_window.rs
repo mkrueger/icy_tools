@@ -145,6 +145,7 @@ pub enum Message {
     // Internal
     Tick,
     ViewportTick,
+    AnimationTick,
 }
 
 /// Status bar information that can be provided by any editor mode
@@ -379,6 +380,34 @@ impl MainWindow {
                     Task::none()
                 }
             }
+            Message::AnimationTick => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    // Send tick with delta time (16ms at 60fps)
+                    let delta = 0.016;
+
+                    // Update color switcher
+                    let color_task = editor
+                        .update(AnsiEditorMessage::ColorSwitcher(crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta)))
+                        .map(Message::AnsiEditor);
+
+                    // Update tool panel
+                    let tool_task = editor
+                        .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
+                        .map(Message::AnsiEditor);
+
+                    Task::batch([color_task, tool_task])
+                } else {
+                    Task::none()
+                }
+            }
+        }
+    }
+
+    /// Check if this window needs animation updates
+    pub fn needs_animation(&self) -> bool {
+        match &self.mode_state {
+            ModeState::Ansi(editor) => editor.needs_animation(),
+            _ => false,
         }
     }
 

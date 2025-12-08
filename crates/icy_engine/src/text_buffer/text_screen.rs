@@ -5,7 +5,7 @@ use std::{sync::Arc, u32};
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, Result, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, SaveOptions,
+    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions,
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
 };
 
@@ -703,7 +703,10 @@ impl EditableScreen for TextScreen {
             self.current_layer = layer;
             Ok(())
         } else {
-            Err(crate::EngineError::LayerOutOfRange { layer, max: self.buffer.layers.len() })
+            Err(crate::EngineError::LayerOutOfRange {
+                layer,
+                max: self.buffer.layers.len(),
+            })
         }
     }
 

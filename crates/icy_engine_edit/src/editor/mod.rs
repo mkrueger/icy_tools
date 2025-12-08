@@ -18,9 +18,9 @@ mod selection_operations;
 mod tag_operations;
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SavedCaretState, 
-    SaveOptions, SauceMetaData, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, 
-    clipboard, overlay_mask::OverlayMask,
+    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
+    SauceMetaData, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, clipboard,
+    overlay_mask::OverlayMask,
 };
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 use parking_lot::Mutex as ParkingMutex;
@@ -753,4 +753,3 @@ impl EditableScreen for EditState {
         self.screen.set_letter_spacing(enabled)
     }
 }
-

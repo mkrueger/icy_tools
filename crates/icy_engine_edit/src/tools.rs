@@ -78,11 +78,7 @@ impl ToolPair {
 
     /// Get the other tool in the pair (toggle)
     pub fn toggle(&self, current: Tool) -> Tool {
-        if current == self.primary {
-            self.secondary
-        } else {
-            self.primary
-        }
+        if current == self.primary { self.secondary } else { self.primary }
     }
 
     /// Check if this is a single tool (no toggle partner)
@@ -189,10 +185,7 @@ impl Tool {
 
     /// Find which slot this tool belongs to
     pub fn slot_index(&self) -> usize {
-        TOOL_SLOTS
-            .iter()
-            .position(|pair| pair.contains(*self))
-            .unwrap_or(0)
+        TOOL_SLOTS.iter().position(|pair| pair.contains(*self)).unwrap_or(0)
     }
 
     /// Check if this tool uses the caret for input
@@ -209,11 +202,7 @@ impl Tool {
     pub fn is_shape_tool(&self) -> bool {
         matches!(
             self,
-            Tool::Line
-                | Tool::RectangleOutline
-                | Tool::RectangleFilled
-                | Tool::EllipseOutline
-                | Tool::EllipseFilled
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
         )
     }
 
@@ -262,11 +251,7 @@ pub fn get_slot_display_tool(slot: usize, current_tool: Tool) -> Tool {
     }
 
     let pair = &TOOL_SLOTS[slot];
-    if pair.contains(current_tool) {
-        current_tool
-    } else {
-        pair.primary
-    }
+    if pair.contains(current_tool) { current_tool } else { pair.primary }
 }
 
 /// Tool event returned from tool operations
@@ -294,14 +279,8 @@ mod tests {
 
     #[test]
     fn test_toggle_rectangle() {
-        assert_eq!(
-            click_tool_slot(3, Tool::RectangleOutline),
-            Tool::RectangleFilled
-        );
-        assert_eq!(
-            click_tool_slot(3, Tool::RectangleFilled),
-            Tool::RectangleOutline
-        );
+        assert_eq!(click_tool_slot(3, Tool::RectangleOutline), Tool::RectangleFilled);
+        assert_eq!(click_tool_slot(3, Tool::RectangleFilled), Tool::RectangleOutline);
     }
 
     #[test]
