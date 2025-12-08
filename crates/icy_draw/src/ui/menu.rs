@@ -12,9 +12,25 @@ use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items, quad, widget::InnerBounds};
 
-use super::main_window::Message;
+use super::MostRecentlyUsedFiles;
+use super::main_window::{EditMode, Message};
 use crate::fl;
 use icy_engine_gui::commands::cmd;
+
+/// Information about current undo/redo state for menu display
+#[derive(Default, Clone)]
+pub struct UndoInfo {
+    /// Description of the next undo operation (None if nothing to undo)
+    pub undo_description: Option<String>,
+    /// Description of the next redo operation (None if nothing to redo)
+    pub redo_description: Option<String>,
+}
+
+impl UndoInfo {
+    pub fn new(undo_description: Option<String>, redo_description: Option<String>) -> Self {
+        Self { undo_description, redo_description }
+    }
+}
 
 /// Menu bar state
 #[derive(Default)]
@@ -25,8 +41,17 @@ impl MenuBarState {
         Self
     }
 
-    /// Build the menu bar view
-    pub fn view(&self) -> Element<'_, Message> {
+    /// Build the menu bar view based on the current edit mode
+    pub fn view(&self, mode: &EditMode, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'_, Message> {
+        match mode {
+            EditMode::Ansi => self.view_ansi(recent_files, undo_info),
+            EditMode::BitFont => self.view_bitfont(recent_files, undo_info),
+            EditMode::CharFont => self.view_charfont(recent_files, undo_info),
+        }
+    }
+
+    /// Build the ANSI editor menu bar (full menu)
+    fn view_ansi(&self, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'_, Message> {
         let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
 
         let mb = menu_bar!(
@@ -38,7 +63,7 @@ impl MenuBarState {
                 menu_template(menu_items!(
                     (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                    // TODO: Open Recent submenu
+                    (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
@@ -55,8 +80,8 @@ impl MenuBarState {
             (
                 menu_button(fl!("menu-edit")),
                 menu_template(menu_items!(
-                    (menu_item(&cmd::EDIT_UNDO, Message::Undo)),
-                    (menu_item(&cmd::EDIT_REDO, Message::Redo)),
+                    (menu_item_undo(&cmd::EDIT_UNDO, Message::Undo, undo_info.undo_description.as_deref())),
+                    (menu_item_redo(&cmd::EDIT_REDO, Message::Redo, undo_info.redo_description.as_deref())),
                     (separator()),
                     (menu_item(&cmd::EDIT_CUT, Message::Cut)),
                     (menu_item(&cmd::EDIT_COPY, Message::Copy)),
@@ -184,6 +209,8 @@ impl MenuBarState {
         .spacing(4.0)
         .padding([4, 8])
         .draw_path(menu::DrawPath::Backdrop)
+        .close_on_item_click_global(true)
+        .close_on_background_click_global(true)
         .style(|theme: &Theme, status: Status| {
             let palette = theme.extended_palette();
             menu::Style {
@@ -202,6 +229,109 @@ impl MenuBarState {
         });
 
         mb.into()
+    }
+
+    /// Build the BitFont editor menu bar (reduced: File, Edit, Help)
+    fn view_bitfont(&self, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'_, Message> {
+        let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
+
+        let mb = menu_bar!(
+            // ═══════════════════════════════════════════════════════════════════
+            // File menu (reduced for BitFont)
+            // ═══════════════════════════════════════════════════════════════════
+            (
+                menu_button(fl!("menu-file")),
+                menu_template(menu_items!(
+                    (menu_item(&cmd::FILE_NEW, Message::NewFile)),
+                    (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
+                    (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
+                    (separator()),
+                    (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
+                    (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
+                    (separator()),
+                    (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
+                    (separator()),
+                    (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))
+                ))
+            ),
+            // ═══════════════════════════════════════════════════════════════════
+            // Edit menu (BitFont specific)
+            // ═══════════════════════════════════════════════════════════════════
+            (
+                menu_button(fl!("menu-edit")),
+                menu_template(menu_items!(
+                    (menu_item_undo(&cmd::EDIT_UNDO, Message::Undo, undo_info.undo_description.as_deref())),
+                    (menu_item_redo(&cmd::EDIT_REDO, Message::Redo, undo_info.redo_description.as_deref())),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-select-all"), "Ctrl+A", Message::BitFontSelectAll)),
+                    (menu_item_simple(fl!("menu-deselect"), "Esc", Message::BitFontClearSelection)),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-clear-glyph"), "E", Message::BitFontClearGlyph)),
+                    (menu_item_simple(fl!("menu-fill-glyph"), "F", Message::BitFontFillSelection)),
+                    (menu_item_simple(fl!("menu-inverse-glyph"), "I", Message::BitFontInverseGlyph)),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-flip-x"), "X", Message::BitFontFlipX)),
+                    (menu_item_simple(fl!("menu-flip-y"), "Y", Message::BitFontFlipY))
+                ))
+            ),
+            // ═══════════════════════════════════════════════════════════════════
+            // Tools menu (BitFont specific)
+            // ═══════════════════════════════════════════════════════════════════
+            (
+                menu_button(fl!("menu-tools")),
+                menu_template(menu_items!(
+                    (menu_item_simple(fl!("menu-tool-click"), "C", Message::BitFontSelectToolClick)),
+                    (menu_item_simple(fl!("menu-tool-select"), "S", Message::BitFontSelectToolSelect)),
+                    (menu_item_simple(fl!("menu-tool-rectangle"), "R", Message::BitFontSelectToolRect)),
+                    (menu_item_simple(fl!("menu-tool-fill"), "G", Message::BitFontSelectToolFill)),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-next-char"), "+", Message::BitFontNextChar)),
+                    (menu_item_simple(fl!("menu-prev-char"), "-", Message::BitFontPrevChar))
+                ))
+            ),
+            // ═══════════════════════════════════════════════════════════════════
+            // Help menu
+            // ═══════════════════════════════════════════════════════════════════
+            (
+                menu_button(fl!("menu-help")),
+                menu_template(menu_items!(
+                    (menu_item_simple(fl!("menu-discuss"), "", Message::OpenDiscussions)),
+                    (menu_item_simple(fl!("menu-report-bug"), "", Message::ReportBug)),
+                    (menu_item_simple(fl!("menu-open_log_file"), "", Message::OpenLogFile)),
+                    (separator()),
+                    (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
+                ))
+            )
+        )
+        .spacing(4.0)
+        .padding([4, 8])
+        .draw_path(menu::DrawPath::Backdrop)
+        .close_on_item_click_global(true)
+        .close_on_background_click_global(true)
+        .style(|theme: &Theme, status: Status| {
+            let palette = theme.extended_palette();
+            menu::Style {
+                path_border: Border {
+                    radius: Radius::new(6.0),
+                    ..Default::default()
+                },
+                path: Color::from_rgb(
+                    palette.primary.weak.color.r * 1.2,
+                    palette.primary.weak.color.g * 1.2,
+                    palette.primary.weak.color.b * 1.2,
+                )
+                .into(),
+                ..primary(theme, status)
+            }
+        });
+
+        mb.into()
+    }
+
+    /// Build the CharFont (TDF) editor menu bar (placeholder - same as BitFont for now)
+    fn view_charfont(&self, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'_, Message> {
+        // For now, use the same reduced menu as BitFont
+        self.view_bitfont(recent_files, undo_info)
     }
 }
 
@@ -237,6 +367,72 @@ fn menu_item(cmd: &icy_engine_gui::commands::CommandDef, msg: Message) -> Elemen
     .style(menu_item_style)
     .on_press(msg)
     .into()
+}
+
+/// Create an Undo menu item with optional operation description
+fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, description: Option<&str>) -> Element<'static, Message> {
+    let base_label = if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() };
+    let label = match description {
+        Some(desc) => format!("{} {}", base_label, desc),
+        None => base_label,
+    };
+    let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
+    let is_enabled = description.is_some();
+
+    let btn = button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text(hotkey).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style });
+
+    if is_enabled {
+        btn.on_press(msg).into()
+    } else {
+        btn.into()
+    }
+}
+
+/// Create a Redo menu item with optional operation description
+fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, description: Option<&str>) -> Element<'static, Message> {
+    let base_label = if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() };
+    let label = match description {
+        Some(desc) => format!("{} {}", base_label, desc),
+        None => base_label,
+    };
+    let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
+    let is_enabled = description.is_some();
+
+    let btn = button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text(hotkey).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style });
+
+    if is_enabled {
+        btn.on_press(msg).into()
+    } else {
+        btn.into()
+    }
 }
 
 /// Create a menu item with direct label and hotkey (without CommandDef)
@@ -282,6 +478,72 @@ fn separator() -> quad::Quad {
     }
 }
 
+/// Create a submenu item (with arrow indicator)
+fn menu_item_submenu(label: String) -> Element<'static, Message> {
+    button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text("▶").size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(menu_item_style)
+    .on_press(Message::Tick) // Dummy - submenu handles interaction
+    .into()
+}
+
+/// Build the recent files submenu
+fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Menu<'static, Message, Theme, iced::Renderer> {
+    let files = recent_files.files();
+    
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    
+    if files.is_empty() {
+        // Show "No recent files" when empty
+        items.push(iced_aw::menu::Item::new(
+            button(text(fl!("menu-no_recent_files")).size(14))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(menu_item_disabled_style)
+        ));
+    } else {
+        // Show files in reverse order (most recent first)
+        for file in files.iter().rev() {
+            let file_name = file.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| file.display().to_string());
+            let path = file.clone();
+            
+            items.push(iced_aw::menu::Item::new(
+                button(text(file_name).size(14))
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .style(menu_item_style)
+                    .on_press(Message::OpenRecentFile(path))
+            ));
+        }
+        
+        // Add separator and clear option
+        items.push(iced_aw::menu::Item::new(separator()));
+        items.push(iced_aw::menu::Item::new(
+            button(text(fl!("menu-clear_recent_files")).size(14))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(menu_item_style)
+                .on_press(Message::ClearRecentFiles)
+        ));
+    }
+    
+    Menu::new(items).width(350.0).offset(0.0)
+}
+
 // ============================================================================
 // Styles
 // ============================================================================
@@ -324,5 +586,16 @@ fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
         )),
         button::Status::Pressed => base.with_background(palette.primary.weak.color),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
+    }
+}
+
+fn menu_item_disabled_style(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+
+    button::Style {
+        text_color: palette.background.base.text.scale_alpha(0.5),
+        border: Border::default().rounded(6.0),
+        background: Some(Color::TRANSPARENT.into()),
+        ..Default::default()
     }
 }

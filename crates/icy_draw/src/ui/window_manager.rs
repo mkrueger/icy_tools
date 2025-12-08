@@ -12,7 +12,7 @@ use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, wi
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
 
-use super::{MainWindow, commands::create_draw_commands};
+use super::{MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
 use crate::load_window_icon;
 
 // Generate the WindowCommands struct with handle() method
@@ -24,12 +24,15 @@ command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id 
 
 /// Shared options between all windows
 pub struct SharedOptions {
-    // TODO: Add shared settings like theme, recent files, etc.
+    /// Most recently used files
+    pub recent_files: MostRecentlyUsedFiles,
 }
 
 impl SharedOptions {
     pub fn load() -> Self {
-        Self {}
+        Self {
+            recent_files: MostRecentlyUsedFiles::load(),
+        }
     }
 }
 

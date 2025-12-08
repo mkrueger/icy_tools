@@ -130,6 +130,23 @@ menu-plugins=Erweiterungen
 menu-open_plugin_directory=Erweiterungsverzeichnis öffnen…
 menu-upgrade_version=Neue Version { $version }
 
+# BitFont Editor Menü
+menu-clear-glyph=Zeichen löschen
+menu-inverse-glyph=Zeichen invertieren
+menu-fill-glyph=Zeichen füllen
+menu-flip-x=Horizontal spiegeln
+menu-flip-y=Vertikal spiegeln
+menu-deselect=Auswahl aufheben
+
+# BitFont Werkzeuge Menü
+menu-tools=Werkzeuge
+menu-tool-click=Klick-Werkzeug
+menu-tool-select=Auswahl-Werkzeug
+menu-tool-rectangle=Rechteck-Werkzeug
+menu-tool-fill=Füll-Werkzeug
+menu-next-char=Nächstes Zeichen
+menu-prev-char=Vorheriges Zeichen
+
 tool-fg=Fg
 tool-bg=Bg
 tool-solid=Solid

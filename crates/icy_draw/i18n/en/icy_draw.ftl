@@ -7,6 +7,8 @@ menu-new=New…
 menu-open=Open…
 menu-open_recent=Open Recent
 menu-open_recent_clear=Clear
+menu-no_recent_files=No Recent Files
+menu-clear_recent_files=Clear Recent Files
 menu-save=Save
 menu-edit-sauce=Edit Sauce Info…
 menu-9px-font=9px Font
@@ -125,6 +127,23 @@ menu-plugins=Plugins
 menu-open_plugin_directory=Open Plugin Directory…
 
 menu-upgrade_version=Upgrade to { $version }
+
+# BitFont Editor menu items
+menu-clear-glyph=Clear Glyph
+menu-inverse-glyph=Inverse Glyph
+menu-fill-glyph=Fill Glyph
+menu-flip-x=Flip Horizontal
+menu-flip-y=Flip Vertical
+menu-deselect=Deselect
+
+# BitFont Tools menu
+menu-tools=Tools
+menu-tool-click=Click Tool
+menu-tool-select=Selection Tool
+menu-tool-rectangle=Rectangle Tool
+menu-tool-fill=Fill Tool
+menu-next-char=Next Character
+menu-prev-char=Previous Character
 
 tool-fg=Fg
 tool-bg=Bg

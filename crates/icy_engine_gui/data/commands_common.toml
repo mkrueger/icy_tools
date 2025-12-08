@@ -14,9 +14,27 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [[commands]]
+id = "file.new"
+hotkey = ["Ctrl+N"]
+hotkey_mac = ["Cmd+N"]
+category = "file"
+
+[[commands]]
 id = "file.open"
 hotkey = ["Ctrl+O"]
 hotkey_mac = ["Cmd+O"]
+category = "file"
+
+[[commands]]
+id = "file.save"
+hotkey = ["Ctrl+S"]
+hotkey_mac = ["Cmd+S"]
+category = "file"
+
+[[commands]]
+id = "file.save_as"
+hotkey = ["Ctrl+Shift+S"]
+hotkey_mac = ["Cmd+Shift+S"]
 category = "file"
 
 [[commands]]
@@ -36,6 +54,24 @@ category = "file"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [[commands]]
+id = "edit.undo"
+hotkey = ["Ctrl+Z"]
+hotkey_mac = ["Cmd+Z"]
+category = "edit"
+
+[[commands]]
+id = "edit.redo"
+hotkey = ["Ctrl+Y", "Ctrl+Shift+Z"]
+hotkey_mac = ["Cmd+Shift+Z"]
+category = "edit"
+
+[[commands]]
+id = "edit.cut"
+hotkey = ["Ctrl+X"]
+hotkey_mac = ["Cmd+X"]
+category = "edit"
+
+[[commands]]
 id = "edit.copy"
 hotkey = ["Ctrl+C"]
 hotkey_mac = ["Cmd+C"]
@@ -45,6 +81,12 @@ category = "edit"
 id = "edit.paste"
 hotkey = ["Ctrl+V"]
 hotkey_mac = ["Cmd+V"]
+category = "edit"
+
+[[commands]]
+id = "edit.delete"
+hotkey = ["Delete"]
+hotkey_mac = ["Delete", "Backspace"]
 category = "edit"
 
 [[commands]]
