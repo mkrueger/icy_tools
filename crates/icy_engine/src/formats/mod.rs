@@ -4,6 +4,9 @@ use std::path::Path;
 
 pub use ansi::*;
 
+mod bitfont_format;
+pub use bitfont_format::*;
+
 mod file_format;
 pub use file_format::*;
 

@@ -28,7 +28,7 @@ use unarc_rs::unified::ArchiveFormat;
 
 use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer};
 
-use super::{FORMATS, ImageFormat, LoadData, OutputFormat, SaveOptions};
+use super::{BitFontFormat, FORMATS, ImageFormat, LoadData, OutputFormat, SaveOptions};
 
 /// Represents all supported file formats for ANSI art and related files.
 ///
@@ -86,6 +86,10 @@ pub enum FileFormat {
     /// IcyDraw animation format (.icyanim)
     IcyAnim,
 
+    // Font formats
+    /// Bitmap font format (.yaff, .psf, .fXX)
+    BitFont(BitFontFormat),
+
     // Image formats (for recognition, not native ANSI formats)
     /// Image format (PNG, GIF, JPEG, BMP)
     Image(ImageFormat),
@@ -120,6 +124,22 @@ impl FileFormat {
         FileFormat::TundraDraw,
         FileFormat::Artworx,
         FileFormat::IcyAnim,
+        FileFormat::BitFont(BitFontFormat::Yaff),
+        FileFormat::BitFont(BitFontFormat::Psf),
+        FileFormat::BitFont(BitFontFormat::Raw(4)),
+        FileFormat::BitFont(BitFontFormat::Raw(5)),
+        FileFormat::BitFont(BitFontFormat::Raw(6)),
+        FileFormat::BitFont(BitFontFormat::Raw(7)),
+        FileFormat::BitFont(BitFontFormat::Raw(8)),
+        FileFormat::BitFont(BitFontFormat::Raw(9)),
+        FileFormat::BitFont(BitFontFormat::Raw(10)),
+        FileFormat::BitFont(BitFontFormat::Raw(12)),
+        FileFormat::BitFont(BitFontFormat::Raw(14)),
+        FileFormat::BitFont(BitFontFormat::Raw(16)),
+        FileFormat::BitFont(BitFontFormat::Raw(19)),
+        FileFormat::BitFont(BitFontFormat::Raw(20)),
+        FileFormat::BitFont(BitFontFormat::Raw(24)),
+        FileFormat::BitFont(BitFontFormat::Raw(32)),
         FileFormat::Image(ImageFormat::Png),
         FileFormat::Image(ImageFormat::Gif),
         FileFormat::Image(ImageFormat::Jpeg),
@@ -266,8 +286,14 @@ impl FileFormat {
             "bmp" => Some(FileFormat::Image(ImageFormat::Bmp)),
             "six" | "sixel" => Some(FileFormat::Image(ImageFormat::Sixel)),
 
-            // Try archive formats
-            _ => ArchiveFormat::from_extension(&ext_lower).map(FileFormat::Archive),
+            // Try BitFont formats, then archive formats
+            _ => {
+                if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
+                    Some(FileFormat::BitFont(font_fmt))
+                } else {
+                    ArchiveFormat::from_extension(&ext_lower).map(FileFormat::Archive)
+                }
+            }
         }
     }
 
@@ -319,6 +345,25 @@ impl FileFormat {
             FileFormat::TundraDraw => "tnd",
             FileFormat::Artworx => "adf",
             FileFormat::IcyAnim => "icyanim",
+            FileFormat::BitFont(font_fmt) => match font_fmt {
+                BitFontFormat::Yaff => "yaff",
+                BitFontFormat::Psf => "psf",
+                BitFontFormat::Raw(4) => "f04",
+                BitFontFormat::Raw(5) => "f05",
+                BitFontFormat::Raw(6) => "f06",
+                BitFontFormat::Raw(7) => "f07",
+                BitFontFormat::Raw(8) => "f08",
+                BitFontFormat::Raw(9) => "f09",
+                BitFontFormat::Raw(10) => "f10",
+                BitFontFormat::Raw(12) => "f12",
+                BitFontFormat::Raw(14) => "f14",
+                BitFontFormat::Raw(16) => "f16",
+                BitFontFormat::Raw(19) => "f19",
+                BitFontFormat::Raw(20) => "f20",
+                BitFontFormat::Raw(24) => "f24",
+                BitFontFormat::Raw(32) => "f32",
+                BitFontFormat::Raw(_) => "f16", // fallback to most common
+            },
             FileFormat::Image(img) => img.extension(),
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Zip => "zip",
@@ -365,6 +410,9 @@ impl FileFormat {
             FileFormat::TundraDraw => &["tnd"],
             FileFormat::Artworx => &["adf"],
             FileFormat::IcyAnim => &["icyanim"],
+            FileFormat::BitFont(BitFontFormat::Yaff) => &["yaff"],
+            FileFormat::BitFont(BitFontFormat::Psf) => &["psf"],
+            FileFormat::BitFont(BitFontFormat::Raw(_)) => &["f04", "f05", "f06", "f07", "f08", "f09", "f10", "f12", "f14", "f16", "f19", "f20", "f24", "f32"],
             FileFormat::Image(ImageFormat::Png) => &["png"],
             FileFormat::Image(ImageFormat::Gif) => &["gif"],
             FileFormat::Image(ImageFormat::Jpeg) => &["jpg", "jpeg"],
@@ -410,6 +458,7 @@ impl FileFormat {
             FileFormat::TundraDraw => "TundraDraw",
             FileFormat::Artworx => "Artworx",
             FileFormat::IcyAnim => "IcyDraw Animation",
+            FileFormat::BitFont(font_fmt) => font_fmt.name(),
             FileFormat::Image(img) => img.name(),
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Zip => "ZIP Archive",
@@ -438,6 +487,11 @@ impl FileFormat {
         matches!(self, FileFormat::Archive(_))
     }
 
+    /// Check if this is a bitmap font format.
+    pub fn is_bitfont(&self) -> bool {
+        matches!(self, FileFormat::BitFont(_))
+    }
+
     /// Get the ArchiveFormat if this is an archive, None otherwise.
     pub fn as_archive(&self) -> Option<ArchiveFormat> {
         match self {
@@ -450,6 +504,14 @@ impl FileFormat {
     pub fn as_image(&self) -> Option<ImageFormat> {
         match self {
             FileFormat::Image(img) => Some(*img),
+            _ => None,
+        }
+    }
+
+    /// Get the BitFontFormat if this is a bitmap font, None otherwise.
+    pub fn as_bitfont(&self) -> Option<BitFontFormat> {
+        match self {
+            FileFormat::BitFont(font) => Some(*font),
             _ => None,
         }
     }
@@ -542,6 +604,9 @@ impl FileFormat {
                 BufferType::Atascii,
                 BufferType::Viewdata,
             ],
+
+            // BitFont formats don't contain text buffer content
+            FileFormat::BitFont(_) => &[],
 
             // Archive formats don't contain displayable content directly
             FileFormat::Archive(_) => &[],
@@ -642,6 +707,7 @@ impl FileFormat {
             | FileFormat::TundraDraw
             | FileFormat::Artworx
             | FileFormat::IcyAnim
+            | FileFormat::BitFont(_)
             | FileFormat::Image(_)
             | FileFormat::Archive(_) => None,
         }
@@ -674,6 +740,7 @@ impl FileFormat {
             FileFormat::SkyPix => ScreenMode::SkyPix,
             FileFormat::Vt52 => ScreenMode::AtariST(crate::TerminalResolution::Medium, false),
             FileFormat::Igs => ScreenMode::AtariST(crate::TerminalResolution::Medium, true),
+            FileFormat::BitFont(_) => ScreenMode::Vga(80, 25), // Default for fonts
             FileFormat::Image(_) => ScreenMode::Vga(80, 25),   // Default for images
             FileFormat::Archive(_) => ScreenMode::Vga(80, 25), // Default for archives
         }
@@ -725,6 +792,7 @@ impl FileFormat {
             | FileFormat::TundraDraw
             | FileFormat::Artworx
             | FileFormat::IcyAnim
+            | FileFormat::BitFont(_)
             | FileFormat::Image(_)
             | FileFormat::Archive(_) => None,
         }

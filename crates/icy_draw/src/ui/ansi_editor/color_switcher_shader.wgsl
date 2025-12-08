@@ -225,7 +225,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                         bg_base_min.y)) + 1.0;
     let def_fg_max = def_fg_min + def_bg_size;
     
-    let def_bg_min = floor(def_fg_min + shadow_margin);
+    let def_bg_min = floor(def_fg_min + shadow_margin / 2.0);
     let def_bg_max = def_bg_min + def_bg_size;
     
     let def_bg_rect = draw_small_rect(uv, def_bg_min, def_bg_max, vec3<f32>(0.0, 0.0, 0.0));

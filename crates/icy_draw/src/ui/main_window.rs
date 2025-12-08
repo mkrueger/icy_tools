@@ -11,7 +11,7 @@ use iced::{
     Element, Event, Length, Task, Theme,
     widget::{column, container, row, rule, text},
 };
-use icy_engine::formats::FileFormat;
+use icy_engine::formats::{BitFontFormat, FileFormat};
 use icy_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogType};
 
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
@@ -110,33 +110,142 @@ impl ModeState {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub enum Message {
+    // ═══════════════════════════════════════════════════════════════════════════
     // File operations
+    // ═══════════════════════════════════════════════════════════════════════════
     NewFile,
     OpenFile,
+    OpenRecentFile(PathBuf),
+    ClearRecentFiles,
     FileOpened(PathBuf),
     FileLoadError(String, String), // (title, error_message)
     SaveFile,
     SaveFileAs,
+    ExportFile,
     CloseFile,
+    ShowSettings,
 
+    // ═══════════════════════════════════════════════════════════════════════════
     // Dialog
+    // ═══════════════════════════════════════════════════════════════════════════
     CloseDialog,
 
+    // ═══════════════════════════════════════════════════════════════════════════
     // Edit operations
+    // ═══════════════════════════════════════════════════════════════════════════
     Undo,
     Redo,
     Cut,
     Copy,
     Paste,
+    PasteAsNewImage,
+    PasteAsBrush,
     SelectAll,
+    Deselect,
+    InverseSelection,
+    DeleteSelection,
 
+    // Edit - Area operations
+    JustifyLineLeft,
+    JustifyLineRight,
+    JustifyLineCenter,
+    InsertRow,
+    DeleteRow,
+    InsertColumn,
+    DeleteColumn,
+    EraseRow,
+    EraseRowToStart,
+    EraseRowToEnd,
+    EraseColumn,
+    EraseColumnToStart,
+    EraseColumnToEnd,
+    ScrollAreaUp,
+    ScrollAreaDown,
+    ScrollAreaLeft,
+    ScrollAreaRight,
+
+    // Edit - Transform
+    FlipX,
+    FlipY,
+    Crop,
+    JustifyCenter,
+    JustifyLeft,
+    JustifyRight,
+
+    // Edit - Document
+    ToggleMirrorMode,
+    EditSauce,
+    ToggleLGAFont,
+    ToggleAspectRatio,
+    SetCanvasSize,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Selection
+    // ═══════════════════════════════════════════════════════════════════════════
+    // (handled by SelectAll, Deselect, InverseSelection above)
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Colors
+    // ═══════════════════════════════════════════════════════════════════════════
+    SwitchIceMode(icy_engine::IceMode),
+    SwitchPaletteMode(icy_engine::PaletteMode),
+    SelectPalette,
+    OpenPalettesDirectory,
+    NextFgColor,
+    PrevFgColor,
+    NextBgColor,
+    PrevBgColor,
+    PickAttributeUnderCaret,
+    ToggleColor,
+    SwitchToDefaultColor,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Fonts
+    // ═══════════════════════════════════════════════════════════════════════════
+    SwitchFontMode(icy_engine::FontMode),
+    OpenFontSelector,
+    AddFonts,
+    OpenFontManager,
+    OpenFontDirectory,
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // View operations
+    // ═══════════════════════════════════════════════════════════════════════════
     ZoomIn,
     ZoomOut,
     ZoomReset,
+    SetZoom(f32),
+    ToggleFitWidth,
+    SetGuide(i32, i32),
+    ToggleGuides,
+    SetRaster(i32, i32),
+    ToggleRaster,
+    ToggleLayerBorders,
+    ToggleLineNumbers,
+    ToggleLeftPanel,
     ToggleRightPanel,
+    ToggleFullscreen,
+    SetReferenceImage,
+    ToggleReferenceImage,
+    ClearReferenceImage,
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Plugins
+    // ═══════════════════════════════════════════════════════════════════════════
+    RunPlugin(usize),
+    OpenPluginDirectory,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Help
+    // ═══════════════════════════════════════════════════════════════════════════
+    OpenDiscussions,
+    ReportBug,
+    OpenLogFile,
+    ShowAbout,
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // Mode switching
+    // ═══════════════════════════════════════════════════════════════════════════
     SwitchMode(EditMode),
 
     // ANSI Editor messages
@@ -184,6 +293,9 @@ pub struct MainWindow {
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
 
+    /// Show left panel (tools, colors)
+    show_left_panel: bool,
+
     /// Show right panel (layers, minimap)
     show_right_panel: bool,
 
@@ -196,16 +308,22 @@ impl MainWindow {
         let (mode_state, error_dialog) = if let Some(ref p) = path {
             // Determine mode based on file extension
             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-            match ext.to_lowercase().as_str() {
-                "psf" | "f16" | "f14" | "f08" => (ModeState::BitFont(BitFontEditorState::new()), None),
-                "tdf" => (ModeState::CharFont(CharFontEditorState::new()), None),
-                _ => match AnsiEditor::with_file(p.clone(), options.clone()) {
+
+            if BitFontFormat::is_bitfont_extension(ext) {
+                // BitFont format detected (yaff, psf, fXX)
+                (ModeState::BitFont(BitFontEditorState::new()), None)
+            } else if ext.eq_ignore_ascii_case("tdf") {
+                // TDF CharFont format
+                (ModeState::CharFont(CharFontEditorState::new()), None)
+            } else {
+                // Try as ANSI/ASCII art file
+                match AnsiEditor::with_file(p.clone(), options.clone()) {
                     Ok(editor) => (ModeState::Ansi(editor), None),
                     Err(e) => {
                         let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
                         (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
                     }
-                },
+                }
             }
         } else {
             (ModeState::Ansi(AnsiEditor::new(options.clone())), None)
@@ -216,6 +334,7 @@ impl MainWindow {
             mode_state,
             options,
             menu_state: MenuBarState::new(),
+            show_left_panel: true,
             show_right_panel: true,
             error_dialog,
         }
@@ -400,6 +519,134 @@ impl MainWindow {
                     Task::none()
                 }
             }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // File operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::OpenRecentFile(_path) => Task::none(),
+            Message::ClearRecentFiles => Task::none(),
+            Message::ExportFile => Task::none(),
+            Message::ShowSettings => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Edit operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::PasteAsNewImage => Task::none(),
+            Message::PasteAsBrush => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Selection operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::Deselect => Task::none(),
+            Message::InverseSelection => Task::none(),
+            Message::DeleteSelection => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Area operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::JustifyLineCenter => Task::none(),
+            Message::JustifyLineLeft => Task::none(),
+            Message::JustifyLineRight => Task::none(),
+            Message::InsertRow => Task::none(),
+            Message::DeleteRow => Task::none(),
+            Message::InsertColumn => Task::none(),
+            Message::DeleteColumn => Task::none(),
+            Message::EraseRow => Task::none(),
+            Message::EraseRowToStart => Task::none(),
+            Message::EraseRowToEnd => Task::none(),
+            Message::EraseColumn => Task::none(),
+            Message::EraseColumnToStart => Task::none(),
+            Message::EraseColumnToEnd => Task::none(),
+            Message::ScrollAreaUp => Task::none(),
+            Message::ScrollAreaDown => Task::none(),
+            Message::ScrollAreaLeft => Task::none(),
+            Message::ScrollAreaRight => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Transform operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::FlipX => Task::none(),
+            Message::FlipY => Task::none(),
+            Message::Crop => Task::none(),
+            Message::JustifyCenter => Task::none(),
+            Message::JustifyLeft => Task::none(),
+            Message::JustifyRight => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Document settings (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ToggleMirrorMode => Task::none(),
+            Message::EditSauce => Task::none(),
+            Message::ToggleLGAFont => Task::none(),
+            Message::ToggleAspectRatio => Task::none(),
+            Message::SetCanvasSize => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Color operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::SwitchIceMode(_mode) => Task::none(),
+            Message::SwitchPaletteMode(_mode) => Task::none(),
+            Message::SelectPalette => Task::none(),
+            Message::OpenPalettesDirectory => Task::none(),
+            Message::NextFgColor => Task::none(),
+            Message::PrevFgColor => Task::none(),
+            Message::NextBgColor => Task::none(),
+            Message::PrevBgColor => Task::none(),
+            Message::PickAttributeUnderCaret => Task::none(),
+            Message::ToggleColor => Task::none(),
+            Message::SwitchToDefaultColor => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Font operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::SwitchFontMode(_mode) => Task::none(),
+            Message::OpenFontSelector => Task::none(),
+            Message::AddFonts => Task::none(),
+            Message::OpenFontManager => Task::none(),
+            Message::OpenFontDirectory => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // View operations (TODO: implement for some)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::SetZoom(zoom) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.canvas.set_zoom(zoom);
+                }
+                Task::none()
+            }
+            Message::SetGuide(_x, _y) => Task::none(),
+            Message::SetRaster(_x, _y) => Task::none(),
+            Message::ToggleGuides => Task::none(),
+            Message::ToggleRaster => Task::none(),
+            Message::ToggleLayerBorders => Task::none(),
+            Message::ToggleLineNumbers => Task::none(),
+            Message::ToggleLeftPanel => {
+                self.show_left_panel = !self.show_left_panel;
+                Task::none()
+            }
+            Message::ToggleFullscreen => Task::none(),
+            Message::SetReferenceImage => Task::none(),
+            Message::ToggleReferenceImage => Task::none(),
+            Message::ClearReferenceImage => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Plugin operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::RunPlugin(_id) => Task::none(),
+            Message::OpenPluginDirectory => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Help operations (TODO: implement)
+            // ═══════════════════════════════════════════════════════════════════
+            Message::OpenDiscussions => Task::none(),
+            Message::ReportBug => Task::none(),
+            Message::OpenLogFile => Task::none(),
+            Message::ShowAbout => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Other view operations
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ToggleFitWidth => Task::none(),
         }
     }
 
