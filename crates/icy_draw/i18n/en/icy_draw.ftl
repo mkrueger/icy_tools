@@ -19,6 +19,10 @@ menu-save-as=Save As…
 menu-export=Export…
 menu-edit-font-outline=Font Outline…
 menu-show_settings=Settings…
+menu-set-font-size=Set Font Size…
+
+font-size-width=Width:
+font-size-height=Height:
 
 menu-edit=Edit
 menu-undo=Undo
@@ -135,6 +139,45 @@ menu-fill-glyph=Fill Glyph
 menu-flip-x=Flip Horizontal
 menu-flip-y=Flip Vertical
 menu-deselect=Deselect
+
+# BitFont Editor Commands
+cmd-bitfont-clear-action = Clear
+cmd-bitfont-clear-desc = Clear the current glyph
+cmd-bitfont-clear-menu = Clear
+
+cmd-bitfont-fill-action = Fill
+cmd-bitfont-fill-desc = Fill the current selection
+cmd-bitfont-fill-menu = Fill
+
+cmd-bitfont-inverse-action = Inverse
+cmd-bitfont-inverse-desc = Inverse the current glyph
+cmd-bitfont-inverse-menu = Inverse
+
+cmd-bitfont-flip_x-action = Flip X
+cmd-bitfont-flip_x-desc = Flip horizontally
+cmd-bitfont-flip_x-menu = Flip Horizontal
+
+cmd-bitfont-flip_y-action = Flip Y
+cmd-bitfont-flip_y-desc = Flip vertically
+cmd-bitfont-flip_y-menu = Flip Vertical
+
+cmd-bitfont-toggle_letter_spacing-action = 8/9-Dot Mode
+cmd-bitfont-toggle_letter_spacing-desc = Toggle 9-dot cell mode (VGA letter spacing)
+cmd-bitfont-toggle_letter_spacing-menu = 8/9-Dot Cell Mode
+
+cmd-bitfont-swap_chars-action = Swap Characters
+cmd-bitfont-swap_chars-desc = Swap selected character with character at cursor
+cmd-bitfont-swap_chars-menu = Swap Characters
+
+cmd-bitfont-duplicate_line-action = Duplicate Line
+cmd-bitfont-duplicate_line-desc = Duplicate current line in all glyphs
+cmd-bitfont-duplicate_line-menu = Duplicate Line
+
+cmd-bitfont-show_preview-action = Show Preview
+cmd-bitfont-show_preview-desc = Show font preview screen
+cmd-bitfont-show_preview-menu = Show Preview
+
+cmd-category-bitfont = BitFont
 
 # BitFont Tools menu
 menu-tools=Tools
@@ -365,6 +408,12 @@ undo-bitfont-inverse=Inverse
 undo-bitfont-clear=Clear
 undo-bitfont-edit=Edit
 undo-bitfont-resize=Resize
+undo-bitfont-insert-line=Insert line
+undo-bitfont-delete-line=Delete line
+undo-bitfont-insert-column=Insert column
+undo-bitfont-delete-column=Delete column
+undo-bitfont-swap-chars=Swap characters
+undo-bitfont-duplicate-line=Duplicate line
 undo-delete=Delete
 undo-backspace=Backspace
 

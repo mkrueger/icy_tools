@@ -1,3 +1,5 @@
+use iced::{Color, Theme};
+
 pub struct IcyTheme {
     pub margin: f32,
     pub padding: f32,
@@ -21,4 +23,10 @@ impl IcyTheme {
             title_font_size: 20.0,
         }
     }
+}
+
+/// Get the main area background color for content areas (preview, editor canvas, etc.)
+/// This provides visual separation from sidebars and toolbars
+pub fn main_area_background(theme: &Theme) -> Color {
+    theme.extended_palette().background.weaker.color
 }

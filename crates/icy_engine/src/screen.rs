@@ -385,6 +385,13 @@ pub trait EditableScreen: Screen {
         }
     }
 
+    fn print_str(&mut self, s: &str) {
+        for c in s.chars() {
+            let ch = AttributedChar::new(c, self.caret().attribute);
+            self.print_char(ch);
+        }
+    }
+
     // Scrolling
     fn scroll_up(&mut self);
     fn scroll_down(&mut self);

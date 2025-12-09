@@ -166,3 +166,53 @@ id = "view.guides"
 hotkey = ["Ctrl+;"]
 hotkey_mac = ["Cmd+;"]
 category = "view"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BitFont Editor
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "bitfont.clear"
+hotkey = ["Delete"]
+hotkey_mac = ["Backspace"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.fill"
+hotkey = ["F"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.inverse"
+hotkey = ["I"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.flip_x"
+hotkey = ["X"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.flip_y"
+hotkey = ["Y"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.toggle_letter_spacing"
+hotkey = ["F8"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.swap_chars"
+hotkey = ["W"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.duplicate_line"
+hotkey = ["F7"]
+category = "bitfont"
+
+[[commands]]
+id = "bitfont.show_preview"
+hotkey = ["F10"]
+category = "bitfont"

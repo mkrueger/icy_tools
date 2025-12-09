@@ -17,6 +17,10 @@ menu-save-as=Speichern unter…
 menu-export=Exportieren…
 menu-edit-font-outline=Font Outline…
 menu-show_settings=Einstellungen…
+menu-set-font-size=Schriftgröße ändern…
+
+font-size-width=Breite:
+font-size-height=Höhe:
 
 menu-edit=Bearbeiten
 menu-undo=Rückgängig
@@ -137,6 +141,45 @@ menu-fill-glyph=Zeichen füllen
 menu-flip-x=Horizontal spiegeln
 menu-flip-y=Vertikal spiegeln
 menu-deselect=Auswahl aufheben
+
+# BitFont Editor Commands
+cmd-bitfont-clear-action = Löschen
+cmd-bitfont-clear-desc = Aktuelles Zeichen löschen
+cmd-bitfont-clear-menu = Löschen
+
+cmd-bitfont-fill-action = Füllen
+cmd-bitfont-fill-desc = Aktuelle Auswahl füllen
+cmd-bitfont-fill-menu = Füllen
+
+cmd-bitfont-inverse-action = Invertieren
+cmd-bitfont-inverse-desc = Aktuelles Zeichen invertieren
+cmd-bitfont-inverse-menu = Invertieren
+
+cmd-bitfont-flip_x-action = X spiegeln
+cmd-bitfont-flip_x-desc = Horizontal spiegeln
+cmd-bitfont-flip_x-menu = Horizontal spiegeln
+
+cmd-bitfont-flip_y-action = Y spiegeln
+cmd-bitfont-flip_y-desc = Vertikal spiegeln
+cmd-bitfont-flip_y-menu = Vertikal spiegeln
+
+cmd-bitfont-toggle_letter_spacing-action = 8/9-Punkt Modus
+cmd-bitfont-toggle_letter_spacing-desc = 9-Punkt Zellenmodus umschalten (VGA Zeichenabstand)
+cmd-bitfont-toggle_letter_spacing-menu = 8/9-Punkt Zellenmodus
+
+cmd-bitfont-swap_chars-action = Zeichen tauschen
+cmd-bitfont-swap_chars-desc = Ausgewähltes Zeichen mit Zeichen am Cursor tauschen
+cmd-bitfont-swap_chars-menu = Zeichen tauschen
+
+cmd-bitfont-duplicate_line-action = Zeile duplizieren
+cmd-bitfont-duplicate_line-desc = Aktuelle Zeile in allen Zeichen duplizieren
+cmd-bitfont-duplicate_line-menu = Zeile duplizieren
+
+cmd-bitfont-show_preview-action = Vorschau anzeigen
+cmd-bitfont-show_preview-desc = Schriftvorschau anzeigen
+cmd-bitfont-show_preview-menu = Vorschau anzeigen
+
+cmd-category-bitfont = BitFont
 
 # BitFont Werkzeuge Menü
 menu-tools=Werkzeuge
@@ -367,6 +410,12 @@ undo-bitfont-inverse=Invertieren
 undo-bitfont-clear=Leeren
 undo-bitfont-edit=Editieren
 undo-bitfont-resize=Größe ändern
+undo-bitfont-insert-line=Zeile einfügen
+undo-bitfont-delete-line=Zeile löschen
+undo-bitfont-insert-column=Spalte einfügen
+undo-bitfont-delete-column=Spalte löschen
+undo-bitfont-swap-chars=Zeichen tauschen
+undo-bitfont-duplicate-line=Zeile duplizieren
 undo-delete=Entfernen
 undo-backspace=Rücktaste
 

@@ -276,28 +276,6 @@ macro_rules! command_handlers {
     };
 }
 
-/// Convenience macro to match a hotkey and call a handler in one step.
-///
-/// # Syntax
-/// ```ignore
-/// // With Iced Event (extracts hotkey automatically)
-/// if let Some(msg) = handle_command!(commands, &event, handler, param1, param2) {
-///     return Task::done(msg);
-/// }
-///
-/// // With Hotkey directly
-/// if let Some(msg) = handle_command!(commands, &hotkey, handler, param1, param2) {
-///     return Task::done(msg);
-/// }
-/// ```
-#[macro_export]
-macro_rules! handle_command {
-    ($commands:expr, $event_or_hotkey:expr, $handler:ident $(, $param:expr)*) => {
-        $crate::commands::try_handle_event($commands, $event_or_hotkey)
-            .and_then(|cmd_id| $handler(cmd_id $(, $param)*))
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use crate::commands::{Hotkey, cmd, create_common_commands, macros::CommandId};
@@ -354,37 +332,6 @@ mod tests {
             multi_param_handler(cmd::WINDOW_NEW.command_id(), 1, 100, 200),
             Some(TestMessage::Move(1, 100, 200))
         );
-    }
-
-    #[test]
-    fn test_handle_command_macro() {
-        let commands = create_common_commands();
-        let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
-        let window_id = 1u32;
-
-        let result = handle_command!(&commands, &hotkey, window_handler, window_id);
-        assert_eq!(result, Some(TestMessage::Open));
-    }
-
-    #[test]
-    fn test_full_workflow() {
-        let commands = create_common_commands();
-        let window_id = 42u32;
-
-        // Simulate various hotkeys
-        let test_cases = [
-            ("Ctrl+Shift+N", Some(TestMessage::Open)),
-            ("Ctrl+W", Some(TestMessage::Close(42))),
-            ("Ctrl++", Some(TestMessage::ZoomIn(42))),
-            ("Ctrl+-", Some(TestMessage::ZoomOut(42))),
-            ("Ctrl+X", None), // Unknown command
-        ];
-
-        for (hotkey_str, expected) in test_cases {
-            let hotkey = Hotkey::parse(hotkey_str).unwrap();
-            let result = handle_command!(&commands, &hotkey, window_handler, window_id);
-            assert_eq!(result, expected, "Failed for hotkey: {}", hotkey_str);
-        }
     }
 
     // Tests for command_handler! macro (struct generation)

@@ -73,3 +73,10 @@ pub const TOOL_BLEND_ANIMATION_DURATION: f32 = 0.2;
 
 /// Duration for color swap animation (seconds)
 pub const COLOR_SWAP_ANIMATION_DURATION: f32 = 0.15;
+
+// =============================================================================
+// LEFT SIDEBAR
+// =============================================================================
+
+/// Width of the left sidebar
+pub const SIDEBAR_WIDTH: f32 = 64.0;

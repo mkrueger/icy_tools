@@ -1,6 +1,8 @@
 mod editor;
 pub use editor::*;
 
+pub mod bitfont;
+
 mod layer_utils;
 pub use layer_utils::{layer_from_area, stamp_layer};
 
@@ -19,7 +21,7 @@ use rust_embed::RustEmbed;
 pub use icy_engine::{
     AddType, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, EngineError, FontMode, GraphicsType, HyperLink, IceMode, Layer,
     Line, MouseField, Palette, PaletteMode, Position, Properties, Rectangle, RenderOptions, Result, Role, SaveOptions, SavedCaretState, Screen, Selection,
-    SelectionMask, Sixel, Size, Tag, TerminalState, TextAttribute, TextBuffer, TextPane, TextScreen, clipboard, load_with_parser, overlay_mask, parsers,
+    SelectionMask, Shape, Sixel, Size, Tag, TerminalState, TextAttribute, TextBuffer, TextPane, TextScreen, clipboard, load_with_parser, overlay_mask, parsers,
 };
 
 // Re-export AnsiParser directly for convenient use

@@ -8,19 +8,22 @@ use std::{path::PathBuf, sync::Arc};
 use parking_lot::Mutex;
 
 use iced::{
-    Element, Event, Length, Task, Theme,
+    Alignment, Element, Event, Length, Task, Theme,
     widget::{column, container, row, rule, text},
 };
 use icy_engine::formats::{BitFontFormat, FileFormat};
 use icy_engine_edit::{EditState, UndoState};
-use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
 use icy_engine_gui::command_handlers;
+use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
 use icy_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogType};
 
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
-use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage};
+use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
-use super::{SharedOptions, menu::{MenuBarState, UndoInfo}};
+use super::{
+    SharedOptions,
+    menu::{MenuBarState, UndoInfo},
+};
 
 /// The editing mode of a window
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,12 +84,12 @@ impl ModeState {
         }
     }
 
-    /// Check if the current document is modified
-    pub fn is_modified(&self) -> bool {
+    /// Get the current undo stack length for dirty tracking
+    pub fn undo_stack_len(&self) -> usize {
         match self {
-            Self::Ansi(editor) => editor.is_modified,
-            Self::BitFont(editor) => editor.is_modified,
-            Self::CharFont(_) => false,
+            Self::Ansi(editor) => editor.undo_stack_len(),
+            Self::BitFont(editor) => editor.undo_stack_len(),
+            Self::CharFont(_) => 0,
         }
     }
 
@@ -94,8 +97,35 @@ impl ModeState {
     pub fn file_path(&self) -> Option<&PathBuf> {
         match self {
             Self::Ansi(editor) => editor.file_path.as_ref(),
-            Self::BitFont(editor) => editor.file_path.as_ref(),
+            Self::BitFont(editor) => editor.file_path(),
             Self::CharFont(_) => None,
+        }
+    }
+
+    /// Set the file path
+    pub fn set_file_path(&mut self, path: PathBuf) {
+        match self {
+            Self::Ansi(editor) => editor.file_path = Some(path),
+            Self::BitFont(editor) => editor.set_file_path(path),
+            Self::CharFont(_) => {}
+        }
+    }
+
+    /// Save the document to the given path
+    pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
+        match self {
+            Self::Ansi(editor) => editor.save(path),
+            Self::BitFont(editor) => editor.save(path),
+            Self::CharFont(_) => Err("CharFont save not implemented".to_string()),
+        }
+    }
+
+    /// Get the default file extension for this mode
+    pub fn default_extension(&self) -> &'static str {
+        match self {
+            Self::Ansi(_) => "ans",
+            Self::BitFont(_) => "psf",
+            Self::CharFont(_) => "tdf",
         }
     }
 }
@@ -115,6 +145,7 @@ pub enum Message {
     FileLoadError(String, String), // (title, error_message)
     SaveFile,
     SaveFileAs,
+    FileSaved(PathBuf), // Path where file was saved (from SaveAs dialog)
     ExportFile,
     CloseFile,
     ShowSettings,
@@ -248,22 +279,6 @@ pub enum Message {
     // BitFont Editor messages
     BitFontEditor(BitFontEditorMessage),
 
-    // BitFont Editor menu actions (wrappers for convenience)
-    BitFontClearGlyph,
-    BitFontInverseGlyph,
-    BitFontFlipX,
-    BitFontFlipY,
-    BitFontSelectAll,
-    BitFontClearSelection,
-    BitFontFillSelection,
-    BitFontNextChar,
-    BitFontPrevChar,
-    // Tool selection
-    BitFontSelectToolClick,
-    BitFontSelectToolSelect,
-    BitFontSelectToolRect,
-    BitFontSelectToolFill,
-
     // Internal
     Tick,
     ViewportTick,
@@ -332,6 +347,9 @@ pub struct MainWindow {
 
     /// Command set for hotkey handling
     commands: CommandSet,
+
+    /// Undo stack length at last save - for dirty tracking
+    last_save: usize,
 }
 
 impl MainWindow {
@@ -366,6 +384,8 @@ impl MainWindow {
             (ModeState::Ansi(AnsiEditor::new(options.clone())), None)
         };
 
+        let last_save = mode_state.undo_stack_len();
+
         Self {
             id,
             mode_state,
@@ -375,6 +395,7 @@ impl MainWindow {
             show_right_panel: true,
             error_dialog,
             commands: create_draw_commands(),
+            last_save,
         }
     }
 
@@ -383,14 +404,25 @@ impl MainWindow {
         self.mode_state.file_path()
     }
 
-    /// Check if the document is modified
+    /// Check if the document is modified (dirty)
+    /// Compares current undo stack length with the length at last save
     pub fn is_modified(&self) -> bool {
-        self.mode_state.is_modified()
+        self.mode_state.undo_stack_len() != self.last_save
+    }
+
+    /// Mark document as saved - updates last_save to current undo stack length
+    pub fn mark_saved(&mut self) {
+        self.last_save = self.mode_state.undo_stack_len();
     }
 
     pub fn title(&self) -> String {
         let mode = self.mode_state.mode();
-        let file_name = self.file_path().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("Untitled");
+        let file_name = self
+            .file_path()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| crate::fl!("unsaved-title"));
 
         let modified = if self.is_modified() { " •" } else { "" };
 
@@ -406,6 +438,7 @@ impl MainWindow {
             Message::NewFile => {
                 // Create new ANSI document
                 self.mode_state = ModeState::Ansi(AnsiEditor::new(self.options.clone()));
+                self.mark_saved();
                 Task::none()
             }
             Message::OpenFile => {
@@ -438,20 +471,17 @@ impl MainWindow {
             }
             Message::FileOpened(path) => {
                 // Determine file type based on extension and open appropriate editor
-                let ext = path.extension()
-                    .and_then(|e| e.to_str())
-                    .map(|s| s.to_lowercase())
-                    .unwrap_or_default();
-                
+                let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+
                 // Check if it's a bitmap font file
-                let is_font_file = ext == "psf" || ext == "yaff" || 
-                    (ext.starts_with('f') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()));
-                
+                let is_font_file = ext == "psf" || ext == "yaff" || (ext.starts_with('f') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()));
+
                 if is_font_file {
                     // Open in BitFont editor
                     match BitFontEditor::from_file(path.clone()) {
                         Ok(editor) => {
                             self.mode_state = ModeState::BitFont(editor);
+                            self.mark_saved();
                             // Add to recent files
                             self.options.lock().recent_files.add_recent_file(&path);
                         }
@@ -464,6 +494,7 @@ impl MainWindow {
                     match AnsiEditor::with_file(path.clone(), self.options.clone()) {
                         Ok(editor) => {
                             self.mode_state = ModeState::Ansi(editor);
+                            self.mark_saved();
                             // Add to recent files
                             self.options.lock().recent_files.add_recent_file(&path);
                         }
@@ -483,11 +514,66 @@ impl MainWindow {
                 Task::none()
             }
             Message::SaveFile => {
-                // TODO: Implement save
-                Task::none()
+                // If we have a file path, save directly; otherwise show SaveAs dialog
+                if let Some(path) = self.mode_state.file_path().cloned() {
+                    match self.mode_state.save(&path) {
+                        Ok(()) => {
+                            self.mark_saved();
+                        }
+                        Err(e) => {
+                            self.error_dialog = Some(("Error Saving File".to_string(), e));
+                        }
+                    }
+                    Task::none()
+                } else {
+                    // No file path - trigger SaveAs
+                    self.update(Message::SaveFileAs)
+                }
             }
             Message::SaveFileAs => {
-                // TODO: Implement save as
+                // Show save dialog
+                let default_ext = self.mode_state.default_extension();
+                let mode = self.mode_state.mode();
+
+                Task::perform(
+                    async move {
+                        let filter_name = match mode {
+                            EditMode::Ansi => "ANSI Files",
+                            EditMode::BitFont => "Font Files",
+                            EditMode::CharFont => "TDF Files",
+                        };
+
+                        rfd::AsyncFileDialog::new()
+                            .add_filter(filter_name, &[default_ext])
+                            .add_filter("All Files", &["*"])
+                            .set_title("Save File As")
+                            .save_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    |result| {
+                        if let Some(path) = result {
+                            Message::FileSaved(path)
+                        } else {
+                            Message::Tick // Cancelled
+                        }
+                    },
+                )
+            }
+            Message::FileSaved(path) => {
+                // Save to the selected path
+                match self.mode_state.save(&path) {
+                    Ok(()) => {
+                        // Update file path and mark as saved
+                        self.mode_state.set_file_path(path.clone());
+                        self.mark_saved();
+                        // Add to recent files
+                        self.options.lock().recent_files.add_recent_file(&path);
+                    }
+                    Err(e) => {
+                        self.error_dialog = Some(("Error Saving File".to_string(), e));
+                    }
+                }
                 Task::none()
             }
             Message::CloseFile => {
@@ -535,15 +621,54 @@ impl MainWindow {
                 }
             }
             Message::Cut => {
-                // TODO: Implement cut
+                match &mut self.mode_state {
+                    ModeState::BitFont(editor) => {
+                        if let Err(e) = editor.state.cut() {
+                            log::error!("Cut failed: {}", e);
+                        }
+                        editor.invalidate_caches();
+                    }
+                    ModeState::Ansi(_) => {
+                        // TODO: Implement cut for ANSI
+                    }
+                    ModeState::CharFont(_) => {
+                        // TODO: Implement cut for CharFont
+                    }
+                }
                 Task::none()
             }
             Message::Copy => {
-                // TODO: Implement copy
+                match &mut self.mode_state {
+                    ModeState::BitFont(editor) => {
+                        if let Err(e) = editor.state.copy() {
+                            log::error!("Copy failed: {}", e);
+                        }
+                        editor.invalidate_caches();
+                    }
+                    ModeState::Ansi(_) => {
+                        // TODO: Implement copy for ANSI
+                    }
+                    ModeState::CharFont(_) => {
+                        // TODO: Implement copy for CharFont
+                    }
+                }
                 Task::none()
             }
             Message::Paste => {
-                // TODO: Implement paste
+                match &mut self.mode_state {
+                    ModeState::BitFont(editor) => {
+                        if let Err(e) = editor.state.paste() {
+                            log::error!("Paste failed: {}", e);
+                        }
+                        editor.invalidate_caches();
+                    }
+                    ModeState::Ansi(_) => {
+                        // TODO: Implement paste for ANSI
+                    }
+                    ModeState::CharFont(_) => {
+                        // TODO: Implement paste for CharFont
+                    }
+                }
                 Task::none()
             }
             Message::SelectAll => {
@@ -587,98 +712,6 @@ impl MainWindow {
                     Task::none()
                 }
             }
-            // BitFont menu actions (wrappers)
-            Message::BitFontClearGlyph => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::Clear).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontInverseGlyph => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::Inverse).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontFlipX => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::FlipX).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontFlipY => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::FlipY).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontSelectAll => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::SelectAll).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontClearSelection => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::ClearSelection).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontFillSelection => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::FillSelection).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontNextChar => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::NextChar).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontPrevChar => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::PrevChar).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontSelectToolClick => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::SelectTool(crate::ui::bitfont_editor::BitFontTool::Click)).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontSelectToolSelect => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::SelectTool(crate::ui::bitfont_editor::BitFontTool::Select)).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontSelectToolRect => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::SelectTool(crate::ui::bitfont_editor::BitFontTool::RectangleOutline)).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::BitFontSelectToolFill => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(BitFontEditorMessage::SelectTool(crate::ui::bitfont_editor::BitFontTool::Fill)).map(Message::BitFontEditor)
-                } else {
-                    Task::none()
-                }
-            }
             Message::AnsiEditor(msg) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.update(msg).map(Message::AnsiEditor)
@@ -694,26 +727,30 @@ impl MainWindow {
                     Task::none()
                 }
             }
-            Message::AnimationTick => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    // Send tick with delta time (16ms at 60fps)
+            Message::AnimationTick => match &mut self.mode_state {
+                ModeState::Ansi(editor) => {
                     let delta = 0.016;
 
-                    // Update color switcher
                     let color_task = editor
                         .update(AnsiEditorMessage::ColorSwitcher(crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta)))
                         .map(Message::AnsiEditor);
 
-                    // Update tool panel
                     let tool_task = editor
                         .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
                         .map(Message::AnsiEditor);
 
                     Task::batch([color_task, tool_task])
-                } else {
-                    Task::none()
                 }
-            }
+                ModeState::BitFont(editor) => {
+                    let delta = 0.016;
+                    editor
+                        .update(BitFontEditorMessage::TopToolbar(BitFontTopToolbarMessage::ColorSwitcher(
+                            crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta),
+                        )))
+                        .map(Message::BitFontEditor)
+                }
+                ModeState::CharFont(_) => Task::none(),
+            },
 
             // ═══════════════════════════════════════════════════════════════════
             // File operations (TODO: implement)
@@ -855,6 +892,7 @@ impl MainWindow {
     pub fn needs_animation(&self) -> bool {
         match &self.mode_state {
             ModeState::Ansi(editor) => editor.needs_animation(),
+            ModeState::BitFont(editor) => editor.needs_animation(),
             _ => false,
         }
     }
@@ -862,7 +900,7 @@ impl MainWindow {
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
         let recent_files = &self.options.lock().recent_files;
-        
+
         // Get undo/redo descriptions for menu
         let undo_info = self.get_undo_info();
         let menu_bar = self.menu_state.view(&self.mode_state.mode(), recent_files, &undo_info);
@@ -915,6 +953,7 @@ impl MainWindow {
                 // Right section
                 container(text(info.right).size(12)).width(Length::FillPortion(1)),
             ]
+            .align_y(Alignment::Center)
             .padding([2, 8]),
         )
         .height(Length::Fixed(24.0))
@@ -947,16 +986,14 @@ impl MainWindow {
                     UndoInfo::default()
                 }
             }
-            ModeState::BitFont(editor) => {
-                UndoInfo::new(editor.undo_description(), editor.redo_description())
-            }
+            ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::CharFont(_) => UndoInfo::default(),
         }
     }
 
     /// Handle events passed from the window manager
     pub fn handle_event(&mut self, event: &Event) -> Option<Message> {
-        // Try to match hotkeys via command system
+        // Try to match hotkeys via command system (global commands)
         if let Some(hotkey) = event.into_hotkey() {
             if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
                 if let Some(msg) = handle_main_window_command(cmd_id) {
@@ -964,15 +1001,31 @@ impl MainWindow {
                 }
             }
         }
+
+        // Handle mode-specific menu commands
+        match &self.mode_state {
+            ModeState::BitFont(editor) => {
+                // Check BitFont menu commands
+                let undo_desc = editor.undo_description();
+                let redo_desc = editor.redo_description();
+                if let Some(msg) = super::bitfont_editor::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
+                    return Some(msg);
+                }
+            }
+            _ => {}
+        }
+
+        // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {
             ModeState::Ansi(_editor) => {
                 // TODO: Handle ANSI editor events (keyboard, etc.)
             }
-            ModeState::BitFont(_state) => {
-                // TODO: Handle BitFont editor events
+            ModeState::BitFont(state) => {
+                if let Some(msg) = state.handle_event(event) {
+                    return Some(Message::BitFontEditor(msg));
+                }
             }
-            ModeState::CharFont(_state) => {
-            }
+            ModeState::CharFont(_state) => {}
         }
 
         None

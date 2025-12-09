@@ -177,6 +177,28 @@ impl PaletteGrid {
         .height(Length::Fixed(height))
         .into()
     }
+
+    /// Render the palette grid in horizontal layout (for top toolbar)
+    /// All colors in one row
+    pub fn view_horizontal(&self) -> Element<'_, PaletteGridMessage> {
+        let palette_len = self.cached_palette.len();
+        let cell_size = 16.0;
+        let width = cell_size * palette_len as f32;
+        let height = cell_size;
+
+        Canvas::new(PaletteGridProgram {
+            foreground: self.foreground,
+            background: self.background,
+            ice_mode: self.ice_mode,
+            font_mode: self.font_mode,
+            cached_palette: self.cached_palette.clone(),
+            items_per_row: palette_len,
+            cell_size,
+        })
+        .width(Length::Fixed(width))
+        .height(Length::Fixed(height))
+        .into()
+    }
 }
 
 /// Canvas program for drawing the palette grid

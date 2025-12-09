@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
-    SaveOptions, Screen, Selection, SelectionMask, Size, TerminalState, TextPane, TextScreen,
+    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Screen,
+    Selection, SelectionMask, Size, TerminalState, TextPane, TextScreen,
 };
 
 /// A wrapper around `Arc<Mutex<TextScreen>>` that implements `Screen`.

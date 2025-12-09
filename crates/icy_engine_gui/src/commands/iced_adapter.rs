@@ -155,27 +155,6 @@ impl IntoHotkey for &iced::Event {
     }
 }
 
-/// Try to handle an event by matching it against a command set.
-///
-/// This function accepts an Iced Event, Hotkey, or MouseBinding.
-/// Checks both keyboard hotkeys and mouse bindings.
-/// Returns the command ID if a matching command is found.
-pub fn try_handle_event<'a, H: IntoHotkey>(commands: &'a super::CommandSet, event: H) -> Option<&'a str> {
-    // Try keyboard first
-    if let Some(hotkey) = event.into_hotkey() {
-        if let Some(cmd) = commands.match_hotkey(&hotkey) {
-            return Some(cmd);
-        }
-    }
-    // Try mouse
-    if let Some(mouse) = event.into_mouse_binding() {
-        if let Some(cmd) = commands.match_mouse_binding(&mouse) {
-            return Some(cmd);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

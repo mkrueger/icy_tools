@@ -57,10 +57,7 @@ pub struct ClearGlyph {
 
 impl ClearGlyph {
     pub fn new(ch: char) -> Self {
-        Self {
-            ch,
-            old_data: Vec::new(),
-        }
+        Self { ch, old_data: Vec::new() }
     }
 }
 
@@ -76,7 +73,7 @@ impl BitFontUndoOperation for ClearGlyph {
     fn redo(&mut self, editor: &mut BitFontEditor) {
         // Save old data before clearing
         self.old_data = editor.get_glyph_pixels(self.ch).clone();
-        
+
         let (width, height) = editor.font_size();
         let cleared = vec![vec![false; width as usize]; height as usize];
         editor.set_glyph_pixels(self.ch, cleared);
@@ -106,10 +103,7 @@ impl BitFontUndoOperation for InverseGlyph {
 
     fn redo(&mut self, editor: &mut BitFontEditor) {
         let data = editor.get_glyph_pixels(self.ch).clone();
-        let inverted: Vec<Vec<bool>> = data
-            .iter()
-            .map(|row| row.iter().map(|&p| !p).collect())
-            .collect();
+        let inverted: Vec<Vec<bool>> = data.iter().map(|row| row.iter().map(|&p| !p).collect()).collect();
         editor.set_glyph_pixels(self.ch, inverted);
     }
 }
@@ -150,15 +144,15 @@ impl BitFontUndoOperation for MoveGlyph {
 
     fn redo(&mut self, editor: &mut BitFontEditor) {
         self.old_data = editor.get_glyph_pixels(self.ch).clone();
-        
+
         let (width, height) = editor.font_size();
         let mut new_data = vec![vec![false; width as usize]; height as usize];
-        
+
         for y in 0..height as usize {
             for x in 0..width as usize {
                 let src_x = x as i32 - self.dx;
                 let src_y = y as i32 - self.dy;
-                
+
                 if src_x >= 0 && src_x < width && src_y >= 0 && src_y < height {
                     if let Some(row) = self.old_data.get(src_y as usize) {
                         if let Some(&pixel) = row.get(src_x as usize) {
@@ -168,7 +162,7 @@ impl BitFontUndoOperation for MoveGlyph {
                 }
             }
         }
-        
+
         editor.set_glyph_pixels(self.ch, new_data);
     }
 }
@@ -201,17 +195,15 @@ impl BitFontUndoOperation for FlipGlyph {
 
     fn redo(&mut self, editor: &mut BitFontEditor) {
         let data = editor.get_glyph_pixels(self.ch).clone();
-        
+
         let flipped: Vec<Vec<bool>> = if self.horizontal {
             // Flip X: reverse each row
-            data.iter()
-                .map(|row| row.iter().rev().copied().collect())
-                .collect()
+            data.iter().map(|row| row.iter().rev().copied().collect()).collect()
         } else {
             // Flip Y: reverse row order
             data.into_iter().rev().collect()
         };
-        
+
         editor.set_glyph_pixels(self.ch, flipped);
     }
 }
@@ -249,7 +241,7 @@ impl BitFontUndoOperation for ResizeFont {
                 editor.set_glyph_pixels(ch, glyph_data.clone());
             }
         }
-        
+
         // Restore old dimensions (the set_glyph_pixels won't resize, so we need to call resize)
         editor.resize_glyphs(self.old_width, self.old_height);
     }
@@ -262,8 +254,270 @@ impl BitFontUndoOperation for ResizeFont {
                 self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
             }
         }
-        
+
         // Resize all glyphs
         editor.resize_glyphs(self.new_width, self.new_height);
+    }
+}
+
+/// Insert line operation - inserts a row at specified Y position in all glyphs
+pub struct InsertLine {
+    y_pos: usize,
+    old_height: i32,
+    old_glyph_data: Vec<Vec<Vec<bool>>>,
+}
+
+impl InsertLine {
+    pub fn new(y_pos: usize, old_height: i32) -> Self {
+        Self {
+            y_pos,
+            old_height,
+            old_glyph_data: Vec::new(),
+        }
+    }
+}
+
+impl BitFontUndoOperation for InsertLine {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-insert-line")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Restore old glyph data and height
+        for (i, glyph_data) in self.old_glyph_data.iter().enumerate() {
+            if let Some(ch) = char::from_u32(i as u32) {
+                editor.set_glyph_pixels(ch, glyph_data.clone());
+            }
+        }
+        editor.set_font_height(self.old_height);
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Save all glyph data before insert
+        self.old_glyph_data.clear();
+        for i in 0..256u32 {
+            if let Some(ch) = char::from_u32(i) {
+                self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
+            }
+        }
+
+        // Insert line in all glyphs
+        editor.insert_line_at(self.y_pos);
+    }
+}
+
+/// Duplicate line operation - duplicates a row at specified Y position in all glyphs
+pub struct DuplicateLine {
+    y_pos: usize,
+    old_height: i32,
+    old_glyph_data: Vec<Vec<Vec<bool>>>,
+}
+
+impl DuplicateLine {
+    pub fn new(y_pos: usize, old_height: i32) -> Self {
+        Self {
+            y_pos,
+            old_height,
+            old_glyph_data: Vec::new(),
+        }
+    }
+}
+
+impl BitFontUndoOperation for DuplicateLine {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-duplicate-line")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Restore old glyph data and height
+        for (i, glyph_data) in self.old_glyph_data.iter().enumerate() {
+            if let Some(ch) = char::from_u32(i as u32) {
+                editor.set_glyph_pixels(ch, glyph_data.clone());
+            }
+        }
+        editor.set_font_height(self.old_height);
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Save all glyph data before duplicate
+        self.old_glyph_data.clear();
+        for i in 0..256u32 {
+            if let Some(ch) = char::from_u32(i) {
+                self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
+            }
+        }
+
+        // Duplicate line in all glyphs
+        editor.duplicate_line_at(self.y_pos);
+    }
+}
+
+/// Delete line operation - removes a row at specified Y position from all glyphs
+pub struct DeleteLine {
+    y_pos: usize,
+    old_height: i32,
+    old_glyph_data: Vec<Vec<Vec<bool>>>,
+}
+
+impl DeleteLine {
+    pub fn new(y_pos: usize, old_height: i32) -> Self {
+        Self {
+            y_pos,
+            old_height,
+            old_glyph_data: Vec::new(),
+        }
+    }
+}
+
+impl BitFontUndoOperation for DeleteLine {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-delete-line")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Restore old glyph data and height
+        for (i, glyph_data) in self.old_glyph_data.iter().enumerate() {
+            if let Some(ch) = char::from_u32(i as u32) {
+                editor.set_glyph_pixels(ch, glyph_data.clone());
+            }
+        }
+        editor.set_font_height(self.old_height);
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Save all glyph data before delete
+        self.old_glyph_data.clear();
+        for i in 0..256u32 {
+            if let Some(ch) = char::from_u32(i) {
+                self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
+            }
+        }
+
+        // Delete line from all glyphs
+        editor.delete_line_at(self.y_pos);
+    }
+}
+
+/// Insert column operation - inserts a column at specified X position in all glyphs
+pub struct InsertColumn {
+    x_pos: usize,
+    old_width: i32,
+    old_glyph_data: Vec<Vec<Vec<bool>>>,
+}
+
+impl InsertColumn {
+    pub fn new(x_pos: usize, old_width: i32) -> Self {
+        Self {
+            x_pos,
+            old_width,
+            old_glyph_data: Vec::new(),
+        }
+    }
+}
+
+impl BitFontUndoOperation for InsertColumn {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-insert-column")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Restore old glyph data and width
+        for (i, glyph_data) in self.old_glyph_data.iter().enumerate() {
+            if let Some(ch) = char::from_u32(i as u32) {
+                editor.set_glyph_pixels(ch, glyph_data.clone());
+            }
+        }
+        editor.set_font_width(self.old_width);
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Save all glyph data before insert
+        self.old_glyph_data.clear();
+        for i in 0..256u32 {
+            if let Some(ch) = char::from_u32(i) {
+                self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
+            }
+        }
+
+        // Insert column in all glyphs
+        editor.insert_column_at(self.x_pos);
+    }
+}
+
+/// Delete column operation - removes a column at specified X position from all glyphs
+pub struct DeleteColumn {
+    x_pos: usize,
+    old_width: i32,
+    old_glyph_data: Vec<Vec<Vec<bool>>>,
+}
+
+impl DeleteColumn {
+    pub fn new(x_pos: usize, old_width: i32) -> Self {
+        Self {
+            x_pos,
+            old_width,
+            old_glyph_data: Vec::new(),
+        }
+    }
+}
+
+impl BitFontUndoOperation for DeleteColumn {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-delete-column")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Restore old glyph data and width
+        for (i, glyph_data) in self.old_glyph_data.iter().enumerate() {
+            if let Some(ch) = char::from_u32(i as u32) {
+                editor.set_glyph_pixels(ch, glyph_data.clone());
+            }
+        }
+        editor.set_font_width(self.old_width);
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Save all glyph data before delete
+        self.old_glyph_data.clear();
+        for i in 0..256u32 {
+            if let Some(ch) = char::from_u32(i) {
+                self.old_glyph_data.push(editor.get_glyph_pixels(ch).clone());
+            }
+        }
+
+        // Delete column from all glyphs
+        editor.delete_column_at(self.x_pos);
+    }
+}
+
+/// Swap two characters operation
+pub struct SwapChars {
+    char1: char,
+    char2: char,
+    data1: Vec<Vec<bool>>,
+    data2: Vec<Vec<bool>>,
+}
+
+impl SwapChars {
+    pub fn new(char1: char, char2: char, data1: Vec<Vec<bool>>, data2: Vec<Vec<bool>>) -> Self {
+        Self { char1, char2, data1, data2 }
+    }
+}
+
+impl BitFontUndoOperation for SwapChars {
+    fn get_description(&self) -> String {
+        fl!(crate::LANGUAGE_LOADER, "undo-bitfont-swap-chars")
+    }
+
+    fn undo(&mut self, editor: &mut BitFontEditor) {
+        // Swap back - restore original data
+        editor.set_glyph_pixels(self.char1, self.data1.clone());
+        editor.set_glyph_pixels(self.char2, self.data2.clone());
+    }
+
+    fn redo(&mut self, editor: &mut BitFontEditor) {
+        // Swap - put data1 in char2 and data2 in char1
+        editor.set_glyph_pixels(self.char1, self.data2.clone());
+        editor.set_glyph_pixels(self.char2, self.data1.clone());
     }
 }

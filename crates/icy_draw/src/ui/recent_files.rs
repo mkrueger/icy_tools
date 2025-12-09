@@ -48,12 +48,11 @@ impl MostRecentlyUsedFiles {
 
     /// Get the path to the MRU config file
     fn get_mru_file_path() -> Option<PathBuf> {
-        ProjectDirs::from("com", "GitHub", "icy_draw")
-            .map(|dirs| dirs.config_dir().join("recent_files.json"))
+        ProjectDirs::from("com", "GitHub", "icy_draw").map(|dirs| dirs.config_dir().join("recent_files.json"))
     }
 
     /// Get recent files, filtering out non-existent ones
-    pub fn get_recent_files(&mut self) -> &[PathBuf] {
+    pub fn _get_recent_files(&mut self) -> &[PathBuf] {
         self.files.retain(|p| p.exists());
         &self.files
     }
@@ -64,25 +63,25 @@ impl MostRecentlyUsedFiles {
     }
 
     /// Check if there are any recent files
-    pub fn is_empty(&self) -> bool {
+    pub fn _is_empty(&self) -> bool {
         self.files.is_empty()
     }
 
     /// Add a file to the recent files list
     pub fn add_recent_file(&mut self, file: &Path) {
         let file = file.to_path_buf();
-        
+
         // Remove if already exists (to move to end)
         self.files.retain(|f| f != &file);
-        
+
         // Add to end
         self.files.push(file);
-        
+
         // Trim to max size
         while self.files.len() > MAX_RECENT_FILES {
             self.files.remove(0);
         }
-        
+
         if let Err(e) = self.save() {
             log::error!("Error saving recent files: {}", e);
         }

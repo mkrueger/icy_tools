@@ -11,11 +11,12 @@ mod channels_view;
 mod color_switcher_gpu;
 pub mod constants;
 mod layer_view;
+pub mod menu_bar;
 mod minimap_view;
 mod palette_grid;
 mod right_panel;
 mod tool_panel;
-mod tool_panel_gpu;
+mod tool_panel_wrapper;
 mod top_toolbar;
 
 pub use canvas_view::*;
@@ -27,19 +28,20 @@ pub use layer_view::*;
 pub use minimap_view::*;
 pub use palette_grid::*;
 pub use right_panel::*;
-// Use GPU-accelerated tool panel
-pub use tool_panel_gpu::{ToolPanel, ToolPanelMessage};
+// Use shared GPU-accelerated tool panel via wrapper
+pub use tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
 pub use top_toolbar::*;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Task,
+    Element, Length, Task, Theme,
     widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{Screen, TextBuffer, TextPane};
+use icy_engine_gui::theme::main_area_background;
 use parking_lot::Mutex;
 
 use crate::ui::SharedOptions;
@@ -213,6 +215,37 @@ impl AnsiEditor {
             .downcast_mut::<EditState>()
             .expect("AnsiEditor screen should always be EditState");
         f(edit_state)
+    }
+
+    /// Get undo stack length for dirty tracking
+    pub fn undo_stack_len(&self) -> usize {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            edit_state.undo_stack_len()
+        } else {
+            0
+        }
+    }
+
+    /// Save the document to the given path
+    pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            // Determine format from extension
+            let format = FileFormat::from_path(path).ok_or_else(|| "Unknown file format".to_string())?;
+
+            // Get buffer and save with default options
+            let buffer = edit_state.get_buffer_mut();
+            let options = icy_engine::formats::SaveOptions::default();
+            let bytes = format.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
+
+            std::fs::write(path, bytes).map_err(|e| e.to_string())?;
+
+            self.is_modified = false;
+            Ok(())
+        } else {
+            Err("Could not access edit state".to_string())
+        }
     }
 
     /// Check if this editor needs animation updates (for smooth animations)
@@ -605,8 +638,8 @@ impl AnsiEditor {
         let palette_view = self.palette_grid.view_with_width(sidebar_width).map(AnsiEditorMessage::PaletteGrid);
 
         // Tool panel - calculate columns based on sidebar width
-        // Use background.weakest color approximation for dark theme
-        let bg_weakest = iced::Color::from_rgb(0.14, 0.14, 0.16);
+        // Use theme's main area background color
+        let bg_weakest = main_area_background(&Theme::Dark);
         let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
 
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = column![palette_view, tool_panel,].spacing(4);
