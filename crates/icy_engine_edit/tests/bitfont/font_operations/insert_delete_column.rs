@@ -2,11 +2,62 @@
 //!
 //! Tests inserting and deleting vertical columns across all glyphs.
 
-use icy_engine_edit::bitfont::{BitFontEditState, BitFontUndoState};
+use icy_engine_edit::bitfont::{BitFontEditState, BitFontUndoState, MAX_FONT_WIDTH, MIN_FONT_WIDTH};
+
+/// Test that delete_column does nothing when font is at minimum width (1)
+#[test]
+fn test_delete_column_minimum_width() {
+    let mut state = BitFontEditState::new();
+
+    // Resize to minimum width
+    state.resize_font(MIN_FONT_WIDTH, 8).unwrap();
+    assert_eq!(state.font_size().0, MIN_FONT_WIDTH);
+
+    // Set a pixel to verify glyph content is preserved
+    state.clear_glyph('A').unwrap();
+    state.set_pixel('A', 0, 0, true).unwrap();
+
+    // Try to delete column - should have no effect
+    state.set_cursor_pos(0, 0);
+    state.delete_column().unwrap();
+
+    // Width should still be 1
+    assert_eq!(state.font_size().0, MIN_FONT_WIDTH, "width should not go below MIN_FONT_WIDTH");
+
+    // Pixel should still be there
+    assert!(state.get_glyph_pixels('A')[0][0], "pixel should be preserved");
+}
+
+/// Test that insert_column does nothing when font is at maximum width (8)
+#[test]
+fn test_insert_column_maximum_width() {
+    let mut state = BitFontEditState::new();
+
+    // VGA font is already at width 8 (MAX_FONT_WIDTH)
+    assert_eq!(state.font_size().0, MAX_FONT_WIDTH);
+
+    // Set a pixel at rightmost column
+    state.clear_glyph('A').unwrap();
+    state.set_pixel('A', (MAX_FONT_WIDTH - 1) as i32, 0, true).unwrap();
+
+    // Try to insert column - should have no effect
+    state.set_cursor_pos(0, 0);
+    state.insert_column().unwrap();
+
+    // Width should still be 8
+    assert_eq!(state.font_size().0, MAX_FONT_WIDTH, "width should not exceed MAX_FONT_WIDTH");
+
+    // Pixel should still be at rightmost column (not pushed off)
+    assert!(state.get_glyph_pixels('A')[0][(MAX_FONT_WIDTH - 1) as usize], "pixel should not be pushed off");
+}
 
 #[test]
 fn test_insert_column() {
     let mut state = BitFontEditState::new();
+
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
+    state.clear_glyph('A').unwrap();
 
     // Set pixel at column 3
     state.set_pixel('A', 3, 5, true).unwrap();
@@ -25,6 +76,10 @@ fn test_insert_column() {
 fn test_insert_column_at_left() {
     let mut state = BitFontEditState::new();
 
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
+    state.clear_glyph('A').unwrap();
+
     // Set pixel at column 0
     state.set_pixel('A', 0, 5, true).unwrap();
 
@@ -39,6 +94,9 @@ fn test_insert_column_at_left() {
 #[test]
 fn test_insert_column_pushes_right_off() {
     let mut state = BitFontEditState::new();
+
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
     let (width, _) = state.font_size();
 
     // Clear the glyph first (VGA font has pixels set)
@@ -50,14 +108,22 @@ fn test_insert_column_pushes_right_off() {
     state.set_cursor_pos(0, 0);
     state.insert_column().unwrap();
 
-    // Rightmost pixel should be gone (pushed off)
+    // After insert, width is now 8, but original rightmost pixel should be pushed off
+    let (new_width, _) = state.font_size();
     let glyph = state.get_glyph_pixels('A');
-    assert!(!glyph[5][(width - 1) as usize], "rightmost column should be empty after push");
+    // The pixel that was at column 6 (width-1) should now be at column 7 (new rightmost)
+    assert!(glyph[5][(new_width - 1) as usize], "pixel should have moved to rightmost column");
 }
 
 #[test]
 fn test_insert_column_affects_all_glyphs() {
     let mut state = BitFontEditState::new();
+
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
+    state.clear_glyph('A').unwrap();
+    state.clear_glyph('B').unwrap();
+    state.clear_glyph('Z').unwrap();
 
     // Set pixels in multiple glyphs at column 3
     state.set_pixel('A', 3, 5, true).unwrap();
@@ -76,6 +142,10 @@ fn test_insert_column_affects_all_glyphs() {
 #[test]
 fn test_insert_column_undo() {
     let mut state = BitFontEditState::new();
+
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
+    state.clear_glyph('A').unwrap();
 
     state.set_pixel('A', 3, 5, true).unwrap();
     state.set_cursor_pos(3, 0);
@@ -160,6 +230,10 @@ fn test_delete_column_affects_all_glyphs() {
 #[test]
 fn test_insert_column_affects_entire_column() {
     let mut state = BitFontEditState::new();
+
+    // Resize to width 7 so insert can work (MAX_FONT_WIDTH = 8)
+    state.resize_font(7, 16).unwrap();
+    state.clear_glyph('A').unwrap();
 
     // Set pixels in entire column 3
     let (_, height) = state.font_size();

@@ -83,7 +83,9 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
 
             draw_rulers(frame, &ruler_state, theme);
 
-            let cursor_color = crate::ui::bitfont_editor::canvas::charset::theme_cursor_color(theme);
+            // Calculate cursor colors based on fg/bg for better visibility
+            let cursor_color = crate::ui::bitfont_editor::canvas::charset::calculate_cursor_colors(fg_iced_color, bg_iced_color);
+
             // Draw pixel grid with palette colors
             for y in 0..height as usize {
                 for x in 0..width as usize {

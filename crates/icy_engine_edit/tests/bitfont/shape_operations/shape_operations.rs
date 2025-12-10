@@ -102,6 +102,9 @@ fn test_draw_rectangle_outline() {
     let mut state = create_test_state();
     let ch = 'A';
 
+    // Clear the glyph first (VGA font has content in 'A')
+    state.clear_glyph(ch).unwrap();
+
     // Draw rectangle outline
     state.draw_rectangle(ch, 1, 1, 6, 6, false, true).unwrap();
 
@@ -175,11 +178,15 @@ fn test_flood_fill_empty_area() {
     let mut state = create_test_state();
     let ch = 'A';
 
+    // Clear the glyph first (VGA font has content in 'A')
+    state.clear_glyph(ch).unwrap();
+
     // Fill entire empty glyph
     state.flood_fill(ch, 0, 0, true).unwrap();
 
     let pixels = state.get_glyph_pixels(ch);
-    for y in 0..8 {
+    // Default font is 8x16, check all pixels
+    for y in 0..16 {
         for x in 0..8 {
             assert!(pixels[y][x], "Point ({}, {}) should be set", x, y);
         }
@@ -191,8 +198,11 @@ fn test_flood_fill_bounded_area() {
     let mut state = create_test_state();
     let ch = 'A';
 
-    // Create a boundary: vertical line at x=4
-    for y in 0..8 {
+    // Clear the glyph first (VGA font has content in 'A')
+    state.clear_glyph(ch).unwrap();
+
+    // Create a boundary: vertical line at x=4 for FULL font height (16 rows for default 8x16 font)
+    for y in 0..16 {
         state.set_pixel(ch, 4, y, true).unwrap();
     }
 
@@ -201,15 +211,15 @@ fn test_flood_fill_bounded_area() {
 
     let pixels = state.get_glyph_pixels(ch);
 
-    // Left side (x < 4) should be filled
-    for y in 0..8 {
+    // Left side (x < 4) should be filled for all rows
+    for y in 0..16 {
         for x in 0..4 {
             assert!(pixels[y][x], "Left side ({}, {}) should be set", x, y);
         }
     }
 
-    // Right side (x > 4) should be empty
-    for y in 0..8 {
+    // Right side (x > 4) should be empty for all rows
+    for y in 0..16 {
         for x in 5..8 {
             assert!(!pixels[y][x], "Right side ({}, {}) should NOT be set", x, y);
         }

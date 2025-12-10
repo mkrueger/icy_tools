@@ -40,8 +40,13 @@ impl BitFontEditState {
     /// Insert line at cursor Y position
     ///
     /// Inserts a new empty row at the cursor's Y position in ALL glyphs.
-    /// The font height increases by 1.
+    /// The font height increases by 1. Does nothing if height would exceed MAX_FONT_HEIGHT.
     pub fn insert_line(&mut self) -> Result<()> {
+        use crate::bitfont::MAX_FONT_HEIGHT;
+        if self.font_height >= MAX_FONT_HEIGHT {
+            return Ok(());
+        }
+
         let y_pos = self.cursor_pos.1 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
@@ -68,8 +73,13 @@ impl BitFontEditState {
     /// Duplicate line at cursor Y position
     ///
     /// Copies the row at the cursor's Y position and inserts it below in ALL glyphs.
-    /// The font height increases by 1.
+    /// The font height increases by 1. Does nothing if height would exceed MAX_FONT_HEIGHT.
     pub fn duplicate_line(&mut self) -> Result<()> {
+        use crate::bitfont::MAX_FONT_HEIGHT;
+        if self.font_height >= MAX_FONT_HEIGHT {
+            return Ok(());
+        }
+
         let y_pos = self.cursor_pos.1 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
@@ -84,8 +94,13 @@ impl BitFontEditState {
     /// Insert column at cursor X position
     ///
     /// Inserts a new empty column at the cursor's X position in ALL glyphs.
-    /// The font width increases by 1.
+    /// The font width increases by 1. Does nothing if width would exceed MAX_FONT_WIDTH.
     pub fn insert_column(&mut self) -> Result<()> {
+        use crate::bitfont::MAX_FONT_WIDTH;
+        if self.font_width >= MAX_FONT_WIDTH {
+            return Ok(());
+        }
+
         let x_pos = self.cursor_pos.0 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
@@ -96,9 +111,10 @@ impl BitFontEditState {
     /// Delete column at cursor X position
     ///
     /// Removes the column at the cursor's X position from ALL glyphs.
-    /// The font width decreases by 1. Does nothing if width would become 0.
+    /// The font width decreases by 1. Does nothing if width would go below MIN_FONT_WIDTH.
     pub fn delete_column(&mut self) -> Result<()> {
-        if self.font_width <= 1 {
+        use crate::bitfont::MIN_FONT_WIDTH;
+        if self.font_width <= MIN_FONT_WIDTH {
             return Ok(());
         }
 

@@ -19,6 +19,7 @@ use iced::{
     widget::{Space, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::BitFont;
+use icy_engine_edit::bitfont::{MAX_FONT_HEIGHT, MAX_FONT_WIDTH};
 use icy_engine_gui::ui::{
     DIALOG_SPACING, DIALOG_WIDTH_LARGE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
     left_label_small, modal_container, primary_button, secondary_button, separator,
@@ -274,8 +275,8 @@ impl FontImportDialog {
             let detected_width = (dim.0 / 16) as i32;
             let detected_height = (dim.1 / 16) as i32;
 
-            // Apply constraints: width > 8 or height > 32 -> default to 8x16
-            let (width, height) = if detected_width > 8 || detected_height > 32 {
+            // Apply constraints: width > MAX_FONT_WIDTH or height > MAX_FONT_HEIGHT -> default to 8x16
+            let (width, height) = if detected_width > MAX_FONT_WIDTH || detected_height > MAX_FONT_HEIGHT {
                 (8, 16)
             } else {
                 (detected_width.max(4), detected_height.max(4))
@@ -669,8 +670,8 @@ fn parse_com_font(name: &str, data: &[u8]) -> Result<BitFont, String> {
     };
 
     // Validate height
-    if height == 0 || height > 32 {
-        return Err(format!("Invalid font height: {} (must be 1-32)", height));
+    if height == 0 || height > MAX_FONT_HEIGHT as usize {
+        return Err(format!("Invalid font height: {} (must be 1-{})", height, MAX_FONT_HEIGHT));
     }
 
     // Check if we have enough data

@@ -60,7 +60,7 @@ pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32) ->
                 // Sample the pixel (with bounds check)
                 let is_set = if src_px < img_width && src_py < img_height {
                     let pixel = img.get_pixel(src_px as u32, src_py as u32);
-                    pixel.0[0] < 128 // Dark pixels are "set" (foreground)
+                    pixel.0[0] >= 128 // Bright pixels are "set" (foreground)
                 } else {
                     false
                 };

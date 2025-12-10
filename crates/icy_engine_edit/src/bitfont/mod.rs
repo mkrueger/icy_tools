@@ -15,6 +15,18 @@ mod edit_state;
 mod undo_operations;
 mod undo_stack;
 
+/// Maximum allowed font height (rows per glyph)
+pub const MAX_FONT_HEIGHT: i32 = 32;
+
+/// Minimum allowed font height (rows per glyph)
+pub const MIN_FONT_HEIGHT: i32 = 1;
+
+/// Maximum allowed font width (columns per glyph)
+pub const MAX_FONT_WIDTH: i32 = 8;
+
+/// Minimum allowed font width (columns per glyph)
+pub const MIN_FONT_WIDTH: i32 = 1;
+
 pub use clipboard::*;
 pub use edit_state::*;
 pub use undo_operations::*;

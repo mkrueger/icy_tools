@@ -85,9 +85,9 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
             let is_selected = ch_code == selected_code;
             let is_cursor_cell = is_focused && col == cursor_col && row == cursor_row;
 
-            // Cursor uses visible color, not XOR
+            // Cursor uses visible color that contrasts with fg/bg
             let (cell_fg, cell_bg) = if is_cursor_cell {
-                theme_cursor_color(&theme)
+                calculate_cursor_colors(fg_iced_color, bg_iced_color)
             } else if is_selected {
                 // Highlight selected character with different bg
                 (fg_iced_color, CHAR_HIGHLIGHT_BG)
@@ -335,4 +335,61 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
 
 pub fn theme_cursor_color(theme: &iced::Theme) -> (Color, Color) {
     (theme.extended_palette().success.base.text, theme.extended_palette().success.base.color)
+}
+
+/// Calculate a cursor color that contrasts with both foreground and background colors.
+/// Returns (fg_cursor_color, bg_cursor_color) where:
+/// - fg_cursor_color is used for "set" pixels under the cursor
+/// - bg_cursor_color is used for "unset" pixels under the cursor
+///
+/// The algorithm ensures that cursor colors are visually distinct from both fg and bg
+/// by using a contrasting color scheme (inverted or complementary colors).
+pub fn calculate_cursor_colors(fg_color: Color, bg_color: Color) -> (Color, Color) {
+    // Calculate luminance for both colors to determine which is "light" and which is "dark"
+    let fg_luminance = color_luminance(fg_color);
+    let bg_luminance = color_luminance(bg_color);
+
+    // Use a distinct cursor color that contrasts with both
+    // The cursor should be visible against both the fg and bg
+
+    // Strategy: Use a high-visibility accent color (e.g., orange/yellow for dark themes,
+    // blue for light themes), inverted for the other state
+
+    // If both colors are similar in luminance, use complementary colors
+    let luminance_diff = (fg_luminance - bg_luminance).abs();
+
+    if luminance_diff < 0.2 {
+        // Low contrast font - use bright accent colors
+        // Bright yellow for foreground pixels, bright blue for background
+        return (
+            Color::from_rgb(1.0, 0.9, 0.0), // Yellow for fg pixels
+            Color::from_rgb(0.0, 0.5, 1.0), // Blue for bg pixels
+        );
+    }
+
+    // High contrast font - invert the colors and add a tint
+    // For the cursor, swap fg/bg with a distinctive hue shift
+    let cursor_fg = if bg_luminance > 0.5 {
+        // Light background - use a darker cursor with blue tint
+        Color::from_rgb(0.0, 0.4, 0.8)
+    } else {
+        // Dark background - use a bright yellow/orange cursor
+        Color::from_rgb(1.0, 0.8, 0.0)
+    };
+
+    let cursor_bg = if fg_luminance > 0.5 {
+        // Light foreground - use darker complementary color
+        Color::from_rgb(0.2, 0.4, 0.7)
+    } else {
+        // Dark foreground - use bright complementary color
+        Color::from_rgb(0.9, 0.6, 0.0)
+    };
+
+    (cursor_fg, cursor_bg)
+}
+
+/// Calculate the relative luminance of a color (0.0 = black, 1.0 = white)
+fn color_luminance(color: Color) -> f32 {
+    // Standard relative luminance formula
+    0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
 }

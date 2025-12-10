@@ -154,3 +154,53 @@ fn test_delete_line_affects_all_glyphs() {
     assert!(state.get_glyph_pixels('A')[5][3]);
     assert!(state.get_glyph_pixels('B')[5][3]);
 }
+
+#[test]
+fn test_delete_line_minimum_height() {
+    use icy_engine_edit::bitfont::MIN_FONT_HEIGHT;
+
+    let mut state = BitFontEditState::new();
+
+    // Resize to minimum height (1 row)
+    state.resize_font(8, MIN_FONT_HEIGHT).unwrap();
+    let (_, height) = state.font_size();
+    assert_eq!(height, MIN_FONT_HEIGHT);
+
+    // Set a pixel in the only row
+    state.set_pixel('A', 3, 0, true).unwrap();
+
+    // Try to delete the last line - should do nothing, not crash
+    state.set_cursor_pos(0, 0);
+    state.delete_line().unwrap();
+
+    // Height should still be MIN_FONT_HEIGHT
+    let (_, new_height) = state.font_size();
+    assert_eq!(new_height, MIN_FONT_HEIGHT, "Height should stay at minimum");
+
+    // Pixel should still be there
+    assert!(state.get_glyph_pixels('A')[0][3], "Pixel should still exist");
+}
+
+#[test]
+fn test_insert_line_maximum_height() {
+    use icy_engine_edit::bitfont::MAX_FONT_HEIGHT;
+
+    let mut state = BitFontEditState::new();
+
+    // Resize to maximum height
+    state.resize_font(8, MAX_FONT_HEIGHT).unwrap();
+    let (_, height) = state.font_size();
+    assert_eq!(height, MAX_FONT_HEIGHT);
+
+    // Try to insert a line - should do nothing
+    state.set_cursor_pos(0, 0);
+    let undo_len_before = state.undo_stack_len();
+    state.insert_line().unwrap();
+
+    // Height should still be MAX_FONT_HEIGHT
+    let (_, new_height) = state.font_size();
+    assert_eq!(new_height, MAX_FONT_HEIGHT, "Height should not exceed maximum");
+
+    // No undo operation should have been added (insert was a no-op)
+    assert_eq!(state.undo_stack_len(), undo_len_before, "No undo should be pushed for no-op");
+}
