@@ -199,7 +199,8 @@ impl WindowManager {
             WindowManagerMessage::FocusWindow(target_id) => {
                 for (window_id, window) in self.windows.iter() {
                     if window.id == target_id {
-                        return window::gain_focus(*window_id);
+                        // Combine multiple actions to ensure the window comes to front
+                        return Task::batch([window::gain_focus(*window_id), window::minimize(*window_id, false)]);
                     }
                 }
                 Task::none()
@@ -261,17 +262,9 @@ impl WindowManager {
                     }
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Alt+Number to focus window (keep this special case)
-                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
-                            if let keyboard::Key::Character(s) = &key {
-                                if let Some(digit) = s.chars().next() {
-                                    if digit.is_ascii_digit() {
-                                        let target_id = digit.to_digit(10).unwrap() as usize;
-                                        let target_id = if target_id == 0 { 10 } else { target_id };
-                                        return Some(WindowManagerMessage::FocusWindow(target_id));
-                                    }
-                                }
-                            }
+                        // Alt+Number to focus window
+                        if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
+                            return Some(WindowManagerMessage::FocusWindow(target_id));
                         }
 
                         // Forward all key events - command matching happens in update()

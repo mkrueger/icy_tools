@@ -19,7 +19,7 @@ const SPEED_PICKER_WIDTH: f32 = 65.0;
 /// Custom button style for transport controls
 fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
     let palette = theme.extended_palette();
-    
+
     if is_active {
         button::Style {
             background: Some(Background::Color(palette.primary.base.color)),
@@ -54,13 +54,13 @@ fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
 /// Main play button style (larger, more prominent)
 fn play_button_style(theme: &Theme, is_playing: bool) -> button::Style {
     let palette = theme.extended_palette();
-    
+
     let bg_color = if is_playing {
         palette.danger.base.color // Red when playing (pause)
     } else {
         palette.success.base.color // Green when paused (play)
     };
-    
+
     button::Style {
         background: Some(Background::Color(bg_color)),
         text_color: iced::Color::WHITE,
@@ -112,7 +112,7 @@ pub fn view_playback_controls(editor: &AnimationEditor) -> Element<'_, Animation
     let controls_enabled = is_ready && !has_error && frame_count > 0;
 
     // === Transport Controls ===
-    
+
     // First frame button
     let first_btn: button::Button<'_, AnimationEditorMessage> = button(container(icons::first_page_icon()).center_x(Length::Fill).center_y(Length::Fill))
         .padding(TRANSPORT_BUTTON_PADDING)
@@ -132,14 +132,14 @@ pub fn view_playback_controls(editor: &AnimationEditor) -> Element<'_, Animation
     // Main Play/Pause button (large, circular)
     let play_pause_btn = if is_playing {
         button(container(icons::pause_icon()).center_x(Length::Fill).center_y(Length::Fill))
-        .padding(TRANSPORT_BUTTON_PADDING)
+            .padding(TRANSPORT_BUTTON_PADDING)
             .width(PLAY_BUTTON_SIZE)
             .height(PLAY_BUTTON_SIZE)
             .style(move |theme, _status| play_button_style(theme, true))
             .on_press_maybe(controls_enabled.then_some(AnimationEditorMessage::TogglePlayback))
     } else {
         button(container(icons::play_icon()).center_x(Length::Fill).center_y(Length::Fill))
-        .padding(TRANSPORT_BUTTON_PADDING)
+            .padding(TRANSPORT_BUTTON_PADDING)
             .width(PLAY_BUTTON_SIZE)
             .height(PLAY_BUTTON_SIZE)
             .style(move |theme, _status| play_button_style(theme, false))
@@ -187,7 +187,7 @@ pub fn view_playback_controls(editor: &AnimationEditor) -> Element<'_, Animation
         s if s <= 2.0 => "2x",
         _ => "4x",
     };
-    
+
     let speed_picker = iced::widget::pick_list(SPEED_OPTIONS, Some(current_speed), |selected| {
         let speed = match selected {
             "0.25x" => 0.25,
@@ -221,11 +221,7 @@ pub fn view_playback_controls(editor: &AnimationEditor) -> Element<'_, Animation
     .spacing(4)
     .align_y(Alignment::Center);
 
-    container(transport_row)
-        .width(Length::Fill)
-        .padding([8, 12])
-        .style(control_bar_style)
-        .into()
+    container(transport_row).width(Length::Fill).padding([8, 12]).style(control_bar_style).into()
 }
 
 /// Build the frame slider UI (progress bar style)
@@ -237,18 +233,13 @@ pub fn view_frame_slider(editor: &AnimationEditor) -> Element<'_, AnimationEdito
 
     if frame_count > 1 && is_ready && !has_error {
         let max_frame = (frame_count.saturating_sub(1)) as f32;
-        
-        // Create a styled progress slider
-        let progress_slider = slider(0.0..=max_frame, current_frame as f32, |v| {
-            AnimationEditorMessage::SeekFrame(v as usize)
-        })
-        .width(Length::Fill)
-        .step(1.0);
 
-        container(progress_slider)
+        // Create a styled progress slider
+        let progress_slider = slider(0.0..=max_frame, current_frame as f32, |v| AnimationEditorMessage::SeekFrame(v as usize))
             .width(Length::Fill)
-            .padding([0, 4])
-            .into()
+            .step(1.0);
+
+        container(progress_slider).width(Length::Fill).padding([0, 4]).into()
     } else {
         Space::new().height(4).into()
     }
@@ -258,13 +249,6 @@ pub fn view_frame_slider(editor: &AnimationEditor) -> Element<'_, AnimationEdito
 pub fn view_player_controls(editor: &AnimationEditor) -> Element<'_, AnimationEditorMessage> {
     let slider = view_frame_slider(editor);
     let controls = view_playback_controls(editor);
-    
-    column![
-        slider,
-        Space::new().height(4),
-        controls,
-    ]
-    .spacing(0)
-    .width(Length::Fill)
-    .into()
+
+    column![slider, Space::new().height(4), controls,].spacing(0).width(Length::Fill).into()
 }

@@ -4,8 +4,8 @@
 //! Supports async export with progress indication and cancellation.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -315,9 +315,7 @@ impl Dialog<Message> for AnimationExportDialog {
                                 ExportFormat::Asciicast => ("Asciicast", "cast"),
                             };
 
-                            let mut dialog = rfd::AsyncFileDialog::new()
-                                .add_filter(filter_name, &[ext])
-                                .set_title("Export Animation");
+                            let mut dialog = rfd::AsyncFileDialog::new().add_filter(filter_name, &[ext]).set_title("Export Animation");
 
                             if let Some(ref path) = initial_path {
                                 if let Some(parent) = path.parent() {
@@ -348,7 +346,7 @@ impl Dialog<Message> for AnimationExportDialog {
                 AnimationExportMessage::Tick => {
                     // Check if export is still running
                     let is_complete = self.progress.as_ref().map(|p| p.complete.load(Ordering::Relaxed)).unwrap_or(false);
-                    
+
                     if is_complete {
                         // Export finished, check for error
                         let error = self.progress.as_ref().and_then(|p| p.error.lock().take());
@@ -381,11 +379,7 @@ impl Dialog<Message> for AnimationExportDialog {
 }
 
 /// Export animation frames to GIF with progress tracking
-fn export_to_gif_with_progress(
-    animator: &Arc<Mutex<Animator>>,
-    path: &PathBuf,
-    progress: &Arc<ExportProgress>,
-) -> Result<(), String> {
+fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
     use icy_engine::gif_encoder::{GifEncoder, GifFrame, RepeatCount};
 
     let animator_guard = animator.lock();
@@ -461,11 +455,7 @@ fn export_to_gif_with_progress(
 }
 
 /// Export animation frames to Asciicast v2 format with progress tracking
-fn export_to_asciicast_with_progress(
-    animator: &Arc<Mutex<Animator>>,
-    path: &PathBuf,
-    progress: &Arc<ExportProgress>,
-) -> Result<(), String> {
+fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
     use std::io::Write;
 
     let animator = animator.lock();

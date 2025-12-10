@@ -1113,15 +1113,12 @@ impl MainWindow {
             let (line, col) = editor.cursor_position();
             let left_text = format!("Ln {}, Col {}", line + 1, col + 1);
             let right_text = if editor.is_dirty() { "Modified" } else { "" };
-            
+
             // Center shows last log message, clickable to toggle log panel
             let log_msg = editor.last_log_message().unwrap_or_else(|| "Log".to_string());
             let log_icon = if editor.is_log_visible() { "▼" } else { "▶" };
-            let center_content = mouse_area(
-                container(text(format!("{} {}", log_icon, log_msg)).size(12))
-                    .center_x(Length::Fill)
-            )
-            .on_press(Message::AnimationEditor(AnimationEditorMessage::ToggleLogPanel));
+            let center_content = mouse_area(container(text(format!("{} {}", log_icon, log_msg)).size(12)).center_x(Length::Fill))
+                .on_press(Message::AnimationEditor(AnimationEditorMessage::ToggleLogPanel));
 
             return container(
                 row![

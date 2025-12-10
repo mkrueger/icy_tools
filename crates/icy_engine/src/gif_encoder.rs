@@ -122,13 +122,7 @@ impl GifEncoder {
     ///
     /// # Returns
     /// `Ok(())` on success, or an error if encoding fails or was cancelled.
-    pub fn encode_to_file_with_progress<F, C>(
-        &self,
-        path: impl AsRef<Path>,
-        frames: Vec<GifFrame>,
-        progress_callback: F,
-        is_cancelled: C,
-    ) -> crate::Result<()>
+    pub fn encode_to_file_with_progress<F, C>(&self, path: impl AsRef<Path>, frames: Vec<GifFrame>, progress_callback: F, is_cancelled: C) -> crate::Result<()>
     where
         F: Fn(usize, usize),
         C: Fn() -> bool,
@@ -144,13 +138,7 @@ impl GifEncoder {
 
     /// Encode frames to a writer with progress callback.
     /// Uses local palettes per frame for best color quality.
-    pub fn encode_to_writer_with_progress<W: Write, F, C>(
-        &self,
-        writer: W,
-        frames: Vec<GifFrame>,
-        progress_callback: F,
-        is_cancelled: C,
-    ) -> crate::Result<()>
+    pub fn encode_to_writer_with_progress<W: Write, F, C>(&self, writer: W, frames: Vec<GifFrame>, progress_callback: F, is_cancelled: C) -> crate::Result<()>
     where
         F: Fn(usize, usize),
         C: Fn() -> bool,
@@ -167,8 +155,8 @@ impl GifEncoder {
         }
 
         // Create encoder with empty global palette - we use local palettes per frame
-        let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])
-            .map_err(|e| EngineError::Generic(format!("GIF encoder creation failed: {e}")))?;
+        let mut encoder =
+            gif::Encoder::new(writer, self.width, self.height, &[]).map_err(|e| EngineError::Generic(format!("GIF encoder creation failed: {e}")))?;
 
         // Set repeat count
         match self.repeat {

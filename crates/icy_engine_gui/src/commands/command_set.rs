@@ -290,11 +290,7 @@ macro_rules! command_set {
 ///
 /// Used by the `command_handler!` macro to implement Debug for generated structs.
 /// Shows all commands with their IDs, hotkeys (platform-specific), and categories.
-pub fn format_command_set_debug(
-    commands: &CommandSet,
-    name: &str,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
+pub fn format_command_set_debug(commands: &CommandSet, name: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     writeln!(f, "{} ({} commands):", name, commands.len())?;
     writeln!(f, "{:-<80}", "")?;
 

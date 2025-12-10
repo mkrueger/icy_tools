@@ -147,12 +147,12 @@ impl AnimationEditor {
     /// Create a new animation editor with empty script
     pub fn new() -> Self {
         let animator = Arc::new(Mutex::new(Animator::default()));
-        
+
         // Create pane layout: Code Editor | Preview
         let (mut panes, code_pane) = pane_grid::State::new(AnimationPane::CodeEditor);
         // Split vertically, preview on the right
         let _ = panes.split(pane_grid::Axis::Vertical, code_pane, AnimationPane::Preview);
-        
+
         Self {
             script: text_editor::Content::with_text(""),
             animator,
@@ -261,7 +261,7 @@ impl AnimationEditor {
     pub fn last_log_message(&self) -> Option<String> {
         let animator = self.animator.lock();
         let current_frame = self.playback.current_frame;
-        
+
         // Find the last log entry that is <= current frame
         animator
             .log
@@ -281,7 +281,7 @@ impl AnimationEditor {
     pub fn get_time_info(&self) -> (u64, u64) {
         let animator = self.animator.lock();
         let frames = &animator.frames;
-        
+
         if frames.is_empty() {
             return (0, 0);
         }
@@ -686,27 +686,17 @@ impl AnimationEditor {
 
         // Code panel - text_editor handles its own scrolling
         // Add left padding for visual separation from pane edge
-        let code_panel = container(code_editor)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(8); // top, right, bottom, left
+        let code_panel = container(code_editor).width(Length::Fill).height(Length::Fill).padding(8); // top, right, bottom, left
 
         // Build code editor pane, optionally with log panel below
         if self.log_panel_visible {
             let log_panel = self.view_log_panel();
-            column![
-                code_panel,
-                rule::horizontal(1),
-                log_panel,
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-        } else {
-            container(code_panel)
+            column![code_panel, rule::horizontal(1), log_panel,]
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
+        } else {
+            container(code_panel).width(Length::Fill).height(Length::Fill).into()
         }
     }
 
@@ -763,12 +753,7 @@ impl AnimationEditor {
         let frame_info_overlay = self.view_frame_info_overlay();
 
         // Stack the terminal view with the frame info overlay
-        let preview_with_overlay = stack![
-            preview_element,
-            frame_info_overlay,
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill);
+        let preview_with_overlay = stack![preview_element, frame_info_overlay,].width(Length::Fill).height(Length::Fill);
 
         // Preview container (takes most of the vertical space)
         // Use a distinct background color for the terminal area
@@ -790,15 +775,12 @@ impl AnimationEditor {
         let player_controls = view_player_controls(self);
 
         // Preview pane: Preview on top, controls below
-        column![
-            preview_container,
-            player_controls,
-        ]
-        .spacing(4)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(8)
-        .into()
+        column![preview_container, player_controls,]
+            .spacing(4)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(8)
+            .into()
     }
 
     /// Render the frame info overlay (positioned at top of preview)
@@ -813,20 +795,18 @@ impl AnimationEditor {
             fl!("animation-no-frames")
         };
 
-        let frame_label = container(
-            text(frame_text).size(12).font(iced::Font::MONOSPACE)
-        )
-        .padding([4, 10])
-        .style(|_theme: &Theme| container::Style {
-            background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-            border: Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-                radius: 4.0.into(),
-            },
-            text_color: Some(iced::Color::WHITE),
-            ..Default::default()
-        });
+        let frame_label = container(text(frame_text).size(12).font(iced::Font::MONOSPACE))
+            .padding([4, 10])
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                border: Border {
+                    color: iced::Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 4.0.into(),
+                },
+                text_color: Some(iced::Color::WHITE),
+                ..Default::default()
+            });
 
         // Time display
         let (current_time_ms, total_time_ms) = self.get_time_info();
@@ -836,38 +816,27 @@ impl AnimationEditor {
             AnimationEditor::format_time(total_time_ms)
         );
 
-        let time_label = container(
-            text(time_text).size(12).font(iced::Font::MONOSPACE)
-        )
-        .padding([4, 10])
-        .style(|_theme: &Theme| container::Style {
-            background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-            border: Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
-                radius: 4.0.into(),
-            },
-            text_color: Some(iced::Color::WHITE),
-            ..Default::default()
-        });
+        let time_label = container(text(time_text).size(12).font(iced::Font::MONOSPACE))
+            .padding([4, 10])
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                border: Border {
+                    color: iced::Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 4.0.into(),
+                },
+                text_color: Some(iced::Color::WHITE),
+                ..Default::default()
+            });
 
         // Row with frame info on left, time on right
-        let info_row = row![
-            frame_label,
-            Space::new().width(Length::Fill),
-            time_label,
-        ]
-        .padding(8)
-        .width(Length::Fill);
+        let info_row = row![frame_label, Space::new().width(Length::Fill), time_label,].padding(8).width(Length::Fill);
 
         // Position at top, let the rest be transparent/pass-through
-        column![
-            info_row,
-            Space::new().height(Length::Fill),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        column![info_row, Space::new().height(Length::Fill),]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Render the log panel (shown below editor when visible)
@@ -876,7 +845,7 @@ impl AnimationEditor {
 
         let error_text = animator.error.clone();
         let current_frame = self.playback.current_frame;
-        
+
         // Filter log entries to show only up to current frame
         let log_entries: Vec<_> = animator
             .log

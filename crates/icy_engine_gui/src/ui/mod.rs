@@ -595,3 +595,31 @@ pub fn left_label_small<T: 'static>(txt: String) -> Element<'static, T> {
         .align_x(iced::alignment::Horizontal::Left)
         .into()
 }
+
+/// Check if a keyboard event is Alt/Cmd+Number for focusing windows.
+/// Returns Some(target_window_id) if the key combination matches (Alt/Cmd + 0-9),
+/// or None if not a window focus key.
+///
+/// Window IDs: 1-9 map to windows 1-9, 0 maps to window 10.
+///
+/// Note: Uses Alt on all platforms. On macOS, Cmd is also accepted (without Ctrl).
+pub fn check_window_focus_key(key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> Option<usize> {
+    // Alt+Number works on all platforms
+    // Cmd+Number works on macOS (command() returns true for Cmd on macOS, Ctrl on Linux/Windows)
+    // We accept Alt always, or Cmd without Ctrl (to avoid Ctrl+Number conflicts)
+    let is_alt_or_cmd = modifiers.alt() || (modifiers.command() && !modifiers.control());
+
+    if is_alt_or_cmd && !modifiers.shift() {
+        if let iced::keyboard::Key::Character(s) = key {
+            if let Some(digit) = s.chars().next() {
+                if digit.is_ascii_digit() {
+                    let target_id = digit.to_digit(10).unwrap() as usize;
+                    // Special case: Alt+0 focuses window 10
+                    let target_id = if target_id == 0 { 10 } else { target_id };
+                    return Some(target_id);
+                }
+            }
+        }
+    }
+    None
+}

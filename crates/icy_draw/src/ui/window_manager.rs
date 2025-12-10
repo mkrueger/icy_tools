@@ -224,16 +224,9 @@ impl WindowManager {
                     }
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window
-                        if (modifiers.alt() || modifiers.command()) && !modifiers.shift() && !modifiers.control() {
-                            if let keyboard::Key::Character(s) = &key {
-                                if let Some(digit) = s.chars().next() {
-                                    if digit.is_ascii_digit() {
-                                        let target_id = digit.to_digit(10).unwrap() as usize;
-                                        let target_id = if target_id == 0 { 10 } else { target_id };
-                                        return Some(WindowManagerMessage::FocusWindow(target_id));
-                                    }
-                                }
-                            }
+                        println!("Key pressed: {:?} with modifiers {:?}", key, modifiers);
+                        if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
+                            return Some(WindowManagerMessage::FocusWindow(target_id));
                         }
                         Some(WindowManagerMessage::Event(window_id, event))
                     }

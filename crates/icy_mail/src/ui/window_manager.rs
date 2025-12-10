@@ -22,6 +22,7 @@ pub enum WindowManagerMessage {
     OpenWindow,
     CloseWindow(window::Id),
     WindowOpened(window::Id),
+    FocusWindow(usize),
     WindowClosed(window::Id),
     WindowMessage(window::Id, crate::ui::Message),
     Event(window::Id, iced::Event),
@@ -114,6 +115,17 @@ impl WindowManager {
                 Task::none()
             }
 
+            WindowManagerMessage::FocusWindow(target_id) => {
+                // Find the window with the target ID number (1-indexed position)
+                for (i, (window_id, _window)) in self.windows.iter().enumerate() {
+                    if i + 1 == target_id {
+                        // Combine multiple actions to ensure the window comes to front
+                        return Task::batch([window::gain_focus(*window_id), window::minimize(*window_id, false)]);
+                    }
+                }
+                Task::none()
+            }
+
             WindowManagerMessage::_UpdateBuffers => {
                 let mut tasks = vec![];
                 for (id, _window) in self.windows.iter() {
@@ -144,6 +156,11 @@ impl WindowManager {
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Alt+Number to focus window
+                        if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
+                            return Some(WindowManagerMessage::FocusWindow(target_id));
+                        }
+
                         if modifiers.shift() {
                             if modifiers.command() {
                                 match &key {
