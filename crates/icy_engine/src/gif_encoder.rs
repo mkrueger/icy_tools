@@ -193,13 +193,7 @@ impl GifEncoder {
     /// * `frame_on` - RGBA data for blink "on" state
     /// * `frame_off` - RGBA data for blink "off" state
     /// * `blink_rate_ms` - Duration of each frame in milliseconds
-    pub fn encode_blink_animation(
-        &self,
-        path: impl AsRef<Path>,
-        frame_on: Vec<u8>,
-        frame_off: Vec<u8>,
-        blink_rate_ms: u32,
-    ) -> crate::Result<()> {
+    pub fn encode_blink_animation(&self, path: impl AsRef<Path>, frame_on: Vec<u8>, frame_off: Vec<u8>, blink_rate_ms: u32) -> crate::Result<()> {
         let frames = vec![GifFrame::new(frame_on, blink_rate_ms), GifFrame::new(frame_off, blink_rate_ms)];
         self.encode_to_file(path, frames)
     }

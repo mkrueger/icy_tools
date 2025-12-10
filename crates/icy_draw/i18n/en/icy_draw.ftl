@@ -623,3 +623,9 @@ font-export-no-path=No path selected
 font-export-button=Export
 font-export-copy-button=Copy to Clipboard
 font-export-ansi-dcs-info=Will be copied to clipboard as CTerm DCS sequence
+
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Export to
+animation-export-no-path=No path selected
+animation-export-success=Export completed successfully

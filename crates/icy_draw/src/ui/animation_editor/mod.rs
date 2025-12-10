@@ -11,6 +11,7 @@
 
 mod encoding;
 pub mod export_dialog;
+mod icons;
 mod lua_highlighting;
 pub mod menu_bar;
 mod messages;
@@ -26,7 +27,7 @@ use iced::{
     Element, Length, Task, Theme, highlighter,
     widget::{Space, column, container, row, rule, scrollable, text, text_editor},
 };
-use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
+use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, set_default_auto_scaling_xy};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
@@ -34,13 +35,22 @@ use parking_lot::Mutex;
 #[allow(dead_code)]
 const DEFAULT_FRAME_DELAY: u32 = 100;
 
+/// Create monitor settings optimized for animation preview
+/// Uses auto-scaling without integer scaling for smooth preview
+fn create_preview_monitor_settings() -> MonitorSettings {
+    let mut settings = MonitorSettings::default();
+    settings.scaling_mode = ScalingMode::Auto;
+    settings.use_integer_scaling = false;
+    settings
+}
+
 /// Animation editor state
 pub struct AnimationEditor {
     /// Lua script source code
     script: text_editor::Content,
 
     /// The animator running the Lua script
-    animator: Arc<Mutex<Animator>>,
+    pub animator: Arc<Mutex<Animator>>,
 
     /// Next animator being computed (for live preview updates)
     next_animator: Option<Arc<Mutex<Animator>>>,
@@ -151,7 +161,7 @@ impl AnimationEditor {
             undo_depth: 0,
             preview_screen: None,
             preview_terminal: None,
-            preview_monitor: MonitorSettings::default(),
+            preview_monitor: create_preview_monitor_settings(),
             last_preview_frame: usize::MAX,
         }
     }
@@ -181,7 +191,7 @@ impl AnimationEditor {
             undo_depth: 0,
             preview_screen: None,
             preview_terminal: None,
-            preview_monitor: MonitorSettings::default(),
+            preview_monitor: create_preview_monitor_settings(),
             last_preview_frame: usize::MAX,
         }
     }
@@ -279,7 +289,12 @@ impl AnimationEditor {
         // - Animation is playing
         // - Script needs recompilation (checking debounce)
         // - Next animator is being computed
-        self.playback.is_playing || self.needs_recompile || self.next_animator.is_some()
+        // - Animator is running (not yet ready) - for initial load
+        // - Preview terminal not yet created but animator is ready
+        let animator_running = !self.is_ready();
+        let needs_preview_update = self.is_ready() && self.preview_terminal.is_none();
+
+        self.playback.is_playing || self.needs_recompile || self.next_animator.is_some() || animator_running || needs_preview_update
     }
 
     /// Schedule a script recompilation
@@ -430,12 +445,14 @@ impl AnimationEditor {
             AnimationEditorMessage::Stop => {
                 self.playback.is_playing = false;
                 self.playback.current_frame = 0;
+                self.update_preview_terminal();
                 Task::none()
             }
 
             AnimationEditorMessage::PreviousFrame => {
                 if self.playback.current_frame > 0 {
                     self.playback.current_frame -= 1;
+                    self.update_preview_terminal();
                 }
                 Task::none()
             }
@@ -444,12 +461,14 @@ impl AnimationEditor {
                 let frame_count = self.frame_count();
                 if self.playback.current_frame + 1 < frame_count {
                     self.playback.current_frame += 1;
+                    self.update_preview_terminal();
                 }
                 Task::none()
             }
 
             AnimationEditorMessage::FirstFrame => {
                 self.playback.current_frame = 0;
+                self.update_preview_terminal();
                 Task::none()
             }
 
@@ -457,6 +476,7 @@ impl AnimationEditor {
                 let frame_count = self.frame_count();
                 if frame_count > 0 {
                     self.playback.current_frame = frame_count - 1;
+                    self.update_preview_terminal();
                 }
                 Task::none()
             }
@@ -464,6 +484,7 @@ impl AnimationEditor {
             AnimationEditorMessage::SeekFrame(frame) => {
                 let frame_count = self.frame_count();
                 self.playback.current_frame = frame.min(frame_count.saturating_sub(1));
+                self.update_preview_terminal();
                 Task::none()
             }
 
@@ -551,30 +572,10 @@ impl AnimationEditor {
             .font(iced::Font::MONOSPACE)
             .height(Length::Fill);
 
-        // Status bar with line/column info
-        let (line, col) = self.cursor_position();
-        let total_lines = self.line_count();
-        let status_text = text(format!("Ln {}, Col {} | {} lines", line + 1, col + 1, total_lines))
-            .size(12)
-            .font(iced::Font::MONOSPACE)
-            .style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().background.strong.color),
-            });
-        
-        let status_bar = container(status_text)
-            .width(Length::Fill)
-            .padding([2, 8])
-            .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
-                ..Default::default()
-            });
-
-        let code_panel = column![
-            container(code_editor).height(Length::Fill).padding(8),
-            status_bar,
-        ]
-        .width(Length::FillPortion(1))
-        .height(Length::Fill);
+        // Wrap code editor in scrollable container
+        let code_panel = scrollable(container(code_editor).width(Length::Fill).height(Length::Fill).padding(8))
+            .width(Length::FillPortion(1))
+            .height(Length::Fill);
 
         // Right panel: Preview and controls
         let playback_controls = view_playback_controls(self);
@@ -586,13 +587,9 @@ impl AnimationEditor {
         // Preview using TerminalView
         let preview_element: Element<'_, AnimationEditorMessage> = if self.has_error() {
             // Show error
-            container(
-                text(error_msg)
-                    .size(14)
-                    .style(|theme: &Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
-                    }),
-            )
+            container(text(error_msg).size(14).style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().danger.base.color),
+            }))
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
@@ -616,7 +613,11 @@ impl AnimationEditor {
                 .into()
         } else if let Some(terminal) = &self.preview_terminal {
             // Show terminal view with current frame
-            TerminalView::show_with_effects(terminal, self.preview_monitor.clone()).map(|_| AnimationEditorMessage::Tick)
+            // Enable auto-scaling for the preview (like terminal)
+            set_default_auto_scaling_xy(true);
+            let view = TerminalView::show_with_effects(terminal, self.preview_monitor.clone()).map(|_| AnimationEditorMessage::Tick);
+            set_default_auto_scaling_xy(false);
+            view
         } else {
             // No terminal yet
             container(text("Preparing preview...").size(14))
@@ -632,16 +633,10 @@ impl AnimationEditor {
         // Log panel
         let log_panel = self.view_log_panel();
 
-        let right_panel = column![
-            playback_controls,
-            frame_slider,
-            preview_container,
-            rule::horizontal(1),
-            log_panel,
-        ]
-        .spacing(4)
-        .width(Length::FillPortion(1))
-        .height(Length::Fill);
+        let right_panel = column![playback_controls, frame_slider, preview_container, rule::horizontal(1), log_panel,]
+            .spacing(4)
+            .width(Length::FillPortion(1))
+            .height(Length::Fill);
 
         let right_container = container(right_panel).width(Length::FillPortion(1)).height(Length::Fill).padding(8);
 

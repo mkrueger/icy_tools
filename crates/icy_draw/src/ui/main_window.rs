@@ -309,6 +309,7 @@ pub enum Message {
 
     // Animation Export Dialog
     ShowAnimationExportDialog,
+    AnimationExport(super::animation_editor::AnimationExportMessage),
 
     // Internal
     Tick,
@@ -905,11 +906,16 @@ impl MainWindow {
             // Animation Export Dialog
             // ═══════════════════════════════════════════════════════════════════
             Message::ShowAnimationExportDialog => {
-                // TODO: Implement animation export dialog
-                // For now, just log
-                log::info!("Show Animation Export Dialog requested");
+                if let ModeState::Animation(editor) = &self.mode_state {
+                    let animator = editor.animator.clone();
+                    let source_path = editor.file_path().cloned();
+                    self.dialogs
+                        .push(super::animation_editor::AnimationExportDialog::new(animator, source_path.as_ref()));
+                }
                 Task::none()
             }
+            // AnimationExport messages are routed through DialogStack::update above
+            Message::AnimationExport(_) => Task::none(),
 
             // ═══════════════════════════════════════════════════════════════════
             // File operations (TODO: implement)
