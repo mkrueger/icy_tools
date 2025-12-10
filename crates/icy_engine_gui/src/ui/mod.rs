@@ -5,6 +5,9 @@ use iced::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 mod icons;
 pub use icons::*;
 
+mod dialog;
+pub use dialog::*;
+
 mod confirmation_dialog;
 pub use confirmation_dialog::*;
 

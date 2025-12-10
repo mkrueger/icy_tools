@@ -1,6 +1,6 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Border, Color, Element, Length, Theme,
+    Alignment, Border, Color, Element, Event, Length, Theme,
     widget::{Space, button, column, container, row, text},
 };
 use std::fmt;
@@ -8,6 +8,7 @@ use std::fmt;
 use crate::{
     DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, LANGUAGE_LOADER, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, danger_button, dialog_area, modal_container,
     modal_overlay, primary_button, secondary_button,
+    ui::dialog::{Dialog, DialogAction},
     ui::icons::{error_icon, warning_icon},
 };
 
@@ -256,5 +257,332 @@ impl ConfirmationDialog {
 
         // Overlay + centering
         modal_overlay::<Message>(background, modal.into())
+    }
+
+    /// Build just the dialog content without modal overlay (for use with Dialog trait)
+    pub fn view_content<'a, Message: 'a + Clone>(&'a self, on_result: impl Fn(DialogResult) -> Message + 'a) -> Element<'a, Message> {
+        let mut text_column = column![text(self.title.clone()).size(22.0).font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::default()
+        })];
+
+        if let Some(secondary) = self.secondary_message.clone() {
+            text_column = text_column.push(text(secondary).size(TEXT_SIZE_SMALL).style(|theme: &Theme| iced::widget::text::Style {
+                color: Some(theme.extended_palette().secondary.base.color),
+            }));
+        }
+
+        // Build header with icon and title/secondary message side by side
+        let header = if let Some(icon_elem) = self.dialog_type.icon() {
+            let icon_container = container(icon_elem).style(|_theme: &Theme| container::Style {
+                background: None,
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            row![icon_container, Space::new().width(12.0), text_column.width(Length::Fill)].align_y(Alignment::Center)
+        } else {
+            row![text_column.width(Length::Fill)]
+        };
+
+        // Main content area with primary message
+        let content = column![
+            header,
+            Space::new().height(DIALOG_SPACING),
+            text(self.primary_message.clone()).size(TEXT_SIZE_NORMAL)
+        ]
+        .spacing(DIALOG_SPACING);
+
+        // Assembly - convert Theme elements to Message elements
+        let dialog_content: Element<'a, Message> = dialog_area(content.into()).map(|_| unreachable!());
+        let buttons_row: Element<'a, Message> = button_row(
+            self.buttons
+                .to_buttons()
+                .into_iter()
+                .map(|(button_type, style)| {
+                    let msg = on_result(button_type.to_result());
+                    let label = button_type.to_string();
+                    match style {
+                        ButtonStyle::Primary => primary_button(&label, Some(msg)),
+                        ButtonStyle::Secondary => secondary_button(&label, Some(msg)),
+                        ButtonStyle::Danger => danger_button(&label, Some(msg)),
+                    }
+                    .into()
+                })
+                .collect(),
+        );
+
+        let button_area: Element<'a, Message> = dialog_area(buttons_row);
+        modal_container(column![dialog_content, button_area].into(), DIALOG_WIDTH_MEDIUM).into()
+    }
+
+    /// Get the default cancel result for this button set
+    pub fn cancel_result(&self) -> DialogResult {
+        match self.buttons {
+            ButtonSet::Ok => DialogResult::Ok,
+            ButtonSet::Close => DialogResult::Close,
+            ButtonSet::OkCancel | ButtonSet::DeleteCancel | ButtonSet::OverwriteCancel => DialogResult::Cancel,
+            ButtonSet::YesNo => DialogResult::No,
+            ButtonSet::YesNoCancel => DialogResult::Cancel,
+        }
+    }
+
+    /// Get the default confirm result for this button set
+    pub fn confirm_result(&self) -> DialogResult {
+        match self.buttons {
+            ButtonSet::Ok => DialogResult::Ok,
+            ButtonSet::Close => DialogResult::Close,
+            ButtonSet::OkCancel => DialogResult::Ok,
+            ButtonSet::YesNo | ButtonSet::YesNoCancel => DialogResult::Yes,
+            ButtonSet::DeleteCancel => DialogResult::Delete,
+            ButtonSet::OverwriteCancel => DialogResult::Overwrite,
+        }
+    }
+}
+
+/// A ConfirmationDialog wrapped for use with the Dialog trait system.
+/// This stores the dialog along with how to map results to app messages.
+pub struct ConfirmationDialogWrapper<M, F>
+where
+    F: Fn(DialogResult) -> M,
+{
+    pub dialog: ConfirmationDialog,
+    pub on_result: F,
+}
+
+impl<M, F> ConfirmationDialogWrapper<M, F>
+where
+    F: Fn(DialogResult) -> M,
+{
+    pub fn new(dialog: ConfirmationDialog, on_result: F) -> Self {
+        Self { dialog, on_result }
+    }
+}
+
+// ============================================================================
+// Builder functions for common dialog patterns
+// ============================================================================
+
+/// Create a simple error dialog with an OK button.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(error_dialog(
+///     "File Not Found",
+///     "The file could not be located.",
+///     |_result| Message::DismissError,
+/// ));
+/// ```
+pub fn error_dialog<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message).dialog_type(DialogType::Error).buttons(ButtonSet::Ok),
+        on_result,
+    )
+}
+
+/// Create a warning dialog with an OK button.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(warning_dialog(
+///     "Unsaved Changes",
+///     "You have unsaved changes.",
+///     |_result| Message::DismissWarning,
+/// ));
+/// ```
+pub fn warning_dialog<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message).dialog_type(DialogType::Warning).buttons(ButtonSet::Ok),
+        on_result,
+    )
+}
+
+/// Create an info dialog with an OK button.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(info_dialog(
+///     "Export Complete",
+///     "Your file has been exported successfully.",
+///     |_result| Message::DismissInfo,
+/// ));
+/// ```
+pub fn info_dialog<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message).dialog_type(DialogType::Info).buttons(ButtonSet::Ok),
+        on_result,
+    )
+}
+
+/// Create a Yes/No confirmation dialog.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(confirm_yes_no(
+///     "Save Changes?",
+///     "Do you want to save your changes before closing?",
+///     |result| match result {
+///         DialogResult::Yes => Message::SaveAndClose,
+///         _ => Message::CloseWithoutSaving,
+///     },
+/// ));
+/// ```
+pub fn confirm_yes_no<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message)
+            .dialog_type(DialogType::Question)
+            .buttons(ButtonSet::YesNo),
+        on_result,
+    )
+}
+
+/// Create a Yes/No/Cancel confirmation dialog.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(confirm_yes_no_cancel(
+///     "Save Changes?",
+///     "Do you want to save your changes before closing?",
+///     |result| match result {
+///         DialogResult::Yes => Message::SaveAndClose,
+///         DialogResult::No => Message::CloseWithoutSaving,
+///         _ => Message::CancelClose,
+///     },
+/// ));
+/// ```
+pub fn confirm_yes_no_cancel<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message)
+            .dialog_type(DialogType::Question)
+            .buttons(ButtonSet::YesNoCancel),
+        on_result,
+    )
+}
+
+/// Create a delete confirmation dialog (Delete/Cancel buttons).
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(confirm_delete(
+///     "Delete File?",
+///     "This action cannot be undone.",
+///     |result| match result {
+///         DialogResult::Delete => Message::PerformDelete,
+///         _ => Message::CancelDelete,
+///     },
+/// ));
+/// ```
+pub fn confirm_delete<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message)
+            .dialog_type(DialogType::Warning)
+            .buttons(ButtonSet::DeleteCancel),
+        on_result,
+    )
+}
+
+/// Create an overwrite confirmation dialog (Overwrite/Cancel buttons).
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(confirm_overwrite(
+///     "File Exists",
+///     "Do you want to overwrite the existing file?",
+///     |result| match result {
+///         DialogResult::Overwrite => Message::PerformOverwrite,
+///         _ => Message::CancelOverwrite,
+///     },
+/// ));
+/// ```
+pub fn confirm_overwrite<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message)
+            .dialog_type(DialogType::Warning)
+            .buttons(ButtonSet::OverwriteCancel),
+        on_result,
+    )
+}
+
+/// Create an Ok/Cancel confirmation dialog.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(confirm_ok_cancel(
+///     "Proceed?",
+///     "Are you sure you want to continue?",
+///     |result| match result {
+///         DialogResult::Ok => Message::Proceed,
+///         _ => Message::Cancel,
+///     },
+/// ));
+/// ```
+pub fn confirm_ok_cancel<M, F>(title: impl Into<String>, message: impl Into<String>, on_result: F) -> ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    ConfirmationDialogWrapper::new(
+        ConfirmationDialog::new(title, message)
+            .dialog_type(DialogType::Plain)
+            .buttons(ButtonSet::OkCancel),
+        on_result,
+    )
+}
+
+impl<M, F> Dialog<M> for ConfirmationDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(DialogResult) -> M + Send + 'static,
+{
+    fn view(&self) -> Element<'_, M> {
+        self.dialog.view_content(|r| (self.on_result)(r))
+    }
+
+    fn request_cancel(&mut self) -> DialogAction<M> {
+        let result = self.dialog.cancel_result();
+        DialogAction::CloseWith((self.on_result)(result))
+    }
+
+    fn request_confirm(&mut self) -> DialogAction<M> {
+        let result = self.dialog.confirm_result();
+        DialogAction::CloseWith((self.on_result)(result))
+    }
+
+    fn handle_event(&mut self, _event: &Event) -> Option<DialogAction<M>> {
+        None
+    }
+
+    fn close_on_blur(&self) -> bool {
+        true
     }
 }

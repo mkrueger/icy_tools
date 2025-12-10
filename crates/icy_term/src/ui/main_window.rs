@@ -24,7 +24,7 @@ use crate::{
 use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::Position;
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, command_handler, music::music::SoundThread};
+use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, command_handler, music::music::SoundThread, ui::DialogStack};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use icy_parser_core::BaudEmulation;
 use tokio::sync::mpsc;
@@ -111,6 +111,8 @@ pub struct MainWindow {
     pub open_serial_dialog: super::open_serial_dialog::OpenSerialDialog,
     pub help_dialog: crate::ui::dialogs::help_dialog::HelpDialog,
     pub about_dialog: crate::ui::dialogs::about_dialog::AboutDialog,
+    /// Dialog stack for trait-based modal dialogs (new unified system)
+    pub dialogs: DialogStack<Message>,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -194,6 +196,7 @@ impl MainWindow {
             open_serial_dialog: super::open_serial_dialog::OpenSerialDialog::new(serial),
             help_dialog: crate::ui::dialogs::help_dialog::HelpDialog::new(),
             about_dialog: crate::ui::dialogs::about_dialog::AboutDialog::new(super::about_dialog::ABOUT_ANSI),
+            dialogs: DialogStack::new(),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -1489,8 +1492,8 @@ impl MainWindow {
 
     pub fn view(&self) -> Element<'_, Message> {
         match &self.state.mode {
-            MainWindowMode::ShowDialingDirectory => return self.dialing_directory.view(&self.settings_dialog.original_options.lock()),
-            MainWindowMode::ShowAboutDialog => return self.about_dialog.view(),
+            MainWindowMode::ShowDialingDirectory => return self.dialogs.view(self.dialing_directory.view(&self.settings_dialog.original_options.lock())),
+            MainWindowMode::ShowAboutDialog => return self.dialogs.view(self.about_dialog.view()),
             _ => {}
         }
 
@@ -1503,7 +1506,7 @@ impl MainWindow {
             self.terminal_window.view(settings, &self.pause_message)
         };
 
-        match &self.state.mode {
+        let mode_view = match &self.state.mode {
             MainWindowMode::ShowTerminal => terminal_view,
             MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
             MainWindowMode::SelectProtocol(download) => {
@@ -1536,7 +1539,10 @@ impl MainWindow {
             _ => {
                 panic!("Unhandled main window mode in view()")
             }
-        }
+        };
+
+        // Wrap with dialog stack (for new trait-based dialogs)
+        self.dialogs.view(mode_view)
     }
 
     pub fn get_mode(&self) -> MainWindowMode {
@@ -1572,16 +1578,23 @@ impl MainWindow {
         self.state.mode = MainWindowMode::ShowTerminal;
     }
 
-    pub fn handle_event(&self, event: &Event) -> Option<Message> {
+    pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
+        // First, let the dialog stack handle events if it has dialogs
+        if !self.dialogs.is_empty() {
+            let task = self.dialogs.handle_event(event);
+            // If the stack has dialogs, consume the event
+            return (None, task);
+        }
+
         match event {
             Event::Window(window::Event::Focused) => {
-                return Some(Message::SetFocus(true));
+                return (Some(Message::SetFocus(true)), Task::none());
             }
             Event::Window(window::Event::Unfocused) => {
-                return Some(Message::SetFocus(false));
+                return (Some(Message::SetFocus(false)), Task::none());
             }
             Event::Mouse(iced::mouse::Event::CursorLeft) => {
-                return Some(Message::CursorLeftWindow);
+                return (Some(Message::CursorLeftWindow), Task::none());
             }
             Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
                 // Only handle mouse wheel in scrollback mode
@@ -1597,14 +1610,14 @@ impl MainWindow {
                             -y
                         }
                     };
-                    return Some(Message::ScrollViewport(0.0, scroll_amount));
+                    return (Some(Message::ScrollViewport(0.0, scroll_amount)), Task::none());
                 }
             }
 
             _ => {}
         }
 
-        match &self.state.mode {
+        let msg = match &self.state.mode {
             MainWindowMode::ShowDialingDirectory => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
@@ -1676,48 +1689,48 @@ impl MainWindow {
                             match key {
                                 // ESC exits scrollback mode
                                 keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                                    return Some(Message::ShowScrollback);
+                                    return (Some(Message::ShowScrollback), Task::none());
                                 }
                                 // Arrow Up: scroll up one line
                                 keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
-                                    return Some(Message::ScrollViewport(0.0, -line_height));
+                                    return (Some(Message::ScrollViewport(0.0, -line_height)), Task::none());
                                 }
                                 // Arrow Down: scroll down one line
                                 keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
-                                    return Some(Message::ScrollViewport(0.0, line_height));
+                                    return (Some(Message::ScrollViewport(0.0, line_height)), Task::none());
                                 }
                                 // Page Up: scroll up one screen
                                 keyboard::Key::Named(keyboard::key::Named::PageUp) => {
-                                    return Some(Message::ScrollViewport(0.0, -page_height));
+                                    return (Some(Message::ScrollViewport(0.0, -page_height)), Task::none());
                                 }
                                 // Page Down: scroll down one screen
                                 keyboard::Key::Named(keyboard::key::Named::PageDown) => {
-                                    return Some(Message::ScrollViewport(0.0, page_height));
+                                    return (Some(Message::ScrollViewport(0.0, page_height)), Task::none());
                                 }
                                 // Home: scroll to top
                                 keyboard::Key::Named(keyboard::key::Named::Home) => {
-                                    return Some(Message::ScrollViewportTo(true, 0.0, 0.0));
+                                    return (Some(Message::ScrollViewportTo(true, 0.0, 0.0)), Task::none());
                                 }
                                 // End: scroll to bottom
                                 keyboard::Key::Named(keyboard::key::Named::End) => {
                                     let max_y = self.terminal_window.terminal.viewport.read().max_scroll_y();
-                                    return Some(Message::ScrollViewportTo(true, 0.0, max_y));
+                                    return (Some(Message::ScrollViewportTo(true, 0.0, max_y)), Task::none());
                                 }
                                 // Any other key exits scrollback mode
                                 _ => {
-                                    return Some(Message::ShowScrollback);
+                                    return (Some(Message::ShowScrollback), Task::none());
                                 }
                             }
                         }
 
                         // Try command handler for keyboard shortcuts
                         if let Some(msg) = self.commands.handle(event) {
-                            return Some(msg);
+                            return (Some(msg), Task::none());
                         }
 
                         // Try to map the key with modifiers using the key map (for terminal input)
                         if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
-                            return Some(Message::SendData(bytes));
+                            return (Some(Message::SendData(bytes)), Task::none());
                         }
 
                         if let Some(text) = text {
@@ -1783,6 +1796,7 @@ impl MainWindow {
                     _ => None,
                 }
             }
-        }
+        };
+        (msg, Task::none())
     }
 }

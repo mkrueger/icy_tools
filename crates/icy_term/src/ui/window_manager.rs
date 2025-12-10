@@ -245,10 +245,13 @@ impl WindowManager {
                 }
 
                 // Pass event to window for other handling
-                if let Some(window) = self.windows.get(&window_id) {
-                    if let Some(msg) = window.handle_event(&event) {
-                        return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    let (msg_opt, task) = window.handle_event(&event);
+                    let mut tasks = vec![task.map(move |m| WindowManagerMessage::WindowMessage(window_id, m))];
+                    if let Some(msg) = msg_opt {
+                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(window_id, msg)));
                     }
+                    return Task::batch(tasks);
                 }
                 Task::none()
             }

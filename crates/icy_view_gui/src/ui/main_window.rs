@@ -8,7 +8,7 @@ use iced::{
 };
 use icy_engine_gui::{
     ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager, command_handler,
-    ui::{ExportDialogMessage, ExportDialogState},
+    ui::{DialogStack, ExportDialogMessage, ExportDialogState},
     version_helper::replace_version_marker,
 };
 use once_cell::sync::Lazy;
@@ -208,6 +208,9 @@ pub struct MainWindow {
     error_dialog: Option<ConfirmationDialog>,
     /// Export dialog (shown as modal when Some)
     export_dialog: Option<ExportDialogState>,
+    /// Dialog stack for trait-based modal dialogs (new unified system)
+    /// This can be used alongside or instead of the Option<Dialog> fields above.
+    dialogs: DialogStack<Message>,
     /// Toast notifications
     toasts: Vec<Toast>,
     /// SAUCE loader for async loading of SAUCE info
@@ -328,6 +331,7 @@ impl MainWindow {
                 settings_dialog: None,
                 error_dialog: None,
                 export_dialog: None,
+                dialogs: DialogStack::new(),
                 toasts: Vec::new(),
                 sauce_loader: Some(sauce_loader),
                 sauce_rx: Some(sauce_rx),
@@ -2232,8 +2236,11 @@ impl MainWindow {
             view_with_help
         };
 
+        // Wrap with dialog stack (for new trait-based dialogs)
+        let view_with_dialogs = self.dialogs.view(view_with_about);
+
         // Wrap with toast notifications
-        ToastManager::new(view_with_about, &self.toasts, Message::CloseToast).into()
+        ToastManager::new(view_with_dialogs, &self.toasts, Message::CloseToast).into()
     }
 
     fn build_status_info(&self) -> StatusInfo {
@@ -2381,34 +2388,41 @@ impl MainWindow {
             || self.shuffle_mode.needs_animation()
     }
 
-    pub fn handle_event(&mut self, event: &Event) -> Option<Message> {
+    pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
+        // First, let the dialog stack handle events if it has dialogs
+        if !self.dialogs.is_empty() {
+            let task = self.dialogs.handle_event(event);
+            // If the stack has dialogs, consume the event (return None for message but the task)
+            return (None, task);
+        }
+
         // Try the command handler first for both keyboard and mouse events
         if let Some(msg) = self.commands.handle(event) {
-            return Some(msg);
+            return (Some(msg), Task::none());
         }
 
         // Delegate to component handlers
         if let Some(msg) = self.preview.handle_event(event) {
-            return Some(Message::Preview(msg));
+            return (Some(Message::Preview(msg)), Task::none());
         }
         if let Some(msg) = self.navigation_bar.handle_event(event) {
-            return Some(Message::Navigation(msg));
+            return (Some(Message::Navigation(msg)), Task::none());
         }
         if let Some(msg) = self.status_bar.handle_event(event) {
-            return Some(Message::StatusBar(msg));
+            return (Some(Message::StatusBar(msg)), Task::none());
         }
 
         // In tile mode, forward mouse events to the tile grid for scroll handling
         if self.view_mode() == ViewMode::Tiles {
             if let Some(msg) = self.tile_grid.handle_event(event, 0.0, 40.0) {
-                return Some(Message::TileGrid(msg));
+                return (Some(Message::TileGrid(msg)), Task::none());
             }
         }
 
         // Handle folder preview mouse events in list mode
         if self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() {
             if let Some(msg) = self.folder_preview.handle_event(event, 300.0, 40.0) {
-                return Some(Message::FolderPreview(msg));
+                return (Some(Message::FolderPreview(msg)), Task::none());
             }
         }
 
@@ -2418,42 +2432,42 @@ impl MainWindow {
                 // Space: shuffle mode or auto-scroll toggle
                 if let Key::Named(Named::Space) = key {
                     if self.shuffle_mode.is_active {
-                        return Some(Message::ShuffleNext);
+                        return (Some(Message::ShuffleNext), Task::none());
                     }
-                    return Some(Message::StatusBar(StatusBarMessage::ToggleAutoScroll));
+                    return (Some(Message::StatusBar(StatusBarMessage::ToggleAutoScroll)), Task::none());
                 }
 
                 // Handle Enter key for dialogs
                 if let Key::Named(Named::Enter) = key {
                     // First check if shuffle mode is active - exit it
                     if self.shuffle_mode.is_active {
-                        return Some(Message::ShuffleNext);
+                        return (Some(Message::ShuffleNext), Task::none());
                     }
 
                     // Settings dialog: Enter = Save (apply and close)
                     if self.settings_dialog.is_some() {
-                        return Some(Message::SettingsDialog(SettingsMessage::Save));
+                        return (Some(Message::SettingsDialog(SettingsMessage::Save)), Task::none());
                     }
                     // Sauce dialog: Enter = Close
                     if self.sauce_dialog.is_some() {
-                        return Some(Message::SauceDialog(SauceDialogMessage::Close));
+                        return (Some(Message::SauceDialog(SauceDialogMessage::Close)), Task::none());
                     }
                     // Error dialog: Enter = Close
                     if self.error_dialog.is_some() {
-                        return Some(Message::CloseErrorDialog);
+                        return (Some(Message::CloseErrorDialog), Task::none());
                     }
                 }
 
                 // Handle Escape key for closing dialogs
                 if let Key::Named(Named::Escape) = key {
-                    return Some(Message::Escape);
+                    return (Some(Message::Escape), Task::none());
                 }
 
                 // View-mode dependent navigation keys
                 // Both List and Tiles views handle their own keyboard events via Focus widget
-                None
+                (None, Task::none())
             }
-            _ => None,
+            _ => (None, Task::none()),
         }
     }
 

@@ -5,7 +5,7 @@
 
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Element, Length,
+    Alignment, Element, Event, Length,
     widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::{
@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::dialog::{Dialog, DialogAction};
 use super::{
     DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row_with_left, dialog_area, dialog_title,
     error_tooltip, left_label_small, modal_container, primary_button, restore_defaults_button, secondary_button, separator,
@@ -430,5 +431,202 @@ impl ExportDialogState {
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into()
+    }
+}
+
+/// A wrapper that makes ExportDialogState usable with the Dialog trait.
+///
+/// This wrapper owns the ExportDialogState and provides Dialog trait implementation
+/// that can be used with DialogStack.
+pub struct ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
+{
+    state: ExportDialogState,
+    screen: Arc<Mutex<Box<dyn Screen>>>,
+    on_message: F,
+    on_exported: Option<Box<dyn Fn(PathBuf) -> M + Send>>,
+    on_cancelled: Option<Box<dyn Fn() -> M + Send>>,
+}
+
+impl<M, F> ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
+{
+    /// Create a new export dialog wrapper.
+    ///
+    /// # Arguments
+    /// * `state` - The export dialog state
+    /// * `screen` - The screen buffer to export
+    /// * `on_message` - Callback to convert dialog messages to app messages
+    pub fn new(state: ExportDialogState, screen: Arc<Mutex<Box<dyn Screen>>>, on_message: F) -> Self {
+        Self {
+            state,
+            screen,
+            on_message,
+            on_exported: None,
+            on_cancelled: None,
+        }
+    }
+
+    /// Set callback when export succeeds
+    pub fn on_exported<G>(mut self, callback: G) -> Self
+    where
+        G: Fn(PathBuf) -> M + Send + 'static,
+    {
+        self.on_exported = Some(Box::new(callback));
+        self
+    }
+
+    /// Set callback when export is cancelled
+    pub fn on_cancelled<G>(mut self, callback: G) -> Self
+    where
+        G: Fn() -> M + Send + 'static,
+    {
+        self.on_cancelled = Some(Box::new(callback));
+        self
+    }
+}
+
+// ============================================================================
+// Builder function for export dialog
+// ============================================================================
+
+/// Create an export dialog for saving a screen buffer.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(
+///     export_dialog(
+///         "./output.ans",
+///         BufferType::Unicode,
+///         screen.clone(),
+///         Message::ExportDialog,
+///     )
+///     .on_exported(|path| Message::ExportComplete(path))
+///     .on_cancelled(|| Message::CloseExportDialog)
+/// );
+/// ```
+pub fn export_dialog<M, F>(
+    initial_path: impl Into<String>,
+    buffer_type: BufferType,
+    screen: Arc<Mutex<Box<dyn Screen>>>,
+    on_message: F,
+) -> ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
+{
+    ExportDialogWrapper::new(ExportDialogState::new(initial_path.into(), buffer_type), screen, on_message)
+}
+
+/// Create an export dialog with a default directory provider.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(
+///     export_dialog_with_defaults(
+///         "./output.ans",
+///         BufferType::Unicode,
+///         screen.clone(),
+///         || default_export_dir(),
+///         Message::ExportDialog,
+///     )
+///     .on_exported(|path| Message::ExportComplete(path))
+/// );
+/// ```
+pub fn export_dialog_with_defaults<M, F, D>(
+    initial_path: impl Into<String>,
+    buffer_type: BufferType,
+    screen: Arc<Mutex<Box<dyn Screen>>>,
+    default_dir_fn: D,
+    on_message: F,
+) -> ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
+    D: Fn() -> PathBuf + Send + Sync + 'static,
+{
+    ExportDialogWrapper::new(
+        ExportDialogState::new(initial_path.into(), buffer_type).with_default_directory_fn(default_dir_fn),
+        screen,
+        on_message,
+    )
+}
+
+impl<M, F> ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
+{
+    /// Handle an export dialog message internally
+    pub fn handle_message(&mut self, message: ExportDialogMessage) -> DialogAction<M> {
+        let screen = self.screen.clone();
+        match self.state.update(message, |state| state.export_buffer(screen)) {
+            Some(true) => {
+                // Export succeeded
+                let path = self.state.get_full_path();
+                if let Some(ref on_exported) = self.on_exported {
+                    DialogAction::CloseWith(on_exported(path))
+                } else {
+                    DialogAction::Close
+                }
+            }
+            Some(false) => {
+                // Cancelled
+                if let Some(ref on_cancelled) = self.on_cancelled {
+                    DialogAction::CloseWith(on_cancelled())
+                } else {
+                    DialogAction::Close
+                }
+            }
+            None => {
+                // Keep dialog open
+                DialogAction::None
+            }
+        }
+    }
+
+    /// Get a reference to the inner state
+    pub fn state(&self) -> &ExportDialogState {
+        &self.state
+    }
+
+    /// Get a mutable reference to the inner state
+    pub fn state_mut(&mut self) -> &mut ExportDialogState {
+        &mut self.state
+    }
+}
+
+impl<M, F> Dialog<M> for ExportDialogWrapper<M, F>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ExportDialogMessage) -> M + Clone + Send + 'static,
+{
+    fn view(&self) -> Element<'_, M> {
+        self.state.view(self.on_message.clone())
+    }
+
+    fn request_cancel(&mut self) -> DialogAction<M> {
+        if let Some(ref on_cancelled) = self.on_cancelled {
+            DialogAction::CloseWith(on_cancelled())
+        } else {
+            DialogAction::Close
+        }
+    }
+
+    fn request_confirm(&mut self) -> DialogAction<M> {
+        // Handle the export action
+        self.handle_message(ExportDialogMessage::Export)
+    }
+
+    fn handle_event(&mut self, _event: &Event) -> Option<DialogAction<M>> {
+        None
+    }
+
+    fn close_on_blur(&self) -> bool {
+        false // Export dialog should not close on blur
     }
 }
