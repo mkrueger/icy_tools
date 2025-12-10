@@ -157,7 +157,7 @@ pub enum EngineError {
 
     // === GIF Encoder Errors ===
     #[error("GIF encoder error: {0}")]
-    GifEncoder(#[from] gifski::Error),
+    GifEncoder(#[from] gif::EncodingError),
 
     // === SAUCE Errors ===
     #[error("SAUCE error: {0}")]

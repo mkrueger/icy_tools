@@ -159,36 +159,15 @@ impl ImageFormat {
     }
 
     fn save_screen_gif(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> Result<()> {
-        use gifski::{Repeat, progress::NoProgress};
+        use crate::gif_encoder::GifEncoder;
 
         let size = screen.get_size();
         let dim = screen.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as usize;
-        let height = (region.get_height().min(size.height) * dim.height) as usize;
+        let width = (region.get_width().min(size.width) * dim.width) as u16;
+        let height = (region.get_height().min(size.height) * dim.height) as u16;
 
         // Get blink rate from the screen's buffer type (in milliseconds)
         let blink_rate_ms = screen.buffer_type().get_blink_rate();
-        let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
-
-        let settings = gifski::Settings {
-            width: Some(width as u32),
-            height: Some(height as u32),
-            quality: 100,
-            fast: true,
-            repeat: Repeat::Infinite,
-        };
-
-        let (collector, writer) = gifski::new(settings)?;
-
-        let fs = std::fs::File::create(path)?;
-        let mut pb = NoProgress {};
-
-        let path_clone = path.to_path_buf();
-        let writer_handle = std::thread::spawn(move || {
-            if let Err(e) = writer.write(fs, &mut pb) {
-                log::error!("GIF writer error for {:?}: {}", path_clone, e);
-            }
-        });
 
         // Frame 1: blink_on = true (visible)
         let options1 = RenderOptions {
@@ -196,9 +175,7 @@ impl ImageFormat {
             blink_on: true,
             ..Default::default()
         };
-        let (frame1_size, frame1_data) = screen.render_to_rgba(&options1);
-        let img1 = Self::create_imgref(frame1_data, frame1_size);
-        collector.add_frame_rgba(0, img1, 0.0)?;
+        let (_frame1_size, frame1_data) = screen.render_to_rgba(&options1);
 
         // Frame 2: blink_on = false (hidden) - use screen's blink rate
         let options2 = RenderOptions {
@@ -206,13 +183,11 @@ impl ImageFormat {
             blink_on: false,
             ..Default::default()
         };
-        let (frame2_size, frame2_data) = screen.render_to_rgba(&options2);
-        let img2 = Self::create_imgref(frame2_data, frame2_size);
-        collector.add_frame_rgba(1, img2, blink_rate_secs)?;
+        let (_frame2_size, frame2_data) = screen.render_to_rgba(&options2);
 
-        drop(collector);
-        writer_handle.join().map_err(|_| crate::EngineError::GifWriterPanicked)?;
-        Ok(())
+        // Use new GIF encoder
+        let encoder = GifEncoder::new(width, height);
+        encoder.encode_blink_animation(path, frame1_data, frame2_data, blink_rate_ms as u32)
     }
 
     /// Save a TextBuffer to an image file.
@@ -276,37 +251,15 @@ impl ImageFormat {
     }
 
     fn save_gif(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> Result<()> {
-        use gifski::{Repeat, progress::NoProgress};
+        use crate::gif_encoder::GifEncoder;
 
         let size = buffer.get_size();
         let dim = buffer.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as usize;
-        let height = (region.get_height().min(size.height) * dim.height) as usize;
+        let width = (region.get_width().min(size.width) * dim.width) as u16;
+        let height = (region.get_height().min(size.height) * dim.height) as u16;
 
         // Get blink rate from the buffer's type (in milliseconds)
         let blink_rate_ms = buffer.buffer_type.get_blink_rate();
-        let blink_rate_secs = blink_rate_ms as f64 / 1000.0;
-
-        let settings = gifski::Settings {
-            width: Some(width as u32),
-            height: Some(height as u32),
-            quality: 100,
-            fast: true,
-            repeat: Repeat::Infinite,
-        };
-
-        let (collector, writer) = gifski::new(settings)?;
-
-        let fs = std::fs::File::create(path)?;
-        let mut pb = NoProgress {};
-
-        // Spawn writer thread
-        let path_clone = path.to_path_buf();
-        let writer_handle = std::thread::spawn(move || {
-            if let Err(e) = writer.write(fs, &mut pb) {
-                log::error!("GIF writer error for {:?}: {}", path_clone, e);
-            }
-        });
 
         // Frame 1: blink_on = true (visible)
         let options1 = RenderOptions {
@@ -315,9 +268,7 @@ impl ImageFormat {
             ..Default::default()
         };
         let scan_lines = options1.override_scan_lines.unwrap_or(false);
-        let (frame1_size, frame1_data) = buffer.render_to_rgba(&options1, scan_lines);
-        let img1 = Self::create_imgref(frame1_data, frame1_size);
-        collector.add_frame_rgba(0, img1, 0.0)?;
+        let (_frame1_size, frame1_data) = buffer.render_to_rgba(&options1, scan_lines);
 
         // Frame 2: blink_on = false (hidden) - use buffer's blink rate
         let options2 = RenderOptions {
@@ -325,24 +276,11 @@ impl ImageFormat {
             blink_on: false,
             ..Default::default()
         };
-        let (frame2_size, frame2_data) = buffer.render_to_rgba(&options2, scan_lines);
-        let img2 = Self::create_imgref(frame2_data, frame2_size);
-        collector.add_frame_rgba(1, img2, blink_rate_secs)?;
+        let (_frame2_size, frame2_data) = buffer.render_to_rgba(&options2, scan_lines);
 
-        // Drop collector to signal completion
-        drop(collector);
-
-        // Wait for writer to finish
-        writer_handle.join().map_err(|_| crate::EngineError::GifWriterPanicked)?;
-        Ok(())
-    }
-
-    fn create_imgref(data: Vec<u8>, size: crate::Size) -> imgref::Img<Vec<rgb::RGBA<u8>>> {
-        let mut rgba_data = Vec::with_capacity(data.len() / 4);
-        for chunk in data.chunks_exact(4) {
-            rgba_data.push(rgb::RGBA::new(chunk[0], chunk[1], chunk[2], chunk[3]));
-        }
-        imgref::Img::new(rgba_data, size.width as usize, size.height as usize)
+        // Use new GIF encoder
+        let encoder = GifEncoder::new(width, height);
+        encoder.encode_blink_animation(path, frame1_data, frame2_data, blink_rate_ms as u32)
     }
 }
 

@@ -528,7 +528,7 @@ fn convert_font_to_u8_data(font: &BitFont) -> Vec<u8> {
 fn export_to_com(font: &BitFont, com_format: ComExportFormat) -> Result<Vec<u8>, String> {
     let height = font.size().height;
 
-    if height == 0 || height > MAX_FONT_HEIGHT as usize {
+    if height == 0 || height as i32 > MAX_FONT_HEIGHT {
         return Err(format!(
             "Font height {} is not supported for COM export (must be 1-{})",
             height, MAX_FONT_HEIGHT

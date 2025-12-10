@@ -1,7 +1,7 @@
 //! MainWindow for icy_draw
 //!
 //! Each MainWindow represents one editing window with its own state and mode.
-//! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont).
+//! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -11,12 +11,13 @@ use iced::{
     Alignment, Element, Event, Length, Task, Theme,
     widget::{column, container, row, rule, text},
 };
-use icy_engine::formats::{BitFontFormat, FileFormat};
+use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::command_handlers;
 use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
 use icy_engine_gui::ui::{DialogStack, error_dialog};
 
+use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
@@ -34,6 +35,8 @@ pub enum EditMode {
     BitFont,
     /// CharFont editor for editing TDF character fonts
     CharFont,
+    /// Animation editor for Lua-scripted ANSI animations
+    Animation,
 }
 
 impl Default for EditMode {
@@ -48,6 +51,7 @@ impl std::fmt::Display for EditMode {
             Self::Ansi => write!(f, "ANSI"),
             Self::BitFont => write!(f, "BitFont"),
             Self::CharFont => write!(f, "CharFont"),
+            Self::Animation => write!(f, "Animation"),
         }
     }
 }
@@ -73,6 +77,7 @@ pub enum ModeState {
     Ansi(AnsiEditor),
     BitFont(BitFontEditorState),
     CharFont(CharFontEditorState),
+    Animation(AnimationEditor),
 }
 
 impl ModeState {
@@ -81,6 +86,7 @@ impl ModeState {
             Self::Ansi(_) => EditMode::Ansi,
             Self::BitFont(_) => EditMode::BitFont,
             Self::CharFont(_) => EditMode::CharFont,
+            Self::Animation(_) => EditMode::Animation,
         }
     }
 
@@ -90,6 +96,7 @@ impl ModeState {
             Self::Ansi(editor) => editor.undo_stack_len(),
             Self::BitFont(editor) => editor.undo_stack_len(),
             Self::CharFont(_) => 0,
+            Self::Animation(editor) => editor.undo_stack_len(),
         }
     }
 
@@ -99,6 +106,7 @@ impl ModeState {
             Self::Ansi(editor) => editor.file_path.as_ref(),
             Self::BitFont(editor) => editor.file_path(),
             Self::CharFont(_) => None,
+            Self::Animation(editor) => editor.file_path(),
         }
     }
 
@@ -108,6 +116,7 @@ impl ModeState {
             Self::Ansi(editor) => editor.file_path = Some(path),
             Self::BitFont(editor) => editor.set_file_path(path),
             Self::CharFont(_) => {}
+            Self::Animation(editor) => editor.set_file_path(path),
         }
     }
 
@@ -117,6 +126,7 @@ impl ModeState {
             Self::Ansi(editor) => editor.save(path),
             Self::BitFont(editor) => editor.save(path),
             Self::CharFont(_) => Err("CharFont save not implemented".to_string()),
+            Self::Animation(editor) => editor.save(path),
         }
     }
 
@@ -126,6 +136,7 @@ impl ModeState {
             Self::Ansi(_) => "ans",
             Self::BitFont(_) => "psf",
             Self::CharFont(_) => "tdf",
+            Self::Animation(_) => "icyanim",
         }
     }
 }
@@ -279,6 +290,9 @@ pub enum Message {
     // BitFont Editor messages
     BitFontEditor(BitFontEditorMessage),
 
+    // Animation Editor messages
+    AnimationEditor(AnimationEditorMessage),
+
     // Font Size Dialog (used by BitFont Editor)
     FontSizeDialog(super::bitfont_editor::FontSizeDialogMessage),
     FontSizeApply(i32, i32),
@@ -292,6 +306,9 @@ pub enum Message {
     ShowExportFontDialog,
     FontExport(super::font_export::FontExportMessage),
     FontExported,
+
+    // Animation Export Dialog
+    ShowAnimationExportDialog,
 
     // Internal
     Tick,
@@ -369,28 +386,38 @@ pub struct MainWindow {
 impl MainWindow {
     pub fn new(id: usize, path: Option<PathBuf>, options: Arc<Mutex<SharedOptions>>) -> Self {
         let (mode_state, initial_error) = if let Some(ref p) = path {
-            // Determine mode based on file extension
-            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            // Determine mode based on file format
+            let format = FileFormat::from_path(p);
 
-            if BitFontFormat::is_bitfont_extension(ext) {
-                // BitFont format detected (yaff, psf, fXX)
-                match BitFontEditor::from_file(p.clone()) {
-                    Ok(editor) => (ModeState::BitFont(editor), None),
-                    Err(e) => {
-                        let error = Some(("Error Loading Font".to_string(), e));
-                        (ModeState::BitFont(BitFontEditor::new()), error)
+            match format {
+                Some(FileFormat::BitFont(_)) => {
+                    // BitFont format detected (yaff, psf, fXX)
+                    match BitFontEditor::from_file(p.clone()) {
+                        Ok(editor) => (ModeState::BitFont(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Font".to_string(), e));
+                            (ModeState::BitFont(BitFontEditor::new()), error)
+                        }
                     }
                 }
-            } else if ext.eq_ignore_ascii_case("tdf") {
-                // TDF CharFont format
-                (ModeState::CharFont(CharFontEditorState::new()), None)
-            } else {
-                // Try as ANSI/ASCII art file
-                match AnsiEditor::with_file(p.clone(), options.clone()) {
-                    Ok(editor) => (ModeState::Ansi(editor), None),
-                    Err(e) => {
-                        let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
-                        (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                Some(FileFormat::IcyAnim) => {
+                    // Animation script format
+                    match AnimationEditor::load_file(p.clone()) {
+                        Ok(editor) => (ModeState::Animation(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Animation".to_string(), e));
+                            (ModeState::Animation(AnimationEditor::new()), error)
+                        }
+                    }
+                }
+                _ => {
+                    // Try as ANSI/ASCII art file (includes TDF and unknown formats)
+                    match AnsiEditor::with_file(p.clone(), options.clone()) {
+                        Ok(editor) => (ModeState::Ansi(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
+                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                        }
                     }
                 }
             }
@@ -494,44 +521,59 @@ impl MainWindow {
                 )
             }
             Message::FileOpened(path) => {
-                // Determine file type based on extension and open appropriate editor
-                let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+                // Determine file type using FileFormat
+                let format = FileFormat::from_path(&path);
 
-                // Check if it's a bitmap font file
-                let is_font_file = ext == "psf" || ext == "yaff" || (ext.starts_with('f') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()));
-
-                if is_font_file {
-                    // Open in BitFont editor
-                    match BitFontEditor::from_file(path.clone()) {
-                        Ok(editor) => {
-                            self.mode_state = ModeState::BitFont(editor);
-                            self.mark_saved();
-                            // Add to recent files
-                            self.options.lock().recent_files.add_recent_file(&path);
-                        }
-                        Err(e) => {
-                            self.dialogs.push(error_dialog(
-                                "Error Loading File",
-                                format!("Failed to load '{}': {}", path.display(), e),
-                                |_| Message::CloseDialog,
-                            ));
+                match format {
+                    Some(FileFormat::BitFont(_)) => {
+                        // Open in BitFont editor
+                        match BitFontEditor::from_file(path.clone()) {
+                            Ok(editor) => {
+                                self.mode_state = ModeState::BitFont(editor);
+                                self.mark_saved();
+                                self.options.lock().recent_files.add_recent_file(&path);
+                            }
+                            Err(e) => {
+                                self.dialogs.push(error_dialog(
+                                    "Error Loading Font",
+                                    format!("Failed to load '{}': {}", path.display(), e),
+                                    |_| Message::CloseDialog,
+                                ));
+                            }
                         }
                     }
-                } else {
-                    // Open in ANSI editor
-                    match AnsiEditor::with_file(path.clone(), self.options.clone()) {
-                        Ok(editor) => {
-                            self.mode_state = ModeState::Ansi(editor);
-                            self.mark_saved();
-                            // Add to recent files
-                            self.options.lock().recent_files.add_recent_file(&path);
+                    Some(FileFormat::IcyAnim) => {
+                        // Open in Animation editor
+                        match AnimationEditor::load_file(path.clone()) {
+                            Ok(editor) => {
+                                self.mode_state = ModeState::Animation(editor);
+                                self.mark_saved();
+                                self.options.lock().recent_files.add_recent_file(&path);
+                            }
+                            Err(e) => {
+                                self.dialogs.push(error_dialog(
+                                    "Error Loading Animation",
+                                    format!("Failed to load '{}': {}", path.display(), e),
+                                    |_| Message::CloseDialog,
+                                ));
+                            }
                         }
-                        Err(e) => {
-                            self.dialogs.push(error_dialog(
-                                "Error Loading File",
-                                format!("Failed to load '{}': {}", path.display(), e),
-                                |_| Message::CloseDialog,
-                            ));
+                    }
+                    _ => {
+                        // Open in ANSI editor (default for all other formats)
+                        match AnsiEditor::with_file(path.clone(), self.options.clone()) {
+                            Ok(editor) => {
+                                self.mode_state = ModeState::Ansi(editor);
+                                self.mark_saved();
+                                self.options.lock().recent_files.add_recent_file(&path);
+                            }
+                            Err(e) => {
+                                self.dialogs.push(error_dialog(
+                                    "Error Loading File",
+                                    format!("Failed to load '{}': {}", path.display(), e),
+                                    |_| Message::CloseDialog,
+                                ));
+                            }
                         }
                     }
                 }
@@ -573,6 +615,7 @@ impl MainWindow {
                             EditMode::Ansi => "ANSI Files",
                             EditMode::BitFont => "Font Files",
                             EditMode::CharFont => "TDF Files",
+                            EditMode::Animation => "Animation Files",
                         };
 
                         rfd::AsyncFileDialog::new()
@@ -630,6 +673,7 @@ impl MainWindow {
                         Task::none()
                     }
                     ModeState::CharFont(_) => Task::none(),
+                    ModeState::Animation(_) => Task::none(), // Animation uses text_editor's built-in undo
                 }
             }
             Message::Redo => {
@@ -650,6 +694,7 @@ impl MainWindow {
                         Task::none()
                     }
                     ModeState::CharFont(_) => Task::none(),
+                    ModeState::Animation(_) => Task::none(), // Animation uses text_editor's built-in redo
                 }
             }
             Message::Cut => {
@@ -665,6 +710,9 @@ impl MainWindow {
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement cut for CharFont
+                    }
+                    ModeState::Animation(_) => {
+                        // TODO: Implement cut for Animation
                     }
                 }
                 Task::none()
@@ -683,6 +731,9 @@ impl MainWindow {
                     ModeState::CharFont(_) => {
                         // TODO: Implement copy for CharFont
                     }
+                    ModeState::Animation(_) => {
+                        // TODO: Implement copy for Animation
+                    }
                 }
                 Task::none()
             }
@@ -699,6 +750,9 @@ impl MainWindow {
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement paste for CharFont
+                    }
+                    ModeState::Animation(_) => {
+                        // TODO: Implement paste for Animation
                     }
                 }
                 Task::none()
@@ -734,6 +788,7 @@ impl MainWindow {
                     EditMode::Ansi => ModeState::Ansi(AnsiEditor::new(self.options.clone())),
                     EditMode::BitFont => ModeState::BitFont(BitFontEditor::new()),
                     EditMode::CharFont => ModeState::CharFont(CharFontEditorState::new()),
+                    EditMode::Animation => ModeState::Animation(AnimationEditor::new()),
                 };
                 Task::none()
             }
@@ -769,6 +824,13 @@ impl MainWindow {
                     Task::none()
                 }
             }
+            Message::AnimationEditor(msg) => {
+                if let ModeState::Animation(editor) = &mut self.mode_state {
+                    editor.update(msg).map(Message::AnimationEditor)
+                } else {
+                    Task::none()
+                }
+            }
             Message::Tick => Task::none(),
             Message::ViewportTick => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
@@ -800,6 +862,7 @@ impl MainWindow {
                         .map(Message::BitFontEditor)
                 }
                 ModeState::CharFont(_) => Task::none(),
+                ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
             },
 
             // ═══════════════════════════════════════════════════════════════════
@@ -835,6 +898,16 @@ impl MainWindow {
             Message::FontExport(_) => Task::none(),
             Message::FontExported => {
                 // Font was successfully exported - nothing special to do
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Animation Export Dialog
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowAnimationExportDialog => {
+                // TODO: Implement animation export dialog
+                // For now, just log
+                log::info!("Show Animation Export Dialog requested");
                 Task::none()
             }
 
@@ -979,7 +1052,8 @@ impl MainWindow {
         match &self.mode_state {
             ModeState::Ansi(editor) => editor.needs_animation(),
             ModeState::BitFont(editor) => editor.needs_animation(),
-            _ => false,
+            ModeState::CharFont(_) => false,
+            ModeState::Animation(editor) => editor.needs_animation(),
         }
     }
 
@@ -995,6 +1069,7 @@ impl MainWindow {
             ModeState::Ansi(editor) => self.view_ansi_editor(editor),
             ModeState::BitFont(editor) => self.view_bitfont_editor(editor),
             ModeState::CharFont(_state) => self.view_charfont_editor(),
+            ModeState::Animation(editor) => self.view_animation_editor(editor),
         };
 
         // Status bar
@@ -1019,6 +1094,10 @@ impl MainWindow {
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into()
+    }
+
+    fn view_animation_editor<'a>(&'a self, editor: &'a AnimationEditor) -> Element<'a, Message> {
+        editor.view().map(Message::AnimationEditor)
     }
 
     fn view_status_bar(&self) -> Element<'_, Message> {
@@ -1052,6 +1131,11 @@ impl MainWindow {
                 center: String::new(),
                 right: String::new(),
             },
+            ModeState::Animation(editor) => StatusBarInfo {
+                left: format!("Animation: {} frames", editor.frame_count()),
+                center: format!("Frame {}/{}", editor.current_frame() + 1, editor.frame_count().max(1)),
+                right: if editor.is_dirty() { "Modified".into() } else { String::new() },
+            },
         }
     }
 
@@ -1068,6 +1152,7 @@ impl MainWindow {
             }
             ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::CharFont(_) => UndoInfo::default(),
+            ModeState::Animation(_) => UndoInfo::default(),
         }
     }
 
@@ -1113,6 +1198,7 @@ impl MainWindow {
                 }
             }
             ModeState::CharFont(_state) => {}
+            ModeState::Animation(_state) => {}
         }
 
         (None, Task::none())

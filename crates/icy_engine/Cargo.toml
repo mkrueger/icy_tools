@@ -39,8 +39,11 @@ libyaff = { workspace = true }
 
 # Image export support
 image = { workspace = true }
-gifski = "1.32.0"
 lodepng = {version ="3.12.1", default-features = false, features = ["cfzlib"] }
+
+# GIF encoding (replaces gifski)
+gif = "0.13"
+quantette = "0.3"
 
 imgref = "1.12.0"
 rgb = "0.8.52"

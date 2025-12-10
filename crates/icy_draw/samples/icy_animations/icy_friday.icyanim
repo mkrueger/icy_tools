@@ -1,0 +1,99 @@
+local buf = load_buffer("icy_friday.icy")
+local stars = { "∙",  "∙",  "∙", "∙", "∙", ",",  "∙", ".", "∙", "∙", ".", ".", "·", "°" }
+local star_colors = { 15, 14, 7, 7, 8, 9 }
+function move_left()
+    for y = 0, buf.height, 1 do
+       for x = 1, buf.width , 1 do
+			local c = buf:pickup_char(x, y)
+			if c ~= ' ' then
+               buf:set_char(x - 1, y, c)
+               buf:clear_char(x, y)
+			end
+        end
+		buf:clear_char(0, y)
+    end
+end
+
+function icy_print(x, y, s)
+    buf.x = x
+    buf.y = y
+    buf.fg = 15
+    for i = 1, #s do 
+       local c = s:sub(i, i)
+       buf:print(c)
+       if c == ' ' then
+		 buf.fg = 15
+	   else 
+         buf.fg = 7
+        end
+    end
+end
+
+buf.layer = 0
+buf:set_layer_visible(2, true)
+buf:set_layer_visible(1, true)
+buf:set_layer_visible(0, true)
+for i=0,260,1 do
+    if i == 100 then
+		buf:set_layer_visible(3, false)
+		buf:set_layer_visible(4, true)
+    end 
+	if i == 105 then
+		buf.layer = 4
+		icy_print(40, 3, "Ansi drawing redefined")
+	end
+	if i == 108 then
+		buf.layer = 4
+		icy_print(38, 5, "Layers, Multiple documents, many formats...")
+	end
+	if i == 112 then
+		buf.layer = 4
+		icy_print(38, 6, "Bitfonts, TDF fonts")
+	end
+	if i == 115 then
+		buf.layer = 4
+		icy_print(38, 7, "Animations (you're viewing one)")
+	end
+	if i == 118 then
+		buf.layer = 4
+		icy_print(38, 8, "And much more...")
+	end
+
+	if i == 120 then
+		buf.layer = 4
+		icy_print(10, 18, "Implementation was faster than expected - release mid october")
+	end
+	if i == 123 then
+		buf.layer = 4
+		icy_print(10, 20, "Just 20 years after the last update (MysticDraw is now IcyDraw)!")
+	end
+
+	if i == 180 then
+		buf:set_layer_visible(4, false)
+		buf:set_layer_visible(5, true)
+	end
+
+	if i % 2 == 0 then
+    	for j = 0, 2, 1 do
+       	 local y = math.random(0, 25)
+    	    local star = math.random(1, #stars)
+			local col = math.random(1, #star_colors)
+		    buf.layer = math.random(0, 2)
+    	    buf.fg = star_colors[col]
+   	     buf.bg = 0
+			buf:set_char(79, y, stars[star])
+	    end
+	end
+	buf.layer = 0
+    move_left()
+    buf.layer = 1
+    move_left()
+    move_left()
+    buf.layer = 2
+    move_left()
+    move_left()
+    move_left()
+	if i > 40 then 
+    	next_frame(buf)
+	end
+end

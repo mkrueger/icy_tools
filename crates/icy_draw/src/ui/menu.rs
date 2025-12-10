@@ -15,7 +15,7 @@ use super::MostRecentlyUsedFiles;
 use super::main_window::{EditMode, Message};
 use crate::{
     fl,
-    ui::{ansi_editor, bitfont_editor},
+    ui::{animation_editor, ansi_editor, bitfont_editor},
 };
 
 /// Information about current undo/redo state for menu display
@@ -53,6 +53,7 @@ impl MenuBarState {
                 bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
             }
             EditMode::CharFont => ansi_editor::menu_bar::view_ansi(recent_files, undo_info), // TODO: Create separate charfont menu
+            EditMode::Animation => animation_editor::menu_bar::view_animation_menu(recent_files, undo_info),
         }
     }
 }

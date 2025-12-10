@@ -2,6 +2,7 @@
 //!
 //! Contains the window manager and main window implementation.
 
+pub mod animation_editor;
 mod ansi_editor;
 mod bitfont_editor;
 pub mod commands;

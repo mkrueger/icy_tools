@@ -1,0 +1,108 @@
+-- icy draw halloween announcement animation
+-- demonstrating monitor settings
+
+local buf = load_buffer("icy_draw_on_fire.icy")
+local chars = { "█", "▓", "▒", "░",  "•", ".","∙", " ", " " }
+
+function get_color(x, y) 
+	local c = buf:get_bg(x, y) 
+    return math.max(0, c - 16)
+end
+
+function burn_up(y)
+    for y = 0, buf.height + 4, 1 do
+       for x = 1, buf.width - 1, 1 do
+           local col = get_color(x, y + 1) * 2 +
+                       get_color(x - 1, y) +
+                       get_color(x + 1, y)
+           col = math.floor(col / 4)
+         
+            buf:set_bg(x, y, col + 16)
+        end
+    end
+end
+
+function clear_line(y)
+    for x = 0, buf.width - 1, 1 do
+        buf:set_char(x, y, " ")
+    end
+end
+
+function fade_in(x, y, step, text)
+   if step < 0 then return end
+   buf.x = x 
+   buf.y = y
+   if step == 0 or step == 1 then buf.fg = 8 end
+   if step == 2 or step == 3 then buf.fg = 7 end
+   if step > 4 then buf.fg = 15 end
+	
+   buf.layer = 6
+   buf:print(text)
+   buf.layer = 0
+end
+
+for i = 0, 15, 1 do 
+	buf:set_palette_color(16 + i, i * 4, 0, 0)
+	buf:set_palette_color(32 + i, 63  + i * 4, 0, 0)
+    buf:set_palette_color(48 + i, 128 + i * 4, i * 4, 0)
+end
+
+buf:set_layer_visible(0, true)
+for i = 1, 5, 1 do
+  buf:set_layer_visible(i, false) 
+end
+buf:set_layer_visible(6, true)
+
+
+-- set some monitor settings to simulate CRT
+monitor_scanlines=50
+monitor_blur=20
+monitor_curvature=20
+
+for frame = 0, 90, 1 do
+    if frame == 25 then
+        buf:set_layer_visible(1, true)
+    end
+    if frame == 30 then
+        buf:set_layer_visible(2, true)
+    end
+    if frame == 45 then
+        buf:set_layer_visible(1, false)
+        buf:set_layer_visible(2, false)
+        buf:set_layer_visible(3, false)
+        buf:set_layer_visible(4, true)
+    end
+    if frame == 50 then
+        buf:set_layer_visible(5, true)
+    end
+    if frame == 55 then
+        buf:set_layer_visible(3, true)
+    end
+    if frame == 65 then
+        buf:set_layer_visible(5, false)
+        buf:set_layer_visible(4, false)
+		buf:set_layer_y_position(3, -3)
+    end
+
+    if frame > 65 then
+        fade_in(30, 20, frame - 66, "Voices of beta testers:")
+        fade_in(25, 21, frame - 68, "It's boring")
+        fade_in(50, 22, frame - 70, "Lightweight version of Moebius")  
+        fade_in(2, 23, frame - 72, "Has nothing to do with an ansi editor") 
+        fade_in(36, 24, frame - 74, "Not sure if all these features are needed")
+        fade_in(40, 21, frame - 76, "Can it do Petscii?")
+    end
+
+    for i = 0, 40, 1 do
+        local r = math.random(0, 80)
+		buf:set_bg(r, buf.height + 3, 16 + 48 + 15)
+    end
+
+    burn_up(y)
+
+	clear_line(buf.height + 3 )
+
+    if frame > 20 then
+        next_frame(buf)
+ 	end
+end

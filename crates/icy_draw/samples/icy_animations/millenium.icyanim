@@ -1,0 +1,60 @@
+-- original animation (way better, just did a quick rip) by Josh Renaud:
+-- https://github.com/Kirkman/sw-milfalcon
+
+local buf = load_buffer("millenium.icy")
+
+-- set all layers visible (may be invis depending on the last save, but never assume the .icy file is correct :))
+for i=0,buf.layer_count - 1,1 do
+	buf:set_layer_visible(i, true)
+end
+
+buf.layer = 4
+
+for i=0,290,1 do
+	-- move surroundings
+	buf:set_layer_x_position(0, -i/2)
+	buf:set_layer_x_position(1, -i)
+	buf:set_layer_x_position(2, -i*2)
+	buf:set_layer_x_position(3, 300-i*3)
+
+	if i < 50 then
+		buf.layer_x = i - 50
+	end
+	if i > 82 and i < 94 then
+		buf.layer_y = buf.layer_y + 1
+	end
+	if i > 101 and i < 123 then
+		buf.layer_y = buf.layer_y - 1
+	end  
+
+	if i > 133 and i < 153 then
+		buf.layer_y = buf.layer_y + 1
+	end
+
+	if i > 145 and i < 200 and i % 2 == 0 then 
+		buf.layer = 3
+		buf.layer_y = buf.layer_y + 1
+		buf.layer = 4
+	end
+
+	if i > 152 and i < 160 then
+		buf.layer_y = buf.layer_y + 2
+	end
+	
+	if i > 180 and i < 204 then
+		buf.layer_y = buf.layer_y -1
+	end
+	
+	if i == 204 then
+		buf:set_layer_visible(4, false)
+		buf:set_layer_visible(5, true)
+		buf:set_layer_position(5, buf.layer_x, 5);
+		buf.layer = 5
+	end
+	if i > 204 then
+		buf.layer_x = buf.layer_x + 1
+	end
+
+	-- take snapshot
+	next_frame(buf)
+end 

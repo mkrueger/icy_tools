@@ -11,7 +11,7 @@ repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
 # UI Framework - iced based
-iced = { workspace = true, features = ["wgpu"] }
+iced = { workspace = true, features = ["wgpu", "highlighter"] }
 iced_aw = { workspace = true }
 
 # GPU/Shader support
@@ -37,6 +37,7 @@ github_release_check = "0.2.1"
 icy_engine = { workspace = true }
 icy_engine_edit = { workspace = true }
 icy_engine_gui = { workspace = true }
+icy_engine_scripting = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
 
@@ -63,6 +64,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
+gif = "0.13"
 
 # TTF font rasterization
 fontdue = "0.9"

@@ -670,7 +670,7 @@ fn parse_com_font(name: &str, data: &[u8]) -> Result<BitFont, String> {
     };
 
     // Validate height
-    if height == 0 || height > MAX_FONT_HEIGHT as usize {
+    if height == 0 || height as i32 > MAX_FONT_HEIGHT {
         return Err(format!("Invalid font height: {} (must be 1-{})", height, MAX_FONT_HEIGHT));
     }
 
