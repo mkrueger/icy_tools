@@ -1,17 +1,25 @@
 use iced::{
-    Alignment, Border, Color, Element, Event, Length, Padding, Theme,
+    Alignment, Border, Color, Element, Length, Padding, Theme,
     widget::{Space, column, container, row, scrollable, text},
 };
 
-use super::dialog::{Dialog, DialogAction};
+use super::dialog::StateResult;
 use super::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button};
-use crate::{ButtonType, commands::CommandDef};
+use crate::{ButtonType, commands::CommandDef, dialog_wrapper};
+
+/// Messages for the help dialog
+#[derive(Debug, Clone)]
+pub enum HelpDialogMessage {
+    /// Close the dialog
+    Close,
+}
 
 /// Category translation function type
-pub type CategoryTranslator = Box<dyn Fn(&str) -> String>;
+pub type CategoryTranslator = Box<dyn Fn(&str) -> String + Send + Sync>;
 
-/// Configuration for the help dialog
-pub struct HelpDialogConfig {
+/// State for the help dialog
+#[dialog_wrapper(close_on_blur = true)]
+pub struct HelpDialogState {
     /// Title of the help dialog
     pub title: String,
     /// Subtitle/description
@@ -24,7 +32,7 @@ pub struct HelpDialogConfig {
     category_translator: Option<CategoryTranslator>,
 }
 
-impl HelpDialogConfig {
+impl HelpDialogState {
     pub fn new(title: impl Into<String>, subtitle: impl Into<String>) -> Self {
         Self {
             title: title.into(),
@@ -46,11 +54,9 @@ impl HelpDialogConfig {
     }
 
     /// Set a translator function for category names
-    /// The function receives the category key (e.g., "connection") and should return
-    /// the translated name (e.g., "Connection")
     pub fn with_category_translator<F>(mut self, translator: F) -> Self
     where
-        F: Fn(&str) -> String + 'static,
+        F: Fn(&str) -> String + Send + Sync + 'static,
     {
         self.category_translator = Some(Box::new(translator));
         self
@@ -69,7 +75,23 @@ impl HelpDialogConfig {
             }
         }
     }
+
+    /// Handle a dialog message
+    pub fn handle_message(&mut self, message: HelpDialogMessage) -> StateResult<()> {
+        match message {
+            HelpDialogMessage::Close => StateResult::Close,
+        }
+    }
+
+    /// Create the dialog view
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(HelpDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
+        help_dialog_content(self, on_message(HelpDialogMessage::Close))
+    }
 }
+
+/// Configuration for the help dialog
+/// DEPRECATED: Use HelpDialogState instead
+pub type HelpDialogConfig = HelpDialogState;
 
 /// Create a keyboard shortcut pill
 fn pill<Message: 'static>(content: &str) -> Element<'static, Message> {
@@ -326,41 +348,8 @@ pub fn is_macos() -> bool {
     cfg!(target_os = "macos")
 }
 
-/// A wrapper that makes HelpDialogConfig usable with the Dialog trait.
-///
-/// This wrapper owns the HelpDialogConfig and provides Dialog trait implementation
-/// that can be used with DialogStack.
-pub struct HelpDialogWrapper<M, F>
-where
-    M: Clone + Send + 'static,
-    F: Fn() -> M + Clone + Send + 'static,
-{
-    config: HelpDialogConfig,
-    on_close: F,
-    _phantom: std::marker::PhantomData<M>,
-}
-
-impl<M, F> HelpDialogWrapper<M, F>
-where
-    M: Clone + Send + 'static,
-    F: Fn() -> M + Clone + Send + 'static,
-{
-    /// Create a new help dialog wrapper.
-    ///
-    /// # Arguments
-    /// * `config` - The help dialog configuration
-    /// * `on_close` - Callback to generate the close message
-    pub fn new(config: HelpDialogConfig, on_close: F) -> Self {
-        Self {
-            config,
-            on_close,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
 // ============================================================================
-// Builder function for help dialog
+// Builder functions for help dialog
 // ============================================================================
 
 /// Create a help dialog showing keyboard shortcuts.
@@ -373,15 +362,27 @@ where
 ///     "Keyboard Shortcuts",
 ///     "Available keyboard shortcuts",
 ///     COMMAND_DEFINITIONS.to_vec(),
-///     || Message::CloseHelp,
+///     Message::HelpDialog,
+///     |msg| match msg { Message::HelpDialog(m) => Some(m), _ => None },
 /// ));
 /// ```
-pub fn help_dialog_for<M, F>(title: impl Into<String>, subtitle: impl Into<String>, commands: Vec<CommandDef>, on_close: F) -> HelpDialogWrapper<M, F>
+pub fn help_dialog_for<M, F, E>(
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+    commands: Vec<CommandDef>,
+    on_message: F,
+    extract_message: E,
+) -> HelpDialogWrapper<M, F, E>
 where
     M: Clone + Send + 'static,
-    F: Fn() -> M + Clone + Send + 'static,
+    F: Fn(HelpDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&HelpDialogMessage> + Clone + 'static,
 {
-    HelpDialogWrapper::new(HelpDialogConfig::new(title, subtitle).with_commands(commands), on_close)
+    HelpDialogWrapper::new(
+        HelpDialogState::new(title, subtitle).with_commands(commands),
+        on_message,
+        extract_message,
+    )
 }
 
 /// Create a help dialog with a custom category translator.
@@ -393,53 +394,29 @@ where
 ///     "Available keyboard shortcuts",
 ///     commands,
 ///     |category| translate_category(category),
-///     || Message::CloseHelp,
+///     Message::HelpDialog,
+///     |msg| match msg { Message::HelpDialog(m) => Some(m), _ => None },
 /// ));
 /// ```
-pub fn help_dialog_with_translator<M, F, T>(
+pub fn help_dialog_with_translator<M, F, E, T>(
     title: impl Into<String>,
     subtitle: impl Into<String>,
     commands: Vec<CommandDef>,
     category_translator: T,
-    on_close: F,
-) -> HelpDialogWrapper<M, F>
+    on_message: F,
+    extract_message: E,
+) -> HelpDialogWrapper<M, F, E>
 where
     M: Clone + Send + 'static,
-    F: Fn() -> M + Clone + Send + 'static,
-    T: Fn(&str) -> String + 'static,
+    F: Fn(HelpDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&HelpDialogMessage> + Clone + 'static,
+    T: Fn(&str) -> String + Send + Sync + 'static,
 {
     HelpDialogWrapper::new(
-        HelpDialogConfig::new(title, subtitle)
+        HelpDialogState::new(title, subtitle)
             .with_commands(commands)
             .with_category_translator(category_translator),
-        on_close,
+        on_message,
+        extract_message,
     )
-}
-
-impl<M, F> Dialog<M> for HelpDialogWrapper<M, F>
-where
-    M: Clone + Send + 'static,
-    F: Fn() -> M + Clone + Send + 'static,
-{
-    fn view(&self) -> Element<'_, M> {
-        let close_msg = (self.on_close)();
-        help_dialog_content(&self.config, close_msg)
-    }
-
-    fn request_cancel(&mut self) -> DialogAction<M> {
-        DialogAction::CloseWith((self.on_close)())
-    }
-
-    fn request_confirm(&mut self) -> DialogAction<M> {
-        // Help dialog has no confirm action, only close
-        DialogAction::None
-    }
-
-    fn handle_event(&mut self, _event: &Event) -> Option<DialogAction<M>> {
-        None
-    }
-
-    fn close_on_blur(&self) -> bool {
-        true
-    }
 }

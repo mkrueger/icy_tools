@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{Item, load_image_to_rgba};
+use crate::items::{Item, ItemError, load_image_to_rgba};
 use crate::ui::thumbnail_view::RgbaData;
 
 use super::{MAIN_PATH, get_cache};
@@ -96,7 +96,7 @@ impl Item for SixteenColorsFile {
         }
     }
 
-    async fn read_data(&self) -> Option<Vec<u8>> {
+    async fn read_data(&self) -> Result<Vec<u8>, ItemError> {
         let url = format!("{}{}", MAIN_PATH, self.uri);
         let cache = get_cache();
 
@@ -104,31 +104,38 @@ impl Item for SixteenColorsFile {
         {
             let cache_read = cache.read();
             if let Some(data) = cache_read.get_file_data(&url) {
-                return Some(data);
+                return Ok(data);
             }
             if cache_read.has_failed(&url) {
-                return None;
+                return Err(ItemError::NotFound(format!("Previously failed: {}", url)));
             }
         }
 
         // Fetch from network
         match reqwest::get(&url).await {
-            Ok(response) => match response.bytes().await {
-                Ok(bytes) => {
-                    let data = bytes.to_vec();
-                    cache.write().set_file_data(url, data.clone());
-                    Some(data)
+            Ok(response) => {
+                if !response.status().is_success() {
+                    let status = response.status();
+                    cache.write().mark_failed(url.clone());
+                    return Err(ItemError::Network(format!("HTTP {} for {}", status, url)));
                 }
-                Err(err) => {
-                    log::error!("Failed to read 16colors data: {}", err);
-                    cache.write().mark_failed(url);
-                    None
+                match response.bytes().await {
+                    Ok(bytes) => {
+                        let data = bytes.to_vec();
+                        cache.write().set_file_data(url, data.clone());
+                        Ok(data)
+                    }
+                    Err(err) => {
+                        log::error!("Failed to read 16colors data: {}", err);
+                        cache.write().mark_failed(url.clone());
+                        Err(ItemError::Network(format!("Failed to read response: {}", err)))
+                    }
                 }
-            },
+            }
             Err(err) => {
                 log::error!("Failed to fetch 16colors data: {}", err);
-                cache.write().mark_failed(url);
-                None
+                cache.write().mark_failed(url.clone());
+                Err(ItemError::Network(format!("Connection error: {}", err)))
             }
         }
     }

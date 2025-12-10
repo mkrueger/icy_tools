@@ -1,4 +1,4 @@
-use crate::items::Item;
+use crate::items::{Item, ItemError};
 use async_trait::async_trait;
 use std::path::PathBuf;
 
@@ -33,8 +33,8 @@ impl Item for ArchiveItem {
             .unwrap_or_else(|| self.path.to_string_lossy().to_string())
     }
 
-    async fn read_data(&self) -> Option<Vec<u8>> {
-        Some(self.data.clone())
+    async fn read_data(&self) -> Result<Vec<u8>, ItemError> {
+        Ok(self.data.clone())
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

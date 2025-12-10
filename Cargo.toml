@@ -4,6 +4,7 @@ members = [
 	"crates/icy_draw", 
 	"crates/icy_engine",
 	"crates/icy_engine_gui",
+	"crates/icy_engine_gui_macros",
 	"crates/icy_engine_edit",
  	"crates/icy_play", 
 	"crates/icy_term",

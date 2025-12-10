@@ -4,7 +4,7 @@ use std::{collections::HashMap, collections::HashSet, path::PathBuf};
 use tokio_util::sync::CancellationToken;
 
 use super::{ArchiveContainer, ArchiveItem};
-use crate::items::{FileIcon, Item, sort_folder};
+use crate::items::{FileIcon, Item, ItemError, sort_folder};
 use crate::ui::thumbnail_view::{FOLDER_PLACEHOLDER, RgbaData};
 
 /// A folder inside an archive
@@ -64,7 +64,7 @@ impl Item for ArchiveFolder {
         None
     }
 
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let mut items: Vec<Box<dyn Item>> = Vec::new();
         let prefix = format!("{}/", self.folder_path);
 
@@ -118,7 +118,7 @@ impl Item for ArchiveFolder {
         }
 
         sort_folder(&mut items);
-        Some(items)
+        Ok(items)
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

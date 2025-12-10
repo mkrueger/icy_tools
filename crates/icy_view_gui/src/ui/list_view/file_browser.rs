@@ -207,7 +207,7 @@ impl FileBrowser {
         self.filter.clear();
 
         // Get items based on provider type (no parent item - use toolbar for navigation)
-        let items = match self.nav_point.provider_type {
+        let items: Option<Vec<Box<dyn Item>>> = match self.nav_point.provider_type {
             ProviderType::File => get_items_at_path(&self.nav_point.path),
             ProviderType::Web => {
                 // Use 16colors provider for web mode
@@ -220,7 +220,8 @@ impl FileBrowser {
                     rt.block_on(provider.get_items(&path))
                 })
                 .join()
-                .unwrap_or(None)
+                .unwrap_or(Err(crate::items::ItemError::Other("Thread panicked".to_string())))
+                .ok()
             }
         };
 

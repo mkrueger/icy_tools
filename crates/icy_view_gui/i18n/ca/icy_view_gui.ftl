@@ -156,6 +156,7 @@ settings-commands-placeholder=Comanda (ex. icy_draw %F)
 settings-commands-description=Utilitza %F per al nom del fitxer
 
 export-no-file-selected=Cap fitxer seleccionat per exportar
+export-no-screen-available=Cap pantalla disponible per exportar
 export-success=Exportat a { $path }
 
 toast-baud-rate-off=Emulació baud: desactivada
@@ -284,3 +285,4 @@ cmd-external-command_2-action = Extern 3
 cmd-external-command_2-desc = Executa comanda 3 (F7)
 cmd-external-command_3-action = Extern 4
 cmd-external-command_3-desc = Executa comanda 4 (F8)
+error-loading-items=Error en carregar els elements

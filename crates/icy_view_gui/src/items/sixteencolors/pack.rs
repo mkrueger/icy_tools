@@ -3,7 +3,7 @@ use icy_engine::formats::FileFormat;
 use icy_engine_gui::ui::FileIcon;
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{ArchiveContainer, Item, load_image_to_rgba, sort_folder};
+use crate::items::{ArchiveContainer, Item, ItemError, load_image_to_rgba, sort_folder};
 use crate::ui::thumbnail_view::{DIZ_NOT_FOUND_PLACEHOLDER, RgbaData};
 
 use super::{API_PATH, SixteenColorsFile, cache::fetch_json_async, get_cache};
@@ -111,11 +111,10 @@ impl Item for SixteenColorsPack {
         Some(DIZ_NOT_FOUND_PLACEHOLDER.clone())
     }
 
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let url = format!("{}/pack/{}?rows=0", API_PATH, self.name);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
-
         let mut result: Vec<Box<dyn Item>> = Vec::new();
         if let Some(packs) = json["files"].as_array() {
             for pack in packs {
@@ -136,7 +135,7 @@ impl Item for SixteenColorsPack {
             }
             sort_folder(&mut result);
         }
-        Some(result)
+        Ok(result)
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

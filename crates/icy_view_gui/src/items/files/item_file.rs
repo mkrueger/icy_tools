@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use tokio_util::sync::CancellationToken;
 
 use super::get_file_name;
-use crate::items::Item;
+use crate::items::{Item, ItemError};
 
 pub struct ItemFile {
     path: PathBuf,
@@ -53,16 +53,11 @@ impl Item for ItemFile {
         self.modified
     }
 
-    async fn read_data(&self) -> Option<Vec<u8>> {
+    async fn read_data(&self) -> Result<Vec<u8>, ItemError> {
         let path = self.path.clone();
-        match tokio::fs::read(&path).await {
-            Ok(data) => Some(data),
-            Err(e) => {
-                // Log as debug since this can happen for special files, broken symlinks, etc.
-                log::debug!("Failed to read file {:?}: {}", path, e);
-                None
-            }
-        }
+        tokio::fs::read(&path)
+            .await
+            .map_err(|e| ItemError::Io(format!("Failed to read file {:?}: {}", path, e)))
     }
 
     fn clone_box(&self) -> Box<dyn Item> {
@@ -78,7 +73,7 @@ impl Item for ItemFile {
     /// Returns the SAUCE record if the file has one
     async fn get_sauce_info(&self, _cancel_token: &CancellationToken) -> Option<SauceRecord> {
         // Default implementation reads data and extracts SAUCE
-        if let Some(data) = self.read_data().await {
+        if let Ok(data) = self.read_data().await {
             return SauceRecord::from_bytes(&data).ok().flatten();
         }
         None

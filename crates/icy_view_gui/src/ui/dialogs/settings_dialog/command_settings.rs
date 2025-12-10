@@ -10,16 +10,20 @@ use icy_engine_gui::{
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, left_label_small},
 };
 
-use super::SettingsMessage;
+use super::SettingsDialogMessage;
 
-pub fn commands_settings_content(commands: [crate::ui::options::ExternalCommand; EXTERNAL_COMMAND_COUNT]) -> Element<'static, crate::ui::Message> {
+pub fn commands_settings_content_generic<M: Clone + 'static>(
+    commands: [crate::ui::options::ExternalCommand; EXTERNAL_COMMAND_COUNT],
+    on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
+) -> Element<'static, M> {
     let mut command_rows = column![].spacing(DIALOG_SPACING);
 
     for (i, cmd) in commands.into_iter().enumerate() {
         let key_label = format!("F{}", i + 5);
+        let on_msg = on_message.clone();
 
         let command_input = text_input(&fl!(crate::LANGUAGE_LOADER, "settings-commands-placeholder"), &cmd.command)
-            .on_input(move |s| crate::ui::Message::SettingsDialog(SettingsMessage::ExternalCommandChanged(i, s)))
+            .on_input(move |s| on_msg(SettingsDialogMessage::ExternalCommandChanged(i, s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 

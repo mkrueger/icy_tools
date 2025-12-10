@@ -156,6 +156,7 @@ settings-commands-placeholder=Comandă (ex. icy_draw %F)
 settings-commands-description=Folosiți %F pentru numele fișierului
 
 export-no-file-selected=Niciun fișier selectat pentru export
+export-no-screen-available=Niciun ecran disponibil pentru export
 export-success=Exportat în { $path }
 
 toast-baud-rate-off=Emulare baud: dezactivată
@@ -284,3 +285,4 @@ cmd-external-command_2-action = Extern 3
 cmd-external-command_2-desc = Rulează comanda 3 (F7)
 cmd-external-command_3-action = Extern 4
 cmd-external-command_3-desc = Rulează comanda 4 (F8)
+error-loading-items=Eroare la încărcarea elementelor

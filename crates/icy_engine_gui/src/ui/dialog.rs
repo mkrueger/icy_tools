@@ -54,7 +54,40 @@
 //! }
 //! ```
 
-use iced::{Event, Task, keyboard};
+/// Helper macro to generate both wrapper and extractor functions for dialog messages.
+///
+/// This reduces boilerplate when creating dialogs that need message routing.
+/// Returns a tuple `(wrapper_fn, extractor_fn)` - use with `*_from_msg` dialog functions.
+///
+/// # Example
+/// ```ignore
+/// // Instead of writing:
+/// settings_dialog(
+///     options, temp_options,
+///     Message::SettingsDialog,
+///     |msg| match msg {
+///         Message::SettingsDialog(m) => Some(m),
+///         _ => None,
+///     },
+/// )
+///
+/// // You can write:
+/// settings_dialog_from_msg(options, temp_options, dialog_msg!(Message::SettingsDialog))
+/// ```
+#[macro_export]
+macro_rules! dialog_msg {
+    ($variant:path) => {
+        (
+            $variant,
+            |msg: &_| match msg {
+                $variant(inner) => Some(inner),
+                _ => None,
+            },
+        )
+    };
+}
+
+use iced::{Event, Task, Theme, keyboard};
 
 /// Action to take after a dialog request (cancel, confirm, or custom event)
 pub enum DialogAction<M> {
@@ -89,6 +122,21 @@ impl<M: Send + 'static> DialogAction<M> {
     }
 }
 
+/// Result returned by a dialog state's `handle_message` method.
+///
+/// This is used by dialog state structs to communicate their result
+/// back to the wrapper, which then converts it to a `DialogAction`.
+///
+/// Generic parameter `T` is the success value type (e.g., `PathBuf` for export dialogs).
+pub enum StateResult<T> {
+    /// Keep dialog open (no action needed)
+    None,
+    /// Close dialog (cancelled or dismissed)
+    Close,
+    /// Close dialog with success result
+    Success(T),
+}
+
 /// A modal dialog that renders over background content.
 ///
 /// Generic parameter `M` is the application's Message type.
@@ -102,6 +150,19 @@ pub trait Dialog<M> {
     /// Return only the dialog box itself - the DialogStack will handle
     /// wrapping it with a modal overlay.
     fn view(&self) -> iced::Element<'_, M>;
+
+    /// Handle a message sent to this dialog.
+    ///
+    /// Return `Some(action)` if this dialog handled the message,
+    /// `None` if the message should be passed to the application.
+    ///
+    /// This allows dialogs to process their own button clicks, input changes, etc.
+    /// without the application needing to know about the dialog's internal state.
+    ///
+    /// Default: Return None (message not handled by dialog)
+    fn update(&mut self, _message: &M) -> Option<DialogAction<M>> {
+        None
+    }
 
     /// Called when Escape is pressed or user clicks outside (if `close_on_blur` is true).
     /// Dialog can validate, show confirmation, or just close.
@@ -134,6 +195,16 @@ pub trait Dialog<M> {
     /// Default: true
     fn close_on_blur(&self) -> bool {
         true
+    }
+
+    /// Override the application theme while this dialog is displayed.
+    ///
+    /// This is useful for dialogs that need to preview theme changes
+    /// (e.g., settings dialog with theme selection).
+    ///
+    /// Default: None (use application's current theme)
+    fn theme(&self) -> Option<Theme> {
+        None
     }
 }
 
@@ -195,6 +266,18 @@ impl<M: Send + 'static> DialogStack<M> {
         self.dialogs.last_mut()
     }
 
+    /// Get the theme override from the topmost dialog, if any.
+    ///
+    /// Use this in your application's `theme()` method:
+    /// ```ignore
+    /// fn theme(&self) -> Theme {
+    ///     self.dialogs.theme().unwrap_or_else(|| self.settings.theme())
+    /// }
+    /// ```
+    pub fn theme(&self) -> Option<Theme> {
+        self.dialogs.last().and_then(|d| d.theme())
+    }
+
     /// Render all dialogs over the background content.
     ///
     /// Each dialog is automatically wrapped with a modal overlay.
@@ -242,6 +325,24 @@ impl<M: Send + 'static> DialogStack<M> {
         }
 
         Task::none()
+    }
+
+    /// Route a message to the topmost dialog for processing.
+    ///
+    /// Returns `Some(Task)` if the dialog handled the message,
+    /// `None` if the message should be handled by the application.
+    ///
+    /// Use this in your application's `update()` method:
+    /// ```ignore
+    /// if let Some(task) = self.dialogs.update(&message) {
+    ///     return task;
+    /// }
+    /// // ... normal message handling
+    /// ```
+    pub fn update(&mut self, message: &M) -> Option<Task<M>> {
+        let dialog = self.dialogs.last_mut()?;
+        let action = dialog.update(message)?;
+        Some(self.process_action(action))
     }
 
     /// Process a DialogAction and return the resulting Task

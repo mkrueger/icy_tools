@@ -283,7 +283,7 @@ impl Options {
         let item_clone = item.clone_box();
         // Use block_on for this synchronous context - this is acceptable as external
         // command execution already involves blocking operations
-        let data = block_on(item_clone.read_data())?;
+        let data = block_on(item_clone.read_data()).ok()?;
         let file_name = PathBuf::from(&item.get_file_path()).file_name()?.to_string_lossy().to_string();
 
         // Create session-specific temp directory

@@ -4,10 +4,10 @@ use iced::{
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::{
-    section_header,
+    dialog_wrapper, section_header,
     ui::{
-        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small, modal_container, modal_overlay,
-        primary_button, secondary_button, separator,
+        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, StateResult, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small, modal_container,
+        modal_overlay, primary_button, secondary_button, separator,
     },
 };
 use icy_sauce::{ArchiveFormat, AudioFormat, BitmapFormat, Capabilities, CharacterFormat, SauceDataType, SauceRecord, VectorFormat};
@@ -76,27 +76,32 @@ pub enum SauceDialogMessage {
     ToggleRaw,
 }
 
-pub struct SauceDialog {
+#[dialog_wrapper(close_on_blur = true)]
+pub struct SauceDialogState {
     sauce: SauceRecord,
     show_raw: bool,
 }
 
-impl SauceDialog {
+impl SauceDialogState {
     pub fn new(sauce: SauceRecord) -> Self {
         Self { sauce, show_raw: false }
     }
 
-    pub fn update(&mut self, message: SauceDialogMessage) -> bool {
+    pub fn handle_message(&mut self, message: SauceDialogMessage) -> StateResult<()> {
         match message {
-            SauceDialogMessage::Close => true,
+            SauceDialogMessage::Close => StateResult::Close,
             SauceDialogMessage::ToggleRaw => {
                 self.show_raw = !self.show_raw;
-                false
+                StateResult::None
             }
         }
     }
 
-    pub fn view<'a, Message: Clone + 'static>(
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(SauceDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
+        self.view_content(on_message)
+    }
+
+    pub fn view_with_background<'a, Message: Clone + 'static>(
         &'a self,
         background: Element<'a, Message>,
         on_message: impl Fn(SauceDialogMessage) -> Message + Copy + 'a,
@@ -563,4 +568,78 @@ impl SauceDialog {
             SauceDataType::Undefined(v) => format!("Undefined({})", v),
         }
     }
+
+    /// Build just the dialog content without modal overlay (for use with Dialog trait)
+    fn view_content<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(SauceDialogMessage) -> Message + 'a) -> Element<'a, Message> {
+        let content = if self.show_raw {
+            self.create_raw_content()
+        } else {
+            self.create_formatted_content()
+        };
+
+        // Buttons
+        let raw_btn = secondary_button(
+            if self.show_raw {
+                fl!(crate::LANGUAGE_LOADER, "sauce-btn-formatted")
+            } else {
+                fl!(crate::LANGUAGE_LOADER, "sauce-btn-raw")
+            },
+            Some(on_message(SauceDialogMessage::ToggleRaw)),
+        );
+
+        let ok_btn = primary_button(fl!(crate::LANGUAGE_LOADER, "button-ok"), Some(on_message(SauceDialogMessage::Close)));
+
+        let buttons = button_row_with_left(vec![raw_btn.into()], vec![ok_btn.into()]);
+
+        let dialog_content = dialog_area(content);
+        let button_area = dialog_area(buttons);
+
+        modal_container(
+            column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
+            DIALOG_WIDTH_MEDIUM,
+        )
+        .into()
+    }
+}
+
+// ============================================================================
+// Builder functions for SAUCE dialog
+// ============================================================================
+
+/// Create a SAUCE info dialog.
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(sauce_dialog(
+///     sauce_record,
+///     Message::SauceDialog,
+///     |msg| match msg { Message::SauceDialog(m) => Some(m), _ => None },
+/// ));
+/// ```
+pub fn sauce_dialog<M, F, E>(sauce: SauceRecord, on_message: F, extract_message: E) -> SauceDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SauceDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SauceDialogMessage> + Clone + 'static,
+{
+    SauceDialogWrapper::new(SauceDialogState::new(sauce), on_message, extract_message)
+}
+
+/// Creates a sauce dialog wrapper using a tuple of (on_message, extract_message).
+///
+/// This is a convenience function to use with the `dialog_msg!` macro:
+/// ```ignore
+/// use icy_engine_gui::dialog_msg;
+/// dialog_stack.push(sauce_dialog_from_msg(
+///     sauce_record,
+///     dialog_msg!(Message::SauceDialog),
+/// ));
+/// ```
+pub fn sauce_dialog_from_msg<M, F, E>(sauce: SauceRecord, msg_tuple: (F, E)) -> SauceDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SauceDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SauceDialogMessage> + Clone + 'static,
+{
+    SauceDialogWrapper::new(SauceDialogState::new(sauce), msg_tuple.0, msg_tuple.1)
 }

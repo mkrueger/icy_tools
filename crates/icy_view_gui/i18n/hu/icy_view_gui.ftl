@@ -157,6 +157,7 @@ settings-commands-placeholder=Parancs (pl. icy_draw %F)
 settings-commands-description=Használja a %F-et a fájlnévhez
 
 export-no-file-selected=Nincs fájl kiválasztva exportáláshoz
+export-no-screen-available=Nincs elérhető képernyő exportáláshoz
 export-success=Exportálva ide: { $path }
 
 toast-baud-rate-off=Baud emuláció: kikapcsolva
@@ -285,3 +286,4 @@ cmd-external-command_2-action = Külső 3
 cmd-external-command_2-desc = 3. parancs futtatása (F7)
 cmd-external-command_3-action = Külső 4
 cmd-external-command_3-desc = 4. parancs futtatása (F8)
+error-loading-items=Hiba az elemek betöltésekor

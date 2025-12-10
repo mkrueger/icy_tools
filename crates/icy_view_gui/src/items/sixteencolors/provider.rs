@@ -1,6 +1,6 @@
 use icy_engine::formats::FileFormat;
 
-use crate::items::{ArchiveContainer, Item, sort_folder};
+use crate::items::{ArchiveContainer, Item, ItemError, sort_folder};
 
 use super::{API_PATH, SixteenColorsFile, SixteenColorsPack, SixteenColorsYear, cache::fetch_json_async, get_cache};
 
@@ -47,7 +47,7 @@ impl SixteenColorsProvider {
     }
 
     /// Fetch years from API (uses global cache)
-    async fn fetch_years() -> Option<Vec<YearInfo>> {
+    async fn fetch_years() -> Result<Vec<YearInfo>, ItemError> {
         let url = format!("{}/year?rows=0", API_PATH);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
@@ -61,11 +61,11 @@ impl SixteenColorsProvider {
             }
             years.reverse(); // Most recent first
         }
-        Some(years)
+        Ok(years)
     }
 
     /// Fetch packs for a year from API (uses global cache)
-    async fn fetch_packs(year: u64) -> Option<Vec<PackInfo>> {
+    async fn fetch_packs(year: u64) -> Result<Vec<PackInfo>, ItemError> {
         let url = format!("{}/year/{}?rows=0", API_PATH, year);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
@@ -80,11 +80,11 @@ impl SixteenColorsProvider {
                 packs.push(PackInfo { filename, month, year, name });
             }
         }
-        Some(packs)
+        Ok(packs)
     }
 
     /// Fetch files for a pack from API (uses global cache)
-    async fn fetch_files(pack_name: &str) -> Option<Vec<FileInfo>> {
+    async fn fetch_files(pack_name: &str) -> Result<Vec<FileInfo>, ItemError> {
         let url = format!("{}/pack/{}?rows=0", API_PATH, pack_name);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
@@ -104,7 +104,7 @@ impl SixteenColorsProvider {
                 });
             }
         }
-        Some(files)
+        Ok(files)
     }
 }
 
@@ -192,7 +192,7 @@ impl SixteenColorsProvider {
     }
 
     /// Get items at a given 16colors path
-    pub async fn get_items(&self, path: &str) -> Option<Vec<Box<dyn Item>>> {
+    pub async fn get_items(&self, path: &str) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let (year, pack) = Self::parse_path(path);
 
         match (year, pack) {
@@ -203,7 +203,7 @@ impl SixteenColorsProvider {
                     .iter()
                     .map(|y| Box::new(SixteenColorsYear::new(y.year, y.packs_count)) as Box<dyn Item>)
                     .collect();
-                Some(items)
+                Ok(items)
             }
             (Some(year), None) => {
                 // Year - show packs
@@ -213,7 +213,7 @@ impl SixteenColorsProvider {
                     .map(|p| Box::new(SixteenColorsPack::new(p.filename, p.month, p.year, p.name)) as Box<dyn Item>)
                     .collect();
                 sort_folder(&mut items);
-                Some(items)
+                Ok(items)
             }
             (Some(_year), Some(pack_name)) => {
                 // Pack - show files
@@ -230,11 +230,11 @@ impl SixteenColorsProvider {
                     })
                     .collect();
                 sort_folder(&mut items);
-                Some(items)
+                Ok(items)
             }
             (None, Some(_)) => {
                 // Invalid path (pack without year)
-                None
+                Err(ItemError::NotFound("Invalid path: pack without year".to_string()))
             }
         }
     }

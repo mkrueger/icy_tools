@@ -259,11 +259,11 @@ async fn get_render_input(item: &dyn Item, cancel_token: &CancellationToken) -> 
     };
 
     match data_result {
-        Some(data) => RenderInput::FileData(data),
-        None => {
+        Ok(data) => RenderInput::FileData(data),
+        Err(err) => {
             // Log as debug since this can happen for special files that slipped through
-            log::debug!("[ThumbnailLoader] Failed to read file data for item: {}", item.get_label());
-            RenderInput::Error("Failed to read file data".to_string())
+            log::debug!("[ThumbnailLoader] Failed to read file data for item: {} - {}", item.get_label(), err);
+            RenderInput::Error(format!("Failed to read file data: {}", err))
         }
     }
 }

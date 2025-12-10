@@ -157,6 +157,7 @@ settings-commands-placeholder=Příkaz (např. icy_draw %F)
 settings-commands-description=Použijte %F pro název souboru
 
 export-no-file-selected=Žádný soubor nevybrán pro export
+export-no-screen-available=Žádná obrazovka k dispozici pro export
 export-success=Exportováno do { $path }
 
 toast-baud-rate-off=Emulace baud: vypnuta
@@ -285,3 +286,4 @@ cmd-external-command_2-action = Externí 3
 cmd-external-command_2-desc = Spustit příkaz 3 (F7)
 cmd-external-command_3-action = Externí 4
 cmd-external-command_3-desc = Spustit příkaz 4 (F8)
+error-loading-items=Chyba při načítání položek

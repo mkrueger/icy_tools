@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use super::{ArchiveFolder, ArchiveItem, parse_archive, render_diz_to_thumbnail};
-use crate::items::{FileIcon, Item, sort_folder};
+use crate::items::{FileIcon, Item, ItemError, sort_folder};
 use crate::ui::thumbnail_view::{DIZ_NOT_FOUND_PLACEHOLDER, RgbaData};
 
 /// An archive file (ZIP, RAR, ARJ, etc.)
@@ -21,7 +21,7 @@ impl ArchiveContainer {
 
     /// Extract FILE_ID.DIZ from the archive and render it as a thumbnail
     async fn extract_and_render_file_id_diz(&self, cancel_token: &CancellationToken) -> Option<RgbaData> {
-        let file_data = self.item.read_data().await?;
+        let file_data = self.item.read_data().await.ok()?;
         let format = self.format;
         let cancel_token = cancel_token.clone();
 
@@ -89,17 +89,17 @@ impl Item for ArchiveContainer {
         Some(DIZ_NOT_FOUND_PLACEHOLDER.clone())
     }
 
-    async fn get_subitems(&self, cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let file = self.item.read_data().await?;
         let archive_path = self.item.get_file_path();
         let format: ArchiveFormat = self.format;
         let cancel_token = cancel_token.clone();
 
         // Archive extraction is CPU-bound, run in blocking thread
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             // Check cancellation early
             if cancel_token.is_cancelled() {
-                return None;
+                return Err(ItemError::Cancelled);
             }
             let mut files: Vec<Box<dyn Item>> = Vec::new();
 
@@ -143,17 +143,19 @@ impl Item for ArchiveContainer {
                     }
                 }
                 None => {
-                    log::error!("Failed to open archive file");
+                    return Err(ItemError::Io("Failed to open archive file".to_string()));
                 }
             }
             sort_folder(&mut files);
-            Some(files)
+            Ok(files)
         })
         .await
-        .ok()?
+        .map_err(|e| ItemError::Other(format!("Task failed: {}", e)))??;
+
+        Ok(result)
     }
 
-    async fn read_data(&self) -> Option<Vec<u8>> {
+    async fn read_data(&self) -> Result<Vec<u8>, ItemError> {
         // Return the archive file data from the underlying item
         self.item.read_data().await
     }

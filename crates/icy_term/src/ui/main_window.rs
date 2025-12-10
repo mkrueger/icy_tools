@@ -183,14 +183,15 @@ impl MainWindow {
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
             settings_dialog: settings_dialog::SettingsDialogState::new(options, temp_options),
             capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
+            export_dialog: export_screen_dialog::new_export_dialog(
+                default_export_path.to_string_lossy().to_string(),
+                icy_engine::BufferType::CP437, // Default, will be updated when dialog is shown
+                terminal_window.terminal.screen.clone(),
+            ),
             terminal_window,
             iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
             terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog::new(super::terminal_info_dialog::TerminalInfo::default()),
             find_dialog: find_dialog::DialogState::new(),
-            export_dialog: export_screen_dialog::new_export_dialog(
-                default_export_path.to_string_lossy().to_string(),
-                icy_engine::BufferType::CP437, // Default, will be updated when dialog is shown
-            ),
             file_transfer_dialog: FileTransferDialogState::new(),
             baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
             open_serial_dialog: super::open_serial_dialog::OpenSerialDialog::new(serial),
@@ -637,12 +638,12 @@ impl MainWindow {
                     .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
                     .join("export.icy");
-                self.export_dialog = export_screen_dialog::new_export_dialog(default_export_path.to_string_lossy().to_string(), buffer_type);
+                self.export_dialog = export_screen_dialog::new_export_dialog(default_export_path.to_string_lossy().to_string(), buffer_type, self.terminal_window.terminal.screen.clone());
                 self.state.mode = MainWindowMode::ShowExportDialog;
                 Task::none()
             }
             Message::ExportDialog(msg) => {
-                if let Some(response) = self.export_dialog.update_icy_term(msg, self.terminal_window.terminal.screen.clone()) {
+                if let Some(response) = self.export_dialog.update_icy_term(msg) {
                     match response {
                         Message::CloseDialog(mode) => {
                             self.state.mode = *mode;

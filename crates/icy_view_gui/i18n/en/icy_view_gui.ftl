@@ -58,6 +58,7 @@ message-empty=Here you see nothing until you select a supported file.
 
 error-invalid-path=Invalid path
 error-never-happens=Should never happen :) - open a bug report!
+error-loading-items=Error Loading Items
 
 sauce-dialog-title=Sauce info
 sauce-dialog-title-label=Title:
@@ -160,6 +161,7 @@ settings-commands-placeholder = Command (e.g. icy_draw %F)
 settings-commands-description = Use %F for file name
 
 export-no-file-selected = No file selected to export
+export-no-screen-available = No screen available to export
 export-success = Exported to { $path }
 
 preview-no-file-selected = No file selected

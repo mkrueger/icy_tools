@@ -160,6 +160,7 @@ settings-commands-placeholder = Befehl (z.B. icy_draw %F)
 settings-commands-description = %F wird durch den Dateinamen ersetzt
 
 export-no-file-selected = Keine Datei zum Exportieren ausgewählt
+export-no-screen-available = Kein Bildschirm zum Exportieren verfügbar
 export-success = Exportiert nach { $path }
 
 preview-no-file-selected = Keine Datei ausgewählt
@@ -284,3 +285,4 @@ cmd-external-command_2-action = Extern 3
 cmd-external-command_2-desc = Externen Befehl 3 ausführen (F7)
 cmd-external-command_3-action = Extern 4
 cmd-external-command_3-desc = Externen Befehl 4 ausführen (F8)
+error-loading-items=Fehler beim Laden der Elemente

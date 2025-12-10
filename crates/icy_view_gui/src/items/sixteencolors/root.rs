@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{FileIcon, Item};
+use crate::items::{FileIcon, Item, ItemError};
 use crate::ui::thumbnail_view::{FOLDER_PLACEHOLDER, RgbaData};
 
 use super::{API_PATH, SixteenColorsYear, cache::fetch_json_async, get_cache};
@@ -42,7 +42,7 @@ impl Item for SixteenColorsRoot {
         None
     }
 
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let url = format!("{}/year?rows=0", API_PATH);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
@@ -56,7 +56,7 @@ impl Item for SixteenColorsRoot {
             }
             result.reverse();
         }
-        Some(result)
+        Ok(result)
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

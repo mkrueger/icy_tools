@@ -1,3 +1,6 @@
+// Self-reference for proc macros to work within this crate
+extern crate self as icy_engine_gui;
+
 pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
@@ -6,6 +9,9 @@ pub mod commands;
 pub use commands::{
     CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers, cmd, create_common_commands, load_commands_from_file, load_commands_from_str,
 };
+
+// Re-export proc macros
+pub use icy_engine_gui_macros::dialog_wrapper;
 
 pub mod render_info;
 pub use render_info::*;

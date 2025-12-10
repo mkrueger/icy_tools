@@ -9,10 +9,13 @@ use icy_engine_gui::{
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, browse_button, secondary_button},
 };
 
-use super::SettingsMessage;
+use super::SettingsDialogMessage;
 use crate::ui::Options;
 
-pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui::Message> {
+pub fn paths_settings_content_generic<M: Clone + 'static>(
+    export_path: String,
+    on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
+) -> Element<'static, M> {
     let config_dir = directories::ProjectDirs::from("com", "GitHub", "icy_view")
         .map(|p| p.config_dir().display().to_string())
         .unwrap_or_else(|| "N/A".to_string());
@@ -23,6 +26,11 @@ pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui
 
     let log_file = Options::get_log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
+    let on_msg_1 = on_message.clone();
+    let on_msg_2 = on_message.clone();
+    let on_msg_3 = on_message.clone();
+    let on_msg_4 = on_message.clone();
+
     let content = column![
         // System Paths (read-only)
         section_header(fl!(crate::LANGUAGE_LOADER, "settings-paths-header")),
@@ -32,7 +40,7 @@ pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-config-dir")),
                     text_input("", &config_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    browse_button(crate::ui::Message::SettingsDialog(SettingsMessage::OpenSettingsFolder)),
+                    browse_button(on_msg_1(SettingsDialogMessage::OpenSettingsFolder)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -47,10 +55,7 @@ pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-log-file")),
                     text_input("", &log_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    secondary_button(
-                        fl!(crate::LANGUAGE_LOADER, "settings-paths-open"),
-                        Some(crate::ui::Message::SettingsDialog(SettingsMessage::OpenLogFile))
-                    ),
+                    secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-paths-open"), Some(on_msg_2(SettingsDialogMessage::OpenLogFile))),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -69,8 +74,8 @@ pub fn paths_settings_content(export_path: String) -> Element<'static, crate::ui
                     text_input(&Options::default_export_directory().to_string_lossy(), &export_path)
                         .size(TEXT_SIZE_NORMAL)
                         .width(Length::Fill)
-                        .on_input(|s| crate::ui::Message::SettingsDialog(SettingsMessage::UpdateExportPath(s))),
-                    browse_button(crate::ui::Message::SettingsDialog(SettingsMessage::BrowseExportPath)),
+                        .on_input(move |s| on_msg_3(SettingsDialogMessage::UpdateExportPath(s))),
+                    browse_button(on_msg_4(SettingsDialogMessage::BrowseExportPath)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),

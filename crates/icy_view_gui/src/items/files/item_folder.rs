@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 use super::{get_file_name, read_folder};
-use crate::items::{FileIcon, Item};
+use crate::items::{FileIcon, Item, ItemError};
 use crate::ui::thumbnail_view::{FOLDER_PLACEHOLDER, RgbaData};
 
 pub struct ItemFolder {
@@ -52,15 +52,12 @@ impl Item for ItemFolder {
         None
     }
 
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let path = self.path.clone();
-        Some(match read_folder(&path) {
-            Ok(items) => items,
-            Err(err) => {
-                log::error!("Failed to read folder: {:?}", err);
-                Vec::new()
-            }
-        })
+        match read_folder(&path) {
+            Ok(items) => Ok(items),
+            Err(err) => Err(ItemError::Io(format!("Failed to read folder {:?}: {:?}", path, err))),
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use iced::Task;
 use icy_sauce::SauceRecord;
+use thiserror::Error;
 
 mod archive;
 mod files;
@@ -18,6 +19,38 @@ use async_trait::async_trait;
 use icy_engine::{AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
 pub use icy_engine_gui::ui::FileIcon;
 use tokio_util::sync::CancellationToken;
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+/// Error type for item operations (network, file I/O, parsing, etc.)
+#[derive(Error, Debug, Clone)]
+pub enum ItemError {
+    /// Network request failed
+    #[error("Network error: {0}")]
+    Network(String),
+
+    /// Failed to parse response (JSON, etc.)
+    #[error("Parse error: {0}")]
+    Parse(String),
+
+    /// File I/O error
+    #[error("I/O error: {0}")]
+    Io(String),
+
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Operation was cancelled
+    #[error("Operation cancelled")]
+    Cancelled,
+
+    /// Generic error with message
+    #[error("{0}")]
+    Other(String),
+}
 
 /// Create a new shared 16colors cache
 pub fn create_shared_cache() -> SharedSixteenColorsCache {
@@ -158,20 +191,22 @@ pub trait Item: Send + Sync {
     }
 
     /// Get subitems (async for network-based items)
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
-        None
+    /// Returns Ok(items) on success, Err(ItemError) on failure
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
+        Ok(Vec::new())
     }
 
     /// Read the item's data (async for network/file I/O)
-    async fn read_data(&self) -> Option<Vec<u8>> {
-        None
+    /// Returns Ok(data) on success, Err(ItemError) on failure
+    async fn read_data(&self) -> Result<Vec<u8>, ItemError> {
+        Err(ItemError::NotFound("No data available".to_string()))
     }
 
     /// Get SAUCE info for this item (async for file I/O)
     /// Returns the SAUCE record if the file has one
     async fn get_sauce_info(&self, _cancel_token: &CancellationToken) -> Option<SauceRecord> {
         // Default implementation reads data and extracts SAUCE
-        if let Some(data) = self.read_data().await {
+        if let Ok(data) = self.read_data().await {
             return SauceRecord::from_bytes(&data).ok().flatten();
         }
         None
@@ -210,7 +245,7 @@ pub fn is_displayable_extension(ext: &str) -> bool {
 
 impl dyn Item {
     pub async fn is_binary(&self) -> bool {
-        if let Some(data) = self.read_data().await {
+        if let Ok(data) = self.read_data().await {
             for i in data.iter().take(500) {
                 if i == &0 || i == &255 {
                     return true;
@@ -227,7 +262,7 @@ impl dyn Item {
 pub type ItemDataResult = Result<(String, Vec<u8>), (String, String)>;
 
 /// Result type for async subitems loading  
-pub type SubitemsResult = Option<Vec<Box<dyn Item>>>;
+pub type SubitemsResult = Result<Vec<Box<dyn Item>>, ItemError>;
 
 /// Load item data asynchronously using Iced's Task system.
 /// Returns a Task that resolves to either (path, data) or (path, error_message).
@@ -243,8 +278,8 @@ where
     Task::perform(
         async move {
             match item.read_data().await {
-                Some(data) => Ok((path, data)),
-                None => Err((path.clone(), "Failed to read data".to_string())),
+                Ok(data) => Ok((path, data)),
+                Err(e) => Err((path.clone(), e.to_string())),
             }
         },
         move |result| match result {
@@ -255,6 +290,7 @@ where
 }
 
 /// Load subitems asynchronously using Iced's Task system.
+/// Returns a Task that resolves to Result<Vec<Item>, ItemError>.
 pub fn load_subitems<M>(item: Box<dyn Item>, cancel_token: CancellationToken, on_complete: impl FnOnce(SubitemsResult) -> M + Send + 'static) -> Task<M>
 where
     M: Send + 'static,

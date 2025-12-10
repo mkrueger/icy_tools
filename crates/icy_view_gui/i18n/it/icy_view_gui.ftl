@@ -157,6 +157,7 @@ settings-commands-placeholder=Comando (es. icy_draw %F)
 settings-commands-description=Usa %F per il nome del file
 
 export-no-file-selected=Nessun file selezionato per l'esportazione
+export-no-screen-available=Nessuna schermata disponibile per l'esportazione
 export-success=Esportato in { $path }
 
 toast-baud-rate-off=Emulazione baud: disattivata
@@ -285,3 +286,4 @@ cmd-external-command_2-action = Esterno 3
 cmd-external-command_2-desc = Esegui comando 3 (F7)
 cmd-external-command_3-action = Esterno 4
 cmd-external-command_3-desc = Esegui comando 4 (F8)
+error-loading-items=Errore nel caricamento degli elementi

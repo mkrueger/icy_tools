@@ -6,6 +6,7 @@ use directories::BaseDirs;
 use parking_lot::RwLock;
 use serde_json::Value;
 
+use crate::items::ItemError;
 use crate::ui::thumbnail_view::RgbaData;
 
 /// Get the cache directory for icy_view
@@ -271,34 +272,47 @@ impl SixteenColorsCache {
 pub type SharedSixteenColorsCache = Arc<RwLock<SixteenColorsCache>>;
 
 /// Async function to fetch JSON, using cache
-pub async fn fetch_json_async(cache: &SharedSixteenColorsCache, url: &str) -> Option<Value> {
+/// Returns Ok(Value) on success, Err(ItemError) on failure
+pub async fn fetch_json_async(cache: &SharedSixteenColorsCache, url: &str) -> Result<Value, ItemError> {
     // Check cache first (read lock)
     {
         let cache_read = cache.read();
         if let Some(cached) = cache_read.get_cached_json(url) {
-            return cached;
+            return cached.ok_or_else(|| ItemError::NotFound(format!("Cached failure for {}", url)));
         }
         if cache_read.is_failed(url) {
-            return None;
+            return Err(ItemError::NotFound(format!("Previously failed: {}", url)));
         }
     }
 
     // Fetch from network (no lock held)
-    match reqwest::get(url).await {
-        Ok(response) => match response.json::<Value>().await {
-            Ok(json) => {
-                cache.write().store_json(url.to_string(), json.clone());
-                Some(json)
-            }
-            Err(err) => {
-                log::debug!("Error parsing json from {}: {}", url, err);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| ItemError::Network(format!("Failed to create HTTP client: {}", e)))?;
+    match client.get(url).send().await {
+        Ok(response) => {
+            if !response.status().is_success() {
+                let status = response.status();
                 cache.write().store_json_failed(url.to_string());
-                None
+                return Err(ItemError::Network(format!("HTTP {} for {}", status, url)));
             }
-        },
+            match response.json::<Value>().await {
+                Ok(json) => {
+                    cache.write().store_json(url.to_string(), json.clone());
+                    Ok(json)
+                }
+                Err(err) => {
+                    log::error!("Error parsing json from {}: {}", url, err);
+                    cache.write().store_json_failed(url.to_string());
+                    Err(ItemError::Parse(format!("Failed to parse JSON from {}: {}", url, err)))
+                }
+            }
+        }
         Err(err) => {
+            log::error!("Failed to fetch 16colors.rs data: {}", err);
             cache.write().log_connection_error(&err);
-            None
+            Err(ItemError::Network(format!("Connection error: {}", err)))
         }
     }
 }

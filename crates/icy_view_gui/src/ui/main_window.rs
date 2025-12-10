@@ -7,8 +7,8 @@ use iced::{
     widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
-    ButtonSet, ConfirmationDialog, DialogType, Toast, ToastManager, command_handler,
-    ui::{DialogStack, ExportDialogMessage, ExportDialogState},
+    Toast, ToastManager, command_handler, dialog_msg, error_dialog,
+    ui::{DialogStack, ExportDialogMessage, HelpDialogMessage, export_dialog_with_defaults_from_msg},
     version_helper::replace_version_marker,
 };
 use once_cell::sync::Lazy;
@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     DEFAULT_TITLE, Item, VERSION,
     commands::{cmd, create_icy_view_commands},
-    items::{ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
+    items::{ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
 };
 use icy_engine::formats::FileFormat;
 
@@ -26,10 +26,10 @@ use super::{
     FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
     NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar,
     StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
-    dialogs::about_dialog::AboutDialog,
-    dialogs::help_dialog::HelpDialog,
-    dialogs::sauce_dialog::{SauceDialog, SauceDialogMessage},
-    dialogs::settings_dialog::{SettingsDialogState, SettingsMessage},
+    dialogs::about_dialog::{AboutDialogMessage, about_dialog},
+    dialogs::help_dialog::help_dialog,
+    dialogs::sauce_dialog::{SauceDialogMessage, sauce_dialog_from_msg},
+    dialogs::settings_dialog::{SettingsDialogMessage, settings_dialog_from_msg},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     focus::{focus, list_focus_style},
     is_image_file, is_sixel_file,
@@ -119,7 +119,7 @@ pub enum Message {
     /// SAUCE dialog messages
     SauceDialog(SauceDialogMessage),
     /// Settings dialog messages
-    SettingsDialog(SettingsMessage),
+    SettingsDialog(SettingsDialogMessage),
     /// Show settings dialog
     ShowSettings,
     /// Close settings dialog
@@ -144,18 +144,18 @@ pub enum Message {
     ShuffleNext,
     /// Show help dialog
     ShowHelp,
-    /// Close help dialog
-    CloseHelp,
+    /// Help dialog messages
+    HelpDialog(HelpDialogMessage),
     /// Show about dialog
     ShowAbout,
-    /// Close about dialog
-    CloseAbout,
+    /// About dialog messages
+    AboutDialog(AboutDialogMessage),
     /// Open a hyperlink
     OpenLink(String),
     /// Shuffle item load error - try next item
     ShuffleLoadError(usize),
-    /// 16colors subitems loaded
-    SixteenColorsSubitemsLoaded(Vec<Box<dyn Item>>),
+    /// 16colors subitems loaded (Result<items, error>)
+    SixteenColorsSubitemsLoaded(Result<Vec<Box<dyn Item>>, ItemError>),
     /// No-op message (for ignored events)
     None,
 }
@@ -196,20 +196,7 @@ pub struct MainWindow {
     pub folder_preview_path: Option<String>,
     /// Last animation tick time for delta calculation
     last_tick: Instant,
-    /// SAUCE dialog (shown as modal when Some)
-    sauce_dialog: Option<SauceDialog>,
-    /// Help dialog (shown as modal when Some)
-    help_dialog: Option<HelpDialog>,
-    /// About dialog (shown as modal when Some)
-    about_dialog: Option<AboutDialog>,
-    /// Settings dialog (shown as modal when Some)
-    settings_dialog: Option<SettingsDialogState>,
-    /// Error dialog (shown as modal when Some)
-    error_dialog: Option<ConfirmationDialog>,
-    /// Export dialog (shown as modal when Some)
-    export_dialog: Option<ExportDialogState>,
-    /// Dialog stack for trait-based modal dialogs (new unified system)
-    /// This can be used alongside or instead of the Option<Dialog> fields above.
+    /// Dialog stack for trait-based modal dialogs (unified system)
     dialogs: DialogStack<Message>,
     /// Toast notifications
     toasts: Vec<Toast>,
@@ -325,12 +312,6 @@ impl MainWindow {
                 folder_preview: TileGridView::new(),
                 folder_preview_path: None,
                 last_tick: Instant::now(),
-                sauce_dialog: None,
-                help_dialog: None,
-                about_dialog: None,
-                settings_dialog: None,
-                error_dialog: None,
-                export_dialog: None,
                 dialogs: DialogStack::new(),
                 toasts: Vec::new(),
                 sauce_loader: Some(sauce_loader),
@@ -514,9 +495,7 @@ impl MainWindow {
                             let root_box: Box<dyn crate::Item> = Box::new(root);
                             let cancel_token = CancellationToken::new();
                             self.navigation_bar.set_path_input("/".to_string());
-                            return load_subitems(root_box, cancel_token, |result| {
-                                Message::SixteenColorsSubitemsLoaded(result.unwrap_or_default())
-                            });
+                            return load_subitems(root_box, cancel_token, Message::SixteenColorsSubitemsLoaded);
                         } else {
                             // Switch back to home
                             let home = directories::UserDirs::new()
@@ -866,19 +845,10 @@ impl MainWindow {
                     self.shuffle_mode.stop();
                     return Task::none();
                 }
-                // Close dialogs in priority order
-                if self.error_dialog.is_some() {
-                    self.error_dialog = None;
-                } else if self.export_dialog.is_some() {
-                    self.export_dialog = None;
-                } else if self.about_dialog.is_some() {
-                    self.about_dialog = None;
-                } else if self.help_dialog.is_some() {
-                    self.help_dialog = None;
-                } else if self.settings_dialog.is_some() {
-                    self.settings_dialog = None;
-                } else if self.sauce_dialog.is_some() {
-                    self.sauce_dialog = None;
+                // Close dialogs from the stack (handled by DialogStack::handle_event)
+                // If no dialogs open, check other UI elements
+                if !self.dialogs.is_empty() {
+                    self.dialogs.pop();
                 } else if self.filter_popup.is_visible() {
                     self.close_filter_popup();
                 } else if self.fullscreen {
@@ -1072,18 +1042,19 @@ impl MainWindow {
                         };
 
                         if let Some(sauce) = sauce_info {
-                            self.sauce_dialog = Some(SauceDialog::new(sauce));
+                            self.dialogs.push(
+                                sauce_dialog_from_msg(sauce, dialog_msg!(Message::SauceDialog)).on_cancel(|| Message::None),
+                            );
                         }
                         return Task::none();
                     }
                 }
             }
-            Message::SauceDialog(msg) => {
-                if let Some(ref mut dialog) = self.sauce_dialog {
-                    let should_close = dialog.update(msg);
-                    if should_close {
-                        self.sauce_dialog = None;
-                    }
+            Message::SauceDialog(ref _msg) => {
+                // SAUCE dialog messages are now handled by Dialog::update()
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
@@ -1484,41 +1455,71 @@ impl MainWindow {
                     self.filter_popup.focus_input()
                 }
             }
-            Message::SettingsDialog(msg) => {
-                if let Some(ref mut dialog) = self.settings_dialog {
-                    if let Some(result_msg) = dialog.update(msg) {
-                        return self.update(result_msg);
-                    }
+            Message::SettingsDialog(ref _msg) => {
+                // Settings dialog messages are now handled by Dialog::update()
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
             Message::ShowSettings => {
                 // Create temp options from current options
                 let temp_options = Arc::new(Mutex::new(self.options.lock().clone()));
-                self.settings_dialog = Some(SettingsDialogState::new(self.options.clone(), temp_options));
+                self.dialogs.push(
+                    settings_dialog_from_msg(self.options.clone(), temp_options, dialog_msg!(Message::SettingsDialog))
+                        .on_save(|| Message::CloseSettingsDialog)
+                        .on_cancel(|| Message::CloseSettingsDialog),
+                );
                 Task::none()
             }
             Message::CloseSettingsDialog => {
-                self.settings_dialog = None;
+                // Dialog is closed via DialogStack's request_cancel/confirm
+                // This message is sent as a result of closing
                 Task::none()
             }
             Message::ShowHelp => {
-                self.help_dialog = Some(HelpDialog::new());
+                self.dialogs.push(help_dialog(
+                    Message::HelpDialog,
+                    |msg| match msg {
+                        Message::HelpDialog(m) => Some(m),
+                        _ => None,
+                    },
+                ));
                 Task::none()
             }
-            Message::CloseHelp => {
-                self.help_dialog = None;
+            Message::HelpDialog(_msg) => {
+                // Dialog handles its own messages via DialogStack
                 Task::none()
             }
             Message::ShowAbout => {
                 icy_engine_gui::set_default_auto_scaling_xy(true);
-                use super::dialogs::about_dialog::ABOUT_ANSI;
-                self.about_dialog = Some(AboutDialog::new(ABOUT_ANSI));
+                self.dialogs.push(
+                    about_dialog(
+                        Message::AboutDialog,
+                        |msg| match msg {
+                            Message::AboutDialog(m) => Some(m),
+                            _ => None,
+                        },
+                    )
+                    .on_cancel(|| {
+                        icy_engine_gui::set_default_auto_scaling_xy(false);
+                        Message::None
+                    }),
+                );
                 Task::none()
             }
-            Message::CloseAbout => {
-                icy_engine_gui::set_default_auto_scaling_xy(false);
-                self.about_dialog = None;
+            Message::AboutDialog(ref msg) => {
+                // Handle OpenLink messages from the about dialog
+                if let AboutDialogMessage::OpenLink(url) = msg {
+                    if let Err(e) = open::that(url) {
+                        log::error!("Failed to open URL {}: {}", url, e);
+                    }
+                }
+                // Route to dialog stack for other messages
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
                 Task::none()
             }
             Message::OpenLink(url) => {
@@ -1535,16 +1536,28 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::SixteenColorsSubitemsLoaded(items) => {
-                // 16colors root items loaded, set them in file browser
-                self.file_browser.set_16colors_mode(items);
-                // Reset SAUCE loader after navigation
-                self.reset_sauce_loader_for_navigation();
-                // Update can_go_up state for toolbar
-                self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
-                if self.view_mode() == ViewMode::Tiles {
-                    let items = self.file_browser.get_items();
-                    self.tile_grid.set_items_from_items(items);
+            Message::SixteenColorsSubitemsLoaded(result) => {
+                match result {
+                    Ok(items) => {
+                        // 16colors root items loaded, set them in file browser
+                        self.file_browser.set_16colors_mode(items);
+                        // Reset SAUCE loader after navigation
+                        self.reset_sauce_loader_for_navigation();
+                        // Update can_go_up state for toolbar
+                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
+                        if self.view_mode() == ViewMode::Tiles {
+                            let items = self.file_browser.get_items();
+                            self.tile_grid.set_items_from_items(items);
+                        }
+                    }
+                    Err(err) => {
+                        // Show error dialog to user
+                        log::error!("Failed to load 16colors items: {}", err);
+                        self.dialogs
+                            .push(error_dialog(fl!(crate::LANGUAGE_LOADER, "error-loading-items"), err.to_string(), |_| {
+                                Message::CloseErrorDialog
+                            }));
+                    }
                 }
                 Task::none()
             }
@@ -1674,11 +1687,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowErrorDialog { title, message } => {
-                self.error_dialog = Some(ConfirmationDialog::new(title, message).dialog_type(DialogType::Error).buttons(ButtonSet::Close));
+                self.dialogs.push(error_dialog(title, message, |_| Message::CloseErrorDialog));
                 Task::none()
             }
             Message::CloseErrorDialog => {
-                self.error_dialog = None;
+                // Close the topmost dialog (error dialogs close via this message)
+                self.dialogs.pop();
                 Task::none()
             }
             Message::ShowToast(toast) => {
@@ -1710,45 +1724,35 @@ impl MainWindow {
                     // Clone options for the closure
                     let options = self.options.clone();
 
-                    self.export_dialog = Some(
-                        ExportDialogState::new(export_path.to_string_lossy().to_string(), buffer_type)
-                            .with_default_directory_fn(move || options.lock().export_path()),
-                    );
+                    // Get the screen for export
+                    if let Some(screen) = self.preview.get_screen() {
+                        self.dialogs.push(
+                            export_dialog_with_defaults_from_msg(
+                                export_path.to_string_lossy().to_string(),
+                                buffer_type,
+                                screen,
+                                move || options.lock().export_path(),
+                                dialog_msg!(Message::ExportDialog),
+                            )
+                            .on_confirm(|path| {
+                                Message::ShowToast(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())))
+                            })
+                            .on_cancel(|| Message::None),
+                        );
+                    } else {
+                        self.toasts.push(Toast::warning(fl!(crate::LANGUAGE_LOADER, "export-no-screen-available")));
+                    }
                 } else {
                     // Show toast that no file is being previewed
                     self.toasts.push(Toast::warning(fl!(crate::LANGUAGE_LOADER, "export-no-file-selected")));
                 }
                 Task::none()
             }
-            Message::ExportDialog(msg) => {
-                if let Some(ref mut dialog) = self.export_dialog {
-                    // Get the screen from preview for export
-                    let screen = self.preview.get_screen();
-
-                    let result = dialog.update(msg, |state| {
-                        if let Some(screen) = screen.as_ref() {
-                            state.export_buffer(screen.clone())
-                        } else {
-                            Err("No screen available for export".to_string())
-                        }
-                    });
-
-                    match result {
-                        Some(true) => {
-                            // Export successful
-                            let path = dialog.get_full_path();
-                            self.toasts
-                                .push(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())));
-                            self.export_dialog = None;
-                        }
-                        Some(false) => {
-                            // Cancelled
-                            self.export_dialog = None;
-                        }
-                        None => {
-                            // Dialog stays open (error or just updating)
-                        }
-                    }
+            Message::ExportDialog(ref _msg) => {
+                // Export dialog messages are now handled by Dialog::update()
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
@@ -1945,50 +1949,56 @@ impl MainWindow {
                     log::debug!("Shuffle preload cancelled for index {}", preload_index);
                     let _ = tx.send(None);
                 }
-                data_opt = item.read_data() => {
-                    let preloaded = data_opt.map(|data| {
-                        // If it's an image, also decode it (store rgba data, handle created on use)
-                        let decoded_image = if is_image {
-                            let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
+                data_result = item.read_data() => {
+                    let preloaded = match data_result {
+                        Ok(data) => {
+                            // If it's an image, also decode it (store rgba data, handle created on use)
+                            let decoded_image = if is_image {
+                                let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
-                            if is_sixel {
-                                // Use icy_sixel for Sixel files
-                                match icy_sixel::sixel_decode(&stripped_data) {
-                                    Ok(image) => {
-                                        let w = image.width as u32;
-                                        let h = image.height as u32;
-                                        Some(super::DecodedImage { rgba: image.pixels, width: w, height: h })
+                                if is_sixel {
+                                    // Use icy_sixel for Sixel files
+                                    match icy_sixel::sixel_decode(&stripped_data) {
+                                        Ok(image) => {
+                                            let w = image.width as u32;
+                                            let h = image.height as u32;
+                                            Some(super::DecodedImage { rgba: image.pixels, width: w, height: h })
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Failed to decode Sixel during preload: {}", e);
+                                            None
+                                        }
                                     }
-                                    Err(e) => {
-                                        log::warn!("Failed to decode Sixel during preload: {}", e);
-                                        None
+                                } else {
+                                    // Use image crate for other formats
+                                    match image::load_from_memory(&stripped_data) {
+                                        Ok(img) => {
+                                            let rgba = img.to_rgba8();
+                                            let (width, height) = rgba.dimensions();
+                                            Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Failed to decode image during preload: {}", e);
+                                            None
+                                        }
                                     }
                                 }
                             } else {
-                                // Use image crate for other formats
-                                match image::load_from_memory(&stripped_data) {
-                                    Ok(img) => {
-                                        let rgba = img.to_rgba8();
-                                        let (width, height) = rgba.dimensions();
-                                        Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Failed to decode image during preload: {}", e);
-                                        None
-                                    }
-                                }
-                            }
-                        } else {
-                            None
-                        };
+                                None
+                            };
 
-                        super::PreloadedItem {
-                            index: preload_index,
-                            path: PathBuf::from(&path),
-                            data,
-                            decoded_image,
+                            Some(super::PreloadedItem {
+                                index: preload_index,
+                                path: PathBuf::from(&path),
+                                data,
+                                decoded_image,
+                            })
                         }
-                    });
+                        Err(e) => {
+                            log::warn!("Failed to read data during shuffle preload: {}", e);
+                            None
+                        }
+                    };
                     log::debug!("Shuffle preload completed for index {}", preload_index);
                     let _ = tx.send(preloaded);
                 }
@@ -2199,45 +2209,8 @@ impl MainWindow {
         // Wrap with filter popup if visible
         let view_with_filter = super::filter_popup_overlay(&self.filter_popup, base_view, Message::FilterPopup);
 
-        // Wrap with error dialog if active (highest priority)
-        if let Some(ref dialog) = self.error_dialog {
-            return dialog.clone().view(view_with_filter, |_result| Message::CloseErrorDialog);
-        }
-
-        // Wrap with Settings dialog if active (takes priority)
-        if let Some(ref dialog) = self.settings_dialog {
-            return dialog.view(view_with_filter);
-        }
-
-        // Wrap with Export dialog if active
-        if let Some(ref dialog) = self.export_dialog {
-            let dialog_view = dialog.view(|msg| Message::ExportDialog(msg));
-            return icy_engine_gui::ui::modal(view_with_filter, dialog_view, Message::ExportDialog(ExportDialogMessage::Cancel));
-        }
-
-        // Wrap with SAUCE dialog if active
-        let view_with_sauce = if let Some(ref dialog) = self.sauce_dialog {
-            dialog.view(view_with_filter, Message::SauceDialog)
-        } else {
-            view_with_filter
-        };
-
-        // Wrap with Help dialog if active
-        let view_with_help = if let Some(ref dialog) = self.help_dialog {
-            dialog.view(view_with_sauce, Message::CloseHelp)
-        } else {
-            view_with_sauce
-        };
-
-        // Wrap with About dialog if active
-        let view_with_about = if let Some(ref dialog) = self.about_dialog {
-            icy_engine_gui::ui::modal(view_with_help, dialog.view(), Message::CloseAbout)
-        } else {
-            view_with_help
-        };
-
-        // Wrap with dialog stack (for new trait-based dialogs)
-        let view_with_dialogs = self.dialogs.view(view_with_about);
+        // Wrap with dialog stack (unified dialog system)
+        let view_with_dialogs = self.dialogs.view(view_with_filter);
 
         // Wrap with toast notifications
         ToastManager::new(view_with_dialogs, &self.toasts, Message::CloseToast).into()
@@ -2322,14 +2295,13 @@ impl MainWindow {
     }
 
     /// Get the current theme based on settings
-    /// When settings dialog is open, use the temp options (for live preview)
-    /// Otherwise use the saved options
+    /// If a dialog is open that provides a theme override (e.g., settings preview), use that
     pub fn theme(&self) -> Theme {
-        if let Some(ref dialog) = self.settings_dialog {
-            dialog.temp_options.lock().monitor_settings.get_theme()
-        } else {
-            self.options.lock().monitor_settings.get_theme()
+        // Check if any dialog wants to override the theme (e.g., settings preview)
+        if let Some(theme) = self.dialogs.theme() {
+            return theme;
         }
+        self.options.lock().monitor_settings.get_theme()
     }
 
     /// Get a string representing the current zoom level for display in title bar
@@ -2339,14 +2311,8 @@ impl MainWindow {
     }
 
     /// Get the current monitor settings
-    /// When settings dialog is open, use the temp options (for live preview)
-    /// Otherwise use the saved options
     fn get_current_monitor_settings(&self) -> icy_engine_gui::MonitorSettings {
-        if let Some(ref dialog) = self.settings_dialog {
-            dialog.temp_options.lock().monitor_settings.clone()
-        } else {
-            self.options.lock().monitor_settings.clone()
-        }
+        self.options.lock().monitor_settings.clone()
     }
 
     /// Get the current view mode from options
@@ -2444,18 +2410,8 @@ impl MainWindow {
                         return (Some(Message::ShuffleNext), Task::none());
                     }
 
-                    // Settings dialog: Enter = Save (apply and close)
-                    if self.settings_dialog.is_some() {
-                        return (Some(Message::SettingsDialog(SettingsMessage::Save)), Task::none());
-                    }
-                    // Sauce dialog: Enter = Close
-                    if self.sauce_dialog.is_some() {
-                        return (Some(Message::SauceDialog(SauceDialogMessage::Close)), Task::none());
-                    }
-                    // Error dialog: Enter = Close
-                    if self.error_dialog.is_some() {
-                        return (Some(Message::CloseErrorDialog), Task::none());
-                    }
+                    // Dialog Enter/Escape are handled by DialogStack::handle_event
+                    // which is called earlier in this function
                 }
 
                 // Handle Escape key for closing dialogs
@@ -2542,7 +2498,7 @@ impl MainWindow {
         if need_16colors_load {
             let root: Box<dyn crate::Item> = Box::new(SixteenColorsRoot::new());
             let cancel_token = CancellationToken::new();
-            return load_subitems(root, cancel_token, |result| Message::SixteenColorsSubitemsLoaded(result.unwrap_or_default()));
+            return load_subitems(root, cancel_token, Message::SixteenColorsSubitemsLoaded);
         }
 
         Task::none()

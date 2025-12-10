@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 icy_engine = { workspace = true }
 icy_parser_core = { workspace = true }
+icy_engine_gui_macros = { path = "../icy_engine_gui_macros" }
 codepages = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }

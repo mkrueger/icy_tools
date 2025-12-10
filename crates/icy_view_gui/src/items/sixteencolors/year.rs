@@ -5,7 +5,7 @@ use icy_engine_gui::ui::FileIcon;
 use retrofont::{Cell, Font, FontTarget, RenderOptions};
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{Item, create_text_buffer_preview, sort_folder};
+use crate::items::{Item, ItemError, create_text_buffer_preview, sort_folder};
 use crate::ui::thumbnail_view::RgbaData;
 
 use super::{API_PATH, SixteenColorsPack, cache::fetch_json_async, get_cache};
@@ -145,7 +145,7 @@ impl Item for SixteenColorsYear {
         Some(render_year_thumbnail(self.year))
     }
 
-    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Option<Vec<Box<dyn Item>>> {
+    async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
         let url = format!("{}/year/{}?rows=0", API_PATH, self.year);
         let cache = get_cache();
         let json = fetch_json_async(&cache, &url).await?;
@@ -161,7 +161,7 @@ impl Item for SixteenColorsYear {
             }
             sort_folder(&mut result);
         }
-        Some(result)
+        Ok(result)
     }
 
     fn clone_box(&self) -> Box<dyn Item> {

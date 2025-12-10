@@ -19,7 +19,7 @@ use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, Thumbn
 use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, create_labeled_placeholder, render_label_tag};
 use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
 use crate::Item;
-use crate::items::{ItemFile, ItemFolder};
+use crate::items::{ItemError, ItemFile, ItemFolder};
 use crate::ui::options::ScrollSpeed;
 
 /// Base tile width for layout calculations (full tile including borders)
@@ -221,7 +221,7 @@ pub struct TileGridView {
     /// Cancellation token for async subitem loading
     subitems_cancel_token: CancellationToken,
     /// Receiver for async subitem loading results
-    subitems_rx: Option<tokio::sync::oneshot::Receiver<Vec<Box<dyn Item>>>>,
+    subitems_rx: Option<tokio::sync::oneshot::Receiver<Result<Vec<Box<dyn Item>>, ItemError>>>,
     /// Background color for shader (shared, can be updated from theme)
     background_color: Arc<RwLock<[f32; 4]>>,
     /// LRU order for loaded thumbnails (front = oldest, back = newest)
@@ -565,11 +565,11 @@ impl TileGridView {
         let item_path = item.get_file_path();
         runtime.spawn(async move {
             log::info!("[TileGridView] async task started for: {:?}", item_path);
-            let items = item.get_subitems(&cancel_token).await;
-            let count = items.as_ref().map(|v| v.len()).unwrap_or(0);
+            let result = item.get_subitems(&cancel_token).await;
+            let count = result.as_ref().map(|v| v.len()).unwrap_or(0);
             log::info!("[TileGridView] async task completed for: {:?}, got {} items", item_path, count);
             // Send result (ignore error if receiver dropped)
-            let _ = tx.send(items.unwrap_or_default());
+            let _ = tx.send(result);
         });
     }
 
@@ -841,10 +841,20 @@ impl TileGridView {
         }
         if let Some(mut rx) = self.subitems_rx.take() {
             match rx.try_recv() {
-                Ok(items) => {
-                    log::info!("[TileGridView] poll_results: received {} subitems", items.len());
-                    // Subitems loaded - set them directly
-                    self.set_items_from_items(items);
+                Ok(result) => {
+                    match result {
+                        Ok(items) => {
+                            log::info!("[TileGridView] poll_results: received {} subitems", items.len());
+                            // Subitems loaded - set them directly
+                            self.set_items_from_items(items);
+                        }
+                        Err(err) => {
+                            log::error!("[TileGridView] poll_results: error loading subitems: {}", err);
+                            // Error loading - could return a message to show error dialog
+                            // For now, just clear items
+                            self.set_items_from_items(Vec::new());
+                        }
+                    }
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
                     // Still loading - put receiver back
