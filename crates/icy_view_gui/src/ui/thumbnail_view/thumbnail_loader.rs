@@ -314,13 +314,13 @@ fn render_sixel_thumbnail(path: &String, data: &[u8], label: &str, cancel_token:
     }
 
     match icy_sixel::sixel_decode(data) {
-        Ok((rgba, width, height)) => {
+        Ok(image) => {
             if cancel_token.is_cancelled() {
                 return None;
             }
 
-            let orig_width = width as u32;
-            let orig_height = height as u32;
+            let orig_width = image.width as u32;
+            let orig_height = image.height as u32;
 
             // Calculate width multiplier from pixel width
             let width_multiplier = if orig_width < 640 {
@@ -341,11 +341,11 @@ fn render_sixel_thumbnail(path: &String, data: &[u8], label: &str, cancel_token:
                 // Crop the RGBA data
                 let row_bytes = (orig_width * 4) as usize;
                 let cropped_size = (crop_height as usize) * row_bytes;
-                let cropped_rgba = rgba[..cropped_size].to_vec();
+                let cropped_rgba = image.pixels[..cropped_size].to_vec();
 
                 (cropped_rgba, orig_width, crop_height)
             } else {
-                (rgba, orig_width, orig_height)
+                (image.pixels, orig_width, orig_height)
             };
 
             debug!("[ThumbnailLoader] Sixel decoded {}x{} from {:?}", final_width, final_height, path);

@@ -211,6 +211,7 @@ impl BitFontMenu {
             file: vec![
                 MenuItem::cmd(&cmd::FILE_NEW, Message::NewFile),
                 MenuItem::cmd(&cmd::FILE_OPEN, Message::OpenFile),
+                MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
                 // Recent files submenu handled separately in view
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
@@ -321,14 +322,15 @@ pub fn view_bitfont(recent_files: &MostRecentlyUsedFiles, undo_desc: Option<&str
             menu_template(menu_items!(
                 (menu_item_view(&menu.file[0])), // New
                 (menu_item_view(&menu.file[1])), // Open
+                (menu_item_view(&menu.file[2])), // Import Font
                 (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
-                (menu_item_view(&menu.file[2])), // Separator
-                (menu_item_view(&menu.file[3])), // Save
-                (menu_item_view(&menu.file[4])), // Save As
-                (menu_item_view(&menu.file[5])), // Separator
-                (menu_item_view(&menu.file[6])), // Settings
-                (menu_item_view(&menu.file[7])), // Separator
-                (menu_item_view(&menu.file[8]))  // Close
+                (menu_item_view(&menu.file[3])), // Separator
+                (menu_item_view(&menu.file[4])), // Save
+                (menu_item_view(&menu.file[5])), // Save As
+                (menu_item_view(&menu.file[6])), // Separator
+                (menu_item_view(&menu.file[7])), // Settings
+                (menu_item_view(&menu.file[8])), // Separator
+                (menu_item_view(&menu.file[9]))  // Close
             ))
         ),
         // Edit menu

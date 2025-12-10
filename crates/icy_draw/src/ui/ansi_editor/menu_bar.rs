@@ -24,6 +24,7 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> 
             menu_template(menu_items!(
                 (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                 (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
+                (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
                 (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                 (separator()),
                 (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),

@@ -279,6 +279,11 @@ pub enum Message {
     // BitFont Editor messages
     BitFontEditor(BitFontEditorMessage),
 
+    // Font Import Dialog
+    ShowImportFontDialog,
+    FontImport(super::font_import::FontImportMessage),
+    FontImported(icy_engine::BitFont),
+
     // Internal
     Tick,
     ViewportTick,
@@ -345,6 +350,9 @@ pub struct MainWindow {
     /// Error dialog state (title, message) - None if no dialog
     error_dialog: Option<(String, String)>,
 
+    /// Font import dialog state
+    font_import_dialog: Option<super::font_import::FontImportDialog>,
+
     /// Command set for hotkey handling
     commands: CommandSet,
 
@@ -394,6 +402,7 @@ impl MainWindow {
             show_left_panel: true,
             show_right_panel: true,
             error_dialog,
+            font_import_dialog: None,
             commands: create_draw_commands(),
             last_save,
         }
@@ -445,7 +454,7 @@ impl MainWindow {
                 // Build filter from supported file formats
                 let extensions: Vec<&str> = FileFormat::ALL
                     .iter()
-                    .filter(|f| f.is_supported())
+                    .filter(|f| f.is_supported() || f.is_bitfont())
                     .flat_map(|f| f.all_extensions())
                     .copied()
                     .collect();
@@ -753,6 +762,42 @@ impl MainWindow {
             },
 
             // ═══════════════════════════════════════════════════════════════════
+            // Font Import Dialog
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowImportFontDialog => {
+                self.font_import_dialog = Some(super::font_import::FontImportDialog::new());
+                Task::none()
+            }
+            Message::FontImport(msg) => {
+                if let Some(dialog) = &mut self.font_import_dialog {
+                    let (result, task) = dialog.update(msg);
+                    if let Some(result) = result {
+                        match result {
+                            super::font_import::FontImportResult::Imported(font) => {
+                                self.font_import_dialog = None;
+                                return self.update(Message::FontImported(font));
+                            }
+                            super::font_import::FontImportResult::Cancel => {
+                                self.font_import_dialog = None;
+                            }
+                        }
+                    }
+                    task.map(Message::FontImport)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::FontImported(font) => {
+                // Switch to BitFont editor with the imported font
+                let mut editor = BitFontEditor::new();
+                editor.state = icy_engine_edit::bitfont::BitFontEditState::from_font(font);
+                editor.invalidate_caches();
+                self.mode_state = ModeState::BitFont(editor);
+                self.mark_saved();
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
             // File operations (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
             Message::OpenRecentFile(path) => {
@@ -915,6 +960,13 @@ impl MainWindow {
         let status_bar = self.view_status_bar();
 
         let main_content: Element<'_, Message> = column![menu_bar, content, rule::horizontal(1), status_bar,].into();
+
+        // Show font import dialog if present
+        let main_content = if let Some(dialog) = &self.font_import_dialog {
+            dialog.view(main_content, Message::FontImport)
+        } else {
+            main_content
+        };
 
         // Show error dialog if present
         if let Some((title, message)) = &self.error_dialog {

@@ -35,6 +35,7 @@ use iced::{
     Element, Length, Point, Task, Theme,
     alignment::Horizontal,
     keyboard::{self, Key},
+    mouse,
     widget::{Canvas, Space, column, container, row, text},
 };
 use icy_engine::BitFont;
@@ -52,6 +53,11 @@ use crate::ui::{
 
 // Layout constants are now in style.rs - import them here for backwards compatibility
 pub(crate) use style::{CELL_GAP as EDIT_CELL_BORDER, CELL_SIZE as EDIT_CELL_SIZE, RULER_SIZE};
+
+/// Maximum height available for the grids (accounting for toolbar, margins, etc.)
+const MAX_GRID_HEIGHT: f32 = 580.0;
+/// Minimum scale factor to prevent grids from becoming too small
+const MIN_SCALE_FACTOR: f32 = 0.25;
 
 /// State for the BitFont editor
 ///
@@ -246,6 +252,55 @@ impl BitFontEditor {
     pub fn invalidate_caches(&mut self) {
         self.edit_cache.clear();
         self.selector_cache.clear();
+    }
+
+    /// Calculate scale factors for edit grid and charset based on available height
+    ///
+    /// Returns (edit_cell_scale, charset_scale) where:
+    /// - edit_cell_scale: multiplier for EDIT_CELL_SIZE (1.0 = default 30px cells)
+    /// - charset_scale: multiplier for font size in charset (2.0 = default)
+    fn calculate_grid_scales(&self) -> (f32, f32) {
+        let (_font_width, font_height) = self.state.font_size();
+
+        // Default scales
+        let default_edit_scale = 1.0;
+        let default_charset_scale = 2.0;
+
+        // Calculate ideal heights at default scales
+        // Edit grid: RULER_SIZE + (CELL_SIZE + CELL_GAP) * font_height
+        let ideal_edit_height = RULER_SIZE + (EDIT_CELL_SIZE + EDIT_CELL_BORDER) * font_height as f32;
+
+        // Charset: RULER_SIZE + 16 rows * (font_height * scale)
+        let ideal_charset_height = RULER_SIZE + 16.0 * (font_height as f32 * default_charset_scale);
+
+        // Use the taller one to determine if scaling is needed
+        let max_ideal_height = ideal_edit_height.max(ideal_charset_height);
+
+        if max_ideal_height <= MAX_GRID_HEIGHT {
+            // Everything fits at default scale
+            (default_edit_scale, default_charset_scale)
+        } else {
+            // Need to scale down proportionally
+            // Calculate the scale factor needed to fit the taller grid
+            let scale_factor = ((MAX_GRID_HEIGHT - RULER_SIZE) / (max_ideal_height - RULER_SIZE)).max(MIN_SCALE_FACTOR);
+
+            let edit_scale = default_edit_scale * scale_factor;
+            let charset_scale = default_charset_scale * scale_factor;
+
+            (edit_scale, charset_scale)
+        }
+    }
+
+    /// Get the current edit cell size (scaled)
+    pub(crate) fn scaled_edit_cell_size(&self) -> f32 {
+        let (edit_scale, _) = self.calculate_grid_scales();
+        EDIT_CELL_SIZE * edit_scale
+    }
+
+    /// Get the current edit cell gap (scaled)
+    pub(crate) fn scaled_edit_cell_gap(&self) -> f32 {
+        let (edit_scale, _) = self.calculate_grid_scales();
+        EDIT_CELL_BORDER * edit_scale
     }
 
     fn refresh_targets(&mut self) {
@@ -922,8 +977,10 @@ impl BitFontEditor {
 
     /// Convert canvas position to pixel coordinates
     fn pos_to_pixel(&self, pos: Point) -> Option<(i32, i32)> {
-        let x = ((pos.x - RULER_SIZE) / (EDIT_CELL_SIZE + EDIT_CELL_BORDER)) as i32;
-        let y = ((pos.y - RULER_SIZE) / (EDIT_CELL_SIZE + EDIT_CELL_BORDER)) as i32;
+        let scaled_cell_size = self.scaled_edit_cell_size();
+        let scaled_cell_gap = self.scaled_edit_cell_gap();
+        let x = ((pos.x - RULER_SIZE) / (scaled_cell_size + scaled_cell_gap)) as i32;
+        let y = ((pos.y - RULER_SIZE) / (scaled_cell_size + scaled_cell_gap)) as i32;
 
         let (width, height) = self.state.font_size();
         if x >= 0 && x < width && y >= 0 && y < height { Some((x, y)) } else { None }
@@ -1167,6 +1224,11 @@ impl BitFontEditor {
         let (font_width, font_height) = self.state.font_size();
         let use_letter_spacing = self.use_letter_spacing();
 
+        // Calculate dynamic scales based on font size and available height
+        let (edit_scale, _charset_scale) = self.calculate_grid_scales();
+        let scaled_cell_size = EDIT_CELL_SIZE * edit_scale;
+        let scaled_cell_gap = EDIT_CELL_BORDER * edit_scale;
+
         // === CENTER: Edit grid canvas ===
         // Add extra column for 9-dot mode if letter spacing is enabled
         let display_width = if use_letter_spacing && font_width == 8 {
@@ -1174,8 +1236,8 @@ impl BitFontEditor {
         } else {
             font_width
         };
-        let edit_grid_width = RULER_SIZE + (EDIT_CELL_SIZE + EDIT_CELL_BORDER) * display_width as f32;
-        let edit_grid_height = RULER_SIZE + (EDIT_CELL_SIZE + EDIT_CELL_BORDER) * font_height as f32;
+        let edit_grid_width = RULER_SIZE + (scaled_cell_size + scaled_cell_gap) * display_width as f32;
+        let edit_grid_height = RULER_SIZE + (scaled_cell_size + scaled_cell_gap) * font_height as f32;
 
         // Get colors from top toolbar
         let fg_color = self.top_toolbar.foreground;
@@ -1261,8 +1323,9 @@ impl BitFontEditor {
 
     /// Build the glyph selector view - compact 16x16 grid with hex labels
     fn view_glyph_selector(&self) -> Element<'_, BitFontEditorMessage> {
-        // Character cell size = font size x2 for visibility
-        let scale = 2.0;
+        // Get dynamic scale based on font size and available height
+        let (_edit_scale, charset_scale) = self.calculate_grid_scales();
+
         // Add extra column for 9-dot mode if letter spacing is enabled
         let (font_width, font_height) = self.state.font_size();
         let display_width = if self.use_letter_spacing() && font_width == 8 {
@@ -1270,8 +1333,8 @@ impl BitFontEditor {
         } else {
             font_width
         };
-        let cell_width = display_width as f32 * scale;
-        let cell_height = font_height as f32 * scale;
+        let cell_width = display_width as f32 * charset_scale;
+        let cell_height = font_height as f32 * charset_scale;
 
         // Get colors from top toolbar
         let fg_color = self.top_toolbar.foreground;
@@ -1316,8 +1379,9 @@ impl BitFontEditor {
 
     /// Build the tile view - 8x8 grid of the current character
     fn view_tile_area(&self) -> Element<'_, BitFontEditorMessage> {
-        // Same scale as character set (2x)
-        let scale = 2.0;
+        // Use same dynamic scale as character set
+        let (_edit_scale, charset_scale) = self.calculate_grid_scales();
+
         // Add extra column for 9-dot mode if letter spacing is enabled
         let (font_width, font_height) = self.state.font_size();
         let display_width = if self.use_letter_spacing() && font_width == 8 {
@@ -1325,8 +1389,8 @@ impl BitFontEditor {
         } else {
             font_width
         };
-        let cell_width = display_width as f32 * scale;
-        let cell_height = font_height as f32 * scale;
+        let cell_width = display_width as f32 * charset_scale;
+        let cell_height = font_height as f32 * charset_scale;
 
         // Get colors from top toolbar
         let fg_color = self.top_toolbar.foreground;
@@ -1444,10 +1508,16 @@ impl BitFontEditor {
             return None;
         }
 
-        // If in preview mode, any key exits the preview
+        // If in preview mode, any key or mouse click exits the preview
         if self.show_preview {
-            if let iced::Event::Keyboard(keyboard::Event::KeyPressed { .. }) = event {
-                return Some(BitFontEditorMessage::HidePreview);
+            match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
+                    return Some(BitFontEditorMessage::HidePreview);
+                }
+                iced::Event::Mouse(mouse::Event::ButtonPressed(_)) => {
+                    return Some(BitFontEditorMessage::HidePreview);
+                }
+                _ => {}
             }
             return None;
         }

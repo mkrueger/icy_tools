@@ -5,6 +5,7 @@
 mod ansi_editor;
 mod bitfont_editor;
 pub mod commands;
+pub mod font_import;
 mod main_window;
 mod menu;
 mod recent_files;

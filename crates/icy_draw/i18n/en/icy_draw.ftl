@@ -598,3 +598,18 @@ ask_unsaved_file_dialog-description=Do you want to save the changes to the follo
 ask_unsaved_file_dialog-subdescription=Your changes will be lost if you don't save them.
 ask_unsaved_file_dialog-save_all_button=Save All
 ask_unsaved_file_dialog-dont_save_button=Don't Save
+
+# Font Import Dialog
+menu-import-font=Import Font…
+font-import-file=Import File
+font-import-file-placeholder=Select a font file…
+font-import-browse=Browse…
+font-import-button=Import
+font-import-preview=Preview
+font-import-no-preview=No preview available
+font-import-native-info=Native font file
+font-import-xb-info=XBin file with embedded font(s)
+font-import-xb-font-1=Font 1
+font-import-xb-font-2=Font 2
+font-import-select-font=Select Font:
+font-import-image-info=Image will be converted to a 16×16 character grid

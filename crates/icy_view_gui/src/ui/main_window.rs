@@ -1950,10 +1950,10 @@ impl MainWindow {
                             if is_sixel {
                                 // Use icy_sixel for Sixel files
                                 match icy_sixel::sixel_decode(&stripped_data) {
-                                    Ok((rgba, width, height)) => {
-                                        let w = width as u32;
-                                        let h = height as u32;
-                                        Some(super::DecodedImage { rgba, width: w, height: h })
+                                    Ok(image) => {
+                                        let w = image.width as u32;
+                                        let h = image.height as u32;
+                                        Some(super::DecodedImage { rgba: image.pixels, width: w, height: h })
                                     }
                                     Err(e) => {
                                         log::warn!("Failed to decode Sixel during preload: {}", e);

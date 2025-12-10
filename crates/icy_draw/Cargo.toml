@@ -60,6 +60,9 @@ anyhow = { workspace = true }
 parking_lot = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
 
+# TTF font rasterization
+fontdue = "0.9"
+
 # File handling
 walkdir = { workspace = true }
 zip = { workspace = true }

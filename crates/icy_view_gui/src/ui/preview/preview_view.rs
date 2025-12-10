@@ -219,10 +219,10 @@ impl PreviewView {
                         if is_sixel {
                             // Use icy_sixel for Sixel files
                             match icy_sixel::sixel_decode(&data) {
-                                Ok((rgba, width, height)) => {
-                                    let w = width as u32;
-                                    let h = height as u32;
-                                    let handle = iced_image::Handle::from_rgba(w, h, rgba);
+                                Ok(image) => {
+                                    let w = image.width as u32;
+                                    let h = image.height as u32;
+                                    let handle = iced_image::Handle::from_rgba(w, h, image.pixels);
                                     (load_id, Ok((handle, w, h)))
                                 }
                                 Err(e) => (load_id, Err(format!("Failed to decode Sixel: {}", e))),

@@ -182,14 +182,14 @@ pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
 
     // Text colors from palette
     let text_normal = if state.is_focused {
-        palette.background.base.color
-    } else {
         palette.secondary.base.color
+    } else {
+        palette.background.base.color
     };
     let text_highlight = if state.is_focused {
         palette.background.base.text
     } else {
-        palette.secondary.base.text
+        palette.secondary.strong.color
     };
     // for the 9px column
     let text_special = text_normal;

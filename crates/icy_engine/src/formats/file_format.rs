@@ -487,11 +487,6 @@ impl FileFormat {
         matches!(self, FileFormat::Archive(_))
     }
 
-    /// Check if this is a bitmap font format.
-    pub fn is_bitfont(&self) -> bool {
-        matches!(self, FileFormat::BitFont(_))
-    }
-
     /// Get the ArchiveFormat if this is an archive, None otherwise.
     pub fn as_archive(&self) -> Option<ArchiveFormat> {
         match self {
@@ -892,6 +887,18 @@ impl FileFormat {
     /// ```
     pub fn is_supported(&self) -> bool {
         self.uses_parser() || self.output_format().is_some()
+    }
+
+    pub fn bitfont_format(&self) -> Option<BitFontFormat> {
+        match self {
+            FileFormat::BitFont(font_fmt) => Some(*font_fmt),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a bitmap font format.
+    pub fn is_bitfont(&self) -> bool {
+        self.bitfont_format().is_some()
     }
 }
 

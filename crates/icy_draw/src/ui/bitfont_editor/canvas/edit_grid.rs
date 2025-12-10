@@ -53,6 +53,10 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
             // Background - use theme's main area background color
             frame.fill_rectangle(Point::ORIGIN, frame.size(), area_bg_color);
 
+            // Get scaled cell dimensions from editor
+            let cell_size = self.editor.scaled_edit_cell_size();
+            let cell_gap = self.editor.scaled_edit_cell_gap();
+
             // Get cursor position for highlighting
             let (cursor_x, cursor_y) = self.editor.cursor_pos();
 
@@ -67,8 +71,8 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                 display_width,
                 height,
                 RULER_SIZE,
-                CELL_SIZE + CELL_GAP,
-                CELL_SIZE + CELL_GAP,
+                cell_size + cell_gap,
+                cell_size + cell_gap,
                 frame.size(),
             );
 
@@ -83,8 +87,8 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
             // Draw pixel grid with palette colors
             for y in 0..height as usize {
                 for x in 0..width as usize {
-                    let cell_x = RULER_SIZE + x as f32 * (CELL_SIZE + CELL_GAP);
-                    let cell_y = RULER_SIZE + y as f32 * (CELL_SIZE + CELL_GAP);
+                    let cell_x = RULER_SIZE + x as f32 * (cell_size + cell_gap);
+                    let cell_y = RULER_SIZE + y as f32 * (cell_size + cell_gap);
 
                     let is_set = pixels.get(y).and_then(|row| row.get(x)).copied().unwrap_or(false);
                     let is_cursor_cell = is_focused && x as i32 == cursor_x && y as i32 == cursor_y;
@@ -95,13 +99,13 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                         if is_cursor_cell { cursor_color.1 } else { bg_iced_color }
                     };
 
-                    frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(CELL_SIZE, CELL_SIZE), color);
+                    frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(cell_size, cell_size), color);
                 }
 
                 // Draw 9th column if in 9-dot mode
                 if use_9dot {
-                    let cell_x = RULER_SIZE + 8.0 * (CELL_SIZE + CELL_GAP);
-                    let cell_y = RULER_SIZE + y as f32 * (CELL_SIZE + CELL_GAP);
+                    let cell_x = RULER_SIZE + 8.0 * (cell_size + cell_gap);
+                    let cell_y = RULER_SIZE + y as f32 * (cell_size + cell_gap);
 
                     // For box-drawing characters, extend the 8th pixel to the 9th
                     // Otherwise, the 9th pixel is always background
@@ -111,16 +115,16 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                     // Use a slightly different shade to indicate it's not editable
                     let color = if is_set { darken(fg_iced_color, 0.85) } else { NINE_DOT_COLUMN };
 
-                    frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(CELL_SIZE, CELL_SIZE), color);
+                    frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(cell_size, cell_size), color);
                 }
             }
 
             // Draw separator line before 9th column if in 9-dot mode
             if use_9dot {
-                let sep_x = RULER_SIZE + 8.0 * (CELL_SIZE + CELL_GAP) - CELL_GAP / 2.0;
+                let sep_x = RULER_SIZE + 8.0 * (cell_size + cell_gap) - cell_gap / 2.0;
                 let sep_path = Path::line(
                     Point::new(sep_x, RULER_SIZE),
-                    Point::new(sep_x, RULER_SIZE + height as f32 * (CELL_SIZE + CELL_GAP)),
+                    Point::new(sep_x, RULER_SIZE + height as f32 * (cell_size + cell_gap)),
                 );
                 frame.stroke(&sep_path, Stroke::default().with_color(NINE_DOT_SEPARATOR).with_width(2.0));
             }
@@ -130,10 +134,10 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                 let (min_x, max_x) = (x1.min(x2), x1.max(x2));
                 let (min_y, max_y) = (y1.min(y2), y1.max(y2));
 
-                let sel_x = RULER_SIZE + min_x as f32 * (CELL_SIZE + CELL_GAP) - 1.0;
-                let sel_y = RULER_SIZE + min_y as f32 * (CELL_SIZE + CELL_GAP) - 1.0;
-                let sel_w = (max_x - min_x + 1) as f32 * (CELL_SIZE + CELL_GAP) + 2.0;
-                let sel_h = (max_y - min_y + 1) as f32 * (CELL_SIZE + CELL_GAP) + 2.0;
+                let sel_x = RULER_SIZE + min_x as f32 * (cell_size + cell_gap) - 1.0;
+                let sel_y = RULER_SIZE + min_y as f32 * (cell_size + cell_gap) - 1.0;
+                let sel_w = (max_x - min_x + 1) as f32 * (cell_size + cell_gap) + 2.0;
+                let sel_h = (max_y - min_y + 1) as f32 * (cell_size + cell_gap) + 2.0;
 
                 // Fill selection area
                 frame.fill_rectangle(Point::new(sel_x, sel_y), Size::new(sel_w, sel_h), SELECTION_COLOR);
@@ -158,9 +162,9 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                     // Draw preview pixels as semi-transparent overlay
                     for (px, py) in preview_points {
                         if px >= 0 && px < width && py >= 0 && py < height {
-                            let cell_x = RULER_SIZE + px as f32 * (CELL_SIZE + CELL_GAP);
-                            let cell_y = RULER_SIZE + py as f32 * (CELL_SIZE + CELL_GAP);
-                            frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(CELL_SIZE, CELL_SIZE), SHAPE_PREVIEW);
+                            let cell_x = RULER_SIZE + px as f32 * (cell_size + cell_gap);
+                            let cell_y = RULER_SIZE + py as f32 * (cell_size + cell_gap);
+                            frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(cell_size, cell_size), SHAPE_PREVIEW);
                         }
                     }
                 }
@@ -181,15 +185,19 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
             let is_cursor_cell = is_focused && hover_x == cursor_x && hover_y == cursor_y;
 
             if !is_cursor_cell && hover_x >= 0 && hover_x < width && hover_y >= 0 && hover_y < height {
+                // Get scaled dimensions
+                let cell_size = self.editor.scaled_edit_cell_size();
+                let cell_gap = self.editor.scaled_edit_cell_gap();
+
                 let hover_geometry = iced::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame| {
-                    let cell_x = RULER_SIZE + hover_x as f32 * (CELL_SIZE + CELL_GAP);
-                    let cell_y = RULER_SIZE + hover_y as f32 * (CELL_SIZE + CELL_GAP);
+                    let cell_x = RULER_SIZE + hover_x as f32 * (cell_size + cell_gap);
+                    let cell_y = RULER_SIZE + hover_y as f32 * (cell_size + cell_gap);
 
                     // Use theme color for hover
                     let iced_palette = theme.extended_palette();
                     let hover_color = iced_palette.primary.base.color;
 
-                    draw_corner_brackets(frame, cell_x, cell_y, CELL_SIZE, CELL_SIZE, hover_color, 2.0);
+                    draw_corner_brackets(frame, cell_x, cell_y, cell_size, cell_size, hover_color, 2.0);
                 });
                 geometries.push(hover_geometry);
             }
@@ -262,13 +270,17 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
         // Handle mouse events - check if cursor is over the canvas
         let cursor_pos = cursor.position_in(bounds);
 
+        // Get scaled dimensions for hover calculations
+        let cell_size = self.editor.scaled_edit_cell_size();
+        let cell_gap = self.editor.scaled_edit_cell_gap();
+
         // Update hover state
         let old_hovered = state.hovered;
         if let Some(pos) = cursor_pos {
             // Calculate hover position for corner bracket effect
             let (width, height) = self.editor.font_size();
-            let hover_x = ((pos.x - RULER_SIZE) / (CELL_SIZE + CELL_GAP)) as i32;
-            let hover_y = ((pos.y - RULER_SIZE) / (CELL_SIZE + CELL_GAP)) as i32;
+            let hover_x = ((pos.x - RULER_SIZE) / (cell_size + cell_gap)) as i32;
+            let hover_y = ((pos.y - RULER_SIZE) / (cell_size + cell_gap)) as i32;
 
             if hover_x >= 0 && hover_x < width && hover_y >= 0 && hover_y < height {
                 state.hovered = Some((hover_x, hover_y));

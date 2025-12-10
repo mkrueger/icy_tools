@@ -3,6 +3,7 @@ mod cursor;
 mod font_operations;
 mod glyph_operations;
 mod helpers;
+mod import;
 mod preview;
 mod selection;
 mod shape_operations;
