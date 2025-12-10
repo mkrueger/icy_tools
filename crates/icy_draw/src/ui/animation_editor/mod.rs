@@ -377,6 +377,19 @@ impl AnimationEditor {
         self.undo_stack.len()
     }
 
+    /// Get bytes for autosave (returns the Lua script as bytes)
+    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
+        Ok(self.get_script().into_bytes())
+    }
+
+    /// Load from an autosave file, using the original path for file association
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf) -> Result<Self, String> {
+        let content = std::fs::read_to_string(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
+        let mut editor = Self::from_file(original_path, content);
+        editor.is_dirty = true; // Autosave means we have unsaved changes
+        Ok(editor)
+    }
+
     /// Check if the animation needs animation updates (for timer subscription)
     pub fn needs_animation(&self) -> bool {
         // Need animation ticks when:

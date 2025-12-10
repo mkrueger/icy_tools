@@ -15,7 +15,7 @@ use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::command_handlers;
 use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
-use icy_engine_gui::ui::{DialogStack, error_dialog};
+use icy_engine_gui::ui::{DialogResult, DialogStack, confirm_yes_no_cancel, error_dialog};
 
 use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
@@ -130,6 +130,16 @@ impl ModeState {
         }
     }
 
+    /// Get bytes for autosave (without modifying the file path)
+    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Ansi(editor) => editor.get_autosave_bytes(),
+            Self::BitFont(editor) => editor.get_autosave_bytes(),
+            Self::CharFont(_) => Err("CharFont autosave not implemented".to_string()),
+            Self::Animation(editor) => editor.get_autosave_bytes(),
+        }
+    }
+
     /// Get the default file extension for this mode
     pub fn default_extension(&self) -> &'static str {
         match self {
@@ -159,6 +169,20 @@ pub enum Message {
     FileSaved(PathBuf), // Path where file was saved (from SaveAs dialog)
     ExportFile,
     CloseFile,
+    /// Save the file and then close the window
+    SaveAndCloseFile,
+    /// Close without saving (user confirmed "Don't Save")
+    ForceCloseFile,
+    /// Save and then open a new file (after dirty check)
+    SaveAndNewFile,
+    /// Open new file without saving (user confirmed "Don't Save")
+    ForceNewFile,
+    /// Save and then open a file (after dirty check)
+    SaveAndOpenFile(PathBuf),
+    /// Open file without saving (user confirmed "Don't Save")
+    ForceOpenFile(PathBuf),
+    /// Show open file dialog without dirty check (user confirmed "Don't Save")
+    ForceShowOpenDialog,
     ShowSettings,
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -382,6 +406,12 @@ pub struct MainWindow {
 
     /// Undo stack length at last save - for dirty tracking
     last_save: usize,
+
+    /// Close the window after a successful save (for SaveAndClose flow)
+    close_after_save: bool,
+
+    /// Pending file to open after save (None inside = new file, Some(path) = open path)
+    pending_open_path: Option<Option<PathBuf>>,
 }
 
 impl MainWindow {
@@ -443,6 +473,156 @@ impl MainWindow {
             dialogs,
             commands: create_draw_commands(),
             last_save,
+            close_after_save: false,
+            pending_open_path: None,
+        }
+    }
+
+    /// Create a MainWindow restored from a session
+    ///
+    /// This loads content from `load_path` but sets `original_path` as the file path.
+    /// If `mark_dirty` is true, the window will be marked as modified.
+    ///
+    /// When `load_path` differs from `original_path`, it's an autosave file and we use
+    /// `load_from_autosave` to load it (since autosave files have .autosave extension
+    /// and can't be identified by extension).
+    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<Mutex<SharedOptions>>) -> Self {
+        let (mode_state, initial_error) = match (&load_path, &original_path) {
+            // Case 1: We have an autosave file to load (load_path differs from original_path)
+            (Some(autosave), Some(orig)) if autosave != orig => {
+                // Determine format from ORIGINAL path, not autosave path
+                let format = FileFormat::from_path(orig);
+
+                match format {
+                    Some(FileFormat::BitFont(_)) => match BitFontEditor::load_from_autosave(autosave, orig.clone()) {
+                        Ok(editor) => (ModeState::BitFont(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Font Autosave".to_string(), e));
+                            (ModeState::BitFont(BitFontEditor::new()), error)
+                        }
+                    },
+                    Some(FileFormat::IcyAnim) => match AnimationEditor::load_from_autosave(autosave, orig.clone()) {
+                        Ok(editor) => (ModeState::Animation(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Animation Autosave".to_string(), e));
+                            (ModeState::Animation(AnimationEditor::new()), error)
+                        }
+                    },
+                    _ => {
+                        // ANSI/other formats
+                        match AnsiEditor::load_from_autosave(autosave, orig.clone(), options.clone()) {
+                            Ok(editor) => (ModeState::Ansi(editor), None),
+                            Err(e) => {
+                                let error = Some(("Error Loading Autosave".to_string(), format!("{}", e)));
+                                (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 2: load_path same as original_path, or only load_path given - load normally
+            (Some(p), _) => {
+                let format = FileFormat::from_path(p);
+
+                match format {
+                    Some(FileFormat::BitFont(_)) => match BitFontEditor::from_file(p.clone()) {
+                        Ok(mut editor) => {
+                            if let Some(ref orig) = original_path {
+                                editor.set_file_path(orig.clone());
+                            }
+                            (ModeState::BitFont(editor), None)
+                        }
+                        Err(e) => {
+                            let error = Some(("Error Loading Font".to_string(), e));
+                            (ModeState::BitFont(BitFontEditor::new()), error)
+                        }
+                    },
+                    Some(FileFormat::IcyAnim) => match AnimationEditor::load_file(p.clone()) {
+                        Ok(mut editor) => {
+                            if let Some(ref orig) = original_path {
+                                editor.set_file_path(orig.clone());
+                            }
+                            (ModeState::Animation(editor), None)
+                        }
+                        Err(e) => {
+                            let error = Some(("Error Loading Animation".to_string(), e));
+                            (ModeState::Animation(AnimationEditor::new()), error)
+                        }
+                    },
+                    _ => match AnsiEditor::with_file(p.clone(), options.clone()) {
+                        Ok(mut editor) => {
+                            if let Some(ref orig) = original_path {
+                                editor.set_file_path(orig.clone());
+                            }
+                            (ModeState::Ansi(editor), None)
+                        }
+                        Err(e) => {
+                            let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
+                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                        }
+                    },
+                }
+            }
+
+            // Case 3: No load_path but have original_path - load original directly
+            (None, Some(orig)) => {
+                let format = FileFormat::from_path(orig);
+
+                match format {
+                    Some(FileFormat::BitFont(_)) => match BitFontEditor::from_file(orig.clone()) {
+                        Ok(editor) => (ModeState::BitFont(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Font".to_string(), e));
+                            (ModeState::BitFont(BitFontEditor::new()), error)
+                        }
+                    },
+                    Some(FileFormat::IcyAnim) => match AnimationEditor::load_file(orig.clone()) {
+                        Ok(editor) => (ModeState::Animation(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading Animation".to_string(), e));
+                            (ModeState::Animation(AnimationEditor::new()), error)
+                        }
+                    },
+                    _ => match AnsiEditor::with_file(orig.clone(), options.clone()) {
+                        Ok(editor) => (ModeState::Ansi(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", orig.display(), e)));
+                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                        }
+                    },
+                }
+            }
+
+            // Case 4: No paths - create empty
+            (None, None) => (ModeState::Ansi(AnsiEditor::new(options.clone())), None),
+        };
+
+        // Determine last_save based on dirty state
+        let last_save = if mark_dirty {
+            // Mark as dirty by setting last_save to something different
+            mode_state.undo_stack_len().wrapping_add(1)
+        } else {
+            mode_state.undo_stack_len()
+        };
+
+        let mut dialogs = DialogStack::new();
+        if let Some((title, message)) = initial_error {
+            dialogs.push(error_dialog(title, message, |_| Message::CloseDialog));
+        }
+
+        Self {
+            id,
+            mode_state,
+            options,
+            menu_state: MenuBarState::new(),
+            show_left_panel: true,
+            show_right_panel: true,
+            dialogs,
+            commands: create_draw_commands(),
+            last_save,
+            close_after_save: false,
+            pending_open_path: None,
         }
     }
 
@@ -480,6 +660,21 @@ impl MainWindow {
         Theme::Dark
     }
 
+    /// Get current edit mode
+    pub fn mode(&self) -> EditMode {
+        self.mode_state.mode()
+    }
+
+    /// Get current undo stack length (for autosave tracking)
+    pub fn undo_stack_len(&self) -> usize {
+        self.mode_state.undo_stack_len()
+    }
+
+    /// Get bytes for autosave
+    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
+        self.mode_state.get_autosave_bytes()
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         // Route messages to dialogs first
         if let Some(task) = self.dialogs.update(&message) {
@@ -488,13 +683,91 @@ impl MainWindow {
 
         match message {
             Message::NewFile => {
+                // Check for unsaved changes first
+                if self.is_modified() {
+                    let filename = self
+                        .file_path()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Untitled".to_string());
+
+                    self.dialogs.push(confirm_yes_no_cancel(
+                        format!("Save changes to \"{}\"?", filename),
+                        "Your changes will be lost if you don't save them.",
+                        |result| match result {
+                            DialogResult::Yes => Message::SaveAndNewFile,
+                            DialogResult::No => Message::ForceNewFile,
+                            _ => Message::CloseDialog,
+                        },
+                    ));
+                    Task::none()
+                } else {
+                    self.update(Message::ForceNewFile)
+                }
+            }
+            Message::ForceNewFile => {
+                // Close the confirmation dialog first (if any)
+                self.dialogs.pop();
+
                 // Create new ANSI document
                 self.mode_state = ModeState::Ansi(AnsiEditor::new(self.options.clone()));
                 self.mark_saved();
                 Task::none()
             }
+            Message::SaveAndNewFile => {
+                // Close the confirmation dialog first
+                self.dialogs.pop();
+
+                // Save first, then create new
+                if let Some(path) = self.file_path().cloned() {
+                    match self.mode_state.save(&path) {
+                        Ok(()) => {
+                            self.mark_saved();
+                            self.update(Message::ForceNewFile)
+                        }
+                        Err(e) => {
+                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
+                            Task::none()
+                        }
+                    }
+                } else {
+                    // No path - need SaveAs, store pending action
+                    self.pending_open_path = Some(None); // None = new file
+                    self.update(Message::SaveFileAs)
+                }
+            }
             Message::OpenFile => {
-                // Build filter from supported file formats
+                // Check for unsaved changes first
+                if self.is_modified() {
+                    let filename = self
+                        .file_path()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Untitled".to_string());
+
+                    // Store that we want to open a file (path TBD from dialog)
+                    self.pending_open_path = Some(Some(PathBuf::new())); // Placeholder
+
+                    self.dialogs.push(confirm_yes_no_cancel(
+                        format!("Save changes to \"{}\"?", filename),
+                        "Your changes will be lost if you don't save them.",
+                        |result| match result {
+                            DialogResult::Yes => Message::SaveFile,           // Will trigger file dialog after save
+                            DialogResult::No => Message::ForceShowOpenDialog, // Show open dialog without dirty check
+                            _ => Message::CloseDialog,
+                        },
+                    ));
+                    Task::none()
+                } else {
+                    self.update(Message::ForceShowOpenDialog)
+                }
+            }
+            Message::ForceShowOpenDialog => {
+                // Close the confirmation dialog first (if any)
+                self.dialogs.pop();
+
+                // Show file picker without dirty check
+                self.pending_open_path = None;
                 let extensions: Vec<&str> = FileFormat::ALL
                     .iter()
                     .filter(|f| f.is_supported() || f.is_bitfont())
@@ -520,6 +793,60 @@ impl MainWindow {
                         }
                     },
                 )
+            }
+            Message::OpenRecentFile(path) => {
+                // Check for unsaved changes first
+                if self.is_modified() {
+                    let filename = self
+                        .file_path()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Untitled".to_string());
+
+                    let open_path = path.clone();
+                    self.dialogs.push(confirm_yes_no_cancel(
+                        format!("Save changes to \"{}\"?", filename),
+                        "Your changes will be lost if you don't save them.",
+                        move |result| match result {
+                            DialogResult::Yes => Message::SaveAndOpenFile(open_path.clone()),
+                            DialogResult::No => Message::ForceOpenFile(open_path.clone()),
+                            _ => Message::CloseDialog,
+                        },
+                    ));
+                    Task::none()
+                } else {
+                    // No unsaved changes, open directly
+                    self.update(Message::FileOpened(path))
+                }
+            }
+            Message::SaveAndOpenFile(path) => {
+                // Close the confirmation dialog first
+                self.dialogs.pop();
+
+                // Save first, then open the file
+                if let Some(current_path) = self.file_path().cloned() {
+                    match self.mode_state.save(&current_path) {
+                        Ok(()) => {
+                            self.mark_saved();
+                            self.update(Message::FileOpened(path))
+                        }
+                        Err(e) => {
+                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
+                            Task::none()
+                        }
+                    }
+                } else {
+                    // No path - need SaveAs, store pending open path
+                    self.pending_open_path = Some(Some(path));
+                    self.update(Message::SaveFileAs)
+                }
+            }
+            Message::ForceOpenFile(path) => {
+                // Close the confirmation dialog first (if any)
+                self.dialogs.pop();
+
+                // Open file without saving
+                self.update(Message::FileOpened(path))
             }
             Message::FileOpened(path) => {
                 // Determine file type using FileFormat
@@ -595,8 +922,29 @@ impl MainWindow {
                     match self.mode_state.save(&path) {
                         Ok(()) => {
                             self.mark_saved();
+
+                            // Check if we should close after save
+                            if self.close_after_save {
+                                self.close_after_save = false;
+                                self.pending_open_path = None;
+                                return Task::done(Message::ForceCloseFile);
+                            }
+
+                            // Check if we have a pending file to open after save
+                            if let Some(pending) = self.pending_open_path.take() {
+                                return match pending {
+                                    None => self.update(Message::ForceNewFile), // New file
+                                    Some(open_path) if open_path.as_os_str().is_empty() => {
+                                        // Empty path means show file picker
+                                        self.update(Message::ForceShowOpenDialog)
+                                    }
+                                    Some(open_path) => self.update(Message::FileOpened(open_path)), // Open specific file
+                                };
+                            }
                         }
                         Err(e) => {
+                            self.close_after_save = false;
+                            self.pending_open_path = None;
                             self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
                         }
                     }
@@ -646,15 +994,89 @@ impl MainWindow {
                         self.mark_saved();
                         // Add to recent files
                         self.options.lock().recent_files.add_recent_file(&path);
+
+                        // Check if we should close after save
+                        if self.close_after_save {
+                            self.close_after_save = false;
+                            self.pending_open_path = None;
+                            return Task::done(Message::ForceCloseFile);
+                        }
+
+                        // Check if we have a pending file to open after save
+                        if let Some(pending) = self.pending_open_path.take() {
+                            return match pending {
+                                None => self.update(Message::ForceNewFile), // New file
+                                Some(open_path) if open_path.as_os_str().is_empty() => {
+                                    // Empty path means show file picker
+                                    self.update(Message::OpenFile)
+                                }
+                                Some(open_path) => self.update(Message::FileOpened(open_path)), // Open specific file
+                            };
+                        }
                     }
                     Err(e) => {
+                        self.close_after_save = false; // Reset flags on error
+                        self.pending_open_path = None;
                         self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
                     }
                 }
                 Task::none()
             }
             Message::CloseFile => {
-                // TODO: Implement close (with save prompt if modified)
+                // Check if document has unsaved changes
+                if self.is_modified() {
+                    // Show save confirmation dialog
+                    let filename = self
+                        .file_path()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Untitled".to_string());
+
+                    self.dialogs.push(confirm_yes_no_cancel(
+                        format!("Save changes to \"{}\"?", filename),
+                        "Your changes will be lost if you don't save them.",
+                        |result| match result {
+                            DialogResult::Yes => Message::SaveAndCloseFile,
+                            DialogResult::No => Message::ForceCloseFile,
+                            _ => Message::CloseDialog, // Cancel - just close dialog
+                        },
+                    ));
+                    Task::none()
+                } else {
+                    // No unsaved changes, close directly
+                    Task::done(Message::ForceCloseFile)
+                }
+            }
+            Message::SaveAndCloseFile => {
+                // Close the confirmation dialog first
+                self.dialogs.pop();
+
+                // Save first, then close
+                if let Some(path) = self.file_path().cloned() {
+                    // Has a path - save directly then close
+                    match self.mode_state.save(&path) {
+                        Ok(()) => {
+                            self.mark_saved();
+                            Task::done(Message::ForceCloseFile)
+                        }
+                        Err(e) => {
+                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
+                            Task::none()
+                        }
+                    }
+                } else {
+                    // No path - need SaveAs dialog, then close after
+                    // We'll set a flag to close after save
+                    self.close_after_save = true;
+                    self.update(Message::SaveFileAs)
+                }
+            }
+            Message::ForceCloseFile => {
+                // Close the confirmation dialog first (if any)
+                self.dialogs.pop();
+
+                // This message is handled by WindowManager to actually close the window
+                // It gets passed up and WindowManager handles it
                 Task::none()
             }
             Message::Undo => {
@@ -921,10 +1343,6 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             // File operations (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
-            Message::OpenRecentFile(path) => {
-                // Re-use FileOpened logic
-                return self.update(Message::FileOpened(path));
-            }
             Message::ClearRecentFiles => {
                 self.options.lock().recent_files.clear_recent_files();
                 Task::none()

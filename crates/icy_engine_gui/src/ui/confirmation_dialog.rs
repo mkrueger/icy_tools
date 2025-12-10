@@ -350,6 +350,8 @@ where
 {
     pub dialog: ConfirmationDialog,
     pub on_result: F,
+    /// Flag to track if we've already handled a button click
+    handled: bool,
 }
 
 impl<M, F> ConfirmationDialogWrapper<M, F>
@@ -357,7 +359,11 @@ where
     F: Fn(DialogResult) -> M,
 {
     pub fn new(dialog: ConfirmationDialog, on_result: F) -> Self {
-        Self { dialog, on_result }
+        Self {
+            dialog,
+            on_result,
+            handled: false,
+        }
     }
 }
 
@@ -572,6 +578,18 @@ where
 {
     fn view(&self) -> Element<'_, M> {
         self.dialog.view_content(|r| (self.on_result)(r))
+    }
+
+    fn update(&mut self, _message: &M) -> Option<DialogAction<M>> {
+        // Don't intercept messages - let them pass through to the app.
+        // The dialog buttons send messages directly to the app.
+        // The app should close the dialog explicitly via dialogs.pop() or
+        // by handling the message appropriately.
+        //
+        // We used to return CloseWith here, but that caused issues because
+        // dialogs.update() is called BEFORE the app's message handling,
+        // so returning Some would prevent the app from ever seeing the message.
+        None
     }
 
     fn request_cancel(&mut self) -> DialogAction<M> {

@@ -50,6 +50,9 @@ libyaff = { workspace = true }
 serde = { workspace = true }
 serde_json = "1.0.145"
 
+# CRC32 for autosave path hashing
+crc32fast = "1.4"
+
 # i18n
 i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }

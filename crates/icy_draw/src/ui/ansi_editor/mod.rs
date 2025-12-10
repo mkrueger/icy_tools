@@ -206,6 +206,31 @@ impl AnsiEditor {
         format!("{}{}", file_name, modified)
     }
 
+    /// Set the file path (for session restore)
+    pub fn set_file_path(&mut self, path: PathBuf) {
+        self.file_path = Some(path);
+    }
+
+    /// Load from an autosave file, using the original path for format detection
+    ///
+    /// The autosave file is always saved in ICY format (to preserve layers, fonts, etc.),
+    /// but we set the original path so future saves use the correct format.
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<Mutex<SharedOptions>>) -> anyhow::Result<Self> {
+        // Autosaves are always saved in ICY format
+        let format = FileFormat::IcyDraw;
+
+        // Read autosave data
+        let data = std::fs::read(autosave_path)?;
+
+        // Load buffer using ICY format
+        let load_data = LoadData::default();
+        let buffer = format.load_buffer(autosave_path, &data, Some(load_data))?;
+
+        let mut editor = Self::with_buffer(buffer, Some(original_path), options);
+        editor.is_modified = true; // Autosave means we have unsaved changes
+        Ok(editor)
+    }
+
     /// Access the EditState via downcast from the Screen trait object
     /// Panics if the screen is not an EditState (should never happen in AnsiEditor)
     fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
@@ -243,6 +268,22 @@ impl AnsiEditor {
 
             self.is_modified = false;
             Ok(())
+        } else {
+            Err("Could not access edit state".to_string())
+        }
+    }
+
+    /// Get bytes for autosave (saves in ICY format with thumbnail skipped for performance)
+    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            // Use ICY format for autosave to preserve all data (layers, fonts, etc.)
+            let format = FileFormat::IcyDraw;
+            let buffer = edit_state.get_buffer_mut();
+            // Skip thumbnail generation for faster autosave
+            let mut options = icy_engine::formats::SaveOptions::default();
+            options.skip_thumbnail = true;
+            format.to_bytes(buffer, &options).map_err(|e| e.to_string())
         } else {
             Err("Could not access edit state".to_string())
         }

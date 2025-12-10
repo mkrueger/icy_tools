@@ -1,18 +1,19 @@
 //! Window Manager for icy_draw
 //!
 //! Manages multiple independent windows, each with its own MainWindow state.
-//! Based on the icy_view/icy_term window manager pattern.
+//! Implements VS Code-like "Hot Exit" for session persistence and crash recovery.
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
+use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
-use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id, handle_window_closed};
+use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id};
 
+use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
 use super::{MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
 use crate::load_window_icon;
 
@@ -37,55 +38,190 @@ impl SharedOptions {
     }
 }
 
+const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
+
+/// How often to save session (in seconds)
+const SESSION_SAVE_INTERVAL_SECS: u64 = 10;
+
+/// Cached window geometry for session saving
+#[derive(Clone, Debug)]
+struct WindowGeometry {
+    position: Option<(f32, f32)>,
+    size: (f32, f32),
+}
+
+impl Default for WindowGeometry {
+    fn default() -> Self {
+        Self {
+            position: None,
+            size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+        }
+    }
+}
+
 pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
+    /// Cached window geometry (position, size) for session saving
+    window_geometry: BTreeMap<window::Id, WindowGeometry>,
     options: Arc<Mutex<SharedOptions>>,
-    initial_path: Option<PathBuf>,
+    /// Pending windows to restore (for session restore)
+    pending_restores: Vec<WindowRestoreInfo>,
+    /// Session manager for hot exit
+    session_manager: SessionManager,
+    /// Whether we're restoring a session (to avoid saving during restore)
+    restoring_session: bool,
+    /// Tick counter for periodic session save
+    session_save_counter: u64,
     commands: WindowCommands,
 }
 
 #[derive(Clone, Debug)]
 pub enum WindowManagerMessage {
     OpenWindow,
+    OpenWindowWithPath(PathBuf),
     CloseWindow(window::Id),
+    /// Window close button (X) was clicked - check for unsaved changes
+    WindowCloseRequested(window::Id),
     WindowOpened(window::Id),
     FocusWindow(usize),
     WindowClosed(window::Id),
+    /// Window was moved - save session with new position
+    WindowMoved(window::Id, Point),
+    /// Window was resized - save session with new size  
+    WindowResized(window::Id, Size),
     WindowMessage(window::Id, super::main_window::Message),
     Event(window::Id, iced::Event),
     AnimationTick,
+    /// Save session before final close
+    SaveSessionAndClose,
+    /// Autosave tick (periodic check)
+    AutosaveTick,
 }
 
-const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
-
 impl WindowManager {
+    /// Create a new WindowManager, restoring session if available
     pub fn new() -> (Self, Task<WindowManagerMessage>) {
-        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
-        let settings = window::Settings {
-            size: DEFAULT_SIZE,
-            icon: window_icon,
-            ..window::Settings::default()
-        };
-        let (_, open) = window::open(settings);
+        let session_manager = SessionManager::new();
+        let options = SharedOptions::load();
+        let commands = WindowCommands::new();
+
+        // Try to restore session
+        if let Some(session) = session_manager.load_session() {
+            log::info!("Restoring session with {} windows", session.windows.len());
+            return Self::restore_session(session, session_manager, options, commands);
+        }
+
+        // No session - open default window
+        Self::open_initial_window(session_manager, options, commands, None)
+    }
+
+    /// Create WindowManager with a specific file (CLI argument - starts fresh session)
+    pub fn with_path(path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
+        let session_manager = SessionManager::new();
+        // Clear any existing session when opening via CLI
+        session_manager.clear_session();
 
         let options = SharedOptions::load();
         let commands = WindowCommands::new();
 
+        Self::open_initial_window(session_manager, options, commands, Some(path))
+    }
+
+    /// Restore a session from saved state
+    fn restore_session(
+        session: SessionState,
+        session_manager: SessionManager,
+        options: SharedOptions,
+        commands: WindowCommands,
+    ) -> (Self, Task<WindowManagerMessage>) {
+        // Convert all window states to restore info
+        let mut pending_restores: Vec<WindowRestoreInfo> = session.windows.into_iter().map(|ws| ws.to_restore_info()).collect();
+
+        // Pop first window to open immediately
+        let first_restore = pending_restores.pop();
+
+        let settings = if let Some(ref restore) = first_restore {
+            let position = restore
+                .position
+                .map_or(window::Position::Default, |(x, y)| window::Position::Specific(Point::new(x, y)));
+            window::Settings {
+                size: Size::new(restore.size.0, restore.size.1),
+                position,
+                icon: load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok(),
+                exit_on_close_request: false,
+                ..window::Settings::default()
+            }
+        } else {
+            window::Settings {
+                size: DEFAULT_SIZE,
+                icon: load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok(),
+                exit_on_close_request: false,
+                ..window::Settings::default()
+            }
+        };
+
+        let (_, open) = window::open(settings);
+
+        let mut manager = Self {
+            windows: BTreeMap::new(),
+            window_geometry: BTreeMap::new(),
+            options: Arc::new(Mutex::new(options)),
+            pending_restores,
+            session_manager,
+            restoring_session: true,
+            session_save_counter: 0,
+            commands,
+        };
+
+        // Store first window info for later
+        if let Some(restore) = first_restore {
+            manager.pending_restores.insert(0, restore);
+        }
+
+        (manager, open.map(WindowManagerMessage::WindowOpened))
+    }
+
+    /// Open initial window (no session restore)
+    fn open_initial_window(
+        session_manager: SessionManager,
+        options: SharedOptions,
+        commands: WindowCommands,
+        path: Option<PathBuf>,
+    ) -> (Self, Task<WindowManagerMessage>) {
+        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+        let settings = window::Settings {
+            size: DEFAULT_SIZE,
+            icon: window_icon,
+            exit_on_close_request: false,
+            ..window::Settings::default()
+        };
+        let (_, open) = window::open(settings);
+
+        let pending = if let Some(p) = path {
+            vec![WindowRestoreInfo {
+                original_path: Some(p),
+                load_path: None, // Will use original_path
+                mark_dirty: false,
+                position: None,
+                size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+            }]
+        } else {
+            vec![]
+        };
+
         (
             Self {
                 windows: BTreeMap::new(),
+                window_geometry: BTreeMap::new(),
                 options: Arc::new(Mutex::new(options)),
-                initial_path: None,
+                pending_restores: pending,
+                session_manager,
+                restoring_session: false,
+                session_save_counter: 0,
                 commands,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
-    }
-
-    pub fn with_path(path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
-        let (mut manager, task) = Self::new();
-        manager.initial_path = Some(path);
-        (manager, task)
     }
 
     pub fn title(&self, window_id: window::Id) -> String {
@@ -120,6 +256,7 @@ impl WindowManager {
                             position,
                             icon: window_icon,
                             size: DEFAULT_SIZE,
+                            exit_on_close_request: false,
                             ..window::Settings::default()
                         };
 
@@ -129,19 +266,231 @@ impl WindowManager {
                     .map(WindowManagerMessage::WindowOpened)
             }
 
-            WindowManagerMessage::CloseWindow(id) => window::close(id),
+            WindowManagerMessage::OpenWindowWithPath(path) => {
+                // Store path for when window opens
+                self.pending_restores.push(WindowRestoreInfo {
+                    original_path: Some(path),
+                    load_path: None,
+                    mark_dirty: false,
+                    position: None,
+                    size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                });
+
+                let Some(last_window) = self.windows.keys().last() else {
+                    // First window
+                    let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+                    let settings = window::Settings {
+                        size: DEFAULT_SIZE,
+                        icon: window_icon,
+                        exit_on_close_request: false,
+                        ..window::Settings::default()
+                    };
+                    let (_, open) = window::open(settings);
+                    return open.map(WindowManagerMessage::WindowOpened);
+                };
+
+                window::position(*last_window)
+                    .then(|last_position| {
+                        let position = last_position.map_or(window::Position::Default, |last_position| {
+                            window::Position::Specific(last_position + Vector::new(20.0, 20.0))
+                        });
+                        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+                        let settings = window::Settings {
+                            position,
+                            icon: window_icon,
+                            size: DEFAULT_SIZE,
+                            ..window::Settings::default()
+                        };
+                        let (_, open) = window::open(settings);
+                        open
+                    })
+                    .map(WindowManagerMessage::WindowOpened)
+            }
+
+            WindowManagerMessage::CloseWindow(id) => {
+                // Check if window has unsaved changes
+                if let Some(window) = self.windows.get(&id) {
+                    if window.is_modified() {
+                        // Send CloseFile message to window - it will show the save dialog
+                        return Task::done(WindowManagerMessage::WindowMessage(id, super::main_window::Message::CloseFile));
+                    }
+                }
+
+                // No unsaved changes or window not found - close directly
+                // If this is the last window, save session first
+                if self.windows.len() == 1 {
+                    return self.save_session_and_close(id);
+                }
+                window::close(id)
+            }
 
             WindowManagerMessage::WindowOpened(id) => {
-                let window = MainWindow::new(find_next_window_id(&self.windows), self.initial_path.take(), self.options.clone());
+                // Get pending restore info if any
+                let pending = self.pending_restores.pop();
+
+                let window = if let Some(ref restore) = pending {
+                    // Initialize geometry from restore info
+                    self.window_geometry.insert(
+                        id,
+                        WindowGeometry {
+                            position: restore.position,
+                            size: restore.size,
+                        },
+                    );
+
+                    // Create window with restore info (handles autosave + original path)
+                    MainWindow::new_restored(
+                        find_next_window_id(&self.windows),
+                        restore.original_path.clone(),
+                        restore.load_path.clone(),
+                        restore.mark_dirty,
+                        self.options.clone(),
+                    )
+                } else {
+                    // Initialize with default geometry
+                    self.window_geometry.insert(
+                        id,
+                        WindowGeometry {
+                            position: None,
+                            size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                        },
+                    );
+
+                    // No pending - create empty window
+                    MainWindow::new(find_next_window_id(&self.windows), None, self.options.clone())
+                };
+
+                // Initialize autosave status
+                self.session_manager.get_autosave_status(id, window.undo_stack_len());
+
                 self.windows.insert(id, window);
+
+                // If more windows pending, open next
+                if !self.pending_restores.is_empty() {
+                    let next = self.pending_restores.last().unwrap();
+                    let position = next
+                        .position
+                        .map_or(window::Position::Default, |(x, y)| window::Position::Specific(Point::new(x, y)));
+                    let settings = window::Settings {
+                        size: Size::new(next.size.0, next.size.1),
+                        position,
+                        icon: load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok(),
+                        exit_on_close_request: false,
+                        ..window::Settings::default()
+                    };
+                    let (_, open) = window::open(settings);
+                    return open.map(WindowManagerMessage::WindowOpened);
+                }
+
+                // Session restore complete
+                if self.restoring_session {
+                    self.restoring_session = false;
+                    // Clear session file now that restore is complete
+                    self.session_manager.clear_session();
+                    log::info!("Session restore complete");
+                } else {
+                    // Save session when a new window opens (not during restore)
+                    self.save_session_sync();
+                }
+
                 Task::none()
             }
 
-            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
+            WindowManagerMessage::WindowMoved(id, position) => {
+                // Update cached geometry
+                let geom = self.window_geometry.entry(id).or_insert_with(|| WindowGeometry {
+                    position: None,
+                    size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                });
+                geom.position = Some((position.x, position.y));
+
+                // Save session when window position changes
+                if !self.restoring_session {
+                    self.save_session_sync();
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::WindowResized(id, size) => {
+                // Update cached geometry
+                let geom = self.window_geometry.entry(id).or_insert_with(|| WindowGeometry {
+                    position: None,
+                    size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                });
+                geom.size = (size.width, size.height);
+
+                // Save session when window size changes
+                if !self.restoring_session {
+                    self.save_session_sync();
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::WindowCloseRequested(id) => {
+                // X button was clicked - check for unsaved changes before closing
+                // This is handled the same as CloseWindow
+                self.update(WindowManagerMessage::CloseWindow(id))
+            }
+
+            WindowManagerMessage::WindowClosed(id) => {
+                // Always save session when a window closes (in case app crashes later)
+                self.save_session_sync();
+
+                // Remove autosave status
+                self.session_manager.remove_autosave_status(id);
+
+                // Remove window and remove its autosave if clean
+                if let Some(window) = self.windows.get(&id) {
+                    if !window.is_modified() {
+                        // Clean close - remove autosave
+                        if let Some(path) = window.file_path() {
+                            let autosave_path = self.session_manager.get_autosave_path(path);
+                            self.session_manager.remove_autosave(&autosave_path);
+                        }
+                    }
+                }
+
+                self.windows.remove(&id);
+                self.window_geometry.remove(&id);
+
+                if self.windows.is_empty() { iced::exit() } else { Task::none() }
+            }
 
             WindowManagerMessage::WindowMessage(id, msg) => {
+                // Handle ForceCloseFile by closing the window directly (bypass is_modified check)
+                if matches!(msg, super::main_window::Message::ForceCloseFile) {
+                    // If this is the last window, save session first
+                    if self.windows.len() == 1 {
+                        return self.save_session_and_close(id);
+                    }
+                    return window::close(id);
+                }
+
+                // Check if this is a save message - clear autosave after successful save
+                let is_save = matches!(msg, super::main_window::Message::SaveFile | super::main_window::Message::SaveFileAs);
+                // Check if this is a file open message - save session after opening
+                let is_file_open = matches!(msg, super::main_window::Message::FileOpened(_) | super::main_window::Message::OpenRecentFile(_));
+
                 if let Some(window) = self.windows.get_mut(&id) {
-                    return window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));
+                    let task = window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));
+
+                    // After save, remove autosave
+                    if is_save {
+                        if let Some(path) = window.file_path() {
+                            let autosave_path = self.session_manager.get_autosave_path(path);
+                            self.session_manager.remove_autosave(&autosave_path);
+                        }
+                        // Update autosave status
+                        let status = self.session_manager.get_autosave_status(id, 0);
+                        status.mark_saved(window.undo_stack_len());
+                    }
+
+                    // After file open, save session
+                    if is_file_open {
+                        self.save_session_sync();
+                    }
+
+                    return task;
                 }
                 Task::none()
             }
@@ -182,6 +531,110 @@ impl WindowManager {
                     .collect();
                 Task::batch(tasks)
             }
+
+            WindowManagerMessage::AutosaveTick => {
+                // Increment session save counter
+                self.session_save_counter += 1;
+
+                // Save session periodically (every SESSION_SAVE_INTERVAL_SECS seconds)
+                if self.session_save_counter >= SESSION_SAVE_INTERVAL_SECS && !self.restoring_session {
+                    self.session_save_counter = 0;
+                    self.save_session_sync();
+                }
+
+                // Check each window for autosave
+                for (window_id, window) in self.windows.iter() {
+                    let undo_len = window.undo_stack_len();
+
+                    if self.session_manager.should_autosave(*window_id, undo_len) {
+                        // Perform autosave
+                        if let Some(path) = window.file_path() {
+                            let autosave_path = self.session_manager.get_autosave_path(path);
+                            if let Ok(bytes) = window.get_autosave_bytes() {
+                                if let Err(e) = self.session_manager.save_autosave(&autosave_path, &bytes) {
+                                    log::warn!("Autosave failed: {}", e);
+                                }
+                            }
+                        } else {
+                            // Untitled document - use window's id (1-based display id)
+                            let autosave_path = self.session_manager.get_untitled_autosave_path(window.id);
+                            if let Ok(bytes) = window.get_autosave_bytes() {
+                                if let Err(e) = self.session_manager.save_autosave(&autosave_path, &bytes) {
+                                    log::warn!("Autosave failed for untitled: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            WindowManagerMessage::SaveSessionAndClose => {
+                // Save session synchronously and exit
+                self.save_session_sync();
+                iced::exit()
+            }
+        }
+    }
+
+    /// Save session and close the last window
+    fn save_session_and_close(&mut self, window_id: window::Id) -> Task<WindowManagerMessage> {
+        // Save session state
+        self.save_session_sync();
+
+        // Close the window
+        window::close(window_id)
+    }
+
+    /// Save session state synchronously
+    fn save_session_sync(&mut self) {
+        let mut window_states = Vec::new();
+
+        for (window_id, window) in self.windows.iter() {
+            let has_unsaved = window.is_modified();
+            let file_path = window.file_path().cloned();
+
+            // Determine autosave path
+            let autosave_path = if has_unsaved {
+                if let Some(ref path) = file_path {
+                    Some(self.session_manager.get_autosave_path(path))
+                } else {
+                    Some(self.session_manager.get_untitled_autosave_path(window.id))
+                }
+            } else {
+                None
+            };
+
+            // Save autosave if needed
+            if has_unsaved {
+                if let Some(ref autosave_path) = autosave_path {
+                    if let Ok(bytes) = window.get_autosave_bytes() {
+                        let _ = self.session_manager.save_autosave(autosave_path, &bytes);
+                    }
+                }
+            }
+
+            // Get cached geometry for this window
+            let geom = self.window_geometry.get(window_id).cloned().unwrap_or_default();
+
+            window_states.push(WindowState {
+                position: geom.position,
+                size: geom.size,
+                file_path,
+                edit_mode: edit_mode_to_string(&window.mode()),
+                has_unsaved_changes: has_unsaved,
+                autosave_path,
+            });
+        }
+
+        let session = SessionState {
+            version: 1,
+            windows: window_states,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+
+        if let Err(e) = self.session_manager.save_session(&session) {
+            log::error!("Failed to save session: {}", e);
         }
     }
 
@@ -200,7 +653,19 @@ impl WindowManager {
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         let mut subs = vec![
-            window::close_events().map(WindowManagerMessage::WindowClosed),
+            // Intercept window close requests (X button) to check for unsaved changes
+            window::close_requests().map(WindowManagerMessage::WindowCloseRequested),
+            window::resize_events().map(|(id, size)| WindowManagerMessage::WindowResized(id, size)),
+            window::events().filter_map(|(id, event)| {
+                match event {
+                    window::Event::Moved(position) => Some(WindowManagerMessage::WindowMoved(id, position)),
+                    window::Event::Opened { size, .. } => Some(WindowManagerMessage::WindowResized(id, size)),
+                    window::Event::Closed => Some(WindowManagerMessage::WindowClosed(id)),
+                    // CloseRequested is handled by close_requests() above - ignore here to prevent duplicate
+                    window::Event::CloseRequested => None,
+                    _ => Some(WindowManagerMessage::Event(id, Event::Window(event))),
+                }
+            }),
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
@@ -217,7 +682,6 @@ impl WindowManager {
                     }
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window
-                        println!("Key pressed: {:?} with modifiers {:?}", key, modifiers);
                         if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
                             return Some(WindowManagerMessage::FocusWindow(target_id));
                         }
@@ -227,6 +691,8 @@ impl WindowManager {
                     _ => None,
                 }
             }),
+            // Autosave tick - check every second
+            iced::time::every(std::time::Duration::from_secs(1)).map(|_| WindowManagerMessage::AutosaveTick),
         ];
 
         // Add animation tick subscription when any window needs animation

@@ -55,15 +55,14 @@ impl OutputFormat for IcyDraw {
         let last_line = (first_line + MAX_LINES).min(buf.get_line_count().max(buf.get_height()));
         let mut height = (last_line - first_line) * font_dims.height;
 
-        let image_empty = if width == 0 || height == 0 {
+        // For autosave or empty images, use 1x1 pixel to skip expensive rendering
+        let skip_image = options.skip_thumbnail || width == 0 || height == 0;
+        if skip_image {
             width = 1;
             height = 1;
-            true
-        } else {
-            false
-        };
+        }
 
-        let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut result, width as u32, height as u32); // Width is 2 pixels and height is 1.
+        let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut result, width as u32, height as u32);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
 
@@ -363,7 +362,8 @@ impl OutputFormat for IcyDraw {
 
         let mut writer = encoder.write_header().unwrap();
 
-        if image_empty {
+        if skip_image {
+            // Write minimal 1x1 transparent pixel for autosave or empty image
             writer.write_image_data(&[0, 0, 0, 0]).unwrap();
         } else {
             let (_, data) = buf.render_to_rgba(

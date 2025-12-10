@@ -119,6 +119,11 @@ pub struct SaveOptions {
 
     #[serde(skip)]
     pub always_use_rgb: bool,
+
+    /// When set, skip generating the thumbnail image (for formats that embed one).
+    /// This is useful for autosave where rendering is expensive.
+    #[serde(skip)]
+    pub skip_thumbnail: bool,
 }
 
 impl SaveOptions {
@@ -141,6 +146,7 @@ impl SaveOptions {
             skip_lines: None,
             alt_rgb: false,
             always_use_rgb: false,
+            skip_thumbnail: false,
         }
     }
 }

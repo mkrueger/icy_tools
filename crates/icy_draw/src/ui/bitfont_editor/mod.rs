@@ -404,6 +404,46 @@ impl BitFontEditor {
         self.state.undo_stack_len()
     }
 
+    /// Get bytes for autosave (saves in PSF2 format)
+    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
+        let font = self.state.build_font();
+        font.to_psf2_bytes().map_err(|e| e.to_string())
+    }
+
+    /// Load from an autosave file, using the original path for file association
+    ///
+    /// The autosave file is always saved as PSF2 format.
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf) -> Result<Self, String> {
+        let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to read autosave: {}", e))?;
+        let name = original_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
+        let font = BitFont::from_bytes(name, &data).map_err(|e| format!("Failed to parse font: {}", e))?;
+        let size = font.size();
+        let mut state = BitFontEditState::from_font(font.clone());
+        state.set_file_path(Some(original_path));
+        // Don't mark clean - this is an autosave recovery
+
+        Ok(Self {
+            target_width: size.width,
+            target_height: size.height,
+            is_left_pressed: false,
+            is_right_pressed: false,
+            draw_value: None,
+            edit_cache: iced::widget::canvas::Cache::new(),
+            selector_cache: iced::widget::canvas::Cache::new(),
+            current_tool: BitFontTool::Click,
+            drag_start: None,
+            is_selecting: false,
+            tool_panel: BitFontToolPanel::new(),
+            palette_grid: PaletteGrid::new(),
+            top_toolbar: BitFontTopToolbar::new(),
+            show_preview: false,
+            preview_screen: None,
+            preview_terminal: None,
+            preview_monitor: MonitorSettings::default(),
+            state,
+        })
+    }
+
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
         self.top_toolbar.color_switcher.needs_animation()

@@ -11,6 +11,7 @@ pub mod font_import;
 mod main_window;
 mod menu;
 mod recent_files;
+mod session;
 pub mod tool_panel;
 mod window_manager;
 
