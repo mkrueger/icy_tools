@@ -47,4 +47,19 @@ impl Blink {
         self.is_on = true;
         self.last_blink = Blink::now_ms();
     }
+
+    /// Update the blink rate. Returns true if the rate was changed.
+    pub fn set_rate(&mut self, new_rate: u128) -> bool {
+        if self.blink_rate != new_rate {
+            self.blink_rate = new_rate;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get the current blink rate in milliseconds.
+    pub fn rate(&self) -> u128 {
+        self.blink_rate
+    }
 }

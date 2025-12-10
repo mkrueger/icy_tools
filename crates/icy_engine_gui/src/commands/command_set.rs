@@ -286,6 +286,82 @@ macro_rules! command_set {
     }};
 }
 
+/// Format a CommandSet for debug output
+///
+/// Used by the `command_handler!` macro to implement Debug for generated structs.
+/// Shows all commands with their IDs, hotkeys (platform-specific), and categories.
+pub fn format_command_set_debug(
+    commands: &CommandSet,
+    name: &str,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    writeln!(f, "{} ({} commands):", name, commands.len())?;
+    writeln!(f, "{:-<80}", "")?;
+
+    // Collect and sort commands by category, then by ID
+    let mut sorted_commands: Vec<_> = commands.commands().collect();
+    sorted_commands.sort_by(|a, b| {
+        let cat_a = a.category.as_deref().unwrap_or("");
+        let cat_b = b.category.as_deref().unwrap_or("");
+        cat_a.cmp(cat_b).then(a.id.cmp(&b.id))
+    });
+
+    let mut current_category: Option<&str> = None;
+
+    for cmd in sorted_commands {
+        let category = cmd.category.as_deref().unwrap_or("uncategorized");
+
+        // Print category header when it changes
+        if current_category != Some(category) {
+            if current_category.is_some() {
+                writeln!(f)?; // Empty line between categories
+            }
+            writeln!(f, "  [{category}]")?;
+            current_category = Some(category);
+        }
+
+        // Format hotkeys - show platform-specific
+        let hotkeys_str = if cfg!(target_os = "macos") {
+            let mac_keys: Vec<_> = cmd.hotkeys_mac().iter().map(|h| h.to_string()).collect();
+            let linux_keys: Vec<_> = cmd.hotkeys().iter().map(|h| h.to_string()).collect();
+            if !mac_keys.is_empty() {
+                format!("{} (mac: {})", linux_keys.join(", "), mac_keys.join(", "))
+            } else if !linux_keys.is_empty() {
+                linux_keys.join(", ")
+            } else {
+                "-".to_string()
+            }
+        } else {
+            let linux_keys: Vec<_> = cmd.hotkeys().iter().map(|h| h.to_string()).collect();
+            let mac_keys: Vec<_> = cmd.hotkeys_mac().iter().map(|h| h.to_string()).collect();
+            if !linux_keys.is_empty() {
+                if !mac_keys.is_empty() {
+                    format!("{} (mac: {})", linux_keys.join(", "), mac_keys.join(", "))
+                } else {
+                    linux_keys.join(", ")
+                }
+            } else if !mac_keys.is_empty() {
+                format!("- (mac: {})", mac_keys.join(", "))
+            } else {
+                "-".to_string()
+            }
+        };
+
+        // Format mouse bindings
+        let mouse_str = if !cmd.mouse_bindings().is_empty() {
+            let bindings: Vec<_> = cmd.mouse_bindings().iter().map(|m| m.to_string()).collect();
+            format!(" [mouse: {}]", bindings.join(", "))
+        } else {
+            String::new()
+        };
+
+        writeln!(f, "    {:<35} {}{}", cmd.id, hotkeys_str, mouse_str)?;
+    }
+
+    writeln!(f, "{:-<80}", "")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

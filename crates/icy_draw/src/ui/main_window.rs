@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 
 use iced::{
     Alignment, Element, Event, Length, Task, Theme,
-    widget::{column, container, row, rule, text},
+    widget::{column, container, mouse_area, row, rule, text},
 };
 use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
@@ -585,7 +585,8 @@ impl MainWindow {
                 Task::none()
             }
             Message::CloseDialog => {
-                // Dialog already closed by DialogStack
+                // Close the topmost dialog
+                self.dialogs.pop();
                 Task::none()
             }
             Message::SaveFile => {
@@ -1107,6 +1108,38 @@ impl MainWindow {
     }
 
     fn view_status_bar(&self) -> Element<'_, Message> {
+        // Special handling for Animation mode - clickable log message in center
+        if let ModeState::Animation(editor) = &self.mode_state {
+            let (line, col) = editor.cursor_position();
+            let left_text = format!("Ln {}, Col {}", line + 1, col + 1);
+            let right_text = if editor.is_dirty() { "Modified" } else { "" };
+            
+            // Center shows last log message, clickable to toggle log panel
+            let log_msg = editor.last_log_message().unwrap_or_else(|| "Log".to_string());
+            let log_icon = if editor.is_log_visible() { "▼" } else { "▶" };
+            let center_content = mouse_area(
+                container(text(format!("{} {}", log_icon, log_msg)).size(12))
+                    .center_x(Length::Fill)
+            )
+            .on_press(Message::AnimationEditor(AnimationEditorMessage::ToggleLogPanel));
+
+            return container(
+                row![
+                    // Left section
+                    container(text(left_text).size(12)).width(Length::FillPortion(1)),
+                    // Center section - clickable log message
+                    container(center_content).width(Length::FillPortion(2)).center_x(Length::Fill),
+                    // Right section
+                    container(text(right_text).size(12)).width(Length::FillPortion(1)),
+                ]
+                .align_y(Alignment::Center)
+                .padding([2, 8]),
+            )
+            .height(Length::Fixed(24.0))
+            .into();
+        }
+
+        // Default status bar for other modes
         let info = self.get_status_info();
 
         container(
@@ -1137,11 +1170,14 @@ impl MainWindow {
                 center: String::new(),
                 right: String::new(),
             },
-            ModeState::Animation(editor) => StatusBarInfo {
-                left: format!("Animation: {} frames", editor.frame_count()),
-                center: format!("Frame {}/{}", editor.current_frame() + 1, editor.frame_count().max(1)),
-                right: if editor.is_dirty() { "Modified".into() } else { String::new() },
-            },
+            ModeState::Animation(editor) => {
+                let (line, col) = editor.cursor_position();
+                StatusBarInfo {
+                    left: format!("Ln {}, Col {}", line + 1, col + 1),
+                    center: String::new(),
+                    right: if editor.is_dirty() { "Modified".into() } else { String::new() },
+                }
+            }
         }
     }
 
@@ -1158,7 +1194,7 @@ impl MainWindow {
             }
             ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::CharFont(_) => UndoInfo::default(),
-            ModeState::Animation(_) => UndoInfo::default(),
+            ModeState::Animation(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
         }
     }
 
@@ -1187,6 +1223,14 @@ impl MainWindow {
                 let undo_desc = editor.undo_description();
                 let redo_desc = editor.redo_description();
                 if let Some(msg) = super::bitfont_editor::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
+                    return (Some(msg), Task::none());
+                }
+            }
+            ModeState::Animation(editor) => {
+                // Check Animation menu commands
+                let undo_desc = editor.undo_description();
+                let redo_desc = editor.redo_description();
+                if let Some(msg) = super::animation_editor::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
                     return (Some(msg), Task::none());
                 }
             }

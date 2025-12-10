@@ -14,7 +14,7 @@ const REPEAT_SVG: &[u8] = include_bytes!("icons/repeat.svg");
 const REPLAY_SVG: &[u8] = include_bytes!("icons/replay.svg");
 
 /// Icon size for playback controls
-pub const ICON_SIZE: f32 = 20.0;
+pub const ICON_SIZE: f32 = 36.0;
 
 fn create_icon<'a, Message: 'a>(data: &'static [u8], size: f32) -> Element<'a, Message> {
     svg(svg::Handle::from_memory(data))

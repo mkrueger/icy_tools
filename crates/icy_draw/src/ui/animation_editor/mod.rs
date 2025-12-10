@@ -9,7 +9,6 @@
 //! - Monitor settings per frame
 //! - Log output from scripts
 
-mod encoding;
 pub mod export_dialog;
 mod icons;
 mod lua_highlighting;
@@ -24,16 +23,27 @@ pub use playback_controls::*;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use iced::{
-    Element, Length, Task, Theme, highlighter,
-    widget::{Space, column, container, row, rule, scrollable, text, text_editor},
+    Background, Border, Element, Length, Task, Theme, highlighter,
+    widget::{Space, column, container, pane_grid, row, rule, scrollable, stack, text, text_editor},
 };
-use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, set_default_auto_scaling_xy};
+use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, set_default_auto_scaling_xy, theme::main_area_background};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
+
+use crate::fl;
 
 /// Default animation speed in milliseconds
 #[allow(dead_code)]
 const DEFAULT_FRAME_DELAY: u32 = 100;
+
+/// Pane content types for the split view
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimationPane {
+    /// Code editor pane (left)
+    CodeEditor,
+    /// Preview pane (right)
+    Preview,
+}
 
 /// Create monitor settings optimized for animation preview
 /// Uses auto-scaling without integer scaling for smooth preview
@@ -61,10 +71,6 @@ pub struct AnimationEditor {
     /// File path for saving
     file_path: Option<PathBuf>,
 
-    /// Export settings
-    export_path: PathBuf,
-    export_format: usize,
-
     /// Playback state
     playback: PlaybackState,
 
@@ -83,14 +89,14 @@ pub struct AnimationEditor {
     /// Current frame to restore after recompile
     restore_frame: usize,
 
-    /// Encoding state
-    encoding: Option<EncodingState>,
-
     /// Whether the editor is dirty (unsaved changes)
     is_dirty: bool,
 
-    /// Undo stack depth
-    undo_depth: usize,
+    /// Undo stack (text snapshots)
+    undo_stack: Vec<String>,
+
+    /// Redo stack (text snapshots)
+    redo_stack: Vec<String>,
 
     /// Preview screen buffer
     preview_screen: Option<Arc<Mutex<Box<dyn icy_engine::Screen>>>>,
@@ -103,6 +109,12 @@ pub struct AnimationEditor {
 
     /// Last displayed frame index (to detect changes)
     last_preview_frame: usize,
+
+    /// Whether the log panel is visible
+    log_panel_visible: bool,
+
+    /// Pane grid state for resizable split view
+    panes: pane_grid::State<AnimationPane>,
 }
 
 /// Playback control state
@@ -131,38 +143,37 @@ impl Default for PlaybackState {
     }
 }
 
-/// Encoding progress state
-pub struct EncodingState {
-    pub current_frame: usize,
-    pub total_frames: usize,
-    pub error: Option<String>,
-}
-
 impl AnimationEditor {
     /// Create a new animation editor with empty script
     pub fn new() -> Self {
         let animator = Arc::new(Mutex::new(Animator::default()));
+        
+        // Create pane layout: Code Editor | Preview
+        let (mut panes, code_pane) = pane_grid::State::new(AnimationPane::CodeEditor);
+        // Split vertically, preview on the right
+        let _ = panes.split(pane_grid::Axis::Vertical, code_pane, AnimationPane::Preview);
+        
         Self {
             script: text_editor::Content::with_text(""),
             animator,
             next_animator: None,
             parent_path: None,
             file_path: None,
-            export_path: PathBuf::from("animation.gif"),
-            export_format: 0,
             playback: PlaybackState::default(),
             scale: 1.0,
             needs_recompile: false,
             last_change: Instant::now(),
             first_frame: true,
             restore_frame: 0,
-            encoding: None,
             is_dirty: false,
-            undo_depth: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             preview_screen: None,
             preview_terminal: None,
             preview_monitor: create_preview_monitor_settings(),
             last_preview_frame: usize::MAX,
+            log_panel_visible: false,
+            panes,
         }
     }
 
@@ -170,7 +181,11 @@ impl AnimationEditor {
     pub fn from_file(path: PathBuf, content: String) -> Self {
         let parent_path = path.parent().map(|p| p.to_path_buf());
         let animator = Animator::run(&parent_path, content.clone());
-        let export_path = path.with_extension("gif");
+
+        // Create pane layout: Code Editor | Preview
+        let (mut panes, code_pane) = pane_grid::State::new(AnimationPane::CodeEditor);
+        // Split vertically, preview on the right
+        let _ = panes.split(pane_grid::Axis::Vertical, code_pane, AnimationPane::Preview);
 
         Self {
             script: text_editor::Content::with_text(&content),
@@ -178,21 +193,21 @@ impl AnimationEditor {
             next_animator: None,
             parent_path,
             file_path: Some(path),
-            export_path,
-            export_format: 0,
             playback: PlaybackState::default(),
             scale: 1.0,
             needs_recompile: false,
             last_change: Instant::now(),
             first_frame: true,
             restore_frame: 0,
-            encoding: None,
             is_dirty: false,
-            undo_depth: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             preview_screen: None,
             preview_terminal: None,
             preview_monitor: create_preview_monitor_settings(),
             last_preview_frame: usize::MAX,
+            log_panel_visible: false,
+            panes,
         }
     }
 
@@ -242,6 +257,58 @@ impl AnimationEditor {
         self.animator.lock().error.clone()
     }
 
+    /// Get the last log message up to current frame (for status bar)
+    pub fn last_log_message(&self) -> Option<String> {
+        let animator = self.animator.lock();
+        let current_frame = self.playback.current_frame;
+        
+        // Find the last log entry that is <= current frame
+        animator
+            .log
+            .iter()
+            .filter(|entry| entry.frame <= current_frame)
+            .last()
+            .map(|entry| format!("[{}] {}", entry.frame, entry.text.clone()))
+    }
+
+    /// Check if log panel is visible
+    pub fn is_log_visible(&self) -> bool {
+        self.log_panel_visible
+    }
+
+    /// Get current time position and total duration in milliseconds
+    /// Returns (current_time_ms, total_time_ms)
+    pub fn get_time_info(&self) -> (u64, u64) {
+        let animator = self.animator.lock();
+        let frames = &animator.frames;
+        
+        if frames.is_empty() {
+            return (0, 0);
+        }
+
+        let mut current_time: u64 = 0;
+        let mut total_time: u64 = 0;
+        let current_frame = self.playback.current_frame;
+
+        for (i, (_, _, delay)) in frames.iter().enumerate() {
+            if i < current_frame {
+                current_time += *delay as u64;
+            }
+            total_time += *delay as u64;
+        }
+
+        (current_time, total_time)
+    }
+
+    /// Format milliseconds as MM:SS.s (e.g., "01:23.4")
+    pub fn format_time(ms: u64) -> String {
+        let total_seconds = ms / 1000;
+        let tenths = (ms % 1000) / 100;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        format!("{:02}:{:02}.{}", minutes, seconds, tenths)
+    }
+
     /// Check if dirty
     pub fn is_dirty(&self) -> bool {
         self.is_dirty
@@ -252,6 +319,34 @@ impl AnimationEditor {
         self.is_dirty = false;
     }
 
+    /// Check if undo is available
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    /// Check if redo is available
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    /// Get description of next undo operation (for menu display)
+    pub fn undo_description(&self) -> Option<String> {
+        if self.undo_stack.is_empty() {
+            None
+        } else {
+            Some(crate::fl!("undo-animation-edit"))
+        }
+    }
+
+    /// Get description of next redo operation (for menu display)
+    pub fn redo_description(&self) -> Option<String> {
+        if self.redo_stack.is_empty() {
+            None
+        } else {
+            Some(crate::fl!("undo-animation-edit"))
+        }
+    }
+
     /// Get file path
     pub fn file_path(&self) -> Option<&PathBuf> {
         self.file_path.as_ref()
@@ -260,7 +355,6 @@ impl AnimationEditor {
     /// Set file path
     pub fn set_file_path(&mut self, path: PathBuf) {
         self.parent_path = path.parent().map(|p| p.to_path_buf());
-        self.export_path = path.with_extension("gif");
         self.file_path = Some(path);
     }
 
@@ -280,7 +374,7 @@ impl AnimationEditor {
 
     /// Get undo stack length (for dirty tracking)
     pub fn undo_stack_len(&self) -> usize {
-        self.undo_depth
+        self.undo_stack.len()
     }
 
     /// Check if the animation needs animation updates (for timer subscription)
@@ -419,10 +513,14 @@ impl AnimationEditor {
         match message {
             AnimationEditorMessage::ScriptAction(action) => {
                 let is_edit = action.is_edit();
+                if is_edit {
+                    // Save current state before edit for undo
+                    self.undo_stack.push(self.script.text());
+                    self.redo_stack.clear(); // Clear redo on new edit
+                }
                 self.script.perform(action);
                 if is_edit {
                     self.is_dirty = true;
-                    self.undo_depth += 1;
                     self.schedule_recompile();
                 }
                 Task::none()
@@ -445,6 +543,14 @@ impl AnimationEditor {
             AnimationEditorMessage::Stop => {
                 self.playback.is_playing = false;
                 self.playback.current_frame = 0;
+                self.update_preview_terminal();
+                Task::none()
+            }
+
+            AnimationEditorMessage::Restart => {
+                self.playback.current_frame = 0;
+                self.playback.is_playing = true;
+                self.playback.last_update = Instant::now();
                 self.update_preview_terminal();
                 Task::none()
             }
@@ -508,46 +614,13 @@ impl AnimationEditor {
                 Task::none()
             }
 
-            AnimationEditorMessage::BrowseExportPath => {
-                // File dialog would be opened here
+            AnimationEditorMessage::ToggleLogPanel => {
+                self.log_panel_visible = !self.log_panel_visible;
                 Task::none()
             }
 
-            AnimationEditorMessage::ExportPathSelected(path) => {
-                if let Some(p) = path {
-                    self.export_path = p;
-                }
-                Task::none()
-            }
-
-            AnimationEditorMessage::SetExportFormat(format) => {
-                self.export_format = format;
-                let ext = encoding::get_encoder_extension(format);
-                self.export_path.set_extension(ext);
-                Task::none()
-            }
-
-            AnimationEditorMessage::StartExport => {
-                // Start encoding in background thread
-                Task::none()
-            }
-
-            AnimationEditorMessage::ExportProgress(frame) => {
-                if let Some(ref mut enc) = self.encoding {
-                    enc.current_frame = frame;
-                }
-                Task::none()
-            }
-
-            AnimationEditorMessage::ExportComplete => {
-                self.encoding = None;
-                Task::none()
-            }
-
-            AnimationEditorMessage::ExportError(error) => {
-                if let Some(ref mut enc) = self.encoding {
-                    enc.error = Some(error);
-                }
+            AnimationEditorMessage::PaneResized(pane_grid::ResizeEvent { split, ratio }) => {
+                self.panes.resize(split, ratio);
                 Task::none()
             }
 
@@ -560,27 +633,85 @@ impl AnimationEditor {
                 self.recompile();
                 Task::none()
             }
+
+            AnimationEditorMessage::Undo => {
+                if let Some(prev_text) = self.undo_stack.pop() {
+                    // Save current state to redo stack
+                    self.redo_stack.push(self.script.text());
+                    // Restore previous state
+                    self.script = text_editor::Content::with_text(&prev_text);
+                    self.schedule_recompile();
+                }
+                Task::none()
+            }
+
+            AnimationEditorMessage::Redo => {
+                if let Some(next_text) = self.redo_stack.pop() {
+                    // Save current state to undo stack
+                    self.undo_stack.push(self.script.text());
+                    // Restore next state
+                    self.script = text_editor::Content::with_text(&next_text);
+                    self.schedule_recompile();
+                }
+                Task::none()
+            }
         }
     }
 
     /// Render the animation editor view
     pub fn view(&self) -> Element<'_, AnimationEditorMessage> {
-        // Left panel: Code editor with Lua syntax highlighting and monospace font
+        // Use pane_grid for resizable split view
+        pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized| {
+            let content: Element<'_, AnimationEditorMessage> = match pane {
+                AnimationPane::CodeEditor => self.view_code_editor_pane(),
+                AnimationPane::Preview => self.view_preview_pane(),
+            };
+            pane_grid::Content::new(content)
+        })
+        .on_resize(10, AnimationEditorMessage::PaneResized)
+        .spacing(1)
+        .into()
+    }
+
+    /// Render the code editor pane (left side)
+    fn view_code_editor_pane(&self) -> Element<'_, AnimationEditorMessage> {
+        // Code editor with Lua syntax highlighting and monospace font
+        // Note: text_editor has its own built-in scrollbar, don't wrap in scrollable!
         let code_editor = text_editor(&self.script)
             .on_action(AnimationEditorMessage::ScriptAction)
             .highlight("lua", highlighter::Theme::SolarizedDark)
             .font(iced::Font::MONOSPACE)
+            .padding(8)
             .height(Length::Fill);
 
-        // Wrap code editor in scrollable container
-        let code_panel = scrollable(container(code_editor).width(Length::Fill).height(Length::Fill).padding(8))
-            .width(Length::FillPortion(1))
-            .height(Length::Fill);
+        // Code panel - text_editor handles its own scrolling
+        // Add left padding for visual separation from pane edge
+        let code_panel = container(code_editor)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(8); // top, right, bottom, left
 
-        // Right panel: Preview and controls
-        let playback_controls = view_playback_controls(self);
-        let frame_slider = view_frame_slider(self);
+        // Build code editor pane, optionally with log panel below
+        if self.log_panel_visible {
+            let log_panel = self.view_log_panel();
+            column![
+                code_panel,
+                rule::horizontal(1),
+                log_panel,
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        } else {
+            container(code_panel)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
+    }
 
+    /// Render the preview pane (right side)
+    fn view_preview_pane(&self) -> Element<'_, AnimationEditorMessage> {
         // Get error message before building UI (to avoid lifetime issues)
         let error_msg = self.error_message();
 
@@ -597,7 +728,7 @@ impl AnimationEditor {
             .into()
         } else if !self.is_ready() {
             // Show loading
-            container(text("Compiling script...").size(14))
+            container(text(fl!("animation-compiling")).size(14))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -605,7 +736,7 @@ impl AnimationEditor {
                 .into()
         } else if self.frame_count() == 0 {
             // No frames
-            container(text("No frames generated").size(14))
+            container(text(fl!("animation-no-frames")).size(14))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -620,7 +751,7 @@ impl AnimationEditor {
             view
         } else {
             // No terminal yet
-            container(text("Preparing preview...").size(14))
+            container(text(fl!("animation-preparing")).size(14))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -628,31 +759,131 @@ impl AnimationEditor {
                 .into()
         };
 
-        let preview_container = container(preview_element).width(Length::Fill).height(Length::FillPortion(3)).padding(8);
+        // Create frame info overlay (frame counter and time display)
+        let frame_info_overlay = self.view_frame_info_overlay();
 
-        // Log panel
-        let log_panel = self.view_log_panel();
+        // Stack the terminal view with the frame info overlay
+        let preview_with_overlay = stack![
+            preview_element,
+            frame_info_overlay,
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill);
 
-        let right_panel = column![playback_controls, frame_slider, preview_container, rule::horizontal(1), log_panel,]
-            .spacing(4)
-            .width(Length::FillPortion(1))
-            .height(Length::Fill);
-
-        let right_container = container(right_panel).width(Length::FillPortion(1)).height(Length::Fill).padding(8);
-
-        // Main layout: code editor | preview
-        row![code_panel, rule::vertical(1), right_container,]
+        // Preview container (takes most of the vertical space)
+        // Use a distinct background color for the terminal area
+        let preview_container = container(preview_with_overlay)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
+            .padding(4)
+            .style(|theme: &Theme| container::Style {
+                background: Some(Background::Color(main_area_background(theme))),
+                border: Border {
+                    color: theme.extended_palette().background.strong.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            });
+
+        // Player controls (below the terminal, like a video player)
+        let player_controls = view_player_controls(self);
+
+        // Preview pane: Preview on top, controls below
+        column![
+            preview_container,
+            player_controls,
+        ]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(8)
+        .into()
     }
 
-    /// Render the log panel
+    /// Render the frame info overlay (positioned at top of preview)
+    fn view_frame_info_overlay(&self) -> Element<'_, AnimationEditorMessage> {
+        let frame_count = self.frame_count();
+        let current_frame = self.current_frame();
+
+        // Frame counter text
+        let frame_text = if frame_count > 0 {
+            fl!("animation-frame-display", current = ((current_frame + 1) as i32), total = (frame_count as i32))
+        } else {
+            fl!("animation-no-frames")
+        };
+
+        let frame_label = container(
+            text(frame_text).size(12).font(iced::Font::MONOSPACE)
+        )
+        .padding([4, 10])
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+            border: Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 4.0.into(),
+            },
+            text_color: Some(iced::Color::WHITE),
+            ..Default::default()
+        });
+
+        // Time display
+        let (current_time_ms, total_time_ms) = self.get_time_info();
+        let time_text = format!(
+            "{} / {}",
+            AnimationEditor::format_time(current_time_ms),
+            AnimationEditor::format_time(total_time_ms)
+        );
+
+        let time_label = container(
+            text(time_text).size(12).font(iced::Font::MONOSPACE)
+        )
+        .padding([4, 10])
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+            border: Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 4.0.into(),
+            },
+            text_color: Some(iced::Color::WHITE),
+            ..Default::default()
+        });
+
+        // Row with frame info on left, time on right
+        let info_row = row![
+            frame_label,
+            Space::new().width(Length::Fill),
+            time_label,
+        ]
+        .padding(8)
+        .width(Length::Fill);
+
+        // Position at top, let the rest be transparent/pass-through
+        column![
+            info_row,
+            Space::new().height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// Render the log panel (shown below editor when visible)
     fn view_log_panel(&self) -> Element<'_, AnimationEditorMessage> {
         let animator = self.animator.lock();
 
         let error_text = animator.error.clone();
-        let log_entries: Vec<_> = animator.log.iter().map(|entry| (entry.frame, entry.text.clone())).collect();
+        let current_frame = self.playback.current_frame;
+        
+        // Filter log entries to show only up to current frame
+        let log_entries: Vec<_> = animator
+            .log
+            .iter()
+            .filter(|entry| entry.frame <= current_frame)
+            .map(|entry| (entry.frame, entry.text.clone()))
+            .collect();
         drop(animator); // Release lock before building UI
 
         if !error_text.is_empty() {
@@ -661,30 +892,39 @@ impl AnimationEditor {
                 color: Some(theme.extended_palette().danger.base.color),
             }))
             .width(Length::Fill)
-            .height(Length::Fixed(100.0))
+            .height(Length::Fixed(120.0))
             .padding(8)
             .into()
         } else if log_entries.is_empty() {
             // No log entries
-            container(text("No log entries").size(12).style(|theme: &Theme| iced::widget::text::Style {
+            container(text(fl!("animation-no-log")).size(12).style(|theme: &Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().background.strong.color),
             }))
             .width(Length::Fill)
-            .height(Length::Fixed(100.0))
+            .height(Length::Fixed(120.0))
             .padding(8)
             .into()
         } else {
-            // Show log entries
+            // Show log entries filtered by current frame
             let entries: Vec<Element<'_, AnimationEditorMessage>> = log_entries
                 .into_iter()
                 .map(|(frame, entry_text)| {
-                    row![text(format!("Frame {}:", frame)).size(12), Space::new().width(8), text(entry_text).size(12),]
-                        .spacing(4)
-                        .into()
+                    row![
+                        text(format!("[{}]", frame)).size(11).style(|theme: &Theme| iced::widget::text::Style {
+                            color: Some(theme.extended_palette().primary.weak.color),
+                        }),
+                        Space::new().width(6),
+                        text(entry_text).size(11),
+                    ]
+                    .spacing(2)
+                    .into()
                 })
                 .collect();
 
-            scrollable(column(entries).spacing(2)).width(Length::Fill).height(Length::Fixed(100.0)).into()
+            scrollable(column(entries).spacing(2).padding(4))
+                .width(Length::Fill)
+                .height(Length::Fixed(120.0))
+                .into()
         }
     }
 }

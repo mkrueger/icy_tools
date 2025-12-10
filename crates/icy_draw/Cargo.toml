@@ -56,6 +56,9 @@ i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
 
+# Async runtime
+tokio = { workspace = true }
+
 # Utilities
 lazy_static = { workspace = true }
 directories = { workspace = true }

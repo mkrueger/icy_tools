@@ -112,17 +112,62 @@ impl GifEncoder {
         self.encode_to_writer(file, frames)
     }
 
+    /// Encode frames to a GIF file with progress callback.
+    ///
+    /// # Arguments
+    /// * `path` - Output file path
+    /// * `frames` - Vector of frames to encode
+    /// * `progress_callback` - Called after each frame with (current_frame, total_frames)
+    /// * `is_cancelled` - Called to check if encoding should be cancelled
+    ///
+    /// # Returns
+    /// `Ok(())` on success, or an error if encoding fails or was cancelled.
+    pub fn encode_to_file_with_progress<F, C>(
+        &self,
+        path: impl AsRef<Path>,
+        frames: Vec<GifFrame>,
+        progress_callback: F,
+        is_cancelled: C,
+    ) -> crate::Result<()>
+    where
+        F: Fn(usize, usize),
+        C: Fn() -> bool,
+    {
+        let file = std::fs::File::create(path.as_ref())?;
+        self.encode_to_writer_with_progress(file, frames, progress_callback, is_cancelled)
+    }
+
     /// Encode frames to a writer (e.g., file or buffer).
     pub fn encode_to_writer<W: Write>(&self, writer: W, frames: Vec<GifFrame>) -> crate::Result<()> {
+        self.encode_to_writer_with_progress(writer, frames, |_, _| {}, || false)
+    }
+
+    /// Encode frames to a writer with progress callback.
+    /// Uses local palettes per frame for best color quality.
+    pub fn encode_to_writer_with_progress<W: Write, F, C>(
+        &self,
+        writer: W,
+        frames: Vec<GifFrame>,
+        progress_callback: F,
+        is_cancelled: C,
+    ) -> crate::Result<()>
+    where
+        F: Fn(usize, usize),
+        C: Fn() -> bool,
+    {
         if frames.is_empty() {
             return Err(EngineError::Generic("No frames to encode".to_string()));
         }
 
-        // Build global palette from first frame
-        let first_frame = &frames[0];
-        let (global_palette, _) = self.quantize_frame(first_frame)?;
+        let total_frames = frames.len();
 
-        let mut encoder = gif::Encoder::new(writer, self.width, self.height, &global_palette)
+        // Check for cancellation
+        if is_cancelled() {
+            return Err(EngineError::Generic("Export cancelled".to_string()));
+        }
+
+        // Create encoder with empty global palette - we use local palettes per frame
+        let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])
             .map_err(|e| EngineError::Generic(format!("GIF encoder creation failed: {e}")))?;
 
         // Set repeat count
@@ -136,14 +181,22 @@ impl GifEncoder {
                 .map_err(|e| EngineError::Generic(format!("Failed to set repeat: {e}")))?,
         }
 
-        for frame in &frames {
-            self.encode_frame(&mut encoder, frame)?;
+        for (i, frame) in frames.iter().enumerate() {
+            // Check for cancellation
+            if is_cancelled() {
+                return Err(EngineError::Generic("Export cancelled".to_string()));
+            }
+
+            self.encode_frame_with_local_palette(&mut encoder, frame)?;
+
+            // Report progress after each frame
+            progress_callback(i + 1, total_frames);
         }
 
         Ok(())
     }
 
-    /// Quantize frame colors to 256-color palette using image crate integration
+    /// Quantize frame colors to 256-color palette using quantette
     fn quantize_frame(&self, frame: &GifFrame) -> crate::Result<(Vec<u8>, Vec<u8>)> {
         // Convert RGBA data to RGB image for quantette
         let rgb_data: Vec<u8> = frame.rgba_data.chunks(4).flat_map(|rgba| [rgba[0], rgba[1], rgba[2]]).collect();
@@ -162,7 +215,32 @@ impl GifEncoder {
         Ok((flat_palette, indexed_pixels))
     }
 
-    /// Encode a single frame to the GIF.
+    /// Encode a single frame with its own local palette for best color quality.
+    fn encode_frame_with_local_palette<W: Write>(&self, encoder: &mut gif::Encoder<W>, frame: &GifFrame) -> crate::Result<()> {
+        let (local_palette, indexed_pixels) = self.quantize_frame(frame)?;
+
+        // Convert duration from milliseconds to GIF centiseconds (1/100th of a second)
+        let delay_cs = (frame.duration_ms / 10).max(1) as u16;
+
+        // Create GIF frame with local palette
+        let mut gif_frame = gif::Frame::default();
+        gif_frame.width = self.width;
+        gif_frame.height = self.height;
+        gif_frame.delay = delay_cs;
+        gif_frame.dispose = gif::DisposalMethod::Background;
+        gif_frame.buffer = std::borrow::Cow::Owned(indexed_pixels);
+        // Set local palette for this frame - ensures correct colors even when palette changes
+        gif_frame.palette = Some(local_palette);
+
+        encoder
+            .write_frame(&gif_frame)
+            .map_err(|e| EngineError::Generic(format!("Failed to write GIF frame: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Encode a single frame to the GIF (legacy, uses global palette).
+    #[allow(dead_code)]
     fn encode_frame<W: Write>(&self, encoder: &mut gif::Encoder<W>, frame: &GifFrame) -> crate::Result<()> {
         let (_palette, indexed_pixels) = self.quantize_frame(frame)?;
 

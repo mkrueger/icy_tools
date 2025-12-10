@@ -559,6 +559,12 @@ where
     )
 }
 
+/// Internal message type for confirmation dialog button clicks
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmationMessage {
+    ButtonClicked(DialogResult),
+}
+
 impl<M, F> Dialog<M> for ConfirmationDialogWrapper<M, F>
 where
     M: Clone + Send + 'static,

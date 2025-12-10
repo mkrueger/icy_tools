@@ -1,6 +1,6 @@
 //! Animation editor messages
 
-use std::path::PathBuf;
+use iced::widget::pane_grid;
 
 /// Messages for the animation editor
 #[derive(Debug, Clone)]
@@ -14,6 +14,8 @@ pub enum AnimationEditorMessage {
     TogglePlayback,
     /// Stop playback and reset to frame 0
     Stop,
+    /// Restart from beginning and play
+    Restart,
     /// Go to previous frame
     PreviousFrame,
     /// Go to next frame
@@ -34,26 +36,22 @@ pub enum AnimationEditorMessage {
     SetScale(f32),
     /// Set playback speed multiplier
     SetPlaybackSpeed(f32),
+    /// Toggle log panel visibility
+    ToggleLogPanel,
 
-    // === Export ===
-    /// Browse for export path
-    BrowseExportPath,
-    /// Export path selected
-    ExportPathSelected(Option<PathBuf>),
-    /// Set export format
-    SetExportFormat(usize),
-    /// Start export
-    StartExport,
-    /// Export progress update
-    ExportProgress(usize),
-    /// Export completed
-    ExportComplete,
-    /// Export error
-    ExportError(String),
+    // === Pane grid ===
+    /// Pane resized
+    PaneResized(pane_grid::ResizeEvent),
 
     // === Animation update ===
     /// Tick for animation update
     Tick,
     /// Force recompile script
     Recompile,
+
+    // === Undo/Redo ===
+    /// Undo last edit
+    Undo,
+    /// Redo last undone edit
+    Redo,
 }

@@ -158,7 +158,7 @@ impl WindowManager {
                     } else {
                         Task::none()
                     };
-                    let dialog_task = task.map(move |msg| WindowManagerMessage::WindowMessage(window_id, msg));
+                    let dialog_task: Task<WindowManagerMessage> = task.map(move |msg| WindowManagerMessage::WindowMessage(window_id, msg));
                     return Task::batch([msg_task, dialog_task]);
                 }
                 Task::none()

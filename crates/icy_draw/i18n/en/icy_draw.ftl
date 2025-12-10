@@ -421,6 +421,7 @@ undo-render_character=Render character
 undo-delete_character=Delete character
 undo-select=Select
 undo-plugin=Plugin { $title }
+undo-animation-edit=Edit
 
 font_selector-ansi_font=ANSI
 font_selector-library_font=LIBRARY
@@ -629,3 +630,14 @@ animation-export-format=Format
 animation-export-path=Export to
 animation-export-no-path=No path selected
 animation-export-success=Export completed successfully
+animation-export-exporting-frame=Exporting frame { $current } / { $total }
+animation-export-cancelled=Export cancelled
+animation-export-no-frames=No frames to export
+animation-export-failed=Export failed: { $error }
+
+# Animation Editor
+animation-compiling=Compiling script...
+animation-no-frames=No frames generated
+animation-preparing=Preparing preview...
+animation-no-log=No log entries
+animation-frame-display=Frame { $current } / { $total }

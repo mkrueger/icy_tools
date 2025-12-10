@@ -52,7 +52,7 @@ mod toml_loader;
 
 pub use command_def::CommandDef;
 pub use command_handler::CommandHandler;
-pub use command_set::{CategoryMeta, CommandSet, HelpCommandInfo};
+pub use command_set::{CategoryMeta, CommandSet, HelpCommandInfo, format_command_set_debug};
 pub use defaults::{cmd, create_common_commands};
 pub use hotkey::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
 pub use iced_adapter::{IntoHotkey, from_iced_key, from_iced_modifiers, from_iced_mouse_button, hotkey_from_iced, mouse_binding_from_iced};

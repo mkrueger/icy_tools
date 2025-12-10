@@ -418,6 +418,7 @@ undo-bitfont-swap-chars=Zeichen tauschen
 undo-bitfont-duplicate-line=Zeile duplizieren
 undo-delete=Entfernen
 undo-backspace=Rücktaste
+undo-animation-edit=Editieren
 
 undo-render_character=Zeichen rendern
 undo-delete_character=Zeichen löschen
@@ -600,3 +601,20 @@ ask_unsaved_file_dialog-description=Sollen die Änderungen in {
 ask_unsaved_file_dialog-subdescription=Alle Änderungen gehen verloren, wenn nicht gespeichert wird.
 ask_unsaved_file_dialog-save_all_button=Alle Speichern
 ask_unsaved_file_dialog-dont_save_button=Nicht Speichern
+
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Exportieren nach
+animation-export-no-path=Kein Pfad ausgewählt
+animation-export-success=Export erfolgreich abgeschlossen
+animation-export-exporting-frame=Exportiere Frame { $current } / { $total }
+animation-export-cancelled=Export abgebrochen
+animation-export-no-frames=Keine Frames zum Exportieren
+animation-export-failed=Export fehlgeschlagen: { $error }
+
+# Animation Editor
+animation-compiling=Kompiliere Skript...
+animation-no-frames=Keine Frames generiert
+animation-preparing=Bereite Vorschau vor...
+animation-no-log=Keine Log-Einträge
+animation-frame-display=Frame { $current } / { $total }

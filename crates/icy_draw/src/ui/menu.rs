@@ -53,7 +53,9 @@ impl MenuBarState {
                 bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
             }
             EditMode::CharFont => ansi_editor::menu_bar::view_ansi(recent_files, undo_info), // TODO: Create separate charfont menu
-            EditMode::Animation => animation_editor::menu_bar::view_animation_menu(recent_files, undo_info),
+            EditMode::Animation => {
+                animation_editor::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
+            }
         }
     }
 }
@@ -106,7 +108,9 @@ pub fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
     let is_enabled = description.is_some();
 
-    let btn = button(
+    // Always set on_press to avoid iced_aw menu overlay issues
+    // The message handler will ignore the action if nothing to undo
+    button(
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
@@ -120,9 +124,9 @@ pub fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     )
     .width(Length::Fill)
     .padding([4, 8])
-    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style });
-
-    if is_enabled { btn.on_press(msg).into() } else { btn.into() }
+    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style })
+    .on_press(msg)
+    .into()
 }
 
 /// Create a Redo menu item with optional operation description
@@ -135,7 +139,9 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
     let is_enabled = description.is_some();
 
-    let btn = button(
+    // Always set on_press to avoid iced_aw menu overlay issues
+    // The message handler will ignore the action if nothing to redo
+    button(
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
@@ -149,9 +155,9 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     )
     .width(Length::Fill)
     .padding([4, 8])
-    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style });
-
-    if is_enabled { btn.on_press(msg).into() } else { btn.into() }
+    .style(if is_enabled { menu_item_style } else { menu_item_disabled_style })
+    .on_press(msg)
+    .into()
 }
 
 /// Create a menu item with direct label and hotkey (without CommandDef)

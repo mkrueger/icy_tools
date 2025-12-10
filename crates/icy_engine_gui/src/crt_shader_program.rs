@@ -23,6 +23,14 @@ impl<'a> CRTShaderProgram<'a> {
     ) -> Option<iced::widget::Action<Message>> {
         let now = crate::Blink::now_ms();
 
+        // Synchronize blink rates with buffer type (only if screen is available without blocking)
+        // This handles cases where buffer type changes during runtime
+        if let Some(screen) = self.term.screen.try_lock() {
+            let buffer_type = screen.buffer_type();
+            state.caret_blink.set_rate(buffer_type.get_caret_blink_rate() as u128);
+            state.character_blink.set_rate(buffer_type.get_blink_rate() as u128);
+        }
+
         state.caret_blink.update(now);
         state.character_blink.update(now);
 

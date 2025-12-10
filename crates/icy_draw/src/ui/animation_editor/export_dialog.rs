@@ -1,18 +1,19 @@
 //! Export dialog for animation editor
 //!
 //! Provides a modal dialog for exporting animations to GIF or Asciicast format.
+//! Supports async export with progress indication and cancellation.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use iced::{
-    Alignment, Element, Length,
-    widget::{Space, column, container, pick_list, row, text, text_input},
+    Alignment, Element, Length, Task,
+    widget::{Space, column, container, pick_list, progress_bar, row, text, text_input},
 };
-use icy_engine::{
-    Position, RenderOptions, Screen,
-    gif_encoder::{GifEncoder, GifFrame, RepeatCount},
-};
+use icy_engine::{Position, Rectangle, RenderOptions, Screen};
 use icy_engine_gui::ButtonType;
 use icy_engine_gui::ui::{
     DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
@@ -57,6 +58,32 @@ impl std::fmt::Display for ExportFormat {
     }
 }
 
+/// Export progress state shared between dialog and background thread
+pub struct ExportProgress {
+    /// Current frame being processed
+    pub current_frame: AtomicUsize,
+    /// Total number of frames
+    pub total_frames: AtomicUsize,
+    /// Whether export should be cancelled
+    pub cancelled: AtomicBool,
+    /// Whether export is complete
+    pub complete: AtomicBool,
+    /// Error message if export failed
+    pub error: Mutex<Option<String>>,
+}
+
+impl ExportProgress {
+    pub fn new(total_frames: usize) -> Self {
+        Self {
+            current_frame: AtomicUsize::new(0),
+            total_frames: AtomicUsize::new(total_frames),
+            cancelled: AtomicBool::new(false),
+            complete: AtomicBool::new(false),
+            error: Mutex::new(None),
+        }
+    }
+}
+
 /// Messages for export dialog
 #[derive(Debug, Clone)]
 pub enum AnimationExportMessage {
@@ -70,7 +97,9 @@ pub enum AnimationExportMessage {
     PathSelected(Option<PathBuf>),
     /// Start export
     Export,
-    /// Close dialog
+    /// Export progress tick (poll for updates)
+    Tick,
+    /// Close dialog (also cancels export)
     Close,
 }
 
@@ -84,8 +113,8 @@ pub struct AnimationExportDialog {
     export_path: Option<PathBuf>,
     /// Error message if export failed
     error: Option<String>,
-    /// Success message
-    success: Option<String>,
+    /// Export progress (Some when exporting)
+    progress: Option<Arc<ExportProgress>>,
 }
 
 impl AnimationExportDialog {
@@ -97,7 +126,7 @@ impl AnimationExportDialog {
             format: ExportFormat::Gif,
             export_path,
             error: None,
-            success: None,
+            progress: None,
         }
     }
 
@@ -108,14 +137,59 @@ impl AnimationExportDialog {
         }
     }
 
-    /// Perform the export
-    fn do_export(&mut self) -> Result<(), String> {
-        let path = self.export_path.as_ref().ok_or("No export path specified")?;
+    /// Check if currently exporting
+    fn is_exporting(&self) -> bool {
+        self.progress.is_some()
+    }
 
-        match self.format {
-            ExportFormat::Gif => export_to_gif(&self.animator, path),
-            ExportFormat::Asciicast => export_to_asciicast(&self.animator, path),
+    /// Start async export
+    fn start_export(&mut self) -> Task<Message> {
+        let Some(path) = self.export_path.clone() else {
+            self.error = Some("No export path specified".to_string());
+            return Task::none();
+        };
+
+        let frame_count = self.animator.lock().frames.len();
+        if frame_count == 0 {
+            self.error = Some("No frames to export".to_string());
+            return Task::none();
         }
+
+        // Create progress tracker
+        let progress = Arc::new(ExportProgress::new(frame_count));
+        self.progress = Some(progress.clone());
+        self.error = None;
+
+        // Clone what we need for the background thread
+        let animator = self.animator.clone();
+        let format = self.format;
+
+        // Spawn background thread
+        thread::spawn(move || {
+            let result = match format {
+                ExportFormat::Gif => export_to_gif_with_progress(&animator, &path, &progress),
+                ExportFormat::Asciicast => export_to_asciicast_with_progress(&animator, &path, &progress),
+            };
+
+            if let Err(e) = result {
+                *progress.error.lock() = Some(e);
+            }
+            progress.complete.store(true, Ordering::Relaxed);
+        });
+
+        // Start polling for progress updates
+        self.create_tick_task()
+    }
+
+    /// Create a task that polls for progress updates
+    fn create_tick_task(&self) -> Task<Message> {
+        Task::perform(
+            async {
+                // Use tokio sleep which doesn't block the UI thread
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            },
+            |_| Message::AnimationExport(AnimationExportMessage::Tick),
+        )
     }
 }
 
@@ -145,40 +219,60 @@ impl Dialog<Message> for AnimationExportDialog {
 
         let file_row = row![path_label, path_input, browse_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
-        // Error/Success message
-        let message_element: Element<'_, Message> = if let Some(ref err) = self.error {
+        // Progress or error message
+        let status_element: Element<'_, Message> = if let Some(ref progress) = self.progress {
+            let current = progress.current_frame.load(Ordering::Relaxed);
+            let total = progress.total_frames.load(Ordering::Relaxed);
+            let percentage = if total > 0 { current as f32 / total as f32 } else { 0.0 };
+
+            column![
+                row![
+                    text(fl!("animation-export-exporting-frame", current = (current as i32), total = (total as i32))).size(TEXT_SIZE_SMALL),
+                    Space::new().width(Length::Fill),
+                    text(format!("{}%", (percentage * 100.0) as u32)).size(TEXT_SIZE_SMALL),
+                ]
+                .align_y(Alignment::Center),
+                container(progress_bar(0.0..=1.0, percentage)).height(Length::Fixed(8.0)),
+            ]
+            .spacing(4)
+            .into()
+        } else if let Some(ref err) = self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(theme.extended_palette().danger.base.color),
                 })
                 .into()
-        } else if let Some(ref success) = self.success {
-            text(success)
-                .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().success.base.color),
-                })
-                .into()
         } else {
-            Space::new().height(0).into()
+            Space::new().height(Length::Fixed(0.0)).into()
         };
 
-        // Frame count info
-        let frame_count = self.animator.lock().frames.len();
-        let info_text = text(format!("{} frames", frame_count)).size(TEXT_SIZE_SMALL);
-
         // Content
-        let content_column = column![format_row, file_row, Space::new().height(DIALOG_SPACING), info_text, message_element,].spacing(DIALOG_SPACING);
+        let frame_count = self.animator.lock().frames.len();
+        let is_exporting = self.is_exporting();
+
+        let content_column = if is_exporting {
+            // When exporting, show only progress
+            column![status_element].spacing(DIALOG_SPACING)
+        } else {
+            column![format_row, file_row, status_element].spacing(DIALOG_SPACING)
+        };
 
         // Buttons
-        let can_export = self.export_path.is_some() && frame_count > 0;
-        let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::AnimationExport(AnimationExportMessage::Close))).into(),
-            primary_button(fl!("menu-export"), can_export.then(|| Message::AnimationExport(AnimationExportMessage::Export))).into(),
-        ]);
+        let buttons = if is_exporting {
+            // Show cancel button during export
+            button_row(vec![
+                secondary_button(format!("{}", ButtonType::Cancel), Some(Message::AnimationExport(AnimationExportMessage::Close))).into(),
+            ])
+        } else {
+            let can_export = self.export_path.is_some() && frame_count > 0;
+            button_row(vec![
+                secondary_button(format!("{}", ButtonType::Cancel), Some(Message::AnimationExport(AnimationExportMessage::Close))).into(),
+                primary_button(fl!("menu-export"), can_export.then(|| Message::AnimationExport(AnimationExportMessage::Export))).into(),
+            ])
+        };
 
-        let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_column].into());
+        let dialog_content = dialog_area(column![title, Space::new().height(Length::Fixed(DIALOG_SPACING as f32)), content_column].into());
         let button_area = dialog_area(buttons.into());
 
         modal_container(
@@ -192,21 +286,54 @@ impl Dialog<Message> for AnimationExportDialog {
         if let Message::AnimationExport(msg) = message {
             match msg {
                 AnimationExportMessage::SetFormat(format) => {
-                    self.format = *format;
-                    self.update_extension();
-                    self.error = None;
-                    self.success = None;
+                    if !self.is_exporting() {
+                        self.format = *format;
+                        self.update_extension();
+                        self.error = None;
+                    }
                     Some(DialogAction::None)
                 }
                 AnimationExportMessage::SetPath(path) => {
-                    self.export_path = Some(PathBuf::from(path));
-                    self.error = None;
-                    self.success = None;
+                    if !self.is_exporting() {
+                        self.export_path = Some(PathBuf::from(path));
+                        self.error = None;
+                    }
                     Some(DialogAction::None)
                 }
                 AnimationExportMessage::Browse => {
-                    // TODO: Open file dialog
-                    Some(DialogAction::None)
+                    if self.is_exporting() {
+                        return Some(DialogAction::None);
+                    }
+
+                    let format = self.format;
+                    let initial_path = self.export_path.clone();
+
+                    let task = Task::perform(
+                        async move {
+                            let (filter_name, ext) = match format {
+                                ExportFormat::Gif => ("GIF Animation", "gif"),
+                                ExportFormat::Asciicast => ("Asciicast", "cast"),
+                            };
+
+                            let mut dialog = rfd::AsyncFileDialog::new()
+                                .add_filter(filter_name, &[ext])
+                                .set_title("Export Animation");
+
+                            if let Some(ref path) = initial_path {
+                                if let Some(parent) = path.parent() {
+                                    dialog = dialog.set_directory(parent);
+                                }
+                                if let Some(name) = path.file_name() {
+                                    dialog = dialog.set_file_name(name.to_string_lossy());
+                                }
+                            }
+
+                            dialog.save_file().await.map(|f| f.path().to_path_buf())
+                        },
+                        |result| Message::AnimationExport(AnimationExportMessage::PathSelected(result)),
+                    );
+
+                    Some(DialogAction::RunTask(task))
                 }
                 AnimationExportMessage::PathSelected(path) => {
                     if let Some(p) = path {
@@ -215,19 +342,37 @@ impl Dialog<Message> for AnimationExportDialog {
                     Some(DialogAction::None)
                 }
                 AnimationExportMessage::Export => {
-                    match self.do_export() {
-                        Ok(()) => {
-                            self.success = Some(fl!("animation-export-success"));
-                            // Keep dialog open to show success, user can close manually
-                            Some(DialogAction::None)
-                        }
-                        Err(e) => {
-                            self.error = Some(e);
-                            Some(DialogAction::None)
-                        }
-                    }
+                    let task = self.start_export();
+                    Some(DialogAction::RunTask(task))
                 }
-                AnimationExportMessage::Close => Some(DialogAction::Close),
+                AnimationExportMessage::Tick => {
+                    // Check if export is still running
+                    let is_complete = self.progress.as_ref().map(|p| p.complete.load(Ordering::Relaxed)).unwrap_or(false);
+                    
+                    if is_complete {
+                        // Export finished, check for error
+                        let error = self.progress.as_ref().and_then(|p| p.error.lock().take());
+                        if let Some(err) = error {
+                            self.error = Some(err);
+                            self.progress = None;
+                            return Some(DialogAction::None);
+                        }
+                        // Success - close dialog
+                        self.progress = None;
+                        return Some(DialogAction::Close);
+                    } else if self.progress.is_some() {
+                        // Still running, schedule another tick
+                        return Some(DialogAction::RunTask(self.create_tick_task()));
+                    }
+                    Some(DialogAction::None)
+                }
+                AnimationExportMessage::Close => {
+                    // Cancel export if running
+                    if let Some(ref progress) = self.progress {
+                        progress.cancelled.store(true, Ordering::Relaxed);
+                    }
+                    Some(DialogAction::Close)
+                }
             }
         } else {
             None
@@ -235,43 +380,92 @@ impl Dialog<Message> for AnimationExportDialog {
     }
 }
 
-/// Export animation frames to GIF
-pub fn export_to_gif(animator: &Arc<Mutex<Animator>>, path: &PathBuf) -> Result<(), String> {
-    let animator = animator.lock();
+/// Export animation frames to GIF with progress tracking
+fn export_to_gif_with_progress(
+    animator: &Arc<Mutex<Animator>>,
+    path: &PathBuf,
+    progress: &Arc<ExportProgress>,
+) -> Result<(), String> {
+    use icy_engine::gif_encoder::{GifEncoder, GifFrame, RepeatCount};
 
-    if animator.frames.is_empty() {
+    let animator_guard = animator.lock();
+
+    if animator_guard.frames.is_empty() {
         return Err("No frames to export".to_string());
     }
 
-    // Get dimensions from first frame
-    let first_frame = &animator.frames[0].0;
-    let size = first_frame.get_size();
-    let dim = first_frame.get_font_dimensions();
-    let width = (size.width * dim.width) as u16;
-    let height = (size.height * dim.height) as u16;
+    let frame_count = animator_guard.frames.len();
+    // Only encoding phase counts for progress (rendering is fast)
+    progress.total_frames.store(frame_count, Ordering::Relaxed);
+    progress.current_frame.store(0, Ordering::Relaxed);
 
-    // Collect frames
-    let mut gif_frames = Vec::with_capacity(animator.frames.len());
+    // Render all frames to RGBA (fast, no progress needed)
+    let mut gif_frames: Vec<GifFrame> = Vec::with_capacity(frame_count);
+    let mut width: u16 = 0;
+    let mut height: u16 = 0;
 
-    for (screen, _settings, delay_ms) in &animator.frames {
+    for (i, (screen, _settings, delay_ms)) in animator_guard.frames.iter().enumerate() {
+        // Check for cancellation
+        if progress.cancelled.load(Ordering::Relaxed) {
+            return Err("Export cancelled".to_string());
+        }
+
+        // Create render options with rect covering the entire screen
+        let screen_width = screen.get_width();
+        let screen_height = screen.get_height();
+        let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
         let options = RenderOptions {
+            rect: full_rect.into(),
             blink_on: true,
             ..Default::default()
         };
 
-        let (_size, rgba_data) = screen.render_to_rgba(&options);
+        let (render_size, rgba_data) = screen.render_to_rgba(&options);
+
+        // Use actual rendered dimensions from first frame
+        if i == 0 {
+            width = render_size.width as u16;
+            height = render_size.height as u16;
+        }
+
         gif_frames.push(GifFrame::new(rgba_data, *delay_ms));
     }
 
-    // Create encoder and export
+    // Drop the animator lock before encoding
+    drop(animator_guard);
+
+    if width == 0 || height == 0 {
+        return Err("Invalid frame dimensions".to_string());
+    }
+
+    // Check for cancellation before encoding
+    if progress.cancelled.load(Ordering::Relaxed) {
+        return Err("Export cancelled".to_string());
+    }
+
+    // Encode GIF with progress callback
     let mut encoder = GifEncoder::new(width, height);
     encoder.set_repeat(RepeatCount::Infinite);
 
-    encoder.encode_to_file(path, gif_frames).map_err(|e| format!("GIF encoding failed: {}", e))
+    let progress_ref = progress.clone();
+    encoder
+        .encode_to_file_with_progress(
+            path,
+            gif_frames,
+            move |current, _total| {
+                progress_ref.current_frame.store(current, Ordering::Relaxed);
+            },
+            || progress.cancelled.load(Ordering::Relaxed),
+        )
+        .map_err(|e| format!("GIF encoding failed: {}", e))
 }
 
-/// Export animation frames to Asciicast v2 format
-pub fn export_to_asciicast(animator: &Arc<Mutex<Animator>>, path: &PathBuf) -> Result<(), String> {
+/// Export animation frames to Asciicast v2 format with progress tracking
+fn export_to_asciicast_with_progress(
+    animator: &Arc<Mutex<Animator>>,
+    path: &PathBuf,
+    progress: &Arc<ExportProgress>,
+) -> Result<(), String> {
     use std::io::Write;
 
     let animator = animator.lock();
@@ -306,22 +500,28 @@ pub fn export_to_asciicast(animator: &Arc<Mutex<Animator>>, path: &PathBuf) -> R
     writeln!(file, "{}", header).map_err(|e| format!("Failed to write header: {}", e))?;
 
     // Write frames
-    let mut timestamp = 0.0;
+    let mut time_offset = 0.0;
 
-    for (screen, _settings, delay_ms) in &animator.frames {
+    for (i, (screen, _settings, delay_ms)) in animator.frames.iter().enumerate() {
+        // Check for cancellation
+        if progress.cancelled.load(Ordering::Relaxed) {
+            return Err("Export cancelled".to_string());
+        }
+
+        // Update progress
+        progress.current_frame.store(i + 1, Ordering::Relaxed);
+
         // Render frame to ANSI escape sequences
         let ansi_output = render_screen_to_ansi(screen.as_ref());
 
         // Clear screen and move cursor to home
         let frame_data = format!("\x1b[2J\x1b[H{}", ansi_output);
 
-        // Escape the output for JSON
-        let escaped = serde_json::to_string(&frame_data).map_err(|e| format!("JSON encoding failed: {}", e))?;
+        // Write event as JSON array: [time, "o", data]
+        let escaped = serde_json::to_string(&frame_data).map_err(|e| format!("Failed to encode frame: {}", e))?;
+        writeln!(file, "[{:.6}, \"o\", {}]", time_offset, escaped).map_err(|e| format!("Failed to write frame: {}", e))?;
 
-        // Write event: [timestamp, "o", data]
-        writeln!(file, "[{}, \"o\", {}]", timestamp, escaped).map_err(|e| format!("Failed to write frame: {}", e))?;
-
-        timestamp += *delay_ms as f64 / 1000.0;
+        time_offset += *delay_ms as f64 / 1000.0;
     }
 
     Ok(())
@@ -329,76 +529,47 @@ pub fn export_to_asciicast(animator: &Arc<Mutex<Animator>>, path: &PathBuf) -> R
 
 /// Render a screen to ANSI escape sequences
 fn render_screen_to_ansi(screen: &dyn Screen) -> String {
-    let size = screen.get_size();
-    let palette = screen.palette();
-    let mut output = String::new();
+    let mut result = String::new();
+    let width = screen.get_width();
+    let height = screen.get_height();
 
-    let mut last_fg: Option<u32> = None;
-    let mut last_bg: Option<u32> = None;
-    let mut last_bold = false;
-    let mut last_blink = false;
+    let mut last_attr = icy_engine::TextAttribute::default();
 
-    for y in 0..size.height {
-        for x in 0..size.width {
+    for y in 0..height {
+        for x in 0..width {
             let ch = screen.get_char(Position::new(x, y));
-            let attr = ch.attribute;
 
-            // Build escape sequence for attribute changes
-            let mut needs_reset = false;
-            let bold = attr.is_bold();
-            let blink = attr.is_blinking();
+            // Check if attributes changed
+            if ch.attribute != last_attr {
+                // Reset and set new attributes
+                result.push_str("\x1b[0m");
 
-            if bold != last_bold || blink != last_blink {
-                needs_reset = true;
-            }
+                let fg = ch.attribute.get_foreground();
+                let bg = ch.attribute.get_background();
 
-            if needs_reset {
-                output.push_str("\x1b[0m");
-                last_fg = None;
-                last_bg = None;
-                last_bold = false;
-                last_blink = false;
-            }
+                // Set foreground color (256 color mode)
+                result.push_str(&format!("\x1b[38;5;{}m", fg));
 
-            // Set attributes
-            if bold && !last_bold {
-                output.push_str("\x1b[1m");
-                last_bold = true;
-            }
-            if blink && !last_blink {
-                output.push_str("\x1b[5m");
-                last_blink = true;
-            }
+                // Set background color (256 color mode)
+                result.push_str(&format!("\x1b[48;5;{}m", bg));
 
-            // Get foreground color from palette
-            let fg_idx = attr.get_foreground();
-            if last_fg != Some(fg_idx) {
-                let (r, g, b) = palette.get_rgb(fg_idx);
-                output.push_str(&format!("\x1b[38;2;{};{};{}m", r, g, b));
-                last_fg = Some(fg_idx);
-            }
+                if ch.attribute.is_bold() {
+                    result.push_str("\x1b[1m");
+                }
+                if ch.attribute.is_blinking() {
+                    result.push_str("\x1b[5m");
+                }
 
-            // Get background color from palette
-            let bg_idx = attr.get_background();
-            if last_bg != Some(bg_idx) {
-                let (r, g, b) = palette.get_rgb(bg_idx);
-                output.push_str(&format!("\x1b[48;2;{};{};{}m", r, g, b));
-                last_bg = Some(bg_idx);
+                last_attr = ch.attribute;
             }
 
             // Output character
-            let char_code = ch.ch;
-            if char_code == '\0' || char_code == ' ' {
-                output.push(' ');
-            } else {
-                output.push(char_code);
-            }
+            let c = if ch.ch == '\0' || ch.ch == ' ' { ' ' } else { ch.ch };
+            result.push(c);
         }
-        output.push_str("\r\n");
+        result.push_str("\r\n");
     }
 
-    // Reset attributes at end
-    output.push_str("\x1b[0m");
-
-    output
+    result.push_str("\x1b[0m");
+    result
 }

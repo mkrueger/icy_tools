@@ -123,8 +123,6 @@ category = "tools"
 
 [[commands]]
 id = "layer.new"
-hotkey = ["Ctrl+Shift+N"]
-hotkey_mac = ["Cmd+Shift+N"]
 category = "layers"
 
 [[commands]]

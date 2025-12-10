@@ -86,6 +86,9 @@ impl CommandId for &LazyLock<CommandDef> {
 /// Commands can be either:
 /// - `CommandRef` statics (with embedded translation source)
 /// - Plain `&str` constants
+///
+/// The generated struct also implements `Debug` for easy debugging,
+/// showing all commands with their IDs, hotkeys (platform-specific), and categories.
 #[macro_export]
 macro_rules! command_handler {
     // Pattern: Single context parameter
@@ -98,6 +101,12 @@ macro_rules! command_handler {
     ) => {
         struct $name {
             commands: $crate::commands::CommandSet,
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                $crate::commands::format_command_set_debug(&self.commands, stringify!($name), f)
+            }
         }
 
         impl $name {
@@ -146,6 +155,12 @@ macro_rules! command_handler {
             commands: $crate::commands::CommandSet,
         }
 
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                $crate::commands::format_command_set_debug(&self.commands, stringify!($name), f)
+            }
+        }
+
         impl $name {
             fn new() -> Self {
                 Self { commands: $commands_init }
@@ -190,6 +205,12 @@ macro_rules! command_handler {
     ) => {
         struct $name {
             commands: $crate::commands::CommandSet,
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                $crate::commands::format_command_set_debug(&self.commands, stringify!($name), f)
+            }
         }
 
         impl $name {
