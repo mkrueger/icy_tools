@@ -11,6 +11,7 @@ use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, wi
 
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
+use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id, handle_window_closed};
 
 use super::{MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
 use crate::load_window_icon;
@@ -87,15 +88,19 @@ impl WindowManager {
         (manager, task)
     }
 
-    pub fn title(&self, window: window::Id) -> String {
-        if self.windows.iter().count() == 1 {
-            return self.windows.get(&window).map(|w| w.title()).unwrap_or_default();
-        }
+    pub fn title(&self, window_id: window::Id) -> String {
+        let Some(w) = self.windows.get(&window_id) else {
+            return String::new();
+        };
 
-        self.windows
-            .get(&window)
-            .map(|w| if w.id < 10 { format!("{} - ⌘{}", w.title(), w.id) } else { w.title() })
-            .unwrap_or_default()
+        if self.windows.len() == 1 {
+            w.title()
+        } else if w.id <= 10 {
+            let display_key = if w.id == 10 { 0 } else { w.id };
+            format!("{} - ⌘{}", w.title(), display_key)
+        } else {
+            w.title()
+        }
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
@@ -127,15 +132,12 @@ impl WindowManager {
             WindowManagerMessage::CloseWindow(id) => window::close(id),
 
             WindowManagerMessage::WindowOpened(id) => {
-                let window = MainWindow::new(self.find_next_id(), self.initial_path.take(), self.options.clone());
+                let window = MainWindow::new(find_next_window_id(&self.windows), self.initial_path.take(), self.options.clone());
                 self.windows.insert(id, window);
                 Task::none()
             }
 
-            WindowManagerMessage::WindowClosed(id) => {
-                self.windows.remove(&id);
-                if self.windows.is_empty() { iced::exit() } else { Task::none() }
-            }
+            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
@@ -164,14 +166,7 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::FocusWindow(target_id) => {
-                for (window_id, window) in self.windows.iter() {
-                    if window.id == target_id {
-                        return window::gain_focus(*window_id);
-                    }
-                }
-                Task::none()
-            }
+            WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
             WindowManagerMessage::AnimationTick => {
                 // Send tick to all windows that need animation
@@ -204,8 +199,6 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let needs_animation = self.windows.values().any(|w| w.needs_animation());
-
         let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
@@ -237,20 +230,10 @@ impl WindowManager {
         ];
 
         // Add animation tick subscription when any window needs animation
-        if needs_animation {
-            subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
+        if any_window_needs_animation(&self.windows) {
+            subs.push(iced::time::every(std::time::Duration::from_millis(ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         Subscription::batch(subs)
-    }
-
-    fn find_next_id(&self) -> usize {
-        let used_ids: std::collections::HashSet<usize> = self.windows.values().map(|w| w.id).collect();
-        for id in 1.. {
-            if !used_ids.contains(&id) {
-                return id;
-            }
-        }
-        1
     }
 }

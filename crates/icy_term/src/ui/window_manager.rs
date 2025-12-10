@@ -4,6 +4,7 @@ use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::error_dialog;
 use icy_engine_gui::music::music::SoundThread;
+use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 use parking_lot::Mutex;
 
 use iced::{
@@ -57,7 +58,7 @@ pub enum WindowManagerMessage {
     TitleChanged(window::Id, String),
     Event(window::Id, iced::Event),
     UpdateBuffers,
-    ViewportTick,
+    AnimationTick,
 }
 
 const DEFAULT_SIZE: Size = Size::new(853.0, 597.0);
@@ -127,26 +128,10 @@ impl WindowManager {
         manager
     }
 
-    pub fn title(&self, window: window::Id) -> String {
-        let zoom_info = self.windows.get(&window).map(|w| w.get_zoom_info_string()).unwrap_or_default();
-
-        if self.windows.iter().count() == 1 {
-            return self
-                .windows
-                .get(&window)
-                .map(|window| format!("{} {}", window.title, zoom_info))
-                .unwrap_or_default();
-        }
-
+    pub fn title(&self, window_id: window::Id) -> String {
         self.windows
-            .get(&window)
-            .map(|window| {
-                if window.id < 10 {
-                    format!("{} {} - ⌘{}", window.title, zoom_info, window.id)
-                } else {
-                    format!("{} {}", window.title, zoom_info)
-                }
-            })
+            .get(&window_id)
+            .map(|w| format_window_title(w, self.windows.len()))
             .unwrap_or_default()
     }
 
@@ -181,7 +166,7 @@ impl WindowManager {
             WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
             WindowManagerMessage::WindowOpened(id) => {
                 let mut window: MainWindow = MainWindow::new(
-                    self.find_next_id(),
+                    find_next_window_id(&self.windows),
                     self.mode.clone(),
                     self.sound_thread.clone(),
                     self.addresses.clone(),
@@ -232,10 +217,7 @@ impl WindowManager {
                     (None, None) => focus_task,
                 }
             }
-            WindowManagerMessage::WindowClosed(id) => {
-                self.windows.remove(&id);
-                if self.windows.is_empty() { iced::exit() } else { Task::none() }
-            }
+            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
@@ -288,19 +270,9 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::FocusWindow(target_id) => {
-                // Find the window with the target ID number
-                for (window_id, window) in self.windows.iter() {
-                    if window.id == target_id {
-                        // Combine multiple actions to ensure the window comes to front
-                        // gain_focus() requests focus, minimize(false) ensures it's not minimized
-                        return Task::batch([window::gain_focus(*window_id), window::minimize(*window_id, false)]);
-                    }
-                }
-                Task::none()
-            }
+            WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
-            WindowManagerMessage::ViewportTick => {
+            WindowManagerMessage::AnimationTick => {
                 // Update viewport and scrollbar animations for all windows
                 for window in self.windows.values_mut() {
                     window.terminal_window.terminal.update_animations();
@@ -359,26 +331,11 @@ impl WindowManager {
             iced::time::every(std::time::Duration::from_millis(160)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
 
-        // Only subscribe to ViewportTick if any window needs animation (viewport or scrollbar)
-        let any_animating = self.windows.values().any(|w| w.terminal_window.terminal.needs_animation());
-        if any_animating {
-            subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(|_| WindowManagerMessage::ViewportTick));
+        // Only subscribe to AnimationTick if any window needs animation (viewport or scrollbar)
+        if any_window_needs_animation(&self.windows) {
+            subs.push(iced::time::every(std::time::Duration::from_millis(ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         iced::Subscription::batch(subs)
-    }
-
-    fn find_next_id(&self) -> usize {
-        let used_ids: std::collections::HashSet<usize> = self.windows.values().map(|w| w.id).collect();
-
-        // Start from 1 (or 0 if you prefer 0-based)
-        for id in 1.. {
-            if !used_ids.contains(&id) {
-                return id;
-            }
-        }
-
-        // This should never be reached, but as a fallback
-        1
     }
 }

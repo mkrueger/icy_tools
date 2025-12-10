@@ -1772,3 +1772,41 @@ impl MainWindow {
         (msg, Task::none())
     }
 }
+
+// Implement the Window trait for use with shared WindowManager helpers
+impl icy_engine_gui::Window for MainWindow {
+    type Message = Message;
+
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn title(&self) -> &str {
+        &self.title
+    }
+
+    fn get_zoom_info_string(&self) -> String {
+        let opts = self.options.lock();
+        opts.monitor_settings.scaling_mode.format_zoom_string()
+    }
+
+    fn update(&mut self, msg: Self::Message) -> Task<Self::Message> {
+        self.update(msg)
+    }
+
+    fn view(&self) -> Element<'_, Self::Message> {
+        self.view()
+    }
+
+    fn theme(&self) -> Theme {
+        self.theme()
+    }
+
+    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
+        self.handle_event(event)
+    }
+
+    fn needs_animation(&self) -> bool {
+        self.terminal_window.terminal.needs_animation()
+    }
+}

@@ -1251,3 +1251,39 @@ impl MainWindow {
         (None, Task::none())
     }
 }
+
+// Implement the Window trait for use with shared WindowManager helpers
+impl icy_engine_gui::Window for MainWindow {
+    type Message = Message;
+
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn title(&self) -> &str {
+        // Return a static reference - we need to store the title
+        // For now, just return a placeholder since title() generates dynamically
+        // The WindowManager will use format_window_title which calls title() separately
+        ""
+    }
+
+    fn update(&mut self, msg: Self::Message) -> Task<Self::Message> {
+        self.update(msg)
+    }
+
+    fn view(&self) -> Element<'_, Self::Message> {
+        self.view()
+    }
+
+    fn theme(&self) -> Theme {
+        self.theme()
+    }
+
+    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
+        self.handle_event(event)
+    }
+
+    fn needs_animation(&self) -> bool {
+        self.needs_animation()
+    }
+}

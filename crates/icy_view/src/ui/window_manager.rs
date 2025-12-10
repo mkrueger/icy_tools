@@ -6,6 +6,7 @@ use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, wi
 
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
+use icy_engine_gui::{any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 use icy_view_gui::{MainWindow, Message, Options};
 
 use crate::load_window_icon;
@@ -95,22 +96,10 @@ impl WindowManager {
         (manager, task)
     }
 
-    pub fn title(&self, window: window::Id) -> String {
-        let zoom_info = self.windows.get(&window).map(|w| w.get_zoom_info_string()).unwrap_or_default();
-
-        if self.windows.iter().count() == 1 {
-            return self.windows.get(&window).map(|w| format!("{} {}", w.title, zoom_info)).unwrap_or_default();
-        }
-
+    pub fn title(&self, window_id: window::Id) -> String {
         self.windows
-            .get(&window)
-            .map(|w| {
-                if w.id < 10 {
-                    format!("{} {} - ⌘{}", w.title, zoom_info, w.id)
-                } else {
-                    format!("{} {}", w.title, zoom_info)
-                }
-            })
+            .get(&window_id)
+            .map(|w| format_window_title(w, self.windows.len()))
             .unwrap_or_default()
     }
 
@@ -146,8 +135,13 @@ impl WindowManager {
             WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
 
             WindowManagerMessage::WindowOpened(id) => {
-                let (window, initial_message) =
-                    MainWindow::new(self.find_next_id(), self.initial_path.take(), self.options.clone(), self.auto_scroll, self.bps);
+                let (window, initial_message) = MainWindow::new(
+                    find_next_window_id(&self.windows),
+                    self.initial_path.take(),
+                    self.options.clone(),
+                    self.auto_scroll,
+                    self.bps,
+                );
 
                 self.windows.insert(id, window);
 
@@ -159,10 +153,7 @@ impl WindowManager {
                 }
             }
 
-            WindowManagerMessage::WindowClosed(id) => {
-                self.windows.remove(&id);
-                if self.windows.is_empty() { iced::exit() } else { Task::none() }
-            }
+            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
@@ -196,15 +187,7 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::FocusWindow(target_id) => {
-                for (window_id, window) in self.windows.iter() {
-                    if window.id == target_id {
-                        // Combine multiple actions to ensure the window comes to front
-                        return Task::batch([window::gain_focus(*window_id), window::minimize(*window_id, false)]);
-                    }
-                }
-                Task::none()
-            }
+            WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
             WindowManagerMessage::AnimationTick => {
                 // Forward animation tick to all windows that need it
@@ -235,7 +218,7 @@ impl WindowManager {
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         // Check if any window needs animation
-        let needs_animation = self.windows.values().any(|w| w.needs_animation());
+        let needs_animation = any_window_needs_animation(&self.windows);
 
         let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
@@ -287,15 +270,5 @@ impl WindowManager {
         }
 
         Subscription::batch(subs)
-    }
-
-    fn find_next_id(&self) -> usize {
-        let used_ids: std::collections::HashSet<usize> = self.windows.values().map(|w| w.id).collect();
-        for id in 1.. {
-            if !used_ids.contains(&id) {
-                return id;
-            }
-        }
-        1
     }
 }

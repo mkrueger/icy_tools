@@ -8,6 +8,8 @@ use iced::{
     window,
 };
 
+use icy_engine_gui::check_window_focus_key;
+
 use crate::{
     Args, load_window_icon,
     ui::{MainWindow, MainWindowMode, Message},
@@ -115,13 +117,10 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::FocusWindow(target_id) => {
-                // Find the window with the target ID number (1-indexed position)
-                for (i, (window_id, _window)) in self.windows.iter().enumerate() {
-                    if i + 1 == target_id {
-                        // Combine multiple actions to ensure the window comes to front
-                        return Task::batch([window::gain_focus(*window_id), window::minimize(*window_id, false)]);
-                    }
+            WindowManagerMessage::FocusWindow(_target_id) => {
+                // icy_mail only supports single window, focus it if it exists
+                if let Some(window_id) = self.windows.keys().next() {
+                    return window::gain_focus(*window_id);
                 }
                 Task::none()
             }
@@ -157,7 +156,7 @@ impl WindowManager {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window
-                        if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
+                        if let Some(target_id) = check_window_focus_key(key, modifiers) {
                             return Some(WindowManagerMessage::FocusWindow(target_id));
                         }
 
