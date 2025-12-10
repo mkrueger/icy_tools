@@ -212,6 +212,7 @@ impl BitFontMenu {
                 MenuItem::cmd(&cmd::FILE_NEW, Message::NewFile),
                 MenuItem::cmd(&cmd::FILE_OPEN, Message::OpenFile),
                 MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
+                MenuItem::simple(fl!("menu-export-font"), "", Message::ShowExportFontDialog),
                 // Recent files submenu handled separately in view
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),

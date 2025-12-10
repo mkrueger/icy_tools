@@ -191,7 +191,7 @@ pub struct SettingsDialogWrapperWithTheme<M, F, E> {
 
 impl<M, F, E> Dialog<M> for SettingsDialogWrapperWithTheme<M, F, E> {
     // Delegate all methods to inner...
-    
+
     fn theme(&self) -> Option<iced::Theme> {
         Some(self.inner.state.get_preview_theme())
     }
@@ -200,4 +200,3 @@ impl<M, F, E> Dialog<M> for SettingsDialogWrapperWithTheme<M, F, E> {
 
 This is rare - most dialogs don't need it.
 */
-

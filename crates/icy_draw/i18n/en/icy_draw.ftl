@@ -613,3 +613,13 @@ font-import-xb-font-1=Font 1
 font-import-xb-font-2=Font 2
 font-import-select-font=Select Font:
 font-import-image-info=Image will be converted to a 16×16 character grid
+
+# Font Export Dialog
+menu-export-font=Export Font…
+font-export-format=Format
+font-export-com-format=COM Type
+font-export-path=Export to
+font-export-no-path=No path selected
+font-export-button=Export
+font-export-copy-button=Copy to Clipboard
+font-export-ansi-dcs-info=Will be copied to clipboard as CTerm DCS sequence

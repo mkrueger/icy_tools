@@ -152,9 +152,14 @@ impl WindowManager {
 
                 // Pass event to window for other handling
                 if let Some(window) = self.windows.get_mut(&window_id) {
-                    if let Some(msg) = window.handle_event(&event) {
-                        return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
-                    }
+                    let (msg_opt, task) = window.handle_event(&event);
+                    let msg_task = if let Some(msg) = msg_opt {
+                        Task::done(WindowManagerMessage::WindowMessage(window_id, msg))
+                    } else {
+                        Task::none()
+                    };
+                    let dialog_task = task.map(move |msg| WindowManagerMessage::WindowMessage(window_id, msg));
+                    return Task::batch([msg_task, dialog_task]);
                 }
                 Task::none()
             }

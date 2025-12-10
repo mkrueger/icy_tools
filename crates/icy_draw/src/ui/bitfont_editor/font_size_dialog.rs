@@ -1,6 +1,7 @@
 //! Font Size Dialog for BitFont Editor
 //!
 //! Allows changing the width and height of the font.
+//! Implements the Dialog trait from icy_engine_gui for stack-based dialog management.
 
 use iced::{
     Alignment, Element, Length,
@@ -9,11 +10,12 @@ use iced::{
 use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, dialog_title, left_label_small, modal_container,
-    modal_overlay, primary_button, secondary_button, separator,
+    DIALOG_SPACING, DIALOG_WIDTH_SMALL, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, dialog_title, left_label_small,
+    modal_container, primary_button, secondary_button, separator,
 };
 
 use crate::fl;
+use crate::ui::Message;
 
 /// Messages for the Font Size dialog
 #[derive(Debug, Clone)]
@@ -60,44 +62,16 @@ impl FontSizeDialog {
     pub fn is_valid(&self) -> bool {
         self.parsed_width().is_some() && self.parsed_height().is_some()
     }
+}
 
-    /// Update the dialog state
-    pub fn update(&mut self, message: FontSizeDialogMessage) -> Option<FontSizeDialogResult> {
-        match message {
-            FontSizeDialogMessage::SetWidth(w) => {
-                self.width = w;
-                None
-            }
-            FontSizeDialogMessage::SetHeight(h) => {
-                self.height = h;
-                None
-            }
-            FontSizeDialogMessage::Apply => {
-                if let (Some(w), Some(h)) = (self.parsed_width(), self.parsed_height()) {
-                    Some(FontSizeDialogResult::Apply(w, h))
-                } else {
-                    None
-                }
-            }
-            FontSizeDialogMessage::Cancel => Some(FontSizeDialogResult::Cancel),
-        }
-    }
-
-    /// Build the dialog view
-    pub fn view<'a, Message: 'a + Clone + 'static>(
-        &'a self,
-        background: Element<'a, Message>,
-        on_message: impl Fn(FontSizeDialogMessage) -> Message + 'a + Clone,
-    ) -> Element<'a, Message> {
+impl Dialog<Message> for FontSizeDialog {
+    fn view(&self) -> Element<'_, Message> {
         let title = dialog_title(fl!("menu-set-font-size").trim_end_matches('…').to_string());
 
         // Width input
         let width_valid = self.parsed_width().is_some();
         let width_input = text_input("1-8", &self.width)
-            .on_input({
-                let on_message = on_message.clone();
-                move |s| on_message(FontSizeDialogMessage::SetWidth(s))
-            })
+            .on_input(|s| Message::FontSizeDialog(FontSizeDialogMessage::SetWidth(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -116,10 +90,7 @@ impl FontSizeDialog {
         // Height input
         let height_valid = self.parsed_height().is_some();
         let height_input = text_input("1-32", &self.height)
-            .on_input({
-                let on_message = on_message.clone();
-                move |s| on_message(FontSizeDialogMessage::SetHeight(s))
-            })
+            .on_input(|s| Message::FontSizeDialog(FontSizeDialogMessage::SetHeight(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -143,35 +114,58 @@ impl FontSizeDialog {
         let can_apply = self.is_valid();
 
         let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(on_message(FontSizeDialogMessage::Cancel))).into(),
-            primary_button(format!("{}", ButtonType::Ok), can_apply.then(|| on_message(FontSizeDialogMessage::Apply))).into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontSizeDialog(FontSizeDialogMessage::Cancel))).into(),
+            primary_button(
+                format!("{}", ButtonType::Ok),
+                can_apply.then(|| Message::FontSizeDialog(FontSizeDialogMessage::Apply)),
+            )
+            .into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
         let button_area = dialog_area(buttons.into());
 
-        let modal = modal_container(
+        modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
             DIALOG_WIDTH_SMALL,
-        );
-
-        let modal_element: Element<'a, Message> = container(modal)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into();
-
-        modal_overlay(background, modal_element)
+        )
+        .into()
     }
-}
 
-/// Result of the Font Size dialog
-#[derive(Debug, Clone)]
-pub enum FontSizeDialogResult {
-    /// Apply new dimensions (width, height)
-    Apply(i32, i32),
-    /// Cancel the dialog
-    Cancel,
+    fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
+        let Message::FontSizeDialog(msg) = message else {
+            return None;
+        };
+        match msg {
+            FontSizeDialogMessage::SetWidth(w) => {
+                self.width = w.clone();
+                Some(DialogAction::None)
+            }
+            FontSizeDialogMessage::SetHeight(h) => {
+                self.height = h.clone();
+                Some(DialogAction::None)
+            }
+            FontSizeDialogMessage::Apply => {
+                if let (Some(w), Some(h)) = (self.parsed_width(), self.parsed_height()) {
+                    Some(DialogAction::CloseWith(Message::FontSizeApply(w, h)))
+                } else {
+                    Some(DialogAction::None)
+                }
+            }
+            FontSizeDialogMessage::Cancel => Some(DialogAction::Close),
+        }
+    }
+
+    fn request_cancel(&mut self) -> DialogAction<Message> {
+        DialogAction::Close
+    }
+
+    fn request_confirm(&mut self) -> DialogAction<Message> {
+        if let (Some(w), Some(h)) = (self.parsed_width(), self.parsed_height()) {
+            DialogAction::CloseWith(Message::FontSizeApply(w, h))
+        } else {
+            DialogAction::None
+        }
+    }
 }

@@ -23,9 +23,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    Ident, ItemStruct, Token, Type,
     parse::{Parse, ParseStream},
-    parse_macro_input,
+    parse_macro_input, Ident, ItemStruct, Token, Type,
 };
 
 /// Configuration for the dialog wrapper macro
@@ -47,7 +46,7 @@ impl Parse for DialogWrapperConfig {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
             input.parse::<Token![=]>()?;
-            
+
             match key.to_string().as_str() {
                 "internal_message" => {
                     internal_message = Some(input.parse()?);
@@ -83,7 +82,7 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
     let close_on_blur = config.close_on_blur;
 
     let state_name_str = state_name.to_string();
-    
+
     // Generate wrapper name from state name:
     // FooState -> FooWrapper, FooDialogState -> FooDialogWrapper
     let wrapper_name_str = if state_name_str.ends_with("State") {
@@ -113,54 +112,53 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
     let state_fields = &state_struct.fields;
 
     // Generate callback field definitions - always on_confirm(T) and on_cancel()
-    let (on_confirm_field, on_confirm_builder, on_confirm_init, success_action) = 
-        if let Some(result_type) = &config.result_type {
-            (
-                quote! { on_confirm: Option<Box<dyn Fn(#result_type) -> M + Send>> },
-                quote! {
-                    /// Set callback for successful confirmation.
-                    /// Called with the result value when dialog completes successfully.
-                    pub fn on_confirm<G>(mut self, callback: G) -> Self
-                    where
-                        G: Fn(#result_type) -> M + Send + 'static,
-                    {
-                        self.on_confirm = Some(Box::new(callback));
-                        self
-                    }
-                },
-                quote! { on_confirm: None },
-                quote! {
-                    if let Some(ref callback) = self.on_confirm {
-                        icy_engine_gui::ui::DialogAction::CloseWith(callback(value))
-                    } else {
-                        icy_engine_gui::ui::DialogAction::Close
-                    }
-                },
-            )
-        } else {
-            // No result type - on_confirm takes no argument, value is ()
-            (
-                quote! { on_confirm: Option<Box<dyn Fn() -> M + Send>> },
-                quote! {
-                    /// Set callback for successful confirmation.
-                    pub fn on_confirm<G>(mut self, callback: G) -> Self
-                    where
-                        G: Fn() -> M + Send + 'static,
-                    {
-                        self.on_confirm = Some(Box::new(callback));
-                        self
-                    }
-                },
-                quote! { on_confirm: None },
-                quote! {
-                    if let Some(ref callback) = self.on_confirm {
-                        icy_engine_gui::ui::DialogAction::CloseWith(callback())
-                    } else {
-                        icy_engine_gui::ui::DialogAction::Close
-                    }
-                },
-            )
-        };
+    let (on_confirm_field, on_confirm_builder, on_confirm_init, success_action) = if let Some(result_type) = &config.result_type {
+        (
+            quote! { on_confirm: Option<Box<dyn Fn(#result_type) -> M + Send>> },
+            quote! {
+                /// Set callback for successful confirmation.
+                /// Called with the result value when dialog completes successfully.
+                pub fn on_confirm<G>(mut self, callback: G) -> Self
+                where
+                    G: Fn(#result_type) -> M + Send + 'static,
+                {
+                    self.on_confirm = Some(Box::new(callback));
+                    self
+                }
+            },
+            quote! { on_confirm: None },
+            quote! {
+                if let Some(ref callback) = self.on_confirm {
+                    icy_engine_gui::ui::DialogAction::CloseWith(callback(value))
+                } else {
+                    icy_engine_gui::ui::DialogAction::Close
+                }
+            },
+        )
+    } else {
+        // No result type - on_confirm takes no argument, value is ()
+        (
+            quote! { on_confirm: Option<Box<dyn Fn() -> M + Send>> },
+            quote! {
+                /// Set callback for successful confirmation.
+                pub fn on_confirm<G>(mut self, callback: G) -> Self
+                where
+                    G: Fn() -> M + Send + 'static,
+                {
+                    self.on_confirm = Some(Box::new(callback));
+                    self
+                }
+            },
+            quote! { on_confirm: None },
+            quote! {
+                if let Some(ref callback) = self.on_confirm {
+                    icy_engine_gui::ui::DialogAction::CloseWith(callback())
+                } else {
+                    icy_engine_gui::ui::DialogAction::Close
+                }
+            },
+        )
+    };
 
     // Generate request_cancel implementation - just calls on_cancel if set
     let request_cancel_impl = quote! {

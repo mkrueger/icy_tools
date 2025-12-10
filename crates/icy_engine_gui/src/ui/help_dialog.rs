@@ -378,11 +378,7 @@ where
     F: Fn(HelpDialogMessage) -> M + Clone + 'static,
     E: Fn(&M) -> Option<&HelpDialogMessage> + Clone + 'static,
 {
-    HelpDialogWrapper::new(
-        HelpDialogState::new(title, subtitle).with_commands(commands),
-        on_message,
-        extract_message,
-    )
+    HelpDialogWrapper::new(HelpDialogState::new(title, subtitle).with_commands(commands), on_message, extract_message)
 }
 
 /// Create a help dialog with a custom category translator.

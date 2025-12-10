@@ -104,8 +104,6 @@ pub struct BitFontEditor {
     preview_terminal: Option<Terminal>,
     /// Monitor settings applied to preview terminal
     preview_monitor: MonitorSettings,
-    /// Font size dialog state (None if not shown)
-    font_size_dialog: Option<FontSizeDialog>,
 }
 
 impl BitFontEditor {
@@ -134,7 +132,6 @@ impl BitFontEditor {
             preview_screen: None,
             preview_terminal: None,
             preview_monitor: MonitorSettings::default(),
-            font_size_dialog: None,
         }
     }
 
@@ -167,7 +164,6 @@ impl BitFontEditor {
             preview_screen: None,
             preview_terminal: None,
             preview_monitor: MonitorSettings::default(),
-            font_size_dialog: None,
             state,
         })
     }
@@ -195,6 +191,15 @@ impl BitFontEditor {
     #[allow(dead_code)]
     pub(crate) fn font_height(&self) -> i32 {
         self.state.font_height()
+    }
+
+    /// Resize the font to new dimensions
+    pub fn resize_font(&mut self, width: i32, height: i32) {
+        if self.state.resize_font(width, height).is_ok() {
+            self.target_width = width;
+            self.target_height = height;
+            self.refresh_targets();
+        }
     }
 
     pub(crate) fn cursor_pos(&self) -> (i32, i32) {
@@ -701,29 +706,9 @@ impl BitFontEditor {
                 self.show_preview = false;
             }
             BitFontEditorMessage::PreviewTerminal(_msg) => {}
-            BitFontEditorMessage::ShowFontSizeDialog => {
-                let (width, height) = self.state.font_size();
-                self.font_size_dialog = Some(FontSizeDialog::new(width, height));
-            }
-            BitFontEditorMessage::FontSizeDialog(msg) => {
-                if let Some(dialog) = &mut self.font_size_dialog {
-                    if let Some(result) = dialog.update(msg) {
-                        match result {
-                            FontSizeDialogResult::Apply(width, height) => {
-                                let _ = self.state.resize_font(width, height);
-                                self.target_width = width;
-                                self.target_height = height;
-                                self.refresh_targets();
-                                self.invalidate_caches();
-                                self.font_size_dialog = None;
-                            }
-                            FontSizeDialogResult::Cancel => {
-                                self.font_size_dialog = None;
-                            }
-                        }
-                    }
-                }
-            }
+            // ShowFontSizeDialog and FontSizeDialog are now handled by MainWindow's DialogStack
+            BitFontEditorMessage::ShowFontSizeDialog => {}
+            BitFontEditorMessage::FontSizeDialog(_) => {}
 
             // ═══════════════════════════════════════════════════════════════
             // Generic keyboard event handling (panel-agnostic)
@@ -1313,12 +1298,8 @@ impl BitFontEditor {
         .spacing(0)
         .into();
 
-        // Show font size dialog if active
-        if let Some(dialog) = &self.font_size_dialog {
-            dialog.view(main_content, BitFontEditorMessage::FontSizeDialog)
-        } else {
-            main_content
-        }
+        // Dialog is now rendered by MainWindow's DialogStack
+        main_content
     }
 
     /// Build the glyph selector view - compact 16x16 grid with hex labels
@@ -1492,21 +1473,7 @@ impl BitFontEditor {
     }
 
     pub(crate) fn handle_event(&self, event: &iced::Event) -> Option<BitFontEditorMessage> {
-        // If font size dialog is open, handle Escape and Enter
-        if self.font_size_dialog.is_some() {
-            if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
-                match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                        return Some(BitFontEditorMessage::FontSizeDialog(FontSizeDialogMessage::Cancel));
-                    }
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
-                        return Some(BitFontEditorMessage::FontSizeDialog(FontSizeDialogMessage::Apply));
-                    }
-                    _ => {}
-                }
-            }
-            return None;
-        }
+        // Font size dialog events are now handled by MainWindow's DialogStack
 
         // If in preview mode, any key or mouse click exits the preview
         if self.show_preview {

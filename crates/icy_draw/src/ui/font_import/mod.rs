@@ -20,12 +20,13 @@ use iced::{
 };
 use icy_engine::BitFont;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, dialog_title, left_label_small, modal_container,
-    modal_overlay, primary_button, secondary_button, separator,
+    DIALOG_SPACING, DIALOG_WIDTH_LARGE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
+    left_label_small, modal_container, primary_button, secondary_button, separator,
 };
 use icy_engine_gui::{ButtonType, settings::effect_box};
 
 use crate::fl;
+use crate::ui::Message;
 
 /// Type of font source being imported
 #[derive(Debug, Clone, PartialEq)]
@@ -56,15 +57,6 @@ pub enum FontImportMessage {
     /// Import the font
     Import,
     /// Cancel the dialog
-    Cancel,
-}
-
-/// Result of the Font Import dialog
-#[derive(Debug, Clone)]
-pub enum FontImportResult {
-    /// Successfully imported a font
-    Imported(BitFont),
-    /// User cancelled
     Cancel,
 }
 
@@ -309,8 +301,8 @@ impl FontImportDialog {
         }
     }
 
-    /// Update the dialog state
-    pub fn update(&mut self, message: FontImportMessage) -> (Option<FontImportResult>, Task<FontImportMessage>) {
+    /// Update the dialog state (internal method)
+    fn update_internal(&mut self, message: &FontImportMessage) -> Option<DialogAction<Message>> {
         match message {
             FontImportMessage::SetFilePath(path) => {
                 self.file_path = path.clone();
@@ -318,106 +310,95 @@ impl FontImportDialog {
                 if path_buf.exists() {
                     self.load_file(&path_buf);
                 }
-                (None, Task::none())
+                Some(DialogAction::None)
             }
             FontImportMessage::Browse => {
                 // Return a task to open file dialog
-                (
-                    None,
-                    Task::perform(
-                        async {
-                            let file = rfd::AsyncFileDialog::new()
-                                .add_filter(
-                                    "All Fonts",
-                                    &[
-                                        // Native fonts
-                                        "yaff", "psf", "psfu", "f08", "f14", "f16", "f19", "f06", "f07", "f09", "f10", "f11", "f12", "f13", "f15", "f17", "f18",
-                                        "f20", "f22", "f24", "f26", "f28", "f30", "f32", // TrueType/OpenType
-                                        "ttf", "otf", "ttc", "otc", // XBin
-                                        "xb",  // DOS COM
-                                        "com", // Images
-                                        "png", "jpg", "jpeg", "gif", "bmp", "webp",
-                                    ],
-                                )
-                                .add_filter("Font Files", &["yaff", "psf", "psfu", "f08", "f14", "f16", "f19"])
-                                .add_filter("TrueType/OpenType", &["ttf", "otf", "ttc", "otc"])
-                                .add_filter("XBin Files", &["xb"])
-                                .add_filter("DOS COM Fonts", &["com"])
-                                .add_filter("Image Files", &["png", "jpg", "jpeg", "gif", "bmp", "webp"])
-                                .add_filter("All Files", &["*"])
-                                .set_title("Import Font")
-                                .pick_file()
-                                .await;
-                            file.map(|f| f.path().to_path_buf())
-                        },
-                        FontImportMessage::FileSelected,
-                    ),
-                )
+                Some(DialogAction::RunTask(Task::perform(
+                    async {
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter(
+                                "All Fonts",
+                                &[
+                                    // Native fonts
+                                    "yaff", "psf", "psfu", "f08", "f14", "f16", "f19", "f06", "f07", "f09", "f10", "f11", "f12", "f13", "f15", "f17", "f18",
+                                    "f20", "f22", "f24", "f26", "f28", "f30", "f32", // TrueType/OpenType
+                                    "ttf", "otf", "ttc", "otc", // XBin
+                                    "xb",  // DOS COM
+                                    "com", // Images
+                                    "png", "jpg", "jpeg", "gif", "bmp", "webp",
+                                ],
+                            )
+                            .add_filter("Font Files", &["yaff", "psf", "psfu", "f08", "f14", "f16", "f19"])
+                            .add_filter("TrueType/OpenType", &["ttf", "otf", "ttc", "otc"])
+                            .add_filter("XBin Files", &["xb"])
+                            .add_filter("DOS COM Fonts", &["com"])
+                            .add_filter("Image Files", &["png", "jpg", "jpeg", "gif", "bmp", "webp"])
+                            .add_filter("All Files", &["*"])
+                            .set_title("Import Font")
+                            .pick_file()
+                            .await;
+                        file.map(|f| f.path().to_path_buf())
+                    },
+                    |path| Message::FontImport(FontImportMessage::FileSelected(path)),
+                )))
             }
             FontImportMessage::FileSelected(path) => {
                 if let Some(path) = path {
                     self.file_path = path.to_string_lossy().to_string();
-                    self.load_file(&path);
+                    self.load_file(path);
                 }
-                (None, Task::none())
+                Some(DialogAction::None)
             }
             FontImportMessage::SelectXBFont(index) => {
-                self.xb_selected_font = index;
-                if index < self.xb_fonts.len() {
-                    self.preview_font = Some(self.xb_fonts[index].clone());
+                self.xb_selected_font = *index;
+                if *index < self.xb_fonts.len() {
+                    self.preview_font = Some(self.xb_fonts[*index].clone());
                 }
-                (None, Task::none())
+                Some(DialogAction::None)
             }
             FontImportMessage::SetFontWidth(w) => {
-                self.image_width = w;
+                self.image_width = w.clone();
                 self.reload_image();
-                (None, Task::none())
+                Some(DialogAction::None)
             }
             FontImportMessage::SetFontHeight(h) => {
-                self.image_height = h;
+                self.image_height = h.clone();
                 self.reload_image();
-                (None, Task::none())
+                Some(DialogAction::None)
             }
             FontImportMessage::Import => {
                 if let Some(font) = self.preview_font.take() {
-                    (Some(FontImportResult::Imported(font)), Task::none())
+                    Some(DialogAction::CloseWith(Message::FontImported(font)))
                 } else {
-                    (None, Task::none())
+                    Some(DialogAction::None)
                 }
             }
-            FontImportMessage::Cancel => (Some(FontImportResult::Cancel), Task::none()),
+            FontImportMessage::Cancel => Some(DialogAction::Close),
         }
     }
+}
 
-    /// Build the dialog view
-    pub fn view<'a, Message: 'a + Clone + 'static>(
-        &'a self,
-        background: Element<'a, Message>,
-        on_message: impl Fn(FontImportMessage) -> Message + 'a + Clone,
-    ) -> Element<'a, Message> {
+impl Dialog<Message> for FontImportDialog {
+    fn view(&self) -> Element<'_, Message> {
         let title = dialog_title(fl!("menu-import-font").trim_end_matches('…').to_string());
 
         // === FILE PATH ROW ===
         let placeholder = fl!("font-import-file-placeholder");
         let file_input = text_input(&placeholder, &self.file_path)
-            .on_input({
-                let on_message = on_message.clone();
-                move |s| on_message(FontImportMessage::SetFilePath(s))
-            })
+            .on_input(|s| Message::FontImport(FontImportMessage::SetFilePath(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let browse_button = iced::widget::button(text(fl!("font-import-browse")).size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .on_press(on_message(FontImportMessage::Browse));
+        let browse_btn = browse_button(Message::FontImport(FontImportMessage::Browse));
 
-        let file_row = row![left_label_small(fl!("font-import-file")), file_input, browse_button,]
+        let file_row = row![left_label_small(fl!("font-import-file")), file_input, browse_btn,]
             .spacing(DIALOG_SPACING)
             .align_y(Alignment::Center);
 
         // === PREVIEW AND OPTIONS ===
-        let preview_element = self.view_preview();
-        let options_element = self.view_options(&on_message);
+        let preview_element = self.view_preview_internal();
+        let options_element = self.view_options_internal();
 
         let preview_options_row = row![
             container(preview_element).width(Length::FillPortion(3)),
@@ -427,7 +408,7 @@ impl FontImportDialog {
         .spacing(DIALOG_SPACING);
 
         // === ERROR MESSAGE ===
-        let error_element: Element<'a, Message> = if let Some(err) = &self.error {
+        let error_element: Element<'_, Message> = if let Some(err) = &self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
@@ -446,30 +427,43 @@ impl FontImportDialog {
         // === BUTTONS ===
         let can_import = self.can_import();
         let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(on_message(FontImportMessage::Cancel))).into(),
-            primary_button(fl!("font-import-button"), can_import.then(|| on_message(FontImportMessage::Import))).into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontImport(FontImportMessage::Cancel))).into(),
+            primary_button(fl!("font-import-button"), can_import.then(|| Message::FontImport(FontImportMessage::Import))).into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
         let button_area = dialog_area(buttons.into());
 
-        let modal = modal_container(
+        modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
             DIALOG_WIDTH_LARGE,
-        );
-
-        let modal_element: Element<'a, Message> = container(modal)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into();
-
-        modal_overlay(background, modal_element)
+        )
+        .into()
     }
 
+    fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
+        let Message::FontImport(msg) = message else {
+            return None;
+        };
+        self.update_internal(msg)
+    }
+
+    fn request_cancel(&mut self) -> DialogAction<Message> {
+        DialogAction::Close
+    }
+
+    fn request_confirm(&mut self) -> DialogAction<Message> {
+        if let Some(font) = self.preview_font.take() {
+            DialogAction::CloseWith(Message::FontImported(font))
+        } else {
+            DialogAction::None
+        }
+    }
+}
+
+impl FontImportDialog {
     /// View for the font preview (charset-like grid)
-    fn view_preview<'a, Message: 'a>(&'a self) -> Element<'a, Message> {
+    fn view_preview_internal(&self) -> Element<'_, Message> {
         use iced::widget::Canvas;
 
         if let Some(font) = &self.preview_font {
@@ -505,7 +499,7 @@ impl FontImportDialog {
     }
 
     /// View for options (depends on source type)
-    fn view_options<'a, Message: 'a + Clone + 'static>(&'a self, on_message: &(impl Fn(FontImportMessage) -> Message + 'a + Clone)) -> Element<'a, Message> {
+    fn view_options_internal(&self) -> Element<'_, Message> {
         match &self.source_type {
             Some(FontSourceType::NativeFont) => {
                 // Simple info for native fonts
@@ -531,12 +525,9 @@ impl FontImportDialog {
 
                 let selected = options.get(self.xb_selected_font).cloned();
 
-                let picker = pick_list(options, selected, {
-                    let on_message = on_message.clone();
-                    move |s: String| {
-                        let index = if s == fl!("font-import-xb-font-2") { 1 } else { 0 };
-                        on_message(FontImportMessage::SelectXBFont(index))
-                    }
+                let picker = pick_list(options, selected, |s: String| {
+                    let index = if s == fl!("font-import-xb-font-2") { 1 } else { 0 };
+                    Message::FontImport(FontImportMessage::SelectXBFont(index))
                 })
                 .width(Length::Fill);
 
@@ -555,18 +546,12 @@ impl FontImportDialog {
                 let height_valid = self.parsed_font_height().is_some();
 
                 let width_input = text_input("4-16", &self.image_width)
-                    .on_input({
-                        let on_message = on_message.clone();
-                        move |s| on_message(FontImportMessage::SetFontWidth(s))
-                    })
+                    .on_input(|s| Message::FontImport(FontImportMessage::SetFontWidth(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 
                 let height_input = text_input("4-32", &self.image_height)
-                    .on_input({
-                        let on_message = on_message.clone();
-                        move |s| on_message(FontImportMessage::SetFontHeight(s))
-                    })
+                    .on_input(|s| Message::FontImport(FontImportMessage::SetFontHeight(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 

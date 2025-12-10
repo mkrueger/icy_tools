@@ -77,13 +77,10 @@
 #[macro_export]
 macro_rules! dialog_msg {
     ($variant:path) => {
-        (
-            $variant,
-            |msg: &_| match msg {
-                $variant(inner) => Some(inner),
-                _ => None,
-            },
-        )
+        ($variant, |msg: &_| match msg {
+            $variant(inner) => Some(inner),
+            _ => None,
+        })
     };
 }
 

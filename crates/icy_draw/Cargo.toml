@@ -39,7 +39,11 @@ icy_engine_edit = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
+
+# Encoding
+base64 = { workspace = true }
 codepages = { workspace = true }
+libyaff = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

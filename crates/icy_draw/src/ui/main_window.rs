@@ -15,7 +15,7 @@ use icy_engine::formats::{BitFontFormat, FileFormat};
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::command_handlers;
 use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
-use icy_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogType};
+use icy_engine_gui::ui::{DialogStack, error_dialog};
 
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
@@ -279,10 +279,19 @@ pub enum Message {
     // BitFont Editor messages
     BitFontEditor(BitFontEditorMessage),
 
+    // Font Size Dialog (used by BitFont Editor)
+    FontSizeDialog(super::bitfont_editor::FontSizeDialogMessage),
+    FontSizeApply(i32, i32),
+
     // Font Import Dialog
     ShowImportFontDialog,
     FontImport(super::font_import::FontImportMessage),
     FontImported(icy_engine::BitFont),
+
+    // Font Export Dialog
+    ShowExportFontDialog,
+    FontExport(super::font_export::FontExportMessage),
+    FontExported,
 
     // Internal
     Tick,
@@ -347,11 +356,8 @@ pub struct MainWindow {
     /// Show right panel (layers, minimap)
     show_right_panel: bool,
 
-    /// Error dialog state (title, message) - None if no dialog
-    error_dialog: Option<(String, String)>,
-
-    /// Font import dialog state
-    font_import_dialog: Option<super::font_import::FontImportDialog>,
+    /// Dialog stack for modal dialogs
+    dialogs: DialogStack<Message>,
 
     /// Command set for hotkey handling
     commands: CommandSet,
@@ -362,7 +368,7 @@ pub struct MainWindow {
 
 impl MainWindow {
     pub fn new(id: usize, path: Option<PathBuf>, options: Arc<Mutex<SharedOptions>>) -> Self {
-        let (mode_state, error_dialog) = if let Some(ref p) = path {
+        let (mode_state, initial_error) = if let Some(ref p) = path {
             // Determine mode based on file extension
             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
 
@@ -394,6 +400,11 @@ impl MainWindow {
 
         let last_save = mode_state.undo_stack_len();
 
+        let mut dialogs = DialogStack::new();
+        if let Some((title, message)) = initial_error {
+            dialogs.push(error_dialog(title, message, |_| Message::CloseDialog));
+        }
+
         Self {
             id,
             mode_state,
@@ -401,8 +412,7 @@ impl MainWindow {
             menu_state: MenuBarState::new(),
             show_left_panel: true,
             show_right_panel: true,
-            error_dialog,
-            font_import_dialog: None,
+            dialogs,
             commands: create_draw_commands(),
             last_save,
         }
@@ -443,6 +453,11 @@ impl MainWindow {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        // Route messages to dialogs first
+        if let Some(task) = self.dialogs.update(&message) {
+            return task;
+        }
+
         match message {
             Message::NewFile => {
                 // Create new ANSI document
@@ -495,7 +510,11 @@ impl MainWindow {
                             self.options.lock().recent_files.add_recent_file(&path);
                         }
                         Err(e) => {
-                            self.error_dialog = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", path.display(), e)));
+                            self.dialogs.push(error_dialog(
+                                "Error Loading File",
+                                format!("Failed to load '{}': {}", path.display(), e),
+                                |_| Message::CloseDialog,
+                            ));
                         }
                     }
                 } else {
@@ -508,18 +527,22 @@ impl MainWindow {
                             self.options.lock().recent_files.add_recent_file(&path);
                         }
                         Err(e) => {
-                            self.error_dialog = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", path.display(), e)));
+                            self.dialogs.push(error_dialog(
+                                "Error Loading File",
+                                format!("Failed to load '{}': {}", path.display(), e),
+                                |_| Message::CloseDialog,
+                            ));
                         }
                     }
                 }
                 Task::none()
             }
             Message::FileLoadError(title, error) => {
-                self.error_dialog = Some((title, error));
+                self.dialogs.push(error_dialog(title, error, |_| Message::CloseDialog));
                 Task::none()
             }
             Message::CloseDialog => {
-                self.error_dialog = None;
+                // Dialog already closed by DialogStack
                 Task::none()
             }
             Message::SaveFile => {
@@ -530,7 +553,7 @@ impl MainWindow {
                             self.mark_saved();
                         }
                         Err(e) => {
-                            self.error_dialog = Some(("Error Saving File".to_string(), e));
+                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
                         }
                     }
                     Task::none()
@@ -580,7 +603,7 @@ impl MainWindow {
                         self.options.lock().recent_files.add_recent_file(&path);
                     }
                     Err(e) => {
-                        self.error_dialog = Some(("Error Saving File".to_string(), e));
+                        self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
                     }
                 }
                 Task::none()
@@ -715,11 +738,29 @@ impl MainWindow {
                 Task::none()
             }
             Message::BitFontEditor(msg) => {
+                // Intercept ShowFontSizeDialog to push onto dialog stack
+                if matches!(msg, BitFontEditorMessage::ShowFontSizeDialog) {
+                    if let ModeState::BitFont(editor) = &self.mode_state {
+                        let (width, height) = editor.font_size();
+                        self.dialogs.push(super::bitfont_editor::FontSizeDialog::new(width, height));
+                    }
+                    return Task::none();
+                }
+
                 if let ModeState::BitFont(editor) = &mut self.mode_state {
                     editor.update(msg).map(Message::BitFontEditor)
                 } else {
                     Task::none()
                 }
+            }
+            // Font Size Dialog messages are routed through DialogStack::update above
+            Message::FontSizeDialog(_) => Task::none(),
+            Message::FontSizeApply(width, height) => {
+                if let ModeState::BitFont(editor) = &mut self.mode_state {
+                    let _ = editor.resize_font(width, height);
+                    editor.invalidate_caches();
+                }
+                Task::none()
             }
             Message::AnsiEditor(msg) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
@@ -765,28 +806,11 @@ impl MainWindow {
             // Font Import Dialog
             // ═══════════════════════════════════════════════════════════════════
             Message::ShowImportFontDialog => {
-                self.font_import_dialog = Some(super::font_import::FontImportDialog::new());
+                self.dialogs.push(super::font_import::FontImportDialog::new());
                 Task::none()
             }
-            Message::FontImport(msg) => {
-                if let Some(dialog) = &mut self.font_import_dialog {
-                    let (result, task) = dialog.update(msg);
-                    if let Some(result) = result {
-                        match result {
-                            super::font_import::FontImportResult::Imported(font) => {
-                                self.font_import_dialog = None;
-                                return self.update(Message::FontImported(font));
-                            }
-                            super::font_import::FontImportResult::Cancel => {
-                                self.font_import_dialog = None;
-                            }
-                        }
-                    }
-                    task.map(Message::FontImport)
-                } else {
-                    Task::none()
-                }
-            }
+            // FontImport messages are routed through DialogStack::update above
+            Message::FontImport(_) => Task::none(),
             Message::FontImported(font) => {
                 // Switch to BitFont editor with the imported font
                 let mut editor = BitFontEditor::new();
@@ -794,6 +818,23 @@ impl MainWindow {
                 editor.invalidate_caches();
                 self.mode_state = ModeState::BitFont(editor);
                 self.mark_saved();
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Font Export Dialog
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowExportFontDialog => {
+                if let ModeState::BitFont(editor) = &self.mode_state {
+                    let font = editor.state.build_font();
+                    self.dialogs.push(super::font_export::FontExportDialog::new(font));
+                }
+                Task::none()
+            }
+            // FontExport messages are routed through DialogStack::update above
+            Message::FontExport(_) => Task::none(),
+            Message::FontExported => {
+                // Font was successfully exported - nothing special to do
                 Task::none()
             }
 
@@ -961,21 +1002,8 @@ impl MainWindow {
 
         let main_content: Element<'_, Message> = column![menu_bar, content, rule::horizontal(1), status_bar,].into();
 
-        // Show font import dialog if present
-        let main_content = if let Some(dialog) = &self.font_import_dialog {
-            dialog.view(main_content, Message::FontImport)
-        } else {
-            main_content
-        };
-
-        // Show error dialog if present
-        if let Some((title, message)) = &self.error_dialog {
-            let dialog = ConfirmationDialog::new(title, message).dialog_type(DialogType::Error).buttons(ButtonSet::Close);
-
-            dialog.view(main_content, |_result| Message::CloseDialog)
-        } else {
-            main_content
-        }
+        // Show dialogs from dialog stack
+        self.dialogs.view(main_content)
     }
 
     fn view_ansi_editor<'a>(&'a self, editor: &'a AnsiEditor) -> Element<'a, Message> {
@@ -1044,12 +1072,19 @@ impl MainWindow {
     }
 
     /// Handle events passed from the window manager
-    pub fn handle_event(&mut self, event: &Event) -> Option<Message> {
+    pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
+        // If dialogs are open, route events there first
+        if !self.dialogs.is_empty() {
+            let task = self.dialogs.handle_event(event);
+            // Dialogs consume all events when open
+            return (None, task);
+        }
+
         // Try to match hotkeys via command system (global commands)
         if let Some(hotkey) = event.into_hotkey() {
             if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
                 if let Some(msg) = handle_main_window_command(cmd_id) {
-                    return Some(msg);
+                    return (Some(msg), Task::none());
                 }
             }
         }
@@ -1061,7 +1096,7 @@ impl MainWindow {
                 let undo_desc = editor.undo_description();
                 let redo_desc = editor.redo_description();
                 if let Some(msg) = super::bitfont_editor::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
-                    return Some(msg);
+                    return (Some(msg), Task::none());
                 }
             }
             _ => {}
@@ -1074,12 +1109,12 @@ impl MainWindow {
             }
             ModeState::BitFont(state) => {
                 if let Some(msg) = state.handle_event(event) {
-                    return Some(Message::BitFontEditor(msg));
+                    return (Some(Message::BitFontEditor(msg)), Task::none());
                 }
             }
             ModeState::CharFont(_state) => {}
         }
 
-        None
+        (None, Task::none())
     }
 }
