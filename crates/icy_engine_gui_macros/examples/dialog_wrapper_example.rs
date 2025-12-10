@@ -1,137 +1,203 @@
-//! Test file demonstrating the dialog_wrapper macro usage
-
-// This file shows how the dialog_wrapper macro can be used to reduce boilerplate.
-// It's not meant to be compiled as part of the crate, but serves as documentation.
+//! Example file demonstrating the dialog_wrapper macro usage
+//!
+//! This file shows how the dialog_wrapper macro reduces boilerplate for dialogs.
 
 /*
-Example of what the macro generates from:
+=============================================================================
+BASIC USAGE - Minimal form (everything derived from naming conventions)
+=============================================================================
 
 ```rust
 use icy_engine_gui::dialog_wrapper;
-use std::sync::Arc;
-use parking_lot::Mutex;
-use std::path::PathBuf;
 
-#[dialog_wrapper(
-    state = ExportDialogState,
-    internal_message = ExportDialogMessage,
-    cancel_message = Cancel,
-    confirm_message = Export,
-)]
-pub struct ExportDialogWrapper {
-    screen: Arc<Mutex<Box<dyn Screen>>>,
-    #[callback(PathBuf)]
-    on_exported: _,
-    #[callback]
-    on_cancelled: _,
+#[derive(Debug, Clone)]
+pub enum SimpleDialogMessage {
+    DoSomething,
+    Cancel,
+}
+
+#[dialog_wrapper]
+pub struct SimpleDialogState {
+    pub some_field: String,
+}
+
+impl SimpleDialogState {
+    pub fn new() -> Self {
+        Self { some_field: String::new() }
+    }
+
+    pub fn handle_message(&mut self, message: SimpleDialogMessage) -> StateResult<()> {
+        match message {
+            SimpleDialogMessage::DoSomething => StateResult::Success(()),
+            SimpleDialogMessage::Cancel => StateResult::Close,
+        }
+    }
+
+    pub fn view<M: Clone + 'static>(&self, on_message: impl Fn(SimpleDialogMessage) -> M + Clone + 'static) -> Element<'static, M> {
+        // Build your UI here...
+        todo!()
+    }
 }
 ```
 
-The macro generates approximately this code:
+The macro derives:
+- SimpleDialogState → SimpleDialogWrapper (wrapper struct)
+- SimpleDialogState → SimpleDialogMessage (expected message enum name)
+- result_type defaults to ()
+- close_on_blur defaults to false
+
+=============================================================================
+WITH RESULT TYPE - For dialogs that return data on success
+=============================================================================
 
 ```rust
-pub struct ExportDialogWrapper<M, F, E>
-where
-    M: Clone + Send + 'static,
-    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
-    E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
-{
-    state: ExportDialogState,
-    on_message: F,
-    extract_message: E,
-    screen: Arc<Mutex<Box<dyn Screen>>>,
-    on_exported: Option<Box<dyn Fn(PathBuf) -> M + Send>>,
-    on_cancelled: Option<Box<dyn Fn() -> M + Send>>,
+use icy_engine_gui::dialog_wrapper;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub enum ExportDialogMessage {
+    UpdatePath(String),
+    Export,
+    Cancel,
 }
 
-impl<M, F, E> ExportDialogWrapper<M, F, E>
-where
-    M: Clone + Send + 'static,
-    F: Fn(ExportDialogMessage) -> M + Clone + 'static,
-    E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
-{
-    pub fn new(
-        state: ExportDialogState,
-        screen: Arc<Mutex<Box<dyn Screen>>>,
-        on_message: F,
-        extract_message: E,
-    ) -> Self {
-        Self {
-            state,
-            on_message,
-            extract_message,
-            screen,
-            on_exported: None,
-            on_cancelled: None,
-        }
-    }
-
-    pub fn on_exported<G>(mut self, callback: G) -> Self
-    where
-        G: Fn(PathBuf) -> M + Send + 'static,
-    {
-        self.on_exported = Some(Box::new(callback));
-        self
-    }
-
-    pub fn on_cancelled<G>(mut self, callback: G) -> Self
-    where
-        G: Fn() -> M + Send + 'static,
-    {
-        self.on_cancelled = Some(Box::new(callback));
-        self
-    }
-
-    pub fn state(&self) -> &ExportDialogState {
-        &self.state
-    }
-
-    pub fn state_mut(&mut self) -> &mut ExportDialogState {
-        &mut self.state
-    }
+#[dialog_wrapper(result_type = PathBuf)]
+pub struct ExportDialogState {
+    pub path: String,
 }
 
-impl<M, F, E> Dialog<M> for ExportDialogWrapper<M, F, E>
-where
-    M: Clone + Send + 'static,
-    F: Fn(ExportDialogMessage) -> M + Clone + Send + 'static,
-    E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + Send + 'static,
-{
-    fn view(&self) -> iced::Element<'_, M> {
-        self.state.view(self.on_message.clone())
-    }
-
-    fn update(&mut self, message: &M) -> Option<DialogAction<M>> {
-        let dialog_msg = (self.extract_message)(message)?;
-        Some(self.handle_message(dialog_msg.clone()))
-    }
-
-    fn request_cancel(&mut self) -> DialogAction<M> {
-        if let Some(ref callback) = self.on_cancelled {
-            DialogAction::CloseWith(callback())
-        } else {
-            DialogAction::Close
+impl ExportDialogState {
+    pub fn handle_message(&mut self, message: ExportDialogMessage) -> StateResult<PathBuf> {
+        match message {
+            ExportDialogMessage::UpdatePath(p) => {
+                self.path = p;
+                StateResult::None
+            }
+            ExportDialogMessage::Export => {
+                StateResult::Success(PathBuf::from(&self.path))
+            }
+            ExportDialogMessage::Cancel => StateResult::Close,
         }
-    }
-
-    fn request_confirm(&mut self) -> DialogAction<M> {
-        self.handle_message(ExportDialogMessage::Export)
-    }
-
-    fn handle_event(&mut self, _event: &iced::Event) -> Option<DialogAction<M>> {
-        None
-    }
-
-    fn close_on_blur(&self) -> bool {
-        false
     }
 }
 ```
 
-Note: The macro does NOT generate:
-- The `handle_message()` method - this contains dialog-specific logic
-- Builder functions like `export_dialog()` - these have custom signatures
+=============================================================================
+WITH CLOSE ON BLUR - For lightweight dialogs that dismiss on click-away
+=============================================================================
 
-The user still needs to implement `handle_message()` manually, which is the
-dialog-specific business logic.
+```rust
+#[dialog_wrapper(close_on_blur = true)]
+pub struct SauceDialogState { ... }
+```
+
+=============================================================================
+WHAT THE MACRO GENERATES
+=============================================================================
+
+From `#[dialog_wrapper]` on `FooDialogState`, the macro generates:
+
+```rust
+// The state struct is kept as-is
+pub struct FooDialogState { ... }
+
+// Generated wrapper struct
+pub struct FooDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(FooDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&FooDialogMessage> + Clone + 'static,
+{
+    pub state: FooDialogState,
+    pub on_message: F,
+    pub extract_message: E,
+    on_confirm: Option<Box<dyn Fn() -> M + Send>>,  // or Fn(T) -> M if result_type specified
+    on_cancel: Option<Box<dyn Fn() -> M + Send>>,
+}
+
+impl<M, F, E> FooDialogWrapper<M, F, E> { ... } {
+    pub fn new(state: FooDialogState, on_message: F, extract_message: E) -> Self;
+    pub fn on_confirm<G>(self, callback: G) -> Self;  // builder method
+    pub fn on_cancel<G>(self, callback: G) -> Self;   // builder method
+}
+
+impl<M, F, E> Dialog<M> for FooDialogWrapper<M, F, E> {
+    fn view(&self) -> Element<'_, M>;
+    fn update(&mut self, message: &M) -> Option<DialogAction<M>>;
+    fn request_cancel(&mut self) -> DialogAction<M>;
+    fn request_confirm(&mut self) -> DialogAction<M>;
+    fn handle_event(&mut self, event: &Event) -> Option<DialogAction<M>>;
+    fn close_on_blur(&self) -> bool;
+}
+```
+
+=============================================================================
+USAGE WITH DialogStack
+=============================================================================
+
+```rust
+use icy_engine_gui::dialog_msg;
+
+// In your main application:
+pub enum Message {
+    ExportDialog(ExportDialogMessage),
+    // ...
+}
+
+// Opening a dialog:
+self.dialog_stack.push(
+    ExportDialogWrapper::new(
+        ExportDialogState::new(),
+        Message::ExportDialog,
+        |msg| match msg { Message::ExportDialog(m) => Some(m), _ => None },
+    )
+    .on_confirm(|path| Message::ExportComplete(path))
+    .on_cancel(|| Message::DialogClosed)
+);
+
+// Or with the dialog_msg! macro:
+self.dialog_stack.push(
+    ExportDialogWrapper::new(
+        ExportDialogState::new(),
+        dialog_msg!(Message::ExportDialog),
+    )
+    .on_confirm(|path| Message::ExportComplete(path))
+);
+```
+
+=============================================================================
+WHAT YOU STILL NEED TO IMPLEMENT MANUALLY
+=============================================================================
+
+The macro does NOT generate:
+1. `handle_message()` - Contains your dialog-specific business logic
+2. `view()` - Contains your dialog UI
+3. Builder functions like `export_dialog()` - Optional convenience wrappers
+
+The macro handles all the boring Dialog trait boilerplate so you can focus
+on the actual dialog logic.
+
+=============================================================================
+SPECIAL CASES - Custom theme() override
+=============================================================================
+
+If your dialog needs to override `theme()` (e.g., for live theme preview in
+a settings dialog), you need to wrap the generated wrapper:
+
+```rust
+pub struct SettingsDialogWrapperWithTheme<M, F, E> {
+    inner: SettingsDialogWrapper<M, F, E>,
+}
+
+impl<M, F, E> Dialog<M> for SettingsDialogWrapperWithTheme<M, F, E> {
+    // Delegate all methods to inner...
+    
+    fn theme(&self) -> Option<iced::Theme> {
+        Some(self.inner.state.get_preview_theme())
+    }
+}
+```
+
+This is rare - most dialogs don't need it.
 */
+

@@ -15,8 +15,7 @@ use crate::{
     scripting::parse_key_string,
     ui::{
         Message,
-        dialogs::{find_dialog, terminal_info_dialog},
-        export_screen_dialog::{self, ExportDialogExt, ExportDialogState},
+        dialogs::{find_dialog, select_bps_dialog},
         up_download_dialog::{self, FileTransferDialogState},
     },
 };
@@ -24,15 +23,15 @@ use crate::{
 use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::Position;
-use icy_engine_gui::{ButtonSet, ConfirmationDialog, DialogType, command_handler, music::music::SoundThread, ui::DialogStack};
+use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
-use icy_parser_core::BaudEmulation;
 use tokio::sync::mpsc;
 
 use crate::{
     Address, AddressBook, Options,
     terminal::terminal_thread::{ConnectionConfig, TerminalCommand, TerminalEvent, create_terminal_thread},
-    ui::{MainWindowState, capture_dialog, dialing_directory_dialog, settings_dialog, show_iemsi, terminal_window},
+    ui::dialogs::{capture_dialog, terminal_info_dialog},
+    ui::{MainWindowState, dialing_directory_dialog, protocol_selector, settings_dialog, show_iemsi, terminal_window},
 };
 
 // Command handler for MainWindow keyboard shortcuts
@@ -80,39 +79,26 @@ pub enum MainWindowMode {
     ShowTerminal,
     #[default]
     ShowDialingDirectory,
-    ShowSettings,
-    ShowHelpDialog,
-    ShowAboutDialog,
-    SelectProtocol(bool),
     FileTransfer(bool),
-    ShowCaptureDialog,
-    ShowExportDialog,
-    ShowIEMSI,
-    ShowTerminalInfo,
     ShowFindDialog,
-    ShowBaudEmulationDialog,
     ShowOpenSerialDialog(bool),
-    ShowErrorDialog(String, String, String, Box<MainWindowMode>),
 }
 
 pub struct MainWindow {
     pub id: usize,
     pub state: MainWindowState,
     pub dialing_directory: dialing_directory_dialog::DialingDirectoryState,
-    pub settings_dialog: settings_dialog::SettingsDialogState,
-    pub capture_dialog: capture_dialog::CaptureDialogState,
+    pub options: Arc<Mutex<Options>>,
     pub terminal_window: terminal_window::TerminalWindow,
-    pub iemsi_dialog: show_iemsi::ShowIemsiDialog,
-    pub terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog,
     pub find_dialog: find_dialog::DialogState,
-    pub export_dialog: ExportDialogState,
     pub file_transfer_dialog: up_download_dialog::FileTransferDialogState,
-    pub baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog,
     pub open_serial_dialog: super::open_serial_dialog::OpenSerialDialog,
-    pub help_dialog: crate::ui::dialogs::help_dialog::HelpDialog,
-    pub about_dialog: crate::ui::dialogs::about_dialog::AboutDialog,
     /// Dialog stack for trait-based modal dialogs (new unified system)
     pub dialogs: DialogStack<Message>,
+
+    // Capture state (persisted across dialog shows)
+    pub is_capturing: bool,
+    pub capture_directory: String,
 
     // sound thread
     pub sound_thread: Arc<Mutex<SoundThread>>,
@@ -153,16 +139,10 @@ impl MainWindow {
         sound_thread: Arc<Mutex<SoundThread>>,
         addresses: Arc<Mutex<AddressBook>>,
         options: Arc<Mutex<Options>>,
-        temp_options: Arc<Mutex<Options>>,
     ) -> Self {
         let default_capture_path: PathBuf = directories::UserDirs::new()
             .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-        let default_export_path = directories::UserDirs::new()
-            .and_then(|dirs: directories::UserDirs| dirs.document_dir().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-            .join("export.icy");
 
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
         let edit_screen = terminal_window.terminal.screen.clone();
@@ -181,23 +161,15 @@ impl MainWindow {
                 options_written: false,
             },
             dialing_directory: dialing_directory_dialog::DialingDirectoryState::new(addresses),
-            settings_dialog: settings_dialog::SettingsDialogState::new(options, temp_options),
-            capture_dialog: capture_dialog::CaptureDialogState::new(default_capture_path.to_string_lossy().to_string()),
-            export_dialog: export_screen_dialog::new_export_dialog(
-                default_export_path.to_string_lossy().to_string(),
-                icy_engine::BufferType::CP437, // Default, will be updated when dialog is shown
-                terminal_window.terminal.screen.clone(),
-            ),
+            options,
             terminal_window,
-            iemsi_dialog: show_iemsi::ShowIemsiDialog::new(icy_net::iemsi::EmsiISI::default()),
-            terminal_info_dialog: super::terminal_info_dialog::TerminalInfoDialog::new(super::terminal_info_dialog::TerminalInfo::default()),
             find_dialog: find_dialog::DialogState::new(),
             file_transfer_dialog: FileTransferDialogState::new(),
-            baud_emulation_dialog: super::select_bps_dialog::SelectBpsDialog::new(BaudEmulation::Off),
             open_serial_dialog: super::open_serial_dialog::OpenSerialDialog::new(serial),
-            help_dialog: crate::ui::dialogs::help_dialog::HelpDialog::new(),
-            about_dialog: crate::ui::dialogs::about_dialog::AboutDialog::new(super::about_dialog::ABOUT_ANSI),
             dialogs: DialogStack::new(),
+
+            is_capturing: false,
+            capture_directory: default_capture_path.to_string_lossy().to_string(),
 
             terminal_tx,
             terminal_rx: Some(terminal_rx),
@@ -228,7 +200,7 @@ impl MainWindow {
             Message::DialingDirectory(msg) => self.dialing_directory.update(msg),
             Message::Connect(address) => {
                 let modem = if matches!(address.protocol, ConnectionType::Modem) {
-                    let options = &self.settings_dialog.original_options.lock();
+                    let options = &self.options.lock();
                     // Find the modem in options that matches the modem_id
                     let modem_opt = options.modems.iter().find(|m| m.name == address.modem_id);
 
@@ -263,7 +235,7 @@ impl MainWindow {
                 } else {
                     None
                 };
-                let options = &self.settings_dialog.original_options.lock();
+                let options = &self.options.lock();
 
                 self.terminal_emulation = address.terminal_type;
 
@@ -357,15 +329,17 @@ impl MainWindow {
             }
 
             Message::TerminalEvent(event) => self.handle_terminal_event(event),
-            Message::CaptureDialog(msg) => {
-                if let Some(close_msg) = self.capture_dialog.update(msg) {
-                    return self.update(close_msg);
+            Message::CaptureDialog(ref _msg) => {
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
-            Message::ShowIemsi(msg) => {
-                if let Some(response) = self.iemsi_dialog.update(msg) {
-                    return self.update(response);
+            Message::ShowIemsi(ref _msg) => {
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
@@ -373,36 +347,59 @@ impl MainWindow {
                 self.switch_to_terminal_screen();
                 // Get IEMSI info from terminal if available
                 if let Some(iemsi_info) = &self.terminal_window.iemsi_info {
-                    self.iemsi_dialog = show_iemsi::ShowIemsiDialog::new(iemsi_info.clone());
-                    self.state.mode = MainWindowMode::ShowIEMSI;
+                    self.dialogs.push(show_iemsi::show_iemsi_dialog_from_msg(
+                        iemsi_info.clone(),
+                        icy_engine_gui::dialog_msg!(Message::ShowIemsi),
+                    ));
                 }
                 Task::none()
             }
-            Message::SettingsDialog(msg) => {
-                if let Some(close_msg) = self.settings_dialog.update(msg) {
-                    let c = self.update(close_msg);
-                    return c;
+            Message::SettingsDialog(ref _msg) => {
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
             Message::ShowHelpDialog => {
                 self.switch_to_terminal_screen();
-                /*
-                let r = self.sound_thread.lock().play_igs(Box::new(IgsCommand::BellsAndWhistles {
-                    sound_effect: icy_parser_core::SoundEffect::try_from(self.effect).unwrap(),
-                }));
-                self.effect = (self.effect + 1) % 20;
-                if let Err(r) = r {
-                    log::error!("TerminalEvent::PlayMusic: {r}");
-                }*/
-
-                self.state.mode = MainWindowMode::ShowHelpDialog;
-
+                self.dialogs
+                    .push(crate::ui::dialogs::help_dialog::help_dialog(Message::HelpDialog, |msg| match msg {
+                        Message::HelpDialog(m) => Some(m),
+                        _ => None,
+                    }));
+                Task::none()
+            }
+            Message::HelpDialog(_msg) => {
+                // Dialog handles its own messages via DialogStack
                 Task::none()
             }
             Message::ShowAboutDialog => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::ShowAboutDialog;
+                icy_engine_gui::set_default_auto_scaling_xy(true);
+                self.dialogs.push(
+                    crate::ui::dialogs::about_dialog::about_dialog(Message::AboutDialog, |msg| match msg {
+                        Message::AboutDialog(m) => Some(m),
+                        _ => None,
+                    })
+                    .on_cancel(|| {
+                        icy_engine_gui::set_default_auto_scaling_xy(false);
+                        Message::None
+                    }),
+                );
+                Task::none()
+            }
+            Message::AboutDialog(ref msg) => {
+                // Handle OpenLink messages from the about dialog
+                if let crate::ui::dialogs::about_dialog::AboutDialogMessage::OpenLink(url) = msg {
+                    if let Err(e) = open::that(url) {
+                        log::error!("Failed to open URL {}: {}", url, e);
+                    }
+                }
+                // Route to dialog stack for other messages
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
                 Task::none()
             }
             Message::CloseDialog(mode) => {
@@ -419,12 +416,26 @@ impl MainWindow {
             }
             Message::Upload => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::SelectProtocol(false);
+                let protocols = self.options.lock().transfer_protocols.clone();
+                self.dialogs.push(
+                    protocol_selector::protocol_selector_dialog_from_msg(false, protocols, icy_engine_gui::dialog_msg!(Message::ProtocolSelector))
+                        .on_confirm(|(protocol, is_download)| Message::InitiateFileTransfer { protocol, is_download }),
+                );
                 Task::none()
             }
             Message::Download => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::SelectProtocol(true);
+                let protocols = self.options.lock().transfer_protocols.clone();
+                self.dialogs.push(
+                    protocol_selector::protocol_selector_dialog_from_msg(true, protocols, icy_engine_gui::dialog_msg!(Message::ProtocolSelector))
+                        .on_confirm(|(protocol, is_download)| Message::InitiateFileTransfer { protocol, is_download }),
+                );
+                Task::none()
+            }
+            Message::ProtocolSelector(ref _msg) => {
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
                 Task::none()
             }
             Message::SendLoginAndPassword(login, pw) => {
@@ -501,29 +512,51 @@ impl MainWindow {
             }
             Message::ShowSettings => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::ShowSettings;
+
+                // Create a fresh state for the dialog (temp_options is managed internally)
+                let state = settings_dialog::SettingsDialogState::new(self.options.clone());
+
+                self.dialogs.push(
+                    settings_dialog::settings_dialog_from_msg(state, icy_engine_gui::dialog_msg!(Message::SettingsDialog)).on_save(|result| {
+                        if let Some(size) = result.new_scrollback_size {
+                            Message::SetScrollbackBufferSize(size)
+                        } else {
+                            Message::None
+                        }
+                    }),
+                );
                 Task::none()
             }
             Message::ShowCaptureDialog => {
                 self.switch_to_terminal_screen();
-                // Update capture dialog with current capture path from options
-                let capture_path = self.settings_dialog.original_options.lock().capture_path();
-                self.capture_dialog.reset(&capture_path, self.capture_dialog.is_capturing());
-                self.state.mode = MainWindowMode::ShowCaptureDialog;
+                // Update capture directory from options
+                let capture_path = self.options.lock().capture_path();
+                if !capture_path.is_empty() {
+                    self.capture_directory = capture_path;
+                }
+                self.dialogs.push(
+                    capture_dialog::capture_dialog_from_msg(
+                        self.capture_directory.clone(),
+                        self.is_capturing,
+                        icy_engine_gui::dialog_msg!(Message::CaptureDialog),
+                    )
+                    .on_confirm(|result| match result {
+                        capture_dialog::CaptureDialogResult::StartCapture(path) => Message::StartCapture(path),
+                        capture_dialog::CaptureDialogResult::StopCapture => Message::StopCapture,
+                    }),
+                );
                 Task::none()
             }
             Message::StartCapture(file_name) => {
-                self.state.mode = MainWindowMode::ShowTerminal;
-                self.capture_dialog.capture_session = true;
+                self.is_capturing = true;
                 self.terminal_window.is_capturing = true;
                 let _ = self.terminal_tx.send(TerminalCommand::StartCapture(file_name));
                 Task::none()
             }
             Message::StopCapture => {
-                self.capture_dialog.capture_session = false;
+                self.is_capturing = false;
                 self.terminal_window.is_capturing = false;
                 let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
-                self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
             Message::ShowRunScriptDialog => {
@@ -574,21 +607,25 @@ impl MainWindow {
             }
             Message::ShowBaudEmulationDialog => {
                 self.switch_to_terminal_screen();
-                self.state.mode = MainWindowMode::ShowBaudEmulationDialog;
-                self.baud_emulation_dialog.set_emulation(self.terminal_window.baud_emulation);
+                let terminal_tx = self.terminal_tx.clone();
+                self.dialogs.push(
+                    select_bps_dialog::select_bps_dialog(self.terminal_window.baud_emulation, Message::SelectBpsDialog, |msg| match msg {
+                        Message::SelectBpsDialog(m) => Some(m),
+                        _ => None,
+                    })
+                    .on_confirm(move |baud| {
+                        let _ = terminal_tx.send(TerminalCommand::SetBaudEmulation(baud));
+                        Message::SelectBps(baud)
+                    })
+                    .on_cancel(|| Message::None),
+                );
                 Task::none()
             }
-            Message::SelectBpsMsg(msg) => {
-                if let Some(message) = self.baud_emulation_dialog.update(msg) {
-                    return self.update(message);
+            Message::SelectBpsDialog(ref _msg) => {
+                // Dialog handles its own messages via DialogStack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
-                Task::none()
-            }
-            Message::ApplyBaudEmulation => {
-                let baud: BaudEmulation = self.baud_emulation_dialog.get_emulation();
-                self.terminal_window.baud_emulation = baud;
-                let _ = self.terminal_tx.send(TerminalCommand::SetBaudEmulation(baud));
-                self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }
             Message::ShowOpenSerialDialog => {
@@ -605,8 +642,8 @@ impl MainWindow {
             Message::ConnectSerial => {
                 let serial = self.open_serial_dialog.serial.clone();
                 // Save serial settings to options
-                self.settings_dialog.original_options.lock().serial = serial.clone();
-                if let Err(e) = self.settings_dialog.original_options.lock().store_options() {
+                self.options.lock().serial = serial.clone();
+                if let Err(e) = self.options.lock().store_options() {
                     log::error!("Failed to save serial settings: {}", e);
                 }
                 // Set serial mode for status bar
@@ -638,19 +675,24 @@ impl MainWindow {
                     .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
                     .join("export.icy");
-                self.export_dialog = export_screen_dialog::new_export_dialog(default_export_path.to_string_lossy().to_string(), buffer_type, self.terminal_window.terminal.screen.clone());
-                self.state.mode = MainWindowMode::ShowExportDialog;
+
+                self.dialogs.push(
+                    icy_engine_gui::ui::export_dialog_with_defaults_from_msg(
+                        default_export_path.to_string_lossy().to_string(),
+                        buffer_type,
+                        self.terminal_window.terminal.screen.clone(),
+                        crate::data::Options::default_capture_directory,
+                        icy_engine_gui::dialog_msg!(Message::ExportDialog),
+                    )
+                    .on_cancel(|| Message::None),
+                );
                 Task::none()
             }
-            Message::ExportDialog(msg) => {
-                if let Some(response) = self.export_dialog.update_icy_term(msg) {
-                    match response {
-                        Message::CloseDialog(mode) => {
-                            self.state.mode = *mode;
-                        }
-                        _ => {}
-                    }
-                    return Task::none();
+            Message::ExportDialog(ref _msg) => {
+                // Export dialog messages are now handled by Dialog::update()
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
@@ -659,9 +701,10 @@ impl MainWindow {
                 Task::none()
             }
 
-            Message::TerminalInfo(msg) => {
-                if let Some(action_msg) = self.terminal_info_dialog.update(msg) {
-                    return self.update(action_msg);
+            Message::TerminalInfo(ref _msg) => {
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
                 }
                 Task::none()
             }
@@ -700,8 +743,15 @@ impl MainWindow {
                 };
                 drop(screen);
 
-                self.terminal_info_dialog = terminal_info_dialog::TerminalInfoDialog::new(info);
-                self.state.mode = MainWindowMode::ShowTerminalInfo;
+                self.dialogs.push(
+                    terminal_info_dialog::terminal_info_dialog_from_msg(info, icy_engine_gui::dialog_msg!(Message::TerminalInfo)).on_confirm(|result| {
+                        Message::ApplyTerminalSettings {
+                            terminal_type: result.terminal_type,
+                            screen_mode: result.screen_mode,
+                            ansi_music: result.ansi_music,
+                        }
+                    }),
+                );
                 Task::none()
             }
 
@@ -771,7 +821,7 @@ impl MainWindow {
 
                 // Stop any ongoing capture
                 if self.terminal_window.is_capturing {
-                    self.capture_dialog.capture_session = false;
+                    self.is_capturing = false;
                     self.terminal_window.is_capturing = false;
                     let _ = self.terminal_tx.send(TerminalCommand::StopCapture);
                 }
@@ -964,8 +1014,7 @@ impl MainWindow {
                     McpCommand::UploadFile { protocol, file_path } => {
                         // Start file upload - lookup protocol by id
                         let transfer_protocol = self
-                            .settings_dialog
-                            .original_options
+                            .options
                             .lock()
                             .transfer_protocols
                             .iter()
@@ -984,8 +1033,7 @@ impl MainWindow {
                     McpCommand::DownloadFile { protocol, save_path } => {
                         // Start file download - lookup protocol by id
                         let transfer_protocol = self
-                            .settings_dialog
-                            .original_options
+                            .options
                             .lock()
                             .transfer_protocols
                             .iter()
@@ -1116,7 +1164,7 @@ impl MainWindow {
 
             // Unified zoom control
             Message::Zoom(zoom_msg) => {
-                let mut opts = self.settings_dialog.original_options.lock();
+                let mut opts = self.options.lock();
                 let use_integer = opts.monitor_settings.use_integer_scaling;
                 let current_zoom = self.terminal_window.terminal.get_zoom();
                 let new_scaling = opts.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
@@ -1161,7 +1209,7 @@ impl MainWindow {
     fn initiate_file_transfer(&mut self, protocol: crate::TransferProtocol, is_download: bool) {
         if is_download {
             // Set download directory from options
-            let download_path = self.settings_dialog.original_options.lock().download_path();
+            let download_path = self.options.lock().download_path();
 
             // If protocol requires asking for download location, show file dialog
             if protocol.ask_for_download_location {
@@ -1278,7 +1326,9 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::Error(error, txt) => {
-                self.state.mode = MainWindowMode::ShowErrorDialog("Terminal Error".to_string(), error, txt, Box::new(MainWindowMode::ShowTerminal));
+                let mut dialog = error_dialog("Terminal Error", txt, |_| Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
+                dialog.dialog = dialog.dialog.secondary_message(error);
+                self.dialogs.push(dialog);
                 Task::none()
             }
             TerminalEvent::PlayMusic(music) => {
@@ -1351,7 +1401,7 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::OpenLineSound => {
-                let dial_tone = self.settings_dialog.original_options.lock().dial_tone;
+                let dial_tone = self.options.lock().dial_tone;
                 let r = self.sound_thread.lock().start_line_sound(dial_tone);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenLineSound: {r}");
@@ -1360,7 +1410,7 @@ impl MainWindow {
             }
 
             TerminalEvent::OpenDialSound(tone_dial, phone_number) => {
-                let dial_tone = self.settings_dialog.original_options.lock().dial_tone;
+                let dial_tone = self.options.lock().dial_tone;
                 let r = self.sound_thread.lock().start_dial_sound(tone_dial, dial_tone, &phone_number);
                 if let Err(r) = r {
                     log::error!("TerminalEvent::OpenDialSound: {r}");
@@ -1378,8 +1428,7 @@ impl MainWindow {
             TerminalEvent::AutoTransferTriggered(protocol_id, is_download, _) => {
                 // First check user-configured protocols
                 let protocol = self
-                    .settings_dialog
-                    .original_options
+                    .options
                     .lock()
                     .transfer_protocols
                     .iter()
@@ -1420,12 +1469,13 @@ impl MainWindow {
                     }
                     Err(e) => {
                         log::error!("Script error: {}", e);
-                        self.state.mode = MainWindowMode::ShowErrorDialog(
-                            i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-title"),
-                            i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-execution-failed"),
-                            e,
-                            Box::new(MainWindowMode::ShowTerminal),
-                        );
+                        let mut dialog = error_dialog(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-title"), e, |_| {
+                            Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))
+                        });
+                        dialog.dialog = dialog
+                            .dialog
+                            .secondary_message(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-execution-failed"));
+                        self.dialogs.push(dialog);
                     }
                 }
                 Task::none()
@@ -1478,64 +1528,40 @@ impl MainWindow {
     }
 
     pub fn theme(&self) -> Theme {
-        if self.get_mode() == MainWindowMode::ShowSettings {
-            self.settings_dialog.temp_options.lock().monitor_settings.get_theme()
-        } else {
-            self.settings_dialog.original_options.lock().monitor_settings.get_theme()
+        // Check if dialog stack has a dialog with custom theme (e.g., settings dialog with live preview)
+        if let Some(theme) = self.dialogs.theme() {
+            return theme;
         }
+        self.options.lock().monitor_settings.get_theme()
     }
 
     /// Get a string representing the current zoom level for display in title bar
     pub fn get_zoom_info_string(&self) -> String {
-        let opts = self.settings_dialog.original_options.lock();
+        let opts = self.options.lock();
         opts.monitor_settings.scaling_mode.format_zoom_string()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         match &self.state.mode {
-            MainWindowMode::ShowDialingDirectory => return self.dialogs.view(self.dialing_directory.view(&self.settings_dialog.original_options.lock())),
-            MainWindowMode::ShowAboutDialog => return self.dialogs.view(self.about_dialog.view()),
+            MainWindowMode::ShowDialingDirectory => return self.dialogs.view(self.dialing_directory.view(&self.options.lock())),
             _ => {}
         }
 
         let terminal_view = {
-            let settings = if self.get_mode() == MainWindowMode::ShowSettings {
-                &self.settings_dialog.temp_options.lock()
-            } else {
-                &self.settings_dialog.original_options.lock()
-            };
+            let settings = &self.options.lock();
             self.terminal_window.view(settings, &self.pause_message)
         };
 
         let mode_view = match &self.state.mode {
             MainWindowMode::ShowTerminal => terminal_view,
-            MainWindowMode::ShowSettings => self.settings_dialog.view(terminal_view),
-            MainWindowMode::SelectProtocol(download) => {
-                let protocols = self.settings_dialog.original_options.lock().transfer_protocols.clone();
-                crate::ui::dialogs::protocol_selector::view_selector(*download, protocols, terminal_view)
-            }
             MainWindowMode::FileTransfer(download) => self.file_transfer_dialog.view(*download, terminal_view),
-            MainWindowMode::ShowCaptureDialog => self.capture_dialog.view(terminal_view),
-            MainWindowMode::ShowExportDialog => self.export_dialog.view_icy_term(terminal_view),
-            MainWindowMode::ShowIEMSI => self.iemsi_dialog.view(terminal_view),
             MainWindowMode::ShowFindDialog => find_dialog::find_dialog_overlay(&self.find_dialog, terminal_view),
-            MainWindowMode::ShowBaudEmulationDialog => self.baud_emulation_dialog.view(terminal_view),
             MainWindowMode::ShowOpenSerialDialog(visible) => {
                 if *visible {
                     self.open_serial_dialog.view(terminal_view)
                 } else {
                     terminal_view
                 }
-            }
-            MainWindowMode::ShowHelpDialog => self.help_dialog.view(terminal_view),
-            MainWindowMode::ShowTerminalInfo => self.terminal_info_dialog.view(terminal_view),
-            MainWindowMode::ShowErrorDialog(title, secondary_msg, error_message, _) => {
-                let dialog = ConfirmationDialog::new(title, error_message)
-                    .dialog_type(DialogType::Error)
-                    .secondary_message(secondary_msg)
-                    .buttons(ButtonSet::Close);
-
-                dialog.view(terminal_view, |_result| Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
             }
             _ => {
                 panic!("Unhandled main window mode in view()")
@@ -1635,43 +1661,6 @@ impl MainWindow {
                 },
                 _ => None,
             },
-            MainWindowMode::SelectProtocol(_) => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                    _ => None,
-                },
-                _ => None,
-            },
-            MainWindowMode::ShowSettings => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::SettingsDialog(settings_dialog::SettingsMsg::Cancel)),
-                    _ => self.dialing_directory.handle_event(event),
-                },
-                _ => None,
-            },
-            MainWindowMode::ShowCaptureDialog => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::Cancel)),
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::CaptureDialog(capture_dialog::CaptureMsg::StartCapture)),
-                    _ => self.dialing_directory.handle_event(event),
-                },
-                _ => None,
-            },
-            MainWindowMode::ShowIEMSI => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ShowIemsi(show_iemsi::IemsiMsg::Close)),
-                    _ => None,
-                },
-                _ => None,
-            },
-            MainWindowMode::ShowTerminalInfo => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Close)),
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::TerminalInfo(terminal_info_dialog::TerminalInfoMsg::Apply)),
-                    _ => None,
-                },
-                _ => None,
-            },
             MainWindowMode::ShowTerminal => {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed {
@@ -1753,20 +1742,6 @@ impl MainWindow {
                 },
                 _ => None,
             },
-            MainWindowMode::ShowExportDialog => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::ExportDialog(icy_engine_gui::ui::ExportDialogMessage::Cancel)),
-                    _ => self.dialing_directory.handle_event(event),
-                },
-                _ => None,
-            },
-            MainWindowMode::ShowBaudEmulationDialog => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
-                    keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                    _ => None,
-                },
-                _ => None,
-            },
             MainWindowMode::ShowOpenSerialDialog(visible) => {
                 if *visible {
                     match event {
@@ -1781,10 +1756,6 @@ impl MainWindow {
                     None
                 }
             }
-            MainWindowMode::ShowHelpDialog | MainWindowMode::ShowAboutDialog => match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { .. }) => Some(Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-                _ => None,
-            },
             _ => {
                 // Handle global shortcuts that work in any mode
                 match event {

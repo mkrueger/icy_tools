@@ -1,43 +1,50 @@
 use iced::{
-    Element, Length, Task,
+    Element, Length,
     widget::{column, container},
 };
 use icy_engine::{Screen, TextBuffer, TextScreen};
-use icy_engine_gui::{MonitorSettings, Terminal, TerminalView};
-use icy_engine_gui::{
-    ui::{button_row, dialog_area, primary_button, separator},
-    version_helper::replace_version_marker,
-};
+use icy_engine_gui::ui::{StateResult, button_row, dialog_area, primary_button, separator};
+use icy_engine_gui::version_helper::replace_version_marker;
+use icy_engine_gui::{MonitorSettings, Terminal, TerminalView, dialog_wrapper};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::{
-    VERSION,
-    ui::{MainWindowMode, Message},
-};
+use crate::VERSION;
 
-// Include the help ANSI file at compile time
+// Include the about ANSI file at compile time
 pub const ABOUT_ANSI: &[u8] = include_bytes!("../../../data/about.icy");
 
-pub struct AboutDialog {
+/// Messages for the about dialog
+#[derive(Debug, Clone)]
+pub enum AboutDialogMessage {
+    /// Close the dialog
+    Close,
+    /// Open a URL link
+    OpenLink(String),
+}
+
+#[dialog_wrapper(close_on_blur = true)]
+pub struct AboutDialogState {
     terminal: Terminal,
 }
 
-impl AboutDialog {
-    pub fn new(ansi: &[u8]) -> Self {
-        // Create an edit state and load the help ANSI
+impl AboutDialogState {
+    pub fn new() -> Self {
+        Self::with_ansi(ABOUT_ANSI)
+    }
+
+    pub fn with_ansi(ansi: &[u8]) -> Self {
         let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
-        // Load the help ANSI file
         match TextBuffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
             Ok(mut buffer) => {
-                let build_date = option_env!("ICY_BUILD_DATE").unwrap_or("-").to_string().to_string();
+                let build_date = option_env!("ICY_BUILD_DATE").unwrap_or("-").to_string();
                 replace_version_marker(&mut buffer, &VERSION, Some(build_date));
                 screen.buffer = buffer;
             }
             Err(e) => {
-                panic!("Failed to load help ANSI: {}", e);
+                panic!("Failed to load about ANSI: {}", e);
             }
         }
         screen.caret.visible = false;
@@ -48,63 +55,62 @@ impl AboutDialog {
         Self { terminal }
     }
 
-    pub fn show(&self) -> bool {
-        // Return true if dialog should be shown
-        true
+    pub fn handle_message(&mut self, message: AboutDialogMessage) -> StateResult<()> {
+        match message {
+            AboutDialogMessage::Close => StateResult::Close,
+            AboutDialogMessage::OpenLink(_) => {
+                // Link opening is handled by the app via on_cancel callback
+                // We just signal to close after opening the link
+                StateResult::None
+            }
+        }
     }
 
-    pub fn update(&mut self, _message: Message) -> Task<Message> {
-        Task::none()
-    }
-
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(AboutDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         let mut settings = MonitorSettings::neutral();
         settings.use_integer_scaling = false;
 
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(|terminal_msg| match terminal_msg {
-            icy_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
-            _ => Message::None,
+        let on_msg = on_message.clone();
+        let on_msg_close = on_message.clone();
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(move |terminal_msg| match terminal_msg {
+            icy_engine_gui::Message::OpenLink(url) => on_msg(AboutDialogMessage::OpenLink(url)),
+            _ => on_msg_close(AboutDialogMessage::Close),
         });
 
-        let ok_button = primary_button(
-            format!("{}", icy_engine_gui::ButtonType::Ok),
-            Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
-        );
+        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(on_message(AboutDialogMessage::Close)));
 
         let buttons = button_row(vec![ok_button.into()]);
 
-        let content = column![container(terminal_view).height(Length::Fill), separator(), dialog_area(buttons),].spacing(0);
-        /*
-        // Wrap in a centered modal overlay
-        container(
-            container(content)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(
-                        theme.extended_palette().background.base.color
-                    )),
-                    border: iced::Border {
-                        color: theme.extended_palette().background.strong.color,
-                        width: 2.0,
-                        radius: 8.0.into(),
-                    },
-                    shadow: iced::Shadow {
-                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                        offset: iced::Vector::new(0.0, 4.0),
-                        blur_radius: 16.0,
-                    },
-                    ..Default::default()
-                })
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(|_theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(
-                iced::Color::from_rgba(0.0, 0.0, 0.0, 0.7)
-            )),
-            ..Default::default()
-        })*/
-        content.into()
+        column![container(terminal_view).height(Length::Fill), separator(), dialog_area(buttons),]
+            .spacing(0)
+            .into()
     }
+}
+
+impl Default for AboutDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Builder function for about dialog
+// ============================================================================
+
+/// Create an about dialog for use with DialogStack
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(about_dialog(
+///     Message::AboutDialog,
+///     |msg| match msg { Message::AboutDialog(m) => Some(m), _ => None },
+/// ));
+/// ```
+pub fn about_dialog<M, F, E>(on_message: F, extract_message: E) -> AboutDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(AboutDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&AboutDialogMessage> + Clone + 'static,
+{
+    AboutDialogWrapper::new(AboutDialogState::new(), on_message, extract_message)
 }

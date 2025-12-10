@@ -55,7 +55,10 @@ pub fn paths_settings_content_generic<M: Clone + 'static>(
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-log-file")),
                     text_input("", &log_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    secondary_button(fl!(crate::LANGUAGE_LOADER, "settings-paths-open"), Some(on_msg_2(SettingsDialogMessage::OpenLogFile))),
+                    secondary_button(
+                        fl!(crate::LANGUAGE_LOADER, "settings-paths-open"),
+                        Some(on_msg_2(SettingsDialogMessage::OpenLogFile))
+                    ),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),

@@ -10,9 +10,13 @@ use icy_engine_gui::{
 };
 
 use crate::Options;
-use crate::ui::dialogs::settings_dialog::SettingsMsg;
+use crate::ui::dialogs::settings_dialog::SettingsDialogMessage;
 
-pub fn paths_settings_content(download_path: String, capture_path: String) -> Element<'static, crate::ui::Message> {
+pub fn paths_settings_content_generic<'a, M: Clone + 'static>(
+    download_path: String,
+    capture_path: String,
+    on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
+) -> Element<'a, M> {
     let config_dir = directories::ProjectDirs::from("com", "GitHub", "icy_term")
         .map(|p| p.config_dir().display().to_string())
         .unwrap_or_else(|| "N/A".to_string());
@@ -27,6 +31,12 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
 
     let log_file = Options::get_log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
+    let on_msg = on_message.clone();
+    let on_msg2 = on_message.clone();
+    let on_msg3 = on_message.clone();
+    let on_msg4 = on_message.clone();
+    let on_msg5 = on_message.clone();
+
     let content = column![
         section_header(fl!(crate::LANGUAGE_LOADER, "settings-paths-header")),
         effect_box(
@@ -35,7 +45,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-config-dir")),
                     text_input("", &config_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::OpenSettingsFolder)),
+                    browse_button(on_msg(SettingsDialogMessage::OpenSettingsFolder)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -59,7 +69,7 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                     text_input("", &log_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
                     secondary_button(
                         fl!(crate::LANGUAGE_LOADER, "settings-paths-open"),
-                        Some(crate::ui::Message::SettingsDialog(SettingsMsg::OpenLogFile))
+                        Some(on_msg2(SettingsDialogMessage::OpenLogFile))
                     ),
                 ]
                 .spacing(DIALOG_SPACING)
@@ -76,10 +86,10 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-download-dir")),
                     text_input("", &download_path)
-                        .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateDownloadPath(value)) })
+                        .on_input(move |value| { on_msg3(SettingsDialogMessage::UpdateDownloadPath(value)) })
                         .size(TEXT_SIZE_NORMAL)
                         .width(Length::Fill),
-                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseDownloadPath)),
+                    browse_button(on_msg4(SettingsDialogMessage::BrowseDownloadPath)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
@@ -87,10 +97,10 @@ pub fn paths_settings_content(download_path: String, capture_path: String) -> El
                 row![
                     left_label(fl!(crate::LANGUAGE_LOADER, "settings-paths-capture-path")),
                     text_input("", &capture_path)
-                        .on_input(|value| { crate::ui::Message::SettingsDialog(SettingsMsg::UpdateCapturePath(value)) })
+                        .on_input(move |value| { on_msg5(SettingsDialogMessage::UpdateCapturePath(value)) })
                         .size(TEXT_SIZE_NORMAL)
                         .width(Length::Fill),
-                    browse_button(crate::ui::Message::SettingsDialog(SettingsMsg::BrowseCapturePath)),
+                    browse_button(on_message(SettingsDialogMessage::BrowseCapturePath)),
                 ]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),

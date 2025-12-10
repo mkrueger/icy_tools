@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use icy_engine::{MouseEvent, Position, ScreenMode, Selection};
-use icy_engine_gui::ui::ExportDialogMessage;
+use icy_engine_gui::ui::{ExportDialogMessage, HelpDialogMessage};
 use icy_net::protocol::TransferState;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{BaudEmulation, MusicOption};
@@ -10,22 +10,28 @@ use icy_parser_core::{BaudEmulation, MusicOption};
 use crate::{
     Address, TransferProtocol,
     terminal_thread::TerminalEvent,
-    ui::{MainWindowMode, find_dialog, open_serial_dialog, select_bps_dialog, terminal_info_dialog, up_download_dialog},
+    ui::dialogs::about_dialog::AboutDialogMessage,
+    ui::dialogs::capture_dialog::CaptureDialogMessage,
+    ui::dialogs::protocol_selector::ProtocolSelectorMessage,
+    ui::dialogs::terminal_info_dialog::TerminalInfoDialogMessage,
+    ui::{MainWindowMode, find_dialog, open_serial_dialog, select_bps_dialog, up_download_dialog},
 };
 
 #[derive(Debug, Clone)]
 pub enum Message {
     DialingDirectory(crate::ui::dialogs::dialing_directory_dialog::DialingDirectoryMsg),
-    SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsMsg),
-    CaptureDialog(crate::ui::dialogs::capture_dialog::CaptureMsg),
-    ShowIemsi(crate::ui::dialogs::show_iemsi::IemsiMsg),
+    SettingsDialog(crate::ui::dialogs::settings_dialog::SettingsDialogMessage),
+    CaptureDialog(CaptureDialogMessage),
+    ShowIemsi(crate::ui::dialogs::show_iemsi::ShowIemsiMessage),
+    ProtocolSelector(ProtocolSelectorMessage),
     FindDialog(find_dialog::FindDialogMsg),
     ExportDialog(ExportDialogMessage),
     TransferDialog(up_download_dialog::TransferMsg),
-    SelectBpsMsg(select_bps_dialog::SelectBpsMsg),
+    SelectBpsDialog(select_bps_dialog::SelectBpsDialogMessage),
     OpenSerialMsg(open_serial_dialog::OpenSerialMsg),
-    TerminalInfo(terminal_info_dialog::TerminalInfoMsg),
-    ApplyBaudEmulation,
+    TerminalInfo(TerminalInfoDialogMessage),
+    HelpDialog(HelpDialogMessage),
+    AboutDialog(AboutDialogMessage),
 
     CancelFileTransfer,
     UpdateTransferState(TransferState),

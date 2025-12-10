@@ -3,15 +3,23 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, column, container, row, text, text_input},
 };
+use icy_engine_gui::StateResult;
+use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::ui::MainWindowMode;
+/// Result from the capture dialog
+#[derive(Debug, Clone)]
+pub enum CaptureDialogResult {
+    /// Start capturing to the given file path
+    StartCapture(String),
+    /// Stop the current capture
+    StopCapture,
+}
 
 #[derive(Debug, Clone)]
-pub enum CaptureMsg {
+pub enum CaptureDialogMessage {
     StartCapture,
     StopCapture,
     ChangeDirectory(String),
@@ -23,31 +31,31 @@ pub enum CaptureMsg {
     CancelOverwrite,
 }
 
+#[dialog_wrapper(close_on_blur = true, result_type = CaptureDialogResult)]
 pub struct CaptureDialogState {
-    pub capture_session: bool,
-    pub capture_directory: String,
-    pub capture_filename: String,
+    is_capturing: bool,
+    capture_directory: String,
+    capture_filename: String,
     temp_directory: String,
     temp_filename: String,
     pending_overwrite: bool,
 }
 
 impl CaptureDialogState {
-    pub fn new(initial_path: String) -> Self {
-        // initial_path is now just a directory, not a full file path
-        let dir = if initial_path.is_empty() {
+    pub fn new(initial_dir: String, is_capturing: bool) -> Self {
+        let dir = if initial_dir.is_empty() {
             std::env::current_dir()
                 .ok()
                 .and_then(|p| p.to_str().map(|s| s.to_string()))
                 .unwrap_or_else(|| ".".to_string())
         } else {
-            initial_path
+            initial_dir
         };
 
         let file = "capture.txt".to_string();
 
         Self {
-            capture_session: false,
+            is_capturing,
             capture_directory: dir.clone(),
             capture_filename: file.clone(),
             temp_directory: dir,
@@ -56,95 +64,60 @@ impl CaptureDialogState {
         }
     }
 
-    pub fn reset(&mut self, capture_dir: &str, is_capturing: bool) {
-        // capture_dir is now just a directory path, not a full file path
-        let dir = if capture_dir.is_empty() {
-            self.capture_directory.clone()
-        } else {
-            capture_dir.to_string()
-        };
-
-        self.temp_directory = dir.clone();
-        self.capture_directory = dir;
-        // Keep existing filename
-        self.temp_filename = self.capture_filename.clone();
-        self.capture_session = is_capturing;
-    }
-
-    pub fn is_capturing(&self) -> bool {
-        self.capture_session
-    }
-
-    pub fn get_full_path(&self) -> PathBuf {
+    fn get_full_path(&self) -> PathBuf {
         Path::new(&self.capture_directory).join(&self.capture_filename)
     }
 
-    pub fn append_data(&mut self, data: &[u8]) {
-        if self.capture_session {
-            let full_path = self.get_full_path();
-            if let Ok(mut data_file) = std::fs::OpenOptions::new().create(true).append(true).open(&full_path) {
-                if let Err(err) = data_file.write_all(data) {
-                    log::error!("Failed to write capture data to file {}: {}", full_path.display(), err);
-                }
-            }
-        }
-    }
-
-    fn start_capture_internal(&mut self) -> Option<crate::ui::Message> {
+    fn start_capture_internal(&mut self) -> StateResult<CaptureDialogResult> {
         self.capture_directory = self.temp_directory.clone();
         self.capture_filename = self.temp_filename.clone();
-        self.capture_session = true;
 
         // Create directory if it doesn't exist
         if let Err(e) = std::fs::create_dir_all(&self.capture_directory) {
             log::error!("Failed to create directory: {}", e);
-            return None;
+            return StateResult::None;
         }
 
         // Save the full path to options
         let full_path = self.get_full_path();
         if let Some(path_str) = full_path.to_str() {
-            Some(crate::ui::Message::StartCapture(path_str.to_string()))
+            StateResult::Success(CaptureDialogResult::StartCapture(path_str.to_string()))
         } else {
-            None
+            StateResult::None
         }
     }
 
-    pub fn update(&mut self, message: CaptureMsg) -> Option<crate::ui::Message> {
+    pub fn handle_message(&mut self, message: CaptureDialogMessage) -> StateResult<CaptureDialogResult> {
         match message {
-            CaptureMsg::StartCapture => {
+            CaptureDialogMessage::StartCapture => {
                 // Check if file exists
                 let full_path = PathBuf::from(&self.temp_directory).join(&self.temp_filename);
-                if full_path.exists() && !self.capture_session {
+                if full_path.exists() && !self.is_capturing {
                     // Show confirmation dialog
                     self.pending_overwrite = true;
-                    None
+                    StateResult::None
                 } else {
                     self.start_capture_internal()
                 }
             }
-            CaptureMsg::ConfirmOverwrite => {
+            CaptureDialogMessage::ConfirmOverwrite => {
                 self.pending_overwrite = false;
                 self.start_capture_internal()
             }
-            CaptureMsg::CancelOverwrite => {
+            CaptureDialogMessage::CancelOverwrite => {
                 self.pending_overwrite = false;
-                None
+                StateResult::None
             }
-            CaptureMsg::StopCapture => {
-                // This message is no longer used - use Message::StopCapture directly
-                self.capture_session = false;
-                Some(crate::ui::Message::StopCapture)
-            }
-            CaptureMsg::ChangeDirectory(dir) => {
+            CaptureDialogMessage::StopCapture => StateResult::Success(CaptureDialogResult::StopCapture),
+            CaptureDialogMessage::ChangeDirectory(dir) => {
                 self.temp_directory = dir;
-                None
+                StateResult::None
             }
-            CaptureMsg::ChangeFileName(name) => {
+            CaptureDialogMessage::ChangeFileName(name) => {
                 self.temp_filename = name;
-                None
+                StateResult::None
             }
-            CaptureMsg::BrowseDirectory => {
+            CaptureDialogMessage::BrowseDirectory => {
                 let initial_dir = if Path::new(&self.temp_directory).exists() {
                     Some(PathBuf::from(&self.temp_directory))
                 } else {
@@ -161,29 +134,25 @@ impl CaptureDialogState {
                         self.temp_directory = path_str.to_string();
                     }
                 }
-                None
+                StateResult::None
             }
-            CaptureMsg::RestoreDefaults => {
+            CaptureDialogMessage::RestoreDefaults => {
                 let default_dir = crate::data::Options::default_capture_directory();
                 if let Some(path_str) = default_dir.to_str() {
                     self.temp_directory = path_str.to_string();
                 }
-                None
+                StateResult::None
             }
-            CaptureMsg::Cancel => {
-                // Don't save changes, just close
-                self.pending_overwrite = false;
-                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
-            }
+            CaptureDialogMessage::Cancel => StateResult::Close,
         }
     }
 
-    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        let overlay = self.create_modal_content();
-        let modal = crate::ui::modal(terminal_content, overlay, crate::ui::Message::CaptureDialog(CaptureMsg::Cancel));
+    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+        let content = self.create_modal_content(on_message.clone());
 
         if self.pending_overwrite {
             let filename = self.temp_filename.clone();
+            let on_msg = on_message.clone();
             let dialog = icy_engine_gui::ConfirmationDialog::new(
                 fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-title"),
                 fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-message", filename = filename),
@@ -192,20 +161,17 @@ impl CaptureDialogState {
             .secondary_message(fl!(crate::LANGUAGE_LOADER, "capture-dialog-overwrite-secondary"))
             .buttons(icy_engine_gui::ButtonSet::OverwriteCancel);
 
-            dialog.view(modal, |result| match result {
-                icy_engine_gui::DialogResult::Overwrite => crate::ui::Message::CaptureDialog(CaptureMsg::ConfirmOverwrite),
-                _ => {
-                    // Reset pending_overwrite flag when user cancels
-                    crate::ui::Message::CaptureDialog(CaptureMsg::CancelOverwrite)
-                }
+            dialog.view(content, move |result| match result {
+                icy_engine_gui::DialogResult::Overwrite => on_msg(CaptureDialogMessage::ConfirmOverwrite),
+                _ => on_msg(CaptureDialogMessage::CancelOverwrite),
             })
         } else {
-            modal
+            content
         }
     }
 
-    fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
-        let title = dialog_title(if self.capture_session {
+    fn create_modal_content<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+        let title = dialog_title(if self.is_capturing {
             fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")
         } else {
             fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-title")
@@ -225,12 +191,14 @@ impl CaptureDialogState {
         };
 
         // Directory input with browse button
+        let on_msg = on_message.clone();
         let dir_input = text_input("", &self.temp_directory)
-            .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeDirectory(s)))
+            .on_input(move |s| on_msg(CaptureDialogMessage::ChangeDirectory(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let browse_btn = browse_button(crate::ui::Message::CaptureDialog(CaptureMsg::BrowseDirectory));
+        let on_msg = on_message.clone();
+        let browse_btn = browse_button(on_msg(CaptureDialogMessage::BrowseDirectory));
 
         let dir_input_row = row![dir_input, Space::new().width(4.0), browse_btn].align_y(Alignment::Center);
 
@@ -243,8 +211,9 @@ impl CaptureDialogState {
         let file_exists = full_path.exists();
 
         // Filename input
-        let file_input: text_input::TextInput<'_, crate::ui::Message> = text_input("", &self.temp_filename)
-            .on_input(|s| crate::ui::Message::CaptureDialog(CaptureMsg::ChangeFileName(s)))
+        let on_msg = on_message.clone();
+        let file_input: text_input::TextInput<'_, M> = text_input("", &self.temp_filename)
+            .on_input(move |s| on_msg(CaptureDialogMessage::ChangeFileName(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
@@ -263,7 +232,7 @@ impl CaptureDialogState {
                 })
             ]
             .align_y(Alignment::Center)
-        } else if file_exists && !self.capture_session {
+        } else if file_exists && !self.is_capturing {
             let file_warning_msg = fl!(crate::LANGUAGE_LOADER, "capture-dialog-file-exists");
             row![
                 warning_tooltip(file_warning_msg.clone()),
@@ -284,33 +253,32 @@ impl CaptureDialogState {
         let default_dir = crate::data::Options::default_capture_directory();
         let is_at_defaults = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
 
-        let restore_btn = if !self.capture_session {
+        let restore_btn = if !self.is_capturing {
+            let on_msg = on_message.clone();
             Some(icy_engine_gui::ui::restore_defaults_button(
                 !is_at_defaults,
-                crate::ui::Message::CaptureDialog(CaptureMsg::RestoreDefaults),
+                on_msg(CaptureDialogMessage::RestoreDefaults),
             ))
         } else {
             None
         };
 
         // Action buttons
-        let action_btn = if self.capture_session {
-            danger_button(fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"), Some(crate::ui::Message::StopCapture))
+        let on_msg = on_message.clone();
+        let action_btn = if self.is_capturing {
+            danger_button(
+                fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture"),
+                Some(on_msg(CaptureDialogMessage::StopCapture)),
+            )
         } else {
             primary_button(
                 fl!(crate::LANGUAGE_LOADER, "capture-dialog-capture-button"),
-                if dir_valid {
-                    Some(crate::ui::Message::CaptureDialog(CaptureMsg::StartCapture))
-                } else {
-                    None
-                },
+                if dir_valid { Some(on_msg(CaptureDialogMessage::StartCapture)) } else { None },
             )
         };
 
-        let cancel_btn = secondary_button(
-            format!("{}", icy_engine_gui::ButtonType::Cancel),
-            Some(crate::ui::Message::CaptureDialog(CaptureMsg::Cancel)),
-        );
+        let on_msg = on_message.clone();
+        let cancel_btn = secondary_button(format!("{}", icy_engine_gui::ButtonType::Cancel), Some(on_msg(CaptureDialogMessage::Cancel)));
 
         let buttons = if let Some(restore) = restore_btn {
             button_row_with_left(vec![restore.into()], vec![cancel_btn.into(), action_btn.into()])
@@ -341,4 +309,14 @@ impl CaptureDialogState {
             .center_y(Length::Fill)
             .into()
     }
+}
+
+/// Create a capture dialog for the dialog stack
+pub fn capture_dialog_from_msg<M, F, E>(initial_dir: String, is_capturing: bool, (on_message, extract_message): (F, E)) -> CaptureDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(CaptureDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&CaptureDialogMessage> + Clone + 'static,
+{
+    CaptureDialogWrapper::new(CaptureDialogState::new(initial_dir, is_capturing), on_message, extract_message)
 }

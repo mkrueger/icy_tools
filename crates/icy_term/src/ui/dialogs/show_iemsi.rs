@@ -3,51 +3,41 @@ use iced::{
     Alignment, Element, Length, Theme,
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
-use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, modal_container, primary_button, section_header, separator,
+use icy_engine_gui::{
+    dialog_wrapper,
+    ui::{
+        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, StateResult, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, modal_container, primary_button,
+        section_header, separator,
+    },
 };
 use icy_net::iemsi::EmsiISI;
-
-use crate::ui::MainWindowMode;
 
 const LABEL_WIDTH: f32 = 140.0;
 
 #[derive(Debug, Clone)]
-pub enum IemsiMsg {
+pub enum ShowIemsiMessage {
     Close,
 }
 
-pub struct ShowIemsiDialog {
+#[dialog_wrapper(close_on_blur = true)]
+pub struct ShowIemsiState {
     pub iemsi_info: EmsiISI,
 }
 
-impl ShowIemsiDialog {
+impl ShowIemsiState {
     pub fn new(iemsi_info: EmsiISI) -> Self {
         Self { iemsi_info }
     }
 
-    pub fn update(&mut self, message: IemsiMsg) -> Option<crate::ui::Message> {
+    pub fn handle_message(&mut self, message: ShowIemsiMessage) -> StateResult<()> {
         match message {
-            IemsiMsg::Close => Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+            ShowIemsiMessage::Close => StateResult::Close,
         }
     }
 
-    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        let overlay = self.create_modal_content();
-        crate::ui::modal(terminal_content, overlay, crate::ui::Message::ShowIemsi(IemsiMsg::Close))
-    }
+    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(ShowIemsiMessage) -> M + Clone + 'static) -> Element<'a, M> {
+        let on_msg = on_message.clone();
 
-    fn create_field(label: String, value: &str) -> Element<'_, crate::ui::Message> {
-        row![
-            text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
-            text_input("", value).size(TEXT_SIZE_NORMAL).width(Length::Fill),
-        ]
-        .spacing(DIALOG_SPACING)
-        .align_y(Alignment::Center)
-        .into()
-    }
-
-    fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
         // System info section
         let system_section = column![
             section_header(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-heading")),
@@ -79,26 +69,51 @@ impl ShowIemsiDialog {
         let content = column![system_section, Space::new().height(DIALOG_SPACING), notice_section,];
 
         // OK button
-        let ok_btn = primary_button(
-            format!("{}", icy_engine_gui::ButtonType::Ok),
-            Some(crate::ui::Message::ShowIemsi(IemsiMsg::Close)),
-        );
+        let ok_btn = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(on_msg(ShowIemsiMessage::Close)));
 
         let buttons = button_row(vec![ok_btn.into()]);
 
         let dialog_content = dialog_area(content.into());
         let button_area = dialog_area(buttons.into());
 
-        let modal = modal_container(
+        modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
             DIALOG_WIDTH_MEDIUM,
-        );
-
-        container(modal)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        )
+        .into()
     }
+
+    fn create_field<'a, M: Clone + 'static>(label: String, value: &str) -> Element<'a, M> {
+        row![
+            text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
+            text_input("", value).size(TEXT_SIZE_NORMAL).width(Length::Fill),
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center)
+        .into()
+    }
+}
+
+// ============================================================================
+// Builder functions
+// ============================================================================
+
+/// Create an IEMSI dialog for use with DialogStack
+pub fn show_iemsi_dialog<M, F, E>(iemsi_info: EmsiISI, on_message: F, extract_message: E) -> ShowIemsiWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ShowIemsiMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&ShowIemsiMessage> + Clone + 'static,
+{
+    ShowIemsiWrapper::new(ShowIemsiState::new(iemsi_info), on_message, extract_message)
+}
+
+/// Creates an IEMSI dialog wrapper using a tuple of (on_message, extract_message).
+pub fn show_iemsi_dialog_from_msg<M, F, E>(iemsi_info: EmsiISI, msg_tuple: (F, E)) -> ShowIemsiWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(ShowIemsiMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&ShowIemsiMessage> + Clone + 'static,
+{
+    show_iemsi_dialog(iemsi_info, msg_tuple.0, msg_tuple.1)
 }

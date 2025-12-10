@@ -3,17 +3,18 @@ use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::{
-    Border, Color, Element, Length,
+    Border, Color, Element, Event, Length,
     widget::{Space, button, column, container, row, scrollable, text},
 };
 use icy_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
 use icy_engine_gui::ui::*;
+use icy_engine_gui::{Dialog, DialogAction, dialog_wrapper};
 use icy_net::{
     modem::ModemConfiguration,
     serial::{CharSize, Parity, StopBits},
 };
 
-use crate::{Options, ui::MainWindowMode};
+use crate::Options;
 
 mod iemsi_settings;
 mod modem_command_input;
@@ -63,8 +64,14 @@ impl SettingsCategory {
     }
 }
 
+/// Result type for settings dialog - contains optional scrollback buffer size change
 #[derive(Debug, Clone)]
-pub enum SettingsMsg {
+pub struct SettingsResult {
+    pub new_scrollback_size: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SettingsDialogMessage {
     SwitchCategory(SettingsCategory),
     UpdateOptions(Options),
     ResetCategory(SettingsCategory),
@@ -90,6 +97,7 @@ pub enum SettingsMsg {
     Noop,
 }
 
+#[dialog_wrapper(close_on_blur = false, result_type = SettingsResult)]
 pub struct SettingsDialogState {
     pub current_category: SettingsCategory,
     pub temp_options: Arc<Mutex<Options>>,
@@ -99,7 +107,9 @@ pub struct SettingsDialogState {
 }
 
 impl SettingsDialogState {
-    pub fn new(original_options: Arc<Mutex<Options>>, temp_options: Arc<Mutex<Options>>) -> Self {
+    pub fn new(original_options: Arc<Mutex<Options>>) -> Self {
+        // Create temp_options as a clone of original_options for editing
+        let temp_options = Arc::new(Mutex::new(original_options.lock().clone()));
         Self {
             current_category: SettingsCategory::Monitor,
             temp_options,
@@ -109,17 +119,17 @@ impl SettingsDialogState {
         }
     }
 
-    pub fn update(&mut self, message: SettingsMsg) -> Option<crate::ui::Message> {
+    pub fn handle_message(&mut self, message: SettingsDialogMessage) -> StateResult<SettingsResult> {
         match message {
-            SettingsMsg::SwitchCategory(category) => {
+            SettingsDialogMessage::SwitchCategory(category) => {
                 self.current_category = category;
-                None
+                StateResult::None
             }
-            SettingsMsg::UpdateOptions(options) => {
+            SettingsDialogMessage::UpdateOptions(options) => {
                 *self.temp_options.lock() = options;
-                None
+                StateResult::None
             }
-            SettingsMsg::ResetCategory(category) => {
+            SettingsDialogMessage::ResetCategory(category) => {
                 match category {
                     SettingsCategory::Monitor => {
                         self.temp_options.lock().reset_monitor_settings();
@@ -150,17 +160,17 @@ impl SettingsDialogState {
                     }
                     _ => {}
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::OpenSettingsFolder => {
+            SettingsDialogMessage::OpenSettingsFolder => {
                 if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
                     if let Err(err) = open::that(proj_dirs.config_dir()) {
                         log::error!("Failed to open settings folder: {}", err);
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::OpenLogFile => {
+            SettingsDialogMessage::OpenLogFile => {
                 if let Some(log_file) = Options::get_log_file() {
                     if log_file.exists() {
                         #[cfg(windows)]
@@ -183,9 +193,9 @@ impl SettingsDialogState {
                         }
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::Save => {
+            SettingsDialogMessage::Save => {
                 // Save the options and close dialog
                 let old_buffer_size = self.original_options.lock().max_scrollback_lines;
                 let tmp = self.temp_options.lock().clone();
@@ -195,24 +205,22 @@ impl SettingsDialogState {
                     log::error!("Failed to save options: {}", e);
                 }
 
-                // If buffer size changed, notify the terminal thread
-                if old_buffer_size != new_buffer_size {
-                    return Some(crate::ui::Message::SetScrollbackBufferSize(new_buffer_size));
-                }
+                // Return result with scrollback size change if needed
+                let new_scrollback_size = if old_buffer_size != new_buffer_size { Some(new_buffer_size) } else { None };
 
-                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
+                StateResult::Success(SettingsResult { new_scrollback_size })
             }
-            SettingsMsg::Cancel => {
+            SettingsDialogMessage::Cancel => {
                 // Reset to original options and close
                 let tmp = self.original_options.lock().clone();
                 *self.temp_options.lock() = tmp;
-                Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
+                StateResult::Close
             }
-            SettingsMsg::SelectModem(index) => {
+            SettingsDialogMessage::SelectModem(index) => {
                 self.selected_modem_index = index;
-                None
+                StateResult::None
             }
-            SettingsMsg::AddModem => {
+            SettingsDialogMessage::AddModem => {
                 let len = self.temp_options.lock().modems.len();
                 let new_modem = ModemConfiguration {
                     name: format!("Modem {}", len + 1),
@@ -220,9 +228,9 @@ impl SettingsDialogState {
                 };
                 self.temp_options.lock().modems.push(new_modem);
                 self.selected_modem_index = len;
-                None
+                StateResult::None
             }
-            SettingsMsg::RemoveModem(index) => {
+            SettingsDialogMessage::RemoveModem(index) => {
                 let mut temp_options = self.temp_options.lock();
                 if index < temp_options.modems.len() {
                     temp_options.modems.remove(index);
@@ -235,21 +243,21 @@ impl SettingsDialogState {
                         self.selected_modem_index = 0;
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::MonitorSettings(settings) => {
+            SettingsDialogMessage::MonitorSettings(settings) => {
                 update_monitor_settings(&mut self.temp_options.lock().monitor_settings, settings);
-                None
+                StateResult::None
             }
-            SettingsMsg::UpdateDownloadPath(path) => {
+            SettingsDialogMessage::UpdateDownloadPath(path) => {
                 self.temp_options.lock().download_path = path;
-                None
+                StateResult::None
             }
-            SettingsMsg::UpdateCapturePath(path) => {
+            SettingsDialogMessage::UpdateCapturePath(path) => {
                 self.temp_options.lock().capture_path = path;
-                None
+                StateResult::None
             }
-            SettingsMsg::BrowseDownloadPath => {
+            SettingsDialogMessage::BrowseDownloadPath => {
                 let current_path = self.temp_options.lock().download_path();
                 let initial_dir = if std::path::Path::new(&current_path).exists() {
                     Some(std::path::PathBuf::from(&current_path))
@@ -267,9 +275,9 @@ impl SettingsDialogState {
                         self.temp_options.lock().download_path = path_str.to_string();
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::BrowseCapturePath => {
+            SettingsDialogMessage::BrowseCapturePath => {
                 let current_path = self.temp_options.lock().capture_path();
                 let initial_dir = if std::path::Path::new(&current_path).exists() {
                     Some(std::path::PathBuf::from(&current_path))
@@ -287,19 +295,19 @@ impl SettingsDialogState {
                         self.temp_options.lock().capture_path = path_str.to_string();
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::ResetPaths => {
+            SettingsDialogMessage::ResetPaths => {
                 let mut options = self.temp_options.lock();
                 options.download_path = String::new();
                 options.capture_path = String::new();
-                None
+                StateResult::None
             }
-            SettingsMsg::SelectProtocol(index) => {
+            SettingsDialogMessage::SelectProtocol(index) => {
                 self.selected_protocol_index = index;
-                None
+                StateResult::None
             }
-            SettingsMsg::AddProtocol => {
+            SettingsDialogMessage::AddProtocol => {
                 use crate::data::TransferProtocol;
                 let len = self.temp_options.lock().transfer_protocols.len();
                 let new_protocol = TransferProtocol {
@@ -310,9 +318,9 @@ impl SettingsDialogState {
                 };
                 self.temp_options.lock().transfer_protocols.push(new_protocol);
                 self.selected_protocol_index = len;
-                None
+                StateResult::None
             }
-            SettingsMsg::RemoveProtocol(index) => {
+            SettingsDialogMessage::RemoveProtocol(index) => {
                 let mut temp_options = self.temp_options.lock();
                 if index < temp_options.transfer_protocols.len() {
                     // Don't allow removing internal protocols
@@ -326,49 +334,46 @@ impl SettingsDialogState {
                         }
                     }
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::MoveProtocolUp(index) => {
+            SettingsDialogMessage::MoveProtocolUp(index) => {
                 let mut temp_options = self.temp_options.lock();
                 if index > 0 && index < temp_options.transfer_protocols.len() {
                     temp_options.transfer_protocols.swap(index, index - 1);
                     self.selected_protocol_index = index - 1;
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::MoveProtocolDown(index) => {
+            SettingsDialogMessage::MoveProtocolDown(index) => {
                 let mut temp_options = self.temp_options.lock();
                 if index + 1 < temp_options.transfer_protocols.len() {
                     temp_options.transfer_protocols.swap(index, index + 1);
                     self.selected_protocol_index = index + 1;
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::ToggleProtocolEnabled(index) => {
+            SettingsDialogMessage::ToggleProtocolEnabled(index) => {
                 let mut temp_options = self.temp_options.lock();
                 if index < temp_options.transfer_protocols.len() {
                     let protocol = &mut temp_options.transfer_protocols[index];
                     protocol.enabled = !protocol.enabled;
                 }
-                None
+                StateResult::None
             }
-            SettingsMsg::Noop => None,
+            SettingsDialogMessage::Noop => StateResult::None,
         }
     }
 
-    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        let overlay = self.create_modal_content();
-        crate::ui::modal(terminal_content, overlay, crate::ui::Message::SettingsDialog(SettingsMsg::Cancel))
-    }
-
-    fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
+    /// Build just the dialog content (for use with Dialog trait)
+    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static) -> Element<'a, M> {
         // Category tabs
         let mut category_row = row![].spacing(DIALOG_SPACING);
         for category in SettingsCategory::all() {
             let is_selected = self.current_category == category;
             let cat = category.clone();
+            let on_msg = on_message.clone();
             let cat_button = button(text(category.name()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
-                .on_press(crate::ui::Message::SettingsDialog(SettingsMsg::SwitchCategory(cat)))
+                .on_press(on_msg(SettingsDialogMessage::SwitchCategory(cat)))
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
@@ -414,89 +419,57 @@ impl SettingsDialogState {
         }
 
         // Settings content for current category
-        let settings_content = match self.current_category {
+        let settings_content: Element<'_, M> = match self.current_category {
             SettingsCategory::Monitor => {
                 let monitor_settings = self.temp_options.lock().monitor_settings.clone();
-                show_monitor_settings(monitor_settings).map(|msg| crate::ui::Message::SettingsDialog(SettingsMsg::MonitorSettings(msg)))
+                let on_msg = on_message.clone();
+                show_monitor_settings(monitor_settings).map(move |msg| on_msg(SettingsDialogMessage::MonitorSettings(msg)))
             }
-            SettingsCategory::IEMSI => self.iemsi_settings_content(),
-            SettingsCategory::Terminal => self.terminal_settings_content(),
-            SettingsCategory::Keybinds => self.keybinds_settings_content(),
-            SettingsCategory::Modem => self.modem_settings_content(),
-            SettingsCategory::Protocols => self.protocol_settings_content(),
+            SettingsCategory::IEMSI => self.iemsi_settings_content_generic(on_message.clone()),
+            SettingsCategory::Terminal => self.terminal_settings_content_generic(on_message.clone()),
+            SettingsCategory::Keybinds => self.keybinds_settings_content_generic(),
+            SettingsCategory::Modem => self.modem_settings_content_generic(on_message.clone()),
+            SettingsCategory::Protocols => self.protocol_settings_content_generic(on_message.clone()),
             SettingsCategory::Paths => {
                 let options = self.temp_options.lock();
                 let download_path = options.download_path();
                 let capture_path = options.capture_path();
                 drop(options);
-                paths_settings::paths_settings_content(download_path, capture_path)
+                paths_settings::paths_settings_content_generic(download_path, capture_path, on_message.clone())
             }
         };
 
         // Buttons
-        let ok_button = primary_button(
-            format!("{}", icy_engine_gui::ButtonType::Ok),
-            Some(crate::ui::Message::SettingsDialog(SettingsMsg::Save)),
-        );
+        let on_msg = on_message.clone();
+        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(on_msg(SettingsDialogMessage::Save)));
 
-        let cancel_button = secondary_button(
-            format!("{}", icy_engine_gui::ButtonType::Cancel),
-            Some(crate::ui::Message::SettingsDialog(SettingsMsg::Cancel)),
-        );
+        let on_msg = on_message.clone();
+        let cancel_button = secondary_button(format!("{}", icy_engine_gui::ButtonType::Cancel), Some(on_msg(SettingsDialogMessage::Cancel)));
 
-        let reset_button = match self.current_category {
+        let reset_button: Option<Element<'_, M>> = match self.current_category {
             SettingsCategory::Monitor => {
                 let current_settings = self.temp_options.lock().monitor_settings.clone();
                 let default_settings = icy_engine_gui::MonitorSettings::default();
                 let is_default = current_settings == default_settings;
-                Some(icy_engine_gui::ui::restore_defaults_button(
-                    !is_default,
-                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
-                ))
+                Some(
+                    icy_engine_gui::ui::restore_defaults_button(!is_default, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone())))
+                        .into(),
+                )
             }
-            SettingsCategory::Terminal => {
-                let options = self.temp_options.lock();
-                // let default_options = crate::data::Options::default();
-                // let is_default = options.console_beep == default_options.console_beep && options.dial_tone == default_options.dial_tone;
-                drop(options);
-                /*let msg = if !is_default {
-                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
-                } else {
-                    None
-                };
-                Some(icy_engine_gui::ui::restore_defaults_button(!is_default, msg))*/
-                None
-            }
-            SettingsCategory::IEMSI => {
-                let options = self.temp_options.lock();
-                // let current_iemsi = options.iemsi.clone();
-                // let default_iemsi = crate::data::IEMSISettings::default();
-                // let is_default = current_iemsi == default_iemsi;
-                drop(options);
-                /*
-                let msg = if !is_default {
-                    Some(crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())))
-                } else {
-                    None
-                };
-                Some(icy_engine_gui::ui::restore_defaults_button(!is_default, msg))*/
-                None
-            }
+            SettingsCategory::Terminal => None,
+            SettingsCategory::IEMSI => None,
             SettingsCategory::Keybinds => {
                 // TODO: Add default keybindings check when implemented
-                Some(icy_engine_gui::ui::restore_defaults_button(
-                    true,
-                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
-                ))
+                Some(icy_engine_gui::ui::restore_defaults_button(true, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone()))).into())
             }
             SettingsCategory::Paths => {
                 let options = self.temp_options.lock();
                 let is_default = options.download_path.is_empty() && options.capture_path.is_empty();
                 drop(options);
-                Some(icy_engine_gui::ui::restore_defaults_button(
-                    !is_default,
-                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
-                ))
+                Some(
+                    icy_engine_gui::ui::restore_defaults_button(!is_default, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone())))
+                        .into(),
+                )
             }
             SettingsCategory::Protocols => {
                 let options = self.temp_options.lock();
@@ -504,20 +477,20 @@ impl SettingsDialogState {
                 drop(options);
                 let default_protocols = crate::data::default_protocols();
                 let is_default = current_protocols == default_protocols;
-                Some(icy_engine_gui::ui::restore_defaults_button(
-                    !is_default,
-                    crate::ui::Message::SettingsDialog(SettingsMsg::ResetCategory(self.current_category.clone())),
-                ))
+                Some(
+                    icy_engine_gui::ui::restore_defaults_button(!is_default, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone())))
+                        .into(),
+                )
             }
             _ => None,
         };
 
-        let mut buttons_left = vec![];
+        let mut buttons_left: Vec<Element<'_, M>> = vec![];
         if let Some(reset_btn) = reset_button {
-            buttons_left.push(reset_btn.into());
+            buttons_left.push(reset_btn);
         }
 
-        let buttons_right = vec![cancel_button.into(), ok_button.into()];
+        let buttons_right: Vec<Element<'_, M>> = vec![cancel_button.into(), ok_button.into()];
 
         let button_area_row = button_row_with_left(buttons_left, buttons_right);
 
@@ -535,22 +508,21 @@ impl SettingsDialogState {
 
         let button_area_wrapped = dialog_area(button_area_row.into());
 
-        let modal = modal_container(
+        modal_container(
             column![container(dialog_content).height(Length::Fill), separator(), button_area_wrapped,].into(),
             DIALOG_WIDTH_XARGLE,
-        );
-
-        container(modal)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        )
+        .into()
     }
 
-    fn keybinds_settings_content(&self) -> Element<'_, crate::ui::Message> {
+    fn keybinds_settings_content_generic<'a, M: Clone + 'static>(&self) -> Element<'a, M> {
         // TODO: Implement keybindings editor
         column![text("Keybindings editor - TODO: Implement keybinding controls").size(TEXT_SIZE_NORMAL),].into()
+    }
+
+    /// Get the current theme for live preview
+    pub fn get_theme(&self) -> iced::Theme {
+        self.temp_options.lock().monitor_settings.get_theme()
     }
 }
 
@@ -750,5 +722,116 @@ impl std::fmt::Display for ThemeOption {
             iced::Theme::Ferra => write!(f, "Ferra"),
             iced::Theme::Custom(_) => write!(f, "Custom"),
         }
+    }
+}
+
+// ============================================================================
+// Builder functions for settings dialog
+// ============================================================================
+
+/// Create a settings dialog for use with DialogStack using an existing state
+pub fn settings_dialog_with_state<M, F, E>(state: SettingsDialogState, on_message: F, extract_message: E) -> SettingsDialogWrapperWithTheme<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SettingsDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
+{
+    SettingsDialogWrapperWithTheme {
+        inner: SettingsDialogWrapper::new(state, on_message, extract_message),
+    }
+}
+
+/// Creates a settings dialog wrapper using a tuple of (on_message, extract_message).
+///
+/// This is a convenience function to use with the `dialog_msg!` macro:
+/// ```ignore
+/// use icy_engine_gui::dialog_msg;
+/// dialog_stack.push(settings_dialog_from_msg(
+///     state,
+///     dialog_msg!(Message::SettingsDialog),
+/// ));
+/// ```
+pub fn settings_dialog_from_msg<M, F, E>(state: SettingsDialogState, msg_tuple: (F, E)) -> SettingsDialogWrapperWithTheme<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SettingsDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
+{
+    settings_dialog_with_state(state, msg_tuple.0, msg_tuple.1)
+}
+
+// ============================================================================
+// Custom wrapper that adds theme() support
+// ============================================================================
+
+/// A wrapper around SettingsDialogWrapper that adds theme() support for live preview.
+/// This is needed because the dialog_wrapper macro doesn't support custom theme methods.
+pub struct SettingsDialogWrapperWithTheme<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SettingsDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
+{
+    inner: SettingsDialogWrapper<M, F, E>,
+}
+
+impl<M, F, E> SettingsDialogWrapperWithTheme<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SettingsDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
+{
+    /// Set callback for successful save (confirm).
+    pub fn on_save<G>(mut self, callback: G) -> Self
+    where
+        G: Fn(SettingsResult) -> M + Send + 'static,
+    {
+        self.inner = self.inner.on_confirm(callback);
+        self
+    }
+
+    /// Set callback for cancel/close.
+    pub fn on_cancel<G>(mut self, callback: G) -> Self
+    where
+        G: Fn() -> M + Send + 'static,
+    {
+        self.inner = self.inner.on_cancel(callback);
+        self
+    }
+}
+
+impl<M, F, E> Dialog<M> for SettingsDialogWrapperWithTheme<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SettingsDialogMessage) -> M + Clone + Send + 'static,
+    E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + Send + 'static,
+{
+    fn view(&self) -> Element<'_, M> {
+        self.inner.view()
+    }
+
+    fn update(&mut self, message: &M) -> Option<DialogAction<M>> {
+        self.inner.update(message)
+    }
+
+    fn request_cancel(&mut self) -> DialogAction<M> {
+        self.inner.request_cancel()
+    }
+
+    fn request_confirm(&mut self) -> DialogAction<M> {
+        self.inner.request_confirm()
+    }
+
+    fn handle_event(&mut self, event: &Event) -> Option<DialogAction<M>> {
+        self.inner.handle_event(event)
+    }
+
+    fn close_on_blur(&self) -> bool {
+        false // Settings dialog should not close on blur
+    }
+
+    fn theme(&self) -> Option<iced::Theme> {
+        // Return the theme from temp_options so changes are previewed live
+        Some(self.inner.state.get_theme())
     }
 }

@@ -1042,9 +1042,8 @@ impl MainWindow {
                         };
 
                         if let Some(sauce) = sauce_info {
-                            self.dialogs.push(
-                                sauce_dialog_from_msg(sauce, dialog_msg!(Message::SauceDialog)).on_cancel(|| Message::None),
-                            );
+                            self.dialogs
+                                .push(sauce_dialog_from_msg(sauce, dialog_msg!(Message::SauceDialog)).on_cancel(|| Message::None));
                         }
                         return Task::none();
                     }
@@ -1479,13 +1478,10 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowHelp => {
-                self.dialogs.push(help_dialog(
-                    Message::HelpDialog,
-                    |msg| match msg {
-                        Message::HelpDialog(m) => Some(m),
-                        _ => None,
-                    },
-                ));
+                self.dialogs.push(help_dialog(Message::HelpDialog, |msg| match msg {
+                    Message::HelpDialog(m) => Some(m),
+                    _ => None,
+                }));
                 Task::none()
             }
             Message::HelpDialog(_msg) => {
@@ -1495,13 +1491,10 @@ impl MainWindow {
             Message::ShowAbout => {
                 icy_engine_gui::set_default_auto_scaling_xy(true);
                 self.dialogs.push(
-                    about_dialog(
-                        Message::AboutDialog,
-                        |msg| match msg {
-                            Message::AboutDialog(m) => Some(m),
-                            _ => None,
-                        },
-                    )
+                    about_dialog(Message::AboutDialog, |msg| match msg {
+                        Message::AboutDialog(m) => Some(m),
+                        _ => None,
+                    })
                     .on_cancel(|| {
                         icy_engine_gui::set_default_auto_scaling_xy(false);
                         Message::None

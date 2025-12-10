@@ -295,11 +295,7 @@ where
     E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
 {
     SettingsDialogWrapperWithTheme {
-        inner: SettingsDialogWrapper::new(
-            SettingsDialogState::new(original_options, temp_options),
-            on_message,
-            extract_message,
-        ),
+        inner: SettingsDialogWrapper::new(SettingsDialogState::new(original_options, temp_options), on_message, extract_message),
     }
 }
 
@@ -402,4 +398,3 @@ where
         Some(self.inner.state.get_theme())
     }
 }
-

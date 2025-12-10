@@ -3,10 +3,9 @@ use iced::{
     Alignment, Border, Color, Element, Length,
     widget::{Space, column, container, radio, row, text, text_input},
 };
+use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::ui::*;
 use icy_parser_core::BaudEmulation;
-
-use crate::ui::MainWindowMode;
 
 // Standard baud rates - index 0 is Off, 1-12 are rates, 13 is custom
 pub const STANDARD_RATES: [Option<u32>; 13] = [
@@ -27,18 +26,22 @@ pub const STANDARD_RATES: [Option<u32>; 13] = [
 
 const CUSTOM_INDEX: usize = 12;
 
-pub struct SelectBpsDialog {
+/// Messages for the baud emulation selection dialog
+#[derive(Debug, Clone)]
+pub enum SelectBpsDialogMessage {
+    SelectBps(usize),
+    CustomBpsChanged(String),
+    Apply,
+    Cancel,
+}
+
+#[dialog_wrapper(close_on_blur = false, result_type = BaudEmulation)]
+pub struct SelectBpsDialogState {
     pub selected_index: usize,
     pub custom_rate: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum SelectBpsMsg {
-    SelectBps(usize),
-    CustomBpsChanged(String),
-}
-
-impl SelectBpsDialog {
+impl SelectBpsDialogState {
     pub fn new(current_bps: BaudEmulation) -> Self {
         let (selected_index, custom_rate) = match current_bps {
             BaudEmulation::Off => (0, String::new()),
@@ -54,23 +57,6 @@ impl SelectBpsDialog {
         };
 
         Self { selected_index, custom_rate }
-    }
-
-    pub fn set_emulation(&mut self, baud: BaudEmulation) {
-        let (selected_index, custom_rate) = match baud {
-            BaudEmulation::Off => (0, String::new()),
-            BaudEmulation::Rate(rate) => {
-                if let Some(idx) = STANDARD_RATES[1..12].iter().position(|&r| r == Some(rate)) {
-                    (idx + 1, self.custom_rate.clone())
-                } else {
-                    (CUSTOM_INDEX, rate.to_string())
-                }
-            }
-        };
-        self.selected_index = selected_index;
-        if selected_index == CUSTOM_INDEX {
-            self.custom_rate = custom_rate;
-        }
     }
 
     pub fn get_emulation(&self) -> BaudEmulation {
@@ -89,32 +75,26 @@ impl SelectBpsDialog {
         }
     }
 
-    pub fn update(&mut self, message: SelectBpsMsg) -> Option<crate::ui::Message> {
+    pub fn handle_message(&mut self, message: SelectBpsDialogMessage) -> StateResult<BaudEmulation> {
         match message {
-            SelectBpsMsg::SelectBps(index) => {
+            SelectBpsDialogMessage::SelectBps(index) => {
                 self.selected_index = index;
                 if index == CUSTOM_INDEX && self.custom_rate.is_empty() {
                     self.custom_rate = "2400".to_string();
                 }
-                None
+                StateResult::None
             }
-            SelectBpsMsg::CustomBpsChanged(value) => {
+            SelectBpsDialogMessage::CustomBpsChanged(value) => {
                 // Only allow digits
                 self.custom_rate = value.chars().filter(|c| c.is_ascii_digit()).collect();
-                None
+                StateResult::None
             }
+            SelectBpsDialogMessage::Apply => StateResult::Success(self.get_emulation()),
+            SelectBpsDialogMessage::Cancel => StateResult::Close,
         }
     }
 
-    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        crate::ui::modal(
-            terminal_content,
-            self.create_modal_content(),
-            crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)),
-        )
-    }
-
-    fn create_modal_content(&self) -> Element<'_, crate::ui::Message> {
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(SelectBpsDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         let title = dialog_title(fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-heading"));
 
         let mut list = column![].spacing(4);
@@ -128,6 +108,7 @@ impl SelectBpsDialog {
             };
 
             let is_selected = self.selected_index == idx;
+            let on_msg = on_message.clone();
 
             let item = radio(
                 label,
@@ -137,7 +118,7 @@ impl SelectBpsDialog {
                 } else {
                     Some(self.selected_index)
                 },
-                |idx| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::SelectBps(idx)),
+                move |idx| on_msg(SelectBpsDialogMessage::SelectBps(idx)),
             )
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
@@ -166,12 +147,14 @@ impl SelectBpsDialog {
 
         // Custom rate row (index 12)
         let is_custom_selected = self.selected_index == CUSTOM_INDEX;
+        let on_msg_custom = on_message.clone();
+        let on_msg_input = on_message.clone();
         let custom_row = {
             let radio_custom = radio(
                 fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-bps-custom"),
                 CUSTOM_INDEX,
                 Some(self.selected_index),
-                |idx| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::SelectBps(idx)),
+                move |idx| on_msg_custom(SelectBpsDialogMessage::SelectBps(idx)),
             )
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
@@ -196,7 +179,7 @@ impl SelectBpsDialog {
             });
 
             let input = text_input("", &self.custom_rate)
-                .on_input(|s| crate::ui::Message::SelectBpsMsg(SelectBpsMsg::CustomBpsChanged(s)))
+                .on_input(move |s| on_msg_input(SelectBpsDialogMessage::CustomBpsChanged(s)))
                 .padding(6)
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fixed(110.0))
@@ -241,10 +224,10 @@ impl SelectBpsDialog {
         // Buttons
         let cancel_button = secondary_button(
             format!("{}", icy_engine_gui::ButtonType::Cancel),
-            Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))),
+            Some(on_message(SelectBpsDialogMessage::Cancel)),
         );
 
-        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(crate::ui::Message::ApplyBaudEmulation));
+        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(on_message(SelectBpsDialogMessage::Apply)));
 
         let buttons = button_row(vec![cancel_button.into(), ok_button.into()]);
 
@@ -264,4 +247,33 @@ impl SelectBpsDialog {
             .center_y(Length::Fill)
             .into()
     }
+}
+
+impl Default for SelectBpsDialogState {
+    fn default() -> Self {
+        Self::new(BaudEmulation::Off)
+    }
+}
+
+// ============================================================================
+// Builder function for baud emulation dialog
+// ============================================================================
+
+/// Create a baud emulation selection dialog for use with DialogStack
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(select_bps_dialog(
+///     current_baud,
+///     Message::SelectBpsDialogMessage,
+///     |msg| match msg { Message::SelectBpsDialogMessage(m) => Some(m), _ => None },
+/// ));
+/// ```
+pub fn select_bps_dialog<M, F, E>(current_bps: BaudEmulation, on_message: F, extract_message: E) -> SelectBpsDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(SelectBpsDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&SelectBpsDialogMessage> + Clone + 'static,
+{
+    SelectBpsDialogWrapper::new(SelectBpsDialogState::new(current_bps), on_message, extract_message)
 }

@@ -1,72 +1,74 @@
-use i18n_embed_fl::fl;
-use iced::Element;
-use icy_engine_gui::commands::CommandDef;
-use icy_engine_gui::ui::{HelpDialogConfig, help_dialog_content, modal};
+//! Help dialog for icy_term
 
+use i18n_embed_fl::fl;
+use icy_engine_gui::commands::CommandDef;
+use icy_engine_gui::ui::{HelpDialogMessage, HelpDialogState, HelpDialogWrapper};
+
+use crate::LANGUAGE_LOADER;
 use crate::commands::cmd;
 
-pub struct HelpDialog;
+/// Get all commands for the help dialog
+fn get_help_commands() -> Vec<CommandDef> {
+    vec![
+        // Connection commands
+        cmd::CONNECTION_DIALING_DIRECTORY.clone(),
+        cmd::CONNECTION_SERIAL.clone(),
+        cmd::CONNECTION_HANGUP.clone(),
+        cmd::APP_QUIT.clone(),
+        // Login commands
+        cmd::LOGIN_SEND_ALL.clone(),
+        cmd::LOGIN_SEND_USER.clone(),
+        cmd::LOGIN_SEND_PASSWORD.clone(),
+        // Transfer commands
+        cmd::TRANSFER_UPLOAD.clone(),
+        cmd::TRANSFER_DOWNLOAD.clone(),
+        // Window commands
+        cmd::WINDOW_CLOSE.clone(),
+        cmd::WINDOW_NEW.clone(),
+        cmd::VIEW_FULLSCREEN.clone(),
+        // Terminal commands
+        cmd::TERMINAL_CLEAR.clone(),
+        cmd::TERMINAL_SCROLLBACK.clone(),
+        cmd::CAPTURE_EXPORT.clone(),
+        cmd::CAPTURE_START.clone(),
+        // Tools commands
+        cmd::SCRIPT_RUN.clone(),
+        cmd::TERMINAL_FIND.clone(),
+        cmd::APP_SETTINGS.clone(),
+        cmd::APP_ABOUT.clone(),
+        cmd::HELP_SHOW.clone(),
+        // Edit commands
+        cmd::EDIT_COPY.clone(),
+        cmd::EDIT_PASTE.clone(),
+        // Zoom commands
+        cmd::VIEW_ZOOM_IN.clone(),
+        cmd::VIEW_ZOOM_OUT.clone(),
+        cmd::VIEW_ZOOM_RESET.clone(),
+        cmd::VIEW_ZOOM_FIT.clone(),
+    ]
+}
 
-impl HelpDialog {
-    pub fn new() -> Self {
-        Self
-    }
+/// Create a help dialog for use with DialogStack
+///
+/// # Example
+/// ```ignore
+/// dialog_stack.push(help_dialog(
+///     Message::HelpDialog,
+///     |msg| match msg { Message::HelpDialog(m) => Some(m), _ => None },
+/// ));
+/// ```
+pub fn help_dialog<M, F, E>(on_message: F, extract_message: E) -> HelpDialogWrapper<M, F, E>
+where
+    M: Clone + Send + 'static,
+    F: Fn(HelpDialogMessage) -> M + Clone + 'static,
+    E: Fn(&M) -> Option<&HelpDialogMessage> + Clone + 'static,
+{
+    let state = HelpDialogState::new(fl!(LANGUAGE_LOADER, "help-title"), fl!(LANGUAGE_LOADER, "help-subtitle"))
+        .with_commands(get_help_commands())
+        .with_category_translator(|category_key| {
+            let translation_key = format!("cmd-category-{}", category_key);
+            icy_engine_gui::LANGUAGE_LOADER.get(&translation_key)
+        });
 
-    pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
-        let config = self.build_config();
-        let close_msg = crate::ui::Message::CloseDialog(Box::new(crate::ui::MainWindowMode::ShowTerminal));
-        let content = help_dialog_content(&config, close_msg.clone());
-        modal(terminal_content, content, close_msg)
-    }
-
-    fn build_config(&self) -> HelpDialogConfig {
-        // Collect all commands for the help dialog
-        let commands: Vec<CommandDef> = vec![
-            // Connection commands
-            cmd::CONNECTION_DIALING_DIRECTORY.clone(),
-            cmd::CONNECTION_SERIAL.clone(),
-            cmd::CONNECTION_HANGUP.clone(),
-            cmd::APP_QUIT.clone(),
-            // Login commands
-            cmd::LOGIN_SEND_ALL.clone(),
-            cmd::LOGIN_SEND_USER.clone(),
-            cmd::LOGIN_SEND_PASSWORD.clone(),
-            // Transfer commands
-            cmd::TRANSFER_UPLOAD.clone(),
-            cmd::TRANSFER_DOWNLOAD.clone(),
-            // Window commands
-            cmd::WINDOW_CLOSE.clone(),
-            cmd::WINDOW_NEW.clone(),
-            cmd::VIEW_FULLSCREEN.clone(),
-            // Terminal commands
-            cmd::TERMINAL_CLEAR.clone(),
-            cmd::TERMINAL_SCROLLBACK.clone(),
-            cmd::CAPTURE_EXPORT.clone(),
-            cmd::CAPTURE_START.clone(),
-            // Tools commands
-            cmd::SCRIPT_RUN.clone(),
-            cmd::TERMINAL_FIND.clone(),
-            cmd::APP_SETTINGS.clone(),
-            cmd::APP_ABOUT.clone(),
-            cmd::HELP_SHOW.clone(),
-            // Edit commands
-            cmd::EDIT_COPY.clone(),
-            cmd::EDIT_PASTE.clone(),
-            // Zoom commands
-            cmd::VIEW_ZOOM_IN.clone(),
-            cmd::VIEW_ZOOM_OUT.clone(),
-            cmd::VIEW_ZOOM_RESET.clone(),
-            cmd::VIEW_ZOOM_FIT.clone(),
-        ];
-
-        HelpDialogConfig::new(fl!(crate::LANGUAGE_LOADER, "help-title"), fl!(crate::LANGUAGE_LOADER, "help-subtitle"))
-            .with_commands(commands)
-            .with_category_translator(|category_key| {
-                // Use icy_engine_gui's LANGUAGE_LOADER for category translations
-                // Category keys in TOML are like "connection", "transfer", "terminal"
-                // Translation keys are "cmd-category-{key}"
-                let translation_key = format!("cmd-category-{}", category_key);
-                icy_engine_gui::LANGUAGE_LOADER.get(&translation_key)
-            })
-    }
+    HelpDialogWrapper::new(state, on_message, extract_message)
 }

@@ -5,7 +5,7 @@ use iced::{
 use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, error_tooltip, left_label_small};
 use icy_net::modem::ModemCommand;
 
-/// Creates a row with a label, text input for ModemCommand editing, and error indicator.
+/// Creates a row with a label, text input for ModemCommand editing, and error indicator (generic version).
 ///
 /// The input displays the ModemCommand as a string and validates input in real-time.
 /// If the input is invalid, an error icon with tooltip is shown.
@@ -22,12 +22,12 @@ use icy_net::modem::ModemCommand;
 ///
 /// # Returns
 /// An Element containing the complete row with label, input, and optional error indicator
-pub fn modem_command_input<'a, Message: Clone + 'static>(
+pub fn modem_command_input_generic<'a, M: Clone + 'static>(
     label: String,
     placeholder: &'a str,
     current_value: &ModemCommand,
-    on_change: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
+    on_change: impl Fn(String) -> M + 'a,
+) -> Element<'a, M> {
     let display_value = current_value.to_string();
 
     // Validate the displayed value - should always be valid for stored ModemCommands
@@ -39,7 +39,7 @@ pub fn modem_command_input<'a, Message: Clone + 'static>(
         .width(Length::Fill)
         .size(TEXT_SIZE_NORMAL);
 
-    let error_element: Element<'a, Message> = if !is_valid {
+    let error_element: Element<'a, M> = if !is_valid {
         let error_text = format_validation_error(&validation_result);
         row![Space::new().width(4), error_tooltip(error_text),].into()
     } else {

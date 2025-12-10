@@ -1,8 +1,11 @@
-use iced::{Element, Length, widget::{column, container}};
+use iced::{
+    Element, Length,
+    widget::{column, container},
+};
 use icy_engine::{Screen, TextBuffer, TextScreen};
-use icy_engine_gui::{MonitorSettings, Terminal, TerminalView, dialog_wrapper};
 use icy_engine_gui::ui::{StateResult, button_row, dialog_area, primary_button, separator};
 use icy_engine_gui::version_helper::replace_version_marker;
+use icy_engine_gui::{MonitorSettings, Terminal, TerminalView, dialog_wrapper};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -63,10 +66,7 @@ impl AboutDialogState {
         }
     }
 
-    pub fn view<'a, Message: Clone + 'static>(
-        &'a self,
-        on_message: impl Fn(AboutDialogMessage) -> Message + 'a + Clone,
-    ) -> Element<'a, Message> {
+    pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(AboutDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         let mut settings = MonitorSettings::neutral();
         settings.use_integer_scaling = false;
 
@@ -77,20 +77,13 @@ impl AboutDialogState {
             _ => on_msg_close(AboutDialogMessage::Close),
         });
 
-        let ok_button = primary_button(
-            format!("{}", icy_engine_gui::ButtonType::Ok),
-            Some(on_message(AboutDialogMessage::Close)),
-        );
+        let ok_button = primary_button(format!("{}", icy_engine_gui::ButtonType::Ok), Some(on_message(AboutDialogMessage::Close)));
 
         let buttons = button_row(vec![ok_button.into()]);
 
-        column![
-            container(terminal_view).height(Length::Fill),
-            separator(),
-            dialog_area(buttons),
-        ]
-        .spacing(0)
-        .into()
+        column![container(terminal_view).height(Length::Fill), separator(), dialog_area(buttons),]
+            .spacing(0)
+            .into()
     }
 }
 

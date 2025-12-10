@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
+use icy_engine_gui::error_dialog;
 use icy_engine_gui::music::music::SoundThread;
 use parking_lot::Mutex;
 
@@ -31,9 +32,9 @@ pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
 
     mode: MainWindowMode,
+    startup_error: Option<(String, String, String)>, // (title, secondary, message)
     addresses: Arc<Mutex<AddressBook>>,
     options: Arc<Mutex<Options>>,
-    temp_options: Arc<Mutex<Options>>,
     url: Option<String>,
     pub script_to_run: Option<PathBuf>,
     mcp_rx: McpHandler,
@@ -81,31 +82,30 @@ impl WindowManager {
 
         // Create a single sound thread to be shared by all windows
         let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
-        let mut mode = MainWindowMode::ShowTerminal;
+        let mode = MainWindowMode::ShowTerminal;
+        let mut startup_error = None;
 
         let addresses = match AddressBook::load_phone_book() {
             Ok(addresses) => addresses,
             Err(err) => {
                 unsafe { crate::PHONE_LOCK = true };
-                mode = MainWindowMode::ShowErrorDialog(
+                startup_error = Some((
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
                     format!("{}", err),
-                    Box::new(MainWindowMode::ShowTerminal),
-                );
+                ));
                 AddressBook::default()
             }
         };
         let options = Arc::new(Mutex::new(options));
-        let temp_options = options.clone();
         (
             Self {
                 windows: BTreeMap::new(),
                 sound_thread,
                 mode,
+                startup_error,
                 addresses: Arc::new(Mutex::new(addresses)),
                 options,
-                temp_options,
                 url: None,
                 script_to_run: None,
                 mcp_rx,
@@ -186,11 +186,17 @@ impl WindowManager {
                     self.sound_thread.clone(),
                     self.addresses.clone(),
                     self.options.clone(),
-                    self.temp_options.clone(),
                 );
 
                 if let Some(mcp_rx) = self.mcp_rx.take() {
                     window.mcp_rx = Some(mcp_rx);
+                }
+
+                // Show startup error if any
+                if let Some((title, secondary, message)) = self.startup_error.take() {
+                    let mut dialog = error_dialog(title, message, |_| Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
+                    dialog.dialog = dialog.dialog.secondary_message(secondary);
+                    window.dialogs.push(dialog);
                 }
 
                 // reset mode to default after opening window
