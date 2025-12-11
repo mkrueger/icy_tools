@@ -294,6 +294,47 @@ impl AnsiEditor {
         self.color_switcher.needs_animation() || self.tool_panel.needs_animation() || self.canvas.needs_animation()
     }
 
+    /// Compute viewport info for the minimap overlay
+    /// Returns normalized coordinates (0.0-1.0) representing the visible area in the terminal
+    fn compute_viewport_info(&self) -> ViewportInfo {
+        // Get direct viewport data from the terminal
+        let vp = self.canvas.terminal.viewport.read();
+        
+        let content_width = vp.content_width.max(1.0);
+        let content_height = vp.content_height.max(1.0);
+        let visible_width = vp.visible_content_width();
+        let visible_height = vp.visible_content_height();
+        
+        // Normalized position: where we are scrolled to (0.0-1.0)
+        let x = vp.scroll_x / content_width;
+        let y = vp.scroll_y / content_height;
+        
+        // Normalized size: how much of the content is visible (0.0-1.0)
+        let width = (visible_width / content_width).min(1.0);
+        let height = (visible_height / content_height).min(1.0);
+        
+        ViewportInfo { x, y, width, height }
+    }
+
+    /// Scroll the canvas to a normalized position (0.0-1.0)
+    /// The viewport will be centered on this position
+    fn scroll_canvas_to_normalized(&mut self, norm_x: f32, norm_y: f32) {
+        let vp = self.canvas.terminal.viewport.read();
+        let content_width = vp.content_width;
+        let content_height = vp.content_height;
+        let visible_width = vp.visible_content_width();
+        let visible_height = vp.visible_content_height();
+        drop(vp);
+        
+        // Convert normalized position to content coordinates
+        // Center the viewport on the clicked position
+        let target_x = norm_x * content_width - visible_width / 2.0;
+        let target_y = norm_y * content_height - visible_height / 2.0;
+        
+        // Scroll to the target position (clamping is done internally)
+        self.canvas.scroll_to(target_x, target_y);
+    }
+
     /// Update the editor state
     pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
         match message {
@@ -312,7 +353,19 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::Canvas(msg) => self.canvas.update(msg).map(AnsiEditorMessage::Canvas),
-            AnsiEditorMessage::RightPanel(msg) => self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel),
+            AnsiEditorMessage::RightPanel(msg) => {
+                // Handle minimap click-to-navigate before passing to right_panel
+                if let RightPanelMessage::Minimap(ref minimap_msg) = msg {
+                    match minimap_msg {
+                        MinimapMessage::Click(norm_x, norm_y) | MinimapMessage::Drag(norm_x, norm_y) => {
+                            // Convert normalized position to content coordinates and scroll
+                            self.scroll_canvas_to_normalized(*norm_x, *norm_y);
+                        }
+                        _ => {}
+                    }
+                }
+                self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel)
+            }
             AnsiEditorMessage::TopToolbar(msg) => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
             AnsiEditorMessage::ColorSwitcher(msg) => {
                 match msg {
@@ -706,11 +759,16 @@ impl AnsiEditor {
 
         let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4);
 
+        // === RIGHT PANEL ===
+        // NOTE: Right panel must be created BEFORE canvas because canvas.view() 
+        // may clear the dirty state, and minimap needs to see it first to cache properly
+        
+        // Compute viewport info for the minimap from the canvas terminal
+        let viewport_info = self.compute_viewport_info();
+        let right_panel = self.right_panel.view(&self.screen, &viewport_info).map(AnsiEditorMessage::RightPanel);
+
         // === CENTER: Canvas ===
         let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
-
-        // === RIGHT PANEL ===
-        let right_panel = self.right_panel.view(&self.screen, self.current_tool).map(AnsiEditorMessage::RightPanel);
 
         // Main layout:
         // Top row: Full-width toolbar (with color switcher)
@@ -721,8 +779,8 @@ impl AnsiEditor {
             container(left_sidebar).width(Length::Fixed(sidebar_width)),
             // Center - canvas
             container(canvas).width(Length::Fill).height(Length::Fill),
-            // Right panel - fixed width
-            container(right_panel).width(Length::Fixed(200.0)),
+            // Right panel - fixed width (320pt for 80-char buffer display)
+            container(right_panel).width(Length::Fixed(RIGHT_PANEL_BASE_WIDTH)),
         ];
 
         column![

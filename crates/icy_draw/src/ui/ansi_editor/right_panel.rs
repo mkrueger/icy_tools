@@ -1,6 +1,6 @@
 //! Right panel component
 //!
-//! Contains Tool Options, Minimap, Layers, and Channels panels in a vertical stack.
+//! Contains Minimap (top, fills available space) and Layers (bottom, fixed height) panels.
 
 use std::sync::Arc;
 
@@ -10,10 +10,15 @@ use iced::{
 };
 
 use icy_engine::Screen;
-use icy_engine_edit::tools::Tool;
 use parking_lot::Mutex;
 
-use crate::ui::{ChannelsMessage, ChannelsView, LayerMessage, LayerView, MinimapMessage, MinimapView};
+use crate::ui::{LayerMessage, LayerView, MinimapMessage, MinimapView, ViewportInfo};
+
+/// Base width for the right panel (matches 80-char buffer display)
+pub const RIGHT_PANEL_BASE_WIDTH: f32 = 320.0;
+
+/// Fixed height for the layer view section
+const LAYER_VIEW_HEIGHT: f32 = 180.0;
 
 /// Messages for the right panel
 #[derive(Clone, Debug)]
@@ -22,22 +27,14 @@ pub enum RightPanelMessage {
     Minimap(MinimapMessage),
     /// Layer view messages
     Layers(LayerMessage),
-    /// Channels view messages
-    Channels(ChannelsMessage),
-    /// Toggle panel collapse
-    ToggleCollapse,
 }
 
 /// Right panel state
 pub struct RightPanel {
-    /// Whether the panel is collapsed
-    pub is_collapsed: bool,
     /// Minimap view
     pub minimap: MinimapView,
     /// Layer view
     pub layers: LayerView,
-    /// Channels view
-    pub channels: ChannelsView,
 }
 
 impl Default for RightPanel {
@@ -49,10 +46,8 @@ impl Default for RightPanel {
 impl RightPanel {
     pub fn new() -> Self {
         Self {
-            is_collapsed: false,
             minimap: MinimapView::new(),
             layers: LayerView::new(),
-            channels: ChannelsView::new(),
         }
     }
 
@@ -61,55 +56,40 @@ impl RightPanel {
         match message {
             RightPanelMessage::Minimap(msg) => self.minimap.update(msg).map(RightPanelMessage::Minimap),
             RightPanelMessage::Layers(msg) => self.layers.update(msg).map(RightPanelMessage::Layers),
-            RightPanelMessage::Channels(msg) => self.channels.update(msg).map(RightPanelMessage::Channels),
-            RightPanelMessage::ToggleCollapse => {
-                self.is_collapsed = !self.is_collapsed;
-                Task::none()
-            }
         }
     }
 
     /// Render the right panel
-    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, current_tool: Tool) -> Element<'a, RightPanelMessage> {
-        if self.is_collapsed {
-            // Show minimal collapsed bar
-            return container(text("▶").size(16)).width(Length::Fixed(20.0)).height(Length::Fill).into();
-        }
+    /// The panel has a fixed width of RIGHT_PANEL_BASE_WIDTH (320pt at 100% scale)
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, viewport_info: &ViewportInfo) -> Element<'a, RightPanelMessage> {
+        // Minimap fills available space above the layer view (no padding)
+        let minimap = self.minimap.view(screen, viewport_info).map(RightPanelMessage::Minimap);
 
-        // Tool info section (show current tool name)
-        let tool_info: Element<'_, RightPanelMessage> =
-            container(column![text(current_tool.name()).size(12), text(current_tool.tooltip()).size(10),].spacing(2))
-                .padding(4)
-                .height(Length::Shrink)
-                .into();
-        // Full panel with Tool Info, Minimap, Layers, Channels
-        let minimap = self.minimap.view(screen).map(RightPanelMessage::Minimap);
-
+        // Layer view with fixed height at bottom
         let layers = self.layers.view(screen).map(RightPanelMessage::Layers);
 
-        let channels = self.channels.view(screen).map(RightPanelMessage::Channels);
-
         let content = column![
-            // Tool info section
-            tool_info,
-            rule::horizontal(1),
-            // Minimap section
-            container(column![text("Minimap").size(12), minimap,].spacing(4))
-                .padding(4)
-                .height(Length::Fixed(150.0)),
-            rule::horizontal(1),
-            // Layers section (scrollable, takes remaining space)
-            container(column![text("Layers").size(12), scrollable(layers).height(Length::Fill),].spacing(4))
-                .padding(4)
+            // Minimap section - fills all available space above layer view
+            container(minimap)
+                .width(Length::Fill)
                 .height(Length::Fill),
             rule::horizontal(1),
-            // Channels section
-            container(column![text("Channels").size(12), channels,].spacing(4))
-                .padding(4)
-                .height(Length::Fixed(60.0)),
+            // Layers section - fixed height at bottom
+            container(
+                column![
+                    text("Layers").size(12),
+                    scrollable(layers).height(Length::Fill),
+                ]
+                .spacing(4)
+            )
+            .padding(4)
+            .height(Length::Fixed(LAYER_VIEW_HEIGHT)),
         ]
         .spacing(0);
 
-        container(content).width(Length::Fill).height(Length::Fill).into()
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 }

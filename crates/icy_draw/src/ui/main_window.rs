@@ -1518,10 +1518,15 @@ impl MainWindow {
         let menu_bar = self.menu_state.view(&self.mode_state.mode(), recent_files, &undo_info);
 
         let content: Element<'_, Message> = match &self.mode_state {
-            ModeState::Ansi(editor) => self.view_ansi_editor(editor),
-            ModeState::BitFont(editor) => self.view_bitfont_editor(editor),
-            ModeState::CharFont(_state) => self.view_charfont_editor(),
-            ModeState::Animation(editor) => self.view_animation_editor(editor),
+            ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),
+            ModeState::BitFont(editor) => editor.view().map(Message::BitFontEditor),
+            ModeState::CharFont(_state) => {
+                container(text("CharFont (TDF) Editor - Coming Soon").size(24))
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill)
+                    .into()
+            }
+            ModeState::Animation(editor) => editor.view().map(Message::AnimationEditor),
         };
 
         // Status bar
