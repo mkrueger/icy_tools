@@ -11,6 +11,9 @@ pub use dialog::*;
 mod confirmation_dialog;
 pub use confirmation_dialog::*;
 
+mod about_dialog;
+pub use about_dialog::*;
+
 mod toast;
 pub use toast::*;
 

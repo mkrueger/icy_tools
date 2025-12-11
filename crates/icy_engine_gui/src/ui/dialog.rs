@@ -86,6 +86,19 @@ macro_rules! dialog_msg {
 
 use iced::{Event, Task, Theme, keyboard};
 
+/// Style for how a dialog is displayed
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DialogStyle {
+    /// Modal dialog with semi-transparent overlay behind it (default)
+    /// The dialog content is centered and the background is dimmed.
+    #[default]
+    Modal,
+    /// Fullscreen dialog that takes the entire window
+    /// No overlay, the dialog view fills the entire screen.
+    /// Useful for about dialogs, splash screens, etc.
+    Fullscreen,
+}
+
 /// Action to take after a dialog request (cancel, confirm, or custom event)
 pub enum DialogAction<M> {
     /// Do nothing, dialog stays open
@@ -189,7 +202,7 @@ pub trait Dialog<M> {
 
     /// Whether clicking outside the dialog should trigger `request_cancel()`.
     ///
-    /// Default: true
+    /// Default: true (only applies to Modal style dialogs)
     fn close_on_blur(&self) -> bool {
         true
     }
@@ -202,6 +215,16 @@ pub trait Dialog<M> {
     /// Default: None (use application's current theme)
     fn theme(&self) -> Option<Theme> {
         None
+    }
+
+    /// The display style for this dialog.
+    ///
+    /// - `Modal`: Centered dialog with dimmed background overlay (default)
+    /// - `Fullscreen`: Dialog content fills the entire window
+    ///
+    /// Default: Modal
+    fn style(&self) -> DialogStyle {
+        DialogStyle::Modal
     }
 }
 
@@ -277,14 +300,24 @@ impl<M: Send + 'static> DialogStack<M> {
 
     /// Render all dialogs over the background content.
     ///
-    /// Each dialog is automatically wrapped with a modal overlay.
+    /// Each dialog is rendered according to its style:
+    /// - `Modal`: Wrapped with a semi-transparent overlay, content centered
+    /// - `Fullscreen`: Content fills the entire window, no overlay
     pub fn view<'a>(&'a self, mut background: iced::Element<'a, M>) -> iced::Element<'a, M>
     where
         M: Clone + 'a,
     {
         for dialog in &self.dialogs {
             let content = dialog.view();
-            background = super::modal_overlay(background, content);
+            match dialog.style() {
+                DialogStyle::Modal => {
+                    background = super::modal_overlay(background, content);
+                }
+                DialogStyle::Fullscreen => {
+                    // Fullscreen dialogs replace the background entirely
+                    background = content;
+                }
+            }
         }
         background
     }

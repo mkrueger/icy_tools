@@ -43,9 +43,6 @@ pub use terminal_view::*;
 // Re-export mouse event types from icy_engine
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
 
-// Re-export ScrollDelta for ZoomMessage
-pub use iced::mouse::ScrollDelta;
-
 pub mod key_map;
 pub mod settings;
 
@@ -268,7 +265,7 @@ impl ScalingMode {
             ZoomMessage::Wheel(delta) => {
                 // Extract y-axis delta and determine zoom behavior
                 let (y_delta, is_smooth) = match delta {
-                    ScrollDelta::Lines { y, .. } => {
+                    WheelDelta::Lines { y, .. } => {
                         // Discrete scroll wheel - use sign for step-based zoom
                         let sign = if y > 0.0 {
                             1.0
@@ -279,7 +276,7 @@ impl ScalingMode {
                         };
                         (sign, false)
                     }
-                    ScrollDelta::Pixels { y, .. } => {
+                    WheelDelta::Pixels { y, .. } => {
                         // Pixel-based scroll (macOS trackpad) - smooth zooming
                         (y / 200.0, true)
                     }
@@ -324,7 +321,7 @@ pub enum ZoomMessage {
     /// Positive delta = zoom in, negative = zoom out
     /// |delta| >= 1.0: discrete scroll wheel (use step-based zoom)
     /// |delta| < 1.0: smooth trackpad (apply delta directly)
-    Wheel(ScrollDelta),
+    Wheel(WheelDelta),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

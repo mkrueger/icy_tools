@@ -2,7 +2,7 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use iced::{Color, widget};
+use iced::{Color, mouse, widget};
 use icy_engine::Screen;
 
 use crate::{RenderInfo, ScrollbarState, Viewport};
@@ -17,6 +17,9 @@ pub struct Terminal {
     /// Shared render information for mouse mapping
     /// Updated by the shader, read by mouse event handlers
     pub render_info: Arc<RwLock<RenderInfo>>,
+    /// Cursor icon to display (set by shader based on hover state)
+    /// None = default cursor, Some(Interaction) = custom cursor (e.g. hand for links)
+    pub cursor_icon: Arc<RwLock<Option<mouse::Interaction>>>,
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
@@ -43,6 +46,7 @@ impl Terminal {
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             render_info: RenderInfo::new_shared(),
+            cursor_icon: Arc::new(RwLock::new(None)),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,

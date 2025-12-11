@@ -6,7 +6,6 @@ use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, Unicode
 use iced::Element;
 use iced::widget::shader;
 use icy_engine::GraphicsType;
-use icy_engine::MouseField;
 use icy_engine::MouseState;
 use icy_engine::Position;
 use icy_engine::Screen;
@@ -105,9 +104,6 @@ pub struct CRTShaderState {
 
     // Hover tracking
     pub hovered_cell: Option<Position>,
-    pub hovered_link: Option<String>,
-    /// Track which RIP field is hovered (by index)
-    pub hovered_rip_field: Option<MouseField>,
 
     /// Cached mouse state from last draw (updated during internal_draw to avoid extra lock in internal_update)
     pub cached_mouse_state: parking_lot::Mutex<Option<MouseState>>,
@@ -134,8 +130,6 @@ impl CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
-            hovered_link: None,
-            hovered_rip_field: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -239,8 +233,6 @@ impl Default for CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
-            hovered_link: None,
-            hovered_rip_field: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),

@@ -35,6 +35,8 @@ struct DialogWrapperConfig {
     result_type: Option<Type>,
     /// Whether to close on blur (default: false)
     close_on_blur: bool,
+    /// Dialog style (Modal or Fullscreen) - defaults to Modal
+    style: Option<Ident>,
 }
 
 impl Parse for DialogWrapperConfig {
@@ -42,6 +44,7 @@ impl Parse for DialogWrapperConfig {
         let mut internal_message: Option<Type> = None;
         let mut result_type: Option<Type> = None;
         let mut close_on_blur = false;
+        let mut style: Option<Ident> = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -58,6 +61,9 @@ impl Parse for DialogWrapperConfig {
                     let lit: syn::LitBool = input.parse()?;
                     close_on_blur = lit.value;
                 }
+                "style" => {
+                    style = Some(input.parse()?);
+                }
                 other => {
                     return Err(syn::Error::new(key.span(), format!("unknown config key: {}", other)));
                 }
@@ -71,6 +77,7 @@ impl Parse for DialogWrapperConfig {
             internal_message,
             result_type,
             close_on_blur,
+            style,
         })
     }
 }
@@ -80,6 +87,26 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
     let state_name = &state_struct.ident;
     let state_vis = &state_struct.vis;
     let close_on_blur = config.close_on_blur;
+
+    // Generate style() implementation
+    let style_impl = if let Some(style_ident) = &config.style {
+        let style_str = style_ident.to_string();
+        match style_str.as_str() {
+            "Fullscreen" => quote! {
+                fn style(&self) -> icy_engine_gui::ui::DialogStyle {
+                    icy_engine_gui::ui::DialogStyle::Fullscreen
+                }
+            },
+            "Modal" | _ => quote! {
+                fn style(&self) -> icy_engine_gui::ui::DialogStyle {
+                    icy_engine_gui::ui::DialogStyle::Modal
+                }
+            },
+        }
+    } else {
+        // Default: Modal (inherited from trait default)
+        quote! {}
+    };
 
     let state_name_str = state_name.to_string();
 
@@ -296,6 +323,8 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
             fn close_on_blur(&self) -> bool {
                 #close_on_blur
             }
+
+            #style_impl
         }
     })
 }
@@ -316,6 +345,7 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
 /// - `result_type`: Type returned by `StateResult::Success(T)` (default: `()`)
 /// - `internal_message`: Override the message enum name (default: derived from state name)
 /// - `close_on_blur`: Whether clicking outside closes the dialog (default: `false`)
+/// - `style`: Dialog style - `Modal` (default) or `Fullscreen`
 ///
 /// # Generated Callbacks
 ///
@@ -339,6 +369,10 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
 /// #[dialog_wrapper(result_type = PathBuf)]
 /// pub struct ExportDialogState { ... }
 /// // -> ExportDialogWrapper, ExportDialogMessage, StateResult<PathBuf>
+///
+/// // Fullscreen dialog (no modal overlay)
+/// #[dialog_wrapper(style = Fullscreen)]
+/// pub struct AboutDialogState { ... }
 ///
 /// // Usage:
 /// export_dialog(...)

@@ -65,17 +65,12 @@ impl TerminalWindow {
 
         // Create the main terminal area
         let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| match terminal_msg {
-            icy_engine_gui::Message::OpenLink(url) => Message::OpenLink(url),
-            icy_engine_gui::Message::Copy => Message::Copy,
-            icy_engine_gui::Message::Paste => Message::Paste,
-            icy_engine_gui::Message::RipCommand(clear_screen, cmd) => Message::RipCommand(clear_screen, cmd),
-            icy_engine_gui::Message::SendMouseEvent(evt) => Message::SendMouseEvent(evt),
-            icy_engine_gui::Message::ScrollViewport(dx, dy) => Message::ScrollViewport(dx, dy),
+            icy_engine_gui::Message::Press(evt) => Message::MousePress(evt),
+            icy_engine_gui::Message::Release(evt) => Message::MouseRelease(evt),
+            icy_engine_gui::Message::Move(evt) => Message::MouseMove(evt),
+            icy_engine_gui::Message::Drag(evt) => Message::MouseDrag(evt),
+            icy_engine_gui::Message::Scroll(delta) => Message::MouseScroll(delta),
             icy_engine_gui::Message::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
-            icy_engine_gui::Message::StartSelection(sel) => Message::StartSelection(sel),
-            icy_engine_gui::Message::UpdateSelection(pos) => Message::UpdateSelection(pos),
-            icy_engine_gui::Message::EndSelection => Message::EndSelection,
-            icy_engine_gui::Message::ClearSelection => Message::ClearSelection,
         });
 
         // Get scrollback info from Box<dyn Screen>

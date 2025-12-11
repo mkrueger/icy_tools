@@ -90,6 +90,13 @@ pub enum Message {
     HScrollbarHovered(bool), // Horizontal scrollbar hover state changed
     CursorLeftWindow,        // Cursor left the window
 
+    // Terminal mouse events (from icy_engine_gui)
+    MousePress(icy_engine_gui::TerminalMouseEvent),
+    MouseRelease(icy_engine_gui::TerminalMouseEvent),
+    MouseMove(icy_engine_gui::TerminalMouseEvent),
+    MouseDrag(icy_engine_gui::TerminalMouseEvent),
+    MouseScroll(icy_engine_gui::WheelDelta),
+
     // Selection messages
     StartSelection(Selection),
     UpdateSelection(Position),

@@ -740,11 +740,22 @@ impl PreviewView {
             }
             PreviewMessage::TerminalMessage(msg) => {
                 match msg {
-                    icy_engine_gui::Message::ScrollViewport(dx, dy) => {
+                    icy_engine_gui::Message::Press(_) | 
+                    icy_engine_gui::Message::Release(_) | 
+                    icy_engine_gui::Message::Move(_) | 
+                    icy_engine_gui::Message::Drag(_) => {
+                        // For icy_view, we don't handle mouse clicks/drags
+                        // (viewer only, no selection/editing)
+                    }
+                    icy_engine_gui::Message::Scroll(delta) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
+                        let (dx, dy) = match delta {
+                            icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
+                            icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
+                        };
                         self.with_content_view(|cv| {
-                            cv.scroll_by(dx, dy);
+                            cv.scroll_by(-dx, -dy);
                             cv.sync_scrollbar();
                         });
                     }
@@ -757,33 +768,6 @@ impl PreviewView {
                             self.terminal.set_zoom(z);
                         }
                     }
-                    icy_engine_gui::Message::StartSelection(sel) => {
-                        // Selection coordinates already include scroll offset from map_mouse_to_cell
-                        let mut screen = self.terminal.screen.lock();
-                        let _ = screen.set_selection(sel);
-                    }
-                    icy_engine_gui::Message::UpdateSelection(pos) => {
-                        // Position already includes scroll offset from map_mouse_to_cell
-                        let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.selection().clone() {
-                            if !sel.locked {
-                                sel.lead = pos;
-                                let _ = screen.set_selection(sel);
-                            }
-                        }
-                    }
-                    icy_engine_gui::Message::EndSelection => {
-                        let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.selection().clone() {
-                            sel.locked = true;
-                            let _ = screen.set_selection(sel);
-                        }
-                    }
-                    icy_engine_gui::Message::ClearSelection => {
-                        let mut screen = self.terminal.screen.lock();
-                        let _ = screen.clear_selection();
-                    }
-                    _ => {}
                 }
                 Task::none()
             }

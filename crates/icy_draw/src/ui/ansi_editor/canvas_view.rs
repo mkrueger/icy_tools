@@ -152,6 +152,15 @@ impl CanvasView {
         }
     }
 
+    /// Handle unified terminal mouse events from icy_engine_gui.
+    /// For icy_draw, we mainly need to handle selection and forwarding to tools.
+    /// The actual event type (Press, Release, Move, Drag) is distinguished
+    /// by the caller in the TerminalMessage match.
+    fn handle_terminal_mouse_event(&mut self, _evt: icy_engine_gui::TerminalMouseEvent) {
+        // For now, icy_draw handles selection at the CanvasMessage level
+        // Individual tool handling will be added later
+    }
+
     /// Set monitor settings for CRT effects
     pub fn set_monitor_settings(&mut self, settings: MonitorSettings) {
         self.monitor_settings = settings;
@@ -204,37 +213,22 @@ impl CanvasView {
             }
             CanvasMessage::TerminalMessage(msg) => {
                 match msg {
-                    icy_engine_gui::Message::ScrollViewport(dx, dy) => {
-                        self.scroll_by(dx, dy);
+                    icy_engine_gui::Message::Press(evt) | 
+                    icy_engine_gui::Message::Release(evt) | 
+                    icy_engine_gui::Message::Move(evt) | 
+                    icy_engine_gui::Message::Drag(evt) => {
+                        self.handle_terminal_mouse_event(evt);
+                    }
+                    icy_engine_gui::Message::Scroll(delta) => {
+                        let (dx, dy) = match delta {
+                            icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
+                            icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
+                        };
+                        self.scroll_by(-dx, -dy);
                     }
                     icy_engine_gui::Message::Zoom(zoom_msg) => {
                         self.apply_zoom(zoom_msg);
                     }
-                    icy_engine_gui::Message::StartSelection(sel) => {
-                        let mut screen = self.terminal.screen.lock();
-                        let _ = screen.set_selection(sel);
-                    }
-                    icy_engine_gui::Message::UpdateSelection(pos) => {
-                        let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.selection().clone() {
-                            if !sel.locked {
-                                sel.lead = pos;
-                                let _ = screen.set_selection(sel);
-                            }
-                        }
-                    }
-                    icy_engine_gui::Message::EndSelection => {
-                        let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.selection().clone() {
-                            sel.locked = true;
-                            let _ = screen.set_selection(sel);
-                        }
-                    }
-                    icy_engine_gui::Message::ClearSelection => {
-                        let mut screen = self.terminal.screen.lock();
-                        let _ = screen.clear_selection();
-                    }
-                    _ => {}
                 }
                 Task::none()
             }
