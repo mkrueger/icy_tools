@@ -284,6 +284,7 @@ impl EditState {
         };
         stack.push(op);
         self.redo_stack.clear();
+        self.screen.mark_dirty();
         Ok(())
     }
 

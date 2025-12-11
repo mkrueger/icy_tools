@@ -363,6 +363,32 @@ impl AnsiEditor {
                         _ => {}
                     }
                 }
+                // Handle layer messages - translate to AnsiEditorMessage
+                if let RightPanelMessage::Layers(ref layer_msg) = msg {
+                    match layer_msg {
+                        LayerMessage::Select(idx) => {
+                            return Task::done(AnsiEditorMessage::SelectLayer(*idx));
+                        }
+                        LayerMessage::ToggleVisibility(idx) => {
+                            return Task::done(AnsiEditorMessage::ToggleLayerVisibility(*idx));
+                        }
+                        LayerMessage::Add => {
+                            return Task::done(AnsiEditorMessage::AddLayer);
+                        }
+                        LayerMessage::Remove(idx) => {
+                            return Task::done(AnsiEditorMessage::RemoveLayer(*idx));
+                        }
+                        LayerMessage::MoveUp(idx) => {
+                            return Task::done(AnsiEditorMessage::MoveLayerUp(*idx));
+                        }
+                        LayerMessage::MoveDown(idx) => {
+                            return Task::done(AnsiEditorMessage::MoveLayerDown(*idx));
+                        }
+                        LayerMessage::Rename(_, _) => {
+                            // TODO: Implement layer rename
+                        }
+                    }
+                }
                 self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel)
             }
             AnsiEditorMessage::TopToolbar(msg) => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
@@ -433,71 +459,41 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::ToggleLayerVisibility(idx) => {
-                let modified = self.with_edit_state(|state| {
-                    if let Some(layer) = state.get_buffer_mut().layers.get_mut(idx) {
-                        layer.set_is_visible(!layer.is_visible());
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if modified {
+                let result = self.with_edit_state(move |state| state.toggle_layer_visibility(idx));
+                if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
             AnsiEditorMessage::AddLayer => {
-                // TODO: Add new layer
-                self.is_modified = true;
-                Task::none()
-            }
-            AnsiEditorMessage::RemoveLayer(idx) => {
-                let modified = self.with_edit_state(|state| {
-                    let layer_count = state.get_buffer().layers.len();
-                    if layer_count > 1 && idx < layer_count {
-                        state.get_buffer_mut().layers.remove(idx);
-                        let new_layer_count = state.get_buffer().layers.len();
-                        let current = state.get_current_layer().unwrap_or(0);
-                        if current >= new_layer_count {
-                            state.set_current_layer(new_layer_count.saturating_sub(1));
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if modified {
+                let current_layer = self.with_edit_state(|state| state.get_current_layer().unwrap_or(0));
+                let result = self.with_edit_state(|state| state.add_new_layer(current_layer));
+                if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::MoveLayerUp(idx) => {
-                let modified = self.with_edit_state(|state| {
-                    let layer_count = state.get_buffer().layers.len();
-                    if idx + 1 < layer_count {
-                        state.get_buffer_mut().layers.swap(idx, idx + 1);
-                        state.set_current_layer(idx + 1);
-                        true
-                    } else {
-                        false
+            AnsiEditorMessage::RemoveLayer(idx) => {
+                // Don't allow removing the last layer
+                let layer_count = self.with_edit_state(|state| state.get_buffer().layers.len());
+                if layer_count > 1 {
+                    let result = self.with_edit_state(|state| state.remove_layer(idx));
+                    if result.is_ok() {
+                        self.is_modified = true;
                     }
-                });
-                if modified {
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::MoveLayerUp(idx) => {
+                let result = self.with_edit_state(|state| state.raise_layer(idx));
+                if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
             AnsiEditorMessage::MoveLayerDown(idx) => {
-                let modified = self.with_edit_state(|state| {
-                    if idx > 0 {
-                        state.get_buffer_mut().layers.swap(idx, idx - 1);
-                        state.set_current_layer(idx - 1);
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if modified {
+                let result = self.with_edit_state(|state| state.lower_layer(idx));
+                if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()

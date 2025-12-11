@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use iced::{
     Element, Length, Task,
-    widget::{column, container, rule, scrollable, text},
+    widget::{column, container, rule, text},
 };
 
 use icy_engine::Screen;
@@ -18,7 +18,7 @@ use crate::ui::{LayerMessage, LayerView, MinimapMessage, MinimapView, ViewportIn
 pub const RIGHT_PANEL_BASE_WIDTH: f32 = 320.0;
 
 /// Fixed height for the layer view section
-const LAYER_VIEW_HEIGHT: f32 = 180.0;
+const LAYER_VIEW_HEIGHT: f32 = 220.0;
 
 /// Messages for the right panel
 #[derive(Clone, Debug)]
@@ -67,14 +67,16 @@ impl RightPanel {
 
         // Layer view with fixed height at bottom
         let layers = self.layers.view(screen).map(RightPanelMessage::Layers);
+        //let layers = text("foo");
 
         let content = column![
             // Minimap section - fills all available space above layer view
             container(minimap).width(Length::Fill).height(Length::Fill),
             rule::horizontal(1),
             // Layers section - fixed height at bottom
-            container(column![text("Layers").size(12), scrollable(layers).height(Length::Fill),].spacing(4))
+            container(column![text("Layers").size(12), layers].spacing(4))
                 .padding(4)
+                .width(Length::Fill)
                 .height(Length::Fixed(LAYER_VIEW_HEIGHT)),
         ]
         .spacing(0);
