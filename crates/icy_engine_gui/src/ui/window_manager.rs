@@ -281,6 +281,8 @@ pub use crate::viewport::ANIMATION_TICK_MS;
 ///
 /// Note: Uses Alt on all platforms. On macOS, Cmd is also accepted (without Ctrl).
 pub fn check_window_focus_key(key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> Option<usize> {
+    
+    
     // Alt+Number works on all platforms
     // Cmd+Number works on macOS (command() returns true for Cmd on macOS, Ctrl on Linux/Windows)
     // We accept Alt always, or Cmd without Ctrl (to avoid Ctrl+Number conflicts)

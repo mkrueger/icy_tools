@@ -1,4 +1,4 @@
-use crate::{CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, render_unicode_to_rgba};
+use crate::{CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalShader, is_alt_pressed, is_ctrl_pressed, is_shift_pressed, render_unicode_to_rgba};
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
 use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton, MouseEvent, MouseEventType};
@@ -34,24 +34,7 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
-        // Track modifier keys - store both locally and globally
-        // Global storage survives widget state resets
-        if let iced::Event::Keyboard(kbd_event) = event {
-            match kbd_event {
-                iced::keyboard::Event::ModifiersChanged(mods) => {
-                    let ctrl = mods.control();
-                    let alt = mods.alt();
-                    let shift = mods.shift();
-                    let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
-                    state.alt_pressed = alt;
-                    state.ctrl_pressed = ctrl;
-                    state.shift_pressed = shift;
-                    // Also store globally for cross-widget access
-                    crate::set_global_modifiers(ctrl, alt, shift, command);
-                }
-                _ => {}
-            }
-        }
+       
 
         if !cursor.is_over(bounds) {
             return None;
@@ -122,9 +105,9 @@ impl<'a> CRTShaderProgram<'a> {
 
                                     if should_report_motion {
                                         let modifiers = KeyModifiers {
-                                            shift: state.shift_pressed,
-                                            ctrl: state.ctrl_pressed,
-                                            alt: state.alt_pressed,
+                                            shift: is_shift_pressed(),
+                                            ctrl: is_ctrl_pressed(),
+                                            alt: is_alt_pressed(),
                                             meta: false,
                                         };
 
@@ -212,9 +195,9 @@ impl<'a> CRTShaderProgram<'a> {
                             if let Some(ref ms) = mouse_state {
                                 if mouse_tracking_enabled {
                                     let modifiers = KeyModifiers {
-                                        shift: state.shift_pressed,
-                                        ctrl: state.ctrl_pressed,
-                                        alt: state.alt_pressed,
+                                        shift: is_shift_pressed(),
+                                        ctrl: is_ctrl_pressed(),
+                                        alt: is_alt_pressed(),
                                         meta: false,
                                     };
 
@@ -235,10 +218,10 @@ impl<'a> CRTShaderProgram<'a> {
                             if matches!(button, mouse::Button::Left) {
                                 // Start selection - send message instead of direct modification
                                 // Clear existing selection unless shift is held
-                                if !state.shift_pressed {
+                                if !is_shift_pressed() {
                                     // Create new selection
                                     let mut sel = icy_engine::Selection::new(cell);
-                                    sel.shape = if state.alt_pressed {
+                                    sel.shape = if is_alt_pressed() {
                                         icy_engine::Shape::Rectangle
                                     } else {
                                         icy_engine::Shape::Lines
@@ -291,9 +274,9 @@ impl<'a> CRTShaderProgram<'a> {
                             if let Some(position) = cursor.position() {
                                 if let Some(cell) = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport) {
                                     let modifiers = KeyModifiers {
-                                        shift: state.shift_pressed,
-                                        ctrl: state.ctrl_pressed,
-                                        alt: state.alt_pressed,
+                                        shift: is_shift_pressed(),
+                                        ctrl: is_ctrl_pressed(),
+                                        alt: is_alt_pressed(),
                                         meta: false,
                                     };
 
@@ -318,7 +301,7 @@ impl<'a> CRTShaderProgram<'a> {
                     if !mouse_tracking_enabled && matches!(button, mouse::Button::Left) && state.dragging {
                         // Handle selection release when not in mouse tracking mode
                         state.dragging = false;
-                        state.shift_pressed_during_selection = state.shift_pressed;
+                        state.shift_pressed_during_selection = is_shift_pressed();
 
                         state.drag_anchor = None;
                         state.last_drag_position = None;
@@ -350,9 +333,9 @@ impl<'a> CRTShaderProgram<'a> {
                                         let button = if lines > 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };
 
                                         let modifiers = KeyModifiers {
-                                            shift: state.shift_pressed,
-                                            ctrl: state.ctrl_pressed,
-                                            alt: state.alt_pressed,
+                                            shift: is_shift_pressed(),
+                                            ctrl: is_ctrl_pressed(),
+                                            alt: is_alt_pressed(),
                                             meta: false,
                                         };
 

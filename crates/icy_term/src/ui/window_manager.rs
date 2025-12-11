@@ -296,8 +296,9 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let mut subs = vec![
+        let mut subs: Vec<Subscription<WindowManagerMessage>> = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
+            
             iced::event::listen_with(|event, _status, window_id| {
                 // Only forward events that are actually needed - skip mouse move events
                 // as they are handled directly by the shader's update() method
@@ -310,6 +311,16 @@ impl WindowManager {
                     }
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
                     Event::Mouse(_) => None,
+
+                    Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
+                        let ctrl = mods.control();
+                        let alt = mods.alt();
+                        let shift = mods.shift();
+                        let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
+                        // Also store globally for cross-widget access
+                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
+                        None
+                    }
                     // Keyboard events need special handling
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Alt+Number to focus window

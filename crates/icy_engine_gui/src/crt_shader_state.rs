@@ -103,11 +103,6 @@ pub struct CRTShaderState {
     pub last_drag_position: Option<Position>,
     pub shift_pressed_during_selection: bool,
 
-    // Modifier tracking
-    pub alt_pressed: bool,
-    pub shift_pressed: bool,
-    pub ctrl_pressed: bool,
-
     // Hover tracking
     pub hovered_cell: Option<Position>,
     pub hovered_link: Option<String>,
@@ -138,9 +133,6 @@ impl CRTShaderState {
             drag_anchor: None,
             last_drag_position: None,
             shift_pressed_during_selection: false,
-            alt_pressed: false,
-            shift_pressed: false,
-            ctrl_pressed: false,
             hovered_cell: None,
             hovered_link: None,
             hovered_rip_field: None,
@@ -246,9 +238,6 @@ impl Default for CRTShaderState {
             drag_anchor: None,
             last_drag_position: None,
             shift_pressed_during_selection: false,
-            alt_pressed: false,
-            shift_pressed: false,
-            ctrl_pressed: false,
             hovered_cell: None,
             hovered_link: None,
             hovered_rip_field: None,
