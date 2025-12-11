@@ -351,7 +351,7 @@ where
     pub dialog: ConfirmationDialog,
     pub on_result: F,
     /// Flag to track if we've already handled a button click
-    handled: bool,
+    _handled: bool,
 }
 
 impl<M, F> ConfirmationDialogWrapper<M, F>
@@ -362,7 +362,7 @@ where
         Self {
             dialog,
             on_result,
-            handled: false,
+            _handled: false,
         }
     }
 }

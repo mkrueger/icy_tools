@@ -61,12 +61,9 @@ command_handler!(MainWindowCommands, create_icy_view_commands(), => Message {
 /// Static welcome logo image handle
 static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
     use icy_engine::{Rectangle, RenderOptions, Selection, TextPane};
-    use std::path::Path;
 
     // Load the XBin file
-    let mut screen = FileFormat::XBin
-        .from_bytes(Path::new("welcome.xb"), WELCOME_LOGO, None)
-        .expect("Failed to load welcome logo");
+    let mut screen = FileFormat::XBin.from_bytes(WELCOME_LOGO, None).expect("Failed to load welcome logo");
 
     // Replace version marker
     replace_version_marker(&mut screen.buffer, &VERSION, None);

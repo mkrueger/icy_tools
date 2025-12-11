@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use super::super::{LoadData, SaveOptions};
 use crate::{AttributedChar, BitFont, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Palette, Result, TextBuffer, TextScreen};
 
@@ -14,7 +12,7 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u
     Err(crate::EngineError::not_implemented("Seq export"))
 }
 
-pub(crate) fn load_seq(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_seq(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((40, 25));
 
     result.buffer.clear_font_table();
@@ -24,7 +22,6 @@ pub(crate) fn load_seq(file_name: &Path, data: &[u8], load_data_opt: Option<Load
     result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
     result.buffer.buffer_type = crate::BufferType::Petscii;
     result.buffer.terminal_state.is_terminal_buffer = false;
-    result.buffer.file_name = Some(file_name.into());
     let load_data = load_data_opt.unwrap_or_default();
     if let Some(sauce) = load_data.sauce_opt {
         result.apply_sauce(&sauce);

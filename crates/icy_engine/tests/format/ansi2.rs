@@ -2,7 +2,7 @@ use icy_engine::{AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, 
 use std::path::PathBuf;
 
 fn test_ansi(data: &[u8]) {
-    let mut buf = FileFormat::Ansi.from_bytes(&PathBuf::from("test.ans"), data, None).unwrap().buffer;
+    let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().buffer;
     let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
@@ -73,7 +73,7 @@ fn test_first_char_color() {
 }
 
 fn test_ansi_ice(data: &[u8]) {
-    let mut buf = FileFormat::Ansi.from_bytes(&PathBuf::from("test.ans"), data, None).unwrap().buffer;
+    let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().buffer;
     buf.ice_mode = icy_engine::IceMode::Ice;
     let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.

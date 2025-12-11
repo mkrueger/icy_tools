@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::{ctrla_bg, ctrla_fg};
 
@@ -171,11 +169,10 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
     Ok(result)
 }
 
-pub(crate) fn load_ctrla(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_ctrla(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((80, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;
-    result.buffer.file_name = Some(file_name.into());
     let load_data = load_data_opt.unwrap_or_default();
     let mut min_height = -1;
     if let Some(sauce) = &load_data.sauce_opt {

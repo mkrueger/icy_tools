@@ -542,7 +542,7 @@ impl ViewThread {
             let stripped_data_clone = stripped_data.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 let load_data = LoadData::new(repaired_sauce_opt, None, None);
-                match format.from_bytes(&path_clone, &stripped_data_clone, Some(load_data)) {
+                match format.from_bytes(&stripped_data_clone, Some(load_data)) {
                     Ok(screen) => {
                         let buffer = screen.buffer;
                         // Validate buffer before returning
@@ -655,7 +655,7 @@ impl ViewThread {
             }
             LoadMode::Format(format) => {
                 // Reload from format
-                match format.from_bytes(&path, &file_data, Some(LoadData::default())) {
+                match format.from_bytes(&file_data, Some(LoadData::default())) {
                     Ok(screen) => {
                         let buffer = screen.buffer;
                         // Validate buffer dimensions

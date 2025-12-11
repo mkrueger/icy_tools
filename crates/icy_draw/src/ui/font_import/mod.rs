@@ -204,7 +204,7 @@ impl FontImportDialog {
         match std::fs::read(path) {
             Ok(data) => {
                 // Parse XB file using icy_engine
-                match icy_engine::formats::FileFormat::XBin.from_bytes(path, &data, None) {
+                match icy_engine::formats::FileFormat::XBin.from_bytes(&data, None) {
                     Ok(screen) => {
                         let buffer = screen.buffer;
                         // Extract fonts from the loaded buffer

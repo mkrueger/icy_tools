@@ -147,7 +147,7 @@ impl AnsiEditor {
 
         // Load buffer using the format
         let load_data = LoadData::default();
-        let buffer = format.from_bytes(&path, &data, Some(load_data))?.buffer;
+        let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
 
         Ok(Self::with_buffer(buffer, Some(path), options))
     }
@@ -223,7 +223,7 @@ impl AnsiEditor {
 
         // Load buffer using ICY format
         let load_data = LoadData::default();
-        let buffer = format.from_bytes(autosave_path, &data, Some(load_data))?.buffer;
+        let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
 
         let mut editor = Self::with_buffer(buffer, Some(original_path), options);
         editor.is_modified = true; // Autosave means we have unsaved changes

@@ -1,6 +1,6 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Alignment;
-use std::{cmp::max, path::PathBuf};
 
 pub mod buffers_rendering;
 
@@ -186,7 +186,6 @@ impl FontMode {
 pub struct TextBuffer {
     original_size: Size,
     size: Size,
-    pub file_name: Option<PathBuf>,
 
     pub terminal_state: TerminalState,
 
@@ -225,7 +224,6 @@ pub struct TextBuffer {
 impl std::fmt::Debug for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Buffer")
-            .field("file_name", &self.file_name)
             .field("width", &self.width())
             .field("height", &self.height())
             .field("custom_palette", &self.palette)
@@ -255,7 +253,6 @@ impl Clone for TextBuffer {
         Self {
             original_size: self.original_size,
             size: self.size,
-            file_name: self.file_name.clone(),
             terminal_state: self.terminal_state.clone(),
             buffer_type: self.buffer_type,
             ice_mode: self.ice_mode,
@@ -426,7 +423,6 @@ impl TextBuffer {
         font_table.insert(0, BitFont::default());
         let size = size.into();
         TextBuffer {
-            file_name: None,
             original_size: size,
             size,
             terminal_state: TerminalState::from(size),

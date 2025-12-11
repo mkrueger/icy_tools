@@ -1,7 +1,6 @@
 //! ANSI format (.ans, .ice, .diz) I/O implementation.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use codepages::tables::UNICODE_TO_CP437;
 
@@ -30,13 +29,12 @@ fn uses_ice_colors(buf: &TextBuffer) -> bool {
 }
 
 /// Load an ANSI file into a TextScreen.
-pub(crate) fn load_ansi(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let load_data = load_data_opt.unwrap_or_default();
     let width = load_data.default_terminal_width.unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
     result.terminal_state_mut().is_terminal_buffer = false;
 
-    result.buffer.file_name = Some(file_name.into());
     let mut min_height = -1;
     if let Some(sauce) = &load_data.sauce_opt {
         let lines = result.apply_sauce(sauce);

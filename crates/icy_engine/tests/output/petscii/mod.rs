@@ -10,7 +10,7 @@ pub fn test_petscii() {
             continue;
         }
 
-        let data: Vec<u8> = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
+        let data: Vec<u8> = fs::read(&cur_entry).unwrap_or_else(|e: std::io::Error| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
         let mut screen = ScreenMode::Vic.create_screen(TerminalEmulation::PETscii, None);
@@ -27,7 +27,7 @@ pub fn test_seq() {
         }
         // Load SEQ file using the SEQ format loader directly
         let screen = FileFormat::Petscii
-            .load(&cur_entry)
+            .load(&cur_entry, None)
             .unwrap_or_else(|e| panic!("Error loading SEQ file {:?}: {}", cur_entry, e));
         crate::compare_buffer_output(&screen.buffer, &cur_entry);
     }

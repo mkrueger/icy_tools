@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use super::super::{LoadData, SaveOptions};
 use crate::{
     AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute, TextBuffer, TextPane, TextScreen,
@@ -108,11 +106,10 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     Ok(result)
 }
 
-pub(crate) fn load_ice_draw(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut result = TextBuffer::new((80, 25));
     result.ice_mode = IceMode::Ice;
     result.terminal_state.is_terminal_buffer = false;
-    result.file_name = Some(file_name.into());
     let load_data = load_data_opt.unwrap_or_default();
     let max_height = load_data.max_height();
 

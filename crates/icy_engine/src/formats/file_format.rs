@@ -858,24 +858,24 @@ impl FileFormat {
     ///
     /// let data = std::fs::read("artwork.ans").unwrap();
     /// let format = FileFormat::from_extension("ans").unwrap();
-    /// let screen = format.from_bytes(Path::new("artwork.ans"), &data, None).unwrap();
+    /// let screen = format.from_bytes(&data, None).unwrap();
     /// ```
-    pub fn from_bytes(&self, file_name: &Path, data: &[u8], load_data: Option<LoadData>) -> Result<TextScreen> {
+    pub fn from_bytes(&self, data: &[u8], load_data: Option<LoadData>) -> Result<TextScreen> {
         match self {
-            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(file_name, data, load_data),
-            FileFormat::Ascii => io::load_ascii(file_name, data, load_data),
-            FileFormat::Avatar => io::load_avatar(file_name, data, load_data),
-            FileFormat::PCBoard => io::load_pcboard(file_name, data, load_data),
-            FileFormat::CtrlA => io::load_ctrla(file_name, data, load_data),
-            FileFormat::Renegade => io::load_renegade(file_name, data, load_data),
-            FileFormat::Atascii => io::load_atascii(file_name, data, load_data),
-            FileFormat::Petscii => io::load_seq(file_name, data, load_data),
-            FileFormat::Bin => io::load_bin(file_name, data, load_data),
-            FileFormat::XBin => io::load_xbin(file_name, data, load_data),
-            FileFormat::IcyDraw => io::load_icy_draw(file_name, data, load_data),
-            FileFormat::IceDraw => io::load_ice_draw(file_name, data, load_data),
-            FileFormat::TundraDraw => io::load_tundra(file_name, data, load_data),
-            FileFormat::Artworx => io::load_artworx(file_name, data, load_data),
+            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(data, load_data),
+            FileFormat::Ascii => io::load_ascii(data, load_data),
+            FileFormat::Avatar => io::load_avatar(data, load_data),
+            FileFormat::PCBoard => io::load_pcboard(data, load_data),
+            FileFormat::CtrlA => io::load_ctrla(data, load_data),
+            FileFormat::Renegade => io::load_renegade(data, load_data),
+            FileFormat::Atascii => io::load_atascii(data, load_data),
+            FileFormat::Petscii => io::load_seq(data, load_data),
+            FileFormat::Bin => io::load_bin(data, load_data),
+            FileFormat::XBin => io::load_xbin(data, load_data),
+            FileFormat::IcyDraw => io::load_icy_draw(data, load_data),
+            FileFormat::IceDraw => io::load_ice_draw(data, load_data),
+            FileFormat::TundraDraw => io::load_tundra(data, load_data),
+            FileFormat::Artworx => io::load_artworx(data, load_data),
             _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "loading".to_string(),
@@ -906,14 +906,17 @@ impl FileFormat {
     /// let screen = format.load(Path::new("artwork.ans")).unwrap();
     /// // SAUCE metadata is automatically applied to the screen
     /// ```
-    pub fn load(&self, file_path: &Path) -> Result<TextScreen> {
+    pub fn load(&self, file_path: &Path, load_data: Option<LoadData>) -> Result<TextScreen> {
         let data = std::fs::read(file_path)?;
 
+        let mut load_data = load_data.unwrap_or_default();
         // Extract SAUCE record from the data
         let sauce_opt = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten();
+        if sauce_opt.is_some() {
+            load_data.sauce_opt = sauce_opt;
+        }
 
-        let load_data = LoadData::new(sauce_opt, None, None);
-        self.from_bytes(file_path, &data, Some(load_data))
+        self.from_bytes(&data, Some(load_data))
     }
 
     /// Save a buffer to bytes.

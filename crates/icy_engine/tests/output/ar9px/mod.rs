@@ -7,7 +7,7 @@ const TEST_FILE: &str = "tests/output/ar9px/files/aeleus-usta1.ans";
 fn load_test_buffer() -> TextBuffer {
     let path = std::path::Path::new(TEST_FILE);
     let data = fs::read(path).expect("Failed to read test file");
-    FileFormat::Ansi.from_bytes(path, &data, None).expect("Failed to parse test file").buffer
+    FileFormat::Ansi.from_bytes(&data, None).expect("Failed to parse test file").buffer
 }
 
 /// Test 9px font rendering (letter spacing)

@@ -174,7 +174,7 @@ impl SettingsDialogState {
             let temp_opts10 = self.temp_options.clone();
             let temp_opts11 = self.temp_options.clone();
             let temp_opts12 = self.temp_options.clone();
-            let temp_opts13 = self.temp_options.clone();
+            let _temp_opts13 = self.temp_options.clone();
 
             let on_msg1 = on_message.clone();
             let on_msg2 = on_message.clone();
@@ -187,11 +187,11 @@ impl SettingsDialogState {
             let on_msg9 = on_message.clone();
             let on_msg10 = on_message.clone();
             let on_msg11 = on_message.clone();
-            let on_msg12 = on_message.clone();
+            let _on_msg12 = on_message.clone();
             let on_msg13 = on_message.clone();
-            let on_msg14 = on_message.clone();
+            let _on_msg14 = on_message.clone();
             let on_msg15 = on_message.clone();
-            let on_msg16 = on_message.clone();
+            let _on_msg16 = on_message.clone();
             let on_msg17 = on_message.clone();
 
             scrollable(

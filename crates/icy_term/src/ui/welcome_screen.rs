@@ -1,18 +1,14 @@
 use crate::{MCP_PORT, VERSION};
 use icy_engine::{AttributedChar, Position, TextAttribute, TextPane, TextScreen, formats::FileFormat};
 use icy_engine_gui::version_helper::replace_version_marker;
-use std::path::Path;
 
 const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");
 const MAIN_SCREEN_ANSI2: &[u8] = include_bytes!("../../data/welcome_screen.2.icy");
 
 pub fn create_welcome_screen() -> TextScreen {
-    // Create a default Box<dyn EditableScreen>
-    let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
-
     // Load the welcome screen from MAIN_SCREEN_ANSI
     let mut screen = FileFormat::IcyDraw
-        .from_bytes(&Path::new("a.icy"), if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 }, None)
+        .from_bytes(if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 }, None)
         .unwrap();
     screen.buffer.buffer_type = icy_engine::BufferType::CP437;
     screen.buffer.terminal_state.is_terminal_buffer = true;

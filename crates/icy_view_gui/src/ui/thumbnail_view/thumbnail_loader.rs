@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use icy_engine::{
-    AttributedChar, BufferType, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane, TextScreen,
+    AttributedChar, BufferType, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane,
     formats::{FileFormat, ImageFormat},
 };
 use icy_net::telnet::TerminalEmulation;
@@ -603,8 +603,7 @@ fn render_with_format(
 
     // Use max_height limit for thumbnail loading
     let load_data = LoadData::new(sauce.cloned(), None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
-    let path_buf = PathBuf::from(path);
-    match format.from_bytes(&path_buf, data, Some(load_data)) {
+    match format.from_bytes(data, Some(load_data)) {
         Ok(screen) => {
             let buffer = &screen.buffer;
             let buffer_load_elapsed: std::time::Duration = start.elapsed();

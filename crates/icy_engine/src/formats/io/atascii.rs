@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use super::super::{LoadData, SaveOptions};
 use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, EditableScreen, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
 
@@ -45,7 +43,7 @@ pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<V
     Ok(result)
 }
 
-pub(crate) fn load_atascii(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_atascii(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((40, 24));
 
     result.buffer.clear_font_table();
@@ -55,7 +53,6 @@ pub(crate) fn load_atascii(file_name: &Path, data: &[u8], load_data_opt: Option<
 
     result.buffer.buffer_type = crate::BufferType::Atascii;
     result.buffer.terminal_state.is_terminal_buffer = false;
-    result.buffer.file_name = Some(file_name.into());
     let load_data = load_data_opt.unwrap_or_default();
     if let Some(sauce) = &load_data.sauce_opt {
         result.apply_sauce(sauce);

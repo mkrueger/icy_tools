@@ -2,7 +2,6 @@ use crate::{
     AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Position, Result, SavingError, TextBuffer, TextPane,
     TextScreen, analyze_font_usage, attribute, guess_font_name,
 };
-use std::path::Path;
 
 use super::super::{LoadData, SaveOptions, TextAttribute};
 
@@ -219,10 +218,9 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     Ok(result)
 }
 
-pub(crate) fn load_xbin(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
-    screen.buffer.file_name = Some(file_name.into());
     let load_data = load_data_opt.unwrap_or_default();
     let max_height = load_data.max_height();
     if let Some(sauce) = &load_data.sauce_opt {

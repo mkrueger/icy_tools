@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crc32fast::Hasher;
-use icy_engine::{SaveOptions, Screen, TextPane, TextScreen, formats::FileFormat};
+use icy_engine::{SaveOptions, Screen, formats::FileFormat};
 use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
@@ -165,7 +165,7 @@ fn main() {
             _ => {
                 let ext = path.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
                 if let Some(format) = FileFormat::from_extension(&ext) {
-                    if let Ok(mut screen) = format.load(&path) {
+                    if let Ok(mut screen) = format.load(&path, None) {
                         show_buffer(&mut io, &mut screen, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
                     }
                 }

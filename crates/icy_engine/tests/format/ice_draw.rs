@@ -67,7 +67,7 @@ fn test_ice_draw(buffer: &mut TextBuffer) -> TextBuffer {
     opt.compress = false;
     opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
-    let buffer2 = xb.from_bytes(std::path::Path::new("test.idf"), &bytes, None).unwrap().buffer;
+    let buffer2 = xb.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);
     buffer2
 }

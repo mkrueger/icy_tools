@@ -1,4 +1,4 @@
-use std::{fmt::Alignment, path::Path};
+use std::fmt::Alignment;
 
 use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
@@ -367,10 +367,9 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     Ok(result)
 }
 
-pub(crate) fn load_icy_draw(file_name: &Path, data: &[u8], _load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Result<TextScreen> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
-    result.file_name = Some(file_name.into());
     result.layers.clear();
 
     let mut decoder = png::StreamingDecoder::new();

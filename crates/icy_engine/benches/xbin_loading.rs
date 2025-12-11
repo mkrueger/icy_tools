@@ -51,7 +51,7 @@ fn bench_xbin_compressed(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data.len() as u64));
         group.bench_with_input(BenchmarkId::new("load", name), data, |b, data| {
             b.iter(|| {
-                let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                let result = FileFormat::XBin.from_bytes(black_box(data), black_box(None));
                 black_box(result)
             });
         });
@@ -74,7 +74,7 @@ fn bench_xbin_uncompressed(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data.len() as u64));
         group.bench_with_input(BenchmarkId::new("load", name), data, |b, data| {
             b.iter(|| {
-                let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                let result = FileFormat::XBin.from_bytes(black_box(data), black_box(None));
                 black_box(result)
             });
         });
@@ -97,7 +97,7 @@ fn bench_xbin_all_files(c: &mut Criterion) {
         group.bench_function("all_compressed", |b| {
             b.iter(|| {
                 for (_, data) in &compressed {
-                    let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                    let result = FileFormat::XBin.from_bytes(black_box(data), black_box(None));
                     let _ = black_box(result);
                 }
             });
@@ -109,7 +109,7 @@ fn bench_xbin_all_files(c: &mut Criterion) {
         group.bench_function("all_uncompressed", |b| {
             b.iter(|| {
                 for (_, data) in &uncompressed {
-                    let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                    let result = FileFormat::XBin.from_bytes(black_box(data), black_box(None));
                     let _ = black_box(result);
                 }
             });

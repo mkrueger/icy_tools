@@ -303,13 +303,13 @@ impl BitFontEditState {
             old_charset_cursor,
             self.charset_cursor,
         ));
-        let result = self.push_plain_undo(op);
+        let _result = self.push_plain_undo(op);
     }
 
     /// Clear charset selection (with undo)
     pub fn clear_charset_selection(&mut self) {
         if self.charset_selection.is_some() {
-            let old_charset = self.charset_selection;
+            let old_charset: Option<(Position, Position, bool)> = self.charset_selection;
 
             self.charset_selection = None;
 

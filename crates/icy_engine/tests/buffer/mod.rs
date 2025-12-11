@@ -65,10 +65,7 @@ fn test_respect_sauce_width() {
     // Extract SAUCE from the bytes
     let sauce_opt = SauceRecord::from_bytes(&ansi_bytes).ok().flatten();
     let load_data = LoadData::new(sauce_opt, None, None);
-    let loaded_buf = FileFormat::Ansi
-        .from_bytes(&std::path::PathBuf::from("test.ans"), &ansi_bytes, Some(load_data))
-        .unwrap()
-        .buffer;
+    let loaded_buf = FileFormat::Ansi.from_bytes(&ansi_bytes, Some(load_data)).unwrap().buffer;
     assert_eq!(10, loaded_buf.width());
     assert_eq!(10, loaded_buf.layers[0].width());
 }
