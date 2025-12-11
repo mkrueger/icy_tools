@@ -1,8 +1,8 @@
-//! Minimap shader implementation
+//! Minimap shader implementation with texture slicing
 //!
-//! A simplified GPU shader for rendering the minimap.
-//! Unlike the full terminal shader, this doesn't need CRT effects,
-//! zooming, selection, or keyboard handling.
+//! A GPU shader for rendering the minimap that supports very tall content
+//! (up to 80,000 pixels) by splitting into multiple texture slices.
+//! Each slice is max 8000px tall, with up to 10 slices supported.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,13 +10,11 @@ use std::sync::Arc;
 use iced::Rectangle;
 use iced::mouse;
 use iced::widget::shader;
+use parking_lot::Mutex;
 
-use super::MinimapMessage;
+use super::{MAX_TEXTURE_SLICES, MinimapMessage, SharedMinimapState, TextureSliceData};
 
-/// Maximum texture dimension supported by most GPUs
-const MAX_TEXTURE_DIMENSION: u32 = 8192;
-
-/// Uniform data for the minimap shader
+/// Uniform data for the minimap shader (multi-texture version)
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
 struct MinimapUniforms {
@@ -30,8 +28,12 @@ struct MinimapUniforms {
     border_thickness: f32,
     /// Whether to show viewport overlay
     show_viewport: f32,
-    /// Padding for alignment
-    _padding: [f32; 2],
+    /// Number of texture slices (1-10)
+    num_slices: f32,
+    /// Total image height across all slices
+    total_image_height: f32,
+    /// Heights of each slice in pixels (packed as 3 vec4s = 12 floats for 10 slices + 2 padding)
+    slice_heights: [[f32; 4]; 3],
 }
 
 /// Viewport information for the minimap overlay
@@ -51,10 +53,14 @@ pub struct ViewportInfo {
 /// This implements shader::Program and creates MinimapPrimitive for rendering
 #[derive(Debug, Clone)]
 pub struct MinimapProgram {
-    /// RGBA pixel data of the buffer (shared to avoid cloning)
-    pub rgba_data: Arc<Vec<u8>>,
-    /// Size of the texture (width, height)
-    pub texture_size: (u32, u32),
+    /// Texture slices (up to MAX_TEXTURE_SLICES)
+    pub slices: Vec<TextureSliceData>,
+    /// Heights of each slice in pixels
+    pub slice_heights: Vec<u32>,
+    /// Width of the texture (same for all slices)
+    pub texture_width: u32,
+    /// Total rendered height across all slices
+    pub total_rendered_height: u32,
     /// Unique instance ID
     pub instance_id: usize,
     /// Viewport overlay information
@@ -63,6 +69,10 @@ pub struct MinimapProgram {
     pub scroll_offset: f32,
     /// Available height for rendering (to compute visible UV range)
     pub available_height: f32,
+    /// Full content height in pixels (for proper viewport scaling)
+    pub full_content_height: f32,
+    /// Shared state for communicating bounds back to MinimapView
+    pub shared_state: Arc<Mutex<SharedMinimapState>>,
 }
 
 /// State for tracking mouse dragging in the minimap
@@ -76,7 +86,8 @@ impl MinimapProgram {
     /// Helper to calculate normalized position from cursor position
     /// Takes absolute position and bounds, calculates relative position internally
     fn calculate_normalized_position(&self, absolute_pos: iced::Point, bounds: Rectangle) -> Option<(f32, f32)> {
-        let (tex_w, tex_h) = self.texture_size;
+        let tex_w = self.texture_width;
+        let tex_h = self.total_rendered_height;
         if tex_w == 0 || tex_h == 0 {
             return None;
         }
@@ -110,13 +121,23 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
     type Primitive = MinimapPrimitive;
 
     fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: Rectangle) -> Self::Primitive {
+        // Update shared state with current bounds (for next frame's rendering)
+        {
+            let mut shared = self.shared_state.lock();
+            shared.available_width = bounds.width;
+            shared.available_height = bounds.height;
+        }
+
         MinimapPrimitive {
-            rgba_data: Arc::clone(&self.rgba_data),
-            texture_size: self.texture_size,
+            slices: self.slices.clone(),
+            slice_heights: self.slice_heights.clone(),
+            texture_width: self.texture_width,
+            total_rendered_height: self.total_rendered_height,
             instance_id: self.instance_id,
             viewport_info: self.viewport_info.clone(),
             scroll_offset: self.scroll_offset,
             available_height: bounds.height,
+            full_content_height: self.full_content_height,
         }
     }
 
@@ -162,10 +183,14 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
 /// The minimap shader primitive (low-level GPU rendering)
 #[derive(Debug, Clone)]
 pub struct MinimapPrimitive {
-    /// RGBA pixel data of the buffer (shared to avoid cloning)
-    pub rgba_data: Arc<Vec<u8>>,
-    /// Size of the texture (width, height)
-    pub texture_size: (u32, u32),
+    /// Texture slices (up to MAX_TEXTURE_SLICES)
+    pub slices: Vec<TextureSliceData>,
+    /// Heights of each slice in pixels
+    pub slice_heights: Vec<u32>,
+    /// Width of the texture (same for all slices)
+    pub texture_width: u32,
+    /// Total rendered height across all slices
+    pub total_rendered_height: u32,
     /// Unique instance ID
     pub instance_id: usize,
     /// Viewport overlay information
@@ -174,22 +199,39 @@ pub struct MinimapPrimitive {
     pub scroll_offset: f32,
     /// Available height for rendering
     pub available_height: f32,
+    /// Full content height in pixels
+    pub full_content_height: f32,
 }
 
-/// Per-instance GPU resources
-struct InstanceResources {
+/// Texture slice for GPU
+struct TextureSlice {
+    #[allow(dead_code)]
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
-    texture_size: (u32, u32),
+    height: u32,
 }
 
-/// The minimap shader renderer (GPU pipeline)
+/// Per-instance GPU resources with texture slicing
+struct InstanceResources {
+    /// Texture slices (1-10 slices depending on content height)
+    slices: Vec<TextureSlice>,
+    /// Bind group for rendering (includes all texture slots)
+    bind_group: iced::wgpu::BindGroup,
+    /// Uniform buffer
+    uniform_buffer: iced::wgpu::Buffer,
+    /// Total texture dimensions for cache validation
+    texture_size: (u32, u32),
+    /// Number of slices for cache validation
+    num_slices: usize,
+}
+
+/// The minimap shader renderer (GPU pipeline) with multi-texture support
 pub struct MinimapShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
+    /// 1x1 transparent texture for unused texture slots
+    dummy_texture_view: iced::wgpu::TextureView,
     instances: HashMap<usize, InstanceResources>,
 }
 
@@ -200,39 +242,46 @@ impl shader::Pipeline for MinimapShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("minimap.wgsl").into()),
         });
 
+        // Create bind group layout with 10 texture slots + sampler + uniforms
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
+
+        // Add 10 texture bindings (0-9)
+        for i in 0..MAX_TEXTURE_SLICES {
+            entries.push(iced::wgpu::BindGroupLayoutEntry {
+                binding: i as u32,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            });
+        }
+
+        // Sampler at binding 10
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: MAX_TEXTURE_SLICES as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+            count: None,
+        });
+
+        // Uniforms at binding 11
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 1) as u32,
+            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: iced::wgpu::BindingType::Buffer {
+                ty: iced::wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some("Minimap Bind Group Layout"),
-            entries: &[
-                // Texture
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // Sampler
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // Uniforms
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &entries,
         });
 
         let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
@@ -287,10 +336,28 @@ impl shader::Pipeline for MinimapShaderRenderer {
             ..Default::default()
         });
 
+        // Create 1x1 transparent dummy texture for unused slots
+        let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some("Minimap Dummy Texture"),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
         MinimapShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
+            dummy_texture_view,
             instances: HashMap::new(),
         }
     }
@@ -308,12 +375,49 @@ impl shader::Primitive for MinimapPrimitive {
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
         let id = self.instance_id;
-        let (w, h) = self.texture_size;
-        let w = w.min(MAX_TEXTURE_DIMENSION).max(1);
-        let h = h.min(MAX_TEXTURE_DIMENSION).max(1);
+        let num_slices = self.slices.len().min(MAX_TEXTURE_SLICES);
+        let tex_w = self.texture_width.max(1);
+        let tex_h = self.total_rendered_height.max(1);
 
-        // Get or create per-instance resources
-        let resources = pipeline.instances.entry(id).or_insert_with(|| {
+        // Check if we need to recreate resources
+        let needs_recreate = match pipeline.instances.get(&id) {
+            Some(resources) => resources.texture_size != (tex_w, tex_h) || resources.num_slices != num_slices,
+            None => true,
+        };
+
+        if needs_recreate {
+            // Create texture slices
+            let mut slices = Vec::with_capacity(num_slices);
+
+            for (i, slice_data) in self.slices.iter().enumerate().take(MAX_TEXTURE_SLICES) {
+                let slice_w = slice_data.width.max(1);
+                let slice_h = slice_data.height.max(1);
+
+                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                    label: Some(&format!("Minimap Texture {} Slice {}", id, i)),
+                    size: iced::wgpu::Extent3d {
+                        width: slice_w,
+                        height: slice_h,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: iced::wgpu::TextureDimension::D2,
+                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                slices.push(TextureSlice {
+                    texture,
+                    texture_view,
+                    height: slice_h,
+                });
+            }
+
+            // Create uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
                 label: Some(&format!("Minimap Uniforms {}", id)),
                 size: std::mem::size_of::<MinimapUniforms>() as u64,
@@ -321,122 +425,81 @@ impl shader::Primitive for MinimapPrimitive {
                 mapped_at_creation: false,
             });
 
-            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some(&format!("Minimap Texture {}", id)),
-                size: iced::wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
+            // Create bind group entries for all 10 texture slots + sampler + uniforms
+            let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
 
-            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-            let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                label: Some(&format!("Minimap BindGroup {}", id)),
-                layout: &pipeline.bind_group_layout,
-                entries: &[
-                    iced::wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: iced::wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
-            InstanceResources {
-                texture,
-                texture_view,
-                bind_group,
-                uniform_buffer,
-                texture_size: (w, h),
+            for i in 0..MAX_TEXTURE_SLICES {
+                let texture_view = if i < slices.len() {
+                    &slices[i].texture_view
+                } else {
+                    &pipeline.dummy_texture_view
+                };
+                entries.push(iced::wgpu::BindGroupEntry {
+                    binding: i as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(texture_view),
+                });
             }
-        });
 
-        // Recreate texture if size changed
-        if resources.texture_size != (w, h) {
-            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some(&format!("Minimap Texture {}", id)),
-                size: iced::wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
+            // Sampler at binding 10
+            entries.push(iced::wgpu::BindGroupEntry {
+                binding: MAX_TEXTURE_SLICES as u32,
+                resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
             });
 
-            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+            // Uniforms at binding 11
+            entries.push(iced::wgpu::BindGroupEntry {
+                binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                resource: uniform_buffer.as_entire_binding(),
+            });
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Minimap BindGroup {}", id)),
                 layout: &pipeline.bind_group_layout,
-                entries: &[
-                    iced::wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: iced::wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: resources.uniform_buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &entries,
             });
 
-            resources.texture = texture;
-            resources.texture_view = texture_view;
-            resources.bind_group = bind_group;
-            resources.texture_size = (w, h);
-        }
-
-        // Upload texture data
-        if !self.rgba_data.is_empty() {
-            let (orig_w, orig_h) = self.texture_size;
-            let clamped_h = orig_h.min(MAX_TEXTURE_DIMENSION);
-            let bytes_per_row = 4 * orig_w.min(MAX_TEXTURE_DIMENSION);
-            let max_bytes = (bytes_per_row * clamped_h) as usize;
-            let data = &self.rgba_data[..max_bytes.min(self.rgba_data.len())];
-
-            queue.write_texture(
-                iced::wgpu::TexelCopyTextureInfo {
-                    texture: &resources.texture,
-                    mip_level: 0,
-                    origin: iced::wgpu::Origin3d::ZERO,
-                    aspect: iced::wgpu::TextureAspect::All,
-                },
-                data,
-                iced::wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: Some(h),
-                },
-                iced::wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
+            pipeline.instances.insert(
+                id,
+                InstanceResources {
+                    slices,
+                    bind_group,
+                    uniform_buffer,
+                    texture_size: (tex_w, tex_h),
+                    num_slices,
                 },
             );
+        }
+
+        let Some(resources) = pipeline.instances.get(&id) else {
+            return;
+        };
+
+        // Upload texture data for each slice
+        for (i, slice_data) in self.slices.iter().enumerate().take(resources.slices.len()) {
+            if !slice_data.rgba_data.is_empty() && i < resources.slices.len() {
+                let slice = &resources.slices[i];
+                let bytes_per_row = 4 * slice_data.width;
+
+                queue.write_texture(
+                    iced::wgpu::TexelCopyTextureInfo {
+                        texture: &slice.texture,
+                        mip_level: 0,
+                        origin: iced::wgpu::Origin3d::ZERO,
+                        aspect: iced::wgpu::TextureAspect::All,
+                    },
+                    &slice_data.rgba_data,
+                    iced::wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: Some(slice_data.height),
+                    },
+                    iced::wgpu::Extent3d {
+                        width: slice_data.width,
+                        height: slice_data.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
 
         // Update uniforms
@@ -447,10 +510,9 @@ impl shader::Primitive for MinimapPrimitive {
         };
 
         // Calculate visible UV range based on texture size, available height, and scroll
-        let (tex_w, tex_h) = (w as f32, h as f32);
         let avail_h = self.available_height.max(1.0);
-        let scale = bounds.width / tex_w;
-        let scaled_h = tex_h * scale;
+        let scale = bounds.width / tex_w as f32;
+        let scaled_h = tex_h as f32 * scale;
 
         // How much of the texture is visible (in normalized UV coordinates)
         let visible_uv_height = (avail_h / scaled_h).min(1.0);
@@ -460,6 +522,12 @@ impl shader::Primitive for MinimapPrimitive {
         let visible_uv_min_y = scroll_uv_y;
         let visible_uv_max_y = scroll_uv_y + visible_uv_height;
 
+        // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
+        let mut packed_heights = [[0.0f32; 4]; 3];
+        for (i, &h) in self.slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
+            packed_heights[i / 4][i % 4] = h as f32;
+        }
+
         let uniforms = MinimapUniforms {
             viewport_rect: [self.viewport_info.x, self.viewport_info.y, self.viewport_info.width, self.viewport_info.height],
             // Modern cyan accent color - vibrant but not overwhelming
@@ -467,7 +535,9 @@ impl shader::Primitive for MinimapPrimitive {
             visible_uv_range: [visible_uv_min_y, visible_uv_max_y, 0.0, 0.0],
             border_thickness: 2.5,
             show_viewport,
-            _padding: [0.0; 2],
+            num_slices: num_slices as f32,
+            total_image_height: tex_h as f32,
+            slice_heights: packed_heights,
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniforms as *const MinimapUniforms as *const u8, std::mem::size_of::<MinimapUniforms>()) };
@@ -479,29 +549,12 @@ impl shader::Primitive for MinimapPrimitive {
             return;
         };
 
-        // Calculate scaling to fill width (minimap fills available width)
-        let (tex_w, tex_h) = resources.texture_size;
-        let tex_w = tex_w.max(1) as f32;
-        let tex_h = tex_h.max(1) as f32;
-
-        let avail_w = clip_bounds.width.max(1) as f32;
-        let avail_h = clip_bounds.height.max(1) as f32;
-
-        // Scale to fill width - content may be taller than available space
-        let scale = avail_w / tex_w;
-        let scaled_w = avail_w;
-        let scaled_h = tex_h * scale;
-
-        // Calculate scroll offset if content is taller than available space
-        let max_scroll = (scaled_h - avail_h).max(0.0);
-        let scroll_y = self.scroll_offset * max_scroll;
-
-        // Center horizontally (always), position vertically based on scroll
-        let offset_x = 0.0;
-        let offset_y = -scroll_y;
-
-        let vp_x = clip_bounds.x as f32 + offset_x;
-        let vp_y = clip_bounds.y as f32 + offset_y;
+        // The viewport is just the visible area (clip_bounds)
+        // Scrolling is handled in the shader via visible_uv_range uniforms
+        let vp_x = clip_bounds.x as f32;
+        let vp_y = clip_bounds.y as f32;
+        let vp_w = clip_bounds.width as f32;
+        let vp_h = clip_bounds.height as f32;
 
         let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
             label: Some("Minimap Render Pass"),
@@ -519,9 +572,9 @@ impl shader::Primitive for MinimapPrimitive {
             occlusion_query_set: None,
         });
 
-        if scaled_w > 0.0 && scaled_h > 0.0 {
+        if vp_w > 0.0 && vp_h > 0.0 {
             render_pass.set_scissor_rect(clip_bounds.x, clip_bounds.y, clip_bounds.width, clip_bounds.height);
-            render_pass.set_viewport(vp_x, vp_y, scaled_w, scaled_h, 0.0, 1.0);
+            render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             render_pass.set_pipeline(&pipeline.pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]);
             render_pass.draw(0..3, 0..1);

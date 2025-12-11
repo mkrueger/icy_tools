@@ -1,4 +1,5 @@
-// Minimap shader - simplified version without CRT effects
+// Minimap shader with multi-texture slicing support
+// Supports up to 10 texture slices for very tall content (80,000px max)
 // Displays the buffer texture with an elegant viewport overlay
 
 struct Uniforms {
@@ -7,15 +8,28 @@ struct Uniforms {
     visible_uv_range: vec4<f32>, // min_y, max_y, unused, unused (what part of texture is visible)
     border_thickness: f32,       // Border thickness in pixels
     show_viewport: f32,          // 1.0 to show, 0.0 to hide
-    _padding: vec2<f32>,
+    num_slices: f32,             // Number of texture slices (1-10)
+    total_image_height: f32,     // Total height in pixels across all slices
+    slice_heights: array<vec4<f32>, 3>, // Heights of each slice (packed as 3 vec4s = 12 floats)
 }
 
-@group(0) @binding(0)
-var t_texture: texture_2d<f32>;
-@group(0) @binding(1)
-var s_sampler: sampler;
-@group(0) @binding(2)
-var<uniform> uniforms: Uniforms;
+// 10 texture slots for slices
+@group(0) @binding(0) var t_slice0: texture_2d<f32>;
+@group(0) @binding(1) var t_slice1: texture_2d<f32>;
+@group(0) @binding(2) var t_slice2: texture_2d<f32>;
+@group(0) @binding(3) var t_slice3: texture_2d<f32>;
+@group(0) @binding(4) var t_slice4: texture_2d<f32>;
+@group(0) @binding(5) var t_slice5: texture_2d<f32>;
+@group(0) @binding(6) var t_slice6: texture_2d<f32>;
+@group(0) @binding(7) var t_slice7: texture_2d<f32>;
+@group(0) @binding(8) var t_slice8: texture_2d<f32>;
+@group(0) @binding(9) var t_slice9: texture_2d<f32>;
+
+// Sampler at binding 10
+@group(0) @binding(10) var s_sampler: sampler;
+
+// Uniforms at binding 11
+@group(0) @binding(11) var<uniform> uniforms: Uniforms;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -43,6 +57,56 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return output;
 }
 
+// Get slice height from packed array
+fn get_slice_height(index: i32) -> f32 {
+    let vec_idx = index / 4;
+    let comp_idx = index % 4;
+    if vec_idx == 0 {
+        return uniforms.slice_heights[0][comp_idx];
+    } else if vec_idx == 1 {
+        return uniforms.slice_heights[1][comp_idx];
+    } else {
+        return uniforms.slice_heights[2][comp_idx];
+    }
+}
+
+// Sample from the appropriate texture slice based on pixel Y coordinate
+fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
+    let total_height = uniforms.total_image_height;
+    let pixel_y = uv.y * total_height;
+    
+    // Find which slice contains this Y coordinate
+    var cumulative_height: f32 = 0.0;
+    let num_slices = i32(uniforms.num_slices);
+    
+    for (var i: i32 = 0; i < num_slices; i++) {
+        let slice_height = get_slice_height(i);
+        let next_cumulative = cumulative_height + slice_height;
+        
+        if pixel_y < next_cumulative || i == num_slices - 1 {
+            // This is the slice we need
+            let local_y = (pixel_y - cumulative_height) / slice_height;
+            let slice_uv = vec2<f32>(uv.x, clamp(local_y, 0.0, 1.0));
+            
+            // Sample from the appropriate texture
+            if i == 0 { return textureSample(t_slice0, s_sampler, slice_uv); }
+            else if i == 1 { return textureSample(t_slice1, s_sampler, slice_uv); }
+            else if i == 2 { return textureSample(t_slice2, s_sampler, slice_uv); }
+            else if i == 3 { return textureSample(t_slice3, s_sampler, slice_uv); }
+            else if i == 4 { return textureSample(t_slice4, s_sampler, slice_uv); }
+            else if i == 5 { return textureSample(t_slice5, s_sampler, slice_uv); }
+            else if i == 6 { return textureSample(t_slice6, s_sampler, slice_uv); }
+            else if i == 7 { return textureSample(t_slice7, s_sampler, slice_uv); }
+            else if i == 8 { return textureSample(t_slice8, s_sampler, slice_uv); }
+            else { return textureSample(t_slice9, s_sampler, slice_uv); }
+        }
+        cumulative_height = next_cumulative;
+    }
+    
+    // Fallback (shouldn't reach here)
+    return textureSample(t_slice0, s_sampler, uv);
+}
+
 // Signed distance to a rectangle (negative inside, positive outside)
 fn sd_rect(p: vec2<f32>, rect_min: vec2<f32>, rect_max: vec2<f32>) -> f32 {
     let center = (rect_min + rect_max) * 0.5;
@@ -66,23 +130,26 @@ fn is_inside_rect(uv: vec2<f32>, rect: vec4<f32>) -> bool {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let uv = input.uv;
+    let screen_uv = input.uv;
     
-    // Sample the texture
-    var color = textureSample(t_texture, s_sampler, uv);
+    // Get the visible UV range (what part of the texture is currently shown on screen)
+    let visible_min_y = uniforms.visible_uv_range.x;
+    let visible_max_y = uniforms.visible_uv_range.y;
+    let visible_height = visible_max_y - visible_min_y;
     
-    // Get texture dimensions for calculations
-    let tex_dims = vec2<f32>(textureDimensions(t_texture));
+    // Transform screen UV to texture UV based on visible range
+    // screen_uv.y=0 maps to visible_min_y, screen_uv.y=1 maps to visible_max_y
+    let texture_uv = vec2<f32>(screen_uv.x, visible_min_y + screen_uv.y * visible_height);
+    
+    // Sample the texture using multi-slice approach with transformed UV
+    var color = sample_sliced_texture(texture_uv);
+    
+    // Use total image height for calculations
+    let tex_height = uniforms.total_image_height;
     
     // Apply viewport overlay if enabled
     if uniforms.show_viewport > 0.5 {
-        // Get the visible UV range (what part of the texture is currently shown on screen)
-        let visible_min_y = uniforms.visible_uv_range.x;
-        let visible_max_y = uniforms.visible_uv_range.y;
-        let visible_height = visible_max_y - visible_min_y;
-        
         // Transform viewport rect from texture space to screen space
-        // viewport_rect is in texture coordinates (0-1), we need to map it to visible coordinates
         let vp_y = uniforms.viewport_rect.y;
         let vp_h = uniforms.viewport_rect.w;
         let vp_y_end = vp_y + vp_h;
@@ -101,14 +168,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             
             let rect_min = screen_rect.xy;
             let rect_max = screen_rect.xy + screen_rect.zw;
-            let inside_viewport = is_inside_rect(uv, screen_rect);
+            let inside_viewport = is_inside_rect(screen_uv, screen_rect);
             
             // Calculate signed distance to rectangle border
-            let dist = sd_rect(uv, rect_min, rect_max);
+            let dist = sd_rect(screen_uv, rect_min, rect_max);
             
             // Convert border thickness from pixels to UV space
-            // Use visible height for more consistent border thickness
-            let visible_pixel_height = tex_dims.y * visible_height;
+            let visible_pixel_height = tex_height * visible_height;
             let pixel_size = 1.0 / visible_pixel_height;
             let border_width = uniforms.border_thickness * pixel_size;
             let inner_border = border_width * 0.5;
@@ -143,7 +209,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             
             // Draw the main border with a gradient effect
             if on_border > 0.01 {
-                let gradient = (uv.x + uv.y) * 0.5 + 0.5;
+                let gradient = (screen_uv.x + screen_uv.y) * 0.5 + 0.5;
                 let border_color_light = uniforms.viewport_color.rgb * 1.3;
                 let border_color_dark = uniforms.viewport_color.rgb * 0.8;
                 let final_border_color = mix(border_color_dark, border_color_light, gradient);
