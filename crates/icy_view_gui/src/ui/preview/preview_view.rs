@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
 use super::content_view::ContentView;
+use super::drag_scroll::DragScrollState;
 use super::image_content_view::ImageContentView;
 use super::image_viewer::{ImageViewer, ImageViewerMessage};
 use super::terminal_content_view::TerminalContentView;
@@ -142,6 +143,9 @@ pub struct PreviewView {
     scroll_speed: ScrollSpeed,
     /// Image viewer (created when viewing images)
     image_viewer: Option<ImageViewer>,
+
+    /// Drag scrolling state (shared between terminal and image viewer)
+    drag_scroll: DragScrollState,
 }
 
 impl PreviewView {
@@ -173,6 +177,8 @@ impl PreviewView {
             auto_scroll_enabled: false,
             scroll_speed: ScrollSpeed::Medium,
             image_viewer: None,
+            // Drag scrolling
+            drag_scroll: DragScrollState::new(),
         }
     }
 
@@ -193,6 +199,9 @@ impl PreviewView {
 
         // Reset scroll mode (background thread will set it)
         self.scroll_mode = ScrollMode::Off;
+
+        // Reset drag/inertia state
+        self.drag_scroll = DragScrollState::new();
 
         // Clear image viewer when loading new file
         self.image_viewer = None;
@@ -469,6 +478,7 @@ impl PreviewView {
             || self.terminal.needs_animation()
             || self.scroll_mode != ScrollMode::Off
             || self.image_viewer.as_ref().map_or(false, |v| v.needs_animation())
+            || self.drag_scroll.needs_animation()
     }
 
     /// Start auto-scroll mode (animated scrolling to bottom)
@@ -586,6 +596,55 @@ impl PreviewView {
                 Task::none()
             }
             PreviewMessage::ImageViewerMessage(msg) => {
+                use super::image_viewer::ImageViewerMessage;
+                use iced::mouse;
+
+                // Handle drag messages with shared drag_scroll state
+                match &msg {
+                    ImageViewerMessage::Press(pos) => {
+                        let viewport_pos = self.with_content_view(|cv| (cv.scroll_x(), cv.scroll_y()));
+                        self.drag_scroll.start_drag(*pos, viewport_pos);
+                        self.scroll_mode = ScrollMode::Off;
+                        // Set grabbing cursor
+                        if let Some(ref viewer) = self.image_viewer {
+                            *viewer.cursor_icon.write() = Some(mouse::Interaction::Grabbing);
+                        }
+                    }
+                    ImageViewerMessage::Release => {
+                        self.drag_scroll.end_drag();
+                        // Reset cursor
+                        if let Some(ref viewer) = self.image_viewer {
+                            *viewer.cursor_icon.write() = None;
+                        }
+                    }
+                    ImageViewerMessage::Move(Some(pos)) => {
+                        // If dragging, process as drag event
+                        if self.drag_scroll.is_dragging {
+                            // ImageViewer uses zoom=1.0 since content_size already includes zoom
+                            if let Some((x, y)) = self.drag_scroll.process_drag(*pos, 1.0) {
+                                self.with_content_view(|cv| {
+                                    cv.scroll_to(x, y);
+                                    cv.sync_scrollbar();
+                                });
+                            }
+                        }
+                        // Cursor is handled by the widget based on cursor_icon state
+                    }
+                    ImageViewerMessage::Move(None) => {
+                        // Mouse left bounds - nothing to do
+                    }
+                    ImageViewerMessage::Drag(_) => {
+                        // Legacy - now handled via Move
+                    }
+                    ImageViewerMessage::Scroll(_, _) => {
+                        // Stop inertia when user scrolls manually
+                        self.scroll_mode = ScrollMode::Off;
+                        self.drag_scroll.stop();
+                    }
+                    _ => {}
+                }
+
+                // Forward remaining messages to viewer
                 if let Some(ref mut viewer) = self.image_viewer {
                     viewer.update(msg);
                 }
@@ -662,8 +721,16 @@ impl PreviewView {
                         }
                     }
                     ScrollMode::Off => {
-                        // No automatic scrolling
+                        // No automatic scrolling - but handle inertia
                     }
+                }
+
+                // Handle inertia scrolling (after drag release)
+                if let Some((dx, dy)) = self.drag_scroll.update_inertia(delta_seconds) {
+                    self.with_content_view(|cv| {
+                        cv.scroll_by(dx, dy);
+                        cv.sync_scrollbar();
+                    });
                 }
 
                 // Return any extra tasks
@@ -739,17 +806,49 @@ impl PreviewView {
                 Task::none()
             }
             PreviewMessage::TerminalMessage(msg) => {
+                use iced::mouse;
+
                 match msg {
-                    icy_engine_gui::Message::Press(_) | 
-                    icy_engine_gui::Message::Release(_) | 
-                    icy_engine_gui::Message::Move(_) | 
-                    icy_engine_gui::Message::Drag(_) => {
-                        // For icy_view, we don't handle mouse clicks/drags
-                        // (viewer only, no selection/editing)
+                    icy_engine_gui::Message::Press(evt) => {
+                        // Only start drag if clicking on the actual content (not border)
+                        if evt.text_position.is_some() {
+                            let viewport_pos = self.with_content_view(|cv| (cv.scroll_x(), cv.scroll_y()));
+                            self.drag_scroll.start_drag(evt.pixel_position, viewport_pos);
+                            // Disable auto-scroll when user starts dragging
+                            self.scroll_mode = ScrollMode::Off;
+                            // Set grabbing cursor
+                            *self.terminal.cursor_icon.write() = Some(mouse::Interaction::Grabbing);
+                        }
+                    }
+                    icy_engine_gui::Message::Release(_) => {
+                        // End drag scrolling, start inertia if we have velocity
+                        self.drag_scroll.end_drag();
+                        // Reset cursor to default (will be set to Grab on next Move if over content)
+                        *self.terminal.cursor_icon.write() = None;
+                    }
+                    icy_engine_gui::Message::Move(evt) => {
+                        // Show grab cursor only when over the actual terminal content area
+                        if !self.drag_scroll.is_dragging {
+                            if evt.text_position.is_some() {
+                                *self.terminal.cursor_icon.write() = Some(mouse::Interaction::Grab);
+                            } else {
+                                *self.terminal.cursor_icon.write() = None;
+                            }
+                        }
+                    }
+                    icy_engine_gui::Message::Drag(evt) => {
+                        let zoom = self.terminal.get_zoom();
+                        if let Some((x, y)) = self.drag_scroll.process_drag(evt.pixel_position, zoom) {
+                            self.with_content_view(|cv| {
+                                cv.scroll_to(x, y);
+                                cv.sync_scrollbar();
+                            });
+                        }
                     }
                     icy_engine_gui::Message::Scroll(delta) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
+                        self.drag_scroll.stop();
                         let (dx, dy) = match delta {
                             icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
                             icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),

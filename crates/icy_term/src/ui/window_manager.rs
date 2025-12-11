@@ -298,7 +298,6 @@ impl WindowManager {
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         let mut subs: Vec<Subscription<WindowManagerMessage>> = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
-            
             iced::event::listen_with(|event, _status, window_id| {
                 // Only forward events that are actually needed - skip mouse move events
                 // as they are handled directly by the shader's update() method

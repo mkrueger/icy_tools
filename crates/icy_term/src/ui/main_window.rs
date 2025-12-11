@@ -1611,10 +1611,10 @@ impl MainWindow {
     fn handle_mouse_move(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
         use iced::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
-        
+
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
-        
+
         // Determine cursor based on what's under it
         let new_cursor = if let Some(cell) = evt.text_position {
             // Check hyperlinks first
@@ -1640,10 +1640,10 @@ impl MainWindow {
             mouse::Interaction::default()
         };
         drop(screen);
-        
+
         // Update terminal cursor icon
         *self.terminal_window.terminal.cursor_icon.write() = Some(new_cursor);
-        
+
         if mouse_state.tracking_enabled() {
             if let Some(cell) = evt.text_position {
                 if matches!(mouse_state.mouse_mode, icy_engine::MouseMode::AnyEvents) {
@@ -1665,19 +1665,18 @@ impl MainWindow {
     fn handle_mouse_drag(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
         use iced::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
-        
+
         // Set crosshair cursor during drag/selection
         *self.terminal_window.terminal.cursor_icon.write() = Some(mouse::Interaction::Crosshair);
-        
+
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
         let mouse_tracking_enabled = mouse_state.tracking_enabled();
         drop(screen);
-        
+
         if mouse_tracking_enabled {
             if let Some(cell) = evt.text_position {
-                let should_report = matches!(mouse_state.mouse_mode, 
-                    icy_engine::MouseMode::ButtonEvents | icy_engine::MouseMode::AnyEvents);
+                let should_report = matches!(mouse_state.mouse_mode, icy_engine::MouseMode::ButtonEvents | icy_engine::MouseMode::AnyEvents);
                 if should_report {
                     let mouse_event = MouseEvent {
                         mouse_state,
@@ -1701,42 +1700,42 @@ impl MainWindow {
     /// Handle mouse button press
     fn handle_mouse_press(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
         use icy_engine::{MouseButton, MouseEvent, MouseEventType, Selection, Shape};
-        
+
         // First, gather info from the screen (with lock held), then release and act
         let mut rip_command: Option<(bool, String)> = None;
         let mut hyperlink_url: Option<String> = None;
         let mut has_selection = false;
         let mouse_state;
         let mouse_tracking_enabled;
-        
+
         {
             let screen = self.terminal_window.terminal.screen.lock();
             mouse_state = screen.terminal_state().mouse_state.clone();
             mouse_tracking_enabled = mouse_state.tracking_enabled();
-            
+
             if let Some(_cell) = evt.text_position {
                 // Check RIP fields
                 rip_command = evt.get_rip_field(&**screen);
-                
+
                 // Check hyperlinks (only if no RIP command and left-click)
                 if rip_command.is_none() && matches!(evt.button, MouseButton::Left) {
                     hyperlink_url = evt.get_hyperlink(&**screen);
                 }
-                
+
                 has_selection = screen.selection().is_some();
             }
         }
-        
+
         // Handle RIP commands
         if let Some((clear_screen, cmd)) = rip_command {
             return self.update(Message::RipCommand(clear_screen, cmd));
         }
-        
+
         // Handle hyperlinks
         if let Some(url) = hyperlink_url {
             return self.update(Message::OpenLink(url));
         }
-        
+
         // Handle mouse tracking
         if mouse_tracking_enabled {
             if let Some(cell) = evt.text_position {
@@ -1781,12 +1780,12 @@ impl MainWindow {
     /// Handle mouse button release  
     fn handle_mouse_release(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
-        
+
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
         let mouse_tracking_enabled = mouse_state.tracking_enabled();
         drop(screen);
-        
+
         if mouse_tracking_enabled {
             if let Some(cell) = evt.text_position {
                 let mouse_event = MouseEvent {
@@ -1809,22 +1808,22 @@ impl MainWindow {
     /// Handle mouse scroll
     fn handle_mouse_scroll(&mut self, delta: icy_engine_gui::WheelDelta) -> Task<Message> {
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
-        
+
         let (scroll_x, scroll_y) = match delta {
             icy_engine_gui::WheelDelta::Lines { x, y } => (x, y),
             icy_engine_gui::WheelDelta::Pixels { x, y } => (x / 20.0, y / 20.0),
         };
-        
+
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
         let mouse_tracking_enabled = mouse_state.tracking_enabled();
         // For wheel events, we don't have text position in the delta, use center
         // TODO: We might want to pass modifiers and position through the Scroll message
         drop(screen);
-        
+
         // Note: We don't have modifiers in WheelDelta, so we can't check for Ctrl+Scroll zoom here
         // That's handled by the Zoom message separately
-        
+
         if mouse_tracking_enabled {
             if scroll_y != 0.0 {
                 let button = if scroll_y > 0.0 { MouseButton::WheelUp } else { MouseButton::WheelDown };

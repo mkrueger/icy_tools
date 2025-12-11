@@ -1,6 +1,6 @@
 use crate::{
-    CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalMouseEvent, TerminalShader,
-    is_alt_pressed, is_ctrl_pressed, is_shift_pressed, render_unicode_to_rgba,
+    CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalMouseEvent, TerminalShader, is_alt_pressed, is_ctrl_pressed,
+    is_shift_pressed, render_unicode_to_rgba,
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
@@ -50,15 +50,57 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
-        if !cursor.is_over(bounds) {
-            return None;
-        }
+        // Check if cursor is over bounds
+        let is_over = cursor.is_over(bounds);
 
-        // Handle mouse events
+        // Handle mouse events - always process Release events and Drag events while dragging
+        // to support "snapped" drag behavior (like scrollbars)
         if let iced::Event::Mouse(mouse_event) = event {
             // Read viewport and render_info for mouse coordinate calculations
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
+
+            // Handle Release events globally (even when cursor is outside bounds)
+            // This ensures drag state is properly cleaned up
+            if let mouse::Event::ButtonReleased(button) = mouse_event {
+                if state.dragging && matches!(button, mouse::Button::Left) {
+                    state.dragging = false;
+                    state.drag_anchor = None;
+                    state.last_drag_position = None;
+
+                    // Get position (may be outside bounds, that's ok)
+                    let (pixel_pos, cell_pos) = if let Some(position) = cursor.position() {
+                        let pixel_pos = (position.x, position.y);
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        (pixel_pos, cell_pos)
+                    } else {
+                        ((0.0, 0.0), None)
+                    };
+
+                    let modifiers = Self::get_modifiers();
+                    let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+                    return Some(iced::widget::Action::publish(Message::Release(evt)));
+                }
+            }
+
+            // Handle Drag events while dragging (even when cursor is outside bounds)
+            if state.dragging {
+                if let mouse::Event::CursorMoved { .. } = mouse_event {
+                    if let Some(position) = cursor.position() {
+                        let pixel_pos = (position.x, position.y);
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+
+                        let modifiers = Self::get_modifiers();
+                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+                        return Some(iced::widget::Action::publish(Message::Drag(evt)));
+                    }
+                }
+            }
+
+            // For other events, only process if cursor is over bounds
+            if !is_over {
+                return None;
+            }
 
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
@@ -112,29 +154,39 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::ButtonReleased(button) => {
-                    if let Some(position) = cursor.position() {
-                        let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                    // Only handle non-left-button releases here (left-button is handled above for drag snapping)
+                    if !matches!(button, mouse::Button::Left) {
+                        if let Some(position) = cursor.position() {
+                            let pixel_pos = (position.x, position.y);
+                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
-                        // Convert iced mouse button to our MouseButton type
-                        let mouse_button = match button {
-                            mouse::Button::Left => MouseButton::Left,
-                            mouse::Button::Middle => MouseButton::Middle,
-                            mouse::Button::Right => MouseButton::Right,
-                            _ => return None,
-                        };
+                            // Convert iced mouse button to our MouseButton type
+                            let mouse_button = match button {
+                                mouse::Button::Middle => MouseButton::Middle,
+                                mouse::Button::Right => MouseButton::Right,
+                                _ => return None,
+                            };
 
-                        // Update drag state for left button
-                        if matches!(button, mouse::Button::Left) {
+                            let modifiers = Self::get_modifiers();
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
+
+                            return Some(iced::widget::Action::publish(Message::Release(evt)));
+                        }
+                    } else if !state.dragging {
+                        // Left button release when not dragging (e.g., simple click release)
+                        if let Some(position) = cursor.position() {
+                            let pixel_pos = (position.x, position.y);
+                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+
                             state.dragging = false;
                             state.drag_anchor = None;
                             state.last_drag_position = None;
+
+                            let modifiers = Self::get_modifiers();
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+
+                            return Some(iced::widget::Action::publish(Message::Release(evt)));
                         }
-
-                        let modifiers = Self::get_modifiers();
-                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
-
-                        return Some(iced::widget::Action::publish(Message::Release(evt)));
                     }
                 }
 

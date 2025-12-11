@@ -12,6 +12,7 @@ use iced::mouse::ScrollDelta;
 use iced::widget::{container, image as iced_image, stack};
 use iced::{Element, Event, Length, Rectangle, Size, Theme, mouse};
 use icy_engine_gui::{HorizontalScrollbarOverlay, ScalingMode, ScrollbarInfo, ScrollbarOverlay, ScrollbarState, Viewport, ZoomMessage};
+use parking_lot::RwLock;
 
 /// Arrow key scroll step in pixels
 const ARROW_SCROLL_STEP: f32 = 50.0;
@@ -55,6 +56,14 @@ pub enum ImageViewerMessage {
     ArrowLeft,
     /// Keyboard navigation: Arrow Right
     ArrowRight,
+    /// Mouse pressed at position (for drag start)
+    Press((f32, f32)),
+    /// Mouse released (for drag end)
+    Release,
+    /// Mouse dragged to position
+    Drag((f32, f32)),
+    /// Mouse moved (for cursor updates)
+    Move(Option<(f32, f32)>),
 }
 
 /// Image viewer state with zoom and scroll support
@@ -73,6 +82,8 @@ pub struct ImageViewer {
     pub vscrollbar_hover_state: Arc<AtomicBool>,
     /// Horizontal scrollbar hover state
     pub hscrollbar_hover_state: Arc<AtomicBool>,
+    /// Current cursor icon override (for drag state)
+    pub cursor_icon: Arc<parking_lot::RwLock<Option<mouse::Interaction>>>,
 }
 
 impl ImageViewer {
@@ -89,6 +100,7 @@ impl ImageViewer {
             scrollbar: ScrollbarState::new(),
             vscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
+            cursor_icon: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -295,7 +307,13 @@ impl ImageViewer {
 
     /// Check if the image viewer needs animation updates
     pub fn needs_animation(&self) -> bool {
-        self.viewport.is_animating() || self.scrollbar.needs_animation()
+        let vp = self.viewport.is_animating();
+        let sb = self.scrollbar.needs_animation();
+        let result = vp || sb;
+        if sb {
+            log::info!("ImageViewer needs_animation: vp={}, sb={} -> {}", vp, sb, result);
+        }
+        result
     }
 
     /// Get scrollbar info for rendering scrollbars
@@ -387,6 +405,8 @@ impl ImageViewer {
             ImageViewerMessage::ArrowDown => self.scroll_arrow_down(),
             ImageViewerMessage::ArrowLeft => self.scroll_arrow_left(),
             ImageViewerMessage::ArrowRight => self.scroll_arrow_right(),
+            // Drag messages are handled by PreviewView, not here
+            ImageViewerMessage::Press(_) | ImageViewerMessage::Release | ImageViewerMessage::Drag(_) | ImageViewerMessage::Move(_) => {}
         }
     }
 
@@ -399,6 +419,7 @@ impl ImageViewer {
             self.zoom,
             (self.viewport.scroll_x, self.viewport.scroll_y),
             on_message.clone(),
+            self.cursor_icon.clone(),
         )
         .into();
 
@@ -459,6 +480,7 @@ struct ImageViewWidget<Message> {
     zoom: f32,
     scroll_offset: (f32, f32),
     on_message: Box<dyn Fn(ImageViewerMessage) -> Message>,
+    cursor_icon: Arc<RwLock<Option<mouse::Interaction>>>,
 }
 
 impl<Message> ImageViewWidget<Message> {
@@ -468,6 +490,7 @@ impl<Message> ImageViewWidget<Message> {
         zoom: f32,
         scroll_offset: (f32, f32),
         on_message: impl Fn(ImageViewerMessage) -> Message + 'static,
+        cursor_icon: Arc<RwLock<Option<mouse::Interaction>>>,
     ) -> Self {
         Self {
             handle,
@@ -475,6 +498,7 @@ impl<Message> ImageViewWidget<Message> {
             zoom,
             scroll_offset,
             on_message: Box::new(on_message),
+            cursor_icon,
         }
     }
 
@@ -567,8 +591,27 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        let zoomed = self.zoomed_size();
+        let can_scroll = zoomed.0 > bounds.width || zoomed.1 > bounds.height;
 
         match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if can_scroll {
+                    if let Some(pos) = cursor.position_in(bounds) {
+                        shell.publish((self.on_message)(ImageViewerMessage::Press((pos.x, pos.y))));
+                    }
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                // Always send release to handle drags that end outside bounds
+                shell.publish((self.on_message)(ImageViewerMessage::Release));
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                // Always send Move with global position for drag tracking
+                // preview_view decides if it's a drag based on is_dragging state
+                let global_pos = (position.x - bounds.x, position.y - bounds.y);
+                shell.publish((self.on_message)(ImageViewerMessage::Move(Some(global_pos))));
+            }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 if cursor.is_over(bounds) {
                     // Check if Cmd/Ctrl is held for zooming (Cmd on macOS, Ctrl on Windows/Linux)
@@ -630,6 +673,11 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         _viewport: &Rectangle,
         _renderer: &iced::Renderer,
     ) -> mouse::Interaction {
+        // Check for cursor override (e.g., during drag)
+        if let Some(cursor_override) = *self.cursor_icon.read() {
+            return cursor_override;
+        }
+
         let bounds = layout.bounds();
         if cursor.is_over(bounds) {
             let zoomed = self.zoomed_size();

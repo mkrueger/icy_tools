@@ -213,10 +213,10 @@ impl CanvasView {
             }
             CanvasMessage::TerminalMessage(msg) => {
                 match msg {
-                    icy_engine_gui::Message::Press(evt) | 
-                    icy_engine_gui::Message::Release(evt) | 
-                    icy_engine_gui::Message::Move(evt) | 
-                    icy_engine_gui::Message::Drag(evt) => {
+                    icy_engine_gui::Message::Press(evt)
+                    | icy_engine_gui::Message::Release(evt)
+                    | icy_engine_gui::Message::Move(evt)
+                    | icy_engine_gui::Message::Drag(evt) => {
                         self.handle_terminal_mouse_event(evt);
                     }
                     icy_engine_gui::Message::Scroll(delta) => {
