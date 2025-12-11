@@ -250,7 +250,7 @@ pub fn iced_to_icy_color(color: Color) -> IcyColor {
 }
 
 pub fn icy_to_iced_color(color: IcyColor) -> Color {
-    let (r, g, b) = color.get_rgb();
+    let (r, g, b) = color.rgb();
     Color::from_rgb8(r, g, b)
 }
 

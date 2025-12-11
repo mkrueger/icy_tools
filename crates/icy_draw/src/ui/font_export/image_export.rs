@@ -32,7 +32,7 @@ pub fn export_font_to_image(font: &BitFont, path: &Path, format: image::ImageFor
 
         // Get glyph data
         let ch = unsafe { char::from_u32_unchecked(ch_code) };
-        let glyph = font.get_glyph(ch);
+        let glyph = font.glyph(ch);
 
         // Calculate position in image
         let base_x = col * font_width;

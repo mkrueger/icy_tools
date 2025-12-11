@@ -96,8 +96,8 @@ impl ColorSwitcher {
 
     /// Update colors from attribute
     pub fn set_from_attribute(&mut self, attr: &TextAttribute) {
-        self.foreground = attr.get_foreground();
-        self.background = attr.get_background();
+        self.foreground = attr.foreground();
+        self.background = attr.background();
     }
 
     /// Get foreground color
@@ -158,10 +158,10 @@ impl ColorSwitcher {
 
     /// Render the color switcher
     pub fn view(&self, foreground: u32, background: u32) -> Element<'_, ColorSwitcherMessage> {
-        let (fg_r, fg_g, fg_b) = self.cached_palette.get_rgb(foreground);
-        let (bg_r, bg_g, bg_b) = self.cached_palette.get_rgb(background);
+        let (fg_r, fg_g, fg_b) = self.cached_palette.rgb(foreground);
+        let (bg_r, bg_g, bg_b) = self.cached_palette.rgb(background);
         // DOS color 7 is the default foreground (light gray)
-        let (def_fg_r, def_fg_g, def_fg_b) = self.cached_palette.get_rgb(7);
+        let (def_fg_r, def_fg_g, def_fg_b) = self.cached_palette.rgb(7);
 
         Shader::new(ColorSwitcherProgram {
             foreground_color: [fg_r as f32 / 255.0, fg_g as f32 / 255.0, fg_b as f32 / 255.0, 1.0],

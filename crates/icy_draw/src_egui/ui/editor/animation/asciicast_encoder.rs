@@ -35,11 +35,11 @@ impl AnimationEncoder for AsciiCast {
         {
             let buf = &animator.lock().unwrap().frames[0].0;
             f.write_all(format!("{{\"version\": 2, \"width\": {}, \"height\": {}, \"timestamp\": 0, \"title\": \"{}\", \"env\": {{\"TERM\": \"IcyTerm\", \"SHELL\": \"/bin/icy_play\"}}, \"theme\": {{ \"fg\": \"{}\", \"bg\": \"{}\", \"palette\": \"{}\" }}  }}\n", 
-                buf.get_width(),
-                buf.get_height(),
+                buf.width(),
+                buf.height(),
                 name,
-                buf.palette.get_color(7).to_hex(),
-                buf.palette.get_color(0).to_hex(),
+                buf.palette.color(7).to_hex(),
+                buf.palette.color(0).to_hex(),
                 buf.palette.color_iter().take(16).fold(String::new(), |mut s, x| {
                     if !s.is_empty() {
                         s.push(':');
@@ -65,9 +65,9 @@ impl AnimationEncoder for AsciiCast {
                 let buf = optimizer.optimize(&animator.lock().unwrap().frames[frame].0);
                 str_gen.generate(&buf, &buf);
             }
-            str_gen.line_offsets.push(str_gen.get_data().len());
+            str_gen.line_offsets.push(str_gen.data().len());
 
-            let data = str_gen.get_data();
+            let data = str_gen.data();
             let mut cur = 0;
             for i in &str_gen.line_offsets {
                 if cur < *i {

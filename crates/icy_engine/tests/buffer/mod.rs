@@ -33,7 +33,7 @@ fn test_set_char() {
 fn test_respect_sauce_width() {
     let mut buf = TextBuffer::default();
     buf.set_width(10);
-    for x in 0..buf.get_width() {
+    for x in 0..buf.width() {
         buf.layers[0].set_char((x, 0), AttributedChar::new('1', TextAttribute::default()));
         buf.layers[0].set_char((x, 1), AttributedChar::new('2', TextAttribute::default()));
         buf.layers[0].set_char((x, 2), AttributedChar::new('3', TextAttribute::default()));
@@ -69,8 +69,8 @@ fn test_respect_sauce_width() {
         .from_bytes(&std::path::PathBuf::from("test.ans"), &ansi_bytes, Some(load_data))
         .unwrap()
         .buffer;
-    assert_eq!(10, loaded_buf.get_width());
-    assert_eq!(10, loaded_buf.layers[0].get_width());
+    assert_eq!(10, loaded_buf.width());
+    assert_eq!(10, loaded_buf.layers[0].width());
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn test_layer_offset() {
     new_layer.set_char((5, 5), AttributedChar::new('a', TextAttribute::default()));
     buf.layers.push(new_layer);
 
-    assert_eq!('a', buf.get_char((7, 7).into()).ch);
+    assert_eq!('a', buf.char_at((7, 7).into()).ch);
 }
 
 #[test]
@@ -102,6 +102,6 @@ fn test_layer_negative_offset() {
     new_layer.set_char((5, 5), AttributedChar::new('b', TextAttribute::default()));
     buf.layers.push(new_layer);
 
-    assert_eq!('a', buf.get_char((3, 3).into()).ch);
-    assert_eq!('b', buf.get_char((7, 7).into()).ch);
+    assert_eq!('a', buf.char_at((3, 3).into()).ch);
+    assert_eq!('b', buf.char_at((7, 7).into()).ch);
 }

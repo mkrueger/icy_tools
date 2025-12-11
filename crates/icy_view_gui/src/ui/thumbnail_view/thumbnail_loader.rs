@@ -568,8 +568,8 @@ fn render_with_parser(
     } else {
         false
     };
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
     debug!("[ThumbnailLoader] {} parsed screen size: {}x{} (unicode={})", path, width, height, use_unicode);
     let result = render_screen_to_thumbnail(path, &*screen, use_unicode, sauce, label, cancel_token);
 
@@ -617,8 +617,8 @@ fn render_with_format(
             // Determine if this is a unicode buffer
             let is_unicode = buffer.buffer_type == BufferType::Unicode;
 
-            let width = buffer.get_width();
-            let height = buffer.get_height();
+            let width = buffer.width();
+            let height = buffer.height();
 
             let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
 
@@ -644,8 +644,8 @@ fn render_screen_to_thumbnail(
         return None;
     }
 
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
 
     if width == 0 || height == 0 {
         return Some(ThumbnailResult {
@@ -836,8 +836,8 @@ fn render_placeholder_thumbnail(path: &String, sauce: Option<SauceRecord>, label
     let (screen, _parser) = mode.create_screen(emulation, None);
 
     // Render the empty screen to get proper dimensions (80x25 with font)
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
     let rect = icy_engine::Selection::from(icy_engine::Rectangle::from(0, 0, width, height));
 
     let opts = RenderOptions {
@@ -885,12 +885,12 @@ fn render_placeholder_thumbnail(path: &String, sauce: Option<SauceRecord>, label
 
 /// Check if the screen has any blinking content
 fn screen_has_blinking(screen: &dyn Screen) -> bool {
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
 
     for y in 0..height {
         for x in 0..width {
-            let ch = screen.get_char((x, y).into());
+            let ch = screen.char_at((x, y).into());
             if ch.attribute.is_blinking() {
                 return true;
             }

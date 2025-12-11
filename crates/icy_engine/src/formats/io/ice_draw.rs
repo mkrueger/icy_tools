@@ -23,7 +23,7 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         return Err(crate::EngineError::OnlyIceModeSupported);
     }
 
-    if buf.get_height() > 200 {
+    if buf.height() > 200 {
         return Err(crate::EngineError::TooManyLines { max_lines: 200 });
     }
     let fonts = analyze_font_usage(buf);
@@ -43,22 +43,22 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     result.push(0);
     result.push(0);
 
-    let w = buf.get_width().saturating_sub(1);
+    let w = buf.width().saturating_sub(1);
     result.push(w as u8);
     result.push((w >> 8) as u8);
 
-    let h = buf.get_height().saturating_sub(1);
+    let h = buf.height().saturating_sub(1);
     result.push(h as u8);
     result.push((h >> 8) as u8);
 
-    for y in 0..buf.get_height() {
+    for y in 0..buf.height() {
         let mut x = 0;
-        while x < buf.get_width() {
-            let ch = buf.get_char((x, y).into());
+        while x < buf.width() {
+            let ch = buf.char_at((x, y).into());
             let mut rle_count = 1;
             if options.compress {
-                while x + rle_count < buf.get_width() && rle_count < (u16::MAX) as i32 {
-                    if ch != buf.get_char((x + rle_count, y).into()) {
+                while x + rle_count < buf.width() && rle_count < (u16::MAX) as i32 {
+                    if ch != buf.char_at((x + rle_count, y).into()) {
                         break;
                     }
                     rle_count += 1;
@@ -91,10 +91,10 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     }
 
     // font
-    if buf.get_font_dimensions() != Size::new(8, 16) {
+    if buf.font_dimensions() != Size::new(8, 16) {
         return Err(SavingError::Only8x16FontsSupported.into());
     }
-    if let Some(font) = buf.get_font(fonts[0]) {
+    if let Some(font) = buf.font(fonts[0]) {
         result.extend(font.convert_to_u8_data());
     } else {
         return Err(SavingError::NoFontFound.into());
@@ -196,7 +196,7 @@ pub(crate) fn load_ice_draw(file_name: &Path, data: &[u8], load_data_opt: Option
 }
 
 pub fn _get_save_sauce_default_idf(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
 

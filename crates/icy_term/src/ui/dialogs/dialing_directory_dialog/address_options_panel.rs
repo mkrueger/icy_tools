@@ -450,9 +450,9 @@ impl super::DialingDirectoryState {
                 .text_size(TEXT_SIZE_NORMAL);
 
                 // Resolution info label
-                let size = current_resolution.get_resolution();
-                let (cols, _rows) = current_resolution.get_text_resolution();
-                let colors = current_resolution.get_max_colors();
+                let size = current_resolution.resolution();
+                let (cols, _rows) = current_resolution.text_resolution();
+                let colors = current_resolution.max_colors();
                 let info_text = fl!(
                     crate::LANGUAGE_LOADER,
                     "dialing_directory-resolution-info",

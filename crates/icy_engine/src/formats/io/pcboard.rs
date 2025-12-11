@@ -11,7 +11,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
     let mut result: Vec<u8> = Vec::new();
     let mut last_attr = TextAttribute::default();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
     let mut first_char = true;
     if options.modern_terminal_output {
         // write UTF-8 BOM as unicode indicator.
@@ -25,7 +25,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
         }
     }
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
 
         while pos.x < line_length {
             let mut found_tag = false;
@@ -46,7 +46,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
                 continue;
             }
 
-            let ch = buf.get_char(pos);
+            let ch = buf.char_at(pos);
 
             if first_char || ch.attribute != last_attr {
                 result.extend_from_slice(format!("@X{:02X}", ch.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
@@ -68,7 +68,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
         }
 
         // do not end with eol
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(13);
             result.push(10);
         }
@@ -138,7 +138,7 @@ pub(crate) fn load_pcboard(file_name: &Path, data: &[u8], load_data_opt: Option<
 }
 
 pub fn _get_save_sauce_default_pcb(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
 

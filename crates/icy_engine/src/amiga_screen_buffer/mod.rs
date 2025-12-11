@@ -76,7 +76,7 @@ impl AmigaScreenBuffer {
             }
             GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
             GraphicsType::IGS(term_res) => {
-                let res = term_res.get_resolution();
+                let res = term_res.resolution();
                 (res.width, res.height)
             }
             GraphicsType::Skypix => (SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height),
@@ -110,7 +110,7 @@ impl AmigaScreenBuffer {
 
         // Set appropriate default palette based on graphics type
         let palette = match graphics_type {
-            GraphicsType::IGS(res) => res.get_palette().clone(),
+            GraphicsType::IGS(res) => res.palette().clone(),
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
@@ -175,11 +175,11 @@ impl AmigaScreenBuffer {
         let pixel_y = pos.y;
 
         // Get colors from palette, swap if inverse video mode is
-        let (fg_color, bg_color) = (ch.attribute.get_foreground() as u32, ch.attribute.get_background() as u32);
+        let (fg_color, bg_color) = (ch.attribute.foreground() as u32, ch.attribute.background() as u32);
 
-        let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+        let font = if let Some(font) = self.font(ch.font_page()) {
             font
-        } else if let Some(font) = self.get_font(0) {
+        } else if let Some(font) = self.font(0) {
             font
         } else {
             &DEFAULT_BITFONT
@@ -187,7 +187,7 @@ impl AmigaScreenBuffer {
         let font_size = font.size();
 
         // Get glyph data from font
-        let Some(glyph) = font.get_glyph(ch.ch) else {
+        let Some(glyph) = font.glyph(ch.ch) else {
             log::error!("NO GLYPH for char '{}'", ch.ch);
             return None;
         };
@@ -262,33 +262,33 @@ impl AmigaScreenBuffer {
 }
 
 impl TextPane for AmigaScreenBuffer {
-    fn get_char(&self, _pos: Position) -> AttributedChar {
+    fn char_at(&self, _pos: Position) -> AttributedChar {
         // won't work for rgba screens.
         AttributedChar::default()
     }
 
-    fn get_line_count(&self) -> i32 {
+    fn line_count(&self) -> i32 {
         self.char_screen_size.height
     }
 
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.char_screen_size.width
     }
 
-    fn get_height(&self) -> i32 {
+    fn height(&self) -> i32 {
         self.char_screen_size.height
     }
 
-    fn get_size(&self) -> Size {
+    fn size(&self) -> Size {
         self.char_screen_size
     }
 
-    fn get_line_length(&self, _line: i32) -> i32 {
+    fn line_length(&self, _line: i32) -> i32 {
         // won't work for rgba screens.
         0
     }
 
-    fn get_rectangle(&self) -> crate::Rectangle {
+    fn rectangle(&self) -> crate::Rectangle {
         crate::Rectangle::from_coords(0, 0, self.char_screen_size.width - 1, self.char_screen_size.height - 1)
     }
 }
@@ -305,7 +305,7 @@ impl Screen for AmigaScreenBuffer {
     /// Override: Convert pixel coordinates to character grid coordinates
     fn caret_position(&self) -> Position {
         let pixel_pos = self.caret.position();
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         // Position::new(pixel_pos.x / font_size.width, ((pixel_pos.y as f32) / font_size.height as f32).ceil() as i32)
         Position::new(pixel_pos.x / font_size.width, pixel_pos.y / font_size.height)
     }
@@ -320,7 +320,7 @@ impl Screen for AmigaScreenBuffer {
 
     fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         // Use cached palette as packed RGBA u32 for single write per pixel
-        let palette_cache_rgba = self.palette.get_palette_cache_rgba();
+        let palette_cache_rgba = self.palette.palette_cache_rgba();
 
         // Clamp region to screen bounds
         let x = px_region.start.x.clamp(0, self.pixel_size.width);
@@ -387,20 +387,20 @@ impl Screen for AmigaScreenBuffer {
     }
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.resolution()), options)
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(self.caret.font_page()) {
+    fn font_dimensions(&self) -> Size {
+        if let Some(font) = self.font(self.caret.font_page()) {
             font.size()
-        } else if let Some(font) = self.get_font(0) {
+        } else if let Some(font) = self.font(0) {
             font.size()
         } else {
             Size::new(8, 16)
         }
     }
 
-    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+    fn font(&self, font_number: usize) -> Option<&BitFont> {
         self.font_table.get(&font_number)
     }
 
@@ -420,7 +420,7 @@ impl Screen for AmigaScreenBuffer {
         self.buffer_type
     }
 
-    fn get_selection(&self) -> Option<Selection> {
+    fn selection(&self) -> Option<Selection> {
         None
     }
 
@@ -432,7 +432,7 @@ impl Screen for AmigaScreenBuffer {
         &self.hyperlinks
     }
 
-    fn get_version(&self) -> u64 {
+    fn version(&self) -> u64 {
         self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -442,13 +442,13 @@ impl Screen for AmigaScreenBuffer {
 
     fn max_base_colors(&self) -> u32 {
         if let GraphicsType::IGS(t) = self.graphics_type {
-            t.get_max_colors()
+            t.max_colors()
         } else {
             self.palette.len() as u32
         }
     }
 
-    fn get_resolution(&self) -> Size {
+    fn resolution(&self) -> Size {
         self.pixel_size
     }
 
@@ -493,44 +493,44 @@ impl EditableScreen for AmigaScreenBuffer {
         return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
-    fn get_first_visible_line(&self) -> i32 {
+    fn first_visible_line(&self) -> i32 {
         0
     }
 
-    fn get_last_visible_line(&self) -> i32 {
+    fn last_visible_line(&self) -> i32 {
         self.char_screen_size.height - 1
     }
 
-    fn get_first_editable_line(&self) -> i32 {
+    fn first_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
+            if let Some((start, _)) = self.terminal_state.margins_top_bottom() {
                 return start;
             }
         }
         0
     }
 
-    fn get_last_editable_line(&self) -> i32 {
+    fn last_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if let Some((_, end)) = self.terminal_state.margins_top_bottom() {
                 return end;
             }
         }
         self.char_screen_size.height - 1
     }
 
-    fn get_first_editable_column(&self) -> i32 {
+    fn first_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_left_right() {
+            if let Some((start, _)) = self.terminal_state.margins_left_right() {
                 return start;
             }
         }
         0
     }
 
-    fn get_last_editable_column(&self) -> i32 {
+    fn last_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_left_right() {
+            if let Some((_, end)) = self.terminal_state.margins_left_right() {
                 return end;
             }
         }
@@ -549,10 +549,10 @@ impl EditableScreen for AmigaScreenBuffer {
 
     fn set_resolution(&mut self, size: Size) {
         self.pixel_size = size;
-        let font_size = self.get_font(0).unwrap().size();
+        let font_size = self.font(0).unwrap().size();
         self.char_screen_size = Size::new(self.pixel_size.width / font_size.width, self.pixel_size.height / font_size.height);
         // Fill with background color from caret (0 for white in most palettes)
-        let bg_color = self.caret.attribute.get_background();
+        let bg_color = self.caret.attribute.background();
         self.screen.clear();
         self.screen
             .resize((self.pixel_size.width as usize) * (self.pixel_size.height as usize), bg_color as u8);
@@ -575,7 +575,7 @@ impl EditableScreen for AmigaScreenBuffer {
                 self.caret.attribute.set_foreground(1);
                 self.caret.attribute.set_background(0);
                 self.terminal_state.cr_is_if = true;
-                self.set_resolution(res.get_resolution());
+                self.set_resolution(res.resolution());
             }
             _ => {
                 // Keep current caret settings
@@ -592,14 +592,14 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Convert character grid coordinates to pixel coordinates
     fn set_caret_position(&mut self, pos: Position) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         let pixel_pos = Position::new(pos.x * font_size.width, pos.y * font_size.height);
         self.caret.set_position(pixel_pos);
     }
 
     /// Override: print_char that works with pixel coordinates
     fn print_char(&mut self, ch: AttributedChar) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
 
         // Check if we need to scroll BEFORE rendering to avoid cutting off text
         if self.terminal_state.is_terminal_buffer && self.caret.y + font_size.height > self.pixel_size.height {
@@ -614,7 +614,7 @@ impl EditableScreen for AmigaScreenBuffer {
         }
         let mut pos = self.caret.position();
 
-        if let Some(font) = self.get_font(self.caret.font_page()) {
+        if let Some(font) = self.font(self.caret.font_page()) {
             if let Some(shift) = font.yaff_font.global_shift_up {
                 pos.y = pos.y.saturating_sub(shift as i32);
             }
@@ -624,9 +624,9 @@ impl EditableScreen for AmigaScreenBuffer {
             let advance_width = if self.graphics_type() == GraphicsType::Skypix {
                 // For proportional fonts with bearing information, use glyph metrics
                 // For monospace fonts, use font_size.width
-                let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+                let font = if let Some(font) = self.font(ch.font_page()) {
                     font
-                } else if let Some(font) = self.get_font(0) {
+                } else if let Some(font) = self.font(0) {
                     font
                 } else {
                     &DEFAULT_BITFONT
@@ -675,7 +675,7 @@ impl EditableScreen for AmigaScreenBuffer {
         if self.text_mode == TextMode::Jam1 {
             return; // No LF in Jam1 mode
         }
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         let in_margin = self.terminal_state.in_margin(self.caret.position());
         self.caret.x = 0;
         self.caret.y += font_size.height;
@@ -706,7 +706,7 @@ impl EditableScreen for AmigaScreenBuffer {
             }
             GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
             GraphicsType::IGS(term_res) => {
-                let res = term_res.get_resolution();
+                let res = term_res.resolution();
                 (res.width, res.height)
             }
             GraphicsType::Skypix => (800, 600),
@@ -750,7 +750,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn reset_terminal(&mut self) {
-        self.terminal_state.reset_terminal(self.terminal_state.get_size());
+        self.terminal_state.reset_terminal(self.terminal_state.size());
         self.terminal_state_mut().cr_is_if = false;
         self.caret.reset();
         self.caret.set_foreground(self.default_foreground_color());
@@ -781,7 +781,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Scroll the screen up by one line (move content up, clear bottom line)
     fn scroll_up(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let line_height = font.height as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -791,7 +791,7 @@ impl EditableScreen for AmigaScreenBuffer {
         }
 
         // Add top line to scrollback BEFORE scrolling (while data is still there)
-        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
             let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
             self.scrollback_buffer.add_chunk(rgba_data, size);
         }
@@ -810,7 +810,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Scroll the screen down by one line (move content down, clear top line)
     fn scroll_down(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let line_height = font.height as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -833,7 +833,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Scroll the screen left by one column (move content left, clear right column)
     fn scroll_left(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let char_width = font.width as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -855,7 +855,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Scroll the screen right by one column (move content right, clear left column)
     fn scroll_right(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let char_width = font.width as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -887,7 +887,7 @@ impl EditableScreen for AmigaScreenBuffer {
         self.terminal_state_mut().cleared_screen = true;
 
         // Clear pixel buffer
-        self.screen.fill(self.caret.attribute.get_background() as u8);
+        self.screen.fill(self.caret.attribute.background() as u8);
         self.terminal_state_mut().cr_is_if = false;
         self.mark_dirty();
     }
@@ -967,7 +967,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn clear_buffer_down(&mut self) {
-        let bg_color = self.caret.attribute.get_background() as u8;
+        let bg_color = self.caret.attribute.background() as u8;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
 
@@ -982,9 +982,9 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn clear_buffer_up(&mut self) {
-        let bg_color = self.caret.attribute.get_background() as u8;
+        let bg_color = self.caret.attribute.background() as u8;
         let screen_width = self.pixel_size.width as usize;
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
 
         // Clear from top of screen to current line (caret.y + font_size.height)
         let end_y = ((self.caret.y as usize) + (font_size.height as usize)).min(self.pixel_size.height as usize);
@@ -996,8 +996,8 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn clear_line(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
+        let font_size = self.font_dimensions();
+        let bg_color = self.caret.attribute.background() as u8;
         let screen_width = self.pixel_size.width as usize;
 
         // Clear entire line from x=0 to screen width, for font_size.height rows
@@ -1012,8 +1012,8 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn clear_line_end(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
+        let font_size = self.font_dimensions();
+        let bg_color = self.caret.attribute.background() as u8;
         let screen_width = self.pixel_size.width as usize;
 
         // Clear from caret.x to end of line, for font_size.height rows
@@ -1030,8 +1030,8 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn clear_line_start(&mut self) {
-        let font_size = self.get_font_dimensions();
-        let bg_color = self.caret.attribute.get_background() as u8;
+        let font_size = self.font_dimensions();
+        let bg_color = self.caret.attribute.background() as u8;
         let screen_width = self.pixel_size.width as usize;
 
         // Clear from 0 to caret.x, for font_size.height rows
@@ -1048,7 +1048,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Move left, handling autowrap and pixel coordinates
     fn left(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
 
         if auto_wrap && self.caret.x == 0 {
             // At column 0: wrap to previous line end if above origin line
@@ -1084,7 +1084,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Move right, handling autowrap and pixel coordinates
     fn right(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         let last_pixel_x = self.pixel_size.width - font_size.width;
 
         if auto_wrap && self.caret.x >= last_pixel_x {
@@ -1110,7 +1110,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Move up, handling pixel coordinates
     fn up(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         self.caret_mut().y -= num * font_size.height;
         if scroll {
             self.check_scrolling_on_caret_up(false, false);
@@ -1119,7 +1119,7 @@ impl EditableScreen for AmigaScreenBuffer {
 
     /// Override: Move down, handling pixel coordinates
     fn down(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         self.caret_mut().y += num * font_size.height;
         if scroll {
             self.check_scrolling_on_caret_down(false, false);
@@ -1127,7 +1127,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn check_scrolling_on_caret_up(&mut self, force: bool, _in_margin: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         if self.terminal_state().needs_scrolling() || force {
             while self.caret.y < 0 {
                 self.scroll_down();
@@ -1137,7 +1137,7 @@ impl EditableScreen for AmigaScreenBuffer {
     }
 
     fn check_scrolling_on_caret_down(&mut self, force: bool, _in_margin: bool) {
-        let font_size = self.get_font_dimensions();
+        let font_size = self.font_dimensions();
         // Scroll up if caret.y + font_height would exceed screen height
         if self.terminal_state().needs_scrolling() || force {
             while self.caret.y + font_size.height > self.pixel_size.height {

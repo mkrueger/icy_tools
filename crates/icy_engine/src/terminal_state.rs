@@ -186,7 +186,7 @@ impl TerminalState {
         self.mouse_state.mouse_tracking_enabled = enabled;
     }
 
-    pub fn get_width(&self) -> i32 {
+    pub fn width(&self) -> i32 {
         self.size.width
     }
 
@@ -195,7 +195,7 @@ impl TerminalState {
         self.reset_tabs();
     }
 
-    pub fn get_height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         self.size.height
     }
 
@@ -203,7 +203,7 @@ impl TerminalState {
         self.size.height = height;
     }
 
-    pub fn get_size(&self) -> Size {
+    pub fn size(&self) -> Size {
         self.size
     }
 
@@ -215,7 +215,7 @@ impl TerminalState {
         self.tab_stops.len()
     }
 
-    pub fn get_tabs(&self) -> &[i32] {
+    pub fn tabs(&self) -> &[i32] {
         &self.tab_stops
     }
 
@@ -230,7 +230,7 @@ impl TerminalState {
     fn reset_tabs(&mut self) {
         let mut i = 0;
         self.tab_stops.clear();
-        while i < self.get_width() {
+        while i < self.width() {
             self.tab_stops.push(i);
             i += 8;
         }
@@ -241,7 +241,7 @@ impl TerminalState {
         while i < self.tab_stops.len() && self.tab_stops[i] <= x {
             i += 1;
         }
-        if i < self.tab_stops.len() { self.tab_stops[i] } else { self.get_width() }
+        if i < self.tab_stops.len() { self.tab_stops[i] } else { self.width() }
     }
 
     pub fn prev_tab_stop(&self, x: i32) -> i32 {
@@ -259,7 +259,7 @@ impl TerminalState {
         }
     }
 
-    pub fn get_baud_emulation(&self) -> BaudEmulation {
+    pub fn baud_emulation(&self) -> BaudEmulation {
         self.baud_rate
     }
 
@@ -267,16 +267,16 @@ impl TerminalState {
         self.baud_rate = baud_rate;
     }
 
-    pub fn get_margins_top_bottom(&self) -> Option<(i32, i32)> {
+    pub fn margins_top_bottom(&self) -> Option<(i32, i32)> {
         self.margins_top_bottom
     }
 
-    pub fn get_margins_left_right(&self) -> Option<(i32, i32)> {
+    pub fn margins_left_right(&self) -> Option<(i32, i32)> {
         self.margins_left_right
     }
 
     pub fn needs_scrolling(&self) -> bool {
-        self.is_terminal_buffer && self.get_margins_top_bottom().is_some()
+        self.is_terminal_buffer && self.margins_top_bottom().is_some()
     }
 
     pub fn set_margins_top_bottom(&mut self, top: i32, bottom: i32) {

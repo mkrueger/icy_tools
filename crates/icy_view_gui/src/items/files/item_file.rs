@@ -45,7 +45,7 @@ impl Item for ItemFile {
         Some(self.path.to_string_lossy().replace('\\', "/"))
     }
 
-    fn get_size(&self) -> Option<u64> {
+    fn size(&self) -> Option<u64> {
         self.size
     }
 

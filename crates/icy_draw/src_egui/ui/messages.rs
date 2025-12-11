@@ -270,8 +270,8 @@ impl<'a> MainWindow<'a> {
             Message::SelectAll => {
                 self.run_editor_command(0, |_, editor, _| {
                     let buf = &mut editor.buffer_view.lock();
-                    let w = buf.get_buffer().get_width();
-                    let h = buf.get_buffer().get_height();
+                    let w = buf.get_buffer().width();
+                    let h = buf.get_buffer().height();
 
                     buf.set_selection(icy_engine::Rectangle::from(0, 0, w, h));
                     None
@@ -475,7 +475,7 @@ impl<'a> MainWindow<'a> {
 
                     let lock = &mut editor.buffer_view.lock();
                     let buf = &mut lock.get_buffer_mut();
-                    if buf.get_font(page).is_none() {
+                    if buf.font(page).is_none() {
                         match BitFont::from_ansi_font_page(page) {
                             Ok(font) => {
                                 buf.set_font(page, font);
@@ -589,7 +589,7 @@ impl<'a> MainWindow<'a> {
                             layer.set_offset((0, 0));
                             layer.role = icy_engine::Role::Normal;
                             layer.properties.has_alpha_channel = false;
-                            let lc = layer.get_line_count();
+                            let lc = layer.line_count();
 
                             state.get_buffer_mut().layers.clear();
                             state.get_buffer_mut().layers.push(layer);
@@ -788,13 +788,13 @@ impl<'a> MainWindow<'a> {
                     let pos = bv.get_caret().get_position();
 
                     let attr = if let Some(layer) = bv.get_edit_state().get_cur_layer() {
-                        layer.get_char(pos + layer.get_offset()).attribute
+                        layer.char_at(pos + layer.offset()).attribute
                     } else {
-                        bv.get_buffer().get_char(pos).attribute
+                        bv.get_buffer().char_at(pos).attribute
                     };
 
-                    let fg = attr.get_foreground();
-                    let bg = attr.get_background();
+                    let fg = attr.foreground();
+                    let bg = attr.background();
                     let caret = bv.get_caret_mut();
                     caret.set_foreground(fg);
                     caret.set_background(bg);
@@ -815,8 +815,8 @@ impl<'a> MainWindow<'a> {
             Message::ToggleColor => {
                 self.run_editor_command(0, |_, editor, _| {
                     let mut attr = editor.buffer_view.lock().get_caret().get_attribute();
-                    let fg = attr.get_foreground();
-                    let bg = attr.get_background();
+                    let fg = attr.foreground();
+                    let bg = attr.background();
                     attr.set_foreground(bg);
                     attr.set_background(fg);
                     editor.buffer_view.lock().get_caret_mut().set_attr(attr);
@@ -1013,7 +1013,7 @@ impl<'a> MainWindow<'a> {
             Message::KeySwitchForeground(k) => {
                 self.run_editor_command(k, |_, editor, k| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let mut fg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_foreground();
+                    let mut fg = editor.buffer_view.lock().get_caret_mut().get_attribute().foreground();
                     if fg % 8 == k as u32 {
                         fg += 8;
                     } else {
@@ -1030,7 +1030,7 @@ impl<'a> MainWindow<'a> {
             Message::KeySwitchBackground(k) => {
                 self.run_editor_command(k, |_, editor, k| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let mut bg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_background();
+                    let mut bg = editor.buffer_view.lock().get_caret_mut().get_attribute().background();
                     if bg % 8 == k as u32 {
                         bg += 8;
                     } else {
@@ -1047,7 +1047,7 @@ impl<'a> MainWindow<'a> {
             Message::NextFgColor => {
                 self.run_editor_command(0, |_, editor, _| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let fg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_foreground();
+                    let fg = editor.buffer_view.lock().get_caret_mut().get_attribute().foreground();
 
                     editor.buffer_view.lock().get_caret_mut().set_foreground((fg + 1) % palette_len);
                     None
@@ -1056,7 +1056,7 @@ impl<'a> MainWindow<'a> {
             Message::PreviousFgColor => {
                 self.run_editor_command(0, |_, editor, _| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let fg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_foreground();
+                    let fg = editor.buffer_view.lock().get_caret_mut().get_attribute().foreground();
 
                     editor.buffer_view.lock().get_caret_mut().set_foreground((fg + palette_len - 1) % palette_len);
                     None
@@ -1065,7 +1065,7 @@ impl<'a> MainWindow<'a> {
             Message::NextBgColor => {
                 self.run_editor_command(0, |_, editor, _| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let bg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_background();
+                    let bg = editor.buffer_view.lock().get_caret_mut().get_attribute().background();
 
                     editor.buffer_view.lock().get_caret_mut().set_background((bg + 1) % palette_len);
                     None
@@ -1074,7 +1074,7 @@ impl<'a> MainWindow<'a> {
             Message::PreviousBgColor => {
                 self.run_editor_command(0, |_, editor, _| {
                     let palette_len = editor.buffer_view.lock().get_buffer_mut().palette.len() as u32;
-                    let bg = editor.buffer_view.lock().get_caret_mut().get_attribute().get_background();
+                    let bg = editor.buffer_view.lock().get_caret_mut().get_attribute().background();
 
                     editor.buffer_view.lock().get_caret_mut().set_background((bg + palette_len - 1) % palette_len);
                     None

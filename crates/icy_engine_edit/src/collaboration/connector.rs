@@ -172,8 +172,8 @@ impl CollaborationConnector {
 pub fn attributed_char_to_block(ch: &crate::AttributedChar) -> Block {
     Block {
         code: ch.ch as u32,
-        fg: ch.attribute.get_foreground() as u8,
-        bg: ch.attribute.get_background() as u8,
+        fg: ch.attribute.foreground() as u8,
+        bg: ch.attribute.background() as u8,
     }
 }
 

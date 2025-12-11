@@ -10,8 +10,8 @@ pub(crate) const RIGHT_BLOCK: char = 222 as char;
 
 fn flip_colors(attribute: TextAttribute) -> TextAttribute {
     let mut result = attribute;
-    result.set_foreground(attribute.get_background());
-    result.set_background(attribute.get_foreground());
+    result.set_foreground(attribute.background());
+    result.set_background(attribute.foreground());
     result
 }
 
@@ -40,7 +40,7 @@ pub struct HalfBlock {
 
 impl HalfBlock {
     pub fn from<T: TextPane>(buf: &T, pos: Position) -> Self {
-        let ch = buf.get_char(Position::new(pos.x, pos.y / 2));
+        let ch = buf.char_at(Position::new(pos.x, pos.y / 2));
         Self::from_char(ch, pos)
     }
 
@@ -176,8 +176,8 @@ impl HalfBlock {
     }
 
     fn optimize_block(&self, mut block: AttributedChar) -> AttributedChar {
-        if block.attribute.get_foreground() == 0 {
-            if block.attribute.get_background() == 0 || block.ch == FULL_BLOCK {
+        if block.attribute.foreground() == 0 {
+            if block.attribute.background() == 0 || block.ch == FULL_BLOCK {
                 block.ch = ' ';
                 block.attribute = TextAttribute::default();
                 return block;
@@ -192,7 +192,7 @@ impl HalfBlock {
                 }
                 _ => {}
             }
-        } else if block.attribute.get_foreground() < 8 && block.attribute.get_background() >= 8 {
+        } else if block.attribute.foreground() < 8 && block.attribute.background() >= 8 {
             if self.is_blocky() {
                 match block.ch {
                     HALF_BLOCK_BOTTOM => {

@@ -28,16 +28,16 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         let end = selection.max();
         for y in start.y..=end.y {
             for x in start.x..=end.x {
-                let ch = buffer.get_char((x, y).into());
-                let mut fg = ch.attribute.get_foreground();
+                let ch = buffer.char_at((x, y).into());
+                let mut fg = ch.attribute.foreground();
                 if buffer.buffer_type == BufferType::CP437 {
                     if ch.attribute.is_bold() && fg < 8 {
                         fg += 8; // bright variant
                     }
                 }
-                add_color(palette.get_rgb(fg));
+                add_color(palette.rgb(fg));
 
-                let mut bg = ch.attribute.get_background();
+                let mut bg = ch.attribute.background();
                 if buffer.ice_mode == IceMode::Ice {
                     if ch.attribute.is_blinking() && bg < 8 {
                         bg += 8; // bright variant
@@ -45,7 +45,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                 }
                 if bg & (1 << 31) == 0 {
                     // skip transparent sentinel
-                    add_color(palette.get_rgb(bg));
+                    add_color(palette.rgb(bg));
                 }
             }
         }
@@ -57,38 +57,38 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         };
         if start.y == end.y {
             for x in start.x..=end.x {
-                let ch = buffer.get_char(Position::new(x, start.y));
-                add_color(palette.get_rgb(ch.attribute.get_foreground()));
-                let bg = ch.attribute.get_background();
+                let ch = buffer.char_at(Position::new(x, start.y));
+                add_color(palette.rgb(ch.attribute.foreground()));
+                let bg = ch.attribute.background();
                 if bg & (1 << 31) == 0 {
-                    add_color(palette.get_rgb(bg));
+                    add_color(palette.rgb(bg));
                 }
             }
         } else {
-            for x in start.x..(buffer.get_line_length(start.y)) {
-                let ch = buffer.get_char(Position::new(x, start.y));
-                add_color(palette.get_rgb(ch.attribute.get_foreground()));
-                let bg = ch.attribute.get_background();
+            for x in start.x..(buffer.line_length(start.y)) {
+                let ch = buffer.char_at(Position::new(x, start.y));
+                add_color(palette.rgb(ch.attribute.foreground()));
+                let bg = ch.attribute.background();
                 if bg & (1 << 31) == 0 {
-                    add_color(palette.get_rgb(bg));
+                    add_color(palette.rgb(bg));
                 }
             }
             for y in start.y + 1..end.y {
-                for x in 0..(buffer.get_line_length(y)) {
-                    let ch = buffer.get_char(Position::new(x, y));
-                    add_color(palette.get_rgb(ch.attribute.get_foreground()));
-                    let bg = ch.attribute.get_background();
+                for x in 0..(buffer.line_length(y)) {
+                    let ch = buffer.char_at(Position::new(x, y));
+                    add_color(palette.rgb(ch.attribute.foreground()));
+                    let bg = ch.attribute.background();
                     if bg & (1 << 31) == 0 {
-                        add_color(palette.get_rgb(bg));
+                        add_color(palette.rgb(bg));
                     }
                 }
             }
             for x in 0..=end.x {
-                let ch = buffer.get_char(Position::new(x, end.y));
-                add_color(palette.get_rgb(ch.attribute.get_foreground()));
-                let bg = ch.attribute.get_background();
+                let ch = buffer.char_at(Position::new(x, end.y));
+                add_color(palette.rgb(ch.attribute.foreground()));
+                let bg = ch.attribute.background();
                 if bg & (1 << 31) == 0 {
-                    add_color(palette.get_rgb(bg));
+                    add_color(palette.rgb(bg));
                 }
             }
         }
@@ -209,16 +209,16 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         let end = selection.max();
         for y in start.y..=end.y {
             for x in start.x..=end.x {
-                let ch = buffer.get_char((x, y).into());
+                let ch = buffer.char_at((x, y).into());
                 let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
+                let fg_rgb = palette.rgb(ch.attribute.foreground());
                 let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                let bg_raw = ch.attribute.get_background();
+                let bg_raw = ch.attribute.background();
                 let bg_idx = if bg_raw & (1 << 31) != 0 {
                     None
                 } else {
-                    let bg_rgb = palette.get_rgb(bg_raw);
+                    let bg_rgb = palette.rgb(bg_raw);
                     color_map.get(&bg_rgb).copied()
                 };
 
@@ -241,16 +241,16 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         if start.y == end.y {
             // Single line selection
             for x in start.x..=end.x {
-                let ch = buffer.get_char(Position::new(x, start.y));
+                let ch = buffer.char_at(Position::new(x, start.y));
                 let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
+                let fg_rgb = palette.rgb(ch.attribute.foreground());
                 let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                let bg_raw = ch.attribute.get_background();
+                let bg_raw = ch.attribute.background();
                 let bg_idx = if bg_raw & (1 << 31) != 0 {
                     None
                 } else {
-                    let bg_rgb = palette.get_rgb(bg_raw);
+                    let bg_rgb = palette.rgb(bg_raw);
                     color_map.get(&bg_rgb).copied()
                 };
 
@@ -265,17 +265,17 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         } else {
             // Multi-line selection
             // First line (partial)
-            for x in start.x..(buffer.get_line_length(start.y)) {
-                let ch = buffer.get_char(Position::new(x, start.y));
+            for x in start.x..(buffer.line_length(start.y)) {
+                let ch = buffer.char_at(Position::new(x, start.y));
                 let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
+                let fg_rgb = palette.rgb(ch.attribute.foreground());
                 let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                let bg_raw = ch.attribute.get_background();
+                let bg_raw = ch.attribute.background();
                 let bg_idx = if bg_raw & (1 << 31) != 0 {
                     None
                 } else {
-                    let bg_rgb = palette.get_rgb(bg_raw);
+                    let bg_rgb = palette.rgb(bg_raw);
                     color_map.get(&bg_rgb).copied()
                 };
 
@@ -289,17 +289,17 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
 
             // Middle lines (full)
             for y in start.y + 1..end.y {
-                for x in 0..(buffer.get_line_length(y)) {
-                    let ch = buffer.get_char(Position::new(x, y));
+                for x in 0..(buffer.line_length(y)) {
+                    let ch = buffer.char_at(Position::new(x, y));
                     let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                    let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
+                    let fg_rgb = palette.rgb(ch.attribute.foreground());
                     let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                    let bg_raw = ch.attribute.get_background();
+                    let bg_raw = ch.attribute.background();
                     let bg_idx = if bg_raw & (1 << 31) != 0 {
                         None
                     } else {
-                        let bg_rgb = palette.get_rgb(bg_raw);
+                        let bg_rgb = palette.rgb(bg_raw);
                         color_map.get(&bg_rgb).copied()
                     };
 
@@ -314,16 +314,16 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
 
             // Last line (partial)
             for x in 0..=end.x {
-                let ch = buffer.get_char(Position::new(x, end.y));
+                let ch = buffer.char_at(Position::new(x, end.y));
                 let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                let fg_rgb = palette.get_rgb(ch.attribute.get_foreground());
+                let fg_rgb = palette.rgb(ch.attribute.foreground());
                 let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                let bg_raw = ch.attribute.get_background();
+                let bg_raw = ch.attribute.background();
                 let bg_idx = if bg_raw & (1 << 31) != 0 {
                     None
                 } else {
-                    let bg_rgb = palette.get_rgb(bg_raw);
+                    let bg_rgb = palette.rgb(bg_raw);
                     color_map.get(&bg_rgb).copied()
                 };
 

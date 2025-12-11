@@ -27,8 +27,8 @@ impl<'a> CRTShaderProgram<'a> {
         // This handles cases where buffer type changes during runtime
         if let Some(screen) = self.term.screen.try_lock() {
             let buffer_type = screen.buffer_type();
-            state.caret_blink.set_rate(buffer_type.get_caret_blink_rate() as u128);
-            state.character_blink.set_rate(buffer_type.get_blink_rate() as u128);
+            state.caret_blink.set_rate(buffer_type.caret_blink_rate() as u128);
+            state.character_blink.set_rate(buffer_type.blink_rate() as u128);
         }
 
         state.caret_blink.update(now);
@@ -153,7 +153,7 @@ impl<'a> CRTShaderProgram<'a> {
                                         let mut found_link: Option<String> = None;
                                         for hyperlink in hyperlinks {
                                             if screen.is_position_in_range(cell, hyperlink.position, hyperlink.length) {
-                                                found_link = Some(hyperlink.get_url(&**screen));
+                                                found_link = Some(hyperlink.url(&**screen));
                                                 break;
                                             }
                                         }
@@ -259,7 +259,7 @@ impl<'a> CRTShaderProgram<'a> {
                             } else if matches!(button, mouse::Button::Middle) {
                                 // Middle click: copy if selection exists, paste if no selection
                                 if let Some(screen) = self.term.screen.try_lock() {
-                                    if screen.get_selection().is_some() {
+                                    if screen.selection().is_some() {
                                         // Has selection - copy it
                                         return Some(iced::widget::Action::publish(Message::Copy));
                                     } else {
@@ -405,7 +405,7 @@ impl<'a> CRTShaderProgram<'a> {
         {
             let screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
-            if let Some(font) = screen.get_font(0) {
+            if let Some(font) = screen.font(0) {
                 font_w = font.size().width as usize;
                 font_h = font.size().height as usize;
             }
@@ -414,11 +414,11 @@ impl<'a> CRTShaderProgram<'a> {
             state.update_cached_screen_info(&**screen);
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
 
-            let current_buffer_version = screen.get_version();
+            let current_buffer_version = screen.version();
             let blink_on = state.character_blink.is_on();
 
             // Check if buffer version or selection changed (need single lock for cached_screen_info)
-            let selection = screen.get_selection();
+            let selection = screen.selection();
             let sel_anchor = selection.as_ref().map(|s| s.anchor);
             let sel_lead = selection.as_ref().map(|s| s.lead);
             let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
@@ -450,7 +450,7 @@ impl<'a> CRTShaderProgram<'a> {
 
             if needs_full_render {
                 // Full re-render - generate both blink on and blink off versions
-                let (fg_sel, bg_sel) = screen.buffer_type().get_selection_colors();
+                let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
 
                 // Render both versions
                 let (render_blink_on, render_blink_off) = if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
@@ -480,7 +480,7 @@ impl<'a> CRTShaderProgram<'a> {
                 } else {
                     // Use viewport-based region rendering for both normal and scrollback mode
                     // Get the actual content resolution
-                    let resolution = screen.get_resolution();
+                    let resolution = screen.resolution();
 
                     let vp = self.term.viewport.read();
 

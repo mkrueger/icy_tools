@@ -52,13 +52,13 @@ fn test_set_letter_spacing() {
 */
 
 pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
-    let rect: Rectangle = screen.get_size().into();
+    let rect: Rectangle = screen.size().into();
     let (rendered_size, rendered_data) = screen.render_to_rgba(&rect.into());
     compare_rendered_output(&rendered_size, &rendered_data, src_file);
 }
 
 pub fn compare_buffer_output(buffer: &TextBuffer, src_file: &Path) {
-    let rect: Rectangle = Rectangle::from(0, 0, buffer.get_width(), buffer.get_height());
+    let rect: Rectangle = Rectangle::from(0, 0, buffer.width(), buffer.height());
     let opts = RenderOptions::from(rect);
     let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
     compare_rendered_output(&rendered_size, &rendered_data, src_file);
@@ -71,7 +71,7 @@ pub fn compare_buffer_output_with_options(buffer: &mut TextBuffer, src_file: &Pa
     buffer.set_use_letter_spacing(use_letter_spacing);
     buffer.set_use_aspect_ratio(use_aspect_ratio);
 
-    let rect: Rectangle = Rectangle::from(0, 0, buffer.get_width(), buffer.get_height());
+    let rect: Rectangle = Rectangle::from(0, 0, buffer.width(), buffer.height());
     let opts = RenderOptions::from(rect);
     let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
     compare_rendered_output(&rendered_size, &rendered_data, src_file);

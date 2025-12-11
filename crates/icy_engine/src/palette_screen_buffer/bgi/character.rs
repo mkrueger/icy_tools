@@ -63,13 +63,13 @@ impl Character {
         Character { strokes: Vec:new(), width: 0 }
     }*/
 
-    pub fn get_width(&self, scale_factor: i32) -> f32 {
+    pub fn width(&self, scale_factor: i32) -> f32 {
         (self.width * SCALE_UP[scale_factor as usize]) as f32 / SCALE_DOWN[scale_factor as usize] as f32
     }
 
     pub fn draw(&self, bgi: &mut super::Bgi, buf: &mut dyn EditableScreen, font: &Font, x: i32, y: i32, dir: super::Direction, size: i32) {
         let size = size as usize;
-        let height = font.get_height() * SCALE_UP[size] / SCALE_DOWN[size];
+        let height = font.height() * SCALE_UP[size] / SCALE_DOWN[size];
         if matches!(dir, super::Direction::Horizontal) {
             for stroke in &self.strokes {
                 let curx = x + (stroke.x * SCALE_UP[size] / SCALE_DOWN[size]);

@@ -221,13 +221,13 @@ pub struct CreationOptions {
 }
 
 impl ScreenMode {
-    pub fn get_window_size(&self) -> Size {
+    pub fn window_size(&self) -> Size {
         match self {
             // ScreenMode::Cga(w, h) | ScreenMode::Ega(w, h) |
             ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => Size::new(*w, *h),
             ScreenMode::Vic | ScreenMode::Mode7 => Size::new(40, 25),
             ScreenMode::AtariST(res, _igs) => {
-                let (w, h) = res.get_text_resolution();
+                let (w, h) = res.text_resolution();
                 Size::new(w, h)
             }
             ScreenMode::Atascii(i) => {
@@ -339,7 +339,7 @@ impl ScreenMode {
                 let buf = PaletteScreenBuffer::new(GraphicsType::IGS(res));
                 Box::new(buf)
             }
-            _ => Box::new(TextScreen::new(self.get_window_size())),
+            _ => Box::new(TextScreen::new(self.window_size())),
         };
 
         self.apply_to_edit_screen(screen.as_mut());

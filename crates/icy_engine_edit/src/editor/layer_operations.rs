@@ -9,7 +9,7 @@ use super::{EditState, undo_operations};
 
 impl EditState {
     pub fn add_new_layer(&mut self, layer: usize) -> Result<()> {
-        let size = self.screen.buffer.get_size();
+        let size = self.screen.buffer.size();
         let mut new_layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-name"), size);
         new_layer.properties.has_alpha_channel = true;
         let idx = (layer + 1).clamp(0, self.screen.buffer.layers.len());
@@ -126,45 +126,42 @@ impl EditState {
         let base_layer = &self.screen.buffer.layers[layer - 1];
         let cur_layer = &self.screen.buffer.layers[layer];
 
-        let start = Position::new(
-            base_layer.get_offset().x.min(cur_layer.get_offset().x),
-            base_layer.get_offset().y.min(cur_layer.get_offset().y),
-        );
+        let start = Position::new(base_layer.offset().x.min(cur_layer.offset().x), base_layer.offset().y.min(cur_layer.offset().y));
 
         let mut merge_layer = base_layer.clone();
         merge_layer.clear();
 
         merge_layer.set_offset(start);
 
-        let width = (base_layer.get_offset().x + base_layer.get_width()).max(cur_layer.get_offset().x + cur_layer.get_width()) - start.x;
-        let height = (base_layer.get_offset().y + base_layer.get_height()).max(cur_layer.get_offset().y + cur_layer.get_height()) - start.y;
+        let width = (base_layer.offset().x + base_layer.width()).max(cur_layer.offset().x + cur_layer.width()) - start.x;
+        let height = (base_layer.offset().y + base_layer.height()).max(cur_layer.offset().y + cur_layer.height()) - start.y;
         if width < 0 || height < 0 {
             return Ok(());
         }
         merge_layer.set_size((width, height));
 
-        for y in 0..base_layer.get_height() {
-            for x in 0..base_layer.get_width() {
+        for y in 0..base_layer.height() {
+            for x in 0..base_layer.width() {
                 let pos = Position::new(x, y);
-                let ch = base_layer.get_char(pos);
-                let pos = pos - merge_layer.get_offset() + base_layer.get_offset();
+                let ch = base_layer.char_at(pos);
+                let pos = pos - merge_layer.offset() + base_layer.offset();
                 merge_layer.set_char(pos, ch);
             }
         }
 
-        for y in 0..cur_layer.get_height() {
-            for x in 0..cur_layer.get_width() {
+        for y in 0..cur_layer.height() {
+            for x in 0..cur_layer.width() {
                 let pos = Position::new(x, y);
-                let mut ch = cur_layer.get_char(pos);
+                let mut ch = cur_layer.char_at(pos);
                 if !ch.is_visible() {
                     continue;
                 }
 
-                let pos = pos - merge_layer.get_offset() + cur_layer.get_offset();
+                let pos = pos - merge_layer.offset() + cur_layer.offset();
 
-                let ch_below = merge_layer.get_char(pos);
+                let ch_below = merge_layer.char_at(pos);
                 if ch_below.is_visible()
-                    && (ch.attribute.get_foreground() == TextAttribute::TRANSPARENT_COLOR || ch.attribute.get_background() == TextAttribute::TRANSPARENT_COLOR)
+                    && (ch.attribute.foreground() == TextAttribute::TRANSPARENT_COLOR || ch.attribute.background() == TextAttribute::TRANSPARENT_COLOR)
                 {
                     ch = self.screen.buffer.make_solid_color(ch, ch_below);
                 }
@@ -193,7 +190,7 @@ impl EditState {
             return Ok(());
         };
         cur_layer.set_preview_offset(None);
-        let op = undo_operations::MoveLayer::new(i, cur_layer.get_offset(), to);
+        let op = undo_operations::MoveLayer::new(i, cur_layer.offset(), to);
         self.push_undo_action(Box::new(op))
     }
 
@@ -224,13 +221,13 @@ impl EditState {
         };
 
         let base_layer = &mut self.screen.buffer.layers[layer_idx - 1];
-        let area = layer.get_rectangle() + base_layer.get_offset();
+        let area = layer.rectangle() + base_layer.offset();
         let old_layer = crate::layer_from_area(base_layer, area);
 
-        for x in 0..layer.get_width() as u32 {
-            for y in 0..layer.get_height() as u32 {
+        for x in 0..layer.width() as u32 {
+            for y in 0..layer.height() as u32 {
                 let pos = Position::new(x as i32, y as i32);
-                let ch = layer.get_char(pos);
+                let ch = layer.char_at(pos);
                 if !ch.is_visible() {
                     continue;
                 }
@@ -248,11 +245,11 @@ impl EditState {
     pub fn rotate_layer(&mut self) -> Result<()> {
         let current_layer = self.screen.current_layer;
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
-            let size = layer.get_size();
+            let size = layer.size();
             let mut new_layer = Layer::new("", (size.height, size.width));
             for y in 0..size.width {
                 for x in 0..size.height {
-                    let ch = layer.get_char((y, size.height - 1 - x).into());
+                    let ch = layer.char_at((y, size.height - 1 - x).into());
                     let ch = map_char_u8(ch, &ROTATE_TABLE);
                     new_layer.set_char((x, y), ch);
                 }
@@ -279,14 +276,14 @@ impl EditState {
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = crate::Rectangle {
                 start: Position::new(0, 0),
-                size: layer.get_size(),
+                size: layer.size(),
             };
             let old_layer = crate::layer_from_area(layer, area);
 
-            for x in 0..layer.get_width() as u32 {
-                for y in 0..layer.get_height() as u32 {
+            for x in 0..layer.width() as u32 {
+                for y in 0..layer.height() as u32 {
                     let pos = Position::new(x as i32, y as i32);
-                    let ch = layer.get_char(pos);
+                    let ch = layer.char_at(pos);
                     if ch.is_transparent() {
                         layer.set_char(pos, crate::AttributedChar::invisible());
                     }

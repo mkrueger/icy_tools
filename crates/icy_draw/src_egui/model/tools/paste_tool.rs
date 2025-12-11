@@ -115,7 +115,7 @@ impl Tool for PasteTool {
         self.drag_started = false;
 
         if let Some(layer) = editor.buffer_view.lock().get_edit_state_mut().get_cur_layer_mut() {
-            self.start_offset = layer.get_offset();
+            self.start_offset = layer.offset();
             self.drag_offset = self.start_offset;
             self.drag_started = true;
         }
@@ -146,7 +146,7 @@ impl Tool for PasteTool {
 
     fn handle_key(&mut self, editor: &mut AnsiEditor, key: MKey, modifier: super::MModifiers) -> Event {
         let offset = if let Some(layer) = editor.buffer_view.lock().get_edit_state_mut().get_cur_layer_mut() {
-            layer.get_offset()
+            layer.offset()
         } else {
             return Event::None;
         };

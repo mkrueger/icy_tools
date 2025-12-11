@@ -12,20 +12,20 @@ pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     let mut result = Vec::new();
     let mut last_attr = TextAttribute::default();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
 
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
         while pos.x < line_length {
-            let ch = buf.get_char(pos);
+            let ch = buf.char_at(pos);
             if ch.attribute != last_attr {
-                let last_fore = last_attr.get_foreground();
-                let last_back = last_attr.get_background();
-                if ch.attribute.get_foreground() != last_fore {
-                    result.extend(format!("|{:02}", ch.attribute.get_foreground()).as_bytes());
+                let last_fore = last_attr.foreground();
+                let last_back = last_attr.background();
+                if ch.attribute.foreground() != last_fore {
+                    result.extend(format!("|{:02}", ch.attribute.foreground()).as_bytes());
                 }
-                if ch.attribute.get_background() != last_back {
-                    result.extend(format!("|{:02}", 16 + ch.attribute.get_background()).as_bytes());
+                if ch.attribute.background() != last_back {
+                    result.extend(format!("|{:02}", 16 + ch.attribute.background()).as_bytes());
                 }
                 last_attr = ch.attribute;
             }
@@ -34,7 +34,7 @@ pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         }
 
         // do not end with eol
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(13);
             result.push(10);
         }

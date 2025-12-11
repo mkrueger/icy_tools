@@ -1,16 +1,16 @@
 mod minimap_shader;
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
 use icy_engine::{Rectangle, RenderOptions, Screen};
 use parking_lot::Mutex;
 
-pub use minimap_shader::ViewportInfo;
 use minimap_shader::MinimapProgram;
+pub use minimap_shader::ViewportInfo;
 
 static MINIMAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -90,12 +90,7 @@ impl MinimapView {
     /// Update the viewport information (the visible area rectangle)
     /// Parameters are normalized values (0.0 to 1.0)
     pub fn set_viewport(&mut self, x: f32, y: f32, width: f32, height: f32) {
-        self.viewport_info = ViewportInfo {
-            x,
-            y,
-            width,
-            height,
-        };
+        self.viewport_info = ViewportInfo { x, y, width, height };
     }
 
     /// Invalidate the cache, forcing a re-render on next view()
@@ -158,29 +153,29 @@ impl MinimapView {
         let cache = self.cache.borrow();
         let (render_width, render_height) = cache.pixel_size;
         drop(cache);
-        
+
         if render_width == 0 || render_height == 0 {
             return;
         }
-        
+
         let last_height = *self.last_available_height.borrow();
         if last_height <= 0.0 {
             return;
         }
-        
+
         // Calculate scale and visible UV height
         // The visible UV height depends on how much of the texture fits on screen
         let visible_uv_height = (last_height / render_height as f32).min(1.0);
         let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
-        
+
         let current_scroll = *self.scroll_position.borrow();
-        
+
         // Current visible UV range
         let visible_uv_start = current_scroll * max_scroll_uv;
         let visible_uv_end = visible_uv_start + visible_uv_height;
-        
+
         let viewport_end = viewport_y + viewport_height;
-        
+
         // Check if viewport is above visible area
         if viewport_y < visible_uv_start {
             // Scroll up to show viewport
@@ -218,21 +213,19 @@ impl MinimapView {
         let screen_guard = screen.lock();
 
         // Get buffer dimensions
-        let buf_width = screen_guard.get_width() as usize;
-        let buf_height = screen_guard.get_height() as usize;
+        let buf_width = screen_guard.width() as usize;
+        let buf_height = screen_guard.height() as usize;
 
         // Check cache version using screen's version tracking
-        let current_version = screen_guard.get_version() as usize;
-        
+        let current_version = screen_guard.version() as usize;
+
         let cached_pixel_size;
         let cached_rgba;
-        
+
         {
             let cache = self.cache.borrow();
-            let cache_valid = cache.rgba.is_some() 
-                && cache.buffer_size == (buf_width, buf_height) 
-                && cache.version == current_version;
-            
+            let cache_valid = cache.rgba.is_some() && cache.buffer_size == (buf_width, buf_height) && cache.version == current_version;
+
             if cache_valid {
                 // Cache is valid - Arc::clone is cheap (just ref count)
                 cached_pixel_size = cache.pixel_size;
@@ -253,7 +246,7 @@ impl MinimapView {
                 cached_pixel_size = (size.width as usize, size.height as usize);
                 let rgba_arc = Arc::new(rgba);
                 cached_rgba = Some(Arc::clone(&rgba_arc));
-                
+
                 // Update the cache
                 let mut cache = self.cache.borrow_mut();
                 cache.rgba = Some(rgba_arc);
@@ -267,11 +260,11 @@ impl MinimapView {
         // Create the shader program with viewport info from canvas
         // Note: available_height will be set from bounds in the shader's draw() method
         let scroll_pos = *self.scroll_position.borrow();
-        
+
         // Auto-scroll to keep viewport visible
         self.ensure_viewport_visible(viewport_info.y, viewport_info.height);
         let scroll_pos = *self.scroll_position.borrow(); // Re-read after potential update
-        
+
         let shader_program = if let Some(ref rgba) = cached_rgba {
             MinimapProgram {
                 rgba_data: Arc::clone(rgba),
@@ -293,10 +286,7 @@ impl MinimapView {
             }
         };
 
-        shader(shader_program)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        shader(shader_program).width(Length::Fill).height(Length::Fill).into()
     }
 
     /// Handle mouse press for click-to-navigate functionality

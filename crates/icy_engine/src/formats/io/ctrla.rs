@@ -12,7 +12,7 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
     let mut result = Vec::new();
     let mut last_attr = TextAttribute::default();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
 
     match options.screen_preparation {
         ScreenPreperation::None => {}
@@ -29,10 +29,10 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
     let mut was_high_bg = false;
 
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
 
         while pos.x < line_length {
-            let ch = buf.get_char(pos);
+            let ch = buf.char_at(pos);
             let mut cur_attribute = ch.attribute;
 
             let mut found_tag = None;
@@ -45,11 +45,11 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
             }
 
             if cur_attribute != last_attr {
-                let is_bold = cur_attribute.get_foreground() > 7;
-                let high_bg = cur_attribute.get_background() > 7;
+                let is_bold = cur_attribute.foreground() > 7;
+                let high_bg = cur_attribute.background() > 7;
                 let is_blink = cur_attribute.is_blinking();
-                let mut last_fore = last_attr.get_foreground();
-                let mut last_back = last_attr.get_background();
+                let mut last_fore = last_attr.foreground();
+                let mut last_back = last_attr.background();
 
                 if !is_bold && was_bold || !high_bg && was_high_bg || !is_blink && was_blink {
                     result.extend_from_slice(b"\x01N");
@@ -71,13 +71,13 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
                     result.extend_from_slice(b"\x01I");
                 }
 
-                if cur_attribute.get_foreground() != last_fore {
+                if cur_attribute.foreground() != last_fore {
                     result.push(1);
-                    result.push(ctrla_fg[cur_attribute.get_foreground() as usize % 8]);
+                    result.push(ctrla_fg[cur_attribute.foreground() as usize % 8]);
                 }
-                if cur_attribute.get_background() != last_back {
+                if cur_attribute.background() != last_back {
                     result.push(1);
-                    result.push(ctrla_bg[cur_attribute.get_background() as usize % 8]);
+                    result.push(ctrla_bg[cur_attribute.background() as usize % 8]);
                 }
                 was_bold = is_bold;
                 was_high_bg = high_bg;
@@ -100,7 +100,7 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
         }
 
         // do not end with eol
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(13);
             result.push(10);
         }
@@ -119,11 +119,11 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
 
             let cur_attribute = tag.attribute;
             if cur_attribute != last_attr {
-                let is_bold = cur_attribute.get_foreground() > 7;
-                let high_bg = cur_attribute.get_background() > 7;
+                let is_bold = cur_attribute.foreground() > 7;
+                let high_bg = cur_attribute.background() > 7;
                 let is_blink = cur_attribute.is_blinking();
-                let mut last_fore = last_attr.get_foreground();
-                let mut last_back = last_attr.get_background();
+                let mut last_fore = last_attr.foreground();
+                let mut last_back = last_attr.background();
 
                 if !is_bold && was_bold || !high_bg && was_high_bg || !is_blink && was_blink {
                     result.extend_from_slice(b"\x01N");
@@ -145,13 +145,13 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
                     result.extend_from_slice(b"\x01I");
                 }
 
-                if cur_attribute.get_foreground() != last_fore {
+                if cur_attribute.foreground() != last_fore {
                     result.push(1);
-                    result.push(ctrla_fg[cur_attribute.get_foreground() as usize % 8]);
+                    result.push(ctrla_fg[cur_attribute.foreground() as usize % 8]);
                 }
-                if cur_attribute.get_background() != last_back {
+                if cur_attribute.background() != last_back {
                     result.push(1);
-                    result.push(ctrla_bg[cur_attribute.get_background() as usize % 8]);
+                    result.push(ctrla_bg[cur_attribute.background() as usize % 8]);
                 }
                 was_bold = is_bold;
                 was_high_bg = high_bg;

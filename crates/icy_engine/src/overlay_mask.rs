@@ -27,7 +27,7 @@ impl OverlayMask {
         }
     }
 
-    pub fn get_is_selected(&self, pos: impl Into<Position>) -> bool {
+    pub fn is_selected(&self, pos: impl Into<Position>) -> bool {
         let pos = pos.into();
         if !self.in_bounds(pos) {
             return false;
@@ -76,7 +76,7 @@ impl OverlayMask {
         true
     }
 
-    pub fn get_rectangle(&self) -> Rectangle {
+    pub fn rectangle(&self) -> Rectangle {
         let mut y_min = usize::MAX;
         let mut x_min = usize::MAX;
         let mut y_max = 0;
@@ -99,11 +99,11 @@ impl OverlayMask {
         }
     }
 
-    pub fn get_width(&self) -> i32 {
+    pub fn width(&self) -> i32 {
         self.size.width
     }
 
-    pub fn get_height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         self.size.height
     }
 }

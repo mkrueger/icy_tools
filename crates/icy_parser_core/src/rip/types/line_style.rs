@@ -17,7 +17,7 @@ impl LineStyle {
         0xFFFF, // User
     ];
 
-    pub fn get_line_pattern(&self) -> Vec<bool> {
+    pub fn line_pattern(&self) -> Vec<bool> {
         let offset = (*self as u8) as usize;
 
         let mut res = Vec::new();

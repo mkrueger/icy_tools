@@ -132,8 +132,8 @@ impl CRTShaderState {
     /// Create a new CRTShaderState with blink rates based on the buffer type
     pub fn new(buffer_type: icy_engine::BufferType) -> Self {
         Self {
-            caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
-            character_blink: Blink::new(buffer_type.get_blink_rate() as u128),
+            caret_blink: Blink::new(buffer_type.caret_blink_rate() as u128),
+            character_blink: Blink::new(buffer_type.blink_rate() as u128),
             dragging: false,
             drag_anchor: None,
             last_drag_position: None,
@@ -166,13 +166,13 @@ impl CRTShaderState {
     /// Called during internal_draw while screen is already locked
     pub fn update_cached_screen_info(&self, screen: &dyn Screen) {
         let mut info = self.cached_screen_info.lock();
-        if let Some(font) = screen.get_font(0) {
+        if let Some(font) = screen.font(0) {
             info.font_w = font.size().width as f32;
             info.font_h = font.size().height as f32;
         }
-        info.screen_width = screen.get_width();
-        info.screen_height = screen.get_height();
-        info.resolution = screen.get_resolution();
+        info.screen_width = screen.width();
+        info.screen_height = screen.height();
+        info.resolution = screen.resolution();
         info.scan_lines = screen.scan_lines();
         info.graphics_type = screen.graphics_type();
     }
@@ -240,8 +240,8 @@ impl Default for CRTShaderState {
         // Default to CP437 blink rates (most common case)
         let buffer_type = icy_engine::BufferType::CP437;
         Self {
-            caret_blink: Blink::new(buffer_type.get_caret_blink_rate() as u128),
-            character_blink: Blink::new(buffer_type.get_blink_rate() as u128),
+            caret_blink: Blink::new(buffer_type.caret_blink_rate() as u128),
+            character_blink: Blink::new(buffer_type.blink_rate() as u128),
             dragging: false,
             drag_anchor: None,
             last_drag_position: None,

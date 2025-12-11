@@ -52,7 +52,7 @@ impl Color {
         (self.r as f32 / 255_f32, self.g as f32 / 255_f32, self.b as f32 / 255_f32)
     }
 
-    pub fn get_rgb(&self) -> (u8, u8, u8) {
+    pub fn rgb(&self) -> (u8, u8, u8) {
         (self.r, self.g, self.b)
     }
 
@@ -192,7 +192,7 @@ impl Palette {
         }
     }
 
-    pub fn get_color(&self, color: u32) -> Color {
+    pub fn color(&self, color: u32) -> Color {
         if color & (1 << 31) != 0 {
             // rgb is directly encoded.
             return Color::new((color >> 16) as u8, (color >> 8) as u8, color as u8);
@@ -220,7 +220,7 @@ impl Palette {
         }
     }
 
-    pub fn get_rgb(&self, color: u32) -> (u8, u8, u8) {
+    pub fn rgb(&self, color: u32) -> (u8, u8, u8) {
         if color & (1 << 31) != 0 {
             // rgb is directly encoded.
             return ((color >> 16) as u8, (color >> 8) as u8, color as u8);
@@ -606,7 +606,7 @@ impl Palette {
     }
 
     /// Get palette cache as packed RGBA u32 values for fast pixel writing
-    pub fn get_palette_cache_rgba(&self) -> &[u32] {
+    pub fn palette_cache_rgba(&self) -> &[u32] {
         &self.palette_cache_rgba
     }
 

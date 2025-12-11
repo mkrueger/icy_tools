@@ -210,10 +210,10 @@ impl FontImportDialog {
                         // Extract fonts from the loaded buffer
                         let mut fonts = Vec::new();
 
-                        if let Some(font) = buffer.get_font(0) {
+                        if let Some(font) = buffer.font(0) {
                             fonts.push(font.clone());
                         }
-                        if let Some(font) = buffer.get_font(1) {
+                        if let Some(font) = buffer.font(1) {
                             fonts.push(font.clone());
                         }
 

@@ -13,12 +13,12 @@ pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<V
 
     let mut result = Vec::new();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
 
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
         while pos.x < line_length {
-            let attr_ch = buf.get_char(pos);
+            let attr_ch = buf.char_at(pos);
             let mut ch = attr_ch.ch as u8;
             if attr_ch.attribute.background_color > 0 {
                 ch += 0x80;
@@ -34,7 +34,7 @@ pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<V
         }
 
         // do not end with eol
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(155);
         }
 

@@ -756,10 +756,10 @@ impl<'a> eframe::App for MainWindow<'a> {
 
                     if let Some(doc) = self.get_active_document() {
                         if let Some(editor) = doc.lock().get_ansi_editor() {
-                            let font = editor.buffer_view.lock().get_edit_state().get_caret().get_font_page();
+                            let font = editor.buffer_view.lock().get_edit_state().get_caret().font_page();
                             let use_letter_spacing = editor.buffer_view.lock().get_buffer().use_letter_spacing();
                             let use_ar = editor.buffer_view.lock().get_buffer().use_aspect_ratio();
-                            if let Some(font) = editor.buffer_view.lock().get_buffer().get_font(font) {
+                            if let Some(font) = editor.buffer_view.lock().get_buffer().font(font) {
                                 let text: WidgetText = format!(
                                     "{} - {}x{} {} {}",
                                     font.name,
@@ -782,10 +782,10 @@ impl<'a> eframe::App for MainWindow<'a> {
                             }
 
                             // center text
-                            let size = editor.buffer_view.lock().get_buffer().get_size();
-                            let text: WidgetText = if let Some(sel) = editor.buffer_view.lock().get_selection() {
+                            let size = editor.buffer_view.lock().get_buffer().size();
+                            let text: WidgetText = if let Some(sel) = editor.buffer_view.lock().selection() {
                                 let r = sel.as_rectangle();
-                                fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = r.get_width(), rows = r.get_height())
+                                fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = r.width(), rows = r.height())
                             } else {
                                 fl!(crate::LANGUAGE_LOADER, "toolbar-size", colums = size.width, rows = size.height)
                             }

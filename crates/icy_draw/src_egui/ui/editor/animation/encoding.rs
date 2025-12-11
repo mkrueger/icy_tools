@@ -64,8 +64,8 @@ pub fn start_encoding_thread(
         data.push((frame, animator.lock().unwrap().get_delay()));
     }
 
-    let size = buffer_view.lock().get_buffer().get_size();
-    let dim = buffer_view.lock().get_buffer().get_font_dimensions();
+    let size = buffer_view.lock().get_buffer().size();
+    let dim = buffer_view.lock().get_buffer().font_dimensions();
     let width = (size.width * dim.width) as usize;
     let height = (size.height * dim.height) as usize;
     let t = thread::Builder::new()

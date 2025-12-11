@@ -56,7 +56,7 @@ impl BrushTool {
         editor.buffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
 
         let offset = if let Some(layer) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -64,7 +64,7 @@ impl BrushTool {
         for y in 0..self.size {
             for x in 0..self.size {
                 let pos = center + Position::new(x, y);
-                if use_selection && !editor.buffer_view.lock().get_edit_state().get_is_selected(pos + offset) {
+                if use_selection && !editor.buffer_view.lock().get_edit_state().is_selected(pos + offset) {
                     continue;
                 }
                 let ch = editor.get_char_from_cur_layer(pos);
@@ -108,7 +108,7 @@ impl BrushTool {
                     }
                     BrushMode::Char(ch) => {
                         self.swap_colors(swap_colors, caret_attr, &mut attribute);
-                        attribute.set_font_page(caret_attr.get_font_page());
+                        attribute.set_font_page(caret_attr.font_page());
                         editor.set_char(center + Position::new(x, y), AttributedChar::new(*ch.borrow(), attribute));
                     }
                     BrushMode::Colorize => {
@@ -124,16 +124,16 @@ impl BrushTool {
     fn swap_colors(&self, swap_colors: bool, caret_attr: icy_engine::TextAttribute, attribute: &mut icy_engine::TextAttribute) {
         if self.color_mode.use_fore() {
             attribute.set_foreground(if swap_colors {
-                caret_attr.get_background()
+                caret_attr.background()
             } else {
-                caret_attr.get_foreground()
+                caret_attr.foreground()
             });
         }
         if self.color_mode.use_back() {
             attribute.set_background(if swap_colors {
-                caret_attr.get_foreground()
+                caret_attr.foreground()
             } else {
-                caret_attr.get_background()
+                caret_attr.background()
             });
         }
     }
@@ -185,8 +185,8 @@ impl Tool for BrushTool {
             let mut layer = custom_brush.clone();
             layer.set_offset((0, 0));
             layer.role = icy_engine::Role::Normal;
-            let mut buf = icy_engine::Buffer::new(layer.get_size());
-            layer.set_title(buf.layers[0].get_title());
+            let mut buf = icy_engine::Buffer::new(layer.size());
+            layer.set_title(buf.layers[0].title());
             buf.layers.clear();
             buf.layers.push(layer);
             self.image = Some(create_image(ctx, &buf));
@@ -221,14 +221,14 @@ impl Tool for BrushTool {
             editor.clear_overlay_layer();
             let lock = &mut editor.buffer_view.lock();
             let cur_layer = lock.get_edit_state().get_current_layer().unwrap_or(0);
-            let layer = lock.get_edit_state_mut().get_overlay_layer(cur_layer);
+            let layer = lock.get_edit_state_mut().overlay_layer(cur_layer);
             if let Some(brush) = &self.custom_brush {
-                let mid = Position::new(-(brush.get_width() / 2), -(brush.get_height() / 2));
+                let mid = Position::new(-(brush.width() / 2), -(brush.height() / 2));
                 self.cur_pos = cur + mid;
-                for y in 0..brush.get_height() {
-                    for x in 0..brush.get_width() {
+                for y in 0..brush.height() {
+                    for x in 0..brush.width() {
                         let pos = Position::new(x, y);
-                        let ch = brush.get_char(pos);
+                        let ch = brush.char_at(pos);
                         layer.set_char(cur + pos + mid, AttributedChar::new(ch.ch, ch.attribute));
                     }
                 }

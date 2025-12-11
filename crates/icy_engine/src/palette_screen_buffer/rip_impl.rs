@@ -105,7 +105,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::Pixel { x, y } => {
-            bgi.put_pixel(buf, x.into(), y.into(), bgi.get_color());
+            bgi.put_pixel(buf, x.into(), y.into(), bgi.color());
         }
 
         RipCommand::Line { x0, y0, x1, y1 } => {
@@ -304,7 +304,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
         }
 
         RipCommand::GetImage { x0, y0, x1, y1, res: _ } => {
-            bgi.rip_image = Some(bgi.get_image(buf, x0.into(), y0.into(), x1.into(), y1.into()));
+            bgi.rip_image = Some(bgi.image(buf, x0.into(), y0.into(), x1.into(), y1.into()));
         }
 
         RipCommand::PutImage { x, y, mode, res: _ } => {
@@ -366,7 +366,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                 ImagePasteMode::Not => BgiWriteMode::Not,
             };
             bgi.set_write_mode(bgi_mode);
-            let res = buf.get_resolution();
+            let res = buf.resolution();
 
             for y2 in 0..height {
                 if i32::from(y) + y2 >= res.height {
@@ -513,8 +513,8 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             res: _,
             dest_line,
         } => {
-            let image = bgi.get_image(buf, x0.into(), y0.into(), (x1 + 1).into(), (y1 + 1).into());
-            bgi.put_image(buf, x0.into(), dest_line.into(), &image, bgi.get_write_mode());
+            let image = bgi.image(buf, x0.into(), y0.into(), (x1 + 1).into(), (y1 + 1).into());
+            bgi.put_image(buf, x0.into(), dest_line.into(), &image, bgi.write_mode());
         }
 
         RipCommand::ReadScene { file_name: _ } => {

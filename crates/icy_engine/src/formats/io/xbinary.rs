@@ -100,14 +100,14 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     result.extend_from_slice(b"XBIN");
     result.push(0x1A); // CP/M EOF char (^Z) - used by DOS as well
 
-    result.push(buf.get_width() as u8);
-    result.push((buf.get_width() >> 8) as u8);
-    result.push(buf.get_height() as u8);
-    result.push((buf.get_height() >> 8) as u8);
+    result.push(buf.width() as u8);
+    result.push((buf.width() >> 8) as u8);
+    result.push(buf.height() as u8);
+    result.push((buf.height() >> 8) as u8);
 
     let mut flags = 0;
     let fonts = analyze_font_usage(buf);
-    let Some(font) = buf.get_font(fonts[0]) else {
+    let Some(font) = buf.font(fonts[0]) else {
         return Err(SavingError::NoFontFound.into());
     };
     if font.length() != 256 {
@@ -175,7 +175,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
                     message: "File needs 2 fonts for 512 char mode".to_string(),
                 });
             }
-            if let Some(ext_font) = buf.get_font(fonts[1]) {
+            if let Some(ext_font) = buf.font(fonts[1]) {
                 if ext_font.length() != 256 {
                     return Err(crate::EngineError::InvalidXBin {
                         message: "2nd font must be 256 chars long".to_string(),
@@ -199,9 +199,9 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     if options.compress {
         compress_backtrack(&mut result, buf, &fonts)?;
     } else {
-        for y in 0..buf.get_height() {
-            for x in 0..buf.get_width() {
-                let ch = buf.get_char((x, y).into());
+        for y in 0..buf.height() {
+            for x in 0..buf.width() {
+                let ch = buf.char_at((x, y).into());
                 let attr = encode_attr(buf, ch, &fonts);
                 let ch = ch.ch as u32;
                 if ch > 255 {
@@ -331,8 +331,8 @@ fn select_attr_table(result: &TextBuffer) -> &'static [TextAttribute; 256] {
 
 fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool> {
     let mut pos = Position::default();
-    let width = result.get_width();
-    let height = result.get_height();
+    let width = result.width();
+    let height = result.height();
     let attr_table = select_attr_table(result);
     let mut o = 0;
     let len = bytes.len();
@@ -446,8 +446,8 @@ fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
 }
 
 fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool> {
-    let width = result.get_width();
-    let height = result.get_height();
+    let width = result.width();
+    let height = result.height();
     let attr_table = select_attr_table(result);
     let mut pos = Position::default();
     let mut o = 0;
@@ -484,9 +484,9 @@ fn count_length(
     mut x: i32,
 ) -> usize {
     let mut count = 0;
-    while x < buffer.get_width() {
-        let cur = buffer.get_char((x, y).into());
-        let next = buffer.get_char((x + 1, y).into());
+    while x < buffer.width() {
+        let cur = buffer.char_at((x, y).into());
+        let next = buffer.char_at((x + 1, y).into());
 
         if run_count > 0 {
             if end_run.is_none() {
@@ -495,28 +495,28 @@ fn count_length(
                 } else if run_count > 0 {
                     match run_mode {
                         Compression::Off => {
-                            if x + 2 < buffer.get_width() && cur == next {
+                            if x + 2 < buffer.width() && cur == next {
                                 end_run = Some(true);
-                            } else if x + 2 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y).into());
+                            } else if x + 2 < buffer.width() {
+                                let next2 = buffer.char_at((x + 2, y).into());
                                 end_run = Some(cur.ch == next.ch && cur.ch == next2.ch || cur.attribute == next.attribute && cur.attribute == next2.attribute);
                             }
                         }
                         Compression::Char => {
                             if cur.ch != run_ch.ch {
                                 end_run = Some(true);
-                            } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y).into());
-                                let next3 = buffer.get_char((x + 3, y).into());
+                            } else if x + 3 < buffer.width() {
+                                let next2 = buffer.char_at((x + 2, y).into());
+                                let next3 = buffer.char_at((x + 3, y).into());
                                 end_run = Some(cur == next && cur == next2 && cur == next3);
                             }
                         }
                         Compression::Attr => {
                             if cur.attribute != run_ch.attribute {
                                 end_run = Some(true);
-                            } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y).into());
-                                let next3 = buffer.get_char((x + 3, y).into());
+                            } else if x + 3 < buffer.width() {
+                                let next2 = buffer.char_at((x + 2, y).into());
+                                let next3 = buffer.char_at((x + 3, y).into());
                                 end_run = Some(cur == next && cur == next2 && cur == next3);
                             }
                         }
@@ -547,7 +547,7 @@ fn count_length(
                 }
             }
         } else {
-            if x + 1 < buffer.get_width() {
+            if x + 1 < buffer.width() {
                 if cur == next {
                     run_mode = Compression::Full;
                 } else if cur.ch == next.ch {
@@ -571,17 +571,17 @@ fn count_length(
 }
 
 fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[usize]) -> Result<()> {
-    for y in 0..buffer.get_height() {
+    for y in 0..buffer.height() {
         let mut run_buf = Vec::new();
         let mut run_mode = Compression::Off;
         let mut run_count = 0;
         let mut run_ch = AttributedChar::default();
 
-        for x in 0..buffer.get_width() {
-            let cur = buffer.get_char((x, y).into());
+        for x in 0..buffer.width() {
+            let cur = buffer.char_at((x, y).into());
 
-            let next = if x + 1 < buffer.get_width() {
-                buffer.get_char((x + 1, y).into())
+            let next = if x + 1 < buffer.width() {
+                buffer.char_at((x + 1, y).into())
             } else {
                 AttributedChar::default()
             };
@@ -593,17 +593,17 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
                 } else if run_count > 0 {
                     match run_mode {
                         Compression::Off => {
-                            if x + 2 < buffer.get_width() && (cur.ch == next.ch || cur.attribute == next.attribute) {
+                            if x + 2 < buffer.width() && (cur.ch == next.ch || cur.attribute == next.attribute) {
                                 let l1 = count_length(run_mode, run_ch, Some(true), run_count, buffer, y, x);
                                 let l2 = count_length(run_mode, run_ch, Some(false), run_count, buffer, y, x);
                                 end_run = l1 < l2;
                             }
                         }
                         Compression::Char => {
-                            if cur.ch != run_ch.ch || cur.get_font_page() != run_ch.get_font_page() {
+                            if cur.ch != run_ch.ch || cur.font_page() != run_ch.font_page() {
                                 end_run = true;
-                            } else if x + 4 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y).into());
+                            } else if x + 4 < buffer.width() {
+                                let next2 = buffer.char_at((x + 2, y).into());
                                 if cur.attribute == next.attribute && cur.attribute == next2.attribute {
                                     let l1 = count_length(run_mode, run_ch, Some(true), run_count, buffer, y, x);
                                     let l2 = count_length(run_mode, run_ch, Some(false), run_count, buffer, y, x);
@@ -612,10 +612,10 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
                             }
                         }
                         Compression::Attr => {
-                            if cur.attribute != run_ch.attribute || cur.get_font_page() != run_ch.get_font_page() {
+                            if cur.attribute != run_ch.attribute || cur.font_page() != run_ch.font_page() {
                                 end_run = true;
-                            } else if x + 3 < buffer.get_width() {
-                                let next2 = buffer.get_char((x + 2, y).into());
+                            } else if x + 3 < buffer.width() {
+                                let next2 = buffer.char_at((x + 2, y).into());
                                 if cur.ch == next.ch && cur.ch == next2.ch {
                                     let l1 = count_length(run_mode, run_ch, Some(true), run_count, buffer, y, x);
                                     let l2 = count_length(run_mode, run_ch, Some(false), run_count, buffer, y, x);
@@ -658,7 +658,7 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
                 }
             } else {
                 run_buf.clear();
-                if x + 1 < buffer.get_width() {
+                if x + 1 < buffer.width() {
                     if cur == next {
                         run_mode = Compression::Full;
                     } else if cur.ch == next.ch {

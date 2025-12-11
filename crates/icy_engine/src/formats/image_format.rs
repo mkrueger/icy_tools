@@ -116,7 +116,7 @@ impl ImageFormat {
     /// # Returns
     /// `Ok(())` on success, or an error if rendering/saving fails.
     pub fn save_screen(&self, screen: &dyn Screen, path: &Path) -> Result<()> {
-        let size = screen.get_size();
+        let size = screen.size();
         let rect = Rectangle::from(0, 0, size.width, size.height);
 
         match self {
@@ -161,13 +161,13 @@ impl ImageFormat {
     fn save_screen_gif(&self, screen: &dyn Screen, path: &Path, region: Rectangle) -> Result<()> {
         use crate::gif_encoder::GifEncoder;
 
-        let size = screen.get_size();
-        let dim = screen.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as u16;
-        let height = (region.get_height().min(size.height) * dim.height) as u16;
+        let size = screen.size();
+        let dim = screen.font_dimensions();
+        let width = (region.width().min(size.width) * dim.width) as u16;
+        let height = (region.height().min(size.height) * dim.height) as u16;
 
         // Get blink rate from the screen's buffer type (in milliseconds)
-        let blink_rate_ms = screen.buffer_type().get_blink_rate();
+        let blink_rate_ms = screen.buffer_type().blink_rate();
 
         // Frame 1: blink_on = true (visible)
         let options1 = RenderOptions {
@@ -202,7 +202,7 @@ impl ImageFormat {
     /// # Returns
     /// `Ok(())` on success, or an error if rendering/saving fails.
     pub fn save_buffer(&self, buffer: &TextBuffer, path: &Path) -> Result<()> {
-        let rect = Rectangle::from(0, 0, buffer.get_width(), buffer.get_height());
+        let rect = Rectangle::from(0, 0, buffer.width(), buffer.height());
 
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
@@ -253,13 +253,13 @@ impl ImageFormat {
     fn save_gif(&self, buffer: &TextBuffer, path: &Path, region: Rectangle) -> Result<()> {
         use crate::gif_encoder::GifEncoder;
 
-        let size = buffer.get_size();
-        let dim = buffer.get_font_dimensions();
-        let width = (region.get_width().min(size.width) * dim.width) as u16;
-        let height = (region.get_height().min(size.height) * dim.height) as u16;
+        let size = buffer.size();
+        let dim = buffer.font_dimensions();
+        let width = (region.width().min(size.width) * dim.width) as u16;
+        let height = (region.height().min(size.height) * dim.height) as u16;
 
         // Get blink rate from the buffer's type (in milliseconds)
-        let blink_rate_ms = buffer.buffer_type.get_blink_rate();
+        let blink_rate_ms = buffer.buffer_type.blink_rate();
 
         // Frame 1: blink_on = true (visible)
         let options1 = RenderOptions {

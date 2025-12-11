@@ -20,7 +20,6 @@ mod tool_panel_wrapper;
 mod top_toolbar;
 
 pub use canvas_view::*;
-pub use channels_view::*;
 pub use color_switcher_gpu::*;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
@@ -224,7 +223,7 @@ impl AnsiEditor {
 
         // Load buffer using ICY format
         let load_data = LoadData::default();
-        let buffer = format.load_buffer(autosave_path, &data, Some(load_data))?;
+        let buffer = format.from_bytes(autosave_path, &data, Some(load_data))?.buffer;
 
         let mut editor = Self::with_buffer(buffer, Some(original_path), options);
         editor.is_modified = true; // Autosave means we have unsaved changes
@@ -299,20 +298,20 @@ impl AnsiEditor {
     fn compute_viewport_info(&self) -> ViewportInfo {
         // Get direct viewport data from the terminal
         let vp = self.canvas.terminal.viewport.read();
-        
+
         let content_width = vp.content_width.max(1.0);
         let content_height = vp.content_height.max(1.0);
         let visible_width = vp.visible_content_width();
         let visible_height = vp.visible_content_height();
-        
+
         // Normalized position: where we are scrolled to (0.0-1.0)
         let x = vp.scroll_x / content_width;
         let y = vp.scroll_y / content_height;
-        
+
         // Normalized size: how much of the content is visible (0.0-1.0)
         let width = (visible_width / content_width).min(1.0);
         let height = (visible_height / content_height).min(1.0);
-        
+
         ViewportInfo { x, y, width, height }
     }
 
@@ -325,12 +324,12 @@ impl AnsiEditor {
         let visible_width = vp.visible_content_width();
         let visible_height = vp.visible_content_height();
         drop(vp);
-        
+
         // Convert normalized position to content coordinates
         // Center the viewport on the clicked position
         let target_x = norm_x * content_width - visible_width / 2.0;
         let target_y = norm_y * content_height - visible_height / 2.0;
-        
+
         // Scroll to the target position (clamping is done internally)
         self.canvas.scroll_to(target_x, target_y);
     }
@@ -377,8 +376,8 @@ impl AnsiEditor {
                         // Animation finished - now actually swap the colors
                         let (fg, bg) = self.with_edit_state(|state| {
                             let caret: &mut icy_engine::Caret = state.get_caret_mut();
-                            let fg = caret.attribute.get_foreground();
-                            let bg = caret.attribute.get_background();
+                            let fg = caret.attribute.foreground();
+                            let bg = caret.attribute.background();
                             caret.attribute.set_foreground(bg);
                             caret.attribute.set_background(fg);
                             (bg, fg)
@@ -436,7 +435,7 @@ impl AnsiEditor {
             AnsiEditorMessage::ToggleLayerVisibility(idx) => {
                 let modified = self.with_edit_state(|state| {
                     if let Some(layer) = state.get_buffer_mut().layers.get_mut(idx) {
-                        layer.set_is_visible(!layer.get_is_visible());
+                        layer.set_is_visible(!layer.is_visible());
                         true
                     } else {
                         false
@@ -570,7 +569,7 @@ impl AnsiEditor {
                     }
                     iced::keyboard::Key::Named(named) => {
                         self.with_edit_state(|state| {
-                            let buffer_width = state.get_buffer().get_width();
+                            let buffer_width = state.get_buffer().width();
                             let caret = state.get_caret_mut();
                             match named {
                                 Named::ArrowUp => caret.y = (caret.y - 1).max(0),
@@ -747,7 +746,7 @@ impl AnsiEditor {
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
             let caret = state.get_caret();
-            (caret.attribute.get_foreground(), caret.attribute.get_background())
+            (caret.attribute.foreground(), caret.attribute.background())
         };
 
         // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
@@ -760,9 +759,9 @@ impl AnsiEditor {
         let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4);
 
         // === RIGHT PANEL ===
-        // NOTE: Right panel must be created BEFORE canvas because canvas.view() 
+        // NOTE: Right panel must be created BEFORE canvas because canvas.view()
         // may clear the dirty state, and minimap needs to see it first to cache properly
-        
+
         // Compute viewport info for the minimap from the canvas terminal
         let viewport_info = self.compute_viewport_info();
         let right_panel = self.right_panel.view(&self.screen, &viewport_info).map(AnsiEditorMessage::RightPanel);
@@ -817,7 +816,7 @@ impl AnsiEditor {
 
         AnsiStatusInfo {
             cursor_position: (caret.x, caret.y),
-            buffer_size: (buffer.get_width(), buffer.get_height()),
+            buffer_size: (buffer.width(), buffer.height()),
             current_layer,
             total_layers: buffer.layers.len(),
             current_tool: self.current_tool.name().to_string(),

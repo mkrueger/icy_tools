@@ -141,15 +141,15 @@ mod tests {
     }
 
     impl DrawTarget for MockTarget {
-        fn get_width(&self) -> i32 {
+        fn width(&self) -> i32 {
             self.width
         }
 
-        fn get_height(&self) -> i32 {
+        fn height(&self) -> i32 {
             self.height
         }
 
-        fn get_char(&self, _pos: Position) -> Option<icy_engine::AttributedChar> {
+        fn char_at(&self, _pos: Position) -> Option<icy_engine::AttributedChar> {
             None
         }
 

@@ -9,7 +9,7 @@ impl VdiPaint {
     pub(super) fn draw_poly(&mut self, buf: &mut dyn EditableScreen, parameters: &[i32], color: u8, close: bool) {
         let mut x = parameters[0];
         let mut y = parameters[1];
-        let mask = self.line_kind.get_mask(self.line_user_mask);
+        let mask = self.line_kind.mask(self.line_user_mask);
         let mut i = 2;
         while i < parameters.len() {
             let nx = parameters[i];
@@ -28,7 +28,7 @@ impl VdiPaint {
     pub fn draw_polyline(&mut self, buf: &mut dyn EditableScreen, color: u8, parameters: &[i32]) {
         let mut x = parameters[0];
         let mut y = parameters[1];
-        let mask = self.line_kind.get_mask(self.line_user_mask);
+        let mask = self.line_kind.mask(self.line_user_mask);
         let mut i = 2;
         while i < parameters.len() {
             let nx = parameters[i];
@@ -41,7 +41,7 @@ impl VdiPaint {
     }
 
     pub fn draw_poly_marker(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
-        let points = self.polymarker_type.get_points();
+        let points = self.polymarker_type.points();
         let num_lines = points[0];
         let mut i = 1;
         let old_type = self.line_kind;

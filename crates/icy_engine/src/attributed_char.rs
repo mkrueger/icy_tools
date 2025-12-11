@@ -44,11 +44,11 @@ impl AttributedChar {
     }
 
     pub fn is_transparent(self) -> bool {
-        (self.ch == '\0' || self.ch == ' ') || self.attribute.get_background() == self.attribute.get_foreground()
+        (self.ch == '\0' || self.ch == ' ') || self.attribute.background() == self.attribute.foreground()
     }
 
-    pub fn get_font_page(&self) -> usize {
-        self.attribute.get_font_page()
+    pub fn font_page(&self) -> usize {
+        self.attribute.font_page()
     }
 
     pub fn set_font_page(&mut self, page: usize) {
@@ -77,7 +77,7 @@ impl std::fmt::Display for AttributedChar {
             self.ch as u32,
             self.ch,
             self.attribute,
-            self.get_font_page()
+            self.font_page()
         )
     }
 }
@@ -92,7 +92,7 @@ impl From<char> for AttributedChar {
 }
 
 /*
-pub fn get_color(color: u8) -> &'static str
+pub fn color(color: u8) -> &'static str
 {
     match color {
         0 => "Black",

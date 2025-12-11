@@ -6,7 +6,7 @@ use crate::{
 /// Render a region from (0,0) with specified height for scrollback buffer.
 /// This is a helper function to avoid code duplication across screen buffer types.
 pub fn render_scrollback_region(screen: &dyn Screen, height: i32) -> (Size, Vec<u8>) {
-    let region = Rectangle::from(0, 0, screen.get_resolution().width, height);
+    let region = Rectangle::from(0, 0, screen.resolution().width, height);
     let mut opt = RenderOptions::default();
     opt.override_scan_lines = Some(false);
     screen.render_region_to_rgba(region, &opt)
@@ -81,15 +81,15 @@ impl ScrollbackBuffer {
         let mut opt = RenderOptions::default();
         opt.override_scan_lines = Some(false);
 
-        let (size, rgba_data) = screen.render_region_to_rgba(Rectangle::new(Position::new(0, 0), screen.get_resolution()), &opt);
+        let (size, rgba_data) = screen.render_region_to_rgba(Rectangle::new(Position::new(0, 0), screen.resolution()), &opt);
 
         self.cur_screen = ScrollbackChunk { rgba_data, size };
 
         // Inherit properties from the screen being snapshotted
         self.scan_lines = screen.scan_lines();
 
-        self.cur_screen_size = screen.get_size();
-        self.font_dimensions = screen.get_font_dimensions();
+        self.cur_screen_size = screen.size();
+        self.font_dimensions = screen.font_dimensions();
         self.palette = screen.palette().clone();
         self.terminal_state = screen.terminal_state().clone();
     }
@@ -100,33 +100,33 @@ impl ScrollbackBuffer {
 }
 
 impl TextPane for ScrollbackBuffer {
-    fn get_char(&self, _pos: Position) -> AttributedChar {
+    fn char_at(&self, _pos: Position) -> AttributedChar {
         // ScrollbackBuffer doesn't have character-level access, return default
         AttributedChar::default()
     }
 
-    fn get_line_count(&self) -> i32 {
+    fn line_count(&self) -> i32 {
         self.total_height() / self.font_dimensions.height
     }
 
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.cur_screen_size.width / self.font_dimensions.width
     }
 
-    fn get_height(&self) -> i32 {
-        self.get_line_count()
+    fn height(&self) -> i32 {
+        self.line_count()
     }
 
-    fn get_size(&self) -> Size {
-        Size::new(self.get_width(), self.get_height())
+    fn size(&self) -> Size {
+        Size::new(self.width(), self.height())
     }
 
-    fn get_line_length(&self, _line: i32) -> i32 {
-        self.get_width()
+    fn line_length(&self, _line: i32) -> i32 {
+        self.width()
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        Rectangle::from(0, 0, self.get_width(), self.get_height())
+    fn rectangle(&self) -> Rectangle {
+        Rectangle::from(0, 0, self.width(), self.height())
     }
 }
 
@@ -135,7 +135,7 @@ impl Screen for ScrollbackBuffer {
         crate::BufferType::CP437
     }
 
-    fn get_resolution(&self) -> Size {
+    fn resolution(&self) -> Size {
         // Resolution is the size of the current visible screen (not including scrollback)
         let mut h = self.cur_screen.size.height;
         if self.scan_lines {
@@ -161,7 +161,7 @@ impl Screen for ScrollbackBuffer {
         Size::new(width, height)
     }
 
-    fn get_font_dimensions(&self) -> Size {
+    fn font_dimensions(&self) -> Size {
         self.font_dimensions
     }
 
@@ -319,7 +319,7 @@ impl Screen for ScrollbackBuffer {
     }
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.resolution()), options)
     }
 
     fn palette(&self) -> &Palette {
@@ -330,7 +330,7 @@ impl Screen for ScrollbackBuffer {
         IceMode::Unlimited
     }
 
-    fn get_font(&self, _font_number: usize) -> Option<&BitFont> {
+    fn font(&self, _font_number: usize) -> Option<&BitFont> {
         None
     }
 
@@ -338,7 +338,7 @@ impl Screen for ScrollbackBuffer {
         0
     }
 
-    fn get_version(&self) -> u64 {
+    fn version(&self) -> u64 {
         self.version
     }
 
@@ -360,7 +360,7 @@ impl Screen for ScrollbackBuffer {
         EMPTY
     }
 
-    fn get_selection(&self) -> Option<Selection> {
+    fn selection(&self) -> Option<Selection> {
         self.selection
     }
 
@@ -411,7 +411,7 @@ impl Screen for ScrollbackBuffer {
 /// Helper method to render a region from a screen and add it to the scrollback buffer.
 /// Always starts at x=0, renders full width with the specified height.
 pub fn add_screen_region(buffer: &mut ScrollbackBuffer, screen: &dyn Screen, height: i32) {
-    let region = Rectangle::from(0, 0, screen.get_resolution().width, height);
+    let region = Rectangle::from(0, 0, screen.resolution().width, height);
     let mut opt = RenderOptions::default();
     opt.override_scan_lines = Some(false);
     let (size, rgba_data) = screen.render_region_to_rgba(region, &opt);

@@ -6,8 +6,8 @@ fn test_clear() {
         .from_bytes(&std::path::PathBuf::from("test.avt"), &[b'X', 12, b'X'], None)
         .unwrap()
         .buffer;
-    assert_eq!(1, buf.get_line_count());
-    assert_eq!(1, buf.get_real_buffer_width());
+    assert_eq!(1, buf.line_count());
+    assert_eq!(1, buf.real_buffer_width());
 }
 
 #[test]
@@ -16,13 +16,13 @@ fn test_repeat() {
         .from_bytes(&std::path::PathBuf::from("test.avt"), &[b'X', 25, b'b', 3, b'X'], None)
         .unwrap()
         .buffer;
-    assert_eq!(1, buf.get_line_count());
-    assert_eq!(5, buf.get_real_buffer_width());
-    assert_eq!(b'X', buf.get_char((0, 0).into()).ch as u8);
-    assert_eq!(b'b', buf.get_char((1, 0).into()).ch as u8);
-    assert_eq!(b'b', buf.get_char((2, 0).into()).ch as u8);
-    assert_eq!(b'b', buf.get_char((3, 0).into()).ch as u8);
-    assert_eq!(b'X', buf.get_char((4, 0).into()).ch as u8);
+    assert_eq!(1, buf.line_count());
+    assert_eq!(5, buf.real_buffer_width());
+    assert_eq!(b'X', buf.char_at((0, 0).into()).ch as u8);
+    assert_eq!(b'b', buf.char_at((1, 0).into()).ch as u8);
+    assert_eq!(b'b', buf.char_at((2, 0).into()).ch as u8);
+    assert_eq!(b'b', buf.char_at((3, 0).into()).ch as u8);
+    assert_eq!(b'X', buf.char_at((4, 0).into()).ch as u8);
 }
 
 #[test]
@@ -31,8 +31,8 @@ fn test_zero_repeat() {
         .from_bytes(&std::path::PathBuf::from("test.avt"), &[25, b'b', 0], None)
         .unwrap()
         .buffer;
-    assert_eq!(0, buf.get_line_count());
-    assert_eq!(0, buf.get_real_buffer_width());
+    assert_eq!(0, buf.line_count());
+    assert_eq!(0, buf.real_buffer_width());
 }
 
 #[test]
@@ -48,8 +48,8 @@ fn test_linebreak_bug() {
         )
         .unwrap()
         .buffer;
-    assert_eq!(1, buf.get_line_count());
-    assert_eq!(47, buf.get_real_buffer_width());
+    assert_eq!(1, buf.line_count());
+    assert_eq!(47, buf.real_buffer_width());
 }
 
 fn output_avt(data: &[u8]) -> Vec<u8> {

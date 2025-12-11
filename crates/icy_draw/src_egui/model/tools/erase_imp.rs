@@ -39,7 +39,7 @@ impl EraseTool {
         let gradient = ['\u{00DB}', '\u{00B2}', '\u{00B1}', '\u{00B0}', ' '];
         let use_selection = editor.buffer_view.lock().get_edit_state().is_something_selected();
         let offset = if let Some(layer) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -47,7 +47,7 @@ impl EraseTool {
         for y in 0..self.size {
             for x in 0..self.size {
                 let pos = center + Position::new(x, y);
-                if use_selection && !editor.buffer_view.lock().get_edit_state().get_is_selected(pos + offset) {
+                if use_selection && !editor.buffer_view.lock().get_edit_state().is_selected(pos + offset) {
                     continue;
                 }
                 match self.brush_type {

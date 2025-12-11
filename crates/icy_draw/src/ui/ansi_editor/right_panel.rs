@@ -70,26 +70,15 @@ impl RightPanel {
 
         let content = column![
             // Minimap section - fills all available space above layer view
-            container(minimap)
-                .width(Length::Fill)
-                .height(Length::Fill),
+            container(minimap).width(Length::Fill).height(Length::Fill),
             rule::horizontal(1),
             // Layers section - fixed height at bottom
-            container(
-                column![
-                    text("Layers").size(12),
-                    scrollable(layers).height(Length::Fill),
-                ]
-                .spacing(4)
-            )
-            .padding(4)
-            .height(Length::Fixed(LAYER_VIEW_HEIGHT)),
+            container(column![text("Layers").size(12), scrollable(layers).height(Length::Fill),].spacing(4))
+                .padding(4)
+                .height(Length::Fixed(LAYER_VIEW_HEIGHT)),
         ]
         .spacing(0);
 
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        container(content).width(Length::Fill).height(Length::Fill).into()
     }
 }

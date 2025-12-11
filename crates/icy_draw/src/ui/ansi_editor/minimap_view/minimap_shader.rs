@@ -80,27 +80,27 @@ impl MinimapProgram {
         if tex_w == 0 || tex_h == 0 {
             return None;
         }
-        
+
         // Calculate position relative to bounds (for mouse capture outside bounds)
         let relative_x = absolute_pos.x - bounds.x;
         let relative_y = absolute_pos.y - bounds.y;
-        
+
         let scale = bounds.width / tex_w as f32;
         let scaled_h = tex_h as f32 * scale;
-        
+
         // Calculate visible UV range (same logic as in prepare())
         let visible_uv_height = (bounds.height / scaled_h).min(1.0);
         let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
         let scroll_uv_y = self.scroll_offset * max_scroll_uv;
-        
+
         // Position in screen space (0-1 of visible area) - can be outside 0-1 range
         let screen_y = relative_y / bounds.height;
-        
+
         // Convert to texture UV space by mapping through visible range
         // Clamp to valid UV range (0-1)
         let norm_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
         let norm_x = (relative_x / bounds.width).clamp(0.0, 1.0);
-        
+
         Some((norm_x, norm_y))
     }
 }
@@ -120,13 +120,7 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
         }
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<MinimapMessage>> {
+    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<MinimapMessage>> {
         match event {
             // Handle mouse button press - start dragging
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
@@ -140,12 +134,12 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
                     }
                 }
             }
-            
+
             // Handle mouse button release - stop dragging
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 state.is_dragging = false;
             }
-            
+
             // Handle cursor movement while dragging
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if state.is_dragging {
@@ -157,10 +151,10 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
                     }
                 }
             }
-            
+
             _ => {}
         }
-        
+
         None
     }
 }
@@ -457,22 +451,17 @@ impl shader::Primitive for MinimapPrimitive {
         let avail_h = self.available_height.max(1.0);
         let scale = bounds.width / tex_w;
         let scaled_h = tex_h * scale;
-        
+
         // How much of the texture is visible (in normalized UV coordinates)
         let visible_uv_height = (avail_h / scaled_h).min(1.0);
         let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
         let scroll_uv_y = self.scroll_offset * max_scroll_uv;
-        
+
         let visible_uv_min_y = scroll_uv_y;
         let visible_uv_max_y = scroll_uv_y + visible_uv_height;
 
         let uniforms = MinimapUniforms {
-            viewport_rect: [
-                self.viewport_info.x,
-                self.viewport_info.y,
-                self.viewport_info.width,
-                self.viewport_info.height,
-            ],
+            viewport_rect: [self.viewport_info.x, self.viewport_info.y, self.viewport_info.width, self.viewport_info.height],
             // Modern cyan accent color - vibrant but not overwhelming
             viewport_color: [0.2, 0.8, 0.9, 0.9],
             visible_uv_range: [visible_uv_min_y, visible_uv_max_y, 0.0, 0.0],
@@ -481,22 +470,11 @@ impl shader::Primitive for MinimapPrimitive {
             _padding: [0.0; 2],
         };
 
-        let uniform_bytes = unsafe {
-            std::slice::from_raw_parts(
-                &uniforms as *const MinimapUniforms as *const u8,
-                std::mem::size_of::<MinimapUniforms>(),
-            )
-        };
+        let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniforms as *const MinimapUniforms as *const u8, std::mem::size_of::<MinimapUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
     }
 
-    fn render(
-        &self,
-        pipeline: &Self::Pipeline,
-        encoder: &mut iced::wgpu::CommandEncoder,
-        target: &iced::wgpu::TextureView,
-        clip_bounds: &Rectangle<u32>,
-    ) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let Some(resources) = pipeline.instances.get(&self.instance_id) else {
             return;
         };

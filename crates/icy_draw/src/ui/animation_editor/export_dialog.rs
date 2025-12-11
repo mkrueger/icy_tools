@@ -405,8 +405,8 @@ fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
         }
 
         // Create render options with rect covering the entire screen
-        let screen_width = screen.get_width();
-        let screen_height = screen.get_height();
+        let screen_width = screen.width();
+        let screen_height = screen.height();
         let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
         let options = RenderOptions {
             rect: full_rect.into(),
@@ -465,7 +465,7 @@ fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &Pat
     }
 
     let first_frame = &animator.frames[0].0;
-    let size = first_frame.get_size();
+    let size = first_frame.size();
 
     let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
 
@@ -520,22 +520,22 @@ fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &Pat
 /// Render a screen to ANSI escape sequences
 fn render_screen_to_ansi(screen: &dyn Screen) -> String {
     let mut result = String::new();
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
 
     let mut last_attr = icy_engine::TextAttribute::default();
 
     for y in 0..height {
         for x in 0..width {
-            let ch = screen.get_char(Position::new(x, y));
+            let ch = screen.char_at(Position::new(x, y));
 
             // Check if attributes changed
             if ch.attribute != last_attr {
                 // Reset and set new attributes
                 result.push_str("\x1b[0m");
 
-                let fg = ch.attribute.get_foreground();
-                let bg = ch.attribute.get_background();
+                let fg = ch.attribute.foreground();
+                let bg = ch.attribute.background();
 
                 // Set foreground color (256 color mode)
                 result.push_str(&format!("\x1b[38;5;{}m", fg));

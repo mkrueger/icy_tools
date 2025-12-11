@@ -204,7 +204,7 @@ fn test_preview_matches_reference() {
     let preview_screen = state.build_preview_content_for(tile_char, fg_color, bg_color);
 
     // Render to RGBA - need to provide full screen rectangle
-    let rect: Rectangle = preview_screen.get_size().into();
+    let rect: Rectangle = preview_screen.size().into();
     let (size, rgba_data) = preview_screen.render_to_rgba(&rect.into());
 
     // Compare against reference PNG

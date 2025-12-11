@@ -73,7 +73,7 @@ impl SelectOutlineDialog {
 
                 let xs = w as f32 * scale * self.font.size.width as f32;
                 let ys = h as f32 * scale * self.font.size.height as f32;
-                if let Some(glyph) = self.font.get_glyph(ch) {
+                if let Some(glyph) = self.font.glyph(ch) {
                     for y in 0..s.height {
                         for x in 0..s.width {
                             if glyph.data[y as usize] & (128 >> x) != 0 {

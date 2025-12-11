@@ -252,15 +252,15 @@ impl Rectangle {
         self.contains_pt(other.start) && self.contains_pt(other.bottom_right())
     }
 
-    pub fn get_width(&self) -> i32 {
+    pub fn width(&self) -> i32 {
         self.size.width
     }
 
-    pub fn get_height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         self.size.height
     }
 
-    pub fn get_size(&self) -> Size {
+    pub fn size(&self) -> Size {
         self.size
     }
 
@@ -390,35 +390,35 @@ impl SubAssign<Position> for Rectangle {
 
 pub trait TextPane {
     /// Gets the character at the specified position
-    fn get_char(&self, pos: Position) -> AttributedChar;
+    fn char_at(&self, pos: Position) -> AttributedChar;
 
     /// Gets the number of lines
-    fn get_line_count(&self) -> i32;
+    fn line_count(&self) -> i32;
 
     /// Gets the width in characters
-    fn get_width(&self) -> i32;
+    fn width(&self) -> i32;
 
     /// Gets the height in characters
-    fn get_height(&self) -> i32;
+    fn height(&self) -> i32;
 
     /// Gets the size in characters
-    fn get_size(&self) -> Size;
+    fn size(&self) -> Size;
 
     /// Gets the length of a specific line in characters
-    fn get_line_length(&self, line: i32) -> i32;
+    fn line_length(&self, line: i32) -> i32;
 
     /// Gets the rectangle covering the entire text pane
-    fn get_rectangle(&self) -> Rectangle;
+    fn rectangle(&self) -> Rectangle;
 
     /// Gets a string of specified size starting from the given position
-    fn get_string(&self, pos: Position, size: usize) -> String {
+    fn string_at(&self, pos: Position, size: usize) -> String {
         let pos = pos.into();
         let mut result = String::new();
         let mut pos = pos;
         for _ in 0..size {
-            result.push(self.get_char(pos).ch);
+            result.push(self.char_at(pos).ch);
             pos.x += 1;
-            if pos.x >= self.get_width() {
+            if pos.x >= self.width() {
                 pos.x = 0;
                 pos.y += 1;
             }
@@ -432,12 +432,12 @@ pub trait TextPane {
             std::cmp::Ordering::Less => false,
             std::cmp::Ordering::Equal => from.x <= pos.x && pos.x < from.x + size,
             std::cmp::Ordering::Greater => {
-                let remainder = size.saturating_sub(self.get_width() + from.x);
-                let lines = remainder / self.get_width();
+                let remainder = size.saturating_sub(self.width() + from.x);
+                let lines = remainder / self.width();
                 let mut y = from.y + lines;
                 let x = if remainder > 0 {
                     y += 1; // remainder > 1 wraps 1 extra line
-                    remainder - lines * self.get_width()
+                    remainder - lines * self.width()
                 } else {
                     remainder
                 };
@@ -452,7 +452,7 @@ pub fn decrqcra_checksum(buf: &dyn TextPane, top: i32, left: i32, bottom: i32, r
     let mut sum: u32 = 0;
     for y in top..=bottom {
         for x in left..=right {
-            let ch = buf.get_char(crate::Position { x, y });
+            let ch = buf.char_at(crate::Position { x, y });
             sum = sum.wrapping_add(ch.ch as u32);
         }
     }

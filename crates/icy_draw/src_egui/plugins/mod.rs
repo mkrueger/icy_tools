@@ -87,10 +87,10 @@ impl Plugin {
             )
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
-        let sel = editor.buffer_view.lock().get_selection();
+        let sel = editor.buffer_view.lock().selection();
 
         let rect = if let Some(l) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
-            l.get_rectangle()
+            l.rectangle()
         } else {
             return Err(anyhow::anyhow!("No layer selected"));
         };
@@ -113,9 +113,9 @@ impl Plugin {
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
         } else {
             globals.set("start_x", 0).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            globals.set("end_x", rect.get_width()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals.set("end_x", rect.width()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
             globals.set("start_y", 0).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            globals.set("end_y", rect.get_height()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            globals.set("end_y", rect.height()).map_err(|error| anyhow::anyhow!(error.to_string()))?;
         }
         let _undo = editor
             .buffer_view
@@ -170,16 +170,16 @@ impl LuaBufferView {
         let ch = match buffer_type {
             icy_engine::BufferType::Unicode => ch,
             icy_engine::BufferType::CP437 => {
-                icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().get_font_page())
+                icy_engine::ascii::CP437Converter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().font_page())
             }
             icy_engine::BufferType::Petscii => {
-                icy_engine::petscii::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().get_font_page())
+                icy_engine::petscii::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().font_page())
             }
             icy_engine::BufferType::Atascii => {
-                icy_engine::atascii::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().get_font_page())
+                icy_engine::atascii::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().font_page())
             }
             icy_engine::BufferType::Viewdata => {
-                icy_engine::viewdata::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().get_font_page())
+                icy_engine::viewdata::CharConverter::default().convert_from_unicode(ch, self.buffer_view.lock().get_caret().font_page())
             }
         };
         Ok(ch)
@@ -200,18 +200,18 @@ impl LuaBufferView {
 
 impl UserData for LuaBufferView {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("height", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().get_height()));
+        fields.add_field_method_get("height", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().height()));
         fields.add_field_method_set("height", |_, this, val| {
             this.buffer_view.lock().get_buffer_mut().set_height(val);
             Ok(())
         });
-        fields.add_field_method_get("width", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().get_width()));
+        fields.add_field_method_get("width", |_, this| Ok(this.buffer_view.lock().get_buffer_mut().width()));
         fields.add_field_method_set("width", |_, this, val| {
             this.buffer_view.lock().get_buffer_mut().set_width(val);
             Ok(())
         });
 
-        fields.add_field_method_get("font_page", |_, this| Ok(this.buffer_view.lock().get_caret_mut().get_font_page()));
+        fields.add_field_method_get("font_page", |_, this| Ok(this.buffer_view.lock().get_caret_mut().font_page()));
         fields.add_field_method_set("font_page", |_, this, val| {
             this.buffer_view.lock().get_caret_mut().set_font_page(val);
             Ok(())
@@ -230,7 +230,7 @@ impl UserData for LuaBufferView {
             }
         });
 
-        fields.add_field_method_get("fg", |_, this| Ok(this.buffer_view.lock().get_caret_mut().get_attribute().get_foreground()));
+        fields.add_field_method_get("fg", |_, this| Ok(this.buffer_view.lock().get_caret_mut().get_attribute().foreground()));
         fields.add_field_method_set("fg", |_, this, val| {
             let mut attr = this.buffer_view.lock().get_caret_mut().get_attribute();
             attr.set_foreground(val);
@@ -238,7 +238,7 @@ impl UserData for LuaBufferView {
             Ok(())
         });
 
-        fields.add_field_method_get("bg", |_, this| Ok(this.buffer_view.lock().get_caret_mut().get_attribute().get_background()));
+        fields.add_field_method_get("bg", |_, this| Ok(this.buffer_view.lock().get_caret_mut().get_attribute().background()));
         fields.add_field_method_set("bg", |_, this, val| {
             let mut attr = this.buffer_view.lock().get_caret_mut().get_attribute();
             attr.set_background(val);
@@ -306,7 +306,7 @@ impl UserData for LuaBufferView {
                 });
             }
 
-            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
+            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
             Ok(this.convert_to_unicode(ch))
         });
 
@@ -320,7 +320,7 @@ impl UserData for LuaBufferView {
                 });
             }
 
-            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
+            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
             let mut attr = ch.attribute;
             attr.attr &= !attribute::INVISIBLE;
             this.buffer_view.lock().get_caret_mut().set_attr(attr);
@@ -337,7 +337,7 @@ impl UserData for LuaBufferView {
                     incomplete_input: false,
                 });
             }
-            let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
+            let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
             ch.attribute.set_foreground(col);
             if let Err(err) = this.buffer_view.lock().get_edit_state_mut().set_char((x, y), ch) {
                 return Err(mlua::Error::SyntaxError {
@@ -358,8 +358,8 @@ impl UserData for LuaBufferView {
                 });
             }
 
-            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
-            Ok(ch.attribute.get_foreground())
+            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
+            Ok(ch.attribute.foreground())
         });
 
         methods.add_method_mut("set_bg", |_, this, (x, y, col): (i32, i32, u32)| {
@@ -371,7 +371,7 @@ impl UserData for LuaBufferView {
                     incomplete_input: false,
                 });
             }
-            let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
+            let mut ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
             ch.attribute.set_background(col);
             if let Err(err) = this.buffer_view.lock().get_edit_state_mut().set_char((x, y), ch) {
                 return Err(mlua::Error::SyntaxError {
@@ -391,8 +391,8 @@ impl UserData for LuaBufferView {
                     incomplete_input: false,
                 });
             }
-            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].get_char((x, y));
-            Ok(ch.attribute.get_background())
+            let ch = this.buffer_view.lock().get_buffer_mut().layers[cur_layer].char_at((x, y));
+            Ok(ch.attribute.background())
         });
 
         methods.add_method_mut("print", |_, this, str: String| {
@@ -426,7 +426,7 @@ impl UserData for LuaBufferView {
         });
         methods.add_method_mut("get_layer_position", |_, this, layer: usize| {
             if layer < this.buffer_view.lock().get_buffer_mut().layers.len() {
-                let pos = this.buffer_view.lock().get_buffer_mut().layers[layer].get_offset();
+                let pos = this.buffer_view.lock().get_buffer_mut().layers[layer].offset();
                 Ok((pos.x, pos.y))
             } else {
                 Err(mlua::Error::SyntaxError {
@@ -452,7 +452,7 @@ impl UserData for LuaBufferView {
 
         methods.add_method_mut("get_layer_visible", |_, this, layer: usize| {
             if layer < this.buffer_view.lock().get_buffer_mut().layers.len() {
-                Ok(this.buffer_view.lock().get_buffer_mut().layers[layer].get_is_visible())
+                Ok(this.buffer_view.lock().get_buffer_mut().layers[layer].is_visible())
             } else {
                 Err(mlua::Error::SyntaxError {
                     message: format!("Layer {} out of range (0..<{})", layer, this.buffer_view.lock().get_buffer_mut().layers.len()),

@@ -87,7 +87,7 @@ fn create_scrollback_buffer(chunk_count: usize, chunk_width: i32, chunk_height: 
 
 /// Benchmark different region sizes for any Screen implementation
 fn bench_screen_full_region<S: Screen>(group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>, screen: &S, screen_name: &str) {
-    let resolution = screen.get_resolution();
+    let resolution = screen.resolution();
     let options = RenderOptions::default();
 
     // Full screen
@@ -104,7 +104,7 @@ fn bench_screen_full_region<S: Screen>(group: &mut criterion::BenchmarkGroup<cri
 }
 
 fn bench_screen_half_region<S: Screen>(group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>, screen: &S, screen_name: &str) {
-    let resolution = screen.get_resolution();
+    let resolution = screen.resolution();
     let options = RenderOptions::default();
 
     // Half screen (typical viewport)
@@ -121,7 +121,7 @@ fn bench_screen_half_region<S: Screen>(group: &mut criterion::BenchmarkGroup<cri
 }
 
 fn bench_screen_quarter_region<S: Screen>(group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>, screen: &S, screen_name: &str) {
-    let resolution = screen.get_resolution();
+    let resolution = screen.resolution();
     let options = RenderOptions::default();
 
     // Quarter screen (scrolling scenario)
@@ -142,7 +142,7 @@ fn bench_screen_quarter_region<S: Screen>(group: &mut criterion::BenchmarkGroup<
 }
 
 fn bench_screen_offset_region<S: Screen>(group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>, screen: &S, screen_name: &str) {
-    let resolution = screen.get_resolution();
+    let resolution = screen.resolution();
     let options = RenderOptions::default();
 
     // Offset region (middle of screen)
@@ -221,7 +221,7 @@ fn bench_scanlines_comparison(c: &mut Criterion) {
 
     // TextScreen without scanlines
     let text_no_scan = create_text_screen(80, 25, false);
-    let text_resolution = text_no_scan.get_resolution();
+    let text_resolution = text_no_scan.resolution();
     let text_region = Rectangle::from_coords(0, 0, text_resolution.width, text_resolution.height);
 
     group.throughput(Throughput::Bytes((text_resolution.width * text_resolution.height * 4) as u64));
@@ -238,7 +238,7 @@ fn bench_scanlines_comparison(c: &mut Criterion) {
 
     // PaletteScreen
     let palette_screen = create_palette_screen();
-    let palette_resolution = palette_screen.get_resolution();
+    let palette_resolution = palette_screen.resolution();
     let palette_region = Rectangle::from_coords(0, 0, palette_resolution.width, palette_resolution.height);
     group.throughput(Throughput::Bytes((palette_resolution.width * palette_resolution.height * 4) as u64));
     group.bench_function("palette_rip", |b| {
@@ -255,7 +255,7 @@ fn bench_small_regions(c: &mut Criterion) {
 
     // Very small regions (cursor area, single character updates)
     let text_screen = create_text_screen(80, 25, false);
-    let font_size = text_screen.get_font_dimensions();
+    let font_size = text_screen.font_dimensions();
 
     // Single character region
     let single_char = Rectangle::from_coords(0, 0, font_size.width, font_size.height);
@@ -312,7 +312,7 @@ fn bench_scrolling_simulation(c: &mut Criterion) {
 
     // Simulate scrolling by rendering different offset regions
     let text_screen = create_text_screen(80, 50, false);
-    let resolution = text_screen.get_resolution();
+    let resolution = text_screen.resolution();
     let viewport_h = resolution.height / 2; // Half-screen viewport
 
     // Scroll positions
@@ -331,7 +331,7 @@ fn bench_scrolling_simulation(c: &mut Criterion) {
 
     // ScrollbackBuffer scrolling (main use case)
     let scrollback = create_scrollback_buffer(50, 640, 400);
-    let sb_resolution = scrollback.get_resolution();
+    let sb_resolution = scrollback.resolution();
     let sb_viewport_h = sb_resolution.height / 2;
 
     for (scroll_y, name) in scroll_positions {

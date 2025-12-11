@@ -228,7 +228,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
             let x = col as f32 * cell_size;
             let y = row as f32 * cell_size;
 
-            let (r, g, b) = self.cached_palette.get_rgb(i as u32);
+            let (r, g, b) = self.cached_palette.rgb(i as u32);
             frame.fill_rectangle(Point::new(x, y), Size::new(cell_size, cell_size), Color::from_rgb8(r, g, b));
         }
 

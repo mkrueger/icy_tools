@@ -448,7 +448,7 @@ impl shader::Primitive for TerminalShader {
             crate::MonitorType::Apple2 => [0.2, 1.0, 0.4, 1.0],
             crate::MonitorType::Futuristic => [0.0, 0.8, 1.0, 1.0],
             crate::MonitorType::CustomMonochrome => {
-                let (r, g, b) = self.monitor_settings.custom_monitor_color.get_rgb();
+                let (r, g, b) = self.monitor_settings.custom_monitor_color.rgb();
                 [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
             }
         };

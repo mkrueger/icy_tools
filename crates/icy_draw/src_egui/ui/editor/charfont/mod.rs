@@ -421,9 +421,9 @@ impl Document for CharFontEditor {
 }
 
 fn set_attribute(layer: &mut Layer, attr: TextAttribute) {
-    for y in 0..layer.get_size().height {
-        for x in 0..layer.get_size().width {
-            let mut c = layer.get_char((x, y));
+    for y in 0..layer.size().height {
+        for x in 0..layer.size().width {
+            let mut c = layer.char_at((x, y));
             if !c.is_visible() {
                 continue;
             }
@@ -504,7 +504,7 @@ impl CharFontEditor {
             self.outline_previewbuffer_view.lock().get_caret_mut().set_attr(attr);
             self.outline_previewbuffer_view.lock().get_edit_state_mut().set_is_buffer_dirty();
             if let Some(ch) = self.selected_char_opt {
-                let size = self.outline_previewbuffer_view.lock().get_edit_state_mut().get_buffer().get_size();
+                let size = self.outline_previewbuffer_view.lock().get_edit_state_mut().get_buffer().size();
 
                 if self.draw_outline_bg {
                     attr.set_foreground(8);

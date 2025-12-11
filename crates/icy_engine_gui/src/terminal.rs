@@ -31,7 +31,7 @@ impl Terminal {
         let viewport = {
             let scr = screen.lock();
             let virtual_size = scr.virtual_size();
-            let resolution = scr.get_resolution();
+            let resolution = scr.resolution();
             Arc::new(RwLock::new(Viewport::new(resolution, virtual_size)))
         };
 
@@ -192,7 +192,7 @@ impl Terminal {
 
             // Get the resolution to use as visible size for scrolling calculations
             let scr = self.screen.lock();
-            let resolution = scr.get_resolution();
+            let resolution = scr.resolution();
             drop(scr);
 
             {

@@ -1298,9 +1298,7 @@ impl MainWindow {
                         .map(Message::AnsiEditor);
 
                     // Update canvas animations (scrollbar fade, smooth scrolling)
-                    let viewport_task = editor
-                        .update(AnsiEditorMessage::ViewportTick)
-                        .map(Message::AnsiEditor);
+                    let viewport_task = editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor);
 
                     Task::batch([color_task, tool_task, viewport_task])
                 }
@@ -1520,12 +1518,10 @@ impl MainWindow {
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),
             ModeState::BitFont(editor) => editor.view().map(Message::BitFontEditor),
-            ModeState::CharFont(_state) => {
-                container(text("CharFont (TDF) Editor - Coming Soon").size(24))
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill)
-                    .into()
-            }
+            ModeState::CharFont(_state) => container(text("CharFont (TDF) Editor - Coming Soon").size(24))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into(),
             ModeState::Animation(editor) => editor.view().map(Message::AnimationEditor),
         };
 

@@ -30,7 +30,7 @@ impl VdiPaint {
 
     pub fn draw_line_pub(&mut self, buf: &mut dyn crate::EditableScreen, x1: i32, y1: i32, x2: i32, y2: i32) {
         let color = self.line_color;
-        let mask = self.line_kind.get_mask(self.line_user_mask);
+        let mask = self.line_kind.mask(self.line_user_mask);
         self.draw_line(buf, x1, y1, x2, y2, color, mask);
     }
 

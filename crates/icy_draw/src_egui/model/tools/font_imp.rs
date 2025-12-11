@@ -368,7 +368,7 @@ impl Tool for FontTool {
 
             MKey::Home => {
                 if let MModifiers::Control = modifier {
-                    let end = editor.buffer_view.lock().get_buffer().get_width();
+                    let end = editor.buffer_view.lock().get_buffer().width();
                     for i in 0..end {
                         if !editor.get_char_from_cur_layer(pos.with_x(i)).is_transparent() {
                             editor.set_caret(i, pos.y);
@@ -381,7 +381,7 @@ impl Tool for FontTool {
 
             MKey::End => {
                 if let MModifiers::Control = modifier {
-                    let end = editor.buffer_view.lock().get_buffer().get_width();
+                    let end = editor.buffer_view.lock().get_buffer().width();
                     for i in (0..end).rev() {
                         if !editor.get_char_from_cur_layer(pos.with_x(i)).is_transparent() {
                             editor.set_caret(i, pos.y);
@@ -389,7 +389,7 @@ impl Tool for FontTool {
                         }
                     }
                 }
-                let w = editor.buffer_view.lock().get_buffer().get_width();
+                let w = editor.buffer_view.lock().get_buffer().width();
                 editor.set_caret(w - 1, pos.y);
             }
 

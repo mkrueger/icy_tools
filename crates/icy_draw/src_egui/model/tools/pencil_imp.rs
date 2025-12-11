@@ -68,8 +68,8 @@ impl Tool for PencilTool {
         let attr = editor.get_caret_attribute();
         if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
-            let tmp = flipped.get_foreground();
-            flipped.set_foreground(flipped.get_background());
+            let tmp = flipped.foreground();
+            flipped.set_foreground(flipped.background());
             flipped.set_background(tmp);
             editor.set_caret_attribute(flipped);
         }
@@ -103,8 +103,8 @@ impl Tool for PencilTool {
         let attr = editor.get_caret_attribute();
         if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
-            let tmp = flipped.get_foreground();
-            flipped.set_foreground(flipped.get_background());
+            let tmp = flipped.foreground();
+            flipped.set_foreground(flipped.background());
             flipped.set_background(tmp);
             editor.set_caret_attribute(flipped);
         }
@@ -138,8 +138,8 @@ impl Tool for PencilTool {
         let attr = editor.get_caret_attribute();
         if flip_colors && self.draw_mode != BrushMode::Shade {
             let mut flipped = attr;
-            let tmp = flipped.get_foreground();
-            flipped.set_foreground(flipped.get_background());
+            let tmp = flipped.foreground();
+            flipped.set_foreground(flipped.background());
             flipped.set_background(tmp);
             editor.set_caret_attribute(flipped);
         }

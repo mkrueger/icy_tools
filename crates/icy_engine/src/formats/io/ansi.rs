@@ -16,10 +16,10 @@ const COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
 fn uses_ice_colors(buf: &TextBuffer) -> bool {
     for layer in &buf.layers {
-        for y in 0..layer.get_height() {
-            for x in 0..layer.get_width() {
-                let ch = layer.get_char((x, y).into());
-                let bg = ch.attribute.get_background();
+        for y in 0..layer.height() {
+            for x in 0..layer.width() {
+                let ch = layer.char_at((x, y).into());
+                let bg = ch.attribute.background();
                 if bg >= 8 && bg < 16 {
                     return true;
                 }
@@ -70,7 +70,7 @@ pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     let state = str_gen.generate(&buf, buf);
     str_gen.screen_end(&buf, state);
     str_gen.add_sixels(&buf);
-    result.extend(str_gen.get_data());
+    result.extend(str_gen.data());
 
     if let Some(sauce) = &options.save_sauce {
         sauce.write(&mut result)?;
@@ -80,7 +80,7 @@ pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
 
 /// Check if SAUCE is required for saving (width != 80).
 pub fn _get_save_sauce_default_ans(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
     (false, String::new())
@@ -139,7 +139,7 @@ impl StringGenerator {
         let mut extended_color_hash = HashMap::new();
         if options.use_extended_colors {
             for (i, (_, col)) in XTERM_256_PALETTE.iter().enumerate() {
-                extended_color_hash.insert(col.get_rgb(), i as u8);
+                extended_color_hash.insert(col.rgb(), i as u8);
             }
         }
 
@@ -155,25 +155,25 @@ impl StringGenerator {
         }
     }
 
-    fn get_color(&self, buf: &TextBuffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
+    fn color(&self, buf: &TextBuffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
         let attr = ch.attribute;
         let mut sgr = Vec::new();
         let mut sgr_tc = Vec::new();
 
-        let fg = attr.get_foreground();
-        let cur_fore_color = buf.palette.get_color(fg);
-        let cur_fore_rgb = cur_fore_color.get_rgb();
+        let fg = attr.foreground();
+        let cur_fore_color = buf.palette.color(fg);
+        let cur_fore_rgb = cur_fore_color.rgb();
 
         let bg = if self.use_ice_colors && attr.is_blinking() {
-            attr.get_background() + 8
+            attr.background() + 8
         } else {
-            attr.get_background()
+            attr.background()
         };
-        let cur_back_color = buf.palette.get_color(bg);
-        let cur_back_rgb = cur_back_color.get_rgb();
+        let cur_back_color = buf.palette.color(bg);
+        let cur_back_rgb = cur_back_color.rgb();
 
-        let mut fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_fore_rgb);
-        let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.get_rgb() == cur_back_rgb);
+        let mut fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_fore_rgb);
+        let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_back_rgb);
 
         let mut is_bold: bool = attr.is_bold();
         let mut is_blink = attr.is_blinking();
@@ -235,7 +235,7 @@ impl StringGenerator {
             || !is_double_underlined && state.is_double_underlined
             || !is_crossed_out && state.is_crossed_out
             || !is_concealed && state.is_concealed
-            || is_bold && !state.is_bold && !DOS_DEFAULT_PALETTE.iter().any(|c| c.get_rgb() == state.fg.get_rgb())
+            || is_bold && !state.is_bold && !DOS_DEFAULT_PALETTE.iter().any(|c| c.rgb() == state.fg.rgb())
         {
             sgr.push(0);
             state.is_bold = false;
@@ -279,7 +279,7 @@ impl StringGenerator {
             state.is_blink = true;
             if self.use_ice_colors && state.bg_idx < 8 {
                 state.bg_idx += 8;
-                state.bg = buf.palette.get_color(bg);
+                state.bg = buf.palette.color(bg);
             }
         }
 
@@ -298,7 +298,7 @@ impl StringGenerator {
             state.is_double_underlined = true;
         }
 
-        if cur_fore_rgb != state.fg.get_rgb() && !ch.is_transparent() {
+        if cur_fore_rgb != state.fg.rgb() && !ch.is_transparent() {
             if let Some(fg_idx) = fore_idx {
                 sgr.push(COLOR_OFFSETS[fg_idx] + 30);
             } else if let Some(ext_color) = self.extended_color_hash.get(&cur_fore_rgb) {
@@ -319,7 +319,7 @@ impl StringGenerator {
             state.fg_idx = fg;
             state.fg = cur_fore_color;
         }
-        if cur_back_rgb != state.bg.get_rgb() {
+        if cur_back_rgb != state.bg.rgb() {
             if let Some(bg_idx) = back_idx {
                 sgr.push(COLOR_OFFSETS[bg_idx] + 40);
                 state.bg_idx = bg_idx as u32;
@@ -374,11 +374,11 @@ impl StringGenerator {
             }
 
             let mut len = if self.options.compress && !self.options.preserve_line_length {
-                let mut last = area.get_width() - 1;
-                let last_attr = layer.get_char((last, y).into()).attribute;
+                let mut last = area.width() - 1;
+                let last_attr = layer.char_at((last, y).into()).attribute;
                 if last_attr.background_color == 0 {
                     while last > area.left() {
-                        let c = layer.get_char((last, y).into());
+                        let c = layer.char_at((last, y).into());
 
                         if c.ch != ' ' && c.ch != 0xFF as char && c.ch != 0 as char {
                             break;
@@ -390,9 +390,9 @@ impl StringGenerator {
                     }
                 }
                 let last = last + 1;
-                if last >= area.get_width() - 1 { area.get_width() } else { last }
+                if last >= area.width() - 1 { area.width() } else { last }
             } else {
-                area.get_width()
+                area.width()
             };
 
             for t in self.tags.iter() {
@@ -423,15 +423,15 @@ impl StringGenerator {
                     continue;
                 }
 
-                let ch = layer.get_char((x, y).into());
+                let ch = layer.char_at((x, y).into());
                 if ch.is_visible() {
-                    let (new_state, sgr, sgr_tc) = self.get_color(buf, ch, state);
+                    let (new_state, sgr, sgr_tc) = self.color(buf, ch, state);
                     state = new_state;
                     line.push(CharCell {
                         ch: ch.ch,
                         sgr,
                         sgr_tc,
-                        font_page: *font_map.get(&ch.get_font_page()).unwrap(),
+                        font_page: *font_map.get(&ch.font_page()).unwrap(),
                         cur_state: state.clone(),
                     });
                 } else {
@@ -439,7 +439,7 @@ impl StringGenerator {
                         ch: ' ',
                         sgr: Vec::new(),
                         sgr_tc: Vec::new(),
-                        font_page: *font_map.get(&ch.get_font_page()).unwrap(),
+                        font_page: *font_map.get(&ch.font_page()).unwrap(),
                         cur_state: state.clone(),
                     });
                 }
@@ -495,7 +495,7 @@ impl StringGenerator {
         let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
-                let (new_state, sgr, _) = self.get_color(buf, AttributedChar::new('#', tag.attribute), state);
+                let (new_state, sgr, _) = self.color(buf, AttributedChar::new('#', tag.attribute), state);
                 state = new_state;
                 if !sgr.is_empty() {
                     self.output.extend_from_slice(b"\x1b[");
@@ -531,14 +531,14 @@ impl StringGenerator {
         let used_fonts = analyze_font_usage(buf);
         for font_slot in used_fonts {
             if font_slot >= 100 {
-                if let Some(font) = buf.get_font(font_slot) {
+                if let Some(font) = buf.font(font_slot) {
                     result.extend_from_slice(font.encode_as_ansi(font_slot).as_bytes());
                 }
             }
         }
         let font_map = StringGenerator::generate_ansi_font_map(buf);
-        let mut area = layer.get_rectangle();
-        let line_count = layer.get_line_count();
+        let mut area = layer.rectangle();
+        let line_count = layer.line_count();
         area.size.height = line_count.min(area.size.height);
 
         let (state, cells) = self.generate_cells(buf, layer, area, &font_map);
@@ -688,8 +688,8 @@ impl StringGenerator {
                     result.extend_from_slice(b"\x1b[0m");
                     result.push(13);
                     result.push(10);
-                } else if x < layer.get_width() as usize && y + 1 < layer.get_height() as usize {
-                    if self.options.compress && x + 1 >= layer.get_width() as usize {
+                } else if x < layer.width() as usize && y + 1 < layer.height() as usize {
+                    if self.options.compress && x + 1 >= layer.width() as usize {
                         result.push(b' ');
                     } else {
                         result.push(13);
@@ -709,13 +709,13 @@ impl StringGenerator {
             for sixel in &layer.sixels {
                 match icy_sixel::sixel_encode(
                     &sixel.picture_data,
-                    sixel.get_width() as usize,
-                    sixel.get_height() as usize,
+                    sixel.width() as usize,
+                    sixel.height() as usize,
                     &icy_sixel::EncodeOptions::default(),
                 ) {
                     Err(err) => log::error!("{err}"),
                     Ok(data) => {
-                        let p = layer.get_offset() + sixel.position;
+                        let p = layer.offset() + sixel.position;
                         self.output.extend(format!("\x1b[{};{}H", p.y + 1, p.x + 1).as_bytes());
                         self.output.extend(data.as_bytes());
                     }
@@ -724,7 +724,7 @@ impl StringGenerator {
         }
     }
 
-    pub fn get_data(&self) -> &[u8] {
+    pub fn data(&self) -> &[u8] {
         &self.output
     }
 

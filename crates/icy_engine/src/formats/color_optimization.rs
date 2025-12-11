@@ -37,21 +37,21 @@ impl ColorOptimizer {
         b.show_tags = false;
         for layer in &mut b.layers {
             let mut cur_attr = TextAttribute::default();
-            for y in 0..layer.get_height() {
-                for x in 0..layer.get_width() {
-                    let attr_ch = layer.get_char((x, y).into());
-                    let map = self.shape_map.get(&attr_ch.get_font_page()).unwrap();
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let attr_ch = layer.char_at((x, y).into());
+                    let map = self.shape_map.get(&attr_ch.font_page()).unwrap();
                     let mut ch = attr_ch.ch;
                     let mut attribute = attr_ch.attribute;
                     match map.get(&attr_ch.ch) {
                         Some(&GlyphShape::Whitespace) => {
-                            attribute.set_foreground(cur_attr.get_foreground());
+                            attribute.set_foreground(cur_attr.foreground());
                             if self.normalize_whitespace && map.contains_key(&' ') {
                                 ch = ' ';
                             }
                         }
                         Some(&GlyphShape::Block) => {
-                            attribute.set_background(cur_attr.get_background());
+                            attribute.set_background(cur_attr.background());
                         }
                         _ => {}
                     }

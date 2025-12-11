@@ -8,10 +8,10 @@ pub fn test_blink() {
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, IceMode::Blink)));
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1000_1000, IceMode::Blink)));
     let res = test_xbin(&mut buffer);
-    let ch = res.layers[0].get_char((1, 0).into());
+    let ch = res.layers[0].char_at((1, 0).into());
 
-    assert_eq!(ch.attribute.get_foreground(), 0b1000);
-    assert_eq!(ch.attribute.get_background(), 0b0000);
+    assert_eq!(ch.attribute.foreground(), 0b1000);
+    assert_eq!(ch.attribute.background(), 0b0000);
     assert!(ch.attribute.is_blinking());
 }
 
@@ -22,10 +22,10 @@ pub fn test_ice() {
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, IceMode::Ice)));
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, IceMode::Ice)));
     let res = test_xbin(&mut buffer);
-    let ch = res.layers[0].get_char((1, 0).into());
+    let ch = res.layers[0].char_at((1, 0).into());
 
-    assert_eq!(ch.attribute.get_foreground(), 0b1111);
-    assert_eq!(ch.attribute.get_background(), 0b1100);
+    assert_eq!(ch.attribute.foreground(), 0b1111);
+    assert_eq!(ch.attribute.background(), 0b1100);
 }
 
 #[test]
@@ -49,10 +49,10 @@ pub fn test_custom_palette() {
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, IceMode::Ice)));
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', TextAttribute::from_u8(0b1100_1111, IceMode::Ice)));
     let res = test_xbin(&mut buffer);
-    let ch = res.layers[0].get_char((1, 0).into());
+    let ch = res.layers[0].char_at((1, 0).into());
 
-    assert_eq!(ch.attribute.get_foreground(), 0b1111);
-    assert_eq!(ch.attribute.get_background(), 0b1100);
+    assert_eq!(ch.attribute.foreground(), 0b1111);
+    assert_eq!(ch.attribute.background(), 0b1100);
 }
 
 #[test]
@@ -76,11 +76,11 @@ pub fn test_extended_font_ice() {
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', attr));
     let res = test_xbin(&mut buffer);
 
-    let ch = res.layers[0].get_char((1, 0).into());
+    let ch = res.layers[0].char_at((1, 0).into());
 
-    assert_eq!(ch.attribute.get_foreground(), 0b0111);
-    assert_eq!(ch.attribute.get_background(), 0b1111);
-    assert_eq!(ch.attribute.get_font_page(), 1);
+    assert_eq!(ch.attribute.foreground(), 0b0111);
+    assert_eq!(ch.attribute.background(), 0b1111);
+    assert_eq!(ch.attribute.font_page(), 1);
 }
 
 #[test]
@@ -99,18 +99,18 @@ pub fn test_extended_font_blink() {
 
     let res = test_xbin(&mut buffer);
 
-    let ch = res.layers[0].get_char((1, 0).into());
+    let ch = res.layers[0].char_at((1, 0).into());
 
-    assert_eq!(ch.attribute.get_foreground(), 0b0111);
-    assert_eq!(ch.attribute.get_background(), 0b0111);
-    assert_eq!(ch.attribute.get_font_page(), 1);
+    assert_eq!(ch.attribute.foreground(), 0b0111);
+    assert_eq!(ch.attribute.background(), 0b0111);
+    assert_eq!(ch.attribute.font_page(), 1);
     assert!(ch.attribute.is_blinking());
 }
 
 fn create_xb_buffer() -> TextBuffer {
     let mut buffer: TextBuffer = TextBuffer::new((80, 25));
-    for y in 0..buffer.get_height() {
-        for x in 0..buffer.get_width() {
+    for y in 0..buffer.height() {
+        for x in 0..buffer.width() {
             buffer.layers[0].set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
         }
     }

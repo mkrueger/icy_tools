@@ -49,7 +49,7 @@ impl VdiPaint {
         let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
 
         for ch in text {
-            let glyph = font.get_glyph(*ch as char).unwrap();
+            let glyph = font.glyph(*ch as char).unwrap();
 
             if is_outlined {
                 for y in 0..font_size.height {

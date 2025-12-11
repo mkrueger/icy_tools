@@ -23,15 +23,15 @@ fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
 impl EditState {
     pub fn justify_left(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
             for y in area.y_range() {
                 let mut removed_chars = 0;
-                let len = area.get_width();
+                let len = area.width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.left() + removed_chars, y).into());
+                    let ch = layer.char_at((area.left() + removed_chars, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -42,7 +42,7 @@ impl EditState {
                 }
                 for x in area.x_range() {
                     let ch = if x + removed_chars < area.right() {
-                        layer.get_char((x + removed_chars, y).into())
+                        layer.char_at((x + removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -59,17 +59,17 @@ impl EditState {
 
     pub fn center(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-center"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         self.justify_left()?;
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
 
             for y in area.y_range() {
                 let mut removed_chars = 0;
-                let len = area.get_width();
+                let len = area.width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.right() - removed_chars - 1, y).into());
+                    let ch = layer.char_at((area.right() - removed_chars - 1, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -81,7 +81,7 @@ impl EditState {
                 let removed_chars = removed_chars / 2;
                 for x in area.x_range().rev() {
                     let ch = if x - removed_chars >= area.left() {
-                        layer.get_char((x - removed_chars, y).into())
+                        layer.char_at((x - removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -99,16 +99,16 @@ impl EditState {
 
     pub fn justify_right(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-right"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
 
             for y in area.y_range() {
                 let mut removed_chars = 0;
-                let len = area.get_width();
+                let len = area.width();
                 while removed_chars < len {
-                    let ch = layer.get_char((area.right() - removed_chars - 1, y).into());
+                    let ch = layer.char_at((area.right() - removed_chars - 1, y).into());
                     if ch.is_visible() && !ch.is_transparent() {
                         break;
                     }
@@ -119,7 +119,7 @@ impl EditState {
                 }
                 for x in area.x_range().rev() {
                     let ch = if x - removed_chars >= area.left() {
-                        layer.get_char((x - removed_chars, y).into())
+                        layer.char_at((x - removed_chars, y).into())
                     } else {
                         AttributedChar::invisible()
                     };
@@ -137,7 +137,7 @@ impl EditState {
 
     pub fn flip_x(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         let mut flip_tables = HashMap::new();
 
         self.screen.buffer.font_iter().for_each(|(page, font)| {
@@ -145,19 +145,19 @@ impl EditState {
         });
 
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
-            let max = area.get_width() / 2;
+            let max = area.width() / 2;
 
             for y in area.y_range() {
                 for x in 0..max {
                     let pos1 = Position::new(area.left() + x, y);
                     let pos2 = Position::new(area.right() - x - 1, y);
 
-                    let pos1ch = layer.get_char(pos1);
-                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.get_font_page()).unwrap());
-                    let pos2ch = layer.get_char(pos2);
-                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.get_font_page()).unwrap());
+                    let pos1ch = layer.char_at(pos1);
+                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+                    let pos2ch = layer.char_at(pos2);
+                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
                     layer.set_char(pos1, pos2ch);
                     layer.set_char(pos2, pos1ch);
                 }
@@ -172,7 +172,7 @@ impl EditState {
 
     pub fn flip_y(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
-        let sel = self.get_selection();
+        let sel = self.selection();
 
         let mut flip_tables = HashMap::new();
 
@@ -181,18 +181,18 @@ impl EditState {
         });
 
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
-            let max = area.get_height() / 2;
+            let max = area.height() / 2;
 
             for x in area.x_range() {
                 for y in 0..max {
                     let pos1 = Position::new(x, area.top() + y);
                     let pos2 = Position::new(x, area.bottom() - 1 - y);
-                    let pos1ch = layer.get_char(pos1);
-                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.get_font_page()).unwrap());
-                    let pos2ch = layer.get_char(pos2);
-                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.get_font_page()).unwrap());
+                    let pos1ch = layer.char_at(pos1);
+                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+                    let pos2ch = layer.char_at(pos2);
+                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
                     layer.set_char(pos1, pos2ch);
                     layer.set_char(pos2, pos1ch);
                 }
@@ -206,7 +206,7 @@ impl EditState {
     }
 
     pub fn crop(&mut self) -> Result<()> {
-        if let Some(sel) = self.get_selection() {
+        if let Some(sel) = self.selection() {
             let sel = sel.as_rectangle();
             self.crop_rect(sel)
         } else {
@@ -215,7 +215,7 @@ impl EditState {
     }
 
     pub fn crop_rect(&mut self, rect: Rectangle) -> Result<()> {
-        let old_size = self.get_buffer().get_size();
+        let old_size = self.get_buffer().size();
         let mut old_layers = Vec::new();
         mem::swap(&mut self.get_buffer_mut().layers, &mut old_layers);
 
@@ -225,7 +225,7 @@ impl EditState {
         for old_layer in &old_layers {
             let mut new_layer = old_layer.clone();
             new_layer.lines.clear();
-            let new_rectangle = old_layer.get_rectangle().intersect(&rect);
+            let new_rectangle = old_layer.rectangle().intersect(&rect);
             if new_rectangle.is_empty() {
                 continue;
             }
@@ -233,15 +233,15 @@ impl EditState {
             new_layer.set_offset(new_rectangle.start - rect.start);
             new_layer.set_size(new_rectangle.size);
 
-            for y in 0..new_rectangle.get_height() {
-                for x in 0..new_rectangle.get_width() {
-                    let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()).into());
+            for y in 0..new_rectangle.height() {
+                for x in 0..new_rectangle.width() {
+                    let ch = old_layer.char_at((x + new_rectangle.left(), y + new_rectangle.top()).into());
                     new_layer.set_char((x, y), ch);
                 }
             }
             self.get_buffer_mut().layers.push(new_layer);
         }
-        let op = super::undo_operations::Crop::new(old_size, rect.get_size(), old_layers);
+        let op = super::undo_operations::Crop::new(old_size, rect.size(), old_layers);
         self.push_plain_undo(Box::new(op))
     }
 
@@ -257,15 +257,15 @@ impl EditState {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
         let layer_idx = self.get_current_layer()?;
         let (area, old_layer) = if let Some(layer) = self.screen.buffer.layers.get_mut(layer_idx) {
-            (layer.get_rectangle(), layer.clone())
+            (layer.rectangle(), layer.clone())
         } else {
             return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
         };
 
-        for y in 0..area.get_height() {
-            for x in 0..area.get_width() {
+        for y in 0..area.height() {
+            for x in 0..area.width() {
                 let pos = Position::new(x, y);
-                if self.get_is_selected(pos + area.start) {
+                if self.is_selected(pos + area.start) {
                     self.screen.buffer.layers.get_mut(layer_idx).unwrap().set_char(pos, AttributedChar::invisible());
                 }
             }
@@ -278,13 +278,13 @@ impl EditState {
 
     pub fn scroll_area_up(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             if area.is_empty() {
                 return Ok(());
             }
-            if area.get_width() >= layer.get_width() {
+            if area.width() >= layer.width() {
                 let op = super::undo_operations::UndoScrollWholeLayerUp::new(self.get_current_layer()?);
                 return self.push_undo_action(Box::new(op));
             }
@@ -319,13 +319,13 @@ impl EditState {
 
     pub fn scroll_area_down(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             if area.is_empty() {
                 return Ok(());
             }
-            if area.get_width() >= layer.get_width() {
+            if area.width() >= layer.width() {
                 let op = super::undo_operations::UndoScrollWholeLayerDown::new(self.get_current_layer()?);
                 return self.push_undo_action(Box::new(op));
             }
@@ -359,9 +359,9 @@ impl EditState {
 
     pub fn scroll_area_left(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             if area.is_empty() {
                 return Ok(());
             }
@@ -384,9 +384,9 @@ impl EditState {
 
     pub fn scroll_area_right(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.get_selection();
+        let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.get_rectangle());
+            let area = get_area(sel, layer.rectangle());
             if area.is_empty() {
                 return Ok(());
             }
@@ -514,7 +514,7 @@ fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
             continue;
         }
 
-        if let Some(cur_glyph_def) = font.get_glyph(*ch) {
+        if let Some(cur_glyph_def) = font.glyph(*ch) {
             let cur_glyph = &cur_glyph_def.bitmap.pixels;
 
             // Normalize glyph to fixed dimensions for comparison
@@ -530,7 +530,7 @@ fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
                 if ch == ch2 || excluded_chars.contains(ch2) {
                     continue;
                 }
-                if let Some(cmp_glyph_def) = font.get_glyph(*ch2) {
+                if let Some(cmp_glyph_def) = font.glyph(*ch2) {
                     let cmp_glyph = &cmp_glyph_def.bitmap.pixels;
                     let normalized_cmp = normalize_glyph(cmp_glyph, 8, size.height as usize);
                     let cmp_glyphs = generate_y_variants(&normalized_cmp);
@@ -596,7 +596,7 @@ fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
             continue;
         }
 
-        if let Some(cur_glyph_def) = font.get_glyph(*ch) {
+        if let Some(cur_glyph_def) = font.glyph(*ch) {
             let cur_glyph = &cur_glyph_def.bitmap.pixels;
 
             // Normalize glyph to 8-pixel width for comparison
@@ -618,7 +618,7 @@ fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
                     continue;
                 }
 
-                if let Some(cmp_glyph_def) = font.get_glyph(*ch2) {
+                if let Some(cmp_glyph_def) = font.glyph(*ch2) {
                     let cmp_glyph = &cmp_glyph_def.bitmap.pixels;
                     let normalized_cmp = normalize_glyph_width(cmp_glyph, 8);
                     let cmp_glyphs = generate_x_variants(&normalized_cmp, size.width);
@@ -673,8 +673,8 @@ pub fn map_char(mut ch: AttributedChar, table: &BTreeMap<char, (bool, char)>) ->
     if let Some((flip, repl)) = table.get(&(ch.ch)) {
         ch.ch = *repl;
         if *flip {
-            let tmp = ch.attribute.get_foreground();
-            ch.attribute.set_foreground(ch.attribute.get_background());
+            let tmp = ch.attribute.foreground();
+            ch.attribute.set_foreground(ch.attribute.background());
             ch.attribute.set_background(tmp);
         }
     }
@@ -956,7 +956,7 @@ mod tests {
         for y in 0..20 {
             for x in 0..20 {
                 let pos = Position::new(x, y);
-                let ch = state.get_buffer().get_char(pos);
+                let ch = state.get_buffer().char_at(pos);
 
                 if rect.is_inside_inclusive(pos) {
                     assert_eq!(ch.ch, ' ');
@@ -971,7 +971,7 @@ mod tests {
         for y in 0..20 {
             for x in 0..20 {
                 let pos = Position::new(x, y);
-                let ch = state.get_buffer().get_char(pos);
+                let ch = state.get_buffer().char_at(pos);
                 assert_eq!(ch.ch, '#');
             }
         }
@@ -996,14 +996,14 @@ mod tests {
         state.flip_x().unwrap();
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 if x == 9 && y == 9 || x == 6 && y == 5 {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1015,7 +1015,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
 
                 if x == 3 && y == 5 || x == 0 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1045,14 +1045,14 @@ mod tests {
         state.flip_y().unwrap();
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 if x == 9 && y == 0 || x == 3 && y == 6 {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1064,7 +1064,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
 
                 if x == 3 && y == 3 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1095,14 +1095,14 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
 
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 if x == 9 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1114,7 +1114,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
 
                 if x == 5 && y == 5 || x == 0 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1145,13 +1145,13 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 if x == 4 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1162,7 +1162,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
 
                 if x == 0 && y == 5 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1193,13 +1193,13 @@ mod tests {
 
         for y in 10..20 {
             for x in 10..20 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 assert_eq!(ch.ch, '#');
             }
         }
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
                 if x == 0 && (y == 5 || y == 9) {
                     assert_eq!(ch.ch, '#');
                 } else {
@@ -1211,7 +1211,7 @@ mod tests {
         state.undo().unwrap();
         for y in 0..10 {
             for x in 0..10 {
-                let ch = state.get_buffer().get_char((x, y).into());
+                let ch = state.get_buffer().char_at((x, y).into());
 
                 if x == 5 && y == 5 || x == 9 && y == 9 {
                     assert_eq!(ch.ch, '#');
@@ -1238,16 +1238,16 @@ mod tests {
 
         state.crop().unwrap();
 
-        assert_eq!(state.get_buffer().get_width(), 5);
-        assert_eq!(state.get_buffer().get_height(), 4);
-        assert_eq!(state.get_buffer().layers[1].get_size(), Size::new(5, 4));
-        assert_eq!(state.get_buffer().layers[2].get_size(), Size::new(2, 2));
+        assert_eq!(state.get_buffer().width(), 5);
+        assert_eq!(state.get_buffer().height(), 4);
+        assert_eq!(state.get_buffer().layers[1].size(), Size::new(5, 4));
+        assert_eq!(state.get_buffer().layers[2].size(), Size::new(2, 2));
 
         state.undo().unwrap();
 
-        assert_eq!(state.get_buffer().get_width(), 80);
-        assert_eq!(state.get_buffer().get_height(), 25);
-        assert_eq!(state.get_buffer().layers[1].get_size(), Size::new(100, 100));
-        assert_eq!(state.get_buffer().layers[2].get_size(), Size::new(2, 2));
+        assert_eq!(state.get_buffer().width(), 80);
+        assert_eq!(state.get_buffer().height(), 25);
+        assert_eq!(state.get_buffer().layers[1].size(), Size::new(100, 100));
+        assert_eq!(state.get_buffer().layers[2].size(), Size::new(2, 2));
     }
 }

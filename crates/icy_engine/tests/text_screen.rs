@@ -9,15 +9,15 @@ use icy_engine::{AttributedChar, EditableScreen, IceMode, Position, Screen, Sele
 #[test]
 fn test_text_pane_get_size() {
     let screen = TextScreen::new(Size::new(80, 25));
-    assert_eq!(screen.get_width(), 80);
-    assert_eq!(screen.get_height(), 25);
-    assert_eq!(screen.get_size(), Size::new(80, 25));
+    assert_eq!(screen.width(), 80);
+    assert_eq!(screen.height(), 25);
+    assert_eq!(screen.size(), Size::new(80, 25));
 }
 
 #[test]
 fn test_text_pane_get_rectangle() {
     let screen = TextScreen::new(Size::new(80, 25));
-    let rect = screen.get_rectangle();
+    let rect = screen.rectangle();
     assert_eq!(rect.start.x, 0);
     assert_eq!(rect.start.y, 0);
     assert_eq!(rect.size.width, 80);
@@ -27,7 +27,7 @@ fn test_text_pane_get_rectangle() {
 #[test]
 fn test_text_pane_get_char_default() {
     let screen = TextScreen::new(Size::new(80, 25));
-    let ch = screen.get_char(Position::new(0, 0));
+    let ch = screen.char_at(Position::new(0, 0));
     // Default char is space ' '
     assert_eq!(ch.ch, ' ');
 }
@@ -36,7 +36,7 @@ fn test_text_pane_get_char_default() {
 fn test_text_pane_get_line_count() {
     let screen = TextScreen::new(Size::new(80, 25));
     // Empty screen may have 0 lines until content is added
-    let count = screen.get_line_count();
+    let count = TextPane::line_count(&screen);
     assert!(count >= 0);
 }
 
@@ -44,11 +44,11 @@ fn test_text_pane_get_line_count() {
 fn test_text_pane_get_line_length() {
     let mut screen = TextScreen::new(Size::new(80, 25));
     // Initially, line length should be 0 (no characters set)
-    assert_eq!(screen.get_line_length(0), 0);
+    assert_eq!(screen.line_length(0), 0);
 
     // Set a character
     screen.set_char(Position::new(5, 0), AttributedChar::new('X', TextAttribute::default()));
-    assert_eq!(screen.get_line_length(0), 6); // 0-5 inclusive = 6 chars
+    assert_eq!(screen.line_length(0), 6); // 0-5 inclusive = 6 chars
 }
 
 // ============================================================================
@@ -97,7 +97,7 @@ fn test_screen_terminal_state() {
     let screen = TextScreen::new(Size::new(80, 25));
     let state = screen.terminal_state();
     // Just ensure it doesn't panic
-    let _width = state.get_width();
+    let _width = state.width();
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn test_screen_palette() {
 fn test_screen_get_font() {
     let screen = TextScreen::new(Size::new(80, 25));
     // Default screen should have at least font 0
-    let font = screen.get_font(0);
+    let font = screen.font(0);
     assert!(font.is_some());
 }
 
@@ -125,7 +125,7 @@ fn test_screen_font_count() {
 #[test]
 fn test_screen_get_font_dimensions() {
     let screen = TextScreen::new(Size::new(80, 25));
-    let dims = screen.get_font_dimensions();
+    let dims = screen.font_dimensions();
     assert!(dims.width > 0);
     assert!(dims.height > 0);
 }
@@ -133,8 +133,8 @@ fn test_screen_get_font_dimensions() {
 #[test]
 fn test_screen_get_resolution() {
     let screen = TextScreen::new(Size::new(80, 25));
-    let resolution = screen.get_resolution();
-    let font_dims = screen.get_font_dimensions();
+    let resolution = screen.resolution();
+    let font_dims = screen.font_dimensions();
     assert_eq!(resolution.width, 80 * font_dims.width);
     assert_eq!(resolution.height, 25 * font_dims.height);
 }
@@ -148,9 +148,9 @@ fn test_screen_default_foreground_color() {
 #[test]
 fn test_screen_get_version() {
     let screen = TextScreen::new(Size::new(80, 25));
-    let v1 = screen.get_version();
+    let v1 = screen.version();
     screen.mark_dirty();
-    let v2 = screen.get_version();
+    let v2 = screen.version();
     assert!(v2 > v1);
 }
 
@@ -159,16 +159,16 @@ fn test_screen_selection() {
     let mut screen = TextScreen::new(Size::new(80, 25));
 
     // Initially no selection
-    assert!(screen.get_selection().is_none());
+    assert!(screen.selection().is_none());
 
     // Set a selection
     let sel = Selection::new(Position::new(0, 0));
     screen.set_selection(sel).unwrap();
-    assert!(screen.get_selection().is_some());
+    assert!(screen.selection().is_some());
 
     // Clear selection
     screen.clear_selection().unwrap();
-    assert!(screen.get_selection().is_none());
+    assert!(screen.selection().is_none());
 }
 
 #[test]
@@ -182,8 +182,8 @@ fn test_screen_as_editable() {
 fn test_screen_clone_box() {
     let screen = TextScreen::new(Size::new(80, 25));
     let cloned = screen.clone_box();
-    assert_eq!(cloned.get_width(), 80);
-    assert_eq!(cloned.get_height(), 25);
+    assert_eq!(cloned.width(), 80);
+    assert_eq!(cloned.height(), 25);
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn test_editable_set_char() {
     let ch = AttributedChar::new('A', TextAttribute::default());
     screen.set_char(Position::new(5, 3), ch);
 
-    let result = screen.get_char(Position::new(5, 3));
+    let result = screen.char_at(Position::new(5, 3));
     assert_eq!(result.ch, 'A');
 }
 
@@ -232,7 +232,7 @@ fn test_editable_print_char() {
     assert_eq!(screen.caret_position(), Position::new(1, 0));
 
     // Character should be at position 0
-    let result = screen.get_char(Position::new(0, 0));
+    let result = screen.char_at(Position::new(0, 0));
     assert_eq!(result.ch, 'H');
 }
 
@@ -246,26 +246,26 @@ fn test_editable_print_char_multiple() {
     }
 
     assert_eq!(screen.caret_position(), Position::new(5, 0));
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'H');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'e');
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'l');
-    assert_eq!(screen.get_char(Position::new(3, 0)).ch, 'l');
-    assert_eq!(screen.get_char(Position::new(4, 0)).ch, 'o');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'H');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'e');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'l');
+    assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'l');
+    assert_eq!(screen.char_at(Position::new(4, 0)).ch, 'o');
 }
 
 #[test]
 fn test_editable_set_size() {
     let mut screen = TextScreen::new(Size::new(80, 25));
     screen.set_size(Size::new(132, 50));
-    assert_eq!(screen.get_width(), 132);
-    assert_eq!(screen.get_height(), 50);
+    assert_eq!(screen.width(), 132);
+    assert_eq!(screen.height(), 50);
 }
 
 #[test]
 fn test_editable_set_height() {
     let mut screen = TextScreen::new(Size::new(80, 25));
     screen.set_height(50);
-    assert_eq!(screen.get_height(), 50);
+    assert_eq!(screen.height(), 50);
 }
 
 #[test]
@@ -298,7 +298,7 @@ fn test_editable_clear_screen() {
     assert_eq!(screen.caret_position(), Position::new(0, 0));
 
     // Characters should be cleared (back to default ' ')
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn test_editable_clear_line() {
     screen.clear_line();
 
     // Line should be cleared
-    assert_eq!(screen.get_line_length(0), 0);
+    assert_eq!(screen.line_length(0), 0);
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn test_editable_clear_line_end() {
     screen.clear_line_end();
 
     // Only first 5 characters should remain
-    assert_eq!(screen.get_line_length(0), 5);
+    assert_eq!(screen.line_length(0), 5);
 }
 
 #[test]
@@ -347,11 +347,11 @@ fn test_editable_clear_line_start() {
 
     // First 5 characters should be cleared (default char is ' ')
     for i in 0..5 {
-        assert_eq!(screen.get_char(Position::new(i, 0)).ch, ' ');
+        assert_eq!(screen.char_at(Position::new(i, 0)).ch, ' ');
     }
     // Rest should still be 'X'
     for i in 5..10 {
-        assert_eq!(screen.get_char(Position::new(i, 0)).ch, 'X');
+        assert_eq!(screen.char_at(Position::new(i, 0)).ch, 'X');
     }
 }
 
@@ -436,10 +436,10 @@ fn test_editable_del() {
     screen.del();
 
     // 'E' should be deleted, 'L' should shift left
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'H');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(3, 0)).ch, 'O');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'H');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'O');
 }
 
 #[test]
@@ -455,11 +455,11 @@ fn test_editable_ins() {
     screen.ins();
 
     // Space should be inserted at position 1, shifting 'L', 'L', 'O' right
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'H');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, ' '); // Inserted space
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(3, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(4, 0)).ch, 'O');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'H');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, ' '); // Inserted space
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(4, 0)).ch, 'O');
 
     // Caret should NOT have moved (fixed bug!)
     assert_eq!(screen.caret_position(), Position::new(1, 0));
@@ -541,8 +541,8 @@ fn test_editable_scroll_up() {
     screen.scroll_up();
 
     // Line 0 should now have 'B', line 1 should have 'C'
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'B');
-    assert_eq!(screen.get_char(Position::new(0, 1)).ch, 'C');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(0, 1)).ch, 'C');
 }
 
 #[test]
@@ -558,9 +558,9 @@ fn test_editable_scroll_down() {
     screen.scroll_down();
 
     // Line 0 should be empty (default ' '), line 1 should have 'A', line 2 should have 'B'
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, ' ');
-    assert_eq!(screen.get_char(Position::new(0, 1)).ch, 'A');
-    assert_eq!(screen.get_char(Position::new(0, 2)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(0, 1)).ch, 'A');
+    assert_eq!(screen.char_at(Position::new(0, 2)).ch, 'B');
 }
 
 #[test]
@@ -576,8 +576,8 @@ fn test_editable_scroll_left() {
     screen.scroll_left();
 
     // Column 0 should now have 'B', column 1 should have 'C'
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'B');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'C');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'C');
 }
 
 #[test]
@@ -593,9 +593,9 @@ fn test_editable_scroll_right() {
     screen.scroll_right();
 
     // Column 0 should be empty (default ' '), column 1 should have 'A', column 2 should have 'B'
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, ' ');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'A');
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'A');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'B');
 }
 
 #[test]
@@ -654,18 +654,18 @@ fn test_editable_layer_management() {
 fn test_editable_editable_lines() {
     let screen = TextScreen::new(Size::new(80, 25));
 
-    assert_eq!(screen.get_first_visible_line(), 0);
-    assert_eq!(screen.get_first_editable_line(), 0);
-    assert!(screen.get_last_visible_line() >= 0);
-    assert!(screen.get_last_editable_line() >= 0);
+    assert_eq!(screen.first_visible_line(), 0);
+    assert_eq!(screen.first_editable_line(), 0);
+    assert!(screen.last_visible_line() >= 0);
+    assert!(screen.last_editable_line() >= 0);
 }
 
 #[test]
 fn test_editable_editable_columns() {
     let screen = TextScreen::new(Size::new(80, 25));
 
-    assert_eq!(screen.get_first_editable_column(), 0);
-    assert_eq!(screen.get_last_editable_column(), 79);
+    assert_eq!(screen.first_editable_column(), 0);
+    assert_eq!(screen.last_editable_column(), 79);
 }
 
 #[test]
@@ -684,7 +684,7 @@ fn test_editable_line_count() {
     // Set terminal buffer to get proper line count
     screen.terminal_state_mut().is_terminal_buffer = true;
     // Line count depends on buffer initialization
-    let _count = screen.line_count();
+    let _count = TextPane::line_count(&screen);
     // Just ensure the method works without panicking
 }
 
@@ -733,9 +733,9 @@ fn test_editable_buffer_type_mut() {
 fn test_editable_mark_dirty() {
     let screen = TextScreen::new(Size::new(80, 25));
 
-    let v1 = screen.get_version();
+    let v1 = screen.version();
     screen.mark_dirty();
-    let v2 = screen.get_version();
+    let v2 = screen.version();
 
     assert!(v2 > v1);
 }
@@ -813,7 +813,7 @@ fn test_editable_insert_terminal_line() {
     screen.insert_terminal_line(0);
 
     // Line 0 should now be empty (default ' '), 'X' should have moved to line 1
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
 }
 
 #[test]
@@ -821,9 +821,9 @@ fn test_editable_set_font() {
     let mut screen = TextScreen::new(Size::new(80, 25));
 
     // Get a font to set
-    if let Some(font) = screen.get_font(0).cloned() {
+    if let Some(font) = screen.font(0).cloned() {
         screen.set_font(1, font);
-        assert!(screen.get_font(1).is_some());
+        assert!(screen.font(1).is_some());
     }
 }
 
@@ -876,11 +876,11 @@ fn test_editable_clear_buffer_down() {
 
     // Lines 5+ should be cleared (default is ' ')
     for y in 5..10 {
-        assert_eq!(screen.get_char(Position::new(0, y)).ch, ' ');
+        assert_eq!(screen.char_at(Position::new(0, y)).ch, ' ');
     }
     // Lines 0-4 should still have 'X'
     for y in 0..5 {
-        assert_eq!(screen.get_char(Position::new(0, y)).ch, 'X');
+        assert_eq!(screen.char_at(Position::new(0, y)).ch, 'X');
     }
 }
 
@@ -899,14 +899,14 @@ fn test_editable_clear_buffer_up() {
 
     // Lines 0-4 should be cleared (default is ' ')
     for y in 0..5 {
-        assert_eq!(screen.get_char(Position::new(0, y)).ch, ' ');
+        assert_eq!(screen.char_at(Position::new(0, y)).ch, ' ');
     }
     // Position (0, 5) - cursor position - should ALSO be cleared per DEC spec (ED 1 erases inclusive)
-    assert_eq!(screen.get_char(Position::new(0, 5)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(0, 5)).ch, ' ');
 
     // Lines 6+ should still have 'X' (positions AFTER cursor)
     for y in 6..10 {
-        assert_eq!(screen.get_char(Position::new(0, y)).ch, 'X');
+        assert_eq!(screen.char_at(Position::new(0, y)).ch, 'X');
     }
 }
 
@@ -941,7 +941,7 @@ fn test_editable_caret_default_colors() {
 
     screen.caret_default_colors();
 
-    assert_eq!(screen.caret().attribute.get_foreground(), 7);
+    assert_eq!(screen.caret().attribute.foreground(), 7);
 }
 
 #[test]
@@ -975,11 +975,11 @@ fn test_insert_mode_print_char() {
     }
 
     // Check result - should be "HELLO" without gaps
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'H');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'E');
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(3, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(4, 0)).ch, 'O');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'H');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'E');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(4, 0)).ch, 'O');
 
     // Caret should be at position 5
     assert_eq!(screen.caret_position(), Position::new(5, 0));
@@ -1005,17 +1005,17 @@ fn test_insert_mode_no_gaps() {
     }
 
     // Result should be "HELLO WORLD" (WORLD shifted right)
-    assert_eq!(screen.get_char(Position::new(0, 0)).ch, 'H');
-    assert_eq!(screen.get_char(Position::new(1, 0)).ch, 'E');
-    assert_eq!(screen.get_char(Position::new(2, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(3, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(4, 0)).ch, 'O');
-    assert_eq!(screen.get_char(Position::new(5, 0)).ch, ' ');
-    assert_eq!(screen.get_char(Position::new(6, 0)).ch, 'W');
-    assert_eq!(screen.get_char(Position::new(7, 0)).ch, 'O');
-    assert_eq!(screen.get_char(Position::new(8, 0)).ch, 'R');
-    assert_eq!(screen.get_char(Position::new(9, 0)).ch, 'L');
-    assert_eq!(screen.get_char(Position::new(10, 0)).ch, 'D');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'H');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'E');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(4, 0)).ch, 'O');
+    assert_eq!(screen.char_at(Position::new(5, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(6, 0)).ch, 'W');
+    assert_eq!(screen.char_at(Position::new(7, 0)).ch, 'O');
+    assert_eq!(screen.char_at(Position::new(8, 0)).ch, 'R');
+    assert_eq!(screen.char_at(Position::new(9, 0)).ch, 'L');
+    assert_eq!(screen.char_at(Position::new(10, 0)).ch, 'D');
 }
 
 #[test]
@@ -1030,8 +1030,8 @@ fn test_insert_line_in_scroll_region() {
     screen.insert_terminal_line(1);
 
     // Row 1 should be empty, row 2 should have 'A'
-    let ch1 = screen.get_char(Position::new(0, 1));
-    let ch2 = screen.get_char(Position::new(0, 2));
+    let ch1 = screen.char_at(Position::new(0, 1));
+    let ch2 = screen.char_at(Position::new(0, 2));
 
     assert!(ch1.is_transparent() || ch1.ch == '\0' || ch1.ch == ' ', "Row 1 should be empty, got: {:?}", ch1);
     assert_eq!(ch2.ch, 'A', "Row 2 should have 'A', got: {:?}", ch2);
@@ -1049,7 +1049,7 @@ fn test_insert_line_outside_scroll_region() {
     screen.insert_terminal_line(0);
 
     // Row 1 should still have 'A'
-    let ch1 = screen.get_char(Position::new(0, 1));
+    let ch1 = screen.char_at(Position::new(0, 1));
     assert_eq!(ch1.ch, 'A', "Row 1 should still have 'A', got: {:?}", ch1);
 }
 
@@ -1085,10 +1085,10 @@ fn test_cpbug2_sequence() {
     }
 
     // "Screen END !" should still be on row 1
-    let ch = screen.get_char(Position::new(0, 1));
+    let ch = screen.char_at(Position::new(0, 1));
     assert_eq!(ch.ch, 'S', "Expected 'S' at row 1, col 0, got: {:?}", ch);
 
     // Row 2 should be empty
-    let ch2 = screen.get_char(Position::new(0, 2));
+    let ch2 = screen.char_at(Position::new(0, 2));
     assert!(ch2.is_transparent() || ch2.ch == ' ' || ch2.ch == '\0', "Row 2 should be empty, got: {:?}", ch2);
 }

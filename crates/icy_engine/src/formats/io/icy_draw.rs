@@ -29,18 +29,18 @@ lazy_static::lazy_static! {
 pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 
-    let font_dims = buf.get_font_dimensions();
-    let mut width = buf.get_width() * font_dims.width;
+    let font_dims = buf.font_dimensions();
+    let mut width = buf.width() * font_dims.width;
 
     let mut first_line = 0;
-    while first_line < buf.get_height() {
+    while first_line < buf.height() {
         if !buf.is_line_empty(first_line) {
             break;
         }
         first_line += 1;
     }
 
-    let last_line = (first_line + MAX_LINES).min(buf.get_line_count().max(buf.get_height()));
+    let last_line = (first_line + MAX_LINES).min(buf.line_count().max(buf.height()));
     let mut height = (last_line - first_line) * font_dims.height;
 
     let image_empty = if width == 0 || height == 0 {
@@ -64,8 +64,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         result.push(buf.palette_mode.to_byte());
         result.push(buf.font_mode.to_byte());
 
-        result.extend(u32::to_le_bytes(buf.get_width() as u32));
-        result.extend(u32::to_le_bytes(buf.get_height() as u32));
+        result.extend(u32::to_le_bytes(buf.width() as u32));
+        result.extend(u32::to_le_bytes(buf.height() as u32));
         let sauce_data = general_purpose::STANDARD.encode(&result);
         if let Err(err) = encoder.add_ztxt_chunk("ICED".to_string(), sauce_data) {
             return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
@@ -119,7 +119,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         result.push(mode);
 
         if let Some(color) = &layer.properties.color {
-            let (r, g, b) = color.clone().get_rgb();
+            let (r, g, b) = color.clone().rgb();
             result.push(r);
             result.push(g);
             result.push(b);
@@ -147,11 +147,11 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         result.extend(u32::to_le_bytes(flags));
         result.push(layer.transparency);
 
-        result.extend(i32::to_le_bytes(layer.get_offset().x));
-        result.extend(i32::to_le_bytes(layer.get_offset().y));
+        result.extend(i32::to_le_bytes(layer.offset().x));
+        result.extend(i32::to_le_bytes(layer.offset().y));
 
-        result.extend(i32::to_le_bytes(layer.get_width()));
-        result.extend(i32::to_le_bytes(layer.get_height()));
+        result.extend(i32::to_le_bytes(layer.width()));
+        result.extend(i32::to_le_bytes(layer.height()));
         result.extend(u16::to_le_bytes(layer.default_font_page as u16));
 
         if matches!(layer.role, crate::Role::Image) {
@@ -162,8 +162,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             let mut bytes_written = MAX.min(len);
             result.extend(u64::to_le_bytes(bytes_written));
 
-            result.extend(i32::to_le_bytes(sixel.get_width()));
-            result.extend(i32::to_le_bytes(sixel.get_height()));
+            result.extend(i32::to_le_bytes(sixel.width()));
+            result.extend(i32::to_le_bytes(sixel.height()));
             result.extend(i32::to_le_bytes(sixel.vertical_scale));
             result.extend(i32::to_le_bytes(sixel.horizontal_scale));
             bytes_written -= sixel_header_size;
@@ -190,13 +190,13 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
             let mut y = 0;
 
-            while y < layer.get_height() {
-                if result.len() as u64 + layer.get_width() as u64 * 16 > MAX {
+            while y < layer.height() {
+                if result.len() as u64 + layer.width() as u64 * 16 > MAX {
                     break;
                 }
                 let real_length = get_invisible_line_length(layer, y);
                 for x in 0..real_length {
-                    let ch = layer.get_char((x, y).into());
+                    let ch = layer.char_at((x, y).into());
                     let mut attr = ch.attribute.attr;
 
                     let is_short = if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255 {
@@ -223,7 +223,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         result.extend(u16::to_le_bytes(ch.attribute.font_page as u16));
                     }
                 }
-                if layer.get_width() > real_length {
+                if layer.width() > real_length {
                     result.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                 }
                 y += 1;
@@ -235,16 +235,16 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                 return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
             }
             let mut chunk = 1;
-            while y < layer.get_height() {
+            while y < layer.height() {
                 result.clear();
-                while y < layer.get_height() {
-                    if result.len() as u64 + layer.get_width() as u64 * 16 > MAX {
+                while y < layer.height() {
+                    if result.len() as u64 + layer.width() as u64 * 16 > MAX {
                         break;
                     }
                     let real_length = get_invisible_line_length(layer, y);
 
                     for x in 0..real_length {
-                        let ch = layer.get_char((x, y).into());
+                        let ch = layer.char_at((x, y).into());
                         let mut attr = ch.attribute.attr;
 
                         let is_short = if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255
@@ -271,7 +271,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                             result.extend(u16::to_le_bytes(ch.attribute.font_page as u16));
                         }
                     }
-                    if layer.get_width() > real_length {
+                    if layer.width() > real_length {
                         result.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                     }
                     y += 1;
@@ -355,7 +355,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         let (_, data) = buf.render_to_rgba(
             &crate::Rectangle {
                 start: Position::new(0, first_line),
-                size: Size::new(buf.get_width(), last_line - first_line),
+                size: Size::new(buf.width(), last_line - first_line),
             }
             .into(),
             false,
@@ -570,12 +570,12 @@ pub(crate) fn load_icy_draw(file_name: &Path, data: &[u8], _load_data_opt: Optio
                                     match layer.role {
                                         crate::Role::Normal => {
                                             let mut o = 0;
-                                            for y in layer.get_line_count()..layer.get_height() {
+                                            for y in layer.line_count()..layer.height() {
                                                 if o >= bytes.len() {
                                                     // will be continued in a later chunk.
                                                     break;
                                                 }
-                                                for x in 0..layer.get_width() {
+                                                for x in 0..layer.width() {
                                                     let mut attr = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
                                                     o += 2;
                                                     if attr == crate::attribute::INVISIBLE_SHORT {
@@ -824,8 +824,8 @@ pub(crate) fn load_icy_draw(file_name: &Path, data: &[u8], _load_data_opt: Optio
 }
 
 fn get_invisible_line_length(layer: &Layer, y: i32) -> i32 {
-    let mut length = layer.get_width();
-    while length > 0 && !layer.get_char((length - 1, y).into()).is_visible() {
+    let mut length = layer.width();
+    while length > 0 && !layer.char_at((length - 1, y).into()).is_visible() {
         length -= 1;
     }
     length

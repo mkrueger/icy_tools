@@ -47,32 +47,32 @@ impl Clone for SharedTextScreen {
 
 // Implement TextPane by delegating to inner
 impl TextPane for SharedTextScreen {
-    fn get_char(&self, pos: Position) -> AttributedChar {
-        self.inner.lock().get_char(pos)
+    fn char_at(&self, pos: Position) -> AttributedChar {
+        self.inner.lock().char_at(pos)
     }
 
-    fn get_line_count(&self) -> i32 {
-        self.inner.lock().get_line_count()
+    fn line_count(&self) -> i32 {
+        TextPane::line_count(&*self.inner.lock())
     }
 
-    fn get_width(&self) -> i32 {
-        self.inner.lock().get_width()
+    fn width(&self) -> i32 {
+        self.inner.lock().width()
     }
 
-    fn get_height(&self) -> i32 {
-        self.inner.lock().get_height()
+    fn height(&self) -> i32 {
+        self.inner.lock().height()
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
-        self.inner.lock().get_line_length(line)
+    fn line_length(&self, line: i32) -> i32 {
+        self.inner.lock().line_length(line)
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        self.inner.lock().get_rectangle()
+    fn rectangle(&self) -> Rectangle {
+        self.inner.lock().rectangle()
     }
 
-    fn get_size(&self) -> Size {
-        self.inner.lock().get_size()
+    fn size(&self) -> Size {
+        self.inner.lock().size()
     }
 }
 
@@ -86,16 +86,16 @@ impl Screen for SharedTextScreen {
         self.inner.lock().graphics_type()
     }
 
-    fn get_resolution(&self) -> Size {
-        self.inner.lock().get_resolution()
+    fn resolution(&self) -> Size {
+        self.inner.lock().resolution()
     }
 
     fn virtual_size(&self) -> Size {
         self.inner.lock().virtual_size()
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        self.inner.lock().get_font_dimensions()
+    fn font_dimensions(&self) -> Size {
+        self.inner.lock().font_dimensions()
     }
 
     fn scan_lines(&self) -> bool {
@@ -122,7 +122,7 @@ impl Screen for SharedTextScreen {
         self.inner.lock().ice_mode()
     }
 
-    fn get_font(&self, _font_number: usize) -> Option<&BitFont> {
+    fn font(&self, _font_number: usize) -> Option<&BitFont> {
         // Same issue as palette - we can't return a reference through a lock
         // The shader handles this differently
         None
@@ -132,8 +132,8 @@ impl Screen for SharedTextScreen {
         self.inner.lock().font_count()
     }
 
-    fn get_version(&self) -> u64 {
-        self.inner.lock().get_version()
+    fn version(&self) -> u64 {
+        self.inner.lock().version()
     }
 
     fn default_foreground_color(&self) -> u32 {
@@ -144,16 +144,16 @@ impl Screen for SharedTextScreen {
         self.inner.lock().max_base_colors()
     }
 
-    fn get_copy_text(&self) -> Option<String> {
-        self.inner.lock().get_copy_text()
+    fn copy_text(&self) -> Option<String> {
+        self.inner.lock().copy_text()
     }
 
-    fn get_copy_rich_text(&self) -> Option<String> {
-        self.inner.lock().get_copy_rich_text()
+    fn copy_rich_text(&self) -> Option<String> {
+        self.inner.lock().copy_rich_text()
     }
 
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        self.inner.lock().get_clipboard_data()
+    fn clipboard_data(&self) -> Option<Vec<u8>> {
+        self.inner.lock().clipboard_data()
     }
 
     fn hyperlinks(&self) -> &Vec<HyperLink> {
@@ -167,8 +167,8 @@ impl Screen for SharedTextScreen {
         EMPTY_FIELDS.get_or_init(Vec::new)
     }
 
-    fn get_selection(&self) -> Option<Selection> {
-        self.inner.lock().get_selection()
+    fn selection(&self) -> Option<Selection> {
+        self.inner.lock().selection()
     }
 
     fn selection_mask(&self) -> &SelectionMask {

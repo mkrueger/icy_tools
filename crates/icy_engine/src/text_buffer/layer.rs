@@ -60,10 +60,10 @@ impl std::fmt::Display for Layer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut str = String::new();
 
-        for y in 0..self.get_line_count() {
+        for y in 0..self.line_count() {
             str.extend(format!("{y:3}: ").chars());
-            for x in 0..self.get_width() {
-                let ch: AttributedChar = self.get_char((x, y).into());
+            for x in 0..self.width() {
+                let ch: AttributedChar = self.char_at((x, y).into());
                 str.push(BufferType::CP437.convert_to_unicode(ch.ch));
             }
             str.push('\n');
@@ -80,18 +80,18 @@ pub struct HyperLink {
 }
 
 impl HyperLink {
-    pub fn get_url(&self, buf: &dyn TextPane) -> String {
+    pub fn url(&self, buf: &dyn TextPane) -> String {
         if let Some(ref url) = self.url {
             url.clone()
         } else {
-            buf.get_string(self.position, self.length as usize)
+            buf.string_at(self.position, self.length as usize)
         }
     }
 }
 
 impl TextPane for Layer {
-    fn get_char(&self, pos: Position) -> AttributedChar {
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.get_width() || pos.y >= self.get_height() {
+    fn char_at(&self, pos: Position) -> AttributedChar {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.width() || pos.y >= self.height() {
             return AttributedChar::invisible().with_font_page(self.default_font_page);
         }
         let y = pos.y;
@@ -104,7 +104,7 @@ impl TextPane for Layer {
         AttributedChar::invisible().with_font_page(self.default_font_page)
     }
 
-    fn get_line_count(&self) -> i32 {
+    fn line_count(&self) -> i32 {
         // Find the last line with content (length > 0)
         for i in (0..self.lines.len()).rev() {
             if !self.lines[i].is_effective_empty() {
@@ -114,24 +114,24 @@ impl TextPane for Layer {
         0
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
-        self.lines[line as usize].get_line_length()
+    fn line_length(&self, line: i32) -> i32 {
+        self.lines[line as usize].line_length()
     }
 
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.size.width
     }
 
-    fn get_height(&self) -> i32 {
+    fn height(&self) -> i32 {
         self.size.height
     }
 
-    fn get_size(&self) -> Size {
+    fn size(&self) -> Size {
         self.size
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        Rectangle::from_min_size(self.get_offset(), (self.get_width(), self.get_height()))
+    fn rectangle(&self) -> Rectangle {
+        Rectangle::from_min_size(self.offset(), (self.width(), self.height()))
     }
 }
 
@@ -154,14 +154,14 @@ impl Layer {
         }
     }
 
-    pub fn get_offset(&self) -> Position {
+    pub fn offset(&self) -> Position {
         if let Some(offset) = self.preview_offset {
             return offset;
         }
         self.properties.offset
     }
 
-    pub fn get_base_offset(&self) -> Position {
+    pub fn base_offset(&self) -> Position {
         self.properties.offset
     }
 
@@ -173,7 +173,7 @@ impl Layer {
         self.properties.offset = pos.into();
     }
 
-    pub fn get_is_visible(&self) -> bool {
+    pub fn is_visible(&self) -> bool {
         self.properties.is_visible
     }
 
@@ -181,7 +181,7 @@ impl Layer {
         self.properties.is_visible = is_visible;
     }
 
-    pub fn get_title(&self) -> &str {
+    pub fn title(&self) -> &str {
         &self.properties.title
     }
 
@@ -209,7 +209,7 @@ impl Layer {
 
     pub fn set_char(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) {
         let pos = pos.into();
-        if pos.x < 0 || pos.y < 0 || pos.x >= self.get_width() || pos.y >= self.get_height() {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.width() || pos.y >= self.height() {
             return;
         }
         if self.properties.is_locked || !self.properties.is_visible {
@@ -220,7 +220,7 @@ impl Layer {
         }
 
         if self.properties.has_alpha_channel && self.properties.is_alpha_channel_locked {
-            let old_char = self.get_char(pos);
+            let old_char = self.char_at(pos);
             if !old_char.is_visible() {
                 return;
             }
@@ -265,8 +265,8 @@ impl Layer {
     pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) {
         let pos1 = pos1.into();
         let pos2 = pos2.into();
-        let tmp = self.get_char(pos1);
-        self.set_char(pos1, self.get_char(pos2));
+        let tmp = self.char_at(pos1);
+        self.set_char(pos1, self.char_at(pos2));
         self.set_char(pos2, tmp);
     }
 
@@ -286,7 +286,7 @@ impl Layer {
         self.size.height = height;
     }
 
-    pub fn get_preview_offset(&self) -> Option<Position> {
+    pub fn preview_offset(&self) -> Option<Position> {
         self.preview_offset
     }
 
@@ -327,23 +327,23 @@ impl Layer {
     }
     /*
     pub(crate) fn from_layer(layer: &Layer, area: Rectangle) -> Layer {
-        let mut result = Layer::new("new", area.get_size());
+        let mut result = Layer::new("new", area.size());
 
         for y in area.y_range() {
             for x in area.x_range() {
                 let pos = Position::new(x, y) - area.start;
-                result.set_char(pos, layer.get_char((x, y).into()).into());
+                result.set_char(pos, layer.char_at((x, y).into()).into());
             }
         }
         result
     }
 
     pub(crate) fn stamp(&mut self, target_pos: Position, layer: &Layer) {
-        let area = layer.get_rectangle();
+        let area = layer.rectangle();
         for y in area.y_range() {
             for x in area.x_range() {
                 let pos = Position::new(x, y);
-                self.set_char(pos + target_pos, layer.get_char(pos));
+                self.set_char(pos + target_pos, layer.char_at(pos));
             }
         }
     }*/

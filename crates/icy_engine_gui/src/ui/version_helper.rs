@@ -9,16 +9,16 @@ use semver::Version;
 pub fn replace_version_marker(buffer: &mut TextBuffer, version: &Version, build: Option<String>) -> Option<(i32, i32)> {
     let mut ready_position = None;
     let mut had_version = false;
-    for y in 0..buffer.get_height() {
-        for x in 0..buffer.get_width() {
-            let ch = buffer.get_char((x, y).into());
+    for y in 0..buffer.height() {
+        for x in 0..buffer.width() {
+            let ch = buffer.char_at((x, y).into());
 
             if ch.ch == '@' {
                 if had_version {
                     if let Some(build_date) = &build {
                         for (i, ch) in build_date.chars().enumerate() {
                             let new_x = x + i as i32;
-                            if new_x < buffer.get_width() {
+                            if new_x < buffer.width() {
                                 let new_ch = AttributedChar::new(ch, TextAttribute::from_u8(0x08, icy_engine::IceMode::Ice));
                                 buffer.layers[0].set_char(Position::new(new_x, y), new_ch);
                             }
@@ -59,7 +59,7 @@ pub fn replace_version_marker(buffer: &mut TextBuffer, version: &Version, build:
                     // Place the colored version at the @ position
                     for (i, new_ch) in version_chars.into_iter().enumerate() {
                         let new_x = x + i as i32;
-                        if new_x < buffer.get_width() {
+                        if new_x < buffer.width() {
                             buffer.layers[0].set_char(Position::new(new_x, y), new_ch);
                         }
                     }

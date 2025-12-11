@@ -168,7 +168,7 @@ impl BlitSurface {
     }
 
     #[allow(dead_code)]
-    fn get_pixel(&self, x: usize, y: usize) -> u8 {
+    fn pixel(&self, x: usize, y: usize) -> u8 {
         self.data[y * self.width + x]
     }
 }
@@ -269,7 +269,7 @@ impl VdiPaint {
     }
 
     fn copy_region_to_buffer(&self, buf: &dyn EditableScreen, region: &BlitRegion) -> Option<BlitSurface> {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         let mut region = region.clone();
 
         if !region.clip_to_bounds(res.width as usize, res.height as usize) {
@@ -280,7 +280,7 @@ impl VdiPaint {
     }
 
     fn blit_buffer_to_screen(buf: &mut dyn EditableScreen, buffer: &BlitSurface, dest: Position, blit_mode: BlitMode) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         let screen_width = res.width as usize;
         let screen_height = res.height as usize;
 
@@ -298,7 +298,7 @@ impl VdiPaint {
         let buffer = &self.blit_buffer;
         let region = BlitRegion::from_corners(from, to);
 
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         let screen_width = res.width as usize;
         let screen_height = res.height as usize;
 

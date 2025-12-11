@@ -68,8 +68,8 @@ impl LayerView {
             .rev() // Show top layer first
             .map(|(idx, layer)| {
                 let is_selected = idx == current_layer;
-                let is_visible = layer.get_is_visible();
-                let title = layer.get_title();
+                let is_visible = layer.is_visible();
+                let title = layer.title();
 
                 let layer_row = row![
                     // Visibility toggle (using button instead of checkbox)

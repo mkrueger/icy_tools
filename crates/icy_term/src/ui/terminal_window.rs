@@ -84,7 +84,7 @@ impl TerminalWindow {
         let scrollback_lines = if self.terminal.is_in_scrollback_mode() {
             // Get font dimensions to calculate how many lines we've scrolled
             let screen = self.terminal.screen.lock();
-            let font_height = screen.get_font_dimensions().height as f32;
+            let font_height = screen.font_dimensions().height as f32;
             drop(screen);
             // Calculate how many lines we've scrolled from the bottom
             let vp = self.terminal.viewport.read();
@@ -472,7 +472,7 @@ impl TerminalWindow {
 
         let (buffer_width, buffer_height) = {
             let edit_screen = self.terminal.screen.lock();
-            let size = edit_screen.get_size();
+            let size = edit_screen.size();
             (size.width, size.height)
         };
 

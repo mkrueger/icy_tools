@@ -59,8 +59,8 @@ impl std::fmt::Display for TextAttribute {
             f,
             "(Attr: {:X}, fg {}, bg {}, blink {})",
             self.as_u8(IceMode::Blink),
-            self.get_foreground(),
-            self.get_background(),
+            self.foreground(),
+            self.background(),
             self.is_blinking()
         )
     }
@@ -121,7 +121,7 @@ impl TextAttribute {
         (fg | bg << 4) as u8
     }
 
-    pub fn get_foreground(self) -> u32 {
+    pub fn foreground(self) -> u32 {
         self.foreground_color
     }
 
@@ -129,7 +129,7 @@ impl TextAttribute {
         self.foreground_color = color;
     }
 
-    pub fn get_background(self) -> u32 {
+    pub fn background(self) -> u32 {
         self.background_color
     }
 
@@ -262,7 +262,7 @@ impl TextAttribute {
     }
 
     #[must_use]
-    pub fn get_font_page(&self) -> usize {
+    pub fn font_page(&self) -> usize {
         self.font_page as usize
     }
 

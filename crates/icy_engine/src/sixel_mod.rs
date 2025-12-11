@@ -41,7 +41,7 @@ impl Sixel {
     }
 
     /// Coordinates are points
-    pub fn get_screen_rect(&self, font_dims: Size) -> Rectangle {
+    pub fn screen_rect(&self, font_dims: Size) -> Rectangle {
         let x = self.position.x * font_dims.width;
         let y = self.position.y * font_dims.height;
         Rectangle {
@@ -82,15 +82,15 @@ impl Sixel {
         })
     }
 
-    pub fn get_width(&self) -> i32 {
+    pub fn width(&self) -> i32 {
         self.size.width
     }
 
-    pub fn get_height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         self.size.height
     }
 
-    pub fn get_size(&self) -> Size {
+    pub fn size(&self) -> Size {
         self.size
     }
 

@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use iced::{Alignment, Element, Length, Task, widget::{container, stack}};
-use icy_engine::Screen;
-use icy_engine_gui::{
-    HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay,
-    Terminal, TerminalView, ZoomMessage,
+use iced::{
+    Alignment, Element, Length, Task,
+    widget::{container, stack},
 };
+use icy_engine::Screen;
 use icy_engine_gui::theme::main_area_background;
+use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::Mutex;
 
 /// Messages for the canvas view
@@ -216,7 +216,7 @@ impl CanvasView {
                     }
                     icy_engine_gui::Message::UpdateSelection(pos) => {
                         let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.get_selection().clone() {
+                        if let Some(mut sel) = screen.selection().clone() {
                             if !sel.locked {
                                 sel.lead = pos;
                                 let _ = screen.set_selection(sel);
@@ -225,7 +225,7 @@ impl CanvasView {
                     }
                     icy_engine_gui::Message::EndSelection => {
                         let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.get_selection().clone() {
+                        if let Some(mut sel) = screen.selection().clone() {
                             sel.locked = true;
                             let _ = screen.set_selection(sel);
                         }
@@ -250,8 +250,7 @@ impl CanvasView {
     /// Render the canvas view with scrollbars
     pub fn view(&self) -> Element<'_, CanvasMessage> {
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone())
-            .map(CanvasMessage::TerminalMessage);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone()).map(CanvasMessage::TerminalMessage);
 
         // Get scrollbar info using shared logic from icy_engine_gui
         let scrollbar_info = self.terminal.scrollbar_info();
@@ -320,8 +319,7 @@ impl CanvasView {
         let monitor_settings = settings.cloned().unwrap_or_else(|| self.monitor_settings.clone());
 
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings)
-            .map(CanvasMessage::TerminalMessage);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(CanvasMessage::TerminalMessage);
 
         // Get scrollbar info using shared logic from icy_engine_gui
         let scrollbar_info = self.terminal.scrollbar_info();

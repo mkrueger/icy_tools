@@ -125,7 +125,7 @@ impl BitFont {
     }
 
     /// Get a glyph for the given character, using lookup table for ASCII range
-    pub fn get_glyph(&self, ch: char) -> Option<GlyphDefinition> {
+    pub fn glyph(&self, ch: char) -> Option<GlyphDefinition> {
         let ch_code = ch as u32;
 
         // Use pre-built lookup table for ASCII/extended ASCII range (0..256)

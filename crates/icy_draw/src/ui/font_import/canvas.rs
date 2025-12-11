@@ -47,7 +47,7 @@ impl<'a, Message> canvas::Program<Message> for FontPreviewCanvas<'a> {
 
             // Get glyph data from font
             let ch = char::from_u32(ch_code).unwrap_or(' ');
-            let glyph = self.font.get_glyph(ch);
+            let glyph = self.font.glyph(ch);
 
             // Calculate pixel scale factor
             let pixel_scale_x = self.cell_width / font_width as f32;

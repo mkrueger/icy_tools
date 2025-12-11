@@ -20,7 +20,7 @@ pub struct MinimapToolWindow {
 }
 
 impl ToolWindow for MinimapToolWindow {
-    fn get_title(&self) -> String {
+    fn title(&self) -> String {
         fl!(crate::LANGUAGE_LOADER, "minimap_tool_title")
     }
 
@@ -48,20 +48,20 @@ impl MinimapToolWindow {
             self.undo_size = undo_stack;
             let bv = editor.buffer_view.lock();
             let buffer = bv.get_buffer();
-            self.buffer_view.lock().get_buffer_mut().set_size(buffer.get_size());
+            self.buffer_view.lock().get_buffer_mut().set_size(buffer.size());
             self.buffer_view.lock().get_buffer_mut().layers = buffer.layers.clone();
             self.buffer_view.lock().get_buffer_mut().buffer_type = buffer.buffer_type;
             self.buffer_view.lock().get_buffer_mut().palette = buffer.palette.clone();
-            self.buffer_view.lock().get_buffer_mut().set_font_table(buffer.get_font_table());
+            self.buffer_view.lock().get_buffer_mut().set_font_table(buffer.font_table());
             self.palette_hash = cur_palette_hash;
             self.buffer_view.lock().redraw_font();
             self.buffer_view.lock().redraw_view();
         }
         self.buffer_view.lock().use_fg = editor.buffer_view.lock().use_fg;
         self.buffer_view.lock().use_bg = editor.buffer_view.lock().use_bg;
-        let w = (ui.available_width() / self.buffer_view.lock().get_buffer().get_font_dimensions().width as f32).floor();
+        let w = (ui.available_width() / self.buffer_view.lock().get_buffer().font_dimensions().width as f32).floor();
 
-        let scalex = (w / self.buffer_view.lock().get_width() as f32).min(2.0);
+        let scalex = (w / self.buffer_view.lock().width() as f32).min(2.0);
         let scaley = if self.buffer_view.lock().get_buffer_mut().use_aspect_ratio() {
             scalex * 1.35
         } else {

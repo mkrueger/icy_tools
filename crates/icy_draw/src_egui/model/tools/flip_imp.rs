@@ -81,11 +81,11 @@ impl Tool for FlipTool {
             ch.attribute.attr &= !attribute::INVISIBLE;
             if self.color_mode.use_fore() {
                 ch.attribute
-                    .set_foreground(editor.buffer_view.lock().get_caret().get_attribute().get_foreground());
+                    .set_foreground(editor.buffer_view.lock().get_caret().get_attribute().foreground());
             }
             if self.color_mode.use_back() {
                 ch.attribute
-                    .set_background(editor.buffer_view.lock().get_caret().get_attribute().get_background());
+                    .set_background(editor.buffer_view.lock().get_caret().get_attribute().background());
             }
             if self.flip_horizontal {
                 if ch.ch as u8 == 223 {

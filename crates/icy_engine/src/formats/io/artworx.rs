@@ -23,7 +23,7 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
     if buf.ice_mode != IceMode::Ice {
         return Err(crate::EngineError::OnlyIceModeSupported);
     }
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return Err(crate::EngineError::WidthNotSupported { width: 80 });
     }
     if buf.palette.len() != 16 {
@@ -37,19 +37,19 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
 
     let mut result = vec![1]; // version
     result.extend(to_ega_data(&buf.palette));
-    if buf.get_font_dimensions().height != 16 {
+    if buf.font_dimensions().height != 16 {
         return Err(SavingError::Only8x16FontsSupported.into());
     }
 
-    if let Some(font) = buf.get_font(fonts[0]) {
+    if let Some(font) = buf.font(fonts[0]) {
         result.extend(font.convert_to_u8_data());
     } else {
         return Err(SavingError::NoFontFound.into());
     }
 
-    for y in 0..buf.get_height() {
-        for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y).into());
+    for y in 0..buf.height() {
+        for x in 0..buf.width() {
+            let ch = buf.char_at((x, y).into());
             let attr = ch.attribute.as_u8(IceMode::Ice);
             let ch = ch.ch as u32;
             if ch > 255 {
@@ -112,7 +112,7 @@ pub(crate) fn load_artworx(file_name: &Path, data: &[u8], load_data_opt: Option<
             }
         }
 
-        for _ in 0..screen.buffer.get_width() {
+        for _ in 0..screen.buffer.width() {
             if o + 2 > file_size {
                 return Ok(screen);
             }
@@ -152,11 +152,11 @@ pub fn to_ega_data(palette: &Palette) -> Vec<u8> {
         if i >= palette.len() {
             break;
         }
-        ega_colors[EGA_COLOR_OFFSETS[i]] = palette.get_color(i as u32);
+        ega_colors[EGA_COLOR_OFFSETS[i]] = palette.color(i as u32);
     }
     let mut res = Vec::with_capacity(3 * 64);
     for col in ega_colors {
-        let (r, g, b) = col.get_rgb();
+        let (r, g, b) = col.rgb();
         res.push(r >> 2);
         res.push(g >> 2);
         res.push(b >> 2);
@@ -165,7 +165,7 @@ pub fn to_ega_data(palette: &Palette) -> Vec<u8> {
 }
 
 pub fn _get_save_sauce_default_adf(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
 

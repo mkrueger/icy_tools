@@ -30,10 +30,10 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
         return Err(crate::EngineError::OnlySingleFontSupported);
     }
 
-    for y in 0..buf.get_height() {
-        for x in 0..buf.get_width() {
+    for y in 0..buf.height() {
+        for x in 0..buf.width() {
             let pos = Position::new(x, y);
-            let ch = buf.get_char(pos);
+            let ch = buf.char_at(pos);
             let cur_attr = ch.attribute;
             if !ch.is_visible() {
                 if skip_pos.is_none() {
@@ -42,7 +42,7 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
                 continue;
             }
             /*
-            if ch.is_transparent() && attr.get_background() == 0 {
+            if ch.is_transparent() && attr.background() == 0 {
                 if skip_pos.is_none() {
                     skip_pos = Some(pos);
                 }
@@ -51,7 +51,7 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
 
             if let Some(pos2) = skip_pos {
                 let skip_len =
-                    (pos.x + pos.y * buf.get_width()) - (pos2.x + pos2.y * buf.get_width());
+                    (pos.x + pos.y * buf.width()) - (pos2.x + pos2.y * buf.width());
                 if skip_len <= TND_GOTO_BLOCK_LEN {
                     result.resize(result.len() + skip_len as usize, 0);
                 } else {
@@ -71,7 +71,7 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
                 result.push(TUNDRA_COLOR_FOREGROUND);
                 result.push(ch as u8);
 
-                let rgb = buf.palette.get_rgb(attr.get_foreground());
+                let rgb = buf.palette.rgb(attr.foreground());
                 result.push(0);
                 result.push(rgb.0);
                 result.push(rgb.1);
@@ -80,12 +80,12 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
             }
 
             let mut cmd = 0;
-            let write_foreground = buf.palette.get_color(attr.get_foreground()).get_rgb() != buf.palette.get_color(cur_attr.get_foreground()).get_rgb()
-                || attr.is_bold() != cur_attr.is_bold();
+            let write_foreground =
+                buf.palette.color(attr.foreground()).rgb() != buf.palette.color(cur_attr.foreground()).rgb() || attr.is_bold() != cur_attr.is_bold();
             if write_foreground {
                 cmd |= TUNDRA_COLOR_FOREGROUND;
             }
-            let write_background = buf.palette.get_color(attr.get_background()).get_rgb() != buf.palette.get_color(cur_attr.get_background()).get_rgb();
+            let write_background = buf.palette.color(attr.background()).rgb() != buf.palette.color(cur_attr.background()).rgb();
             if write_background {
                 cmd |= TUNDRA_COLOR_BACKGROUND;
             }
@@ -94,21 +94,21 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
                 result.push(cmd);
                 result.push(ch as u8);
                 if write_foreground {
-                    let mut fg = cur_attr.get_foreground();
+                    let mut fg = cur_attr.foreground();
                     if cur_attr.is_bold() {
                         fg += 8;
                     }
                     colors.insert(fg);
-                    let rgb = buf.palette.get_rgb(fg);
+                    let rgb = buf.palette.rgb(fg);
                     result.push(0);
                     result.push(rgb.0);
                     result.push(rgb.1);
                     result.push(rgb.2);
                 }
                 if write_background {
-                    colors.insert(cur_attr.get_background());
+                    colors.insert(cur_attr.background());
 
-                    let rgb = buf.palette.get_rgb(cur_attr.get_background());
+                    let rgb = buf.palette.rgb(cur_attr.background());
                     result.push(0);
                     result.push(rgb.0);
                     result.push(rgb.1);
@@ -121,9 +121,9 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
         }
     }
     if let Some(pos2) = skip_pos {
-        let pos = Position::new(buf.get_width().saturating_sub(1), buf.get_height().saturating_sub(1));
+        let pos = Position::new(buf.width().saturating_sub(1), buf.height().saturating_sub(1));
 
-        let skip_len = (pos.x + pos.y * buf.get_width()) - (pos2.x + pos2.y * buf.get_width()) + 1;
+        let skip_len = (pos.x + pos.y * buf.width()) - (pos2.x + pos2.y * buf.width()) + 1;
         result.resize(result.len() + skip_len as usize, 0);
     }
 
@@ -187,19 +187,19 @@ pub(crate) fn load_tundra(file_name: &Path, data: &[u8], load_data_opt: Option<L
                     format!(
                         "Invalid Tundra Draw file.\nJump y position {} out of bounds (height is {})",
                         pos.y,
-                        screen.buffer.get_height()
+                        screen.buffer.height()
                     ),
                 )
                 .into());
             }
             o += 4;
             pos.x = to_u32(&data[o..]);
-            if pos.x >= screen.buffer.get_width() {
+            if pos.x >= screen.buffer.width() {
                 return Err(crate::EngineError::InvalidBounds {
                     message: format!(
                         "Invalid Tundra Draw file. Jump x position {} out of bounds (width is {})",
                         pos.x,
-                        screen.buffer.get_width()
+                        screen.buffer.width()
                     ),
                 });
             }
@@ -237,14 +237,14 @@ pub(crate) fn load_tundra(file_name: &Path, data: &[u8], load_data_opt: Option<L
         screen.buffer.layers[0].set_char(pos, AttributedChar::new(cmd as char, attr));
         advance_pos(&screen.buffer, &mut pos);
     }
-    screen.buffer.set_size(screen.buffer.layers[0].get_size());
+    screen.buffer.set_size(screen.buffer.layers[0].size());
 
     Ok(screen)
 }
 
 fn advance_pos(result: &TextBuffer, pos: &mut Position) -> bool {
     pos.x += 1;
-    if pos.x >= result.get_width() {
+    if pos.x >= result.width() {
         pos.x = 0;
         pos.y += 1;
     }
@@ -258,7 +258,7 @@ fn to_u32(bytes: &[u8]) -> i32 {
 // const TND_GOTO_BLOCK_LEN: i32 = 1 + 2 * 4;
 
 pub fn _get_save_sauce_default_tnd(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
 

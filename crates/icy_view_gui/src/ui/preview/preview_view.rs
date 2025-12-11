@@ -306,7 +306,7 @@ impl PreviewView {
     }
 
     /// Get current baud emulation setting
-    pub fn get_baud_emulation(&self) -> BaudEmulation {
+    pub fn baud_emulation(&self) -> BaudEmulation {
         self.baud_emulation
     }
 
@@ -398,7 +398,7 @@ impl PreviewView {
     pub fn get_buffer_size(&self) -> Option<(i32, i32)> {
         if matches!(self.preview_mode, PreviewMode::Terminal) {
             let screen = self.terminal.screen.lock();
-            return Some((screen.get_width(), screen.get_height()));
+            return Some((screen.width(), screen.height()));
         }
         if let PreviewMode::Image(_, w, h) = self.preview_mode {
             return Some((w as i32, h as i32));
@@ -765,7 +765,7 @@ impl PreviewView {
                     icy_engine_gui::Message::UpdateSelection(pos) => {
                         // Position already includes scroll offset from map_mouse_to_cell
                         let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.get_selection().clone() {
+                        if let Some(mut sel) = screen.selection().clone() {
                             if !sel.locked {
                                 sel.lead = pos;
                                 let _ = screen.set_selection(sel);
@@ -774,7 +774,7 @@ impl PreviewView {
                     }
                     icy_engine_gui::Message::EndSelection => {
                         let mut screen = self.terminal.screen.lock();
-                        if let Some(mut sel) = screen.get_selection().clone() {
+                        if let Some(mut sel) = screen.selection().clone() {
                             sel.locked = true;
                             let _ = screen.set_selection(sel);
                         }

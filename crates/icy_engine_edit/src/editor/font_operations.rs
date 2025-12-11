@@ -40,7 +40,7 @@ impl EditState {
             crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -49,7 +49,7 @@ impl EditState {
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_ansi_font_page(page)?;
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -63,7 +63,7 @@ impl EditState {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce | crate::FontMode::Single => {
                 let new_font = BitFont::from_sauce_name(name)?;
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -72,7 +72,7 @@ impl EditState {
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_sauce_name(name)?;
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -106,7 +106,7 @@ impl EditState {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -114,7 +114,7 @@ impl EditState {
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
-                if let Some(font) = self.get_buffer().get_font(0) {
+                if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
                 } else {
@@ -131,8 +131,8 @@ impl EditState {
         let new_palette = match mode {
             PaletteMode::RGB => old_palette.clone(),
             PaletteMode::Fixed16 => Palette::from_slice(&DOS_DEFAULT_PALETTE),
-            PaletteMode::Free8 => get_palette(&old_layers, &old_palette, 8),
-            PaletteMode::Free16 => get_palette(&old_layers, &old_palette, 16),
+            PaletteMode::Free8 => palette(&old_layers, &old_palette, 8),
+            PaletteMode::Free16 => palette(&old_layers, &old_palette, 16),
         };
 
         let mut new_palette_table = Vec::new();
@@ -152,7 +152,7 @@ impl EditState {
         for layer in &mut self.get_buffer_mut().layers {
             for line in &mut layer.lines {
                 for ch in &mut line.chars {
-                    let fg = ch.attribute.get_foreground();
+                    let fg = ch.attribute.foreground();
                     let new_fg = if fg == TextAttribute::TRANSPARENT_COLOR {
                         7
                     } else {
@@ -162,7 +162,7 @@ impl EditState {
                     table.get(fg as usize).copied().unwrap_or(7);
                     ch.attribute.set_foreground(new_fg);
 
-                    let bg = ch.attribute.get_background();
+                    let bg = ch.attribute.background();
 
                     let new_bg = if bg == TextAttribute::TRANSPARENT_COLOR {
                         0
@@ -183,15 +183,15 @@ impl EditState {
         match mode {
             IceMode::Unlimited => { /* no conversion needed */ }
             IceMode::Blink => {
-                if self.screen.caret.attribute.get_background() > 7 {
+                if self.screen.caret.attribute.background() > 7 {
                     self.screen.caret.attribute.set_is_blinking(true);
-                    self.screen.caret.attribute.set_background(self.screen.caret.attribute.get_background() - 8);
+                    self.screen.caret.attribute.set_background(self.screen.caret.attribute.background() - 8);
                 }
 
                 for layer in &mut new_layers {
                     for line in &mut layer.lines {
                         for ch in &mut line.chars {
-                            if (8..16).contains(&ch.attribute.get_background()) {
+                            if (8..16).contains(&ch.attribute.background()) {
                                 *ch = remove_ice_color(*ch);
                             }
                         }
@@ -201,8 +201,8 @@ impl EditState {
             IceMode::Ice => {
                 if self.screen.caret.attribute.is_blinking() {
                     self.screen.caret.attribute.set_is_blinking(false);
-                    if self.screen.caret.attribute.get_background() < 8 {
-                        self.screen.caret.attribute.set_background(self.screen.caret.attribute.get_background() + 8);
+                    if self.screen.caret.attribute.background() < 8 {
+                        self.screen.caret.attribute.set_background(self.screen.caret.attribute.background() + 8);
                     }
                 }
 
@@ -211,7 +211,7 @@ impl EditState {
                         for ch in &mut line.chars {
                             if ch.attribute.is_blinking() {
                                 ch.attribute.set_is_blinking(false);
-                                let bg = ch.attribute.get_background();
+                                let bg = ch.attribute.background();
                                 if bg < 8 {
                                     ch.attribute.set_background(bg + 8);
                                 }
@@ -235,10 +235,10 @@ impl EditState {
             if layer.default_font_page == from {
                 layer.default_font_page = to;
             }
-            for y in 0..layer.get_height() {
-                for x in 0..layer.get_width() {
-                    let mut ch = layer.get_char((x, y).into());
-                    if ch.attribute.get_font_page() == from {
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let mut ch = layer.char_at((x, y).into());
+                    if ch.attribute.font_page() == from {
                         ch.attribute.set_font_page(to);
                         layer.set_char((x, y), ch);
                     }
@@ -275,8 +275,8 @@ impl EditState {
 }
 
 fn remove_ice_color(ch: crate::AttributedChar) -> crate::AttributedChar {
-    let fg = ch.attribute.get_foreground();
-    let bg = ch.attribute.get_background();
+    let fg = ch.attribute.foreground();
+    let bg = ch.attribute.background();
     let mut attr = ch.attribute;
 
     if fg == bg {
@@ -285,7 +285,7 @@ fn remove_ice_color(ch: crate::AttributedChar) -> crate::AttributedChar {
     }
     match ch.ch as u32 {
         0 | 32 | 255 => {
-            attr.set_foreground(attr.get_background());
+            attr.set_foreground(attr.background());
             attr.set_background(0);
             return AttributedChar::new(219 as char, attr);
         }
@@ -298,39 +298,39 @@ fn remove_ice_color(ch: crate::AttributedChar) -> crate::AttributedChar {
     if fg < 8 {
         match ch.ch as u32 {
             176 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
 
                 return AttributedChar::new(178 as char, attr);
             }
             177 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(177 as char, attr);
             }
             178 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(176 as char, attr);
             }
             220 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(223 as char, attr);
             }
             221 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(222 as char, attr);
             }
             222 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(221 as char, attr);
             }
             223 => {
-                attr.set_foreground(ch.attribute.get_background());
-                attr.set_background(ch.attribute.get_foreground());
+                attr.set_foreground(ch.attribute.background());
+                attr.set_background(ch.attribute.foreground());
                 return AttributedChar::new(220 as char, attr);
             }
             _ => {}
@@ -342,7 +342,7 @@ fn remove_ice_color(ch: crate::AttributedChar) -> crate::AttributedChar {
     AttributedChar::new(ch.ch, attr)
 }
 
-fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize) -> Palette {
+fn palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize) -> Palette {
     let mut color_count = vec![0; old_palette.len()];
     for layer in old_layers {
         for line in &layer.lines {
@@ -350,8 +350,8 @@ fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize)
                 if !ch.is_visible() {
                     continue;
                 }
-                let fg = ch.attribute.get_foreground();
-                let bg = ch.attribute.get_background();
+                let fg = ch.attribute.foreground();
+                let bg = ch.attribute.background();
                 if (fg as usize) < color_count.len() {
                     color_count[fg as usize] += 1;
                 }
@@ -362,7 +362,7 @@ fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize)
         }
     }
     let mut new_colors = Vec::new();
-    new_colors.push((0, old_palette.get_color(0)));
+    new_colors.push((0, old_palette.color(0)));
     while new_colors.len() < palette_size {
         let mut max = -1;
         let mut idx = 0;
@@ -376,7 +376,7 @@ fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize)
             break;
         }
         color_count[idx] = -1;
-        new_colors.push((idx, old_palette.get_color(idx as u32)));
+        new_colors.push((idx, old_palette.color(idx as u32)));
     }
     new_colors.sort_by(|a, b| (a.0).partial_cmp(&b.0).unwrap());
 
@@ -389,7 +389,7 @@ fn get_palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize)
 }
 
 fn find_new_color(old_palette: &Palette, new_palette: &Palette, color: u32) -> u32 {
-    let (o_r, o_g, o_b) = old_palette.get_rgb(color);
+    let (o_r, o_g, o_b) = old_palette.rgb(color);
     let o_r = o_r as i32;
     let o_g = o_g as i32;
     let o_b = o_b as i32;
@@ -397,7 +397,7 @@ fn find_new_color(old_palette: &Palette, new_palette: &Palette, color: u32) -> u
     let mut new_color = 0;
     let mut delta = i32::MAX;
     for i in 0..new_palette.len() {
-        let (r, g, b) = new_palette.get_rgb(i as u32);
+        let (r, g, b) = new_palette.rgb(i as u32);
         let r = r as i32;
         let g = g as i32;
         let b = b as i32;

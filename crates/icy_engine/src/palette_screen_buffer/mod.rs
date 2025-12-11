@@ -66,7 +66,7 @@ impl PaletteScreenBuffer {
             }
             GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
             GraphicsType::IGS(term_res) => {
-                let res = term_res.get_resolution();
+                let res = term_res.resolution();
                 (res.width, res.height)
             }
             GraphicsType::Skypix => (SKYPIX_SCREEN_SIZE.width, SKYPIX_SCREEN_SIZE.height),
@@ -100,7 +100,7 @@ impl PaletteScreenBuffer {
 
         // Set appropriate default palette based on graphics type
         let palette = match graphics_type {
-            GraphicsType::IGS(res) => res.get_palette().clone(),
+            GraphicsType::IGS(res) => res.palette().clone(),
             _ => Palette::from_slice(&DOS_DEFAULT_PALETTE),
         };
 
@@ -159,16 +159,16 @@ impl PaletteScreenBuffer {
         let y = pos.y;
 
         // Get colors from palette
-        let mut fg_color = ch.attribute.get_foreground() as u32;
+        let mut fg_color = ch.attribute.foreground() as u32;
         if ch.attribute.is_bold() && fg_color < 8 {
             fg_color += 8;
         }
 
-        let bg_color = ch.attribute.get_background() as u32; // Apply color limit
+        let bg_color = ch.attribute.background() as u32; // Apply color limit
 
-        let font = if let Some(font) = self.get_font(ch.get_font_page()) {
+        let font = if let Some(font) = self.font(ch.font_page()) {
             font
-        } else if let Some(font) = self.get_font(0) {
+        } else if let Some(font) = self.font(0) {
             font
         } else {
             &DEFAULT_BITFONT
@@ -179,7 +179,7 @@ impl PaletteScreenBuffer {
         let pixel_y = y * font.size().height;
 
         // Get glyph data from font
-        let glyph = font.get_glyph(ch.ch);
+        let glyph = font.glyph(ch.ch);
         // Render the character
         let font_size = font.size();
 
@@ -222,33 +222,33 @@ impl PaletteScreenBuffer {
 }
 
 impl TextPane for PaletteScreenBuffer {
-    fn get_char(&self, _pos: Position) -> AttributedChar {
+    fn char_at(&self, _pos: Position) -> AttributedChar {
         // won't work for rgba screens.
         AttributedChar::default()
     }
 
-    fn get_line_count(&self) -> i32 {
+    fn line_count(&self) -> i32 {
         self.char_screen_size.height
     }
 
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.char_screen_size.width
     }
 
-    fn get_height(&self) -> i32 {
+    fn height(&self) -> i32 {
         self.char_screen_size.height
     }
 
-    fn get_size(&self) -> Size {
+    fn size(&self) -> Size {
         self.char_screen_size
     }
 
-    fn get_line_length(&self, _line: i32) -> i32 {
+    fn line_length(&self, _line: i32) -> i32 {
         // won't work for rgba screens.
         0
     }
 
-    fn get_rectangle(&self) -> crate::Rectangle {
+    fn rectangle(&self) -> crate::Rectangle {
         crate::Rectangle::from_coords(0, 0, self.char_screen_size.width - 1, self.char_screen_size.height - 1)
     }
 }
@@ -272,7 +272,7 @@ impl Screen for PaletteScreenBuffer {
 
     fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         // Use cached palette as packed RGBA u32 for single write per pixel
-        let palette_cache_rgba = self.palette.get_palette_cache_rgba();
+        let palette_cache_rgba = self.palette.palette_cache_rgba();
 
         // Clamp region to screen bounds
         let x = px_region.start.x.clamp(0, self.pixel_size.width);
@@ -339,14 +339,14 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
-        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.get_resolution()), options)
+        self.render_region_to_rgba(Rectangle::from_min_size((0, 0), self.resolution()), options)
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
+    fn font_dimensions(&self) -> Size {
+        if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
     }
 
-    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+    fn font(&self, font_number: usize) -> Option<&BitFont> {
         self.font_table.get(&font_number)
     }
 
@@ -366,7 +366,7 @@ impl Screen for PaletteScreenBuffer {
         self.buffer_type
     }
 
-    fn get_selection(&self) -> Option<Selection> {
+    fn selection(&self) -> Option<Selection> {
         None
     }
 
@@ -378,22 +378,22 @@ impl Screen for PaletteScreenBuffer {
         &self.hyperlinks
     }
 
-    fn get_copy_text(&self) -> Option<String> {
+    fn copy_text(&self) -> Option<String> {
         None
     }
 
-    fn get_copy_rich_text(&self) -> Option<String> {
+    fn copy_rich_text(&self) -> Option<String> {
         None
     }
 
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
+    fn clipboard_data(&self) -> Option<Vec<u8>> {
         None
     }
     fn mouse_fields(&self) -> &Vec<MouseField> {
         &self.mouse_fields
     }
 
-    fn get_version(&self) -> u64 {
+    fn version(&self) -> u64 {
         self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -403,13 +403,13 @@ impl Screen for PaletteScreenBuffer {
 
     fn max_base_colors(&self) -> u32 {
         if let GraphicsType::IGS(t) = self.graphics_type {
-            t.get_max_colors()
+            t.max_colors()
         } else {
             self.palette.len() as u32
         }
     }
 
-    fn get_resolution(&self) -> Size {
+    fn resolution(&self) -> Size {
         self.pixel_size
     }
 
@@ -450,44 +450,44 @@ impl EditableScreen for PaletteScreenBuffer {
         return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
-    fn get_first_visible_line(&self) -> i32 {
+    fn first_visible_line(&self) -> i32 {
         0
     }
 
-    fn get_last_visible_line(&self) -> i32 {
+    fn last_visible_line(&self) -> i32 {
         self.char_screen_size.height - 1
     }
 
-    fn get_first_editable_line(&self) -> i32 {
+    fn first_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
+            if let Some((start, _)) = self.terminal_state.margins_top_bottom() {
                 return start;
             }
         }
         0
     }
 
-    fn get_last_editable_line(&self) -> i32 {
+    fn last_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
+            if let Some((_, end)) = self.terminal_state.margins_top_bottom() {
                 return end;
             }
         }
         self.char_screen_size.height - 1
     }
 
-    fn get_first_editable_column(&self) -> i32 {
+    fn first_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_left_right() {
+            if let Some((start, _)) = self.terminal_state.margins_left_right() {
                 return start;
             }
         }
         0
     }
 
-    fn get_last_editable_column(&self) -> i32 {
+    fn last_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_left_right() {
+            if let Some((_, end)) = self.terminal_state.margins_left_right() {
                 return end;
             }
         }
@@ -510,7 +510,7 @@ impl EditableScreen for PaletteScreenBuffer {
                 self.caret.attribute.set_foreground(1);
                 self.caret.attribute.set_background(0);
                 self.terminal_state.cr_is_if = true;
-                self.set_resolution(res.get_resolution());
+                self.set_resolution(res.resolution());
             }
             _ => {
                 // Keep current caret settings
@@ -527,10 +527,10 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn set_resolution(&mut self, size: Size) {
         self.pixel_size = size;
-        let font_size = self.get_font(0).unwrap().size();
+        let font_size = self.font(0).unwrap().size();
         self.char_screen_size = Size::new(self.pixel_size.width / font_size.width, self.pixel_size.height / font_size.height);
         // Fill with background color from caret (0 for white in most palettes)
-        let bg_color = self.caret.attribute.get_background();
+        let bg_color = self.caret.attribute.background();
         self.screen.clear();
         self.screen
             .resize((self.pixel_size.width as usize) * (self.pixel_size.height as usize), bg_color as u8);
@@ -548,7 +548,7 @@ impl EditableScreen for PaletteScreenBuffer {
             }
             GraphicsType::Rip => (RIP_SCREEN_SIZE.width, RIP_SCREEN_SIZE.height),
             GraphicsType::IGS(term_res) => {
-                let res = term_res.get_resolution();
+                let res = term_res.resolution();
                 (res.width, res.height)
             }
             GraphicsType::Skypix => (800, 600),
@@ -592,7 +592,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn reset_terminal(&mut self) {
-        self.terminal_state.reset_terminal(self.terminal_state.get_size());
+        self.terminal_state.reset_terminal(self.terminal_state.size());
         self.caret.reset();
         self.caret.set_foreground(self.default_foreground_color());
     }
@@ -619,7 +619,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
     /// Scroll the screen up by one line (move content up, clear bottom line)
     fn scroll_up(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let line_height = font.height as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -629,7 +629,7 @@ impl EditableScreen for PaletteScreenBuffer {
         }
 
         // Add top line to scrollback before scrolling (while data is still there)
-        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
             let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
             self.scrollback_buffer.add_chunk(rgba_data, size);
         }
@@ -648,7 +648,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
     /// Scroll the screen down by one line (move content down, clear top line)
     fn scroll_down(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let line_height = font.height as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -671,7 +671,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
     /// Scroll the screen left by one column (move content left, clear right column)
     fn scroll_left(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let char_width = font.width as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -693,7 +693,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
     /// Scroll the screen right by one column (move content right, clear left column)
     fn scroll_right(&mut self) {
-        let font = self.get_font_dimensions();
+        let font = self.font_dimensions();
         let char_width = font.width as usize;
         let screen_width = self.pixel_size.width as usize;
         let screen_height = self.pixel_size.height as usize;
@@ -725,7 +725,7 @@ impl EditableScreen for PaletteScreenBuffer {
         self.terminal_state_mut().cleared_screen = true;
 
         // Clear pixel buffer
-        self.screen.fill(self.caret.attribute.get_background() as u8);
+        self.screen.fill(self.caret.attribute.background() as u8);
         self.mark_dirty();
     }
 
@@ -812,8 +812,8 @@ impl EditableScreen for PaletteScreenBuffer {
             ..Default::default()
         };
 
-        for y in pos.y..self.get_last_visible_line() {
-            for x in 0..self.get_width() {
+        for y in pos.y..self.last_visible_line() {
+            for x in 0..self.width() {
                 self.set_char((x, y).into(), ch);
             }
         }
@@ -826,8 +826,8 @@ impl EditableScreen for PaletteScreenBuffer {
             ..Default::default()
         };
 
-        for y in self.get_first_visible_line()..pos.y {
-            for x in 0..self.get_width() {
+        for y in self.first_visible_line()..pos.y {
+            for x in 0..self.width() {
                 self.set_char((x, y).into(), ch);
             }
         }
@@ -839,7 +839,7 @@ impl EditableScreen for PaletteScreenBuffer {
             attribute: self.caret().attribute,
             ..Default::default()
         };
-        for x in 0..self.get_width() {
+        for x in 0..self.width() {
             pos.x = x;
             self.set_char(pos, ch);
         }
@@ -851,7 +851,7 @@ impl EditableScreen for PaletteScreenBuffer {
             attribute: self.caret().attribute,
             ..Default::default()
         };
-        for x in pos.x..self.get_width() {
+        for x in pos.x..self.width() {
             pos.x = x;
             self.set_char(pos, ch);
         }

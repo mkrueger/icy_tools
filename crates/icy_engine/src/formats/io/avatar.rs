@@ -14,7 +14,7 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
     let mut result = Vec::new();
     let mut last_attr = TextAttribute::default();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
     let mut first_char = true;
 
     match options.screen_preparation {
@@ -32,7 +32,7 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
 
     // TODO: implement repeat pattern compression (however even TheDraw never bothered to implement this cool RLE from fsc0037)
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
 
         while pos.x < line_length {
             let mut found_tag = false;
@@ -49,12 +49,12 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
             }
 
             let mut repeat_count = 1;
-            let mut ch = buf.get_char(pos);
+            let mut ch = buf.char_at(pos);
 
-            while pos.x + 3 < buf.get_width() && ch == buf.get_char(pos + Position::new(1, 0)) {
+            while pos.x + 3 < buf.width() && ch == buf.char_at(pos + Position::new(1, 0)) {
                 repeat_count += 1;
                 pos.x += 1;
-                ch = buf.get_char(pos);
+                ch = buf.char_at(pos);
             }
 
             if first_char || ch.attribute != last_attr {
@@ -89,7 +89,7 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
             pos.x += 1;
         }
         // do not end with eol
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(13);
             result.push(10);
         }
@@ -147,7 +147,7 @@ pub(crate) fn load_avatar(file_name: &Path, data: &[u8], load_data_opt: Option<L
 }
 
 pub fn _get_save_sauce_default_avt(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
 

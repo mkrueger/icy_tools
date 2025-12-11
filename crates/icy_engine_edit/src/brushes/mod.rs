@@ -58,20 +58,20 @@ pub struct HalfBlocks {
 /// any buffer-like structure without depending on specific types.
 pub trait DrawTarget {
     /// Get the width of the drawable area
-    fn get_width(&self) -> i32;
+    fn width(&self) -> i32;
 
     /// Get the height of the drawable area
-    fn get_height(&self) -> i32;
+    fn height(&self) -> i32;
 
     /// Get the character at a position
-    fn get_char(&self, pos: Position) -> Option<AttributedChar>;
+    fn char_at(&self, pos: Position) -> Option<AttributedChar>;
 
     /// Set the character at a position
     fn set_char(&mut self, pos: Position, ch: AttributedChar);
 
     /// Check if a position is within bounds
     fn is_valid(&self, pos: Position) -> bool {
-        pos.x >= 0 && pos.y >= 0 && pos.x < self.get_width() && pos.y < self.get_height()
+        pos.x >= 0 && pos.y >= 0 && pos.x < self.width() && pos.y < self.height()
     }
 }
 
@@ -222,7 +222,7 @@ impl DrawContext {
     }
 
     fn draw_shade<T: DrawTarget>(&self, target: &mut T, pos: Position, up: bool) {
-        let current = target.get_char(pos);
+        let current = target.char_at(pos);
         let current_ch = current.map(|c| c.ch).unwrap_or(' ');
 
         // Find current shade level
@@ -245,7 +245,7 @@ impl DrawContext {
     }
 
     fn colorize<T: DrawTarget>(&self, target: &mut T, pos: Position) {
-        if let Some(mut ch) = target.get_char(pos) {
+        if let Some(mut ch) = target.char_at(pos) {
             let mut attr = ch.attribute;
             
             if self.color_mode.affects_foreground() {
@@ -271,7 +271,7 @@ impl DrawContext {
 
         for by in 0..brush.height {
             for bx in 0..brush.width {
-                if let Some(ch) = brush.get_char(bx, by) {
+                if let Some(ch) = brush.char_at(bx, by) {
                     if ch != ' ' {
                         let target_pos = Position::new(pos.x + bx - offset_x, pos.y + by - offset_y);
                         if target.is_valid(target_pos) {
@@ -285,8 +285,8 @@ impl DrawContext {
     }
 
     fn plot_mirrored_points<T: DrawTarget>(&self, target: &mut T, pos: Position, role: PointRole) {
-        let center_x = target.get_width() / 2;
-        let center_y = target.get_height() / 2;
+        let center_x = target.width() / 2;
+        let center_y = target.height() / 2;
 
         match self.mirror_mode {
             MirrorMode::Horizontal => {
@@ -415,15 +415,15 @@ impl TestTarget {
 
 #[cfg(test)]
 impl DrawTarget for TestTarget {
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.width
     }
 
-    fn get_height(&self) -> i32 {
+    fn height(&self) -> i32 {
         self.height
     }
 
-    fn get_char(&self, pos: Position) -> Option<AttributedChar> {
+    fn char_at(&self, pos: Position) -> Option<AttributedChar> {
         if self.is_valid(pos) {
             Some(self.chars[(pos.y * self.width + pos.x) as usize])
         } else {
@@ -505,8 +505,8 @@ mod tests {
         
         let ch = target.get_at(10, 5);
         assert_eq!(ch.ch, 'A'); // Character unchanged
-        assert_eq!(ch.attribute.get_foreground(), 4);
-        assert_eq!(ch.attribute.get_background(), 1);
+        assert_eq!(ch.attribute.foreground(), 4);
+        assert_eq!(ch.attribute.background(), 1);
     }
 
     #[test]

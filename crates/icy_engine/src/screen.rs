@@ -53,14 +53,14 @@ pub trait Screen: TextPane + Send + Sync {
     }
 
     /// Gets the current resolution of the screen in pixels (based on terminal size)
-    fn get_resolution(&self) -> Size;
+    fn resolution(&self) -> Size;
 
     /// Gets the virtual size of the screen (including scrollback)
     fn virtual_size(&self) -> Size {
-        self.get_resolution() // Default: no scrollback
+        self.resolution() // Default: no scrollback
     }
 
-    fn get_font_dimensions(&self) -> Size;
+    fn font_dimensions(&self) -> Size;
 
     fn scan_lines(&self) -> bool;
 
@@ -78,26 +78,26 @@ pub trait Screen: TextPane + Send + Sync {
     // Visual state
     fn palette(&self) -> &Palette;
     fn ice_mode(&self) -> IceMode;
-    fn get_font(&self, font_number: usize) -> Option<&BitFont>;
+    fn font(&self, font_number: usize) -> Option<&BitFont>;
     fn font_count(&self) -> usize;
 
     // Version for change tracking
-    fn get_version(&self) -> u64;
+    fn version(&self) -> u64;
 
     // Default foreground color
     fn default_foreground_color(&self) -> u32;
     fn max_base_colors(&self) -> u32;
 
     // Optional text content access (for copy/paste)
-    fn get_copy_text(&self) -> Option<String> {
+    fn copy_text(&self) -> Option<String> {
         None
     }
 
-    fn get_copy_rich_text(&self) -> Option<String> {
+    fn copy_rich_text(&self) -> Option<String> {
         None
     }
 
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
+    fn clipboard_data(&self) -> Option<Vec<u8>> {
         None
     }
 
@@ -107,7 +107,7 @@ pub trait Screen: TextPane + Send + Sync {
     fn mouse_fields(&self) -> &Vec<MouseField>;
 
     // Selection support
-    fn get_selection(&self) -> Option<Selection>;
+    fn selection(&self) -> Option<Selection>;
     fn selection_mask(&self) -> &crate::SelectionMask;
 
     // Selection management (mutable)
@@ -159,12 +159,12 @@ pub trait Screen: TextPane + Send + Sync {
 /// Extends Screen with editing operations
 pub trait EditableScreen: Screen {
     // Utility methods for editing operations
-    fn get_first_visible_line(&self) -> i32;
-    fn get_last_visible_line(&self) -> i32;
-    fn get_first_editable_line(&self) -> i32;
-    fn get_last_editable_line(&self) -> i32;
-    fn get_first_editable_column(&self) -> i32;
-    fn get_last_editable_column(&self) -> i32;
+    fn first_visible_line(&self) -> i32;
+    fn last_visible_line(&self) -> i32;
+    fn first_editable_line(&self) -> i32;
+    fn last_editable_line(&self) -> i32;
+    fn first_editable_column(&self) -> i32;
+    fn last_editable_column(&self) -> i32;
 
     // Line access for editing
     fn get_line(&self, line: usize) -> Option<&Line>;
@@ -175,11 +175,11 @@ pub trait EditableScreen: Screen {
         match self.terminal_state().origin_mode {
             crate::OriginMode::UpperLeftCorner => Position {
                 x: 0,
-                y: self.get_first_visible_line(),
+                y: self.first_visible_line(),
             },
             crate::OriginMode::WithinMargins => Position {
                 x: 0,
-                y: self.get_first_editable_line(),
+                y: self.first_editable_line(),
             },
         }
     }
@@ -348,7 +348,7 @@ pub trait EditableScreen: Screen {
             return;
         }
 
-        if !is_terminal && self.caret().y + 1 > self.get_height() {
+        if !is_terminal && self.caret().y + 1 > self.height() {
             self.set_height((self.caret().y + 1).min(limits::MAX_BUFFER_HEIGHT));
         }
 
@@ -363,8 +363,8 @@ pub trait EditableScreen: Screen {
         caret_pos.x += 1;
         // left/right margin only valued inside margins - this way it's possible to print beyond right margin for updating UI
         // without resetting margins
-        let in_margins = self.get_first_editable_line() <= caret_pos.y && caret_pos.y <= self.get_last_editable_line();
-        let last_col = if in_margins { self.get_last_editable_column() } else { self.get_width() - 1 };
+        let in_margins = self.first_editable_line() <= caret_pos.y && caret_pos.y <= self.last_editable_line();
+        let last_col = if in_margins { self.last_editable_column() } else { self.width() - 1 };
 
         let should_break_line = caret_pos.x > last_col;
         if should_break_line {
@@ -419,9 +419,9 @@ pub trait EditableScreen: Screen {
             ..Default::default()
         };
 
-        for y in pos.y..=self.get_last_visible_line() {
+        for y in pos.y..=self.last_visible_line() {
             // <= statt <
-            for x in 0..self.get_width() {
+            for x in 0..self.width() {
                 self.set_char((x, y).into(), ch);
             }
         }
@@ -434,8 +434,8 @@ pub trait EditableScreen: Screen {
             ..Default::default()
         };
 
-        for y in self.get_first_visible_line()..pos.y {
-            for x in 0..self.get_width() {
+        for y in self.first_visible_line()..pos.y {
+            for x in 0..self.width() {
                 self.set_char((x, y).into(), ch);
             }
         }
@@ -462,23 +462,19 @@ pub trait EditableScreen: Screen {
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
         let mut pos = self.caret().position();
 
-        pos.x = self.get_first_editable_column();
+        pos.x = self.first_editable_column();
         pos.y += 1;
 
         if self.terminal_state().is_terminal_buffer {
             // Determine the bottom boundary based on whether we're in a scroll region
-            let bottom = if in_scroll_region {
-                self.get_last_editable_line()
-            } else {
-                self.get_height() - 1
-            };
+            let bottom = if in_scroll_region { self.last_editable_line() } else { self.height() - 1 };
 
             while pos.y > bottom {
                 self.scroll_up();
                 pos.y -= 1;
             }
         } else {
-            if pos.y + 1 > self.get_height() {
+            if pos.y + 1 > self.height() {
                 self.set_height(pos.y + 1);
             }
             self.set_caret_position(pos);
@@ -500,7 +496,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn eol(&mut self) {
-        let x = self.get_width() - 1;
+        let x = self.width() - 1;
         self.caret_mut().x = x;
     }
 
@@ -512,7 +508,7 @@ pub trait EditableScreen: Screen {
     fn del(&mut self) {
         let caret_position = self.caret_position();
         let pos = caret_position;
-        let line_len = self.get_last_editable_column();
+        let line_len = self.last_editable_column();
         if pos.x < 0 || pos.y < 0 {
             return;
         }
@@ -522,7 +518,7 @@ pub trait EditableScreen: Screen {
 
         // Shift characters left from pos.x+1 .. line_len-1
         for x in pos.x..(line_len - 1) {
-            let next = self.get_char((x + 1, pos.y).into());
+            let next = self.char_at((x + 1, pos.y).into());
             self.set_char((x, pos.y).into(), next);
         }
         // Blank out last logical character position
@@ -535,21 +531,21 @@ pub trait EditableScreen: Screen {
         if pos.x < 0 || pos.y < 0 {
             return;
         }
-        let line_len = self.get_line_length(pos.y);
-        if pos.x >= self.get_width() {
+        let line_len = self.line_length(pos.y);
+        if pos.x >= self.width() {
             return;
         }
         // Ensure we have a trailing cell to shift into; extend with blank if needed
         let blank_attr = self.caret().attribute;
-        if line_len < self.get_width() {
+        if line_len < self.width() {
             // Nothing required; implicit blank beyond line_len assumed, but we explicitly write one at end to avoid artifacts.
             let end_blank = AttributedChar::new(' ', blank_attr);
-            self.set_char((self.get_width() - 1, pos.y).into(), end_blank);
+            self.set_char((self.width() - 1, pos.y).into(), end_blank);
         }
         // Shift right from last editable column down to caret.x
-        let last = (self.get_width() - 1).min(line_len.max(pos.x));
+        let last = (self.width() - 1).min(line_len.max(pos.x));
         for x in (pos.x..=last).rev() {
-            let src = if x == pos.x { None } else { Some(self.get_char((x - 1, pos.y).into())) };
+            let src = if x == pos.x { None } else { Some(self.char_at((x - 1, pos.y).into())) };
             let to_write = src.unwrap_or(AttributedChar::new(' ', blank_attr));
             self.set_char((x, pos.y).into(), to_write);
         }
@@ -558,7 +554,7 @@ pub trait EditableScreen: Screen {
     fn bs(&mut self) {
         // BS (0x08): Non-destructive backspace
         let min_x = if self.terminal_state().in_margin(self.caret().position()) {
-            self.get_first_editable_column()
+            self.first_editable_column()
         } else {
             0
         };
@@ -574,15 +570,15 @@ pub trait EditableScreen: Screen {
         if should_wrap && self.caret().x == 0 {
             // At column 0: wrap to previous line end if above origin line
             let origin_line = match self.terminal_state().origin_mode {
-                crate::OriginMode::UpperLeftCorner => self.get_first_visible_line(),
-                crate::OriginMode::WithinMargins => self.get_first_editable_line(),
+                crate::OriginMode::UpperLeftCorner => self.first_visible_line(),
+                crate::OriginMode::WithinMargins => self.first_editable_line(),
             };
             if self.caret().y <= origin_line {
                 // Already at origin line -> no-op
                 return;
             }
             self.caret_mut().y -= 1;
-            self.caret_mut().x = (self.get_width() - 1).max(0);
+            self.caret_mut().x = (self.width() - 1).max(0);
         } else {
             let x = self.caret().x.saturating_sub(num);
             self.caret_mut().x = x;
@@ -594,7 +590,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn right(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
-        let last_col = (self.get_width() - 1).max(0);
+        let last_col = (self.width() - 1).max(0);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
 
@@ -660,7 +656,7 @@ pub trait EditableScreen: Screen {
 
     fn check_scrolling_on_caret_up(&mut self, force: bool, in_scroll_region: bool) {
         if self.terminal_state().needs_scrolling() || force {
-            let last: i32 = if in_scroll_region { self.get_first_editable_line() } else { 0 };
+            let last: i32 = if in_scroll_region { self.first_editable_line() } else { 0 };
             while self.caret_position().y < last {
                 self.scroll_down();
                 let mut pos = self.caret_position();
@@ -671,11 +667,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn check_scrolling_on_caret_down(&mut self, force: bool, in_scroll_region: bool) {
-        let last = if in_scroll_region {
-            self.get_last_editable_line()
-        } else {
-            self.get_height() - 1
-        };
+        let last = if in_scroll_region { self.last_editable_line() } else { self.height() - 1 };
         if (self.terminal_state().needs_scrolling() || force) && self.caret_position().y > last {
             self.scroll_up();
             let mut pos = self.caret_position();
@@ -687,7 +679,7 @@ pub trait EditableScreen: Screen {
     fn tab_forward(&mut self) {
         let mut pos = self.caret_position();
         let x = self.terminal_state().next_tab_stop(pos.x);
-        let w = self.get_width() - 1;
+        let w = self.width() - 1;
         pos.x = x.min(w);
         self.set_caret_position(pos);
     }
@@ -696,18 +688,18 @@ pub trait EditableScreen: Screen {
         let mut pos = self.caret_position();
         if !was_in_margin || self.terminal_state().origin_mode == crate::OriginMode::UpperLeftCorner {
             if self.terminal_state().is_terminal_buffer {
-                let first = self.get_first_visible_line();
-                pos.y = pos.y.clamp(first, first + self.get_height() - 1);
+                let first = self.first_visible_line();
+                pos.y = pos.y.clamp(first, first + self.height() - 1);
             }
-            let x: i32 = pos.x.clamp(0, (self.get_width() - 1).max(0));
+            let x: i32 = pos.x.clamp(0, (self.width() - 1).max(0));
             pos.x = x;
         } else {
-            let first = self.get_first_editable_line();
-            let last = self.get_last_editable_line();
+            let first = self.first_editable_line();
+            let last = self.last_editable_line();
             pos.y = pos.y.clamp(first, last);
             // Respect left/right margins when origin is within margins
-            let left = self.get_first_editable_column().max(0);
-            let right = self.get_last_editable_column().min(self.get_width() - 1).max(left);
+            let left = self.first_editable_column().max(0);
+            let right = self.last_editable_column().min(self.width() - 1).max(left);
             let x = pos.x.clamp(left, right);
             pos.x = x;
         }

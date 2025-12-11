@@ -56,7 +56,7 @@ impl VdiPaint {
             swap(&mut top, &mut bottom);
         }
 
-        let x_radius = ((buf.get_resolution().width >> 6).min((right - left) / 2) - 1).max(0);
+        let x_radius = ((buf.resolution().width >> 6).min((right - left) / 2) - 1).max(0);
         let y_radius = self.calc_circle_y_radius(x_radius).min((top - bottom) / 2);
 
         const ISIN225: i32 = 12539;

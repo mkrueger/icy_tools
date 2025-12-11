@@ -67,14 +67,14 @@ impl TerminalLuaExtension {
 /// Extracts the current screen content as a String
 fn get_screen_text(screen: &Arc<Mutex<Box<dyn Screen>>>) -> String {
     let screen_guard = screen.lock();
-    let width = screen_guard.get_width();
-    let height = screen_guard.get_height();
+    let width = screen_guard.width();
+    let height = screen_guard.height();
     let buffer_type = screen_guard.buffer_type();
 
     let mut text = String::new();
     for y in 0..height {
         for x in 0..width {
-            let ch = screen_guard.get_char(icy_engine::Position::new(x, y));
+            let ch = screen_guard.char_at(icy_engine::Position::new(x, y));
             text.push(buffer_type.convert_to_unicode(ch.ch));
         }
         text.push('\n');

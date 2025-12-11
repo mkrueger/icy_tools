@@ -55,14 +55,14 @@ enum Commands {
 
 pub fn get_line_checksums(screen: &dyn Screen) -> Vec<u32> {
     let mut result = Vec::new();
-    for y in 0..screen.get_height() {
+    for y in 0..screen.height() {
         let mut hasher = Hasher::new();
-        for x in 0..screen.get_width() {
-            let ch = screen.get_char((x, y).into());
+        for x in 0..screen.width() {
+            let ch = screen.char_at((x, y).into());
             hasher.update(&[ch.ch as u8]);
-            let fg = screen.palette().get_color(ch.attribute.get_foreground()).get_rgb();
+            let fg = screen.palette().color(ch.attribute.foreground()).rgb();
             hasher.update(&[fg.0, fg.1, fg.2]);
-            let bg = screen.palette().get_color(ch.attribute.get_background()).get_rgb();
+            let bg = screen.palette().color(ch.attribute.background()).rgb();
             hasher.update(&[bg.0, bg.1, bg.2]);
             hasher.update(&[ch.attribute.attr as u8, (ch.attribute.attr >> 8) as u8]);
         }
@@ -215,7 +215,7 @@ fn show_buffer(
         io.write(b"\x1BP0;1;0!z")?;
     }
     io.write(&bytes)?;
-    /*for i in 0..buffer.get_height() {
+    /*for i in 0..buffer.height() {
         io.write(format!("\x1b[{};1H{}:", i + 1, i).as_bytes())?;
     }
     */

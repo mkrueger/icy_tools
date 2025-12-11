@@ -95,7 +95,7 @@ impl UndoHandler for AnsiEditor {
 
 impl ClipboardHandler for AnsiEditor {
     fn can_cut(&self) -> bool {
-        self.buffer_view.lock().get_selection().is_some()
+        self.buffer_view.lock().selection().is_some()
     }
     fn cut(&mut self, ctx: &egui::Context) -> EngineResult<()> {
         let _cut = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-cut"));
@@ -105,24 +105,24 @@ impl ClipboardHandler for AnsiEditor {
     }
 
     fn can_copy(&self) -> bool {
-        self.buffer_view.lock().get_selection().is_some()
+        self.buffer_view.lock().selection().is_some()
     }
 
     fn copy(&mut self, _ctx: &egui::Context) -> EngineResult<()> {
         let mut lock = self.buffer_view.lock();
         let edit_state = lock.get_edit_state_mut();
         let mut vec = vec![];
-        if let Some(text) = edit_state.get_copy_text() {
+        if let Some(text) = edit_state.copy_text() {
             vec.push(ClipboardContent::Text(text.clone()));
         } else {
             return Ok(());
         }
-        if let Some(rich_text) = edit_state.get_copy_rich_text() {
+        if let Some(rich_text) = edit_state.copy_rich_text() {
             vec.push(ClipboardContent::Rtf(rich_text));
         }
 
         /*
-        let selection = edit_state.get_selection().unwrap();
+        let selection = edit_state.selection().unwrap();
         if selection.shape == Shape::Rectangle {
             let (size, data) = edit_state.get_buffer().render_to_rgba(&RenderOptions {
                 rect: selection.as_rectangle(),
@@ -141,7 +141,7 @@ impl ClipboardHandler for AnsiEditor {
             vec.push(ClipboardContent::Image(img));
         }*/
 
-        if let Some(data) = edit_state.get_clipboard_data() {
+        if let Some(data) = edit_state.clipboard_data() {
             vec.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
         }
 
@@ -165,10 +165,10 @@ impl ClipboardHandler for AnsiEditor {
 
         if let Ok(data) = CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
             self.buffer_view.lock().get_edit_state_mut().paste_clipboard_data(&data)?;
-        } else if let Ok(img) = CLIPBOARD_CONTEXT.get_image() {
+        } else if let Ok(img) = CLIPBOARD_CONTEXT.image() {
             let mut sixel = Sixel::new(Position::default());
             sixel.picture_data = img.to_rgba8().unwrap().as_raw().clone();
-            let (w, h) = img.get_size();
+            let (w, h) = img.size();
             sixel.set_width(w as i32);
             sixel.set_height(h as i32);
             self.buffer_view.lock().get_edit_state_mut().paste_sixel(sixel)?;
@@ -339,8 +339,8 @@ impl AnsiEditor {
     pub fn set_caret_position(&mut self, pos: Position) {
         let buffer_view = &mut self.buffer_view.lock();
         let pos = Position::new(
-            min(buffer_view.get_width() - 1, max(0, pos.x)),
-            min(buffer_view.get_buffer().get_height() - 1, max(0, pos.y)),
+            min(buffer_view.width() - 1, max(0, pos.x)),
+            min(buffer_view.get_buffer().height() - 1, max(0, pos.y)),
         );
         buffer_view.get_set_caret_position(pos);
         buffer_view.reset_caret_blink();
@@ -373,8 +373,8 @@ impl AnsiEditor {
                 for x in 0..line.chars.len() {
                     let ch = line.chars[x];
                     let pos = Position::new(x as i32, y as i32);
-                    if ch.is_visible() && (!use_selection || self.buffer_view.lock().get_edit_state().get_is_selected(pos + layer.get_offset())) {
-                        let underlying_char = self.buffer_view.lock().get_edit_state_mut().get_buffer().layers[cur_layer].get_char(pos);
+                    if ch.is_visible() && (!use_selection || self.buffer_view.lock().get_edit_state().is_selected(pos + layer.offset())) {
+                        let underlying_char = self.buffer_view.lock().get_edit_state_mut().get_buffer().layers[cur_layer].char_at(pos);
                         let solid = self.buffer_view.lock().get_edit_state_mut().get_buffer().make_solid_color(ch, underlying_char);
                         self.set_char(pos, solid);
                     }
@@ -406,7 +406,7 @@ impl AnsiEditor {
     }
 
     pub fn pickup_color(&mut self, pos: Position) {
-        let ch = self.buffer_view.lock().get_buffer().get_char(pos);
+        let ch = self.buffer_view.lock().get_buffer().char_at(pos);
         if ch.is_visible() {
             self.buffer_view.lock().get_caret_mut().set_attr(ch.attribute);
         }
@@ -414,12 +414,12 @@ impl AnsiEditor {
 
     pub fn set_caret(&mut self, x: i32, y: i32) -> Event {
         let old = self.buffer_view.lock().get_caret().get_position();
-        let mut w = self.buffer_view.lock().get_buffer().get_width() - 1;
-        let mut h = self.buffer_view.lock().get_buffer().get_height() - 1;
+        let mut w = self.buffer_view.lock().get_buffer().width() - 1;
+        let mut h = self.buffer_view.lock().get_buffer().height() - 1;
         let offset: Position = if let Some(layer) = self.buffer_view.lock().get_edit_state().get_cur_layer() {
-            w = layer.get_width() - 1;
-            h = layer.get_height() - 1;
-            layer.get_offset()
+            w = layer.width() - 1;
+            h = layer.height() - 1;
+            layer.offset()
         } else {
             Position::default()
         };
@@ -437,7 +437,7 @@ impl AnsiEditor {
         let y = min(max(0, y), h);
         self.set_caret_position(Position::new(min(max(0, x), w), y));
 
-        let font_dim = self.buffer_view.lock().get_buffer().get_font_dimensions();
+        let font_dim = self.buffer_view.lock().get_buffer().font_dimensions();
 
         let pos = self.buffer_view.lock().get_caret().get_position();
         let x = (offset.x + pos.x) as f32 * font_dim.width as f32;
@@ -485,9 +485,9 @@ impl AnsiEditor {
     pub fn get_char_set_key(&self, i: usize) -> char {
         unsafe {
             let lock = self.buffer_view.lock();
-            let font_page = lock.get_caret().get_font_page();
+            let font_page = lock.get_caret().font_page();
 
-            let checksum = if let Some(font) = lock.get_buffer().get_font(font_page) {
+            let checksum = if let Some(font) = lock.get_buffer().font(font_page) {
                 font.get_checksum()
             } else {
                 0
@@ -503,8 +503,8 @@ impl AnsiEditor {
         self.type_cp437_key(unsafe { char::from_u32_unchecked(ch as u32) });
     }
 
-    pub fn get_char(&self, pos: Position) -> AttributedChar {
-        self.buffer_view.lock().get_buffer().get_char(pos)
+    pub fn char_at(&self, pos: Position) -> AttributedChar {
+        self.buffer_view.lock().get_buffer().char_at(pos)
     }
 
     pub fn get_char_from_cur_layer(&self, pos: Position) -> AttributedChar {
@@ -512,7 +512,7 @@ impl AnsiEditor {
             if cur_layer >= self.buffer_view.lock().get_buffer().layers.len() {
                 return AttributedChar::invisible();
             }
-            self.buffer_view.lock().get_buffer().layers[cur_layer].get_char(pos)
+            self.buffer_view.lock().get_buffer().layers[cur_layer].char_at(pos)
         } else {
             log::error!("can't get current layer!");
             AttributedChar::invisible()
@@ -549,21 +549,21 @@ impl AnsiEditor {
         let pos = self.buffer_view.lock().get_caret().get_position();
         self.buffer_view.lock().clear_selection();
         if self.buffer_view.lock().get_caret().insert_mode {
-            let end = self.buffer_view.lock().get_buffer().get_width();
+            let end = self.buffer_view.lock().get_buffer().width();
             for i in (pos.x..end).rev() {
                 let next = self.get_char_from_cur_layer(Position::new(i - 1, pos.y));
                 self.set_char(Position::new(i, pos.y), next);
             }
         }
-        let mut attr = self.get_char(pos).attribute;
+        let mut attr = self.char_at(pos).attribute;
         let caret_attr = self.buffer_view.lock().get_caret().get_attribute();
-        attr.set_font_page(caret_attr.get_font_page());
+        attr.set_font_page(caret_attr.font_page());
         attr.attr = caret_attr.attr & !attribute::INVISIBLE;
         if self.color_mode.use_fore() {
-            attr.set_foreground(caret_attr.get_foreground());
+            attr.set_foreground(caret_attr.foreground());
         }
         if self.color_mode.use_back() {
-            attr.set_background(caret_attr.get_background());
+            attr.set_background(caret_attr.background());
         }
 
         self.set_char(pos, AttributedChar::new(char_code, attr));
@@ -573,8 +573,8 @@ impl AnsiEditor {
 
     pub fn switch_fg_bg_color(&mut self) {
         let mut attr = self.buffer_view.lock().get_caret().get_attribute();
-        let bg = attr.get_background();
-        attr.set_background(attr.get_foreground());
+        let bg = attr.background();
+        attr.set_background(attr.foreground());
         attr.set_foreground(bg);
         self.set_caret_attribute(attr);
     }
@@ -814,18 +814,18 @@ impl AnsiEditor {
 
     fn get_cur_click_offset(&mut self) -> Position {
         if let Some(layer) = self.buffer_view.lock().get_edit_state().get_cur_layer() {
-            return layer.get_offset();
+            return layer.offset();
         }
         Position::default()
     }
 
     pub(crate) fn clear_overlay_layer(&self) {
         let mut lock = self.buffer_view.lock();
-        let cur_offset = lock.get_edit_state().get_cur_layer().unwrap().get_offset();
+        let cur_offset = lock.get_edit_state().get_cur_layer().unwrap().offset();
 
         {
             let cur_layer = lock.get_edit_state().get_current_layer().unwrap_or(0);
-            let layer = lock.get_edit_state_mut().get_overlay_layer(cur_layer);
+            let layer = lock.get_edit_state_mut().overlay_layer(cur_layer);
             layer.set_offset(cur_offset);
             layer.clear();
         }
@@ -843,12 +843,12 @@ impl AnsiEditor {
         if pos.x > 0 {
             self.set_caret_position(pos + Position::new(-1, 0));
             if self.buffer_view.lock().get_caret().insert_mode {
-                let end = self.buffer_view.lock().get_width() - 1;
+                let end = self.buffer_view.lock().width() - 1;
                 for i in pos.x..end {
                     let next = self.get_char_from_cur_layer(Position::new(i + 1, pos.y));
                     self.set_char(Position::new(i, pos.y), next);
                 }
-                let last_pos = Position::new(self.buffer_view.lock().get_width() - 1, pos.y);
+                let last_pos = Position::new(self.buffer_view.lock().width() - 1, pos.y);
                 self.set_char(last_pos, AttributedChar::invisible());
             } else {
                 let pos = self.get_caret_position();
@@ -866,12 +866,12 @@ impl AnsiEditor {
         self.buffer_view.lock().clear_selection();
         let pos = self.get_caret_position();
         if pos.x >= 0 {
-            let end = self.buffer_view.lock().get_width() - 1;
+            let end = self.buffer_view.lock().width() - 1;
             for i in pos.x..end {
                 let next = self.get_char_from_cur_layer(Position::new(i + 1, pos.y));
                 self.set_char(Position::new(i, pos.y), next);
             }
-            let last_pos = Position::new(self.buffer_view.lock().get_width() - 1, pos.y);
+            let last_pos = Position::new(self.buffer_view.lock().width() - 1, pos.y);
             self.set_char(last_pos, AttributedChar::invisible());
         }
     }
@@ -904,7 +904,7 @@ pub fn terminal_context_menu(editor: &AnsiEditor, commands: &Commands, ui: &mut 
     commands.copy.ui(ui, &mut result);
     commands.paste.ui(ui, &mut result);
 
-    let sel = editor.buffer_view.lock().get_selection();
+    let sel = editor.buffer_view.lock().selection();
 
     if let Some(_sel) = sel {
         commands.erase_selection.ui(ui, &mut result);

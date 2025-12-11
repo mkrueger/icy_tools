@@ -207,7 +207,7 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
 
             // Resize first layer if needed
             if !buf.layers.is_empty() {
-                let size = buf.get_size();
+                let size = buf.size();
                 buf.layers[0].set_size(size);
             }
 
@@ -253,8 +253,8 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
         let mut num = 0;
         while !result.buffer.layers[0].sixels.is_empty() {
             if let Some(mut sixel) = result.buffer.layers[0].sixels.pop() {
-                let size = sixel.get_size();
-                let font_size = result.buffer.get_font_dimensions();
+                let size = sixel.size();
+                let font_size = result.buffer.font_dimensions();
                 let size = Size::new(
                     (size.width + font_size.width - 1) / font_size.width,
                     (size.height + font_size.height - 1) / font_size.height,
@@ -275,17 +275,17 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
     // a caret move may move up, to load correctly it need to be checked.
     // The initial height of 24 lines may be too large for the real content height.
     if min_height > 0 {
-        let real_height = result.buffer.get_line_count().max(result.caret.y + 1).max(min_height);
+        let real_height = result.buffer.line_count().max(result.caret.y + 1).max(min_height);
         result.buffer.set_height(real_height);
     }
 
-    let height = result.get_height();
-    let width = result.get_width();
+    let height = result.height();
+    let width = result.width();
     for y in 0..height {
         for x in 0..width {
-            let mut ch = result.get_char((x, y).into());
+            let mut ch = result.char_at((x, y).into());
             if ch.attribute.is_bold() {
-                let fg = ch.attribute.get_foreground();
+                let fg = ch.attribute.foreground();
                 if fg < 8 {
                     ch.attribute.set_foreground(fg + 8);
                 }

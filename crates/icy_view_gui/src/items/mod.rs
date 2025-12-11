@@ -161,7 +161,7 @@ pub trait Item: Send + Sync {
 
     /// Get the file size in bytes (for sorting)
     /// Returns None for items that don't have a size (e.g., folders)
-    fn get_size(&self) -> Option<u64> {
+    fn size(&self) -> Option<u64> {
         None
     }
 
@@ -324,13 +324,13 @@ pub fn sort_items(items: &mut Vec<Box<dyn Item>>, order: SortOrder) {
             SortOrder::NameAsc => a.get_label().to_lowercase().cmp(&b.get_label().to_lowercase()),
             SortOrder::NameDesc => b.get_label().to_lowercase().cmp(&a.get_label().to_lowercase()),
             SortOrder::SizeAsc => {
-                let a_size = a.get_size().unwrap_or(0);
-                let b_size = b.get_size().unwrap_or(0);
+                let a_size = a.size().unwrap_or(0);
+                let b_size = b.size().unwrap_or(0);
                 a_size.cmp(&b_size)
             }
             SortOrder::SizeDesc => {
-                let a_size = a.get_size().unwrap_or(0);
-                let b_size = b.get_size().unwrap_or(0);
+                let a_size = a.size().unwrap_or(0);
+                let b_size = b.size().unwrap_or(0);
                 b_size.cmp(&a_size)
             }
             SortOrder::DateAsc => {
@@ -350,8 +350,8 @@ pub fn sort_items(items: &mut Vec<Box<dyn Item>>, order: SortOrder) {
 /// Create a thumbnail preview from a TextBuffer (80x25 screen)
 /// Renders the buffer to RGBA and scales it to thumbnail size
 pub fn create_text_buffer_preview(buffer: &TextBuffer) -> RgbaData {
-    let width = buffer.get_width();
-    let height = buffer.get_height();
+    let width = buffer.width();
+    let height = buffer.height();
 
     if width == 0 || height == 0 {
         return create_folder_placeholder();

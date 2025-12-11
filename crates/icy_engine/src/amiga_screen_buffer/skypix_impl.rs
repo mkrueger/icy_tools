@@ -14,9 +14,9 @@ fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
 
     // Only adjust if we're on a custom font page
     if current_page != 0 {
-        if let Some(current_font) = buf.get_font(current_page) {
+        if let Some(current_font) = buf.font(current_page) {
             let current_height = current_font.size().height;
-            let default_height = buf.get_font(0).map(|f| f.size().height).unwrap_or(8);
+            let default_height = buf.font(0).map(|f| f.size().height).unwrap_or(8);
 
             let mut pos = buf.caret().position();
             pos.y += current_height - default_height;
@@ -47,7 +47,7 @@ pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
 fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPaint, cmd: SkypixCommand) {
     // Get current pen colors from caret attribute
-    let pen_a = buf.caret().attribute.get_foreground() as u8;
+    let pen_a = buf.caret().attribute.foreground() as u8;
     buf.text_mode = super::TextMode::Jam1;
     match cmd {
         SkypixCommand::Comment { .. } => {
@@ -77,7 +77,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         SkypixCommand::GrabBrush { x1, y1, width, height } => {
             let x2 = x1 + width;
             let y2 = y1 + height;
-            paint.rip_image = Some(paint.get_image(buf, x1, y1, x2, y2));
+            paint.rip_image = Some(paint.image(buf, x1, y1, x2, y2));
         }
 
         SkypixCommand::UseBrush {
@@ -180,7 +180,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         SkypixCommand::EndSkypix => {
             *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
 
-            buf.terminal_state.reset_terminal(buf.terminal_state.get_size());
+            buf.terminal_state.reset_terminal(buf.terminal_state.size());
             buf.caret.visible = true;
             buf.caret.shape = crate::CaretShape::Underline;
             buf.caret.set_foreground(buf.default_foreground_color());

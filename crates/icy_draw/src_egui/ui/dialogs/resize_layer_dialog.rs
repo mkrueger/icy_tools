@@ -17,8 +17,8 @@ impl ResizeLayerDialog {
     pub fn new(buf: &icy_engine::Buffer, layer: usize) -> Self {
         ResizeLayerDialog {
             should_commit: false,
-            width: buf.layers[layer].get_width(),
-            height: buf.layers[layer].get_height(),
+            width: buf.layers[layer].width(),
+            height: buf.layers[layer].height(),
             layer,
         }
     }

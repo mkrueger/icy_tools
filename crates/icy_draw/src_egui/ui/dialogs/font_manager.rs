@@ -139,7 +139,7 @@ impl crate::ModalDialog for FontManager {
                             } else {
                                 self.replace_with = 0;
                             }
-                            let enabled = self.buffer_view.lock().get_buffer().get_font(self.replace_with).is_some();
+                            let enabled = self.buffer_view.lock().get_buffer().font(self.replace_with).is_some();
                             if ui
                                 .add_enabled(enabled, Button::new(fl!(crate::LANGUAGE_LOADER, "manage-font-replace_font_button")))
                                 .clicked()
@@ -186,7 +186,7 @@ impl crate::ModalDialog for FontManager {
 
                 if copy_font_button.clicked() {
                     let lock = &self.buffer_view.lock();
-                    if let Some(font) = lock.get_buffer().get_font(self.selected) {
+                    if let Some(font) = lock.get_buffer().font(self.selected) {
                         ui.ctx().copy_text(font.encode_as_ansi(self.selected));
                     }
                 }

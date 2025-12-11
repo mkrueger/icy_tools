@@ -60,32 +60,32 @@ impl TextScreen {
 }
 
 impl TextPane for TextScreen {
-    fn get_char(&self, pos: crate::Position) -> AttributedChar {
-        self.buffer.get_char(pos)
+    fn char_at(&self, pos: crate::Position) -> AttributedChar {
+        self.buffer.char_at(pos)
     }
 
-    fn get_line_count(&self) -> i32 {
-        self.buffer.get_line_count()
+    fn line_count(&self) -> i32 {
+        self.buffer.line_count()
     }
 
-    fn get_width(&self) -> i32 {
-        self.buffer.get_width()
+    fn width(&self) -> i32 {
+        self.buffer.width()
     }
 
-    fn get_height(&self) -> i32 {
-        self.buffer.get_height()
+    fn height(&self) -> i32 {
+        self.buffer.height()
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
-        self.buffer.get_line_length(line)
+    fn line_length(&self, line: i32) -> i32 {
+        self.buffer.line_length(line)
     }
 
-    fn get_rectangle(&self) -> crate::Rectangle {
-        self.buffer.get_rectangle()
+    fn rectangle(&self) -> crate::Rectangle {
+        self.buffer.rectangle()
     }
 
-    fn get_size(&self) -> Size {
-        self.buffer.get_size()
+    fn size(&self) -> Size {
+        self.buffer.size()
     }
 }
 
@@ -130,19 +130,19 @@ impl Screen for TextScreen {
         self.buffer.render_region_to_rgba(px_region, options, self.scan_lines)
     }
 
-    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
-        self.buffer.get_font(font_number)
+    fn font(&self, font_number: usize) -> Option<&BitFont> {
+        self.buffer.font(font_number)
     }
 
     fn font_count(&self) -> usize {
         self.buffer.font_count()
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        self.buffer.get_font_dimensions()
+    fn font_dimensions(&self) -> Size {
+        self.buffer.font_dimensions()
     }
 
-    fn get_selection(&self) -> Option<Selection> {
+    fn selection(&self) -> Option<Selection> {
         self.selection_opt
     }
 
@@ -165,30 +165,30 @@ impl Screen for TextScreen {
         }
     }
 
-    fn get_copy_text(&self) -> Option<String> {
+    fn copy_text(&self) -> Option<String> {
         let Some(selection) = &self.selection_opt else {
             return None;
         };
-        clipboard::get_text(&self.buffer, self.buffer.buffer_type, selection)
+        clipboard::text(&self.buffer, self.buffer.buffer_type, selection)
     }
 
-    fn get_copy_rich_text(&self) -> Option<String> {
+    fn copy_rich_text(&self) -> Option<String> {
         let Some(selection) = &self.selection_opt else {
             return None;
         };
         clipboard::get_rich_text(&self.buffer, selection)
     }
 
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        clipboard::get_clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
+    fn clipboard_data(&self) -> Option<Vec<u8>> {
+        clipboard::clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
     }
 
     fn mouse_fields(&self) -> &Vec<MouseField> {
         &self.mouse_fields
     }
 
-    fn get_version(&self) -> u64 {
-        self.buffer.get_version()
+    fn version(&self) -> u64 {
+        self.buffer.version()
     }
 
     fn default_foreground_color(&self) -> u32 {
@@ -199,17 +199,17 @@ impl Screen for TextScreen {
         u32::MAX
     }
 
-    fn get_resolution(&self) -> Size {
-        let font_size = self.get_font(0).unwrap().size();
-        let rect = self.terminal_state().get_size();
+    fn resolution(&self) -> Size {
+        let font_size = self.font(0).unwrap().size();
+        let rect = self.terminal_state().size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)
     }
 
     fn virtual_size(&self) -> Size {
-        let font_size = self.get_font(0).unwrap().size();
-        let rect = self.buffer.get_size();
+        let font_size = self.font(0).unwrap().size();
+        let rect = self.buffer.size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
         Size::new(px_width, px_height)
@@ -255,28 +255,28 @@ impl EditableScreen for TextScreen {
         return Some(Arc::new(Mutex::new(Box::new(scrollback))));
     }
 
-    fn get_first_visible_line(&self) -> i32 {
-        self.buffer.get_first_visible_line()
+    fn first_visible_line(&self) -> i32 {
+        self.buffer.first_visible_line()
     }
 
-    fn get_last_visible_line(&self) -> i32 {
-        self.buffer.get_last_visible_line()
+    fn last_visible_line(&self) -> i32 {
+        self.buffer.last_visible_line()
     }
 
-    fn get_first_editable_line(&self) -> i32 {
-        self.buffer.get_first_editable_line()
+    fn first_editable_line(&self) -> i32 {
+        self.buffer.first_editable_line()
     }
 
-    fn get_last_editable_line(&self) -> i32 {
-        self.buffer.get_last_editable_line()
+    fn last_editable_line(&self) -> i32 {
+        self.buffer.last_editable_line()
     }
 
-    fn get_first_editable_column(&self) -> i32 {
-        self.buffer.get_first_editable_column()
+    fn first_editable_column(&self) -> i32 {
+        self.buffer.first_editable_column()
     }
 
-    fn get_last_editable_column(&self) -> i32 {
-        self.buffer.get_last_editable_column()
+    fn last_editable_column(&self) -> i32 {
+        self.buffer.last_editable_column()
     }
 
     fn get_line(&self, line: usize) -> Option<&Line> {
@@ -284,7 +284,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn line_count(&self) -> usize {
-        self.buffer.get_line_count() as usize
+        self.buffer.line_count() as usize
     }
 
     fn set_resolution(&mut self, _size: Size) {
@@ -370,25 +370,25 @@ impl EditableScreen for TextScreen {
 
     fn scroll_up(&mut self) {
         // Add top line to scrollback before scrolling (while data is still there)
-        if self.terminal_state().get_margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
-            let font_height = self.get_font_dimensions().height;
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
+            let font_height = self.font_dimensions().height;
             let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, font_height);
             self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
-        let font_dims = self.get_font_dimensions();
+        let font_dims = self.font_dimensions();
 
-        let start_line: i32 = self.get_first_editable_line();
-        let end_line = self.get_last_editable_line();
+        let start_line: i32 = self.first_editable_line();
+        let end_line = self.last_editable_line();
 
-        let start_column = self.get_first_editable_column();
-        let end_column = self.get_last_editable_column();
+        let start_column = self.first_editable_column();
+        let end_column = self.last_editable_column();
 
         {
             let layer_ref = &mut self.buffer.layers[self.current_layer];
             for x in start_column..=end_column {
                 (start_line..end_line).for_each(|y| {
-                    let ch = layer_ref.get_char((x, y + 1).into());
+                    let ch = layer_ref.char_at((x, y + 1).into());
                     layer_ref.set_char((x, y), ch);
                 });
                 layer_ref.set_char((x, end_line), AttributedChar::default());
@@ -421,19 +421,19 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_down(&mut self) {
-        let font_dims = self.get_font_dimensions();
+        let font_dims = self.font_dimensions();
 
-        let start_line: i32 = self.get_first_editable_line();
-        let end_line = self.get_last_editable_line();
+        let start_line: i32 = self.first_editable_line();
+        let end_line = self.last_editable_line();
 
-        let start_column = self.get_first_editable_column();
-        let end_column = self.get_last_editable_column();
+        let start_column = self.first_editable_column();
+        let end_column = self.last_editable_column();
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data downward
         for x in start_column..=end_column {
             ((start_line + 1)..=end_line).rev().for_each(|y: i32| {
-                let ch = layer_ref.get_char((x, y - 1).into());
+                let ch = layer_ref.char_at((x, y - 1).into());
                 layer_ref.set_char((x, y), ch);
             });
             layer_ref.set_char((x, start_line), AttributedChar::default());
@@ -461,13 +461,13 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_left(&mut self) {
-        let font_dims = self.get_font_dimensions();
+        let font_dims = self.font_dimensions();
 
-        let start_line: i32 = self.get_first_editable_line();
-        let end_line = self.get_last_editable_line();
+        let start_line: i32 = self.first_editable_line();
+        let end_line = self.last_editable_line();
 
-        let start_column = self.get_first_editable_column() as usize;
-        let end_column = self.get_last_editable_column() + 1;
+        let start_column = self.first_editable_column() as usize;
+        let end_column = self.last_editable_column() + 1;
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data left
@@ -503,13 +503,13 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_right(&mut self) {
-        let font_dims = self.get_font_dimensions();
+        let font_dims = self.font_dimensions();
 
-        let start_line: i32 = self.get_first_editable_line();
-        let end_line = self.get_last_editable_line();
+        let start_line: i32 = self.first_editable_line();
+        let end_line = self.last_editable_line();
 
-        let start_column = self.get_first_editable_column() as usize;
-        let end_column = self.get_last_editable_column() as usize;
+        let start_column = self.first_editable_column() as usize;
+        let end_column = self.last_editable_column() as usize;
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
         for y in start_line..=end_line {
@@ -544,15 +544,15 @@ impl EditableScreen for TextScreen {
 
     fn add_sixel(&mut self, pos: Position, mut sixel: Sixel) {
         sixel.position = pos;
-        let font_dims = self.buffer.get_font_dimensions();
+        let font_dims = self.buffer.font_dimensions();
         let vec = &mut self.buffer.layers[0].sixels;
 
-        let screen_rect = sixel.get_screen_rect(font_dims);
+        let screen_rect = sixel.screen_rect(font_dims);
         let mut sixel_count = vec.len();
         // remove old sixel that are shadowed by the new one
         let mut i = 0;
         while i < sixel_count {
-            let old_rect = vec[i].get_screen_rect(font_dims);
+            let old_rect = vec[i].screen_rect(font_dims);
             if screen_rect.contains_rect(&old_rect) {
                 vec.remove(i);
                 sixel_count -= 1;
@@ -608,13 +608,13 @@ impl EditableScreen for TextScreen {
         // DL (Delete Line) - Delete lines at cursor position
         // Lines are scrolled up within the scroll region, blank line added at bottom
         // If cursor is outside scroll region, the operation has no effect.
-        let start_column = self.get_first_editable_column();
-        let end_column = self.get_last_editable_column();
+        let start_column = self.first_editable_column();
+        let end_column = self.last_editable_column();
 
-        let top = self.get_first_editable_line();
-        let bottom = self.get_last_editable_line();
+        let top = self.first_editable_line();
+        let bottom = self.last_editable_line();
 
-        if self.terminal_state().get_margins_top_bottom().is_some() {
+        if self.terminal_state().margins_top_bottom().is_some() {
             // If cursor is outside scroll region, do nothing
             if line < top || line > bottom {
                 return;
@@ -625,7 +625,7 @@ impl EditableScreen for TextScreen {
             for x in start_column..=end_column {
                 // Move from delete position to bottom
                 for y in line..bottom {
-                    let ch = layer_ref.get_char((x, y + 1).into());
+                    let ch = layer_ref.char_at((x, y + 1).into());
                     layer_ref.set_char((x, y), ch);
                 }
                 // Clear the bottom line
@@ -633,7 +633,7 @@ impl EditableScreen for TextScreen {
             }
         } else {
             // No scroll region - just remove the line
-            if line >= self.buffer.get_line_count() {
+            if line >= self.buffer.line_count() {
                 return;
             }
             self.buffer.layers[self.current_layer].remove_line(line);
@@ -644,13 +644,13 @@ impl EditableScreen for TextScreen {
         // IL (Insert Line) - Insert blank lines at cursor position
         // Lines are scrolled down within the scroll region, bottom line is lost
         // If cursor is outside scroll region, the operation has no effect.
-        let start_column = self.get_first_editable_column();
-        let end_column = self.get_last_editable_column();
+        let start_column = self.first_editable_column();
+        let end_column = self.last_editable_column();
 
-        let top = self.get_first_editable_line();
-        let bottom = self.get_last_editable_line();
+        let top = self.first_editable_line();
+        let bottom = self.last_editable_line();
 
-        if self.terminal_state().get_margins_top_bottom().is_some() {
+        if self.terminal_state().margins_top_bottom().is_some() {
             // If cursor is outside scroll region, do nothing
             if line < top || line > bottom {
                 return;
@@ -664,7 +664,7 @@ impl EditableScreen for TextScreen {
                 // We shift lines line..bottom down to line+1..bottom+1
                 // The content at 'bottom' is lost (pushed out of scroll region)
                 for y in (line..bottom).rev() {
-                    let ch = layer_ref.get_char((x, y).into());
+                    let ch = layer_ref.char_at((x, y).into());
                     layer_ref.set_char((x, y + 1), ch);
                 }
                 // Clear the inserted line
@@ -672,7 +672,7 @@ impl EditableScreen for TextScreen {
             }
         } else {
             // No scroll region - insert line at cursor, pushing everything down
-            let buffer_width = self.buffer.layers[self.current_layer].get_width();
+            let buffer_width = self.buffer.layers[self.current_layer].width();
             self.buffer.layers[self.current_layer].insert_line(line, Line::with_capacity(buffer_width));
         }
     }
@@ -680,7 +680,7 @@ impl EditableScreen for TextScreen {
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback
         if self.terminal_state().is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.get_resolution().height);
+            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.resolution().height);
             self.scrollback_buffer.add_chunk(rgba_data, size);
         }
 
@@ -688,7 +688,7 @@ impl EditableScreen for TextScreen {
         let layer: &mut Layer = &mut self.buffer.layers[self.current_layer];
         layer.clear();
         if self.terminal_state().is_terminal_buffer {
-            self.buffer.set_size(self.terminal_state().get_size());
+            self.buffer.set_size(self.terminal_state().size());
         }
         self.buffer.mark_dirty();
     }

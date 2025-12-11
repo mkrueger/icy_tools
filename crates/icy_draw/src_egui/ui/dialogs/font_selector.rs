@@ -102,7 +102,7 @@ impl FontSelector {
         }
 
         let mut selected_font = 0;
-        let cur_font = editor.buffer_view.lock().get_caret().get_font_page();
+        let cur_font = editor.buffer_view.lock().get_caret().font_page();
 
         for (id, file_font) in editor.buffer_view.lock().get_buffer().font_iter() {
             let mut found = false;

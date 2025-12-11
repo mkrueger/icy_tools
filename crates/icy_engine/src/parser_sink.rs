@@ -45,11 +45,11 @@ impl<'a> ScreenSink<'a> {
     }
 
     /// Get the current caret attribute with inverse_video applied if active
-    fn get_display_attribute(&self) -> crate::TextAttribute {
+    fn display_attribute(&self) -> crate::TextAttribute {
         let mut attr = if self.screen.terminal_state().inverse_video {
             let mut attr = self.screen.caret().attribute;
-            let fg = attr.get_foreground();
-            let bg = attr.get_background();
+            let fg = attr.foreground();
+            let bg = attr.background();
             attr.set_foreground(bg);
             attr.set_background(fg);
             attr
@@ -237,8 +237,8 @@ impl<'a> ScreenSink<'a> {
                 // A full implementation would need to track this mode separately
                 let attr = &mut self.screen.caret_mut().attribute;
                 if enabled {
-                    let fg = attr.get_foreground();
-                    let bg = attr.get_background();
+                    let fg = attr.foreground();
+                    let bg = attr.background();
                     attr.set_foreground(bg);
                     attr.set_background(fg);
                 }
@@ -310,13 +310,13 @@ impl<'a> ScreenSink<'a> {
         let sx = self.screen.caret_position().x;
         let sy = self.screen.caret_position().y;
 
-        let prev_attr = self.screen.get_char((sx, sy).into()).attribute;
+        let prev_attr = self.screen.char_at((sx, sy).into()).attribute;
 
         // Fill remaining characters on the line that match the previous attribute
         // This handles cases like double-height where we need to update all following characters
-        for x in sx..self.screen.terminal_state().get_width() {
+        for x in sx..self.screen.terminal_state().width() {
             let p = Position::new(x, sy);
-            let mut ch = self.screen.get_char(p);
+            let mut ch = self.screen.char_at(p);
 
             // Stop if we hit a character with a different attribute
             // (this means a new color/style command was encountered)
@@ -358,24 +358,22 @@ impl<'a> CommandSink for ScreenSink<'a> {
 
                 // Now output the collected characters
                 for ch in chars {
-                    if self.screen.get_height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.get_width() >= crate::limits::MAX_BUFFER_WIDTH as i32
-                    {
+                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH as i32 {
                         // Prevent excessive buffer growth
                         break;
                     }
-                    let attr_char = AttributedChar::new(ch, self.get_display_attribute());
+                    let attr_char = AttributedChar::new(ch, self.display_attribute());
                     self.screen.print_char(attr_char);
                 }
             }
             _ => {
                 // Legacy mode: treat each byte as a character (CP437, Petscii, Atascii, Viewdata)
                 for &byte in text {
-                    if self.screen.get_height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.get_width() >= crate::limits::MAX_BUFFER_WIDTH as i32
-                    {
+                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH as i32 {
                         // Prevent excessive buffer growth
                         break;
                     }
-                    let ch = AttributedChar::new(byte as char, self.get_display_attribute());
+                    let ch = AttributedChar::new(byte as char, self.display_attribute());
                     self.screen.print_char(ch);
                 }
             }
@@ -510,10 +508,10 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiEraseCharacter(n) => {
                 let pos = self.screen.caret_position();
-                let blank = AttributedChar::new(' ', self.get_display_attribute());
+                let blank = AttributedChar::new(' ', self.display_attribute());
                 for i in 0..n as i32 {
                     let x = pos.x + i;
-                    if x < self.screen.get_width() {
+                    if x < self.screen.width() {
                         self.screen.set_char(Position::new(x, pos.y), blank);
                     }
                 }
@@ -652,7 +650,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
                 let nr = font_number as usize;
-                if self.screen().get_font(nr).is_some() {
+                if self.screen().font(nr).is_some() {
                     self.set_font_selection_success(nr);
                 }
                 match BitFont::from_ansi_font_page(nr) {
@@ -695,9 +693,9 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.set_caret_position(Position::default());
             }
             TerminalCommand::ResetLeftAndRightMargin { left, right } => {
-                let width = self.screen.get_width();
+                let width = self.screen.width();
 
-                let (current_left, current_right) = self.screen.terminal_state().get_margins_left_right().unwrap_or((0, width - 1));
+                let (current_left, current_right) = self.screen.terminal_state().margins_left_right().unwrap_or((0, width - 1));
 
                 let mut new_left_1b = left as i32;
                 let mut new_right_1b = right as i32;
@@ -726,15 +724,15 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 use icy_parser_core::MarginType;
                 match margin_type {
                     MarginType::Top => {
-                        let bottom = if let Some((_, b)) = self.screen.terminal_state().get_margins_top_bottom() {
+                        let bottom = if let Some((_, b)) = self.screen.terminal_state().margins_top_bottom() {
                             b
                         } else {
-                            self.screen.get_height() - 1
+                            self.screen.height() - 1
                         };
                         self.screen.terminal_state_mut().set_margins_top_bottom(n, bottom);
                     }
                     MarginType::Bottom => {
-                        let top = if let Some((t, _)) = self.screen.terminal_state().get_margins_top_bottom() {
+                        let top = if let Some((t, _)) = self.screen.terminal_state().margins_top_bottom() {
                             t
                         } else {
                             0
@@ -742,15 +740,15 @@ impl<'a> CommandSink for ScreenSink<'a> {
                         self.screen.terminal_state_mut().set_margins_top_bottom(top, n);
                     }
                     MarginType::Left => {
-                        let right = if let Some((_, r)) = self.screen.terminal_state().get_margins_left_right() {
+                        let right = if let Some((_, r)) = self.screen.terminal_state().margins_left_right() {
                             r
                         } else {
-                            self.screen.get_width() - 1
+                            self.screen.width() - 1
                         };
                         self.screen.terminal_state_mut().set_margins_left_right(n, right);
                     }
                     MarginType::Right => {
-                        let left = if let Some((l, _)) = self.screen.terminal_state().get_margins_left_right() {
+                        let left = if let Some((l, _)) = self.screen.terminal_state().margins_left_right() {
                             l
                         } else {
                             0
@@ -838,7 +836,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                     let y = if current_y > 0 {
                         current_y.saturating_sub(1)
                     } else {
-                        self.screen.terminal_state().get_height() - 1
+                        self.screen.terminal_state().height() - 1
                     };
                     let mut pos = self.screen.caret_position();
                     pos.y = y;
@@ -847,7 +845,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 Direction::Down => {
                     let mut pos = self.screen.caret_position();
                     pos.y = pos.y + 1;
-                    if pos.y >= self.screen.terminal_state().get_height() {
+                    if pos.y >= self.screen.terminal_state().height() {
                         pos.y = 0;
                     }
                     self.screen.set_caret_position(pos);
@@ -859,7 +857,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                         new_pos.x = pos.x.saturating_sub(1);
                         self.screen.set_caret_position(new_pos);
                     } else {
-                        let x = self.screen.terminal_state().get_width().saturating_sub(1);
+                        let x = self.screen.terminal_state().width().saturating_sub(1);
                         self.screen.caret_mut().x = x;
                         self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Up));
                     }
@@ -867,7 +865,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 Direction::Right => {
                     let x = self.screen.caret().x;
                     self.screen.caret_mut().x = x + 1;
-                    if self.screen.caret().x >= self.screen.terminal_state().get_width() {
+                    if self.screen.caret().x >= self.screen.terminal_state().width() {
                         self.screen.caret_mut().x = 0;
                         self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Down));
                         return true;
@@ -875,11 +873,11 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
             },
             ViewDataCommand::SetBgToFg => {
-                let fg = self.screen.caret_mut().attribute.get_foreground();
+                let fg = self.screen.caret_mut().attribute.foreground();
                 self.screen.caret_mut().attribute.set_background(fg);
             }
             ViewDataCommand::SetChar(ch) => {
-                let ch = AttributedChar::new(ch as char, self.get_display_attribute());
+                let ch = AttributedChar::new(ch as char, self.display_attribute());
                 self.screen.set_char(self.screen.caret_position(), ch);
             }
         }
@@ -951,7 +949,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                         if cp.y == p.position.y {
                             p.length = cp.x - p.position.x;
                         } else {
-                            p.length = self.screen.terminal_state().get_width() - p.position.x + (cp.y - p.position.y) * self.screen.terminal_state().get_width() + p.position.x;
+                            p.length = self.screen.terminal_state().width() - p.position.x + (cp.y - p.position.y) * self.screen.terminal_state().width() + p.position.x;
                         }
                         self.screen.add_hyperlink(p);
                     } else {*/

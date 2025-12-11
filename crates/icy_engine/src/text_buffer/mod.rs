@@ -226,8 +226,8 @@ impl std::fmt::Debug for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Buffer")
             .field("file_name", &self.file_name)
-            .field("width", &self.get_width())
-            .field("height", &self.get_height())
+            .field("width", &self.width())
+            .field("height", &self.height())
             .field("custom_palette", &self.palette)
             .field("layers", &self.layers)
             .finish_non_exhaustive()
@@ -238,10 +238,10 @@ impl std::fmt::Display for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut str = String::new();
 
-        for y in 0..self.get_height() {
+        for y in 0..self.height() {
             str.extend(format!("{y:3}: ").chars());
-            for x in 0..self.get_width() {
-                let ch = self.get_char((x, y).into());
+            for x in 0..self.width() {
+                let ch = self.char_at((x, y).into());
                 str.push(self.buffer_type.convert_to_unicode(ch.ch));
             }
             str.push('\n');
@@ -280,8 +280,8 @@ impl Clone for TextBuffer {
 impl TextBuffer {
     /// Check if a line contains only transparent/empty characters
     pub fn is_line_empty(&self, line: i32) -> bool {
-        for i in 0..self.get_width() {
-            if !self.get_char((i, line).into()).is_transparent() {
+        for i in 0..self.width() {
+            if !self.char_at((i, line).into()).is_transparent() {
                 return false;
             }
         }
@@ -297,11 +297,11 @@ impl TextBuffer {
             if !layer.hyperlinks.is_empty() {
                 result.has_links = true;
             }
-            for y in 0..layer.get_height() {
-                for x in 0..layer.get_width() {
-                    let ch = layer.get_char((x, y).into());
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let ch = layer.char_at((x, y).into());
 
-                    if ch.attribute.get_foreground() != 7 || ch.attribute.get_background() != 0 {
+                    if ch.attribute.foreground() != 7 || ch.attribute.background() != 0 {
                         result.use_colors = true;
                     }
 
@@ -323,7 +323,7 @@ impl TextBuffer {
     }
 
     fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {
-        let cur_char = cur_layer.get_char(pos);
+        let cur_char = cur_layer.char_at(pos);
         match cur_layer.properties.mode {
             crate::Mode::Normal => {
                 let underlying_char = *found_char;
@@ -350,7 +350,7 @@ impl TextBuffer {
             crate::Mode::Chars => {
                 if !cur_char.is_transparent() {
                     found_char.ch = cur_char.ch;
-                    found_char.set_font_page(cur_char.get_font_page());
+                    found_char.set_font_page(cur_char.font_page());
                 }
             }
             crate::Mode::Attributes => {
@@ -364,10 +364,10 @@ impl TextBuffer {
 
 pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<usize> {
     let mut hash_set = HashSet::new();
-    for y in 0..buf.get_height() {
-        for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y).into());
-            hash_set.insert(ch.get_font_page());
+    for y in 0..buf.height() {
+        for x in 0..buf.width() {
+            let ch = buf.char_at((x, y).into());
+            hash_set.insert(ch.font_page());
         }
     }
     let mut v: Vec<usize> = hash_set.into_iter().collect();
@@ -473,7 +473,7 @@ impl TextBuffer {
 
     /// Get the current buffer version (increments on each modification)
     /// Used for cache invalidation
-    pub fn get_version(&self) -> u64 {
+    pub fn version(&self) -> u64 {
         self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -517,14 +517,14 @@ impl TextBuffer {
         self.font_table.iter_mut()
     }
 
-    pub fn get_font(&self, font_number: usize) -> Option<&BitFont> {
+    pub fn font(&self, font_number: usize) -> Option<&BitFont> {
         self.font_table.get(&font_number)
     }
 
     /// Get the appropriate font for rendering, considering letter spacing setting.
     /// Returns the 9px version if use_letter_spacing is true and cached, otherwise the original.
     /// For use during rendering (immutable access).
-    pub fn get_font_for_render(&self, font_number: usize) -> Option<&BitFont> {
+    pub fn font_for_render(&self, font_number: usize) -> Option<&BitFont> {
         if self.use_letter_spacing {
             // Try to get cached 9px font first
             if let Some(font) = self.font_table_9px.get(&font_number) {
@@ -538,7 +538,7 @@ impl TextBuffer {
     /// Get the appropriate font for rendering, considering letter spacing setting.
     /// Returns the 9px version if use_letter_spacing is true, otherwise the original.
     /// Note: This requires mutable access because it may lazily create the 9px font.
-    pub fn get_render_font(&mut self, font_number: usize) -> Option<&BitFont> {
+    pub fn render_font(&mut self, font_number: usize) -> Option<&BitFont> {
         if self.use_letter_spacing {
             // Lazily create 9px font if not cached
             if !self.font_table_9px.contains_key(&font_number) {
@@ -587,7 +587,7 @@ impl TextBuffer {
         self.font_table.len()
     }
 
-    pub fn get_font_table(&self) -> HashMap<usize, BitFont> {
+    pub fn font_table(&self) -> HashMap<usize, BitFont> {
         self.font_table.clone()
     }
 
@@ -606,11 +606,11 @@ impl TextBuffer {
         i
     }
 
-    pub fn get_real_buffer_width(&self) -> i32 {
+    pub fn real_buffer_width(&self) -> i32 {
         let mut w = 0;
         for layer in &self.layers {
             for line in &layer.lines {
-                w = max(w, line.get_line_length());
+                w = max(w, line.line_length());
             }
         }
         w
@@ -652,55 +652,55 @@ impl TextBuffer {
     /// terminal buffers have a viewport on the bottom of the buffer
     /// this function gives back the first visible line.
     #[must_use]
-    pub fn get_first_visible_line(&self) -> i32 {
+    pub fn first_visible_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            max(0, self.size.height.saturating_sub(self.terminal_state.get_height()))
+            max(0, self.size.height.saturating_sub(self.terminal_state.height()))
         } else {
             0
         }
     }
 
-    pub fn get_last_visible_line(&self) -> i32 {
-        self.get_first_visible_line() + self.get_height()
+    pub fn last_visible_line(&self) -> i32 {
+        self.first_visible_line() + self.height()
     }
 
-    pub fn get_first_editable_line(&self) -> i32 {
+    pub fn first_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_top_bottom() {
-                return self.get_first_visible_line() + start;
+            if let Some((start, _)) = self.terminal_state.margins_top_bottom() {
+                return self.first_visible_line() + start;
             }
         }
-        self.get_first_visible_line()
+        self.first_visible_line()
     }
 
-    pub fn get_first_editable_column(&self) -> i32 {
+    pub fn first_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((start, _)) = self.terminal_state.get_margins_left_right() {
+            if let Some((start, _)) = self.terminal_state.margins_left_right() {
                 return start;
             }
         }
         0
     }
 
-    pub fn get_last_editable_column(&self) -> i32 {
+    pub fn last_editable_column(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_left_right() {
+            if let Some((_, end)) = self.terminal_state.margins_left_right() {
                 return end;
             }
         }
-        self.get_width().saturating_sub(1)
+        self.width().saturating_sub(1)
     }
 
     #[must_use]
-    pub fn get_last_editable_line(&self) -> i32 {
+    pub fn last_editable_line(&self) -> i32 {
         if self.terminal_state.is_terminal_buffer {
-            if let Some((_, end)) = self.terminal_state.get_margins_top_bottom() {
-                self.get_first_visible_line() + end
+            if let Some((_, end)) = self.terminal_state.margins_top_bottom() {
+                self.first_visible_line() + end
             } else {
-                (self.get_first_visible_line() + self.get_height()).saturating_sub(1)
+                (self.first_visible_line() + self.height()).saturating_sub(1)
             }
         } else {
-            max(self.layers[0].lines.len() as i32, self.get_height().saturating_sub(1))
+            max(self.layers[0].lines.len() as i32, self.height().saturating_sub(1))
         }
     }
 
@@ -714,25 +714,25 @@ impl TextBuffer {
     }
 
     #[must_use]
-    pub fn get_glyph(&self, ch: &AttributedChar) -> Option<libyaff::GlyphDefinition> {
-        if let Some(ext) = &self.get_font(ch.get_font_page()) {
-            return ext.get_glyph(ch.ch);
+    pub fn glyph(&self, ch: &AttributedChar) -> Option<libyaff::GlyphDefinition> {
+        if let Some(ext) = &self.font(ch.font_page()) {
+            return ext.glyph(ch.ch);
         }
         None
     }
 
     #[must_use]
-    pub fn get_font_dimensions(&self) -> Size {
-        if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
+    pub fn font_dimensions(&self) -> Size {
+        if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {
-        let font_dimensions = self.get_font_dimensions();
+        let font_dimensions = self.font_dimensions();
         x as f64 * font_dimensions.width as f64
     }
 
     pub fn to_screeny(&self, y: i32) -> f64 {
-        let font_dimensions = self.get_font_dimensions();
+        let font_dimensions = self.font_dimensions();
         y as f64 * font_dimensions.height as f64
     }
 
@@ -800,23 +800,23 @@ impl Default for TextBuffer {
 }
 
 impl TextPane for TextBuffer {
-    fn get_width(&self) -> i32 {
+    fn width(&self) -> i32 {
         self.size.width
     }
 
-    fn get_height(&self) -> i32 {
+    fn height(&self) -> i32 {
         self.size.height
     }
 
-    fn get_line_count(&self) -> i32 {
-        if let Some(len) = self.layers.iter().map(|l| l.get_line_count()).max() {
+    fn line_count(&self) -> i32 {
+        if let Some(len) = self.layers.iter().map(|l| l.line_count()).max() {
             len as i32
         } else {
             self.size.height
         }
     }
 
-    fn get_char(&self, pos: Position) -> AttributedChar {
+    fn char_at(&self, pos: Position) -> AttributedChar {
         let pos = pos.into();
 
         if self.show_tags {
@@ -830,8 +830,8 @@ impl TextPane for TextBuffer {
         for i in 0..self.layers.len() {
             let cur_layer = &self.layers[i];
             if cur_layer.properties.is_visible {
-                let pos: Position = pos - cur_layer.get_offset();
-                if pos.x >= 0 && pos.y >= 0 && pos.x < cur_layer.get_width() && pos.y < cur_layer.get_height() {
+                let pos: Position = pos - cur_layer.offset();
+                if pos.x >= 0 && pos.y >= 0 && pos.x < cur_layer.width() && pos.y < cur_layer.height() {
                     self.merge_layer_char(&mut found_char, cur_layer, pos);
                 }
             }
@@ -840,15 +840,15 @@ impl TextPane for TextBuffer {
         found_char
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
+    fn line_length(&self, line: i32) -> i32 {
         let mut length = 0;
         let mut pos = Position::new(0, line);
         let mut last_char = AttributedChar::invisible();
-        for x in 0..self.get_width() {
+        for x in 0..self.width() {
             pos.x = x;
-            let ch = self.get_char(pos);
+            let ch = self.char_at(pos);
             if x > 0 && ch.is_transparent() {
-                let bg = last_char.attribute.get_background();
+                let bg = last_char.attribute.background();
                 if bg != TextAttribute::TRANSPARENT_COLOR && bg > 0 {
                     length = x + 1;
                 }
@@ -869,11 +869,11 @@ impl TextPane for TextBuffer {
         length
     }
 
-    fn get_size(&self) -> Size {
+    fn size(&self) -> Size {
         self.size
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        Rectangle::from_min_size((0, 0), (self.get_width(), self.get_height()))
+    fn rectangle(&self) -> Rectangle {
+        Rectangle::from_min_size((0, 0), (self.width(), self.height()))
     }
 }

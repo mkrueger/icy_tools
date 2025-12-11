@@ -40,21 +40,21 @@ fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) ->
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         // Use get_font_for_render to get the correct font (9px if letter spacing is enabled)
-        let Some(font) = self.get_font_for_render(0) else {
+        let Some(font) = self.font_for_render(0) else {
             log::error!("render_to_rgba: no font available");
             return (Size::new(0, 0), Vec::new());
         };
         let font_size = font.size();
 
         // Validate buffer dimensions
-        if self.get_width() <= 0 || self.get_height() <= 0 {
-            log::error!("render_to_rgba: invalid buffer dimensions {}x{}", self.get_width(), self.get_height());
+        if self.width() <= 0 || self.height() <= 0 {
+            log::error!("render_to_rgba: invalid buffer dimensions {}x{}", self.width(), self.height());
             return (Size::new(0, 0), Vec::new());
         }
 
-        let rect = options.rect.as_rectangle_with_width(self.get_width());
-        let px_width = rect.get_width() * font_size.width;
-        let px_height = rect.get_height() * font_size.height;
+        let rect = options.rect.as_rectangle_with_width(self.width());
+        let px_width = rect.width() * font_size.width;
+        let px_height = rect.height() * font_size.height;
 
         // Check for overflow before allocation
         let total_pixels = (px_width as u64).checked_mul(px_height as u64);
@@ -63,8 +63,8 @@ impl TextBuffer {
                 "render_to_rgba: dimensions too large {}x{} ({}x{} chars)",
                 px_width,
                 px_height,
-                rect.get_width(),
-                rect.get_height()
+                rect.width(),
+                rect.height()
             );
             return (Size::new(0, 0), Vec::new());
         }
@@ -129,7 +129,7 @@ impl TextBuffer {
 
                 _ => {
                     let mut res = if self.use_letter_spacing { 1.35 } else { 1.2 };
-                    if let Some(font) = self.get_font(0) {
+                    if let Some(font) = self.font(0) {
                         // This only works for SAUCE originated fonts but that's where AR matters most
                         if font.name().starts_with("IBM EGA") {
                             res = 1.3714;
@@ -163,15 +163,15 @@ impl TextBuffer {
     /// Render only a specific pixel region (for viewport-based rendering)
     /// Renders the character region and crops to exact pixel bounds
     pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
-        let Some(font) = self.get_font_for_render(0) else {
+        let Some(font) = self.font_for_render(0) else {
             log::error!("render_region_to_rgba: no font available");
             return (Size::new(0, 0), Vec::new());
         };
         let font_size = font.size();
 
         // Validate buffer dimensions
-        if self.get_width() <= 0 || self.get_height() <= 0 {
-            log::error!("render_region_to_rgba: invalid buffer dimensions {}x{}", self.get_width(), self.get_height());
+        if self.width() <= 0 || self.height() <= 0 {
+            log::error!("render_region_to_rgba: invalid buffer dimensions {}x{}", self.width(), self.height());
             return (Size::new(0, 0), Vec::new());
         }
 
@@ -194,10 +194,10 @@ impl TextBuffer {
         let char_bottom = (px_region.start.y + px_region.size.height + font_size.height - 1) / font_size.height;
 
         // Clamp to buffer bounds
-        let char_x = char_x.clamp(0, self.get_width());
-        let char_y = char_y.clamp(0, self.get_height());
-        let char_width = (char_right - char_x).clamp(0, self.get_width() - char_x);
-        let char_height = (char_bottom - char_y).clamp(0, self.get_height() - char_y);
+        let char_x = char_x.clamp(0, self.width());
+        let char_y = char_y.clamp(0, self.height());
+        let char_width = (char_right - char_x).clamp(0, self.width() - char_x);
+        let char_height = (char_bottom - char_y).clamp(0, self.height() - char_y);
 
         // Early exit if nothing to render
         if char_width <= 0 || char_height <= 0 {
@@ -313,7 +313,7 @@ impl TextBuffer {
         use crate::Palette;
 
         // Palette cache as u32 for direct pixel writes
-        let palette_cache = self.palette.get_palette_cache_rgba();
+        let palette_cache = self.palette.palette_cache_rgba();
         // Fallback colors as u32
         let default_fg = Palette::rgb_to_rgba_u32(255, 255, 255);
         let default_bg = Palette::rgb_to_rgba_u32(0, 0, 0);
@@ -323,8 +323,8 @@ impl TextBuffer {
 
         // Optional selection colors (if both are set) - pre-packed as u32
         let explicit_sel_colors = options.selection_fg.as_ref().zip(options.selection_bg.as_ref()).map(|(fg, bg)| {
-            let (f_r, f_g, f_b) = fg.get_rgb();
-            let (b_r, b_g, b_b) = bg.get_rgb();
+            let (f_r, f_g, f_b) = fg.rgb();
+            let (b_r, b_g, b_b) = bg.rgb();
             (Palette::rgb_to_rgba_u32(f_r, f_g, f_b), Palette::rgb_to_rgba_u32(b_r, b_g, b_b))
         });
 
@@ -339,21 +339,19 @@ impl TextBuffer {
             let y = y as i32;
 
             // Process this character row
-            for x in 0..rect.get_width() {
+            for x in 0..rect.width() {
                 let pos = Position::new(x + rect.start.x, y + rect.start.y);
-                let ch = self.get_char(pos);
+                let ch = self.char_at(pos);
 
                 // Resolve font - use get_font_for_render for 9px font support
-                let font = self
-                    .get_font_for_render(ch.get_font_page())
-                    .unwrap_or_else(|| self.get_font_for_render(0).unwrap());
+                let font = self.font_for_render(ch.font_page()).unwrap_or_else(|| self.font_for_render(0).unwrap());
 
                 // Foreground index (apply bold high bit)
-                let mut fg = ch.attribute.get_foreground();
+                let mut fg = ch.attribute.foreground();
                 if ch.attribute.is_bold() && fg < 8 {
                     fg += 8;
                 }
-                let bg = ch.attribute.get_background();
+                let bg = ch.attribute.background();
 
                 if ch.attribute.is_blinking() && !options.blink_on {
                     fg = bg;
@@ -396,7 +394,7 @@ impl TextBuffer {
                 }
 
                 // Foreground glyph overlay
-                if let Some(glyph) = font.get_glyph(ch.ch) {
+                if let Some(glyph) = font.glyph(ch.ch) {
                     let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
                     unsafe {
                         for cy in 0..max_cy {
@@ -458,33 +456,33 @@ impl TextBuffer {
         use crate::Palette;
 
         // Palette cache (u32 version for faster writes)
-        let palette_cache = self.palette.get_palette_cache_rgba();
+        let palette_cache = self.palette.palette_cache_rgba();
 
         let selection_active = options.selection.is_some();
         let selection_ref = options.selection.as_ref();
 
         // Optional selection colors (if both are set)
         let explicit_sel_colors = options.selection_fg.as_ref().zip(options.selection_bg.as_ref()).map(|(fg, bg)| {
-            let (f_r, f_g, f_b) = fg.get_rgb();
-            let (b_r, b_g, b_b) = bg.get_rgb();
+            let (f_r, f_g, f_b) = fg.rgb();
+            let (b_r, b_g, b_b) = bg.rgb();
             (Palette::rgb_to_rgba_u32(f_r, f_g, f_b), Palette::rgb_to_rgba_u32(b_r, b_g, b_b))
         });
 
         // Pre-scan lines to determine which are double-height
-        let mut is_double_height_line = vec![false; rect.get_height() as usize];
-        let mut is_bottom_half_line = vec![false; rect.get_height() as usize];
+        let mut is_double_height_line = vec![false; rect.height() as usize];
+        let mut is_bottom_half_line = vec![false; rect.height() as usize];
 
         let mut y = 0;
-        while y < rect.get_height() {
+        while y < rect.height() {
             let abs_y = y + rect.start.y;
             // Check if any character in this line has double-height
-            for x in 0..rect.get_width() {
+            for x in 0..rect.width() {
                 let pos = Position::new(x + rect.start.x, abs_y);
-                let ch = self.get_char(pos);
+                let ch = self.char_at(pos);
                 if ch.attribute.is_double_height() {
                     is_double_height_line[y as usize] = true;
                     // Mark the next line as bottom half (if it exists)
-                    if (y + 1) < rect.get_height() {
+                    if (y + 1) < rect.height() {
                         is_bottom_half_line[(y + 1) as usize] = true;
                     }
                     break; // No need to check rest of line
@@ -505,13 +503,13 @@ impl TextBuffer {
                 // Get the character from the line above
                 if pos.y > 0 {
                     let above_pos = Position::new(pos.x, pos.y - 1);
-                    let above_ch = self.get_char(above_pos);
+                    let above_ch = self.char_at(above_pos);
 
                     // Only render bottom half if the character above has double-height flag
                     if !above_ch.attribute.is_double_height() {
                         // Character above is not double-height, just render blank space
                         // Background fill only (no glyph)
-                        let bg = above_ch.attribute.get_background();
+                        let bg = above_ch.attribute.background();
                         let bg_idx = bg as usize;
                         let bg_u32 = if bg_idx < palette_cache.len() {
                             palette_cache[bg_idx]
@@ -541,29 +539,27 @@ impl TextBuffer {
                 }
             }
 
-            let ch = self.get_char(pos);
+            let ch = self.char_at(pos);
 
             // Determine what to render and how
             let is_in_double_height_line = is_double_height_line[y as usize];
             let is_rendering_bottom_half = is_bottom_half_line[y as usize];
             let render_ch = if is_rendering_bottom_half {
                 // We already checked above that this character has double-height
-                self.get_char(Position::new(pos.x, pos.y - 1))
+                self.char_at(Position::new(pos.x, pos.y - 1))
             } else {
                 ch
             };
 
             // Resolve font
-            let font = self
-                .get_font_for_render(render_ch.get_font_page())
-                .unwrap_or_else(|| self.get_font_for_render(0).unwrap());
+            let font = self.font_for_render(render_ch.font_page()).unwrap_or_else(|| self.font_for_render(0).unwrap());
 
             // Foreground index (apply bold high bit)
-            let mut fg = render_ch.attribute.get_foreground();
+            let mut fg = render_ch.attribute.foreground();
             if render_ch.attribute.is_bold() && fg < 8 {
                 fg += 8;
             }
-            let bg = render_ch.attribute.get_background();
+            let bg = render_ch.attribute.background();
 
             if render_ch.attribute.is_blinking() && !options.blink_on || render_ch.attribute.is_concealed() {
                 fg = bg;
@@ -628,7 +624,7 @@ impl TextBuffer {
             // Decide how to render the glyph
             if is_rendering_bottom_half || (is_in_double_height_line && render_ch.attribute.is_double_height()) {
                 // Render double-height (either top or bottom half)
-                if let Some(glyph) = font.get_glyph(render_ch.ch) {
+                if let Some(glyph) = font.glyph(render_ch.ch) {
                     let glyph_height = glyph.bitmap.pixels.len();
 
                     unsafe {
@@ -659,7 +655,7 @@ impl TextBuffer {
                 }
             } else {
                 // Normal height rendering (including non-double-height chars in double-height lines)
-                if let Some(glyph) = font.get_glyph(render_ch.ch) {
+                if let Some(glyph) = font.glyph(render_ch.ch) {
                     let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
                     unsafe {
                         for cy in 0..max_cy {
@@ -717,8 +713,8 @@ impl TextBuffer {
         };
 
         // Sequential processing (parallel would be complex with line dependencies)
-        for y in 0..rect.get_height() {
-            for x in 0..rect.get_width() {
+        for y in 0..rect.height() {
+            for x in 0..rect.width() {
                 let pos = Position::new(x + rect.start.x, y + rect.start.y);
                 render_char(pixels, x, y, pos);
             }
@@ -734,12 +730,12 @@ impl TextBuffer {
         for layer in &self.layers {
             for sixel in &layer.sixels {
                 // Calculate sixel position in character coordinates
-                let sx_char = layer.get_offset().x + sixel.position.x;
-                let sy_char = layer.get_offset().y + sixel.position.y;
+                let sx_char = layer.offset().x + sixel.position.x;
+                let sy_char = layer.offset().y + sixel.position.y;
 
                 // Calculate sixel dimensions in character coordinates
-                let sixel_width_chars = (sixel.get_width() + font_dims.width - 1) / font_dims.width;
-                let sixel_height_chars = (sixel.get_height() + font_dims.height - 1) / font_dims.height;
+                let sixel_width_chars = (sixel.width() + font_dims.width - 1) / font_dims.width;
+                let sixel_height_chars = (sixel.height() + font_dims.height - 1) / font_dims.height;
 
                 // Skip if sixel is completely outside the rect
                 if sy_char + sixel_height_chars <= rect.start.y
@@ -763,8 +759,8 @@ impl TextBuffer {
                 let dest_y_px = sy.max(0) * font_dims.height;
 
                 // Calculate how many pixels to copy
-                let max_y = (dest_y_px + sixel.get_height() - skip_y_px).min(px_height);
-                let visible_width = (sixel.get_width() - skip_x_px).min(line_width - dest_x_px);
+                let max_y = (dest_y_px + sixel.height() - skip_y_px).min(px_height);
+                let visible_width = (sixel.width() - skip_x_px).min(line_width - dest_x_px);
 
                 if visible_width <= 0 {
                     continue;
@@ -774,7 +770,7 @@ impl TextBuffer {
 
                 // Sixel data as u32 slice
                 let sixel_u32 = unsafe { std::slice::from_raw_parts(sixel.picture_data.as_ptr().cast::<u32>(), sixel.picture_data.len() / 4) };
-                let sixel_line_width = sixel.get_width() as usize;
+                let sixel_line_width = sixel.width() as usize;
                 let line_width_usize = line_width as usize;
 
                 // Pre-compute limits for safe unchecked access

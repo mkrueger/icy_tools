@@ -36,12 +36,12 @@ impl ModalDialog for SelectCharacterDialog {
         let modal = Modal::new(ctx, "select_character_dialog");
         modal.show(|ui| {
             modal.title(ui, fl!(crate::LANGUAGE_LOADER, "select-character-title"));
-            let font_page = self.buf.lock().get_caret().get_font_page();
+            let font_page = self.buf.lock().get_caret().font_page();
             let scale = 4.;
 
             //   ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
             modal.frame(ui, |ui| {
-                if let Some(font) = self.buf.lock().get_buffer().get_font(font_page) {
+                if let Some(font) = self.buf.lock().get_buffer().font(font_page) {
                     let (_id, stroke_rect) = ui.allocate_space(Vec2::new(scale * font.size.width as f32, scale * font.size.height as f32));
                     let painter = ui.painter_at(stroke_rect);
                     painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::BLACK);
@@ -49,7 +49,7 @@ impl ModalDialog for SelectCharacterDialog {
 
                     let col = Color32::GRAY;
                     let ch = unsafe { char::from_u32_unchecked(self.selected_ch as u32) };
-                    if let Some(glyph) = font.get_glyph(ch) {
+                    if let Some(glyph) = font.glyph(ch) {
                         for y in 0..s.height {
                             for x in 0..s.width {
                                 if glyph.data[y as usize] & (128 >> x) != 0 {
@@ -75,7 +75,7 @@ impl ModalDialog for SelectCharacterDialog {
             let scale = 2.;
 
             modal.frame(ui, |ui| {
-                if let Some(font) = self.buf.lock().get_buffer().get_font(font_page) {
+                if let Some(font) = self.buf.lock().get_buffer().font(font_page) {
                     let (_id, stroke_rect) = ui.allocate_space(Vec2::new(scale * font.size.width as f32 * 256. / 8., scale * font.size.height as f32 * 8.));
 
                     let painter = ui.painter_at(stroke_rect);
@@ -113,7 +113,7 @@ impl ModalDialog for SelectCharacterDialog {
                         let ch = unsafe { char::from_u32_unchecked(i as u32) };
                         let xs = ((i % 32) as f32) * scale * font.size.width as f32;
                         let ys = ((i / 32) as f32) * scale * font.size.height as f32;
-                        if let Some(glyph) = font.get_glyph(ch) {
+                        if let Some(glyph) = font.glyph(ch) {
                             for y in 0..s.height {
                                 for x in 0..s.width {
                                     if glyph.data[y as usize] & (128 >> x) != 0 {

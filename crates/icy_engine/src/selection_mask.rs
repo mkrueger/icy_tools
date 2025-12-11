@@ -18,8 +18,8 @@ impl SelectionMask {
         self.overlay_mask.remove_rectangle(rect);
     }
 
-    pub fn get_is_selected(&self, pos: impl Into<Position>) -> bool {
-        self.overlay_mask.get_is_selected(pos)
+    pub fn is_selected(&self, pos: impl Into<Position>) -> bool {
+        self.overlay_mask.is_selected(pos)
     }
 
     pub fn set_is_selected(&mut self, pos: impl Into<Position>, selected: bool) {
@@ -34,8 +34,8 @@ impl SelectionMask {
         self.overlay_mask.is_empty()
     }
 
-    pub fn get_rectangle(&self) -> Rectangle {
-        self.overlay_mask.get_rectangle()
+    pub fn rectangle(&self) -> Rectangle {
+        self.overlay_mask.rectangle()
     }
 
     pub fn add_selection(&mut self, selection: Selection) {
@@ -52,7 +52,7 @@ impl SelectionMask {
                 while pos < max {
                     self.set_is_selected(pos, true);
                     pos.x += 1;
-                    if pos.x >= self.overlay_mask.get_width() {
+                    if pos.x >= self.overlay_mask.width() {
                         pos.x = 0;
                         pos.y += 1;
                     }
@@ -75,7 +75,7 @@ impl SelectionMask {
                 while pos < max {
                     self.set_is_selected(pos, false);
                     pos.x += 1;
-                    if pos.x >= self.overlay_mask.get_width() {
+                    if pos.x >= self.overlay_mask.width() {
                         pos.x = 0;
                         pos.y += 1;
                     }
@@ -84,8 +84,8 @@ impl SelectionMask {
         }
     }
 
-    pub fn get_selected_rectangle(&self, selection_opt: &Option<Selection>) -> Rectangle {
-        let mut rect = self.get_rectangle();
+    pub fn selected_rectangle(&self, selection_opt: &Option<Selection>) -> Rectangle {
+        let mut rect = self.rectangle();
         if let Some(sel) = selection_opt {
             if rect.is_empty() {
                 return sel.as_rectangle();
@@ -103,6 +103,6 @@ impl SelectionMask {
             }
         }
 
-        self.get_is_selected(pos)
+        self.is_selected(pos)
     }
 }

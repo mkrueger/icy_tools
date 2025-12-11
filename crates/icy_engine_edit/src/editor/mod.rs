@@ -92,7 +92,7 @@ impl Default for EditState {
     fn default() -> Self {
         let screen = TextScreen::default();
         let mut tool_overlay_mask = OverlayMask::default();
-        tool_overlay_mask.set_size(screen.buffer.get_size());
+        tool_overlay_mask.set_size(screen.buffer.size());
 
         Self {
             screen,
@@ -113,7 +113,7 @@ impl EditState {
     pub fn from_buffer(buffer: TextBuffer) -> Self {
         let screen = TextScreen::from_buffer(buffer);
         let mut tool_overlay_mask = OverlayMask::default();
-        tool_overlay_mask.set_size(screen.buffer.get_size());
+        tool_overlay_mask.set_size(screen.buffer.size());
 
         Self {
             screen,
@@ -128,8 +128,8 @@ impl EditState {
     }
 
     pub fn set_mask_size(&mut self) {
-        self.screen.selection_mask.set_size(self.screen.buffer.get_size());
-        self.tool_overlay_mask.set_size(self.screen.buffer.get_size());
+        self.screen.selection_mask.set_size(self.screen.buffer.size());
+        self.tool_overlay_mask.set_size(self.screen.buffer.size());
     }
 
     pub fn get_tool_overlay_mask(&self) -> &OverlayMask {
@@ -211,11 +211,11 @@ impl EditState {
         (&mut self.screen.buffer, &mut self.screen.caret)
     }
 
-    pub fn get_copy_text(&self) -> Option<String> {
+    pub fn copy_text(&self) -> Option<String> {
         let Some(selection) = &self.screen.selection_opt else {
             return None;
         };
-        clipboard::get_text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
+        clipboard::text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
     }
 
     /// Returns the get current layer of this [`EditState`].
@@ -363,32 +363,32 @@ impl UndoState for EditState {
 
 // Delegate TextPane to inner screen
 impl TextPane for EditState {
-    fn get_char(&self, pos: Position) -> AttributedChar {
-        self.screen.get_char(pos)
+    fn char_at(&self, pos: Position) -> AttributedChar {
+        self.screen.char_at(pos)
     }
 
-    fn get_line_count(&self) -> i32 {
-        self.screen.get_line_count()
+    fn line_count(&self) -> i32 {
+        TextPane::line_count(&self.screen)
     }
 
-    fn get_width(&self) -> i32 {
-        self.screen.get_width()
+    fn width(&self) -> i32 {
+        self.screen.width()
     }
 
-    fn get_height(&self) -> i32 {
-        self.screen.get_height()
+    fn height(&self) -> i32 {
+        self.screen.height()
     }
 
-    fn get_line_length(&self, line: i32) -> i32 {
-        self.screen.get_line_length(line)
+    fn line_length(&self, line: i32) -> i32 {
+        self.screen.line_length(line)
     }
 
-    fn get_rectangle(&self) -> Rectangle {
-        self.screen.get_rectangle()
+    fn rectangle(&self) -> Rectangle {
+        self.screen.rectangle()
     }
 
-    fn get_size(&self) -> Size {
-        self.screen.get_size()
+    fn size(&self) -> Size {
+        self.screen.size()
     }
 }
 
@@ -434,20 +434,20 @@ impl Screen for EditState {
         self.screen.render_region_to_rgba(px_region, options)
     }
 
-    fn get_font(&self, font_number: usize) -> Option<&BitFont> {
-        self.screen.get_font(font_number)
+    fn font(&self, font_number: usize) -> Option<&BitFont> {
+        self.screen.font(font_number)
     }
 
     fn font_count(&self) -> usize {
         self.screen.font_count()
     }
 
-    fn get_font_dimensions(&self) -> Size {
-        self.screen.get_font_dimensions()
+    fn font_dimensions(&self) -> Size {
+        self.screen.font_dimensions()
     }
 
-    fn get_selection(&self) -> Option<Selection> {
-        self.screen.get_selection()
+    fn selection(&self) -> Option<Selection> {
+        self.screen.selection()
     }
 
     fn selection_mask(&self) -> &SelectionMask {
@@ -462,24 +462,24 @@ impl Screen for EditState {
         self.screen.to_bytes(extension, options)
     }
 
-    fn get_copy_text(&self) -> Option<String> {
-        self.screen.get_copy_text()
+    fn copy_text(&self) -> Option<String> {
+        self.screen.copy_text()
     }
 
-    fn get_copy_rich_text(&self) -> Option<String> {
-        self.screen.get_copy_rich_text()
+    fn copy_rich_text(&self) -> Option<String> {
+        self.screen.copy_rich_text()
     }
 
-    fn get_clipboard_data(&self) -> Option<Vec<u8>> {
-        self.screen.get_clipboard_data()
+    fn clipboard_data(&self) -> Option<Vec<u8>> {
+        self.screen.clipboard_data()
     }
 
     fn mouse_fields(&self) -> &Vec<MouseField> {
         self.screen.mouse_fields()
     }
 
-    fn get_version(&self) -> u64 {
-        self.screen.get_version()
+    fn version(&self) -> u64 {
+        self.screen.version()
     }
 
     fn default_foreground_color(&self) -> u32 {
@@ -490,8 +490,8 @@ impl Screen for EditState {
         self.screen.max_base_colors()
     }
 
-    fn get_resolution(&self) -> Size {
-        self.screen.get_resolution()
+    fn resolution(&self) -> Size {
+        self.screen.resolution()
     }
 
     fn virtual_size(&self) -> Size {
@@ -533,28 +533,28 @@ impl EditableScreen for EditState {
         self.screen.snapshot_scrollback()
     }
 
-    fn get_first_visible_line(&self) -> i32 {
-        self.screen.get_first_visible_line()
+    fn first_visible_line(&self) -> i32 {
+        self.screen.first_visible_line()
     }
 
-    fn get_last_visible_line(&self) -> i32 {
-        self.screen.get_last_visible_line()
+    fn last_visible_line(&self) -> i32 {
+        self.screen.last_visible_line()
     }
 
-    fn get_first_editable_line(&self) -> i32 {
-        self.screen.get_first_editable_line()
+    fn first_editable_line(&self) -> i32 {
+        self.screen.first_editable_line()
     }
 
-    fn get_last_editable_line(&self) -> i32 {
-        self.screen.get_last_editable_line()
+    fn last_editable_line(&self) -> i32 {
+        self.screen.last_editable_line()
     }
 
-    fn get_first_editable_column(&self) -> i32 {
-        self.screen.get_first_editable_column()
+    fn first_editable_column(&self) -> i32 {
+        self.screen.first_editable_column()
     }
 
-    fn get_last_editable_column(&self) -> i32 {
-        self.screen.get_last_editable_column()
+    fn last_editable_column(&self) -> i32 {
+        self.screen.last_editable_column()
     }
 
     fn get_line(&self, line: usize) -> Option<&Line> {
@@ -562,7 +562,7 @@ impl EditableScreen for EditState {
     }
 
     fn line_count(&self) -> usize {
-        self.screen.line_count()
+        EditableScreen::line_count(&self.screen)
     }
 
     fn set_resolution(&mut self, size: Size) {

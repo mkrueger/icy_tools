@@ -49,7 +49,7 @@ impl CustomBrush {
         }
     }
 
-    pub fn get_char(&self, x: i32, y: i32) -> Option<char> {
+    pub fn char_at(&self, x: i32, y: i32) -> Option<char> {
         if x >= 0 && x < self.width && y >= 0 && y < self.height {
             Some(self.data[(y * self.width + x) as usize])
         } else {

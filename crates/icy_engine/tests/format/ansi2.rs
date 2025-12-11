@@ -148,13 +148,7 @@ impl CompareOptions {
 #[cfg(test)]
 pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compare_options: CompareOptions) {
     assert_eq!(buf_old.layers.len(), buf_new.layers.len());
-    assert_eq!(
-        buf_old.get_size(),
-        buf_new.get_size(),
-        "size differs: {} != {}",
-        buf_old.get_size(),
-        buf_new.get_size()
-    );
+    assert_eq!(buf_old.size(), buf_new.size(), "size differs: {} != {}", buf_old.size(), buf_new.size());
 
     //crop2_loaded_file(buf_old);
     //crop2_loaded_file(buf_new);
@@ -168,12 +162,12 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         assert_eq!(buf_old.palette.len(), buf_new.palette.len(), "palette color count differs");
         for i in 0..buf_old.palette.len() {
             assert_eq!(
-                buf_old.palette.get_color(i as u32),
-                buf_new.palette.get_color(i as u32),
+                buf_old.palette.color(i as u32),
+                buf_new.palette.color(i as u32),
                 "palette color {} differs: {} <> {}",
                 i,
-                buf_old.palette.get_color(i as u32),
-                buf_new.palette.get_color(i as u32),
+                buf_old.palette.color(i as u32),
+                buf_new.palette.color(i as u32),
             );
         }
     }
@@ -182,7 +176,7 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         assert_eq!(buf_old.font_count(), buf_new.font_count());
 
         for (i, old_fnt) in buf_old.font_iter() {
-            let new_fnt = buf_new.get_font(*i).unwrap();
+            let new_fnt = buf_new.font(*i).unwrap();
 
             // Compare the yaff_font glyphs directly
             assert_eq!(
@@ -202,12 +196,8 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
             buf_new.layers[layer].lines.len(),
             "layer {layer} line count differs"
         );*/
-        assert_eq!(
-            buf_old.layers[layer].get_offset(),
-            buf_new.layers[layer].get_offset(),
-            "layer {layer} offset differs"
-        );
-        assert_eq!(buf_old.layers[layer].get_size(), buf_new.layers[layer].get_size(), "layer {layer} size differs");
+        assert_eq!(buf_old.layers[layer].offset(), buf_new.layers[layer].offset(), "layer {layer} offset differs");
+        assert_eq!(buf_old.layers[layer].size(), buf_new.layers[layer].size(), "layer {layer} size differs");
         assert_eq!(
             buf_old.layers[layer].properties.is_visible, buf_new.layers[layer].properties.is_visible,
             "layer {layer} is_visible differs"
@@ -223,30 +213,30 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         );
 
         for line in 0..buf_old.layers[layer].lines.len() {
-            for i in 0..buf_old.layers[layer].get_width() as usize {
-                let mut ch = buf_old.layers[layer].get_char((line, i).into());
-                let mut ch2 = buf_new.layers[layer].get_char((line, i).into());
+            for i in 0..buf_old.layers[layer].width() as usize {
+                let mut ch = buf_old.layers[layer].char_at((line, i).into());
+                let mut ch2 = buf_new.layers[layer].char_at((line, i).into());
                 if compare_options.ignore_invisible_chars && (!ch.is_visible() || !ch2.is_visible()) {
                     continue;
                 }
 
                 assert_eq!(
-                    buf_old.palette.get_color(ch.attribute.get_foreground()),
-                    buf_new.palette.get_color(ch2.attribute.get_foreground()),
+                    buf_old.palette.color(ch.attribute.foreground()),
+                    buf_new.palette.color(ch2.attribute.foreground()),
                     "fg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
-                    ch.attribute.get_foreground(),
-                    buf_old.palette.get_color(ch.attribute.get_foreground()),
-                    ch2.attribute.get_foreground(),
-                    buf_new.palette.get_color(ch2.attribute.get_foreground())
+                    ch.attribute.foreground(),
+                    buf_old.palette.color(ch.attribute.foreground()),
+                    ch2.attribute.foreground(),
+                    buf_new.palette.color(ch2.attribute.foreground())
                 );
                 assert_eq!(
-                    buf_old.palette.get_color(ch.attribute.get_background()),
-                    buf_new.palette.get_color(ch2.attribute.get_background()),
+                    buf_old.palette.color(ch.attribute.background()),
+                    buf_new.palette.color(ch2.attribute.background()),
                     "bg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
-                    ch.attribute.get_background(),
-                    buf_old.palette.get_color(ch.attribute.get_background()),
-                    ch2.attribute.get_background(),
-                    buf_new.palette.get_color(ch2.attribute.get_background())
+                    ch.attribute.background(),
+                    buf_old.palette.color(ch.attribute.background()),
+                    ch2.attribute.background(),
+                    buf_new.palette.color(ch2.attribute.background())
                 );
 
                 ch.attribute.set_foreground(0);

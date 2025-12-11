@@ -90,7 +90,7 @@ impl BitFontEditor {
         let painter = ui.painter_at(stroke_rect);
         painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::BLACK);
         let s = font.size;
-        if let Some(glyph) = font.get_glyph(ch) {
+        if let Some(glyph) = font.glyph(ch) {
             for y in 0..s.height {
                 for x in 0..s.width {
                     if glyph.data[y as usize] & (128 >> x) != 0 {
@@ -115,8 +115,8 @@ impl BitFontEditor {
         buf.set_font(0, self.font.clone());
 
         let ch = self.selected_char_opt.unwrap_or(' ');
-        for y in 0..buf.get_width() {
-            for x in 0..buf.get_height() {
+        for y in 0..buf.width() {
+            for x in 0..buf.height() {
                 buf.layers[0].set_char(
                     (x, y),
                     icy_engine::AttributedChar {
@@ -394,7 +394,7 @@ impl BitFontEditor {
             return;
         }
         if let Some(number) = self.selected_char_opt {
-            if let Some(glyph) = self.font.get_glyph(number) {
+            if let Some(glyph) = self.font.glyph(number) {
                 if let Some(old_data) = self.old_data.take() {
                     let op = undo::Edit::new(number, glyph.data.clone(), old_data);
                     self.undo_stack.lock().push(Box::new(op));

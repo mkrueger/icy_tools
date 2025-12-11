@@ -49,7 +49,7 @@ fn test_roundtrip() {
         let orig_bytes = fs::read(path).unwrap();
 
         if let Ok(buf) = TextBuffer::from_bytes(path, true, &orig_bytes, None, None) {
-            if buf.get_width() != 80 {
+            if buf.width() != 80 {
                 continue;
             }
             if buf.palette.len() > 16 {
@@ -77,16 +77,16 @@ fn test_roundtrip() {
                 bg: Color::new(0, 0, 0),
             };
             draw.screen_end(&buf, state);
-            let bytes = draw.get_data().to_vec();
+            let bytes = draw.data().to_vec();
             let buf2 = TextBuffer::from_bytes(Path::new("test.ans"), true, &bytes, None, None).unwrap();
-            if buf.get_height() != buf2.get_height() {
+            if buf.height() != buf2.height() {
                 continue;
             }
 
             /*
             for x in 23..30 {
-                let ch = buf2.layers[0].get_char((x, 0).into());
-                "{:?} {:?}", ch, buf2.palette.get_color(ch.attribute.get_foreground()));
+                let ch = buf2.layers[0].char_at((x, 0).into());
+                "{:?} {:?}", ch, buf2.palette.color(ch.attribute.foreground()));
             }
             */
 

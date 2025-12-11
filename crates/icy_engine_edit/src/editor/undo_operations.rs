@@ -377,7 +377,7 @@ impl UndoOperation for SetLayerSize {
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.index) {
-            self.from = layer.get_size();
+            self.from = layer.size();
             layer.set_size(self.to);
             Ok(())
         } else {
@@ -521,7 +521,7 @@ impl UndoOperation for UndoLayerChange {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.layer) {
-            if layer.get_size() == self.old_chars.get_size() {
+            if layer.size() == self.old_chars.size() {
                 layer.lines = self.old_chars.lines.clone();
             } else {
                 crate::stamp_layer(layer, self.pos, &self.old_chars);
@@ -534,7 +534,7 @@ impl UndoOperation for UndoLayerChange {
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.screen.buffer.layers.get_mut(self.layer) {
-            if layer.get_size() == self.new_chars.get_size() {
+            if layer.size() == self.new_chars.size() {
                 layer.lines = self.new_chars.lines.clone();
             } else {
                 crate::stamp_layer(layer, self.pos, &self.new_chars);
@@ -610,7 +610,7 @@ impl UndoOperation for DeleteRow {
             let mut deleted_row = Line::default();
             mem::swap(&mut self.deleted_row, &mut deleted_row);
             layer.lines.insert(self.line as usize, deleted_row);
-            layer.set_height(layer.get_height() + 1);
+            layer.set_height(layer.height() + 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -623,7 +623,7 @@ impl UndoOperation for DeleteRow {
                 layer.lines.resize(self.line as usize + 1, Line::default());
             }
             self.deleted_row = layer.lines.remove(self.line as usize);
-            layer.set_height(layer.get_height() - 1);
+            layer.set_height(layer.height() - 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -656,7 +656,7 @@ impl UndoOperation for InsertRow {
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
             self.inserted_row = layer.lines.remove(self.line as usize);
-            layer.set_height(layer.get_height() - 1);
+            layer.set_height(layer.height() - 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -671,7 +671,7 @@ impl UndoOperation for InsertRow {
                 layer.lines.resize(self.line as usize + 1, Line::default());
             }
             layer.lines.insert(self.line as usize, insert_row);
-            layer.set_height(layer.get_height() + 1);
+            layer.set_height(layer.height() + 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -709,7 +709,7 @@ impl UndoOperation for DeleteColumn {
                     layer.lines[i].chars.insert(offset, *ch);
                 }
             }
-            layer.set_width(layer.get_width() + 1);
+            layer.set_width(layer.width() + 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -728,7 +728,7 @@ impl UndoOperation for DeleteColumn {
                 }
             }
             self.deleted_chars = deleted_row;
-            layer.set_width(layer.get_width() - 1);
+            layer.set_width(layer.width() - 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -761,7 +761,7 @@ impl UndoOperation for InsertColumn {
                     line.chars.remove(offset);
                 }
             }
-            layer.set_width(layer.get_width() - 1);
+            layer.set_width(layer.width() - 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -776,7 +776,7 @@ impl UndoOperation for InsertColumn {
                     line.chars.insert(offset, AttributedChar::invisible());
                 }
             }
-            layer.set_width(layer.get_width() + 1);
+            layer.set_width(layer.width() + 1);
             Ok(())
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", self.layer)))
@@ -880,7 +880,7 @@ impl UndoOperation for RotateLayer {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
-            let size = layer.get_size();
+            let size = layer.size();
             layer.set_size((size.height, size.width));
             layer.lines = self.old_lines.clone();
         }
@@ -889,7 +889,7 @@ impl UndoOperation for RotateLayer {
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(self.layer) {
-            let size = layer.get_size();
+            let size = layer.size();
             layer.set_size((size.height, size.width));
             layer.lines = self.new_lines.clone();
         }

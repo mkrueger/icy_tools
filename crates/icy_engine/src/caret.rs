@@ -46,7 +46,7 @@ impl Caret {
     }
 
     pub fn font_page(&self) -> usize {
-        self.attribute.get_font_page()
+        self.attribute.font_page()
     }
 
     pub fn set_font_page(&mut self, page: usize) {

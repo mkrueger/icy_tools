@@ -311,7 +311,7 @@ fn test_invisisible_persistance_bug() {
     buf.layers[1].properties.is_visible = false;
     buf.layers[1].properties.has_alpha_channel = true;
 
-    assert_eq!(AttributedChar::invisible(), buf.layers[1].get_char((1, 0).into()).into());
+    assert_eq!(AttributedChar::invisible(), buf.layers[1].char_at((1, 0).into()).into());
 
     let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();

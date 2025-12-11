@@ -7,7 +7,7 @@ use iced::{
     alignment::{Horizontal, Vertical},
     widget::{Id, button, column, container, row, text, text_input},
 };
-use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection};
+use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection, TextPane};
 use icy_engine_gui::ui::{
     BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, danger_button_style, primary_button_style, secondary_button_style,
 };
@@ -207,9 +207,9 @@ impl DialogState {
             self.conv_pattern = self.pattern.chars().map(|c| c.to_ascii_lowercase()).collect();
         }
 
-        for y in 0..buf.get_line_count() {
-            for x in 0..buf.get_width() {
-                let ch = buf.get_char((x, y).into());
+        for y in 0..TextPane::line_count(buf) {
+            for x in 0..buf.width() {
+                let ch = buf.char_at((x, y).into());
                 if self.compare(buf.buffer_type(), cur_len, ch) {
                     if cur_len == 0 {
                         start_pos = (x, y).into();

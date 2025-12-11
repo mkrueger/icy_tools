@@ -92,7 +92,7 @@ impl TerminalResolution {
         }
     }
 
-    pub fn get_max_colors(&self) -> u32 {
+    pub fn max_colors(&self) -> u32 {
         match self {
             TerminalResolution::Low => 16,
             TerminalResolution::Medium => 4,
@@ -109,7 +109,7 @@ impl TerminalResolution {
     }
 
     /// Returns text resolution in characters (width, height)
-    pub fn get_text_resolution(&self) -> (i32, i32) {
+    pub fn text_resolution(&self) -> (i32, i32) {
         match self {
             TerminalResolution::Low => (40, 25),
             TerminalResolution::Medium => (80, 25),

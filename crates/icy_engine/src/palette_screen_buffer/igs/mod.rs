@@ -16,13 +16,13 @@ pub const IGS_VERSION: &str = "2.19";
 
 /// Extension trait for TerminalResolution with icy_engine-specific functionality
 pub trait TerminalResolutionExt {
-    fn get_resolution(&self) -> Size;
-    fn get_text_resolution(&self) -> Size;
-    fn get_palette(&self) -> &crate::Palette;
+    fn resolution(&self) -> Size;
+    fn text_resolution(&self) -> Size;
+    fn palette(&self) -> &crate::Palette;
 }
 
 impl TerminalResolutionExt for TerminalResolution {
-    fn get_resolution(&self) -> Size {
+    fn resolution(&self) -> Size {
         match self {
             TerminalResolution::Low => Size { width: 320, height: 200 },
             TerminalResolution::Medium => Size { width: 640, height: 200 },
@@ -30,7 +30,7 @@ impl TerminalResolutionExt for TerminalResolution {
         }
     }
 
-    fn get_text_resolution(&self) -> Size {
+    fn text_resolution(&self) -> Size {
         match self {
             TerminalResolution::Low => Size { width: 40, height: 25 },
             TerminalResolution::Medium => Size { width: 80, height: 25 },
@@ -38,7 +38,7 @@ impl TerminalResolutionExt for TerminalResolution {
         }
     }
 
-    fn get_palette(&self) -> &crate::Palette {
+    fn palette(&self) -> &crate::Palette {
         match self {
             TerminalResolution::Low => &crate::palette_handling::ATARI_ST_LOW_PALETTE,
             TerminalResolution::Medium => &crate::palette_handling::ATARI_ST_MEDIUM_PALETTE,

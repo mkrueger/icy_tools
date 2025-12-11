@@ -1524,14 +1524,14 @@ impl TerminalThread {
             TerminalRequest::CursorPositionReport => {
                 let screen = self.edit_screen.lock();
                 let pos = screen.caret_position();
-                let y = pos.y.min(screen.get_height() as i32 - 1) + 1;
-                let x = pos.x.min(screen.get_width() as i32 - 1) + 1;
+                let y = pos.y.min(screen.height() as i32 - 1) + 1;
+                let x = pos.x.min(screen.width() as i32 - 1) + 1;
                 Some(format!("\x1B[{};{}R", y, x).into_bytes())
             }
             TerminalRequest::ScreenSizeReport => {
                 let screen = self.edit_screen.lock();
-                let height = screen.get_height();
-                let width = screen.get_width();
+                let height = screen.height();
+                let width = screen.width();
                 Some(format!("\x1B[{};{}R", height, width).into_bytes())
             }
             TerminalRequest::RequestTabStopReport => {
@@ -1539,7 +1539,7 @@ impl TerminalThread {
                 let mut response = b"\x1BP2$u".to_vec();
                 let tab_count = screen.terminal_state().tab_count();
                 for i in 0..tab_count {
-                    let tab = screen.terminal_state().get_tabs()[i];
+                    let tab = screen.terminal_state().tabs()[i];
                     response.extend_from_slice((tab + 1).to_string().as_bytes());
                     if i < tab_count.saturating_sub(1) {
                         response.push(b'/');
@@ -1636,7 +1636,7 @@ impl TerminalThread {
             }
             TerminalRequest::FontDimensionReport => {
                 let screen = self.edit_screen.lock();
-                let dim = screen.get_font_dimensions();
+                let dim = screen.font_dimensions();
                 Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
             }
             TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),

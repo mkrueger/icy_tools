@@ -49,10 +49,10 @@ impl FillOperation {
     pub fn new(fill_tool: &FillTool, editor: &AnsiEditor, base_char: AttributedChar, new_ch: AttributedChar) -> Self {
         let lock = &editor.buffer_view.lock();
         let state = lock.get_edit_state();
-        let size = state.get_cur_layer().unwrap().get_size();
+        let size = state.get_cur_layer().unwrap().size();
         let use_selection = state.is_something_selected();
         let offset = if let Some(layer) = state.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -78,8 +78,8 @@ impl FillOperation {
                 continue;
             }
 
-            if !self.use_selection || editor.buffer_view.lock().get_edit_state().get_is_selected(pos + self.offset) {
-                let cur_char = editor.buffer_view.lock().get_edit_state().get_cur_layer().unwrap().get_char(pos);
+            if !self.use_selection || editor.buffer_view.lock().get_edit_state().is_selected(pos + self.offset) {
+                let cur_char = editor.buffer_view.lock().get_edit_state().get_cur_layer().unwrap().char_at(pos);
 
                 let mut repl_ch = cur_char;
 
@@ -89,7 +89,7 @@ impl FillOperation {
                             continue;
                         }
                         repl_ch.ch = self.new_char.ch;
-                        repl_ch.set_font_page(self.new_char.get_font_page());
+                        repl_ch.set_font_page(self.new_char.font_page());
                     }
                     BrushMode::Colorize => {
                         if self.use_exact_matching && cur_char != self.base_char || !self.use_exact_matching && cur_char.attribute != self.base_char.attribute {
@@ -99,15 +99,15 @@ impl FillOperation {
                     _ => {}
                 }
                 if self.color_mode.use_fore() {
-                    repl_ch.attribute.set_foreground(self.new_char.attribute.get_foreground());
+                    repl_ch.attribute.set_foreground(self.new_char.attribute.foreground());
                     repl_ch.attribute.set_is_bold(self.new_char.attribute.is_bold());
                 }
 
                 if self.color_mode.use_back() {
-                    repl_ch.attribute.set_background(self.new_char.attribute.get_background());
+                    repl_ch.attribute.set_background(self.new_char.attribute.background());
                 }
 
-                repl_ch.set_font_page(editor.buffer_view.lock().get_caret().get_attribute().get_font_page());
+                repl_ch.set_font_page(editor.buffer_view.lock().get_caret().get_attribute().font_page());
                 repl_ch.attribute.attr &= !icy_engine::attribute::INVISIBLE;
                 editor.set_char(pos, repl_ch);
             }
@@ -158,7 +158,7 @@ impl Tool for FillTool {
             return None;
         }
         let ch = if let Some(layer) = editor.buffer_view.lock().get_edit_state().get_cur_layer() {
-            layer.get_char(pos)
+            layer.char_at(pos)
         } else {
             return None;
         };
@@ -166,15 +166,15 @@ impl Tool for FillTool {
         let mut attr = editor.get_caret_attribute();
         let flip_colors = button == 2;
         if flip_colors {
-            let tmp = attr.get_foreground();
-            attr.set_foreground(attr.get_background());
+            let tmp = attr.foreground();
+            attr.set_foreground(attr.background());
             attr.set_background(tmp);
         }
 
         match self.fill_type {
             BrushMode::HalfBlock => {
                 let _undo = editor.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-bucket-fill"));
-                let mut op = FillHalfBlockOperation::new(self, editor, attr.get_foreground());
+                let mut op = FillHalfBlockOperation::new(self, editor, attr.foreground());
                 op.fill(editor, editor.half_block_click_pos);
             }
             BrushMode::Char(_) => {
@@ -208,10 +208,10 @@ impl FillHalfBlockOperation {
     pub fn new(_fill_tool: &FillTool, editor: &AnsiEditor, color: u32) -> Self {
         let lock = &editor.buffer_view.lock();
         let state = lock.get_edit_state();
-        let size = state.get_cur_layer().unwrap().get_size();
+        let size = state.get_cur_layer().unwrap().size();
         let use_selection = state.is_something_selected();
         let offset = if let Some(layer) = state.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -241,7 +241,7 @@ impl FillHalfBlockOperation {
             if to.x < 0 || to.y < 0 || to.x >= self.size.width || text_pos.y >= self.size.height || !self.visited.insert(to) {
                 continue;
             }
-            if self.use_selection && !editor.buffer_view.lock().get_edit_state().get_is_selected(text_pos + self.offset) {
+            if self.use_selection && !editor.buffer_view.lock().get_edit_state().is_selected(text_pos + self.offset) {
                 continue;
             }
             let block = HalfBlock::from(&editor.buffer_view.lock().get_edit_state_mut().get_buffer_mut().layers[cur_layer], to);

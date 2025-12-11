@@ -21,7 +21,7 @@ impl Line {
         Line { chars }
     }
 
-    pub fn get_line_length(&self) -> i32 {
+    pub fn line_length(&self) -> i32 {
         for idx in (0..self.chars.len()).rev() {
             if !self.chars[idx].is_transparent() {
                 return idx as i32 + 1;

@@ -92,12 +92,12 @@ impl VdiPaint {
     }
 
     pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
 
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
         }
-        let old_px = self.get_pixel(buf, x, y);
+        let old_px = self.pixel(buf, x, y);
 
         let mut vec = vec![Position::new(x, y)];
         let col = self.fill_color;
@@ -112,7 +112,7 @@ impl VdiPaint {
                 continue;
             }
 
-            let cp = self.get_pixel(buf, pos.x, pos.y);
+            let cp = self.pixel(buf, pos.x, pos.y);
             if cp != old_px || visited.contains(&pos) {
                 continue;
             }

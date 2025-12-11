@@ -182,7 +182,7 @@ impl Session {
     }
 
     /// Get font name.
-    pub fn get_font(&self) -> String {
+    pub fn font(&self) -> String {
         self.font.read().clone()
     }
 

@@ -62,8 +62,8 @@ impl ChannelsView {
         let mut screen_guard = screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
         let caret = state.get_caret();
-        let fg_color = caret.attribute.get_foreground();
-        let bg_color = caret.attribute.get_background();
+        let fg_color = caret.attribute.foreground();
+        let bg_color = caret.attribute.background();
 
         row![
             column![

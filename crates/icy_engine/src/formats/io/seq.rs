@@ -36,8 +36,8 @@ pub(crate) fn load_seq(file_name: &Path, data: &[u8], load_data_opt: Option<Load
 }
 
 pub fn seq_prepare(result: &mut dyn EditableScreen) {
-    for y in 0..result.get_height() {
-        for x in 0..result.get_width() {
+    for y in 0..result.height() {
+        for x in 0..result.width() {
             let mut ch = AttributedChar::default();
             ch.attribute.set_foreground(7);
             ch.attribute.set_background(0);

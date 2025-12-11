@@ -87,7 +87,7 @@ impl VdiPaint {
         if amount == 0 {
             return;
         }
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         if amount < 0 {
             buf.screen_mut().splice(0..0, vec![1; res.width as usize * amount.abs() as usize]);
             buf.screen_mut().truncate(res.width as usize * res.height as usize);
@@ -145,7 +145,7 @@ impl VdiPaint {
     }
 
     pub fn set_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
         }
@@ -154,7 +154,7 @@ impl VdiPaint {
     }
 
     fn set_pixel_with_mode(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8, is_non_transparent: bool) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
         }
@@ -188,13 +188,13 @@ impl VdiPaint {
         buf.screen_mut()[offset] = final_color;
     }
 
-    pub fn get_pixel(&mut self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
-        let offset = (y * buf.get_resolution().width + x) as usize;
+    pub fn pixel(&mut self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
+        let offset = (y * buf.resolution().width + x) as usize;
         buf.screen()[offset]
     }
 
     fn fill_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         let px = x;
         // In IGS medium/high Auflösungen sind die Pattern immer 16‑Pixel breit
         // und werden unabhängig von der aktuellen X‑Position wiederholt.

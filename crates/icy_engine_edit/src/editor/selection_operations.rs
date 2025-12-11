@@ -5,7 +5,7 @@ use super::{EditState, undo_operations};
 use crate::{AddType, AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
 impl EditState {
-    pub fn get_selection(&self) -> Option<Selection> {
+    pub fn selection(&self) -> Option<Selection> {
         self.screen.selection_opt
     }
 
@@ -41,7 +41,7 @@ impl EditState {
         self.screen.selection_opt.is_some() || !self.screen.selection_mask.is_empty()
     }
 
-    pub fn get_is_selected(&self, pos: impl Into<Position>) -> bool {
+    pub fn is_selected(&self, pos: impl Into<Position>) -> bool {
         let pos = pos.into();
         if let Some(sel) = self.screen.selection_opt {
             if sel.is_inside(pos) {
@@ -49,13 +49,13 @@ impl EditState {
             }
         }
 
-        self.screen.selection_mask.get_is_selected(pos)
+        self.screen.selection_mask.is_selected(pos)
     }
 
     pub fn get_is_mask_selected(&self, pos: impl Into<Position>) -> bool {
         let pos = pos.into();
 
-        self.screen.selection_mask.get_is_selected(pos)
+        self.screen.selection_mask.is_selected(pos)
     }
 
     pub fn add_selection_to_mask(&mut self) -> Result<()> {
@@ -69,8 +69,8 @@ impl EditState {
         }
     }
 
-    pub fn get_selected_rectangle(&self) -> Rectangle {
-        self.screen.selection_mask.get_selected_rectangle(&self.screen.selection_opt)
+    pub fn selected_rectangle(&self) -> Rectangle {
+        self.screen.selection_mask.selected_rectangle(&self.screen.selection_opt)
     }
 
     /// Returns the inverse selection of this [`EditState`].
@@ -96,10 +96,10 @@ impl EditState {
             }
         }
         self.screen.selection_opt = None;
-        for y in 0..self.screen.buffer.get_height() {
-            for x in 0..self.screen.buffer.get_width() {
+        for y in 0..self.screen.buffer.height() {
+            for x in 0..self.screen.buffer.width() {
                 let pos = Position::new(x, y);
-                let is_selected = self.get_is_selected(pos);
+                let is_selected = self.is_selected(pos);
                 self.screen.selection_mask.set_is_selected(pos, !is_selected);
             }
         }
@@ -118,18 +118,18 @@ impl EditState {
         F: Fn(Position, AttributedChar, bool) -> Option<bool>,
     {
         let offset = if let Some(cur_layer) = self.get_cur_layer() {
-            cur_layer.get_offset()
+            cur_layer.offset()
         } else {
             log::error!("No current layer");
             return;
         };
 
         let old_mask = self.screen.selection_mask.clone();
-        for y in 0..self.screen.buffer.get_height() {
-            for x in 0..self.screen.buffer.get_width() {
+        for y in 0..self.screen.buffer.height() {
+            for x in 0..self.screen.buffer.width() {
                 let pos = Position::new(x, y);
-                let is_selected = self.get_is_selected(pos);
-                let ch = self.get_cur_layer().unwrap().get_char(pos - offset);
+                let is_selected = self.is_selected(pos);
+                let ch = self.get_cur_layer().unwrap().char_at(pos - offset);
                 if let Some(res) = f(pos, ch, is_selected) {
                     self.screen.selection_mask.set_is_selected(pos, res);
                 }

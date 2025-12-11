@@ -132,7 +132,7 @@ impl LayerToolWindow {
             for i in (0..max).rev() {
                 ui.horizontal(|ui| {
                     ui.add_space(4.0);
-                    let dims = editor.buffer_view.lock().get_buffer().get_font_dimensions();
+                    let dims = editor.buffer_view.lock().get_buffer().font_dimensions();
                     let size = dims.height as f32 * 25.0;
                     let scale = row_height / size;
 
@@ -149,13 +149,13 @@ impl LayerToolWindow {
                         let view = self.get_buffer_view(i);
                         if redraw_layer_views {
                             view.lock().get_buffer_mut().layers.clear();
-                            let width = editor.buffer_view.lock().get_width();
+                            let width = editor.buffer_view.lock().width();
                             view.lock().get_buffer_mut().set_width(width);
                             let lock = &editor.buffer_view.lock();
                             if let Some(layer) = lock.get_buffer().layers.get(i) {
                                 let mut l = layer.clone();
                                 l.set_is_visible(true);
-                                view.lock().get_buffer_mut().set_font_table(lock.get_buffer().get_font_table());
+                                view.lock().get_buffer_mut().set_font_table(lock.get_buffer().font_table());
                                 view.lock().get_buffer_mut().palette = lock.get_buffer().palette.clone();
                                 view.lock().get_buffer_mut().layers.push(l);
                                 view.lock().get_edit_state_mut().set_is_buffer_dirty();
@@ -168,7 +168,7 @@ impl LayerToolWindow {
                     let (is_visible, title, color) = {
                         let lock = editor.buffer_view.lock();
                         let layer = &lock.get_buffer().layers[i];
-                        (layer.get_is_visible(), layer.get_title().to_string(), layer.properties.color.clone())
+                        (layer.is_visible(), layer.title().to_string(), layer.properties.color.clone())
                     };
                     let width = ui.available_width();
 
@@ -272,7 +272,7 @@ impl LayerToolWindow {
 }
 
 impl ToolWindow for LayerToolWindow {
-    fn get_title(&self) -> String {
+    fn title(&self) -> String {
         fl!(crate::LANGUAGE_LOADER, "layer_tool_title")
     }
 

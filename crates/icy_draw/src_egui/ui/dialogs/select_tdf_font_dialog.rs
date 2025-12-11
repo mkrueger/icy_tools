@@ -335,7 +335,7 @@ impl crate::ModalDialog for SelectFontDialog {
 }
 
 pub fn create_image(ctx: &egui::Context, buf: &Buffer) -> TextureHandle {
-    let (size, pixels) = buf.render_to_rgba(&Rectangle::from(0, 0, buf.get_width(), buf.get_height()).into());
+    let (size, pixels) = buf.render_to_rgba(&Rectangle::from(0, 0, buf.width(), buf.height()).into());
     let color_image: ColorImage = ColorImage::from_rgba_premultiplied([size.width as usize, size.height as usize], &pixels);
     ctx.load_texture("my_texture", color_image, TextureOptions::NEAREST)
 }

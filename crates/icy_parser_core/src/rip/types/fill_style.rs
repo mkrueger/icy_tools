@@ -79,7 +79,7 @@ impl FillStyle {
         [0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55],
     ];
 
-    pub fn get_fill_pattern(self, fill_user_pattern: &[u8]) -> &[u8] {
+    pub fn fill_pattern(self, fill_user_pattern: &[u8]) -> &[u8] {
         match self {
             FillStyle::User => fill_user_pattern,
             _ => &FillStyle::DEFAULT_FILL_PATTERNS[self as usize],

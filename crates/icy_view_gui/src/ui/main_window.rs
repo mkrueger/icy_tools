@@ -72,7 +72,7 @@ static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
     replace_version_marker(&mut screen.buffer, &VERSION, None);
 
     // Render to RGBA
-    let rect = Selection::from(Rectangle::from(0, 0, screen.buffer.get_width(), screen.buffer.get_height()));
+    let rect = Selection::from(Rectangle::from(0, 0, screen.buffer.width(), screen.buffer.height()));
     let opts = RenderOptions {
         rect,
         blink_on: true,
@@ -905,7 +905,7 @@ impl MainWindow {
                 match msg {
                     StatusBarMessage::CycleBaudEmulation | StatusBarMessage::CycleBaudRate => {
                         // Find current index and cycle to next
-                        let current = self.preview.get_baud_emulation();
+                        let current = self.preview.baud_emulation();
                         let current_idx = icy_parser_core::BaudEmulation::OPTIONS.iter().position(|&b| b == current).unwrap_or(0);
                         let next_idx = (current_idx + 1) % icy_parser_core::BaudEmulation::OPTIONS.len();
                         let next_baud = icy_parser_core::BaudEmulation::OPTIONS[next_idx];
@@ -920,7 +920,7 @@ impl MainWindow {
                     }
                     StatusBarMessage::CycleBaudRateBackward => {
                         // Find current index and cycle to previous
-                        let current = self.preview.get_baud_emulation();
+                        let current = self.preview.baud_emulation();
                         let current_idx = icy_parser_core::BaudEmulation::OPTIONS.iter().position(|&b| b == current).unwrap_or(0);
                         let prev_idx = if current_idx == 0 {
                             icy_parser_core::BaudEmulation::OPTIONS.len() - 1
@@ -2222,7 +2222,7 @@ impl MainWindow {
 
         let mut info = StatusInfo::new()
             .with_item_count(item_count)
-            .with_baud_emulation(self.preview.get_baud_emulation())
+            .with_baud_emulation(self.preview.baud_emulation())
             .with_viewing_file(self.current_file.is_some())
             .with_buffer_size(self.preview.get_buffer_size())
             .with_content_size(self.preview.get_content_size())

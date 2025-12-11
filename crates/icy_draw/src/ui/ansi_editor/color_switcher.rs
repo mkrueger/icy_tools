@@ -54,8 +54,8 @@ impl ColorSwitcher {
 
     /// Update colors from attribute
     pub fn set_from_attribute(&mut self, attr: &TextAttribute) {
-        self.foreground = attr.get_foreground();
-        self.background = attr.get_background();
+        self.foreground = attr.foreground();
+        self.background = attr.background();
     }
 
     /// Get foreground color
@@ -152,7 +152,7 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         let rect_height = height * 0.618;
         
         // Background color rectangle (bottom-right, drawn first so FG overlaps)
-        let (r, g, b) = self.cached_palette.get_rgb(self.background);
+        let (r, g, b) = self.cached_palette.rgb(self.background);
         Self::draw_color_rect(
             &mut frame,
             height - rect_height,
@@ -162,7 +162,7 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         );
 
         // Foreground color rectangle (top-left, overlaps background)
-        let (r, g, b) = self.cached_palette.get_rgb(self.foreground);
+        let (r, g, b) = self.cached_palette.rgb(self.foreground);
         Self::draw_color_rect(
             &mut frame,
             0.0,
@@ -177,7 +177,7 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         let overlap = 2.0;
 
         // Default foreground (white/color 7) - bottom small rect
-        let (r, g, b) = self.cached_palette.get_rgb(7);
+        let (r, g, b) = self.cached_palette.rgb(7);
         Self::draw_small_rect(
             &mut frame,
             rh - overlap,
@@ -187,7 +187,7 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         );
 
         // Default background (black/color 0) - top small rect
-        let (r, g, b) = self.cached_palette.get_rgb(0);
+        let (r, g, b) = self.cached_palette.rgb(0);
         Self::draw_small_rect(
             &mut frame,
             overlap,

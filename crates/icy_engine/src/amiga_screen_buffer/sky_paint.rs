@@ -50,7 +50,7 @@ impl SkyPaint {
         if !self.viewport.contains(x, y) {
             return;
         }
-        let width = buf.get_resolution().width;
+        let width = buf.resolution().width;
         let offset = (y * width + x) as usize;
         let screen = buf.screen_mut();
         if offset < screen.len() {
@@ -59,8 +59,8 @@ impl SkyPaint {
         }
     }
 
-    pub fn get_pixel(&self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
-        let width = buf.get_resolution().width;
+    pub fn pixel(&self, buf: &dyn EditableScreen, x: i32, y: i32) -> u8 {
+        let width = buf.resolution().width;
         let offset = (y * width + x) as usize;
         let screen = buf.screen();
         if offset < screen.len() { screen[offset] } else { 0 }
@@ -106,13 +106,13 @@ impl SkyPaint {
     /// - `FillMode::Color`: Fill replaces all connected pixels that are the
     ///   SAME color as the starting pixel (x, y).
     pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, mode: FillMode, fill_color: u8) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
 
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;
         }
 
-        let start_color = self.get_pixel(buf, x, y);
+        let start_color = self.pixel(buf, x, y);
 
         match mode {
             FillMode::Outline => {
@@ -148,7 +148,7 @@ impl SkyPaint {
             }
             visited.insert(pos);
 
-            let pixel = self.get_pixel(buf, pos.x, pos.y);
+            let pixel = self.pixel(buf, pos.x, pos.y);
             if pixel == outline_color {
                 continue; // Stop at outline
             }
@@ -171,7 +171,7 @@ impl SkyPaint {
                 continue;
             }
 
-            let pixel = self.get_pixel(buf, pos.x, pos.y);
+            let pixel = self.pixel(buf, pos.x, pos.y);
             if pixel != target_color {
                 continue;
             }
@@ -187,14 +187,14 @@ impl SkyPaint {
 
     pub fn bar(&mut self, buf: &mut dyn EditableScreen, left: i32, top: i32, right: i32, bottom: i32, color: u8) {
         let rect = Rectangle::from(left, top, right - left + 1, bottom - top + 1).intersect(&self.viewport);
-        if rect.get_width() <= 0 || rect.get_height() <= 0 {
+        if rect.width() <= 0 || rect.height() <= 0 {
             return;
         }
-        let width = buf.get_resolution().width;
+        let width = buf.resolution().width;
         let screen = buf.screen_mut();
         for y in rect.top()..rect.bottom() {
             let start = (y * width + rect.left()) as usize;
-            let end = start + rect.get_width() as usize;
+            let end = start + rect.width() as usize;
             if end <= screen.len() {
                 screen[start..end].fill(color);
             }
@@ -261,11 +261,11 @@ impl SkyPaint {
         self.ellipse(buf, cx, cy, rx, ry, color);
     }
 
-    pub fn get_image(&self, buf: &dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
+    pub fn image(&self, buf: &dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
         let mut data = Vec::new();
         for y in y0..y1 {
             for x in x0..x1 {
-                data.push(self.get_pixel(buf, x, y));
+                data.push(self.pixel(buf, x, y));
             }
         }
         Image {

@@ -152,7 +152,7 @@ impl ServerState {
     }
 
     /// Get a character from the document.
-    pub async fn get_char(&self, col: i32, row: i32) -> Option<Block> {
+    pub async fn char_at(&self, col: i32, row: i32) -> Option<Block> {
         let doc = self.document.read().await;
         let (columns, rows) = self.session.get_dimensions();
 
@@ -273,7 +273,7 @@ impl ServerState {
             rows,
             use_9px: self.session.get_use_9px(),
             ice_colors: self.session.get_ice_colors(),
-            font: self.session.get_font(),
+            font: self.session.font(),
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -495,7 +495,7 @@ mod tests {
         let block = Block { code: 65, fg: 7, bg: 0 };
         state.set_char(10, 5, block.clone()).await;
 
-        let retrieved = state.get_char(10, 5).await.unwrap();
+        let retrieved = state.char_at(10, 5).await.unwrap();
         assert_eq!(retrieved.code, 65);
         assert_eq!(retrieved.fg, 7);
         assert_eq!(retrieved.bg, 0);

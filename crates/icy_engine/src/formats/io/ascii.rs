@@ -33,12 +33,12 @@ pub(crate) fn load_ascii(file_name: &Path, data: &[u8], load_data_opt: Option<Lo
 pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result = Vec::new();
     let mut pos = Position::default();
-    let height = buf.get_line_count();
+    let height = buf.line_count();
 
     while pos.y < height {
-        let line_length = buf.get_line_length(pos.y);
+        let line_length = buf.line_length(pos.y);
         while pos.x < line_length {
-            let ch = buf.get_char(pos);
+            let ch = buf.char_at(pos);
             if options.modern_terminal_output {
                 let char_to_write = if ch.ch == '\0' { ' ' } else { ch.ch };
                 let uni = buf.buffer_type.convert_to_unicode(char_to_write);
@@ -51,7 +51,7 @@ pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
             pos.x += 1;
         }
 
-        if pos.x < buf.get_width() && pos.y + 1 < height {
+        if pos.x < buf.width() && pos.y + 1 < height {
             result.push(13);
             result.push(10);
         }
@@ -68,7 +68,7 @@ pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
 
 /// Check if SAUCE is required for saving (width != 80).
 pub fn _get_save_sauce_default_asc(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
+    if buf.width() != 80 {
         return (true, "width != 80".to_string());
     }
     (false, String::new())

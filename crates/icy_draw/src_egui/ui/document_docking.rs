@@ -254,8 +254,8 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                 if let Some(editor) = doc.get_ansi_editor() {
                     ui.add_space(4.0);
                     let mut buffer = Buffer::new((48, 1));
-                    let font_page = editor.buffer_view.lock().get_caret().get_font_page();
-                    if let Some(font) = editor.buffer_view.lock().get_buffer().get_font(font_page) {
+                    let font_page = editor.buffer_view.lock().get_caret().font_page();
+                    if let Some(font) = editor.buffer_view.lock().get_buffer().font(font_page) {
                         buffer.set_font(1, font.clone());
                     }
 
@@ -284,7 +284,7 @@ impl egui_tiles::Behavior<DocumentTab> for DocumentBehavior {
                         attr.set_foreground(15);
                         attr.set_background(4);
 
-                        for j in i..buffer.get_width() {
+                        for j in i..buffer.width() {
                             buffer.layers[0].set_char((j, 0), AttributedChar::new(' ', attr));
                         }
 

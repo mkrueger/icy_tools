@@ -218,7 +218,7 @@ impl ModalDialog for ExportFileDialog {
                 if ext == "png" {
                     let lock = &editor.buffer_view.lock();
                     let buf = lock.get_buffer();
-                    let (size, pixels) = buf.render_to_rgba(&Rectangle::from(0, 0, buf.get_width(), buf.get_height()).into());
+                    let (size, pixels) = buf.render_to_rgba(&Rectangle::from(0, 0, buf.width(), buf.height()).into());
                     let image_buffer: Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>> =
                         image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels);
                     match image_buffer {
@@ -238,8 +238,8 @@ impl ModalDialog for ExportFileDialog {
                     let lock = &editor.buffer_view.lock();
                     let buffer = lock.get_buffer();
 
-                    let size = buffer.get_size();
-                    let dim = buffer.get_font_dimensions();
+                    let size = buffer.size();
+                    let dim = buffer.font_dimensions();
                     let width = size.width * dim.width;
                     let height = size.height * dim.height;
 
@@ -257,11 +257,11 @@ impl ModalDialog for ExportFileDialog {
                     let mut pb = NoProgress {};
                     std::thread::spawn(move || w.write(fs, &mut pb).unwrap());
 
-                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()).into());
+                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.width(), buffer.height()).into());
                     let img = get_image(data, size);
                     c.add_frame_rgba(0, img, 0.0)?;
 
-                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()).into());
+                    let (size, data) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.width(), buffer.height()).into());
                     let img = get_image(data, size);
                     c.add_frame_rgba(1, img, 0.556)?;
                     return Ok(None);
@@ -276,7 +276,7 @@ impl ModalDialog for ExportFileDialog {
     }
 }
 
-fn get_image(data: Vec<u8>, size: icy_engine::Size) -> imgref::Img<Vec<rgb::RGBA<u8>>> {
+fn image(data: Vec<u8>, size: icy_engine::Size) -> imgref::Img<Vec<rgb::RGBA<u8>>> {
     let mut n = 0;
     let mut d = Vec::new();
     while n < data.len() {

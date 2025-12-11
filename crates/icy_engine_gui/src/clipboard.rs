@@ -64,7 +64,7 @@ impl std::error::Error for ClipboardError {}
 /// to be properly recognized by other applications.
 pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipboard: &C) -> Result<(), ClipboardError> {
     // Get plain text first - if no text, nothing to copy
-    let text = match screen.get_copy_text() {
+    let text = match screen.copy_text() {
         Some(t) => t,
         None => return Err(ClipboardError::NoSelection),
     };
@@ -73,12 +73,12 @@ pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipbo
 
     // ICY binary format (for paste between ICY applications)
     // This preserves all attributes, fonts, colors, etc.
-    if let Some(data) = screen.get_clipboard_data() {
+    if let Some(data) = screen.clipboard_data() {
         contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
     }
 
     // Image (rendered selection as RGBA)
-    if let Some(selection) = screen.get_selection() {
+    if let Some(selection) = screen.selection() {
         let (size, data) = screen.render_to_rgba(&RenderOptions {
             rect: selection,
             blink_on: true,
@@ -98,7 +98,7 @@ pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipbo
     }
 
     // RTF (rich text with colors and formatting)
-    if let Some(rich_text) = screen.get_copy_rich_text() {
+    if let Some(rich_text) = screen.copy_rich_text() {
         contents.push(ClipboardContent::Rtf(rich_text));
     }
 

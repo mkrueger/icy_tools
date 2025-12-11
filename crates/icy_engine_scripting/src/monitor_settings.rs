@@ -27,7 +27,7 @@ pub enum MonitorType {
 }
 
 impl MonitorType {
-    pub fn get_color(&self) -> Color {
+    pub fn color(&self) -> Color {
         match self {
             MonitorType::Color => Color::new(0, 0, 0),
             MonitorType::Grayscale => Color::new(0xFF, 0xFF, 0xFF),
@@ -177,7 +177,7 @@ impl MonitorSettings {
     pub fn get_monochrome_color(&self) -> Color {
         match self.monitor_type {
             MonitorType::CustomMonochrome => self.custom_monitor_color.clone(),
-            _ => self.monitor_type.get_color(),
+            _ => self.monitor_type.color(),
         }
     }
 }

@@ -22,7 +22,7 @@ pub struct ToolBehavior {
 
 impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
     fn tab_title_for_pane(&mut self, pane: &ToolTab) -> egui::WidgetText {
-        let title = pane.doc.get_title();
+        let title = pane.doc.title();
 
         WidgetText::RichText(Arc::new(egui::RichText::new(title).small()))
     }
@@ -43,7 +43,7 @@ impl egui_tiles::Behavior<ToolTab> for ToolBehavior {
 }
 
 pub trait ToolWindow {
-    fn get_title(&self) -> String;
+    fn title(&self) -> String;
 
     fn show_ui(&mut self, ui: &mut egui::Ui, active_document: Option<Arc<Mutex<Box<dyn Document>>>>) -> Option<Message>;
 }

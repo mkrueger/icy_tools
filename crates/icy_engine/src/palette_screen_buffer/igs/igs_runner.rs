@@ -394,7 +394,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     }
 
                     icy_parser_core::InitializationType::VdiDefaultPalette => {
-                        *buf.palette_mut() = resolution.get_palette().clone();
+                        *buf.palette_mut() = resolution.palette().clone();
                     }
 
                     icy_parser_core::InitializationType::DesktopResolutionAndClipping => {
@@ -437,7 +437,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             // Mode QuickVt52Reset resets colors to default
             if mode == ScreenClearMode::QuickVt52Reset {
                 if let GraphicsType::IGS(term) = buf.graphics_type() {
-                    *buf.palette_mut() = term.get_palette().clone();
+                    *buf.palette_mut() = term.palette().clone();
                 }
             }
 
@@ -486,7 +486,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     }
                     PaletteMode::VdiDefault => {
                         // All three modes use the same palette for now (from resolution)
-                        *buf.palette_mut() = resolution.get_palette().clone();
+                        *buf.palette_mut() = resolution.palette().clone();
                     }
                 }
             } else if resolution == icy_parser_core::TerminalResolution::Medium {

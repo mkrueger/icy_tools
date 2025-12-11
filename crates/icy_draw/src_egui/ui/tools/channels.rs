@@ -10,7 +10,7 @@ use crate::{Document, Message, ToolWindow};
 pub struct ChannelToolWindow {}
 
 impl ToolWindow for ChannelToolWindow {
-    fn get_title(&self) -> String {
+    fn title(&self) -> String {
         fl!(crate::LANGUAGE_LOADER, "channel_tool_title")
     }
 

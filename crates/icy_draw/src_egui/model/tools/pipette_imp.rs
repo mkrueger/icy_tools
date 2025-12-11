@@ -56,10 +56,10 @@ impl Tool for PipetteTool {
 
                     let mut buf = Buffer::new((1, 1));
                     buf.clear_font_table();
-                    if let Some(font) = editor.buffer_view.lock().get_buffer().get_font(ch.get_font_page()) {
+                    if let Some(font) = editor.buffer_view.lock().get_buffer().font(ch.font_page()) {
                         buf.set_font(0, font.clone());
                     } else {
-                        log::error!("Pipette tool: font page {} not found", ch.get_font_page());
+                        log::error!("Pipette tool: font page {} not found", ch.font_page());
                     }
                     buf.layers[0].set_char((0, 0), AttributedChar::new(ch.ch, TextAttribute::default()));
                     self.char_image = Some(create_image(ctx, &buf));
@@ -72,15 +72,15 @@ impl Tool for PipetteTool {
 
                 self.take_fg = !ui.input(|i| i.modifiers.ctrl) || ui.input(|i| i.modifiers.shift);
                 if self.take_fg {
-                    ui.label(fl!(crate::LANGUAGE_LOADER, "pipette_tool_foreground", fg = ch.attribute.get_foreground()));
-                    paint_color(ui, &editor.buffer_view.lock().get_buffer().palette.get_color(ch.attribute.get_foreground()));
+                    ui.label(fl!(crate::LANGUAGE_LOADER, "pipette_tool_foreground", fg = ch.attribute.foreground()));
+                    paint_color(ui, &editor.buffer_view.lock().get_buffer().palette.color(ch.attribute.foreground()));
                 }
 
                 self.take_bg = !ui.input(|i| i.modifiers.shift) || ui.input(|i| i.modifiers.ctrl);
 
                 if self.take_bg {
-                    ui.label(fl!(crate::LANGUAGE_LOADER, "pipette_tool_background", bg = ch.attribute.get_background()));
-                    paint_color(ui, &editor.buffer_view.lock().get_buffer().palette.get_color(ch.attribute.get_background()));
+                    ui.label(fl!(crate::LANGUAGE_LOADER, "pipette_tool_background", bg = ch.attribute.background()));
+                    paint_color(ui, &editor.buffer_view.lock().get_buffer().palette.color(ch.attribute.background()));
                 }
             });
 
@@ -95,7 +95,7 @@ impl Tool for PipetteTool {
 
     fn handle_hover(&mut self, _ui: &egui::Ui, response: egui::Response, editor: &mut AnsiEditor, cur: Position, cur_abs: Position) -> egui::Response {
         unsafe {
-            CUR_CHAR = Some(editor.get_char(cur_abs));
+            CUR_CHAR = Some(editor.char_at(cur_abs));
         }
         if self.cur_pos != Some(cur) {
             self.cur_pos = Some(cur);
@@ -129,11 +129,11 @@ impl Tool for PipetteTool {
                 if let Some(ch) = CUR_CHAR {
                     let mut attr = editor.buffer_view.lock().get_caret_mut().get_attribute();
                     if self.take_fg {
-                        attr.set_foreground(ch.attribute.get_foreground());
+                        attr.set_foreground(ch.attribute.foreground());
                     }
 
                     if self.take_bg {
-                        attr.set_background(ch.attribute.get_background());
+                        attr.set_background(ch.attribute.background());
                     }
                     editor.set_caret_attribute(attr);
                 }
@@ -149,7 +149,7 @@ fn paint_color(ui: &mut egui::Ui, color: &icy_engine::Color) {
 
     let painter = ui.painter_at(stroke_rect);
 
-    let (r, g, b) = color.get_rgb();
+    let (r, g, b) = color.rgb();
     painter.rect_filled(stroke_rect, CornerRadius::ZERO, Color32::BLACK);
     painter.rect_filled(stroke_rect.shrink(1.0), CornerRadius::ZERO, Color32::WHITE);
     let color = Color32::from_rgb(r, g, b);

@@ -31,7 +31,7 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn get_height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         self.org_to_cap.abs() as i32 + self.org_to_dec.abs() as i32
     }
 
@@ -181,7 +181,7 @@ impl Font {
 
         if let Some(ch) = &self.characters[character as usize] {
             ch.draw(bgi, buf, self, x, y, dir, size);
-            ch.get_width(size)
+            ch.width(size)
         } else {
             0.0
         }
@@ -194,22 +194,22 @@ impl Font {
                 continue;
             }
             if let Some(ch) = &self.characters[c as usize] {
-                width += ch.get_width(size);
+                width += ch.width(size);
             }
         }
         match dir {
             Direction::Horizontal => Size::new(
                 width as i32,
-                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
             ),
             Direction::Vertical => Size::new(
-                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
                 width as i32,
             ),
         }
     }
 
-    pub fn get_text_size(&self, str: &str, dir: Direction, size: i32) -> Size {
+    pub fn text_size(&self, str: &str, dir: Direction, size: i32) -> Size {
         let mut width = 0.0;
         for c in str.bytes() {
             if c as usize >= self.characters.len() {
@@ -217,16 +217,16 @@ impl Font {
             }
             if let Some(ch) = &self.characters[c as usize] {
                 // Use the scaled width, not the raw width
-                width += ch.get_width(size);
+                width += ch.width(size);
             }
         }
         match dir {
             Direction::Horizontal => Size::new(
                 width as i32,
-                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
             ),
             Direction::Vertical => Size::new(
-                (self.get_height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec.abs() as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
                 width as i32,
             ),
         }
@@ -235,15 +235,15 @@ impl Font {
     pub fn get_max_character_size(&self, dir: Direction, size: i32) -> Size {
         let mut width = 0.0f32;
         for ch in self.characters.iter().flatten() {
-            width = width.max(ch.get_width(size));
+            width = width.max(ch.width(size));
         }
         match dir {
             Direction::Horizontal => Size::new(
                 width.round() as i32,
-                (self.get_height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
             ),
             Direction::Vertical => Size::new(
-                (self.get_height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
+                (self.height() + self.org_to_dec as i32 + 1) * SCALE_UP[size as usize] / SCALE_DOWN[size as usize],
                 width.round() as i32,
             ),
         }

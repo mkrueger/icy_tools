@@ -41,14 +41,14 @@ pub fn render_diz_to_thumbnail(data: &[u8]) -> Option<RgbaData> {
             cmd.process_screen_command(&mut screen_sink);
 
             // Safety limit
-            if screen_sink.screen().get_height() >= 100 {
+            if screen_sink.screen().height() >= 100 {
                 break;
             }
         }
     }
 
-    let width = screen.get_width();
-    let height = screen.get_height();
+    let width = screen.width();
+    let height = screen.height();
 
     if width == 0 || height == 0 {
         return None;

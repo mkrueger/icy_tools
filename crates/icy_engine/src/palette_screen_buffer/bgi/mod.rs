@@ -80,7 +80,7 @@ impl LineStyle {
         }
     }
 
-    pub fn get_line_pattern(&self) -> Vec<bool> {
+    pub fn line_pattern(&self) -> Vec<bool> {
         let offset = match self {
             LineStyle::Solid => 0,
             LineStyle::Dotted => 1,
@@ -130,7 +130,7 @@ pub enum FontType {
 }
 
 impl FontType {
-    pub fn get_font(&self) -> &Font {
+    pub fn font(&self) -> &Font {
         match self {
             FontType::User | FontType::Default => &FONTS[0],
             FontType::Triplex => &FONTS[1],
@@ -447,7 +447,7 @@ impl Bgi {
             bkcolor: 0,
             write_mode: WriteMode::Copy,
             line_style: LineStyle::Solid,
-            line_pattern: LineStyle::Solid.get_line_pattern(),
+            line_pattern: LineStyle::Solid.line_pattern(),
             fill_style: FillStyle::Solid,
             fill_user_pattern: DEFAULT_USER_PATTERN.to_vec(),
             fill_color: 0,
@@ -464,7 +464,7 @@ impl Bgi {
         }
     }
 
-    pub fn get_color(&self) -> u8 {
+    pub fn color(&self) -> u8 {
         self.color
     }
 
@@ -504,18 +504,18 @@ impl Bgi {
         old
     }
 
-    pub fn get_line_style(&self) -> LineStyle {
+    pub fn line_style(&self) -> LineStyle {
         self.line_style
     }
 
     pub fn set_line_style(&mut self, style: LineStyle) -> LineStyle {
         let old = self.line_style;
         self.line_style = style;
-        self.line_pattern = style.get_line_pattern();
+        self.line_pattern = style.line_pattern();
         old
     }
 
-    pub fn get_line_thickness(&self) -> i32 {
+    pub fn line_thickness(&self) -> i32 {
         self.line_thickness
     }
 
@@ -563,18 +563,18 @@ impl Bgi {
     }
 
     #[inline(always)]
-    pub fn get_pixel(&self, buf: &mut dyn EditableScreen, x: i32, y: i32) -> u8 {
-        if x < 0 || y < 0 || x >= buf.get_resolution().width || y >= buf.get_resolution().height {
+    pub fn pixel(&self, buf: &mut dyn EditableScreen, x: i32, y: i32) -> u8 {
+        if x < 0 || y < 0 || x >= buf.resolution().width || y >= buf.resolution().height {
             return 0;
         }
-        let off = (y * buf.get_resolution().width + x) as usize;
+        let off = (y * buf.resolution().width + x) as usize;
         unsafe {
             // Use unsafe for bounds-checked access we've already validated
             *buf.screen().get_unchecked(off)
         }
     }
 
-    pub fn get_fill_pattern(&self) -> &Vec<u8> {
+    pub fn fill_pattern(&self) -> &Vec<u8> {
         &self.fill_user_pattern
     }
 
@@ -587,13 +587,13 @@ impl Bgi {
         if !self.viewport.contains(x, y) {
             return;
         }
-        if x < 0 || y < 0 || x >= buf.get_resolution().width || y >= buf.get_resolution().height {
+        if x < 0 || y < 0 || x >= buf.resolution().width || y >= buf.resolution().height {
             return;
         }
         let mut new_index = color % 16;
 
         if !matches!(self.write_mode, WriteMode::Copy) {
-            let cur = self.get_pixel(buf, x, y);
+            let cur = self.pixel(buf, x, y);
             new_index = match self.write_mode {
                 WriteMode::Copy => color % 16,
                 WriteMode::Xor => cur ^ color,
@@ -602,13 +602,13 @@ impl Bgi {
                 WriteMode::Not => (!color) & 0x0F,
             } % 16;
         }
-        let off = (y * buf.get_resolution().width + x) as usize;
+        let off = (y * buf.resolution().width + x) as usize;
         unsafe {
             *buf.screen_mut().get_unchecked_mut(off) = new_index;
         }
     }
 
-    pub fn get_write_mode(&self) -> WriteMode {
+    pub fn write_mode(&self) -> WriteMode {
         self.write_mode
     }
 
@@ -842,9 +842,9 @@ impl Bgi {
 
     fn find_line(&self, x: i32, y: i32, border: u8, buf: &mut dyn EditableScreen) -> Option<LineInfo> {
         // find end pixel
-        let mut endx = self.viewport.get_width();
-        for ex in x..self.viewport.get_width() {
-            let col = self.get_pixel(buf, ex, y);
+        let mut endx = self.viewport.width();
+        for ex in x..self.viewport.width() {
+            let col = self.pixel(buf, ex, y);
             if col == border {
                 endx = ex;
                 break;
@@ -855,7 +855,7 @@ impl Bgi {
         // find beginning pixel
         let mut startx = -1;
         for sx in (0..x).rev() {
-            let col = self.get_pixel(buf, sx, y);
+            let col = self.pixel(buf, sx, y);
             if col == border {
                 startx = sx;
                 break;
@@ -864,7 +864,7 @@ impl Bgi {
         startx += 1;
 
         // a weird condition for solid fills and the sides of the screen
-        if (startx == 0 || endx == buf.get_resolution().width - 1) && (endx == startx) {
+        if (startx == 0 || endx == buf.resolution().width - 1) && (endx == startx) {
             return None;
         }
 
@@ -885,21 +885,21 @@ impl Bgi {
         }
 
         // If starting pixel is already edge, nothing to do.
-        if self.get_pixel(buf, start_x, start_y) == edge {
+        if self.pixel(buf, start_x, start_y) == edge {
             return;
         }
 
         // Retrieve pattern (clone user pattern first to avoid borrow issues during pixel writes)
         let user_pattern = self.fill_user_pattern.clone();
-        let pattern = self.fill_style.get_fill_pattern(&user_pattern);
+        let pattern = self.fill_style.fill_pattern(&user_pattern);
 
         let vp_left = self.viewport.left();
         let vp_top = self.viewport.top();
         let vp_right = self.viewport.right();
         let vp_bottom = self.viewport.bottom();
 
-        let width = self.viewport.get_width();
-        let height = self.viewport.get_height();
+        let width = self.viewport.width();
+        let height = self.viewport.height();
 
         // Visited bitmap so we don’t revisit horizontal spans
         let mut visited = vec![false; (width * height) as usize];
@@ -935,7 +935,7 @@ impl Bgi {
             }
 
             // Skip if pixel is edge or already visited
-            if self.get_pixel(buf, x, y) == edge {
+            if self.pixel(buf, x, y) == edge {
                 continue;
             }
             if let Some(i) = idx(x, y) {
@@ -948,7 +948,7 @@ impl Bgi {
             let mut scan_x = x;
             while scan_x > vp_left {
                 let nx = scan_x - 1;
-                let px = self.get_pixel(buf, nx, y);
+                let px = self.pixel(buf, nx, y);
                 if px == edge {
                     break;
                 }
@@ -978,7 +978,7 @@ impl Bgi {
             let mut cur_x = scan_x;
             while cur_x < vp_right {
                 // Stop if edge encountered
-                let col = self.get_pixel(buf, cur_x, y);
+                let col = self.pixel(buf, cur_x, y);
                 if col == edge {
                     break;
                 }
@@ -1006,7 +1006,7 @@ impl Bgi {
                 if cur_pattern_row == 0 || use_fg {
                     // Previous line logic
                     if prev_y >= vp_top && !iszero && !(iszero && oy == prev_y) {
-                        let prev_pixel = self.get_pixel(buf, cur_x, prev_y);
+                        let prev_pixel = self.pixel(buf, cur_x, prev_y);
                         let prev_visited = idx(cur_x, prev_y).map(|i| visited[i]).unwrap_or(true);
                         if prevline_active {
                             if prev_pixel == edge {
@@ -1022,7 +1022,7 @@ impl Bgi {
 
                     // Next line logic
                     if next_y < vp_bottom && !iszero && !(iszero && oy == next_y) {
-                        let next_pixel = self.get_pixel(buf, cur_x, next_y);
+                        let next_pixel = self.pixel(buf, cur_x, next_y);
                         let next_visited = idx(cur_x, next_y).map(|i| visited[i]).unwrap_or(true);
                         if nextline_active {
                             if next_pixel == edge {
@@ -1048,10 +1048,10 @@ impl Bgi {
         if !self.viewport.contains(x, y) {
             return;
         }
-        let mut fill_lines = vec![Vec::new(); self.viewport.get_height() as usize];
+        let mut fill_lines = vec![Vec::new(); self.viewport.height() as usize];
         let mut point_stack = Vec::new();
 
-        if self.get_pixel(buf, x, y) != border {
+        if self.pixel(buf, x, y) != border {
             let li = self.find_line(x, y, border, buf);
             if let Some(li) = li {
                 point_stack.push(FillLineInfo::new(&li, 1));
@@ -1064,7 +1064,7 @@ impl Bgi {
                     if cury < self.viewport.bottom() && cury >= self.viewport.top() {
                         let mut cx = fli.x1;
                         while cx <= fli.x2 {
-                            let cur_px = self.get_pixel(buf, cx, cury);
+                            let cur_px = self.pixel(buf, cx, cury);
                             if cur_px == border || cur_px == self.fill_color && matches!(self.fill_style, FillStyle::Solid) {
                                 cx += 1;
                                 continue; // it's a border color, so don't scan any more this direction
@@ -1111,24 +1111,24 @@ impl Bgi {
 
     pub fn bar_rect(&mut self, buf: &mut dyn EditableScreen, rect: Rectangle) {
         let rect = rect.intersect(&self.viewport);
-        if rect.get_width() == 0 || rect.get_height() == 0 {
+        if rect.width() == 0 || rect.height() == 0 {
             return;
         }
         let right = rect.right();
         let bottom = rect.bottom();
         if matches!(self.fill_style, FillStyle::Solid) {
-            let width = buf.get_resolution().width;
+            let width = buf.resolution().width;
             let screen = buf.screen_mut();
             let color = self.fill_color;
             for y in rect.top()..rect.bottom() {
                 let start = (y * width as i32 + rect.left()) as usize;
-                let end = start + rect.get_width() as usize;
+                let end = start + rect.width() as usize;
                 screen[start..end].fill(color);
             }
         } else {
             // Avoid borrowing self.fill_user_pattern immutably across the pixel writes by cloning first
             let user_pattern = self.fill_user_pattern.clone();
-            let pattern = self.fill_style.get_fill_pattern(&user_pattern);
+            let pattern = self.fill_style.fill_pattern(&user_pattern);
             let mut ypat = rect.top() % 8;
             for y in rect.top()..bottom {
                 let mut xpatmask = (128 >> (rect.left() % 8)) as u8;
@@ -1288,7 +1288,7 @@ impl Bgi {
     }
 
     pub fn outline_scan(&mut self, buf: &mut dyn EditableScreen, rows: &mut Vec<Vec<i32>>) {
-        let old_line_style = self.get_line_style();
+        let old_line_style = self.line_style();
         if !matches!(old_line_style, LineStyle::Solid) {
             self.set_line_style(LineStyle::Solid);
         }
@@ -1625,7 +1625,7 @@ impl Bgi {
     }
 
     pub fn clear_device(&mut self, buf: &mut dyn EditableScreen) {
-        let res = buf.get_resolution();
+        let res = buf.resolution();
         self.bar(buf, 0, 0, res.width, res.height);
         self.move_to(0, 0);
     }
@@ -1636,7 +1636,7 @@ impl Bgi {
         let start_point = center + get_angle_size(start_angle, radiusx, radius_y);
         let end_point = center + get_angle_size(end_angle, radiusx, radius_y);
 
-        let oldthickness = self.get_line_thickness();
+        let oldthickness = self.line_thickness();
         if !matches!(self.line_style, LineStyle::Solid) {
             self.set_line_thickness(1);
         }
@@ -1670,7 +1670,7 @@ impl Bgi {
 
     pub fn graph_defaults(&mut self, buf: &mut dyn EditableScreen) {
         *buf.palette_mut() = Palette::dos_default();
-        self.viewport = Rectangle::from(0, 0, buf.get_resolution().width, buf.get_resolution().height);
+        self.viewport = Rectangle::from(0, 0, buf.resolution().width, buf.resolution().height);
         self.set_color(7);
         self.set_bk_color(0);
         self.set_line_style(LineStyle::Solid);
@@ -1760,11 +1760,11 @@ impl Bgi {
 
             // For vertical text with bitmap font, adjust starting position
             if matches!(self.direction, Direction::Vertical) {
-                yf += self.get_text_size(str).height;
+                yf += self.text_size(str).height;
             }
 
             for c in str.chars() {
-                if let Some(glyph) = DEFAULT_BITFONT.get_glyph(c) {
+                if let Some(glyph) = DEFAULT_BITFONT.glyph(c) {
                     let char_x = if matches!(self.direction, Direction::Vertical) { xf } else { xf };
                     let char_y = if matches!(self.direction, Direction::Vertical) { yf - 8 * mag } else { yf };
 
@@ -1800,11 +1800,11 @@ impl Bgi {
         // Vector font handling - this was already correct
         let old_thickness = self.line_thickness;
         self.line_thickness = 1;
-        let oldline = self.get_line_style();
+        let oldline = self.line_style();
         self.set_line_style(LineStyle::Solid);
 
-        let loaded_font = font.get_font();
-        let text_size = loaded_font.get_text_size(str, self.direction, self.char_size);
+        let loaded_font = font.font();
+        let text_size = loaded_font.text_size(str, self.direction, self.char_size);
         if matches!(self.direction, Direction::Vertical) {
             yf += text_size.height;
         }
@@ -1822,7 +1822,7 @@ impl Bgi {
         Position::new(xf, yf)
     }
 
-    pub fn get_text_size(&mut self, str: &str) -> Size {
+    pub fn text_size(&mut self, str: &str) -> Size {
         if str.is_empty() {
             return Size::new(0, 0);
         }
@@ -1838,19 +1838,19 @@ impl Bgi {
             }
         }
 
-        let loaded_font = font.get_font();
-        loaded_font.get_text_size(str, self.direction, self.char_size)
+        let loaded_font = font.font();
+        loaded_font.text_size(str, self.direction, self.char_size)
     }
 
     pub fn get_text_settings(&self) -> (FontType, Direction, i32) {
         (self.font, self.direction, self.char_size)
     }
 
-    pub fn get_image(&self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
+    pub fn image(&self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32) -> Image {
         let mut image = Vec::new();
         for y in y0..y1 {
             for x in x0..x1 {
-                image.push(self.get_pixel(buf, x, y));
+                image.push(self.pixel(buf, x, y));
             }
         }
         Image {
@@ -1868,7 +1868,7 @@ impl Bgi {
     }
 
     pub fn put_image(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, image: &Image, op: WriteMode) {
-        let old_wm = self.get_write_mode();
+        let old_wm = self.write_mode();
         self.set_write_mode(op);
 
         let mut pos = 0;
@@ -1889,7 +1889,7 @@ impl Bgi {
         self.set_write_mode(old_wm);
     }
     pub fn put_image2(&mut self, buf: &mut dyn EditableScreen, src_x: i32, src_y: i32, width: i32, height: i32, x: i32, y: i32, image: &Image, op: WriteMode) {
-        let old_wm = self.get_write_mode();
+        let old_wm = self.write_mode();
         self.set_write_mode(op);
 
         for iy in src_y..src_y + height {
@@ -1938,7 +1938,7 @@ impl Bgi {
             let hk_ch = (hotkey as char).to_ascii_uppercase();
             for (i, character) in text.chars().enumerate() {
                 if character.to_ascii_uppercase() == hk_ch {
-                    let prefix_size = self.get_text_size(&text[0..i]);
+                    let prefix_size = self.text_size(&text[0..i]);
 
                     // Highlight hotkey character
                     if self.button_style.highlight_hotkey() {
@@ -1948,7 +1948,7 @@ impl Bgi {
 
                     // Underline hotkey character
                     if self.button_style.underline_hotkey() {
-                        let hotkey_size = self.get_text_size(&character.to_string());
+                        let hotkey_size = self.text_size(&character.to_string());
 
                         // Draw drop shadow for underline
                         if self.button_style.display_dropshadow() {
@@ -2119,8 +2119,8 @@ impl Bgi {
                 text.pop();
             }
 
-            let old_col = self.get_color();
-            let text_size = self.get_text_size(&text);
+            let old_col = self.color();
+            let text_size = self.text_size(&text);
 
             // Calculate base position for text (use original button area for reference)
             let (tx, ty) = match self.button_style.orientation {

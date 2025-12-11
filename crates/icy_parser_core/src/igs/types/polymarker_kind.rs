@@ -16,7 +16,7 @@ pub enum PolymarkerKind {
 }
 
 impl PolymarkerKind {
-    pub fn get_points(&self) -> &'static [i32] {
+    pub fn points(&self) -> &'static [i32] {
         // The first two values are control values (line count, points per line)
         // The rest are coordinate pairs that need to be scaled
         match self {

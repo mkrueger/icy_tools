@@ -26,8 +26,8 @@ impl<'a> canvas::Program<BitFontEditorMessage> for TileViewCanvas<'a> {
 
         // Get colors from palette
         let palette = icy_engine::Palette::dos_default();
-        let (fg_r, fg_g, fg_b) = palette.get_rgb(self.fg_color);
-        let (bg_r, bg_g, bg_b) = palette.get_rgb(self.bg_color);
+        let (fg_r, fg_g, fg_b) = palette.rgb(self.fg_color);
+        let (bg_r, bg_g, bg_b) = palette.rgb(self.bg_color);
         let fg_iced_color = Color::from_rgb8(fg_r, fg_g, fg_b);
         let bg_iced_color = Color::from_rgb8(bg_r, bg_g, bg_b);
 

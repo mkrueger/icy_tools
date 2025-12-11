@@ -53,8 +53,8 @@ pub fn test_custom_font() {
 
 fn create_buffer() -> TextBuffer {
     let mut buffer = TextBuffer::new((80, 25));
-    for y in 0..buffer.get_height() {
-        for x in 0..buffer.get_width() {
+    for y in 0..buffer.height() {
+        for x in 0..buffer.width() {
             buffer.layers[0].set_char((x, y), AttributedChar::new(' ', TextAttribute::default()));
         }
     }

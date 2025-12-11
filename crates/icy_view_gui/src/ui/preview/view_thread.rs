@@ -381,8 +381,8 @@ impl ViewThread {
         let mut screen = self.screen.lock();
         if let Some(editable) = screen.as_editable() {
             // Validate buffer dimensions to prevent overflow
-            let width = buffer.get_width();
-            let height = buffer.get_height();
+            let width = buffer.width();
+            let height = buffer.height();
 
             if width == 0 || height == 0 {
                 log::warn!("Invalid buffer dimensions: {}x{}, skipping copy", width, height);
@@ -420,9 +420,9 @@ impl ViewThread {
             // Copy all characters from layer 0
             if !buffer.layers.is_empty() {
                 let layer = &buffer.layers[0];
-                for y in 0..buffer.get_height() {
-                    for x in 0..buffer.get_width() {
-                        let ch: icy_engine::AttributedChar = layer.get_char((x, y).into());
+                for y in 0..buffer.height() {
+                    for x in 0..buffer.width() {
+                        let ch: icy_engine::AttributedChar = layer.char_at((x, y).into());
                         editable.set_char((x, y).into(), ch);
                     }
                 }
@@ -491,7 +491,7 @@ impl ViewThread {
                 if let Some(sauce) = &repaired_sauce_opt {
                     let mut screen = self.screen.lock();
                     if let Some(editable) = screen.as_editable() {
-                        let height = editable.get_height();
+                        let height = editable.height();
                         editable.apply_sauce(sauce);
                         // preserve height otherwise the "baud rate"
                         // emulation may not work correctly
@@ -546,8 +546,8 @@ impl ViewThread {
                     Ok(screen) => {
                         let buffer = screen.buffer;
                         // Validate buffer before returning
-                        if buffer.get_width() == 0 || buffer.get_height() == 0 {
-                            log::error!("Format produced invalid buffer dimensions: {}x{}", buffer.get_width(), buffer.get_height());
+                        if buffer.width() == 0 || buffer.height() == 0 {
+                            log::error!("Format produced invalid buffer dimensions: {}x{}", buffer.width(), buffer.height());
                             None
                         } else {
                             Some(FormatLoadResult {
@@ -659,12 +659,10 @@ impl ViewThread {
                     Ok(screen) => {
                         let buffer = screen.buffer;
                         // Validate buffer dimensions
-                        if buffer.get_width() == 0 || buffer.get_height() == 0 {
-                            let _ = self.event_tx.send(ViewEvent::Error(format!(
-                                "Invalid buffer dimensions: {}x{}",
-                                buffer.get_width(),
-                                buffer.get_height()
-                            )));
+                        if buffer.width() == 0 || buffer.height() == 0 {
+                            let _ = self
+                                .event_tx
+                                .send(ViewEvent::Error(format!("Invalid buffer dimensions: {}x{}", buffer.width(), buffer.height())));
                             return;
                         }
 
@@ -809,8 +807,7 @@ impl ViewThread {
                             return;
                         }
 
-                        if screen_sink.screen().get_height() >= limits::MAX_BUFFER_HEIGHT as i32
-                            || screen_sink.screen().get_width() >= limits::MAX_BUFFER_WIDTH as i32
+                        if screen_sink.screen().height() >= limits::MAX_BUFFER_HEIGHT as i32 || screen_sink.screen().width() >= limits::MAX_BUFFER_WIDTH as i32
                         {
                             load.is_playing = false;
                             return;

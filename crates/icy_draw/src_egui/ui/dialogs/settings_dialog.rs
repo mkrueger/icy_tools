@@ -318,7 +318,7 @@ impl SettingsDialog {
         ui.separator();
         egui::Grid::new("paste_mode_grid").num_columns(6).spacing([8.0, 8.0]).show(ui, |ui| {
             for (i, view) in self.views.iter().enumerate() {
-                let font_dims = view.lock().get_buffer_mut().get_font_dimensions();
+                let font_dims = view.lock().get_buffer_mut().font_dimensions();
 
                 let opt = icy_engine_gui::TerminalOptions {
                     stick_to_bottom: false,
@@ -357,7 +357,7 @@ impl SettingsDialog {
                 }
             }
         });
-        if self.char_view.get_font().get_checksum() != cur_font.checksum {
+        if self.char_view.font().get_checksum() != cur_font.checksum {
             self.char_view.set_font(ui.ctx(), cur_font.clone());
             for view in &self.views {
                 view.lock().get_buffer_mut().set_font(0, cur_font.clone())
@@ -400,7 +400,7 @@ pub fn show_marker_settings(ui: &mut egui::Ui, old_settings: &MarkerSettings) ->
 
     ui.horizontal(|ui| {
         ui.label(fl!(crate::LANGUAGE_LOADER, "settings-raster-label"));
-        let (r, g, b) = marker_settings.raster_color.get_rgb();
+        let (r, g, b) = marker_settings.raster_color.rgb();
         let mut color = Color32::from_rgb(r, g, b);
 
         color_picker::color_edit_button_srgba(ui, &mut color, color_picker::Alpha::Opaque);
@@ -410,7 +410,7 @@ pub fn show_marker_settings(ui: &mut egui::Ui, old_settings: &MarkerSettings) ->
 
     ui.horizontal(|ui| {
         ui.label(fl!(crate::LANGUAGE_LOADER, "settings-guide-label"));
-        let (r, g, b) = marker_settings.guide_color.get_rgb();
+        let (r, g, b) = marker_settings.guide_color.rgb();
         let mut color = Color32::from_rgb(r, g, b);
 
         color_picker::color_edit_button_srgba(ui, &mut color, color_picker::Alpha::Opaque);

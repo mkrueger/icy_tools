@@ -13,10 +13,10 @@ pub struct RenderUnicodeOptions {
 }
 
 pub fn render_unicode_to_rgba(buf: &dyn Screen, opts: &RenderUnicodeOptions) -> (icy_engine::Size, Vec<u8>) {
-    let width = buf.get_width();
-    let height = buf.get_height();
+    let width = buf.width();
+    let height = buf.height();
 
-    let size = buf.get_font_dimensions();
+    let size = buf.font_dimensions();
     let (cell_w, cell_h) = (size.width as usize, size.height as usize);
 
     //static FONT_REGULAR: &[u8] = include_bytes!("../fonts/modern-fixedsys-excelsior/FSEX301-L2.ttf");
@@ -37,23 +37,23 @@ pub fn render_unicode_to_rgba(buf: &dyn Screen, opts: &RenderUnicodeOptions) -> 
     // Palette cache
     let mut palette_cache = [(0u8, 0u8, 0u8); 256];
     for i in 0..buf.palette().len() {
-        palette_cache[i] = buf.palette().get_rgb(i as u32);
+        palette_cache[i] = buf.palette().rgb(i as u32);
     }
 
     let explicit_sel = opts.selection_fg.as_ref().zip(opts.selection_bg.as_ref()).map(|(fg, bg)| {
-        let (fr, fg_, fb) = fg.get_rgb();
-        let (br, bg_, bb) = bg.get_rgb();
+        let (fr, fg_, fb) = fg.rgb();
+        let (br, bg_, bb) = bg.rgb();
         (fr, fg_, fb, br, bg_, bb)
     });
 
     for row in 0..height {
         for col in 0..width {
             let pos = Position::new(col, row);
-            let ch_attr = buf.get_char(pos);
+            let ch_attr = buf.char_at(pos);
             let ch = ch_attr.ch;
 
-            let mut fg_idx = ch_attr.attribute.get_foreground();
-            let mut bg_idx = ch_attr.attribute.get_background();
+            let mut fg_idx = ch_attr.attribute.foreground();
+            let mut bg_idx = ch_attr.attribute.background();
             let is_bold = ch_attr.attribute.is_bold();
 
             // Clamp indices to valid palette range

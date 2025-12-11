@@ -214,7 +214,7 @@ impl SelectPaletteDialog {
         let h = color_rect.height() / (palette.0.len() as f32 / num_colors as f32).ceil().max(1.0);
 
         for i in 0..palette.0.len() {
-            let (r, g, b) = palette.0.get_rgb(i as u32);
+            let (r, g, b) = palette.0.rgb(i as u32);
             let rect = Rect::from_min_size(
                 Pos2::new(color_rect.left() + (i % num_colors) as f32 * w, color_rect.top() + (i / num_colors) as f32 * h),
                 Vec2::new(w, h),

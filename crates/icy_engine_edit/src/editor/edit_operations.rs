@@ -19,11 +19,11 @@ impl EditState {
 
         if let Some(layer) = self.get_cur_layer() {
             let pos = pos.into();
-            let old = layer.get_char(pos);
+            let old = layer.char_at(pos);
 
             if self.mirror_mode {
-                let mirror_pos = Position::new(layer.get_width() - pos.x - 1, pos.y);
-                let mirror_old = layer.get_char(mirror_pos);
+                let mirror_pos = Position::new(layer.width() - pos.x - 1, pos.y);
+                let mirror_old = layer.char_at(mirror_pos);
                 self.push_undo_action(Box::new(UndoSetChar {
                     pos: mirror_pos,
                     layer: self.get_current_layer()?,
@@ -66,13 +66,13 @@ impl EditState {
     }
 
     pub fn paste_sixel(&mut self, sixel: Sixel) -> Result<()> {
-        let dims = self.get_buffer().get_font_dimensions();
+        let dims = self.get_buffer().font_dimensions();
 
         let mut layer = Layer::new(
             fl!(crate::LANGUAGE_LOADER, "layer-pasted-name"),
             (
-                (sixel.get_width() as f32 / dims.width as f32).ceil() as i32,
-                (sixel.get_height() as f32 / dims.height as f32).ceil() as i32,
+                (sixel.width() as f32 / dims.width as f32).ceil() as i32,
+                (sixel.height() as f32 / dims.height as f32).ceil() as i32,
             ),
         );
         layer.role = crate::Role::PasteImage;
@@ -89,7 +89,7 @@ impl EditState {
         let x = self.screen.caret.position().x;
         let y = self.screen.caret.position().y;
 
-        let width = self.get_buffer().get_size().width - x;
+        let width = self.get_buffer().size().width - x;
         let mut result = crate::TextScreen::new((width, 25));
         result.terminal_state_mut().is_terminal_buffer = false;
 
@@ -125,7 +125,7 @@ impl EditState {
         if resize_layer {
             let size = size.into();
             let rect = Rectangle::from_min_size(Position::default(), size);
-            let old_size = self.get_buffer().get_size();
+            let old_size = self.get_buffer().size();
             let mut old_layers = Vec::new();
             mem::swap(&mut self.get_buffer_mut().layers, &mut old_layers);
 
@@ -135,7 +135,7 @@ impl EditState {
             for old_layer in &old_layers {
                 let mut new_layer = old_layer.clone();
                 new_layer.lines.clear();
-                let new_rectangle = old_layer.get_rectangle().intersect(&rect);
+                let new_rectangle = old_layer.rectangle().intersect(&rect);
                 if new_rectangle.is_empty() {
                     continue;
                 }
@@ -143,29 +143,29 @@ impl EditState {
                 new_layer.set_offset(new_rectangle.start - rect.start);
                 new_layer.set_size(new_rectangle.size);
 
-                for y in 0..new_rectangle.get_height() {
-                    for x in 0..new_rectangle.get_width() {
-                        let ch = old_layer.get_char((x + new_rectangle.left(), y + new_rectangle.top()).into());
+                for y in 0..new_rectangle.height() {
+                    for x in 0..new_rectangle.width() {
+                        let ch = old_layer.char_at((x + new_rectangle.left(), y + new_rectangle.top()).into());
                         new_layer.set_char((x, y), ch);
                     }
                 }
                 self.get_buffer_mut().layers.push(new_layer);
             }
-            if self.get_buffer_mut().layers[0].get_size() == old_size {
+            if self.get_buffer_mut().layers[0].size() == old_size {
                 self.get_buffer_mut().layers[0].set_size(size);
             }
 
-            let op = super::undo_operations::Crop::new(old_size, rect.get_size(), old_layers);
+            let op = super::undo_operations::Crop::new(old_size, rect.size(), old_layers);
 
             return self.push_plain_undo(Box::new(op));
         }
 
-        let op = super::undo_operations::ResizeBuffer::new(self.get_buffer().get_size(), size);
+        let op = super::undo_operations::ResizeBuffer::new(self.get_buffer().size(), size);
         self.push_undo_action(Box::new(op))
     }
 
     pub fn center_line(&mut self) -> Result<()> {
-        let offset = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
+        let offset = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         let y = self.screen.caret.position().y + offset;
@@ -176,7 +176,7 @@ impl EditState {
     }
 
     pub fn justify_line_left(&mut self) -> Result<()> {
-        let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
+        let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         let y = self.screen.caret.position().y + offset;
@@ -187,7 +187,7 @@ impl EditState {
     }
 
     pub fn justify_line_right(&mut self) -> Result<()> {
-        let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
+        let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
         let y = self.screen.caret.position().y + offset;
@@ -226,7 +226,7 @@ impl EditState {
     }
 
     pub fn erase_row(&mut self) -> Result<()> {
-        let offset = if let Some(layer) = self.get_cur_layer() { layer.get_offset().y } else { 0 };
+        let offset = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let y = self.screen.caret.position().y + offset;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
@@ -236,7 +236,7 @@ impl EditState {
 
     pub fn erase_row_to_start(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -250,7 +250,7 @@ impl EditState {
 
     pub fn erase_row_to_end(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -264,7 +264,7 @@ impl EditState {
 
     pub fn erase_column(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -277,7 +277,7 @@ impl EditState {
 
     pub fn erase_column_to_start(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };
@@ -291,7 +291,7 @@ impl EditState {
 
     pub fn erase_column_to_end(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() {
-            layer.get_offset()
+            layer.offset()
         } else {
             Position::default()
         };

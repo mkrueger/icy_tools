@@ -60,7 +60,7 @@ impl LuaLayer {
 impl UserData for LuaLayer {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         // Buffer dimensions
-        fields.add_field_method_get("height", |_, this| Ok(this.screen.lock().get_height()));
+        fields.add_field_method_get("height", |_, this| Ok(this.screen.lock().height()));
         fields.add_field_method_set("height", |_, this, val| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -71,11 +71,11 @@ impl UserData for LuaLayer {
             }
         });
 
-        fields.add_field_method_get("width", |_, this| Ok(this.screen.lock().get_width()));
+        fields.add_field_method_get("width", |_, this| Ok(this.screen.lock().width()));
         fields.add_field_method_set("width", |_, this, val| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.set_size(icy_engine::Size::new(val, editable.get_height()));
+                editable.set_size(icy_engine::Size::new(val, editable.height()));
                 Ok(())
             } else {
                 Err(no_editable_error())
@@ -116,7 +116,7 @@ impl UserData for LuaLayer {
         });
 
         // Foreground color
-        fields.add_field_method_get("fg", |_, this| Ok(this.screen.lock().caret().attribute.get_foreground()));
+        fields.add_field_method_get("fg", |_, this| Ok(this.screen.lock().caret().attribute.foreground()));
         fields.add_field_method_set("fg", |_, this, val| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -128,7 +128,7 @@ impl UserData for LuaLayer {
         });
 
         // Background color
-        fields.add_field_method_get("bg", |_, this| Ok(this.screen.lock().caret().attribute.get_background()));
+        fields.add_field_method_get("bg", |_, this| Ok(this.screen.lock().caret().attribute.background()));
         fields.add_field_method_set("bg", |_, this, val| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -168,7 +168,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    Ok(layer.get_offset().x)
+                    Ok(layer.offset().x)
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -182,7 +182,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let offset = layer.get_offset();
+                    let offset = layer.offset();
                     layer.set_offset((val, offset.y));
                     Ok(())
                 } else {
@@ -198,7 +198,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    Ok(layer.get_offset().y)
+                    Ok(layer.offset().y)
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -212,7 +212,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let offset = layer.get_offset();
+                    let offset = layer.offset();
                     layer.set_offset((offset.x, val));
                     Ok(())
                 } else {
@@ -269,7 +269,7 @@ impl UserData for LuaLayer {
 
         methods.add_method("get_palette_color", |_, this, color: u32| {
             let screen = this.screen.lock();
-            let (r, g, b) = screen.palette().get_rgb(color);
+            let (r, g, b) = screen.palette().rgb(color);
             Ok([r, g, b])
         });
 
@@ -314,7 +314,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
+                    let ch = layer.char_at(Position::new(x, y));
                     let buffer_type = editable.buffer_type();
                     let ch = buffer_type.convert_to_unicode(ch.ch);
                     Ok(ch.to_string())
@@ -331,7 +331,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
+                    let ch = layer.char_at(Position::new(x, y));
                     let mut attr = ch.attribute;
                     attr.attr &= !attribute::INVISIBLE;
                     editable.caret_mut().attribute = attr;
@@ -352,7 +352,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let mut ch = layer.get_char(Position::new(x, y));
+                    let mut ch = layer.char_at(Position::new(x, y));
                     if !ch.is_visible() {
                         ch.attribute.attr = 0;
                     }
@@ -372,8 +372,8 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
-                    Ok(ch.attribute.get_foreground())
+                    let ch = layer.char_at(Position::new(x, y));
+                    Ok(ch.attribute.foreground())
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -387,7 +387,7 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let mut ch = layer.get_char(Position::new(x, y));
+                    let mut ch = layer.char_at(Position::new(x, y));
                     if !ch.is_visible() {
                         ch.attribute.attr = 0;
                     }
@@ -407,8 +407,8 @@ impl UserData for LuaLayer {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
-                    Ok(ch.attribute.get_background())
+                    let ch = layer.char_at(Position::new(x, y));
+                    Ok(ch.attribute.background())
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -474,7 +474,7 @@ impl UserData for LuaLayer {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer_mut(layer) {
-                    let offset = l.get_offset();
+                    let offset = l.offset();
                     l.set_offset((x, offset.y));
                     Ok(())
                 } else {
@@ -489,7 +489,7 @@ impl UserData for LuaLayer {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer_mut(layer) {
-                    let offset = l.get_offset();
+                    let offset = l.offset();
                     l.set_offset((offset.x, y));
                     Ok(())
                 } else {
@@ -504,7 +504,7 @@ impl UserData for LuaLayer {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer(layer) {
-                    let pos = l.get_offset();
+                    let pos = l.offset();
                     Ok((pos.x, pos.y))
                 } else {
                     Err(layer_error(layer, editable.layer_count()))
@@ -532,7 +532,7 @@ impl UserData for LuaLayer {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer(layer) {
-                    Ok(l.get_is_visible())
+                    Ok(l.is_visible())
                 } else {
                     Err(layer_error(layer, editable.layer_count()))
                 }
@@ -576,7 +576,7 @@ impl UserData for LuaScreen {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         // Delegate all LuaLayer fields
         // Buffer dimensions
-        fields.add_field_method_get("height", |_, this| Ok(this.layer.screen.lock().get_height()));
+        fields.add_field_method_get("height", |_, this| Ok(this.layer.screen.lock().height()));
         fields.add_field_method_set("height", |_, this, val| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -587,11 +587,11 @@ impl UserData for LuaScreen {
             }
         });
 
-        fields.add_field_method_get("width", |_, this| Ok(this.layer.screen.lock().get_width()));
+        fields.add_field_method_get("width", |_, this| Ok(this.layer.screen.lock().width()));
         fields.add_field_method_set("width", |_, this, val| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                editable.set_size(icy_engine::Size::new(val, editable.get_height()));
+                editable.set_size(icy_engine::Size::new(val, editable.height()));
                 Ok(())
             } else {
                 Err(no_editable_error())
@@ -632,7 +632,7 @@ impl UserData for LuaScreen {
         });
 
         // Foreground color
-        fields.add_field_method_get("fg", |_, this| Ok(this.layer.screen.lock().caret().attribute.get_foreground()));
+        fields.add_field_method_get("fg", |_, this| Ok(this.layer.screen.lock().caret().attribute.foreground()));
         fields.add_field_method_set("fg", |_, this, val| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -644,7 +644,7 @@ impl UserData for LuaScreen {
         });
 
         // Background color
-        fields.add_field_method_get("bg", |_, this: &LuaScreen| Ok(this.layer.screen.lock().caret().attribute.get_background()));
+        fields.add_field_method_get("bg", |_, this: &LuaScreen| Ok(this.layer.screen.lock().caret().attribute.background()));
         fields.add_field_method_set("bg", |_, this, val| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
@@ -684,7 +684,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    Ok(layer.get_offset().x)
+                    Ok(layer.offset().x)
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -698,7 +698,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let offset = layer.get_offset();
+                    let offset = layer.offset();
                     layer.set_offset((val, offset.y));
                     Ok(())
                 } else {
@@ -714,7 +714,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    Ok(layer.get_offset().y)
+                    Ok(layer.offset().y)
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -728,7 +728,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let offset = layer.get_offset();
+                    let offset = layer.offset();
                     layer.set_offset((offset.x, val));
                     Ok(())
                 } else {
@@ -821,7 +821,7 @@ impl UserData for LuaScreen {
 
         methods.add_method("get_palette_color", |_, this, color: u32| {
             let screen = this.layer.screen.lock();
-            let (r, g, b) = screen.palette().get_rgb(color);
+            let (r, g, b) = screen.palette().rgb(color);
             Ok([r, g, b])
         });
 
@@ -866,7 +866,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
+                    let ch = layer.char_at(Position::new(x, y));
                     let buffer_type = editable.buffer_type();
                     let ch = buffer_type.convert_to_unicode(ch.ch);
                     Ok(ch.to_string())
@@ -883,7 +883,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
+                    let ch = layer.char_at(Position::new(x, y));
                     let mut attr = ch.attribute;
                     attr.attr &= !attribute::INVISIBLE;
                     editable.caret_mut().attribute = attr;
@@ -904,7 +904,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let mut ch = layer.get_char(Position::new(x, y));
+                    let mut ch = layer.char_at(Position::new(x, y));
                     if !ch.is_visible() {
                         ch.attribute.attr = 0;
                     }
@@ -924,8 +924,8 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
-                    Ok(ch.attribute.get_foreground())
+                    let ch = layer.char_at(Position::new(x, y));
+                    Ok(ch.attribute.foreground())
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -939,7 +939,7 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
-                    let mut ch = layer.get_char(Position::new(x, y));
+                    let mut ch = layer.char_at(Position::new(x, y));
                     if !ch.is_visible() {
                         ch.attribute.attr = 0;
                     }
@@ -959,8 +959,8 @@ impl UserData for LuaScreen {
             if let Some(editable) = screen.as_editable() {
                 let cur_layer = editable.get_current_layer();
                 if let Some(layer) = editable.get_layer(cur_layer) {
-                    let ch = layer.get_char(Position::new(x, y));
-                    Ok(ch.attribute.get_background())
+                    let ch = layer.char_at(Position::new(x, y));
+                    Ok(ch.attribute.background())
                 } else {
                     Err(layer_error(cur_layer, editable.layer_count()))
                 }
@@ -1026,7 +1026,7 @@ impl UserData for LuaScreen {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer_mut(layer) {
-                    let offset = l.get_offset();
+                    let offset = l.offset();
                     l.set_offset((x, offset.y));
                     Ok(())
                 } else {
@@ -1041,7 +1041,7 @@ impl UserData for LuaScreen {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer_mut(layer) {
-                    let offset = l.get_offset();
+                    let offset = l.offset();
                     l.set_offset((offset.x, y));
                     Ok(())
                 } else {
@@ -1056,7 +1056,7 @@ impl UserData for LuaScreen {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer(layer) {
-                    let pos = l.get_offset();
+                    let pos = l.offset();
                     Ok((pos.x, pos.y))
                 } else {
                     Err(layer_error(layer, editable.layer_count()))
@@ -1084,7 +1084,7 @@ impl UserData for LuaScreen {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 if let Some(l) = editable.get_layer(layer) {
-                    Ok(l.get_is_visible())
+                    Ok(l.is_visible())
                 } else {
                     Err(layer_error(layer, editable.layer_count()))
                 }

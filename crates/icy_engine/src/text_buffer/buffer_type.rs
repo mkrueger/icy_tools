@@ -13,7 +13,7 @@ pub enum BufferType {
 }
 
 impl BufferType {
-    pub fn get_blink_rate(&self) -> u64 {
+    pub fn blink_rate(&self) -> u64 {
         match self {
             BufferType::CP437 => 533,
             BufferType::Viewdata => 1000,
@@ -22,7 +22,7 @@ impl BufferType {
             _ => 533,
         }
     }
-    pub fn get_caret_blink_rate(&self) -> u64 {
+    pub fn caret_blink_rate(&self) -> u64 {
         match self {
             BufferType::CP437 => 266,
             BufferType::Viewdata => 500,
@@ -52,7 +52,7 @@ impl BufferType {
         }
     }
 
-    pub fn get_selection_colors(&self) -> (Color, Color) {
+    pub fn selection_colors(&self) -> (Color, Color) {
         match self {
             // CP437 and Unicode use VGA-style magenta on gray selection
             BufferType::CP437 | BufferType::Unicode => (

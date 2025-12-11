@@ -1,22 +1,22 @@
 use crate::{AttributedChar, BufferType, Layer, Position, Role, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
 pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
-pub fn get_clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {
-    let selection_rect = selection_mask.get_selected_rectangle(selection);
+pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {
+    let selection_rect = selection_mask.selected_rectangle(selection);
 
     let mut data = Vec::new();
     data.push(0);
     data.extend(i32::to_le_bytes(selection_rect.start.x));
     data.extend(i32::to_le_bytes(selection_rect.start.y));
 
-    data.extend(u32::to_le_bytes(selection_rect.get_size().width as u32));
-    data.extend(u32::to_le_bytes(selection_rect.get_size().height as u32));
+    data.extend(u32::to_le_bytes(selection_rect.size().width as u32));
+    data.extend(u32::to_le_bytes(selection_rect.size().height as u32));
     let layer = &buffer.layers[layer];
     for y in selection_rect.y_range() {
         for x in selection_rect.x_range() {
             let pos = Position::new(x, y);
             let ch = if selection_mask.selected_in_selection((x, y), selection) {
-                layer.get_char(pos - layer.get_offset())
+                layer.char_at(pos - layer.offset())
             } else {
                 AttributedChar::invisible()
             };

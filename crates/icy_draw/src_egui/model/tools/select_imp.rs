@@ -135,12 +135,12 @@ impl Tool for SelectTool {
                 .buffer_view
                 .lock()
                 .get_edit_state_mut()
-                .enumerate_selections(|_, ch, _| selection_mode.get_response(ch.attribute.get_foreground() == cur_ch.attribute.get_foreground())),
+                .enumerate_selections(|_, ch, _| selection_mode.get_response(ch.attribute.foreground() == cur_ch.attribute.foreground())),
             SelectionMode::Background => editor
                 .buffer_view
                 .lock()
                 .get_edit_state_mut()
-                .enumerate_selections(|_, ch, _| selection_mode.get_response(ch.attribute.get_background() == cur_ch.attribute.get_background())),
+                .enumerate_selections(|_, ch, _| selection_mode.get_response(ch.attribute.background() == cur_ch.attribute.background())),
         }
         None
     }
@@ -153,7 +153,7 @@ impl Tool for SelectTool {
 
         self.selection_drag = get_selection_drag(editor, editor.drag_pos.start_abs);
         if !matches!(self.selection_drag, SelectionDrag::None) {
-            if let Some(selection) = editor.buffer_view.lock().get_selection() {
+            if let Some(selection) = editor.buffer_view.lock().selection() {
                 self.start_selection = selection.as_rectangle();
             }
         } else if !response.ctx.input(|i| i.modifiers.shift_only() || i.modifiers.command_only()) {
@@ -166,7 +166,7 @@ impl Tool for SelectTool {
         if self.mode != SelectionMode::Normal {
             return response;
         }
-        let mut rect = if let Some(selection) = editor.buffer_view.lock().get_selection() {
+        let mut rect = if let Some(selection) = editor.buffer_view.lock().selection() {
             selection.as_rectangle()
         } else {
             Rectangle::from_coords(0, 0, 0, 0)
@@ -229,7 +229,7 @@ impl Tool for SelectTool {
         }
 
         let lock = &mut editor.buffer_view.lock();
-        if let Some(mut selection) = lock.get_selection() {
+        if let Some(mut selection) = lock.selection() {
             if response.ctx.input(|i| i.modifiers.command_only()) {
                 selection.add_type = AddType::Subtract;
             }
@@ -303,7 +303,7 @@ impl SelectTool {
     fn move_left(&mut self, editor: &AnsiEditor, rect: &mut Rectangle) {
         let delta = editor.drag_pos.start_abs.x - editor.drag_pos.cur_abs.x;
         rect.start.x = self.start_selection.left() - delta;
-        rect.size.width = self.start_selection.get_width() + delta;
+        rect.size.width = self.start_selection.width() + delta;
 
         if rect.size.width < 0 {
             rect.size.width = rect.start.x - self.start_selection.right();
@@ -312,7 +312,7 @@ impl SelectTool {
     }
 
     fn move_right(&mut self, editor: &AnsiEditor, rect: &mut Rectangle) {
-        rect.size.width = self.start_selection.get_width() - editor.drag_pos.start_abs.x + editor.drag_pos.cur_abs.x;
+        rect.size.width = self.start_selection.width() - editor.drag_pos.start_abs.x + editor.drag_pos.cur_abs.x;
         if rect.size.width < 0 {
             rect.start.x = self.start_selection.left() + rect.size.width;
             rect.size.width = self.start_selection.left() - rect.start.x;
@@ -322,7 +322,7 @@ impl SelectTool {
     fn move_top(&mut self, editor: &AnsiEditor, rect: &mut Rectangle) {
         let delta = editor.drag_pos.start_abs.y - editor.drag_pos.cur_abs.y;
         rect.start.y = self.start_selection.top() - delta;
-        rect.size.height = self.start_selection.get_height() + delta;
+        rect.size.height = self.start_selection.height() + delta;
 
         if rect.size.height < 0 {
             rect.size.height = rect.start.y - self.start_selection.bottom();
@@ -331,7 +331,7 @@ impl SelectTool {
     }
 
     fn move_bottom(&mut self, editor: &AnsiEditor, rect: &mut Rectangle) {
-        rect.size.height = self.start_selection.get_height() - editor.drag_pos.start_abs.y + editor.drag_pos.cur_abs.y;
+        rect.size.height = self.start_selection.height() - editor.drag_pos.start_abs.y + editor.drag_pos.cur_abs.y;
         if rect.size.height < 0 {
             rect.start.y = self.start_selection.top() + rect.size.height;
             rect.size.height = self.start_selection.top() - rect.start.y;
@@ -340,14 +340,14 @@ impl SelectTool {
 }
 
 fn is_inside_selection(editor: &AnsiEditor, cur_abs: Position) -> bool {
-    if let Some(selection) = editor.buffer_view.lock().get_selection() {
+    if let Some(selection) = editor.buffer_view.lock().selection() {
         return selection.is_inside(cur_abs);
     }
     false
 }
 
 fn get_selection_drag(editor: &AnsiEditor, cur_abs: Position) -> SelectionDrag {
-    if let Some(selection) = editor.buffer_view.lock().get_selection() {
+    if let Some(selection) = editor.buffer_view.lock().selection() {
         let rect = selection.as_rectangle();
 
         if rect.is_inside(cur_abs) {

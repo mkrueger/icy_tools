@@ -27,9 +27,9 @@ pub(crate) fn load_bin(file_name: &Path, data: &[u8], load_data_opt: Option<Load
             }
         }
 
-        for _ in 0..screen.buffer.get_width() {
+        for _ in 0..screen.buffer.width() {
             if o >= data.len() {
-                screen.buffer.set_height(screen.buffer.layers[0].get_height());
+                screen.buffer.set_height(screen.buffer.layers[0].height());
                 return Ok(screen);
             }
 
@@ -37,7 +37,7 @@ pub(crate) fn load_bin(file_name: &Path, data: &[u8], load_data_opt: Option<Load
                 // last byte is not important enough to throw an error
                 // there seem to be some invalid files out there.
                 log::error!("Invalid Bin. Read char block beyond EOF.");
-                screen.buffer.set_height(screen.buffer.layers[0].get_height());
+                screen.buffer.set_height(screen.buffer.layers[0].height());
                 return Ok(screen);
             }
 
@@ -61,9 +61,9 @@ pub(crate) fn load_bin(file_name: &Path, data: &[u8], load_data_opt: Option<Load
 pub(crate) fn save_bin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 
-    for y in 0..buf.get_height() {
-        for x in 0..buf.get_width() {
-            let ch = buf.get_char((x, y).into());
+    for y in 0..buf.height() {
+        for x in 0..buf.width() {
+            let ch = buf.char_at((x, y).into());
             result.push(ch.ch as u8);
             result.push(ch.attribute.as_u8(buf.ice_mode));
         }
@@ -76,7 +76,7 @@ pub(crate) fn save_bin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8
 
 /// Check if SAUCE is required for saving (width != 160).
 pub fn _get_save_sauce_default_binary(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 160 {
+    if buf.width() != 160 {
         return (true, "width != 160".to_string());
     }
     (false, String::new())

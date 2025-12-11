@@ -9,11 +9,11 @@ fn test_get_char() {
 
     layer.insert_line(0, line);
 
-    assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1).into()));
-    assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000).into()));
-    assert_eq!('a', layer.get_char((10, 0).into()).ch);
-    assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0).into()));
-    assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((-1, -1).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((1000, 1000).into()));
+    assert_eq!('a', layer.char_at((10, 0).into()).ch);
+    assert_eq!(AttributedChar::invisible(), layer.char_at((9, 0).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((11, 0).into()));
 }
 
 #[test]
@@ -26,11 +26,11 @@ fn test_get_char_intransparent() {
 
     layer.insert_line(0, line);
 
-    assert_eq!(AttributedChar::invisible(), layer.get_char((-1, -1).into()));
-    assert_eq!(AttributedChar::invisible(), layer.get_char((1000, 1000).into()));
-    assert_eq!('a', layer.get_char((10, 0).into()).ch);
-    assert_eq!(AttributedChar::invisible(), layer.get_char((9, 0).into()));
-    assert_eq!(AttributedChar::invisible(), layer.get_char((11, 0).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((-1, -1).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((1000, 1000).into()));
+    assert_eq!('a', layer.char_at((10, 0).into()).ch);
+    assert_eq!(AttributedChar::invisible(), layer.char_at((9, 0).into()));
+    assert_eq!(AttributedChar::invisible(), layer.char_at((11, 0).into()));
 }
 
 #[test]
@@ -66,15 +66,15 @@ fn test_clipboard() {
     }
 
     state.set_selection(Rectangle::from_min_size((5, 6), (7, 8))).unwrap();
-    let data = state.get_clipboard_data().unwrap();
+    let data = state.clipboard_data().unwrap();
 
     let layer = state.from_clipboard_data(&data).unwrap();
 
-    assert_eq!(layer.get_width(), 7);
-    assert_eq!(layer.get_height(), 8);
+    assert_eq!(layer.width(), 7);
+    assert_eq!(layer.height(), 8);
 
     assert_eq!(layer.properties.offset.x, 5);
     assert_eq!(layer.properties.offset.y, 6);
 
-    assert!(layer.get_char((0, 0).into()).ch == '5');
+    assert!(layer.char_at((0, 0).into()).ch == '5');
 }*/

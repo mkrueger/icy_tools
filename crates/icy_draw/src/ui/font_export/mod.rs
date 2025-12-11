@@ -451,7 +451,7 @@ fn export_to_raw_bytes(font: &BitFont) -> Result<Vec<u8>, String> {
     let mut data = Vec::with_capacity(256 * height);
 
     for ch_code in 0..256u32 {
-        let glyph = font.get_glyph(unsafe { char::from_u32_unchecked(ch_code) });
+        let glyph = font.glyph(unsafe { char::from_u32_unchecked(ch_code) });
 
         for row in 0..height {
             let mut row_byte: u8 = 0;
@@ -492,7 +492,7 @@ fn convert_font_to_u8_data(font: &BitFont) -> Vec<u8> {
 
     for ch_code in 0..256u32 {
         let ch = unsafe { char::from_u32_unchecked(ch_code) };
-        if let Some(glyph) = font.get_glyph(ch) {
+        if let Some(glyph) = font.glyph(ch) {
             let mut rows = vec![0u8; bytes_per_row * size.height as usize];
             for (y, row) in glyph.bitmap.pixels.iter().enumerate() {
                 if y >= size.height as usize {

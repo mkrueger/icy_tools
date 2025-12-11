@@ -33,7 +33,7 @@ impl CharTableToolWindow {
         }
     }
 
-    pub fn get_font(&self) -> &BitFont {
+    pub fn font(&self) -> &BitFont {
         &self.font
     }
 
@@ -119,9 +119,9 @@ impl CharTableToolWindow {
     pub fn show_char_table(&mut self, ui: &mut egui::Ui, editor: &AnsiEditor) -> Option<Message> {
         let mut result = None;
 
-        let font_page = editor.buffer_view.lock().get_caret().get_font_page();
+        let font_page = editor.buffer_view.lock().get_caret().font_page();
         let font_count = editor.buffer_view.lock().get_buffer().font_count();
-        if let Some(cur_font) = editor.buffer_view.lock().get_buffer().get_font(font_page) {
+        if let Some(cur_font) = editor.buffer_view.lock().get_buffer().font(font_page) {
             if cur_font.name != self.font.name {
                 self.font = cur_font.clone();
                 self.char_table = create_font_image(ui.ctx(), &self.font, self.buffer_width, TextAttribute::default(), TextAttribute::default(), 0);
@@ -224,7 +224,7 @@ pub fn create_hover_image(ctx: &Context, font: &BitFont, ch: char, color: u32) -
 }
 
 impl ToolWindow for CharTableToolWindow {
-    fn get_title(&self) -> String {
+    fn title(&self) -> String {
         fl!(crate::LANGUAGE_LOADER, "char_table_tool_title")
     }
 

@@ -721,9 +721,9 @@ impl MainWindow {
                 let ansi_music = self.terminal_window.ansi_music;
 
                 let info = terminal_info_dialog::TerminalInfo {
-                    buffer_size: terminal_state.get_size(),
-                    screen_resolution: screen.get_resolution(),
-                    font_size: screen.get_font(caret.font_page()).map(|f| f.size()).unwrap_or_default(),
+                    buffer_size: terminal_state.size(),
+                    screen_resolution: screen.resolution(),
+                    font_size: screen.font(caret.font_page()).map(|f| f.size()).unwrap_or_default(),
                     caret_position: caret.position(),
                     caret_visible: caret.visible,
                     caret_blinking: caret.blinking,
@@ -731,8 +731,8 @@ impl MainWindow {
                     insert_mode: caret.insert_mode,
                     auto_wrap: terminal_state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
                     scroll_mode: terminal_state.scroll_state,
-                    margins_top_bottom: terminal_state.get_margins_top_bottom(),
-                    margins_left_right: terminal_state.get_margins_left_right(),
+                    margins_top_bottom: terminal_state.margins_top_bottom(),
+                    margins_left_right: terminal_state.margins_left_right(),
                     mouse_mode: format!("{:?}", terminal_state.mouse_state.mouse_mode),
                     inverse_mode: terminal_state.inverse_video,
                     ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
@@ -1080,7 +1080,7 @@ impl MainWindow {
                             let cursor = screen.caret_position();
                             mcp::types::TerminalState {
                                 cursor_position: (cursor.x as usize, cursor.y as usize),
-                                screen_size: (screen.get_size().width as usize, screen.get_size().height as usize),
+                                screen_size: (screen.size().width as usize, screen.size().height as usize),
                                 current_buffer: String::new(),
                                 is_connected: self.is_connected,
                                 current_bbs: self.current_address.as_ref().map(|addr| addr.system_name.clone()),
@@ -1133,7 +1133,7 @@ impl MainWindow {
             Message::UpdateSelection(pos) => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Some(mut sel) = screen.get_selection().clone() {
+                    if let Some(mut sel) = screen.selection().clone() {
                         if !sel.locked {
                             sel.lead = pos;
                             let _ = screen.set_selection(sel);
@@ -1146,7 +1146,7 @@ impl MainWindow {
             Message::EndSelection => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Some(mut sel) = screen.get_selection().clone() {
+                    if let Some(mut sel) = screen.selection().clone() {
                         sel.locked = true;
                         let _ = screen.set_selection(sel);
                     }

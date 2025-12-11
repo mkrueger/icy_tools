@@ -33,7 +33,7 @@ pub fn create_welcome_screen() -> TextScreen {
         let yellow_attr = TextAttribute::from_u8(0x0E, icy_engine::IceMode::Ice);
 
         for msg_char in mcp_msg.chars() {
-            if caret_pos.x < screen.buffer.get_width() {
+            if caret_pos.x < screen.buffer.width() {
                 let new_ch = AttributedChar::new(msg_char, yellow_attr);
                 screen.buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
                 caret_pos.x += 1;
@@ -51,7 +51,7 @@ pub fn create_welcome_screen() -> TextScreen {
     let ready_msg = variants[fastrand::usize(0..variants.len())];
 
     for msg_char in ready_msg.chars() {
-        if caret_pos.x < screen.buffer.get_width() {
+        if caret_pos.x < screen.buffer.width() {
             let new_ch = AttributedChar::new(msg_char, TextAttribute::default());
             screen.buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
             caret_pos.x += 1;

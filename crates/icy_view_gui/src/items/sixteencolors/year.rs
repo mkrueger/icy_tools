@@ -49,7 +49,7 @@ impl FontTarget for BufferRenderer<'_> {
     type Error = std::fmt::Error;
 
     fn draw(&mut self, cell: Cell) -> std::result::Result<(), Self::Error> {
-        if self.cur_x >= 0 && self.cur_x < self.buffer.get_width() && self.cur_y >= 0 && self.cur_y < self.buffer.get_height() {
+        if self.cur_x >= 0 && self.cur_x < self.buffer.width() && self.cur_y >= 0 && self.cur_y < self.buffer.height() {
             let fg = cell.fg.unwrap_or(15);
             let bg = cell.bg.unwrap_or(0);
             let attr = TextAttribute::from_color(fg, bg);
