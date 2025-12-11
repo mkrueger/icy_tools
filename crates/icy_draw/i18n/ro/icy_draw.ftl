@@ -266,12 +266,12 @@ about-dialog-created_by =
     Ajutor și testare: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Proprietăți strat
-edit-layer-dialog-name-label=Nume:
+edit-layer-dialog-name-label=Nume
 edit-layer-dialog-is-visible-checkbox=Vizibil
 edit-layer-dialog-is-edit-locked-checkbox=Blocare editare
 edit-layer-dialog-is-position-locked-checkbox=Blocare poziție
-edit-layer-dialog-is-x-offset-label=Deplasare X:
-edit-layer-dialog-is-y-offset-label=Deplasare Y:
+edit-layer-dialog-is-x-offset-label=Deplasare X
+edit-layer-dialog-is-y-offset-label=Deplasare Y
 edit-layer-dialog-has-alpha-checkbox=Are alfa
 edit-layer-dialog-is-alpha-locked-checkbox=Blocare alfa
 

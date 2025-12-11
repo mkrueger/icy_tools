@@ -1,3 +1,4 @@
+mod double_click;
 mod file_list_toolbar;
 mod filter_popup;
 pub mod focus;
@@ -12,6 +13,7 @@ mod status_bar;
 pub mod theme;
 pub mod thumbnail_view;
 
+pub use double_click::*;
 pub use file_list_toolbar::*;
 pub use filter_popup::*;
 pub use focus::{Focus, focus};

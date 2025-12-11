@@ -11,6 +11,7 @@ use iced::{
     Alignment, Element, Event, Length, Task, Theme,
     widget::{column, container, mouse_area, row, rule, text},
 };
+use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::command_handlers;
@@ -327,6 +328,11 @@ pub enum Message {
     // Animation Export Dialog
     ShowAnimationExportDialog,
     AnimationExport(super::animation_editor::AnimationExportMessage),
+
+    // Edit Layer Dialog
+    ShowEditLayerDialog(usize),
+    EditLayerDialog(super::ansi_editor::EditLayerDialogMessage),
+    ApplyEditLayer(super::ansi_editor::EditLayerResult),
 
     // Internal
     Tick,
@@ -1316,6 +1322,10 @@ impl MainWindow {
                 }
             }
             Message::AnsiEditor(msg) => {
+                // Intercept EditLayer to show the dialog
+                if let AnsiEditorMessage::EditLayer(layer_index) = msg {
+                    return self.update(Message::ShowEditLayerDialog(layer_index));
+                }
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.update(msg).map(Message::AnsiEditor)
                 } else {
@@ -1424,6 +1434,44 @@ impl MainWindow {
             }
             // AnimationExport messages are routed through DialogStack::update above
             Message::AnimationExport(_) => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Edit Layer Dialog
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowEditLayerDialog(layer_index) => {
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        let buffer = state.get_buffer();
+                        if let Some(layer) = buffer.layers.get(layer_index) {
+                            let properties = layer.properties.clone();
+                            let size = layer.size();
+                            self.dialogs.push(super::ansi_editor::EditLayerDialog::new(layer_index, properties, size));
+                        }
+                    }
+                }
+                Task::none()
+            }
+            // EditLayerDialog messages are routed through DialogStack::update above
+            Message::EditLayerDialog(_) => Task::none(),
+            Message::ApplyEditLayer(result) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // Update properties
+                        if let Err(e) = state.update_layer_properties(result.layer_index, result.properties) {
+                            log::error!("Failed to update layer properties: {}", e);
+                        }
+                        // Update size if changed
+                        if let Some(new_size) = result.new_size {
+                            if let Err(e) = state.set_layer_size(result.layer_index, (new_size.width, new_size.height)) {
+                                log::error!("Failed to resize layer: {}", e);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // File operations (TODO: implement)

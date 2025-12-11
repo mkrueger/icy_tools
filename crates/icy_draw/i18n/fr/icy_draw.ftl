@@ -266,12 +266,12 @@ about-dialog-created_by =
     Aide et tests: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Propriétés du calque
-edit-layer-dialog-name-label=Nom:
+edit-layer-dialog-name-label=Nom
 edit-layer-dialog-is-visible-checkbox=Visible
 edit-layer-dialog-is-edit-locked-checkbox=Édition verrouillée
 edit-layer-dialog-is-position-locked-checkbox=Position verrouillée
-edit-layer-dialog-is-x-offset-label=Décalage X:
-edit-layer-dialog-is-y-offset-label=Décalage Y:
+edit-layer-dialog-is-x-offset-label=Décalage X
+edit-layer-dialog-is-y-offset-label=Décalage Y
 edit-layer-dialog-has-alpha-checkbox=A un alpha
 edit-layer-dialog-is-alpha-locked-checkbox=Alpha verrouillé
 

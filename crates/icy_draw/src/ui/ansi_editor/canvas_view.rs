@@ -7,10 +7,13 @@
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Task,
-    widget::{container, stack},
+    Alignment, Element, Length, Task, Theme,
+    widget::{button, column, container, stack, text},
 };
+use iced_aw::ContextMenu;
 use icy_engine::Screen;
+
+use crate::fl;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::Mutex;
@@ -46,6 +49,12 @@ pub enum CanvasMessage {
     MouseRelease(iced::Point, iced::mouse::Button),
     /// Mouse moved on canvas
     MouseMove(iced::Point),
+    /// Cut selection (context menu)
+    Cut,
+    /// Copy selection (context menu)
+    Copy,
+    /// Paste clipboard (context menu)
+    Paste,
 }
 
 /// Canvas view state for the ANSI editor
@@ -238,7 +247,79 @@ impl CanvasView {
             }
             CanvasMessage::MouseRelease(_pos, _button) => Task::none(),
             CanvasMessage::MouseMove(_pos) => Task::none(),
+            CanvasMessage::Cut | CanvasMessage::Copy | CanvasMessage::Paste => {
+                // These are handled by the parent AnsiEditor
+                Task::none()
+            }
         }
+    }
+
+    /// Create a menu item button for the context menu
+    fn menu_item(label: String, message: Option<CanvasMessage>) -> Element<'static, CanvasMessage> {
+        let is_enabled = message.is_some();
+
+        button(text(label).size(13))
+            .on_press_maybe(message)
+            .width(Length::Fill)
+            .padding([6, 10])
+            .style(move |theme: &Theme, status: button::Status| {
+                let palette = theme.extended_palette();
+
+                match status {
+                    button::Status::Hovered if is_enabled => button::Style {
+                        background: Some(iced::Background::Color(palette.primary.base.color)),
+                        text_color: palette.primary.base.text,
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    button::Status::Pressed if is_enabled => button::Style {
+                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                        text_color: palette.primary.strong.text,
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    _ if !is_enabled => button::Style {
+                        background: None,
+                        text_color: palette.background.weak.text.scale_alpha(0.4),
+                        ..Default::default()
+                    },
+                    _ => button::Style {
+                        background: None,
+                        text_color: palette.background.weak.text,
+                        ..Default::default()
+                    },
+                }
+            })
+            .into()
+    }
+
+    /// Build the context menu for the canvas
+    fn build_context_menu() -> Element<'static, CanvasMessage> {
+        let cut_btn = Self::menu_item(fl!("menu-cut"), Some(CanvasMessage::Cut));
+        let copy_btn = Self::menu_item(fl!("menu-copy"), Some(CanvasMessage::Copy));
+        let paste_btn = Self::menu_item(fl!("menu-paste"), Some(CanvasMessage::Paste));
+
+        container(column![cut_btn, copy_btn, paste_btn].spacing(2).width(Length::Fixed(150.0)))
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style {
+                    background: Some(iced::Background::Color(palette.background.weak.color)),
+                    border: iced::Border {
+                        color: palette.background.strong.color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                }
+            })
+            .padding(4)
+            .into()
     }
 
     /// Render the canvas view with scrollbars
@@ -288,23 +369,27 @@ impl CanvasView {
                 layers.push(hscrollbar_container.into());
             }
 
-            container(stack(layers))
+            let canvas_view = container(stack(layers))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|theme: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(main_area_background(theme))),
                     ..Default::default()
-                })
-                .into()
+                });
+
+            // Wrap with context menu
+            ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
         } else {
-            container(terminal_view)
+            let canvas_view = container(terminal_view)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|theme: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(main_area_background(theme))),
                     ..Default::default()
-                })
-                .into()
+                });
+
+            // Wrap with context menu
+            ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
         }
     }
 

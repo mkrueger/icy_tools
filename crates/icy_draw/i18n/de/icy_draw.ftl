@@ -270,8 +270,8 @@ edit-sauce-letter-spacing=9 Pixel Modus:
 edit-sauce-aspect-ratio=Klassisches Seitenverhältnis:
 
 edit-canvas-size-title=Leinwandgröße
-edit-canvas-size-width-label=Breite:
-edit-canvas-size-height-label=Höhe:
+edit-canvas-size-width-label=Breite
+edit-canvas-size-height-label=Höhe
 edit-canvas-size-resize=Größe ändern
 edit-canvas-size-resize_layers-label=Ebenen anpassen
 
@@ -331,12 +331,12 @@ about-dialog-created_by =
     Erstellt von { $authors }
     Help & testing: NuSkooler, Grymmjack
 edit-layer-dialog-title=Ebene bearbeiten
-edit-layer-dialog-name-label=Name:
+edit-layer-dialog-name-label=Name
 edit-layer-dialog-is-visible-checkbox=Sichtbar
 edit-layer-dialog-is-edit-locked-checkbox=Edit gesperrt
 edit-layer-dialog-is-position-locked-checkbox=Position gesperrt
-edit-layer-dialog-is-x-offset-label=X Versatz:
-edit-layer-dialog-is-y-offset-label=Y Versatz:
+edit-layer-dialog-is-x-offset-label=X Versatz
+edit-layer-dialog-is-y-offset-label=Y Versatz
 edit-layer-dialog-has-alpha-checkbox=Hat Alphakanal
 edit-layer-dialog-is-alpha-locked-checkbox=Alphakanal gesperrt
 

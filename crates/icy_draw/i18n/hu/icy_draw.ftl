@@ -266,12 +266,12 @@ about-dialog-created_by =
     Segítség és tesztelés: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Réteg tulajdonságai
-edit-layer-dialog-name-label=Név:
+edit-layer-dialog-name-label=Név
 edit-layer-dialog-is-visible-checkbox=Látható
 edit-layer-dialog-is-edit-locked-checkbox=Szerkesztés zárolva
 edit-layer-dialog-is-position-locked-checkbox=Pozíció zárolva
-edit-layer-dialog-is-x-offset-label=X eltolás:
-edit-layer-dialog-is-y-offset-label=Y eltolás:
+edit-layer-dialog-is-x-offset-label=X eltolás
+edit-layer-dialog-is-y-offset-label=Y eltolás
 edit-layer-dialog-has-alpha-checkbox=Alpha van
 edit-layer-dialog-is-alpha-locked-checkbox=Alpha zárolva
 

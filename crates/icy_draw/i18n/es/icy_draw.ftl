@@ -266,12 +266,12 @@ about-dialog-created_by =
     Ayuda y pruebas: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Propiedades de la capa
-edit-layer-dialog-name-label=Nombre:
+edit-layer-dialog-name-label=Nombre
 edit-layer-dialog-is-visible-checkbox=Visible
 edit-layer-dialog-is-edit-locked-checkbox=Edición bloqueada
 edit-layer-dialog-is-position-locked-checkbox=Posición bloqueada
-edit-layer-dialog-is-x-offset-label=Desplazamiento X:
-edit-layer-dialog-is-y-offset-label=Desplazamiento Y:
+edit-layer-dialog-is-x-offset-label=Desplazamiento X
+edit-layer-dialog-is-y-offset-label=Desplazamiento Y
 edit-layer-dialog-has-alpha-checkbox=Tiene alfa
 edit-layer-dialog-is-alpha-locked-checkbox=Alfa bloqueado
 

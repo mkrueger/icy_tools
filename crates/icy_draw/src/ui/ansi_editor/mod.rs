@@ -10,6 +10,7 @@ mod canvas_view;
 mod channels_view;
 mod color_switcher_gpu;
 pub mod constants;
+mod edit_layer_dialog;
 mod layer_view;
 pub mod menu_bar;
 mod minimap_view;
@@ -21,6 +22,7 @@ mod top_toolbar;
 
 pub use canvas_view::*;
 pub use color_switcher_gpu::*;
+pub use edit_layer_dialog::*;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
@@ -74,6 +76,14 @@ pub enum AnsiEditorMessage {
     MoveLayerUp(usize),
     /// Move layer down
     MoveLayerDown(usize),
+    /// Open layer properties dialog
+    EditLayer(usize),
+    /// Duplicate a layer
+    DuplicateLayer(usize),
+    /// Merge layer down
+    MergeLayerDown(usize),
+    /// Clear layer contents
+    ClearLayer(usize),
     /// Viewport tick for animations
     ViewportTick,
     /// Scroll viewport
@@ -367,6 +377,10 @@ impl AnsiEditor {
                 if let RightPanelMessage::Layers(ref layer_msg) = msg {
                     match layer_msg {
                         LayerMessage::Select(idx) => {
+                            // Check for double-click
+                            if self.right_panel.layers.check_double_click(*idx) {
+                                return Task::done(AnsiEditorMessage::EditLayer(*idx));
+                            }
                             return Task::done(AnsiEditorMessage::SelectLayer(*idx));
                         }
                         LayerMessage::ToggleVisibility(idx) => {
@@ -386,6 +400,18 @@ impl AnsiEditor {
                         }
                         LayerMessage::Rename(_, _) => {
                             // TODO: Implement layer rename
+                        }
+                        LayerMessage::EditLayer(idx) => {
+                            return Task::done(AnsiEditorMessage::EditLayer(*idx));
+                        }
+                        LayerMessage::Duplicate(idx) => {
+                            return Task::done(AnsiEditorMessage::DuplicateLayer(*idx));
+                        }
+                        LayerMessage::MergeDown(idx) => {
+                            return Task::done(AnsiEditorMessage::MergeLayerDown(*idx));
+                        }
+                        LayerMessage::Clear(idx) => {
+                            return Task::done(AnsiEditorMessage::ClearLayer(*idx));
                         }
                     }
                 }
@@ -498,6 +524,27 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
+            AnsiEditorMessage::DuplicateLayer(idx) => {
+                let result = self.with_edit_state(|state| state.duplicate_layer(idx));
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::MergeLayerDown(idx) => {
+                let result = self.with_edit_state(|state| state.merge_layer_down(idx));
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::ClearLayer(idx) => {
+                let result = self.with_edit_state(|state| state.clear_layer(idx));
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
             AnsiEditorMessage::ViewportTick => {
                 self.canvas.update_animations();
                 Task::none()
@@ -512,6 +559,11 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::CanvasMouseEvent(event) => {
                 self.handle_canvas_mouse_event(event);
+                Task::none()
+            }
+            AnsiEditorMessage::EditLayer(_layer_index) => {
+                // This message is handled by main_window to show the dialog
+                // It's emitted from here and intercepted at a higher level
                 Task::none()
             }
         }

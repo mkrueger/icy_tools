@@ -266,12 +266,12 @@ about-dialog-created_by =
     Pomoc a testování: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Vlastnosti vrstvy
-edit-layer-dialog-name-label=Název:
+edit-layer-dialog-name-label=Název
 edit-layer-dialog-is-visible-checkbox=Viditelná
 edit-layer-dialog-is-edit-locked-checkbox=Zamčeno pro úpravy
 edit-layer-dialog-is-position-locked-checkbox=Zamčeno pro pozici
-edit-layer-dialog-is-x-offset-label=Posun X:
-edit-layer-dialog-is-y-offset-label=Posun Y:
+edit-layer-dialog-is-x-offset-label=Posun X
+edit-layer-dialog-is-y-offset-label=Posun Y
 edit-layer-dialog-has-alpha-checkbox=Má alfa
 edit-layer-dialog-is-alpha-locked-checkbox=Alfa zamčeno
 

@@ -17,9 +17,13 @@ use iced::{
     },
 };
 
+use iced_aw::ContextMenu;
 use icy_engine::{Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
+use icy_view_gui::DoubleClickDetector;
 use parking_lot::Mutex;
+
+use crate::fl;
 
 // SVG icon data
 const ADD_LAYER_SVG: &[u8] = include_bytes!("../../../data/icons/add_layer.svg");
@@ -47,6 +51,14 @@ pub enum LayerMessage {
     MoveUp(usize),
     MoveDown(usize),
     Rename(usize, String),
+    /// Open layer properties dialog (triggered by double-click or context menu)
+    EditLayer(usize),
+    /// Duplicate a layer (context menu)
+    Duplicate(usize),
+    /// Merge layer down (context menu)
+    MergeDown(usize),
+    /// Clear layer contents (context menu)
+    Clear(usize),
 }
 
 /// Cached preview data for a layer
@@ -78,6 +90,8 @@ pub struct LayerView {
     last_undo_len: RefCell<usize>,
     /// Last known layer count
     last_layer_count: RefCell<usize>,
+    /// Double-click detector for opening layer properties
+    double_click: RefCell<DoubleClickDetector<usize>>,
 }
 
 impl Default for LayerView {
@@ -92,11 +106,18 @@ impl LayerView {
             preview_cache: RefCell::new(HashMap::new()),
             last_undo_len: RefCell::new(usize::MAX),
             last_layer_count: RefCell::new(0),
+            double_click: RefCell::new(DoubleClickDetector::new()),
         }
     }
 
     pub fn update(&mut self, _message: LayerMessage) -> Task<LayerMessage> {
         Task::none()
+    }
+
+    /// Check if the given layer index was double-clicked.
+    /// Returns true if it was a double-click, false for single click.
+    pub fn check_double_click(&self, index: usize) -> bool {
+        self.double_click.borrow_mut().is_double_click(index)
     }
 
     /// Generate preview RGBA data for a layer
@@ -113,12 +134,6 @@ impl LayerView {
         temp_buffer.set_font_table(buffer.font_table());
 
         let mut layer_copy = layer.clone();
-        println!(
-            "Generating preview for layer '{}' size {:?} in buffer size {:?}",
-            layer.title(),
-            layer.size(),
-            buffer.size()
-        );
         layer_copy.set_offset(Position::default());
         layer_copy.set_is_visible(true);
         temp_buffer.set_size(layer_copy.size());
@@ -136,7 +151,6 @@ impl LayerView {
             MAX_PREVIEW_CHARS_HEIGHT * temp_buffer.font_dimensions().height,
         );
         let (size, rgba) = temp_buffer.render_region_to_rgba(region, &options, false);
-        println!("Generated preview size: {:?}", size);
 
         if size.width <= 0 || size.height <= 0 || rgba.is_empty() {
             return None;
@@ -152,7 +166,14 @@ impl LayerView {
     }
 
     /// Render a layer row with canvas preview
-    fn layer_row<'a>(index: usize, title: String, is_visible: bool, is_selected: bool, preview: Option<PreviewData>) -> Element<'a, LayerMessage> {
+    fn layer_row<'a>(
+        index: usize,
+        title: String,
+        is_visible: bool,
+        is_selected: bool,
+        preview: Option<PreviewData>,
+        layer_count: usize,
+    ) -> Element<'a, LayerMessage> {
         // Preview canvas
         let preview_canvas: Element<'a, LayerMessage> = canvas(PreviewCanvas { data: preview })
             .width(Length::Fixed(PREVIEW_WIDTH))
@@ -191,7 +212,7 @@ impl LayerView {
             .align_y(iced::Alignment::Center);
 
         // Clickable row
-        button(row_content)
+        let layer_button = button(row_content)
             .on_press(LayerMessage::Select(index))
             .width(Length::Fill)
             .style(move |theme: &Theme, status| {
@@ -236,6 +257,89 @@ impl LayerView {
                     },
                     button::Status::Disabled => base,
                 }
+            });
+
+        // Wrap with context menu
+        ContextMenu::new(layer_button, move || Self::build_context_menu(index, layer_count)).into()
+    }
+
+    /// Build the context menu for a layer
+    fn build_context_menu(index: usize, layer_count: usize) -> Element<'static, LayerMessage> {
+        let props_btn = Self::menu_item(fl!("layer_tool_menu_layer_properties"), Some(LayerMessage::EditLayer(index)));
+        let new_btn = Self::menu_item(fl!("layer_tool_menu_new_layer"), Some(LayerMessage::Add));
+        let duplicate_btn = Self::menu_item(fl!("layer_tool_menu_duplicate_layer"), Some(LayerMessage::Duplicate(index)));
+        let merge_btn = Self::menu_item(
+            fl!("layer_tool_menu_merge_layer"),
+            if index > 0 { Some(LayerMessage::MergeDown(index)) } else { None },
+        );
+        let delete_btn = Self::menu_item(
+            fl!("layer_tool_menu_delete_layer"),
+            if layer_count > 1 { Some(LayerMessage::Remove(index)) } else { None },
+        );
+        let clear_btn = Self::menu_item(fl!("layer_tool_menu_clear_layer"), Some(LayerMessage::Clear(index)));
+
+        container(
+            column![props_btn, new_btn, duplicate_btn, merge_btn, delete_btn, clear_btn]
+                .spacing(2)
+                .width(Length::Fixed(200.0)),
+        )
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background.weak.color)),
+                border: iced::Border {
+                    color: palette.background.strong.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .padding(4)
+        .into()
+    }
+
+    /// Create a single menu item button
+    fn menu_item(label: String, message: Option<LayerMessage>) -> Element<'static, LayerMessage> {
+        let is_enabled = message.is_some();
+
+        button(text(label).size(13))
+            .on_press_maybe(message)
+            .width(Length::Fill)
+            .padding([6, 10])
+            .style(move |theme: &Theme, status: button::Status| {
+                let palette = theme.extended_palette();
+
+                match status {
+                    button::Status::Hovered if is_enabled => button::Style {
+                        background: Some(iced::Background::Color(palette.primary.base.color)),
+                        text_color: palette.primary.base.text,
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    button::Status::Pressed if is_enabled => button::Style {
+                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                        text_color: palette.primary.strong.text,
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    _ if !is_enabled => button::Style {
+                        background: None,
+                        text_color: palette.background.weak.text.scale_alpha(0.4),
+                        ..Default::default()
+                    },
+                    _ => button::Style {
+                        background: None,
+                        text_color: palette.background.weak.text,
+                        ..Default::default()
+                    },
+                }
             })
             .into()
     }
@@ -243,7 +347,7 @@ impl LayerView {
     /// Render the layer view
     pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>) -> Element<'a, LayerMessage> {
         // Read layer data and update cache
-        let (layer_data, current_layer) = {
+        let (layer_data, current_layer, layer_count) = {
             let mut screen_guard = screen.lock();
             let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
 
@@ -286,13 +390,13 @@ impl LayerView {
                 })
                 .collect();
 
-            (data, current)
+            (data, current, layer_count)
         };
 
         // Create layer rows
         let mut layer_list = column![].spacing(2).padding(4);
         for (idx, title, is_visible, preview) in layer_data {
-            layer_list = layer_list.push(Self::layer_row(idx, title, is_visible, idx == current_layer, preview));
+            layer_list = layer_list.push(Self::layer_row(idx, title, is_visible, idx == current_layer, preview, layer_count));
         }
 
         // Scrollable layer list

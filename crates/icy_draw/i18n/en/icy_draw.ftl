@@ -328,12 +328,12 @@ about-dialog-created_by =
     Help & testing: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Layer properties
-edit-layer-dialog-name-label=Name:
+edit-layer-dialog-name-label=Name
 edit-layer-dialog-is-visible-checkbox=Visible
 edit-layer-dialog-is-edit-locked-checkbox=Edit locked
 edit-layer-dialog-is-position-locked-checkbox=Position locked
-edit-layer-dialog-is-x-offset-label=X offset:
-edit-layer-dialog-is-y-offset-label=Y offset:
+edit-layer-dialog-is-x-offset-label=X offset
+edit-layer-dialog-is-y-offset-label=Y offset
 edit-layer-dialog-has-alpha-checkbox=Has alpha
 edit-layer-dialog-is-alpha-locked-checkbox=Alpha locked
 
