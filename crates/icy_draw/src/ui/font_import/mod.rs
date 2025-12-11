@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{Space, column, container, pick_list, row, text, text_input},
+    widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::{MAX_FONT_HEIGHT, MAX_FONT_WIDTH};
@@ -55,6 +55,8 @@ pub enum FontImportMessage {
     SetFontWidth(String),
     /// For image import: set font height
     SetFontHeight(String),
+    /// For image import: toggle dithering
+    SetDithering(bool),
     /// Import the font
     Import,
     /// Cancel the dialog
@@ -77,6 +79,8 @@ pub struct FontImportDialog {
     pub image_width: String,
     /// For image import: target font height
     pub image_height: String,
+    /// For image import: use dithering
+    pub use_dithering: bool,
     /// Error message (if any)
     pub error: Option<String>,
 }
@@ -98,18 +102,19 @@ impl FontImportDialog {
             xb_selected_font: 0,
             image_width: "8".to_string(),
             image_height: "16".to_string(),
+            use_dithering: true,
             error: None,
         }
     }
 
-    /// Parse font width for image import (4-16)
+    /// Parse font width for image import
     fn parsed_font_width(&self) -> Option<i32> {
-        self.image_width.parse::<i32>().ok().filter(|&w| w >= 4 && w <= 16)
+        self.image_width.parse::<i32>().ok().filter(|&w| w >= 1)
     }
 
-    /// Parse font height for image import (4-32)
+    /// Parse font height for image import
     fn parsed_font_height(&self) -> Option<i32> {
-        self.image_height.parse::<i32>().ok().filter(|&h| h >= 4 && h <= 32)
+        self.image_height.parse::<i32>().ok().filter(|&h| h >= 1)
     }
 
     /// Check if the dialog is ready for import
@@ -260,7 +265,7 @@ impl FontImportDialog {
         let width = self.parsed_font_width().unwrap_or(8);
         let height = self.parsed_font_height().unwrap_or(16);
 
-        match image_import::import_font_from_image(path, width, height) {
+        match image_import::import_font_from_image(path, width, height, self.use_dithering) {
             Ok(font) => {
                 self.preview_font = Some(font);
             }
@@ -276,12 +281,9 @@ impl FontImportDialog {
             let detected_width = (dim.0 / 16) as i32;
             let detected_height = (dim.1 / 16) as i32;
 
-            // Apply constraints: width > MAX_FONT_WIDTH or height > MAX_FONT_HEIGHT -> default to 8x16
-            let (width, height) = if detected_width > MAX_FONT_WIDTH || detected_height > MAX_FONT_HEIGHT {
-                (8, 16)
-            } else {
-                (detected_width.max(4), detected_height.max(4))
-            };
+            // Use detected dimensions, minimum 1
+            let width = detected_width.max(1);
+            let height = detected_height.max(1);
 
             self.image_width = width.to_string();
             self.image_height = height.to_string();
@@ -366,6 +368,11 @@ impl FontImportDialog {
             }
             FontImportMessage::SetFontHeight(h) => {
                 self.image_height = h.clone();
+                self.reload_image();
+                Some(DialogAction::None)
+            }
+            FontImportMessage::SetDithering(enabled) => {
+                self.use_dithering = *enabled;
                 self.reload_image();
                 Some(DialogAction::None)
             }
@@ -547,18 +554,18 @@ impl FontImportDialog {
                 let width_valid = self.parsed_font_width().is_some();
                 let height_valid = self.parsed_font_height().is_some();
 
-                let width_input = text_input("4-16", &self.image_width)
+                let width_input = text_input("8", &self.image_width)
                     .on_input(|s| Message::FontImport(FontImportMessage::SetFontWidth(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 
-                let height_input = text_input("4-32", &self.image_height)
+                let height_input = text_input("16", &self.image_height)
                     .on_input(|s| Message::FontImport(FontImportMessage::SetFontHeight(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 
                 let width_error = if !width_valid && !self.image_width.is_empty() {
-                    text("4-16").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
                         color: Some(theme.extended_palette().danger.base.color),
                     })
                 } else {
@@ -566,12 +573,20 @@ impl FontImportDialog {
                 };
 
                 let height_error = if !height_valid && !self.image_height.is_empty() {
-                    text("4-32").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
                         color: Some(theme.extended_palette().danger.base.color),
                     })
                 } else {
                     text("").size(TEXT_SIZE_SMALL)
                 };
+
+                let dither_checkbox = checkbox(self.use_dithering)
+                    .on_toggle(|b| Message::FontImport(FontImportMessage::SetDithering(b)))
+                    .size(16);
+
+                let dither_row = row![dither_checkbox, text(fl!("font-import-dithering")).size(TEXT_SIZE_NORMAL),]
+                    .spacing(6)
+                    .align_y(Alignment::Center);
 
                 column![
                     text(fl!("font-import-image-info")).size(TEXT_SIZE_SMALL),
@@ -583,6 +598,8 @@ impl FontImportDialog {
                     row![left_label_small(fl!("font-size-height")), height_input, height_error,]
                         .spacing(4)
                         .align_y(Alignment::Center),
+                    Space::new().height(4),
+                    dither_row,
                 ]
                 .spacing(4)
                 .into()

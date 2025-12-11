@@ -48,6 +48,8 @@ pub use mouse_handling::*;
 
 pub mod limits;
 
+pub mod char_set;
+
 pub mod gif_encoder;
 pub use gif_encoder::{GifEncoder, GifFrame, RepeatCount, encode_animated_gif, encode_animated_gif_with_progress, encode_static_gif};
 

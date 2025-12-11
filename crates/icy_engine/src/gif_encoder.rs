@@ -192,15 +192,18 @@ impl GifEncoder {
         let img: image::RgbImage = image::RgbImage::from_raw(self.width as u32, self.height as u32, rgb_data)
             .ok_or_else(|| EngineError::Generic("Failed to create RGB image for quantization".to_string()))?;
 
-        let mut pipeline = quantette::ImagePipeline::try_from(&img).map_err(|e| EngineError::Generic(format!("Quantization pipeline error: {e}")))?;
+        let quantette_img: quantette::ImageBuf<quantette::deps::palette::Srgb<u8>> =
+            quantette::ImageBuf::try_from(img).map_err(|e| EngineError::Generic(format!("Quantization pipeline error: {e}")))?;
 
-        let (palette, indexed_pixels) = pipeline.palette_size(255).indexed_palette();
+        let indexed = quantette::Pipeline::new()
+            .palette_size(quantette::PaletteSize::MAX)
+            .input_image(quantette_img.as_ref())
+            .output_srgb8_indexed_image();
 
         // Convert palette to flat RGB array for gif crate
-        // palette is Vec<Srgb<u8>> from palette crate
-        let flat_palette: Vec<u8> = palette.iter().flat_map(|c| [c.red, c.green, c.blue]).collect();
+        let flat_palette: Vec<u8> = indexed.palette().iter().flat_map(|c| [c.red, c.green, c.blue]).collect();
 
-        Ok((flat_palette, indexed_pixels))
+        Ok((flat_palette, indexed.indices().to_vec()))
     }
 
     /// Encode a single frame with its own local palette for best color quality.

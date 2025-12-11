@@ -59,18 +59,8 @@ impl std::fmt::Display for EditMode {
 /// State for the BitFont editor mode - now uses the full BitFontEditor
 pub type BitFontEditorState = BitFontEditor;
 
-/// State for the CharFont (TDF) editor mode
-pub struct CharFontEditorState {
-    // TODO: Add CharFont editor state
-    // - TDF font data
-    // - selected character
-}
-
-impl CharFontEditorState {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+/// State for the CharFont (TDF) editor mode - now uses the full CharFontEditor
+pub type CharFontEditorState = super::charfont_editor::CharFontEditor;
 
 /// Mode-specific state
 pub enum ModeState {
@@ -95,7 +85,7 @@ impl ModeState {
         match self {
             Self::Ansi(editor) => editor.undo_stack_len(),
             Self::BitFont(editor) => editor.undo_stack_len(),
-            Self::CharFont(_) => 0,
+            Self::CharFont(editor) => editor.undo_stack_len(),
             Self::Animation(editor) => editor.undo_stack_len(),
         }
     }
@@ -105,7 +95,7 @@ impl ModeState {
         match self {
             Self::Ansi(editor) => editor.file_path.as_ref(),
             Self::BitFont(editor) => editor.file_path(),
-            Self::CharFont(_) => None,
+            Self::CharFont(editor) => editor.file_path(),
             Self::Animation(editor) => editor.file_path(),
         }
     }
@@ -115,7 +105,7 @@ impl ModeState {
         match self {
             Self::Ansi(editor) => editor.file_path = Some(path),
             Self::BitFont(editor) => editor.set_file_path(path),
-            Self::CharFont(_) => {}
+            Self::CharFont(editor) => editor.set_file_path(path),
             Self::Animation(editor) => editor.set_file_path(path),
         }
     }
@@ -125,7 +115,7 @@ impl ModeState {
         match self {
             Self::Ansi(editor) => editor.save(path),
             Self::BitFont(editor) => editor.save(path),
-            Self::CharFont(_) => Err("CharFont save not implemented".to_string()),
+            Self::CharFont(editor) => editor.save(path),
             Self::Animation(editor) => editor.save(path),
         }
     }
@@ -135,7 +125,7 @@ impl ModeState {
         match self {
             Self::Ansi(editor) => editor.get_autosave_bytes(),
             Self::BitFont(editor) => editor.get_autosave_bytes(),
-            Self::CharFont(_) => Err("CharFont autosave not implemented".to_string()),
+            Self::CharFont(editor) => editor.get_autosave_bytes(),
             Self::Animation(editor) => editor.get_autosave_bytes(),
         }
     }
@@ -314,6 +304,9 @@ pub enum Message {
     // BitFont Editor messages
     BitFontEditor(BitFontEditorMessage),
 
+    // CharFont (TDF) Editor messages
+    CharFontEditor(super::charfont_editor::CharFontEditorMessage),
+
     // Animation Editor messages
     AnimationEditor(AnimationEditorMessage),
 
@@ -444,8 +437,18 @@ impl MainWindow {
                         }
                     }
                 }
+                Some(FileFormat::CharacterFont(_)) => {
+                    // TDF character font format
+                    match super::charfont_editor::CharFontEditor::with_file(p.clone(), options.clone()) {
+                        Ok(editor) => (ModeState::CharFont(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                            (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
+                        }
+                    }
+                }
                 _ => {
-                    // Try as ANSI/ASCII art file (includes TDF and unknown formats)
+                    // Try as ANSI/ASCII art file
                     match AnsiEditor::with_file(p.clone(), options.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
@@ -514,6 +517,15 @@ impl MainWindow {
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
                     },
+                    Some(FileFormat::CharacterFont(_)) => {
+                        match super::charfont_editor::CharFontEditor::load_from_autosave(autosave, orig.clone(), options.clone()) {
+                            Ok(editor) => (ModeState::CharFont(editor), None),
+                            Err(e) => {
+                                let error = Some(("Error Loading TDF Font Autosave".to_string(), format!("{}", e)));
+                                (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
+                            }
+                        }
+                    }
                     _ => {
                         // ANSI/other formats
                         match AnsiEditor::load_from_autosave(autosave, orig.clone(), options.clone()) {
@@ -556,6 +568,18 @@ impl MainWindow {
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
                     },
+                    Some(FileFormat::CharacterFont(_)) => match super::charfont_editor::CharFontEditor::with_file(p.clone(), options.clone()) {
+                        Ok(mut editor) => {
+                            if let Some(ref orig) = original_path {
+                                editor.set_file_path(orig.clone());
+                            }
+                            (ModeState::CharFont(editor), None)
+                        }
+                        Err(e) => {
+                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                            (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
+                        }
+                    },
                     _ => match AnsiEditor::with_file(p.clone(), options.clone()) {
                         Ok(mut editor) => {
                             if let Some(ref orig) = original_path {
@@ -588,6 +612,13 @@ impl MainWindow {
                         Err(e) => {
                             let error = Some(("Error Loading Animation".to_string(), e));
                             (ModeState::Animation(AnimationEditor::new()), error)
+                        }
+                    },
+                    Some(FileFormat::CharacterFont(_)) => match super::charfont_editor::CharFontEditor::with_file(orig.clone(), options.clone()) {
+                        Ok(editor) => (ModeState::CharFont(editor), None),
+                        Err(e) => {
+                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                            (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
                         }
                     },
                     _ => match AnsiEditor::with_file(orig.clone(), options.clone()) {
@@ -900,6 +931,23 @@ impl MainWindow {
                             Err(e) => {
                                 self.dialogs.push(error_dialog(
                                     "Error Loading Animation",
+                                    format!("Failed to load '{}': {}", path.display(), e),
+                                    |_| Message::CloseDialog,
+                                ));
+                            }
+                        }
+                    }
+                    Some(FileFormat::CharacterFont(_)) => {
+                        // Open in CharFont (TDF) editor
+                        match super::charfont_editor::CharFontEditor::with_file(path.clone(), self.options.clone()) {
+                            Ok(editor) => {
+                                self.mode_state = ModeState::CharFont(editor);
+                                self.mark_saved();
+                                self.options.lock().recent_files.add_recent_file(&path);
+                            }
+                            Err(e) => {
+                                self.dialogs.push(error_dialog(
+                                    "Error Loading TDF Font",
                                     format!("Failed to load '{}': {}", path.display(), e),
                                     |_| Message::CloseDialog,
                                 ));
@@ -1230,7 +1278,7 @@ impl MainWindow {
                 self.mode_state = match mode {
                     EditMode::Ansi => ModeState::Ansi(AnsiEditor::new(self.options.clone())),
                     EditMode::BitFont => ModeState::BitFont(BitFontEditor::new()),
-                    EditMode::CharFont => ModeState::CharFont(CharFontEditorState::new()),
+                    EditMode::CharFont => ModeState::CharFont(super::charfont_editor::CharFontEditor::new(self.options.clone())),
                     EditMode::Animation => ModeState::Animation(AnimationEditor::new()),
                 };
                 Task::none()
@@ -1259,6 +1307,13 @@ impl MainWindow {
                     editor.invalidate_caches();
                 }
                 Task::none()
+            }
+            Message::CharFontEditor(msg) => {
+                if let ModeState::CharFont(editor) = &mut self.mode_state {
+                    editor.update(msg).map(Message::CharFontEditor)
+                } else {
+                    Task::none()
+                }
             }
             Message::AnsiEditor(msg) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
@@ -1310,7 +1365,12 @@ impl MainWindow {
                         )))
                         .map(Message::BitFontEditor)
                 }
-                ModeState::CharFont(_) => Task::none(),
+                ModeState::CharFont(editor) => {
+                    let delta = 0.016;
+                    editor
+                        .update(super::charfont_editor::CharFontEditorMessage::Tick(delta))
+                        .map(Message::CharFontEditor)
+                }
                 ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
             },
 
@@ -1502,7 +1562,7 @@ impl MainWindow {
         match &self.mode_state {
             ModeState::Ansi(editor) => editor.needs_animation(),
             ModeState::BitFont(editor) => editor.needs_animation(),
-            ModeState::CharFont(_) => false,
+            ModeState::CharFont(editor) => editor.needs_animation(),
             ModeState::Animation(editor) => editor.needs_animation(),
         }
     }
@@ -1518,10 +1578,7 @@ impl MainWindow {
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),
             ModeState::BitFont(editor) => editor.view().map(Message::BitFontEditor),
-            ModeState::CharFont(_state) => container(text("CharFont (TDF) Editor - Coming Soon").size(24))
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into(),
+            ModeState::CharFont(editor) => editor.view().map(Message::CharFontEditor),
             ModeState::Animation(editor) => editor.view().map(Message::AnimationEditor),
         };
 
@@ -1608,11 +1665,10 @@ impl MainWindow {
                 let (left, center, right) = editor.status_info();
                 StatusBarInfo { left, center, right }
             }
-            ModeState::CharFont(_) => StatusBarInfo {
-                left: "CharFont Editor".into(),
-                center: String::new(),
-                right: String::new(),
-            },
+            ModeState::CharFont(editor) => {
+                let (left, center, right) = editor.status_info();
+                StatusBarInfo { left, center, right }
+            }
             ModeState::Animation(editor) => {
                 let (line, col) = editor.cursor_position();
                 StatusBarInfo {
@@ -1636,7 +1692,7 @@ impl MainWindow {
                 }
             }
             ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
-            ModeState::CharFont(_) => UndoInfo::default(),
+            ModeState::CharFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::Animation(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
         }
     }

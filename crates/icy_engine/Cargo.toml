@@ -26,6 +26,7 @@ codepages = { workspace = true }
 rayon = { workspace = true }
 icy_net = { workspace = true }
 parking_lot = { workspace = true }
+retrofont = { workspace = true }
 
 icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
@@ -42,8 +43,8 @@ image = { workspace = true }
 lodepng = {version ="3.12.1", default-features = false, features = ["cfzlib"] }
 
 # GIF encoding (replaces gifski)
-gif = "0.13"
-quantette = "0.3"
+gif = "0.14.1"
+quantette = "0.5.1"
 
 imgref = "1.12.0"
 rgb = "0.8.52"

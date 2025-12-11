@@ -614,6 +614,7 @@ font-import-xb-font-1=Font 1
 font-import-xb-font-2=Font 2
 font-import-select-font=Select Font:
 font-import-image-info=Image will be converted to a 16×16 character grid
+font-import-dithering=Use Dithering
 
 # Font Export Dialog
 menu-export-font=Export Font…

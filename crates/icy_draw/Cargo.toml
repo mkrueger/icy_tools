@@ -40,6 +40,7 @@ icy_engine_gui = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_view_gui = { workspace = true }
 icy_sauce = { workspace = true }
+retrofont = { workspace = true }
 
 # Encoding
 base64 = { workspace = true }
@@ -71,6 +72,7 @@ anyhow = { workspace = true }
 parking_lot = { workspace = true }
 image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "jpeg_rayon", "openexr", "qoi"] }
 gif = "0.13"
+quantette = { version = "0.5.1", features = ["image"] }
 
 # TTF font rasterization
 fontdue = "0.9"
