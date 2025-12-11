@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use icy_engine::{FORMATS, LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane, formats::FileFormat, limits};
+use icy_engine::{LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane, formats::FileFormat, limits};
 use icy_engine_gui::music::SoundThread;
 use icy_engine_gui::util::{BaudEmulator, QueuedCommand, QueueingSink};
 use icy_net::telnet::TerminalEmulation;
@@ -15,12 +15,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 /// How to load the file
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum LoadMode {
     /// Stream through a parser (supports baud emulation)
     Parser,
     /// Load via format (instant load, no streaming)
-    Format(usize), // Index into FORMATS array
+    Format(FileFormat),
 }
 
 /// Scroll mode determined by background thread
@@ -169,18 +169,8 @@ pub fn prepare_parser_data(data: Vec<u8>, ext: &str) -> (Vec<u8>, bool) {
 }
 
 /// Find a matching format for the file extension
-fn find_format_for_extension(ext: &str) -> Option<usize> {
-    for (i, format) in FORMATS.iter().enumerate() {
-        if format.get_file_extension().eq_ignore_ascii_case(ext) {
-            return Some(i);
-        }
-        for alt_ext in format.get_alt_extensions() {
-            if alt_ext == ext {
-                return Some(i);
-            }
-        }
-    }
-    None
+fn find_format_for_extension(ext: &str) -> Option<FileFormat> {
+    FileFormat::from_extension(ext)
 }
 
 /// Repair invalid SAUCE data
@@ -542,9 +532,9 @@ impl ViewThread {
 
         // Fallback: format-based loading for formats without parser support
         // This runs in a background task so the UI stays responsive
-        if let Some(format_idx) = find_format_for_extension(&ext) {
+        if let Some(format) = find_format_for_extension(&ext) {
             if let Some(load) = &mut self.current_load {
-                load.load_mode = LoadMode::Format(format_idx);
+                load.load_mode = LoadMode::Format(format.clone());
             }
 
             // Spawn background task for format loading
@@ -552,8 +542,9 @@ impl ViewThread {
             let stripped_data_clone = stripped_data.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 let load_data = LoadData::new(repaired_sauce_opt, None, None);
-                match FORMATS[format_idx].load_buffer(&path_clone, &stripped_data_clone, Some(load_data)) {
-                    Ok(buffer) => {
+                match format.from_bytes(&path_clone, &stripped_data_clone, Some(load_data)) {
+                    Ok(screen) => {
+                        let buffer = screen.buffer;
                         // Validate buffer before returning
                         if buffer.get_width() == 0 || buffer.get_height() == 0 {
                             log::error!("Format produced invalid buffer dimensions: {}x{}", buffer.get_width(), buffer.get_height());
@@ -640,7 +631,7 @@ impl ViewThread {
         // Store values we need before creating a new load
         let path = load.path.clone();
         let file_data = load.file_data.clone();
-        let load_mode = load.load_mode;
+        let load_mode = load.load_mode.clone();
         let screen_mode = load.screen_mode;
         let terminal_emulation = load.terminal_emulation;
 
@@ -662,10 +653,11 @@ impl ViewThread {
                     load.is_playing = true;
                 }
             }
-            LoadMode::Format(format_idx) => {
+            LoadMode::Format(format) => {
                 // Reload from format
-                match FORMATS[format_idx].load_buffer(&path, &file_data, Some(LoadData::default())) {
-                    Ok(buffer) => {
+                match format.from_bytes(&path, &file_data, Some(LoadData::default())) {
+                    Ok(screen) => {
+                        let buffer = screen.buffer;
                         // Validate buffer dimensions
                         if buffer.get_width() == 0 || buffer.get_height() == 0 {
                             let _ = self.event_tx.send(ViewEvent::Error(format!(
@@ -680,7 +672,7 @@ impl ViewThread {
 
                         if let Some(load) = &mut self.current_load {
                             load.file_data = file_data;
-                            load.load_mode = LoadMode::Format(format_idx);
+                            load.load_mode = LoadMode::Format(format);
                         }
 
                         let _ = self.event_tx.send(ViewEvent::LoadingCompleted);

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use icy_engine::{AttributedChar, EditableScreen, Size, TextAttribute, TextBuffer, TextScreen};
+use icy_engine::{AttributedChar, EditableScreen, Size, TextAttribute, TextScreen, formats::FileFormat};
 
 use super::BitFontEditState;
 
@@ -15,12 +15,8 @@ impl BitFontEditState {
     /// - The current character number (#NNN)
     pub fn build_preview_content_for(&self, tile_char: char, fg_color: u8, bg_color: u8) -> TextScreen {
         // Load the preview template from embedded .icy file
-        let mut screen = match TextBuffer::from_bytes(Path::new("debug_preview.icy"), false, PREVIEW_TEMPLATE, None, None) {
-            Ok(buf) => {
-                let mut ts = TextScreen::new(Size::new(80, 25));
-                ts.buffer = buf;
-                ts
-            }
+        let mut screen = match FileFormat::IcyDraw.from_bytes(Path::new("debug_preview.icy"), PREVIEW_TEMPLATE, None) {
+            Ok(ts) => ts,
             Err(_) => {
                 // Fallback to blank screen if template fails to load
                 TextScreen::new(Size::new(80, 25))

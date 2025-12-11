@@ -227,7 +227,7 @@ impl FileIcon {
             FileFormat::IceDraw | FileFormat::Bin | FileFormat::XBin | FileFormat::TundraDraw | FileFormat::Artworx => FileIcon::Binary,
 
             // Font formats
-            FileFormat::BitFont(_) => FileIcon::Binary,
+            FileFormat::BitFont(_) | FileFormat::CharacterFont(_) => FileIcon::Binary,
         }
     }
 

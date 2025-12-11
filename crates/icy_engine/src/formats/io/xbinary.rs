@@ -1,10 +1,10 @@
 use crate::{
-    AttributedChar, BitFont, BufferFeatures, FontMode, IceMode, LoadingError, OutputFormat, Palette, PaletteMode, Position, Result, SavingError, TextBuffer,
-    TextPane, analyze_font_usage, attribute, guess_font_name,
+    AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Position, Result, SavingError, TextBuffer, TextPane,
+    TextScreen, analyze_font_usage, attribute, guess_font_name,
 };
 use std::path::Path;
 
-use super::{LoadData, SaveOptions, TextAttribute};
+use super::super::{LoadData, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;
@@ -94,233 +94,216 @@ enum Compression {
     Full = 0b1100_0000,
 }
 
-#[derive(Default)]
-pub struct XBin {}
+pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    let mut result = Vec::new();
 
-impl OutputFormat for XBin {
-    fn get_file_extension(&self) -> &str {
-        "xb"
+    result.extend_from_slice(b"XBIN");
+    result.push(0x1A); // CP/M EOF char (^Z) - used by DOS as well
+
+    result.push(buf.get_width() as u8);
+    result.push((buf.get_width() >> 8) as u8);
+    result.push(buf.get_height() as u8);
+    result.push((buf.get_height() >> 8) as u8);
+
+    let mut flags = 0;
+    let fonts = analyze_font_usage(buf);
+    let Some(font) = buf.get_font(fonts[0]) else {
+        return Err(SavingError::NoFontFound.into());
+    };
+    if font.length() != 256 {
+        return Err(crate::EngineError::InvalidXBin {
+            message: "1st font must be 256 chars long".to_string(),
+        });
     }
 
-    fn get_name(&self) -> &str {
-        "XBin"
+    if fonts.len() > 2 {
+        return Err(crate::EngineError::InvalidXBin {
+            message: "Only up to 2 fonts are supported".to_string(),
+        });
     }
 
-    fn analyze_features(&self, _features: &BufferFeatures) -> String {
-        String::new()
+    if font.size().width != 8 || font.size().height < 1 || font.size().height > 32 {
+        return Err(SavingError::InvalidXBinFont.into());
     }
 
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
-        let mut result = Vec::new();
+    result.push(font.size().height as u8);
+    if !font.is_default() || !buf.has_fonts() || fonts.len() > 1 {
+        flags |= FLAG_FONT;
+    }
 
-        result.extend_from_slice(b"XBIN");
-        result.push(0x1A); // CP/M EOF char (^Z) - used by DOS as well
+    if !buf.palette.is_default() {
+        flags |= FLAG_PALETTE;
+    }
 
-        result.push(buf.get_width() as u8);
-        result.push((buf.get_width() >> 8) as u8);
-        result.push(buf.get_height() as u8);
-        result.push((buf.get_height() >> 8) as u8);
+    if options.compress {
+        flags |= FLAG_COMPRESS;
+    }
 
-        let mut flags = 0;
-        let fonts = analyze_font_usage(buf);
-        let Some(font) = buf.get_font(fonts[0]) else {
-            return Err(SavingError::NoFontFound.into());
-        };
-        if font.length() != 256 {
+    if matches!(buf.ice_mode, IceMode::Ice) {
+        flags |= FLAG_NON_BLINK_MODE;
+    }
+
+    if fonts.len() == 2 {
+        flags |= FLAG_512CHAR_MODE;
+    }
+
+    result.push(flags);
+
+    if (flags & FLAG_PALETTE) == FLAG_PALETTE {
+        let mut pal = buf.palette.clone();
+        pal.fill_to_16();
+        let palette_data = pal.as_vec_63();
+        if palette_data.len() != XBIN_PALETTE_LENGTH {
             return Err(crate::EngineError::InvalidXBin {
-                message: "1st font must be 256 chars long".to_string(),
+                message: format!("Invalid palette data length was {} should be {}", palette_data.len(), XBIN_PALETTE_LENGTH),
             });
         }
-
-        if fonts.len() > 2 {
+        result.extend(palette_data);
+    }
+    if flags & FLAG_FONT == FLAG_FONT {
+        let font_data = font.convert_to_u8_data();
+        let font_len = font_data.len();
+        if font_len != 256 * font.size().height as usize {
             return Err(crate::EngineError::InvalidXBin {
-                message: "Only up to 2 fonts are supported".to_string(),
+                message: "Invalid font length".to_string(),
             });
         }
-
-        if font.size().width != 8 || font.size().height < 1 || font.size().height > 32 {
-            return Err(SavingError::InvalidXBinFont.into());
-        }
-
-        result.push(font.size().height as u8);
-        if !font.is_default() || !buf.has_fonts() || fonts.len() > 1 {
-            flags |= FLAG_FONT;
-        }
-
-        if !buf.palette.is_default() {
-            flags |= FLAG_PALETTE;
-        }
-
-        if options.compress {
-            flags |= FLAG_COMPRESS;
-        }
-
-        if matches!(buf.ice_mode, IceMode::Ice) {
-            flags |= FLAG_NON_BLINK_MODE;
-        }
-
-        if fonts.len() == 2 {
-            flags |= FLAG_512CHAR_MODE;
-        }
-
-        result.push(flags);
-
-        if (flags & FLAG_PALETTE) == FLAG_PALETTE {
-            let mut pal = buf.palette.clone();
-            pal.fill_to_16();
-            let palette_data = pal.as_vec_63();
-            if palette_data.len() != XBIN_PALETTE_LENGTH {
+        result.extend(font_data);
+        if flags & FLAG_512CHAR_MODE == FLAG_512CHAR_MODE {
+            if fonts.len() != 2 {
                 return Err(crate::EngineError::InvalidXBin {
-                    message: format!("Invalid palette data length was {} should be {}", palette_data.len(), XBIN_PALETTE_LENGTH),
+                    message: "File needs 2 fonts for 512 char mode".to_string(),
                 });
             }
-            result.extend(palette_data);
-        }
-        if flags & FLAG_FONT == FLAG_FONT {
-            let font_data = font.convert_to_u8_data();
-            let font_len = font_data.len();
-            if font_len != 256 * font.size().height as usize {
+            if let Some(ext_font) = buf.get_font(fonts[1]) {
+                if ext_font.length() != 256 {
+                    return Err(crate::EngineError::InvalidXBin {
+                        message: "2nd font must be 256 chars long".to_string(),
+                    });
+                }
+
+                let ext_font_data = ext_font.convert_to_u8_data();
+                if ext_font_data.len() != font_len {
+                    return Err(crate::EngineError::InvalidXBin {
+                        message: "2nd font must be same height as 1st font".to_string(),
+                    });
+                }
+                result.extend(ext_font_data);
+            } else {
                 return Err(crate::EngineError::InvalidXBin {
-                    message: "Invalid font length".to_string(),
+                    message: "Can't get second font".to_string(),
                 });
             }
-            result.extend(font_data);
-            if flags & FLAG_512CHAR_MODE == FLAG_512CHAR_MODE {
-                if fonts.len() != 2 {
-                    return Err(crate::EngineError::InvalidXBin {
-                        message: "File needs 2 fonts for 512 char mode".to_string(),
-                    });
+        }
+    }
+    if options.compress {
+        compress_backtrack(&mut result, buf, &fonts)?;
+    } else {
+        for y in 0..buf.get_height() {
+            for x in 0..buf.get_width() {
+                let ch = buf.get_char((x, y).into());
+                let attr = encode_attr(buf, ch, &fonts);
+                let ch = ch.ch as u32;
+                if ch > 255 {
+                    return Err(SavingError::Only8BitCharactersSupported.into());
                 }
-                if let Some(ext_font) = buf.get_font(fonts[1]) {
-                    if ext_font.length() != 256 {
-                        return Err(crate::EngineError::InvalidXBin {
-                            message: "2nd font must be 256 chars long".to_string(),
-                        });
-                    }
-
-                    let ext_font_data = ext_font.convert_to_u8_data();
-                    if ext_font_data.len() != font_len {
-                        return Err(crate::EngineError::InvalidXBin {
-                            message: "2nd font must be same height as 1st font".to_string(),
-                        });
-                    }
-                    result.extend(ext_font_data);
-                } else {
-                    return Err(crate::EngineError::InvalidXBin {
-                        message: "Can't get second font".to_string(),
-                    });
-                }
+                result.push(ch as u8);
+                result.push(attr);
             }
         }
-        if options.compress {
-            compress_backtrack(&mut result, buf, &fonts)?;
-        } else {
-            for y in 0..buf.get_height() {
-                for x in 0..buf.get_width() {
-                    let ch = buf.get_char((x, y).into());
-                    let attr = encode_attr(buf, ch, &fonts);
-                    let ch = ch.ch as u32;
-                    if ch > 255 {
-                        return Err(SavingError::Only8BitCharactersSupported.into());
-                    }
-                    result.push(ch as u8);
-                    result.push(attr);
-                }
-            }
-        }
-
-        if let Some(sauce) = &options.save_sauce {
-            sauce.write(&mut result)?;
-        }
-        Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer> {
-        let mut result = TextBuffer::new((80, 25));
-        result.terminal_state.is_terminal_buffer = false;
-        result.file_name = Some(file_name.into());
-        let load_data = load_data_opt.unwrap_or_default();
-        let max_height = load_data.max_height();
-        if let Some(sauce) = &load_data.sauce_opt {
-            super::apply_sauce_to_buffer(&mut result, sauce);
-        }
+    if let Some(sauce) = &options.save_sauce {
+        sauce.write(&mut result)?;
+    }
+    Ok(result)
+}
 
-        if data.len() < XBIN_HEADER_SIZE {
-            return Err(LoadingError::FileTooShort.into());
-        }
-        if b"XBIN" != &data[0..4] {
-            return Err(LoadingError::IDMismatch.into());
-        }
+pub(crate) fn load_xbin(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+    let mut screen = TextScreen::new((80, 25));
+    screen.buffer.terminal_state.is_terminal_buffer = false;
+    screen.buffer.file_name = Some(file_name.into());
+    let load_data = load_data_opt.unwrap_or_default();
+    let max_height = load_data.max_height();
+    if let Some(sauce) = &load_data.sauce_opt {
+        screen.apply_sauce(sauce);
+    }
 
-        let mut o = 4;
+    if data.len() < XBIN_HEADER_SIZE {
+        return Err(LoadingError::FileTooShort.into());
+    }
+    if b"XBIN" != &data[0..4] {
+        return Err(LoadingError::IDMismatch.into());
+    }
 
-        // let eof_char = bytes[o];
-        o += 1;
-        let width = data[o] as i32 + ((data[o + 1] as i32) << 8);
-        if !(1..=4096).contains(&width) {
-            return Err(crate::EngineError::InvalidXBin {
-                message: format!("Width out of range: {} (1-4096)", width),
-            });
-        }
-        result.set_width(width);
-        o += 2;
-        let mut height = data[o] as i32 + ((data[o + 1] as i32) << 8);
-        // Apply height limit if specified
-        if let Some(max_h) = max_height {
-            height = height.min(max_h);
-        }
-        result.set_height(height);
-        // Pre-allocate lines for the known size - this is the key optimization
-        result.layers[0].preallocate_lines(width, height);
-        o += 2;
-        let mut font_size = data[o];
-        if font_size == 0 {
-            font_size = 16;
-        }
-        if font_size > 32 {
-            return Err(crate::EngineError::InvalidXBin {
-                message: format!("Font height too large: {} (32 max)", font_size),
-            });
-        }
-        o += 1;
-        let flags = data[o];
-        o += 1;
+    let mut o = 4;
 
-        let has_custom_palette = (flags & FLAG_PALETTE) == FLAG_PALETTE;
-        let has_custom_font = (flags & FLAG_FONT) == FLAG_FONT;
-        let is_compressed = (flags & FLAG_COMPRESS) == FLAG_COMPRESS;
-        let use_ice = (flags & FLAG_NON_BLINK_MODE) == FLAG_NON_BLINK_MODE;
-        let extended_char_mode = (flags & FLAG_512CHAR_MODE) == FLAG_512CHAR_MODE;
+    // let eof_char = bytes[o];
+    o += 1;
+    let width = data[o] as i32 + ((data[o + 1] as i32) << 8);
+    if !(1..=4096).contains(&width) {
+        return Err(crate::EngineError::InvalidXBin {
+            message: format!("Width out of range: {} (1-4096)", width),
+        });
+    }
+    screen.buffer.set_width(width);
+    o += 2;
+    let mut height = data[o] as i32 + ((data[o + 1] as i32) << 8);
+    // Apply height limit if specified
+    if let Some(max_h) = max_height {
+        height = height.min(max_h);
+    }
+    screen.buffer.set_height(height);
+    // Pre-allocate lines for the known size - this is the key optimization
+    screen.buffer.layers[0].preallocate_lines(width, height);
+    o += 2;
+    let mut font_size = data[o];
+    if font_size == 0 {
+        font_size = 16;
+    }
+    if font_size > 32 {
+        return Err(crate::EngineError::InvalidXBin {
+            message: format!("Font height too large: {} (32 max)", font_size),
+        });
+    }
+    o += 1;
+    let flags = data[o];
+    o += 1;
 
-        result.font_mode = if extended_char_mode { FontMode::FixedSize } else { FontMode::Single };
-        result.palette_mode = if extended_char_mode { PaletteMode::Free8 } else { PaletteMode::Free16 };
-        result.ice_mode = if use_ice { IceMode::Ice } else { IceMode::Blink };
+    let has_custom_palette = (flags & FLAG_PALETTE) == FLAG_PALETTE;
+    let has_custom_font = (flags & FLAG_FONT) == FLAG_FONT;
+    let is_compressed = (flags & FLAG_COMPRESS) == FLAG_COMPRESS;
+    let use_ice = (flags & FLAG_NON_BLINK_MODE) == FLAG_NON_BLINK_MODE;
+    let extended_char_mode = (flags & FLAG_512CHAR_MODE) == FLAG_512CHAR_MODE;
 
-        if has_custom_palette {
-            result.palette = Palette::from_63(&data[o..(o + XBIN_PALETTE_LENGTH)]);
-            o += XBIN_PALETTE_LENGTH;
-        }
-        if has_custom_font {
-            let font_length = font_size as usize * 256;
-            result.clear_font_table();
+    screen.buffer.font_mode = if extended_char_mode { FontMode::FixedSize } else { FontMode::Single };
+    screen.buffer.palette_mode = if extended_char_mode { PaletteMode::Free8 } else { PaletteMode::Free16 };
+    screen.buffer.ice_mode = if use_ice { IceMode::Ice } else { IceMode::Blink };
+
+    if has_custom_palette {
+        screen.buffer.palette = Palette::from_63(&data[o..(o + XBIN_PALETTE_LENGTH)]);
+        o += XBIN_PALETTE_LENGTH;
+    }
+    if has_custom_font {
+        let font_length = font_size as usize * 256;
+        screen.buffer.clear_font_table();
+        let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
+        font.yaff_font.name = Some(guess_font_name(&font));
+        screen.buffer.set_font(0, font);
+        o += font_length;
+        if extended_char_mode {
             let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
             font.yaff_font.name = Some(guess_font_name(&font));
-            result.set_font(0, font);
+            screen.buffer.set_font(1, font);
             o += font_length;
-            if extended_char_mode {
-                let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
-                font.yaff_font.name = Some(guess_font_name(&font));
-                result.set_font(1, font);
-                o += font_length;
-            }
         }
-        if is_compressed {
-            read_data_compressed(&mut result, &data[o..])?;
-        } else {
-            read_data_uncompressed(&mut result, &data[o..])?;
-        }
-        Ok(result)
     }
+    if is_compressed {
+        read_data_compressed(&mut screen.buffer, &data[o..])?;
+    } else {
+        read_data_uncompressed(&mut screen.buffer, &data[o..])?;
+    }
+    Ok(screen)
 }
 
 /// Advance position - fast version without TextBuffer reference
@@ -709,6 +692,6 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
     Ok(())
 }
 
-pub fn get_save_sauce_default_xb(_buf: &TextBuffer) -> (bool, String) {
+pub fn _get_save_sauce_default_xb(_buf: &TextBuffer) -> (bool, String) {
     (false, String::new())
 }

@@ -1,6 +1,9 @@
 use bstr::BString;
-use icy_engine::{AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane};
-use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
+use icy_engine::{
+    AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane,
+    formats::{FileFormat, LoadData},
+};
+use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecord, SauceRecordBuilder};
 
 mod layer;
 
@@ -57,9 +60,15 @@ fn test_respect_sauce_width() {
 
     let mut opt = SaveOptions::new();
     opt.save_sauce = Some(sauce);
-    let ansi_bytes = buf.to_bytes("ans", &opt).unwrap();
+    let ansi_bytes = FileFormat::Ansi.to_bytes(&buf, &opt).unwrap();
 
-    let loaded_buf = TextBuffer::from_bytes(&std::path::PathBuf::from("test.ans"), false, &ansi_bytes, None, None).unwrap();
+    // Extract SAUCE from the bytes
+    let sauce_opt = SauceRecord::from_bytes(&ansi_bytes).ok().flatten();
+    let load_data = LoadData::new(sauce_opt, None, None);
+    let loaded_buf = FileFormat::Ansi
+        .from_bytes(&std::path::PathBuf::from("test.ans"), &ansi_bytes, Some(load_data))
+        .unwrap()
+        .buffer;
     assert_eq!(10, loaded_buf.get_width());
     assert_eq!(10, loaded_buf.layers[0].get_width());
 }

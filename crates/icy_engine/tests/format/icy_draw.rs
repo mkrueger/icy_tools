@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AttributedChar, Color, FORMATS, Layer, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AttributedChar, Color, FileFormat, Layer, SaveOptions, TextAttribute, TextBuffer, TextPane};
 /*
     fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         entry
@@ -48,10 +48,10 @@ use icy_engine::{AttributedChar, Color, FORMATS, Layer, SaveOptions, TextAttribu
                             continue;
                         }*/
                         if let Ok(mut buf) = Buffer::load_buffer(path, true) {
-                            let draw = &*FORMATS[1];
+                            let draw = FileFormat::IcyDraw;
                             let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
                             let buf2 = draw
-                                .load_buffer(Path::new("test.icy"), &bytes, None)
+                                .from_bytes(Path::new("test.icy"), &bytes, None)
                                 .unwrap();
                             compare_buffers(&buf, &buf2);
                         }
@@ -67,10 +67,10 @@ use icy_engine::{AttributedChar, Color, FORMATS, Layer, SaveOptions, TextAttribu
             true,
         )
         .unwrap();
-        let draw = &*FORMATS[1];
+        let draw = FileFormat::IcyDraw;
         let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
         let buf2 = draw
-            .load_buffer(Path::new("test.icy"), &bytes, None)
+            .from_bytes(Path::new("test.icy"), &bytes, None)
             .unwrap();
         compare_buffers(&buf, &buf2);
     }
@@ -83,9 +83,9 @@ fn test_default_font_page() {
     buf.layers.push(Layer::new("test", (80, 25)));
     buf.layers[1].default_font_page = 1;
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -95,9 +95,9 @@ fn test_empty_buffer() {
     buf.set_width(12);
     buf.set_height(23);
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -121,9 +121,9 @@ fn test_rgb_serialization_bug() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -143,9 +143,9 @@ fn test_rgb_serialization_bug_2() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -164,9 +164,9 @@ fn test_nonstandard_palettes() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -186,9 +186,9 @@ fn test_fg_switch() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -204,9 +204,9 @@ fn test_escape_char() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -228,9 +228,11 @@ fn test_0_255_chars() {
         },
     );
 
-    let draw = &*FORMATS[1];
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let draw = FileFormat::IcyDraw;
+    let mut opt = SaveOptions::default();
+    opt.lossles_output = true;
+    let bytes = draw.to_bytes(&mut buf, &opt).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -259,9 +261,9 @@ fn test_too_long_lines() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -276,9 +278,9 @@ fn test_space_persistance_buffer() {
         },
     );
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
 
@@ -290,9 +292,9 @@ fn test_invisible_layer_bug() {
     buf.layers[0].properties.is_visible = false;
     buf.layers[1].properties.is_visible = false;
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let mut buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let mut buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
     buf2.layers[0].properties.is_visible = true;
@@ -311,9 +313,9 @@ fn test_invisisible_persistance_bug() {
 
     assert_eq!(AttributedChar::invisible(), buf.layers[1].get_char((1, 0).into()).into());
 
-    let draw = &*FORMATS[1];
+    let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
-    let mut buf2 = draw.load_buffer(Path::new("test.icy"), &bytes, None).unwrap();
+    let mut buf2 = draw.from_bytes(Path::new("test.icy"), &bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
     buf2.layers[0].properties.is_visible = true;

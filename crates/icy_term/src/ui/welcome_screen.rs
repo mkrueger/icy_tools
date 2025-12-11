@@ -1,5 +1,5 @@
 use crate::{MCP_PORT, VERSION};
-use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane, TextScreen};
+use icy_engine::{AttributedChar, Position, TextAttribute, TextPane, TextScreen, formats::FileFormat};
 use icy_engine_gui::version_helper::replace_version_marker;
 use std::path::Path;
 
@@ -11,18 +11,13 @@ pub fn create_welcome_screen() -> TextScreen {
     let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
     // Load the welcome screen from MAIN_SCREEN_ANSI
-    let mut buffer = TextBuffer::from_bytes(
-        &Path::new("a.icy"),
-        true,
-        if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 },
-        None,
-        None,
-    )
-    .unwrap();
-    buffer.buffer_type = icy_engine::BufferType::CP437;
-    buffer.terminal_state.is_terminal_buffer = true;
+    let mut screen = FileFormat::IcyDraw
+        .from_bytes(&Path::new("a.icy"), if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 }, None)
+        .unwrap();
+    screen.buffer.buffer_type = icy_engine::BufferType::CP437;
+    screen.buffer.terminal_state.is_terminal_buffer = true;
     // Find and replace special characters
-    let ready_position = replace_version_marker(&mut buffer, &VERSION, None);
+    let ready_position = replace_version_marker(&mut screen.buffer, &VERSION, None);
 
     // Write "IcyTerm ready." message at the marked position
     let mut caret_pos = Position::default();
@@ -38,9 +33,9 @@ pub fn create_welcome_screen() -> TextScreen {
         let yellow_attr = TextAttribute::from_u8(0x0E, icy_engine::IceMode::Ice);
 
         for msg_char in mcp_msg.chars() {
-            if caret_pos.x < buffer.get_width() {
+            if caret_pos.x < screen.buffer.get_width() {
                 let new_ch = AttributedChar::new(msg_char, yellow_attr);
-                buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
+                screen.buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
                 caret_pos.x += 1;
             }
         }
@@ -56,9 +51,9 @@ pub fn create_welcome_screen() -> TextScreen {
     let ready_msg = variants[fastrand::usize(0..variants.len())];
 
     for msg_char in ready_msg.chars() {
-        if caret_pos.x < buffer.get_width() {
+        if caret_pos.x < screen.buffer.get_width() {
             let new_ch = AttributedChar::new(msg_char, TextAttribute::default());
-            buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
+            screen.buffer.layers[0].set_char(Position::new(caret_pos.x, caret_pos.y), new_ch);
             caret_pos.x += 1;
         }
     }
@@ -66,8 +61,7 @@ pub fn create_welcome_screen() -> TextScreen {
     // Set cursor position after the ready message
     caret_pos = Position::new(0, caret_pos.y + 1);
 
-    buffer.update_hyperlinks();
-    screen.buffer = buffer;
+    screen.buffer.update_hyperlinks();
     screen.caret.set_position(caret_pos);
 
     screen

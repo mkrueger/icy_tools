@@ -199,7 +199,14 @@ impl Screen for SharedTextScreen {
     }
 
     fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
-        self.inner.lock().to_bytes(extension, options)
+        let extension = extension.to_ascii_lowercase();
+        if let Some(format) = crate::formats::FileFormat::from_extension(&extension) {
+            format.to_bytes(&self.inner.lock().buffer, options)
+        } else {
+            Err(crate::EngineError::UnsupportedFormat {
+                description: format!("Unknown format: {}", extension),
+            })
+        }
     }
 
     fn use_letter_spacing(&self) -> bool {

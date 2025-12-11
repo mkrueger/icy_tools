@@ -32,7 +32,7 @@ impl ColorOptimizer {
     ///
     /// Panics if .
     pub fn optimize(&self, buffer: &TextBuffer) -> TextBuffer {
-        let mut b = buffer.flat_clone(false);
+        let mut b = buffer.clone();
         let tags_enabled = b.show_tags;
         b.show_tags = false;
         for layer in &mut b.layers {

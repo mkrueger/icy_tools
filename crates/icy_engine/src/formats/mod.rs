@@ -1,11 +1,10 @@
-mod ansi;
-
-use std::path::Path;
-
-pub use ansi::*;
+pub(crate) mod io;
 
 mod bitfont_format;
 pub use bitfont_format::*;
+
+mod character_font_format;
+pub use character_font_format::*;
 
 mod file_format;
 pub use file_format::*;
@@ -14,41 +13,14 @@ mod image_format;
 use icy_sauce::SauceRecord;
 pub use image_format::*;
 
-mod pcboard;
-pub use pcboard::*;
-
-mod avatar;
-pub use avatar::*;
-
-mod ascii;
-pub use ascii::*;
-
-mod bin;
-pub use bin::*;
-
-mod xbinary;
 use serde::{Deserialize, Serialize};
-pub use xbinary::*;
-
-mod artworx;
-pub use artworx::*;
-
-mod ice_draw;
-pub use ice_draw::*;
-
-mod tundra;
-pub use tundra::*;
 
 mod color_optimization;
 pub use color_optimization::*;
-mod atascii;
-mod ctrla;
-mod icy_draw;
-mod renegade;
-mod seq;
-pub use seq::seq_prepare;
 
-use crate::{ANSI_FONTS, BitFont, BufferFeatures, EditableScreen, Layer, Result, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
+pub use io::seq::seq_prepare;
+
+use crate::{ANSI_FONTS, BitFont, EditableScreen, Layer, Result, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
 use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
@@ -256,53 +228,6 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
             // No character/binary capabilities - nothing to apply
         }
     }
-}
-
-pub trait OutputFormat: Send + Sync {
-    fn get_file_extension(&self) -> &str;
-
-    fn get_alt_extensions(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn get_name(&self) -> &str;
-
-    fn analyze_features(&self, _features: &BufferFeatures) -> String {
-        String::new()
-    }
-
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> Result<Vec<u8>>;
-
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<crate::TextBuffer>;
-}
-
-lazy_static::lazy_static! {
-    pub static ref FORMATS: [Box<dyn OutputFormat>; 14] = [
-        Box::<ansi::Ansi>::default(),
-        Box::<icy_draw::IcyDraw>::default(),
-        Box::<IceDraw>::default(),
-        Box::<Bin>::default(),
-        Box::<XBin>::default(),
-        Box::<TundraDraw>::default(),
-        Box::<PCBoard>::default(),
-        Box::<Avatar>::default(),
-        Box::<ascii::Ascii>::default(),
-        Box::<artworx::Artworx>::default(),
-        Box::<ctrla::CtrlA>::default(),
-        Box::<renegade::Renegade>::default(),
-        Box::<seq::Seq>::default(),
-        Box::<atascii::Atascii>::default(),
-        ];
 }
 
 /// Parse data using a CommandParser from icy_parser_core

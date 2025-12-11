@@ -1,14 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Alignment;
-use std::{
-    cmp::max,
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
-};
-
-use icy_parser_core::MusicOption;
-use icy_sauce::prelude::*;
+use std::{cmp::max, path::PathBuf};
 
 pub mod buffers_rendering;
 
@@ -24,9 +16,9 @@ pub use layer::*;
 mod buffer_type;
 pub use buffer_type::*;
 
-use crate::{Color, FORMATS, HalfBlock, LoadData, LoadingError, OutputFormat, Position, Rectangle, Result, TerminalState, TextAttribute, TextPane, attribute};
+use crate::{Color, HalfBlock, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute};
 
-use super::{AttributedChar, BitFont, Palette, SaveOptions, Size};
+use super::{AttributedChar, BitFont, Palette, Size};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -286,6 +278,16 @@ impl Clone for TextBuffer {
 }
 
 impl TextBuffer {
+    /// Check if a line contains only transparent/empty characters
+    pub fn is_line_empty(&self, line: i32) -> bool {
+        for i in 0..self.get_width() {
+            if !self.get_char((i, line).into()).is_transparent() {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn scan_buffer_features(&self) -> BufferFeatures {
         let mut result = BufferFeatures::default();
         for layer in &self.layers {
@@ -318,42 +320,6 @@ impl TextBuffer {
         result.use_extended_colors = self.palette.len() > 16;
 
         result
-    }
-
-    /// Clones the buffer (without sixel threads)
-    pub fn flat_clone(&self, deep_layers: bool) -> TextBuffer {
-        let mut frame = TextBuffer::new(self.get_size());
-        frame.file_name = self.file_name.clone();
-        frame.terminal_state = self.terminal_state.clone();
-        frame.buffer_type = self.buffer_type;
-        frame.ice_mode = self.ice_mode;
-        frame.palette_mode = self.palette_mode;
-        frame.font_mode = self.font_mode;
-        frame.terminal_state.is_terminal_buffer = self.terminal_state.is_terminal_buffer;
-        frame.terminal_state = self.terminal_state.clone();
-        frame.palette = self.palette.clone();
-
-        if deep_layers {
-            frame.layers = Vec::new();
-            for l in &self.layers {
-                frame.layers.push(l.clone());
-            }
-        } else {
-            for y in 0..self.get_height() {
-                for x in 0..self.get_width() {
-                    let ch = self.get_char((x, y).into());
-                    frame.layers[0].set_char((x, y), ch);
-                }
-            }
-        }
-
-        frame.clear_font_table();
-        for f in self.font_iter() {
-            frame.set_font(*f.0, f.1.clone());
-        }
-        frame.tags = self.tags.clone();
-        frame.show_tags = self.show_tags;
-        frame
     }
 
     fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {
@@ -758,96 +724,6 @@ impl TextBuffer {
     #[must_use]
     pub fn get_font_dimensions(&self) -> Size {
         if let Some(font) = self.get_font(0) { font.size() } else { Size::new(8, 16) }
-    }
-
-    /// .
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn load_buffer(file_name: &Path, skip_errors: bool, ansi_music: Option<MusicOption>) -> Result<TextBuffer> {
-        let mut f = match File::open(file_name) {
-            Ok(f) => f,
-            Err(err) => {
-                return Err(LoadingError::OpenFileError(format!("{err}")).into());
-            }
-        };
-        let mut bytes = Vec::new();
-        if let Err(err) = f.read_to_end(&mut bytes) {
-            return Err(LoadingError::ReadFileError(format!("{err}")).into());
-        }
-
-        TextBuffer::from_bytes(file_name, skip_errors, &bytes, ansi_music, None)
-    }
-
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
-        let extension = extension.to_ascii_lowercase();
-        for fmt in &*crate::FORMATS {
-            if fmt.get_file_extension() == extension || fmt.get_alt_extensions().contains(&extension) {
-                let tags_enabled = self.show_tags;
-                self.show_tags = false;
-                let res = if options.lossles_output {
-                    fmt.to_bytes(self, options)
-                } else {
-                    let optimizer = crate::ColorOptimizer::new(self, options);
-                    fmt.to_bytes(&mut optimizer.optimize(self), options)
-                };
-                self.show_tags = tags_enabled;
-                return res;
-            }
-        }
-        Err(crate::EngineError::UnsupportedFormat {
-            description: format!("Unknown format for file: {:?}", self.file_name),
-        })
-    }
-
-    /// .
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn from_bytes(
-        file_name: &Path,
-        _skip_errors: bool,
-        bytes: &[u8],
-        ansi_music: Option<MusicOption>,
-        default_terminal_width: Option<usize>,
-    ) -> Result<TextBuffer> {
-        let ext = file_name.extension().unwrap_or_default().to_string_lossy();
-        let mut len = bytes.len();
-        let sauce_data = match SauceRecord::from_bytes(bytes) {
-            Ok(Some(sauce)) => {
-                len -= sauce.record_len() - 1;
-                Some(sauce)
-            }
-            Ok(None) => None,
-            Err(err) => {
-                log::error!("Error reading sauce data: {}", err);
-                None
-            }
-        };
-
-        let ext = ext.to_ascii_lowercase();
-        for fmt in &*FORMATS {
-            if fmt.get_file_extension() == ext || fmt.get_alt_extensions().contains(&ext) {
-                return fmt.load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music, default_terminal_width)));
-            }
-        }
-
-        crate::Ansi::default().load_buffer(file_name, &bytes[..len], Some(LoadData::new(sauce_data, ansi_music, default_terminal_width)))
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {

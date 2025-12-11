@@ -389,6 +389,7 @@ impl Screen for ScrollbackBuffer {
     }
 
     fn to_bytes(&mut self, _extension: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
+        // ScrollbackBuffer doesn't support saving
         Ok(Vec::new())
     }
 

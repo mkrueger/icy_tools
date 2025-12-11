@@ -3,7 +3,7 @@
 //! Tests loading performance for compressed and uncompressed XBin files.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use icy_engine::formats::{OutputFormat, XBin};
+use icy_engine::FileFormat;
 use std::fs;
 use std::hint::black_box;
 use std::path::Path;
@@ -51,8 +51,7 @@ fn bench_xbin_compressed(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data.len() as u64));
         group.bench_with_input(BenchmarkId::new("load", name), data, |b, data| {
             b.iter(|| {
-                let xbin = XBin::default();
-                let result = xbin.load_buffer(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
                 black_box(result)
             });
         });
@@ -75,8 +74,7 @@ fn bench_xbin_uncompressed(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data.len() as u64));
         group.bench_with_input(BenchmarkId::new("load", name), data, |b, data| {
             b.iter(|| {
-                let xbin = XBin::default();
-                let result = xbin.load_buffer(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
                 black_box(result)
             });
         });
@@ -99,8 +97,7 @@ fn bench_xbin_all_files(c: &mut Criterion) {
         group.bench_function("all_compressed", |b| {
             b.iter(|| {
                 for (_, data) in &compressed {
-                    let xbin = XBin::default();
-                    let result = xbin.load_buffer(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                    let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
                     let _ = black_box(result);
                 }
             });
@@ -112,8 +109,7 @@ fn bench_xbin_all_files(c: &mut Criterion) {
         group.bench_function("all_uncompressed", |b| {
             b.iter(|| {
                 for (_, data) in &uncompressed {
-                    let xbin = XBin::default();
-                    let result = xbin.load_buffer(black_box(Path::new("test.xb")), black_box(data), black_box(None));
+                    let result = FileFormat::XBin.from_bytes(black_box(Path::new("test.xb")), black_box(data), black_box(None));
                     let _ = black_box(result);
                 }
             });

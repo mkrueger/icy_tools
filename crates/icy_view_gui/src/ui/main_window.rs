@@ -60,18 +60,19 @@ command_handler!(MainWindowCommands, create_icy_view_commands(), => Message {
 
 /// Static welcome logo image handle
 static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
-    use icy_engine::{Rectangle, RenderOptions, Selection, TextBuffer, TextPane};
-    use icy_parser_core::MusicOption;
+    use icy_engine::{Rectangle, RenderOptions, Selection, TextPane};
     use std::path::Path;
 
     // Load the XBin file
-    let mut buffer = TextBuffer::from_bytes(Path::new("welcome.xb"), true, WELCOME_LOGO, Some(MusicOption::Off), None).expect("Failed to load welcome logo");
+    let mut screen = FileFormat::XBin
+        .from_bytes(Path::new("welcome.xb"), WELCOME_LOGO, None)
+        .expect("Failed to load welcome logo");
 
     // Replace version marker
-    replace_version_marker(&mut buffer, &VERSION, None);
+    replace_version_marker(&mut screen.buffer, &VERSION, None);
 
     // Render to RGBA
-    let rect = Selection::from(Rectangle::from(0, 0, buffer.get_width(), buffer.get_height()));
+    let rect = Selection::from(Rectangle::from(0, 0, screen.buffer.get_width(), screen.buffer.get_height()));
     let opts = RenderOptions {
         rect,
         blink_on: true,
@@ -81,7 +82,7 @@ static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
         override_scan_lines: Some(false),
     };
 
-    let (size, rgba) = buffer.render_to_rgba(&opts, false);
+    let (size, rgba) = screen.buffer.render_to_rgba(&opts, false);
     iced_image::Handle::from_rgba(size.width as u32, size.height as u32, rgba)
 });
 

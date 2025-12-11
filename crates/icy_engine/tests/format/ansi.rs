@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path};
 
-use icy_engine::{AnsiState, Color, ControlCharHandling, FORMATS, SaveOptions, StringGenerator, TextBuffer, TextPane};
+use icy_engine::{AnsiState, Color, ControlCharHandling, FileFormat, SaveOptions, StringGenerator, TextBuffer, TextPane};
 
 use super::ansi2::{CompareOptions, compare_buffers};
 

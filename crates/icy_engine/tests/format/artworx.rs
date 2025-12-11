@@ -1,5 +1,5 @@
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AttributedChar, BitFont, Color, FORMATS, IceMode, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AttributedChar, BitFont, Color, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer, TextPane};
 
 #[test]
 pub fn test_ice() {
@@ -53,11 +53,12 @@ fn create_buffer() -> TextBuffer {
 }
 
 fn test_artworx(buffer: &mut TextBuffer) -> TextBuffer {
-    let xb = &*FORMATS[9];
+    let xb = FileFormat::Artworx;
     let mut opt = SaveOptions::default();
     opt.compress = false;
+    opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
-    let buffer2 = xb.load_buffer(std::path::Path::new("test.adf"), &bytes, None).unwrap();
+    let buffer2 = xb.from_bytes(std::path::Path::new("test.adf"), &bytes, None).unwrap().buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);
     buffer2
 }

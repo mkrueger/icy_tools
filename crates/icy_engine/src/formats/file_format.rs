@@ -26,9 +26,9 @@ use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
 use unarc_rs::unified::ArchiveFormat;
 
-use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer};
+use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextScreen};
 
-use super::{BitFontFormat, FORMATS, ImageFormat, LoadData, OutputFormat, SaveOptions};
+use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, SaveOptions, io};
 
 /// Represents all supported file formats for ANSI art and related files.
 ///
@@ -90,6 +90,9 @@ pub enum FileFormat {
     /// Bitmap font format (.yaff, .psf, .fXX)
     BitFont(BitFontFormat),
 
+    /// Character/ASCII art font format (.flf, .tdf)
+    CharacterFont(CharacterFontFormat),
+
     // Image formats (for recognition, not native ANSI formats)
     /// Image format (PNG, GIF, JPEG, BMP)
     Image(ImageFormat),
@@ -140,6 +143,8 @@ impl FileFormat {
         FileFormat::BitFont(BitFontFormat::Raw(20)),
         FileFormat::BitFont(BitFontFormat::Raw(24)),
         FileFormat::BitFont(BitFontFormat::Raw(32)),
+        FileFormat::CharacterFont(CharacterFontFormat::Figlet),
+        FileFormat::CharacterFont(CharacterFontFormat::Tdf),
         FileFormat::Image(ImageFormat::Png),
         FileFormat::Image(ImageFormat::Gif),
         FileFormat::Image(ImageFormat::Jpeg),
@@ -286,9 +291,11 @@ impl FileFormat {
             "bmp" => Some(FileFormat::Image(ImageFormat::Bmp)),
             "six" | "sixel" => Some(FileFormat::Image(ImageFormat::Sixel)),
 
-            // Try BitFont formats, then archive formats
+            // Try CharacterFont formats, then BitFont formats, then archive formats
             _ => {
-                if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
+                if let Some(char_font_fmt) = CharacterFontFormat::from_extension(&ext_lower) {
+                    Some(FileFormat::CharacterFont(char_font_fmt))
+                } else if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
                     Some(FileFormat::BitFont(font_fmt))
                 } else {
                     ArchiveFormat::from_extension(&ext_lower).map(FileFormat::Archive)
@@ -364,6 +371,7 @@ impl FileFormat {
                 BitFontFormat::Raw(32) => "f32",
                 BitFontFormat::Raw(_) => "f16", // fallback to most common
             },
+            FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.extension(),
             FileFormat::Image(img) => img.extension(),
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Zip => "zip",
@@ -413,6 +421,8 @@ impl FileFormat {
             FileFormat::BitFont(BitFontFormat::Yaff) => &["yaff"],
             FileFormat::BitFont(BitFontFormat::Psf) => &["psf"],
             FileFormat::BitFont(BitFontFormat::Raw(_)) => &["f04", "f05", "f06", "f07", "f08", "f09", "f10", "f12", "f14", "f16", "f19", "f20", "f24", "f32"],
+            FileFormat::CharacterFont(CharacterFontFormat::Figlet) => &["flf"],
+            FileFormat::CharacterFont(CharacterFontFormat::Tdf) => &["tdf"],
             FileFormat::Image(ImageFormat::Png) => &["png"],
             FileFormat::Image(ImageFormat::Gif) => &["gif"],
             FileFormat::Image(ImageFormat::Jpeg) => &["jpg", "jpeg"],
@@ -459,6 +469,7 @@ impl FileFormat {
             FileFormat::Artworx => "Artworx",
             FileFormat::IcyAnim => "IcyDraw Animation",
             FileFormat::BitFont(font_fmt) => font_fmt.name(),
+            FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.name(),
             FileFormat::Image(img) => img.name(),
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Zip => "ZIP Archive",
@@ -511,6 +522,19 @@ impl FileFormat {
         }
     }
 
+    /// Check if this is a character font format.
+    pub fn is_character_font(&self) -> bool {
+        matches!(self, FileFormat::CharacterFont(_))
+    }
+
+    /// Get the CharacterFontFormat if this is a character font, None otherwise.
+    pub fn as_character_font(&self) -> Option<CharacterFontFormat> {
+        match self {
+            FileFormat::CharacterFont(font) => Some(*font),
+            _ => None,
+        }
+    }
+
     /// Check if this format uses a streaming parser.
     ///
     /// Parser-based formats process data incrementally and support
@@ -540,7 +564,22 @@ impl FileFormat {
     pub fn supports_save(&self) -> bool {
         match self {
             FileFormat::Image(img) => img.supports_save(),
-            _ => self.output_format().is_some(),
+            FileFormat::Ansi
+            | FileFormat::AnsiMusic
+            | FileFormat::Ascii
+            | FileFormat::Avatar
+            | FileFormat::PCBoard
+            | FileFormat::CtrlA
+            | FileFormat::Renegade
+            | FileFormat::Atascii
+            | FileFormat::Petscii
+            | FileFormat::Bin
+            | FileFormat::XBin
+            | FileFormat::IcyDraw
+            | FileFormat::IceDraw
+            | FileFormat::TundraDraw
+            | FileFormat::Artworx => true,
+            _ => false,
         }
     }
 
@@ -602,6 +641,9 @@ impl FileFormat {
 
             // BitFont formats don't contain text buffer content
             FileFormat::BitFont(_) => &[],
+
+            // CharacterFont formats don't contain text buffer content
+            FileFormat::CharacterFont(_) => &[],
 
             // Archive formats don't contain displayable content directly
             FileFormat::Archive(_) => &[],
@@ -703,6 +745,7 @@ impl FileFormat {
             | FileFormat::Artworx
             | FileFormat::IcyAnim
             | FileFormat::BitFont(_)
+            | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
             | FileFormat::Archive(_) => None,
         }
@@ -735,9 +778,10 @@ impl FileFormat {
             FileFormat::SkyPix => ScreenMode::SkyPix,
             FileFormat::Vt52 => ScreenMode::AtariST(crate::TerminalResolution::Medium, false),
             FileFormat::Igs => ScreenMode::AtariST(crate::TerminalResolution::Medium, true),
-            FileFormat::BitFont(_) => ScreenMode::Vga(80, 25), // Default for fonts
-            FileFormat::Image(_) => ScreenMode::Vga(80, 25),   // Default for images
-            FileFormat::Archive(_) => ScreenMode::Vga(80, 25), // Default for archives
+            FileFormat::BitFont(_) => ScreenMode::Vga(80, 25),       // Default for fonts
+            FileFormat::CharacterFont(_) => ScreenMode::Vga(80, 25), // Default for character fonts
+            FileFormat::Image(_) => ScreenMode::Vga(80, 25),         // Default for images
+            FileFormat::Archive(_) => ScreenMode::Vga(80, 25),       // Default for archives
         }
     }
 
@@ -788,30 +832,13 @@ impl FileFormat {
             | FileFormat::Artworx
             | FileFormat::IcyAnim
             | FileFormat::BitFont(_)
+            | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
             | FileFormat::Archive(_) => None,
         }
     }
 
-    /// Get the OutputFormat implementation for this format.
-    ///
-    /// # Returns
-    /// A reference to the `OutputFormat` trait object if this format supports
-    /// saving, `None` otherwise.
-    pub fn output_format(&self) -> Option<&'static dyn OutputFormat> {
-        let ext = self.primary_extension();
-        for format in FORMATS.iter() {
-            if format.get_file_extension() == ext {
-                return Some(format.as_ref());
-            }
-            if format.get_alt_extensions().iter().any(|e| e == ext) {
-                return Some(format.as_ref());
-            }
-        }
-        None
-    }
-
-    /// Load a buffer from file data.
+    /// Load content from bytes into a TextScreen.
     ///
     /// # Arguments
     /// * `file_name` - Path to the file (used for format-specific handling)
@@ -819,19 +846,74 @@ impl FileFormat {
     /// * `load_data` - Optional loading options (SAUCE, music settings, etc.)
     ///
     /// # Returns
-    /// A `TextBuffer` containing the loaded content.
+    /// A `TextScreen` containing the loaded content with proper caret state.
     ///
     /// # Errors
     /// Returns an error if the format doesn't support loading or if loading fails.
-    pub fn load_buffer(&self, file_name: &Path, data: &[u8], load_data: Option<LoadData>) -> Result<TextBuffer> {
-        if let Some(output_format) = self.output_format() {
-            output_format.load_buffer(file_name, data, load_data)
-        } else {
-            Err(EngineError::FormatNotSupported {
+    ///
+    /// # Example
+    /// ```no_run
+    /// use icy_engine::formats::{FileFormat, LoadData};
+    /// use std::path::Path;
+    ///
+    /// let data = std::fs::read("artwork.ans").unwrap();
+    /// let format = FileFormat::from_extension("ans").unwrap();
+    /// let screen = format.from_bytes(Path::new("artwork.ans"), &data, None).unwrap();
+    /// ```
+    pub fn from_bytes(&self, file_name: &Path, data: &[u8], load_data: Option<LoadData>) -> Result<TextScreen> {
+        match self {
+            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(file_name, data, load_data),
+            FileFormat::Ascii => io::load_ascii(file_name, data, load_data),
+            FileFormat::Avatar => io::load_avatar(file_name, data, load_data),
+            FileFormat::PCBoard => io::load_pcboard(file_name, data, load_data),
+            FileFormat::CtrlA => io::load_ctrla(file_name, data, load_data),
+            FileFormat::Renegade => io::load_renegade(file_name, data, load_data),
+            FileFormat::Atascii => io::load_atascii(file_name, data, load_data),
+            FileFormat::Petscii => io::load_seq(file_name, data, load_data),
+            FileFormat::Bin => io::load_bin(file_name, data, load_data),
+            FileFormat::XBin => io::load_xbin(file_name, data, load_data),
+            FileFormat::IcyDraw => io::load_icy_draw(file_name, data, load_data),
+            FileFormat::IceDraw => io::load_ice_draw(file_name, data, load_data),
+            FileFormat::TundraDraw => io::load_tundra(file_name, data, load_data),
+            FileFormat::Artworx => io::load_artworx(file_name, data, load_data),
+            _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
-                operation: "loading via OutputFormat".to_string(),
-            })
+                operation: "loading".to_string(),
+            }),
         }
+    }
+
+    /// Load content from a file path, automatically extracting SAUCE metadata.
+    ///
+    /// This is a convenience method that reads the file, extracts any SAUCE record,
+    /// and passes it to `from_bytes`. Use this when you want automatic SAUCE handling.
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to the file to load
+    ///
+    /// # Returns
+    /// A `TextScreen` containing the loaded content with SAUCE metadata applied.
+    ///
+    /// # Errors
+    /// Returns an error if file reading fails or if the format doesn't support loading.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use icy_engine::formats::FileFormat;
+    /// use std::path::Path;
+    ///
+    /// let format = FileFormat::from_extension("ans").unwrap();
+    /// let screen = format.load(Path::new("artwork.ans")).unwrap();
+    /// // SAUCE metadata is automatically applied to the screen
+    /// ```
+    pub fn load(&self, file_path: &Path) -> Result<TextScreen> {
+        let data = std::fs::read(file_path)?;
+
+        // Extract SAUCE record from the data
+        let sauce_opt = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten();
+
+        let load_data = LoadData::new(sauce_opt, None, None);
+        self.from_bytes(file_path, &data, Some(load_data))
     }
 
     /// Save a buffer to bytes.
@@ -846,20 +928,48 @@ impl FileFormat {
     /// # Errors
     /// Returns an error if the format doesn't support saving or if saving fails.
     /// Note: Image formats require `save_to_file` instead as they need a file path.
-    pub fn to_bytes(&self, buffer: &mut TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    pub fn to_bytes(&self, buffer: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if let FileFormat::Image(img) = self {
             return Err(EngineError::FormatNotSupported {
                 name: img.name().to_string(),
                 operation: "to_bytes() - use ImageFormat::save_buffer() with a file path".to_string(),
             });
         }
-        if let Some(output_format) = self.output_format() {
-            output_format.to_bytes(buffer, options)
+
+        // Apply color optimizer if not lossless output
+        let buffer = if self == &FileFormat::IcyDraw {
+            // IcyDraw native format
+            buffer.clone()
+        } else if options.lossles_output {
+            let mut buffer = buffer.clone();
+            buffer.show_tags = false;
+            buffer
         } else {
-            Err(EngineError::FormatNotSupported {
+            let optimizer = crate::ColorOptimizer::new(buffer, options);
+            let mut buffer = optimizer.optimize(buffer);
+            buffer.show_tags = false;
+            buffer
+        };
+
+        match self {
+            FileFormat::Ansi | FileFormat::AnsiMusic => io::save_ansi(&buffer, options),
+            FileFormat::Ascii => io::save_ascii(&buffer, options),
+            FileFormat::Avatar => io::save_avatar(&buffer, options),
+            FileFormat::PCBoard => io::save_pcboard(&buffer, options),
+            FileFormat::CtrlA => io::save_ctrla(&buffer, options),
+            FileFormat::Renegade => io::save_renegade(&buffer, options),
+            FileFormat::Atascii => io::save_atascii(&buffer, options),
+            FileFormat::Petscii => io::save_seq(&buffer, options),
+            FileFormat::Bin => io::save_bin(&buffer, options),
+            FileFormat::XBin => io::save_xbin(&buffer, options),
+            FileFormat::IcyDraw => io::save_icy_draw(&buffer, options),
+            FileFormat::IceDraw => io::save_ice_draw(&buffer, options),
+            FileFormat::TundraDraw => io::save_tundra(&buffer, options),
+            FileFormat::Artworx => io::save_artworx(&buffer, options),
+            _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
-            })
+            }),
         }
     }
 
@@ -867,7 +977,7 @@ impl FileFormat {
     ///
     /// A format is considered supported if it either:
     /// - Uses a streaming parser (can be played back with baud emulation)
-    /// - Has a loader via `output_format()` (can be loaded directly)
+    /// - Has a direct loader implementation
     ///
     /// # Returns
     /// `true` if the format can be loaded/viewed, `false` otherwise.
@@ -886,7 +996,7 @@ impl FileFormat {
     /// assert!(!FileFormat::Archive(unarc_rs::unified::ArchiveFormat::Zip).is_supported());
     /// ```
     pub fn is_supported(&self) -> bool {
-        self.uses_parser() || self.output_format().is_some()
+        self.uses_parser() || self.supports_save()
     }
 
     pub fn bitfont_format(&self) -> Option<BitFontFormat> {

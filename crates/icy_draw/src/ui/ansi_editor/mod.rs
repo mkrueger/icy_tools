@@ -148,7 +148,7 @@ impl AnsiEditor {
 
         // Load buffer using the format
         let load_data = LoadData::default();
-        let buffer = format.load_buffer(&path, &data, Some(load_data))?;
+        let buffer = format.from_bytes(&path, &data, Some(load_data))?.buffer;
 
         Ok(Self::with_buffer(buffer, Some(path), options))
     }

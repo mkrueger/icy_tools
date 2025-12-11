@@ -155,7 +155,14 @@ impl Screen for TextScreen {
     }
 
     fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
-        self.buffer.to_bytes(extension, options)
+        let extension = extension.to_ascii_lowercase();
+        if let Some(format) = crate::formats::FileFormat::from_extension(&extension) {
+            format.to_bytes(&self.buffer, options)
+        } else {
+            Err(crate::EngineError::UnsupportedFormat {
+                description: format!("Unknown format: {}", extension),
+            })
+        }
     }
 
     fn get_copy_text(&self) -> Option<String> {

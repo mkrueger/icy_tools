@@ -1,9 +1,9 @@
-use icy_engine::{AttributedChar, Color, FORMATS, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
 use std::path::PathBuf;
 
 fn test_ansi(data: &[u8]) {
-    let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
-    let converted: Vec<u8> = FORMATS[0].to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+    let mut buf = FileFormat::Ansi.from_bytes(&PathBuf::from("test.ans"), data, None).unwrap().buffer;
+    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
     let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
@@ -73,9 +73,9 @@ fn test_first_char_color() {
 }
 
 fn test_ansi_ice(data: &[u8]) {
-    let mut buf = TextBuffer::from_bytes(&PathBuf::from("test.ans"), false, data, None, None).unwrap();
+    let mut buf = FileFormat::Ansi.from_bytes(&PathBuf::from("test.ans"), data, None).unwrap().buffer;
     buf.ice_mode = icy_engine::IceMode::Ice;
-    let converted: Vec<u8> = FORMATS[0].to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
     let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
@@ -104,7 +104,7 @@ fn test_palette_color_bug() {
         },
     );
 
-    let bytes = buf.to_bytes("ans", &SaveOptions::default()).unwrap();
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let str = String::from_utf8_lossy(&bytes).to_string();
 
     assert_eq!(" \u{1b}[1;211;211;211tA ", str);

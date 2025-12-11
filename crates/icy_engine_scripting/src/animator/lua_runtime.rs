@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use icy_engine::{Screen, TextBuffer, TextPane, TextScreen};
+use icy_engine::{Screen, TextScreen, formats::FileFormat};
 use mlua::{Lua, Value};
 use parking_lot::Mutex;
 use regex::Regex;
@@ -88,13 +88,17 @@ fn register_load_buffer(lua: &Lua, globals: &mlua::Table, parent: &Option<PathBu
                     return Err(mlua::Error::RuntimeError(format!("File not found {}", file)));
                 }
 
-                if let Ok(buffer) = TextBuffer::load_buffer(&file_name, true, None) {
-                    let mut text_screen = TextScreen::new(buffer.get_size());
-                    text_screen.buffer = buffer;
-                    let screen: Box<dyn Screen> = Box::new(text_screen);
-                    mlua::Result::Ok(LuaLayer::new(Arc::new(Mutex::new(screen))))
+                let ext = file_name.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+                let format = FileFormat::from_extension(&ext);
+                if let Some(format) = format {
+                    if let Ok(text_screen) = format.load(&file_name) {
+                        let screen: Box<dyn Screen> = Box::new(text_screen);
+                        mlua::Result::Ok(LuaLayer::new(Arc::new(Mutex::new(screen))))
+                    } else {
+                        Err(mlua::Error::RuntimeError(format!("Could not load file {}", file)))
+                    }
                 } else {
-                    Err(mlua::Error::RuntimeError(format!("Could not load file {}", file)))
+                    Err(mlua::Error::RuntimeError(format!("Unknown file format for {}", file)))
                 }
             })
             .unwrap(),

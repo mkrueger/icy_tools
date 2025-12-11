@@ -2,7 +2,7 @@ use iced::{
     Element, Length,
     widget::{column, container},
 };
-use icy_engine::{Screen, TextBuffer, TextScreen};
+use icy_engine::{Screen, TextScreen, formats::FileFormat};
 use icy_engine_gui::ui::{StateResult, button_row, dialog_area, primary_button, separator};
 use icy_engine_gui::version_helper::replace_version_marker;
 use icy_engine_gui::{MonitorSettings, Terminal, TerminalView, dialog_wrapper};
@@ -37,11 +37,15 @@ impl AboutDialogState {
     pub fn with_ansi(ansi: &[u8]) -> Self {
         let mut screen = TextScreen::new(icy_engine::Size::new(80, 25));
 
-        match TextBuffer::from_bytes(std::path::Path::new("a.icy"), true, ansi, Some(MusicOption::Off), None) {
-            Ok(mut buffer) => {
+        match FileFormat::IcyDraw.from_bytes(
+            std::path::Path::new("a.icy"),
+            ansi,
+            Some(icy_engine::formats::LoadData::new(None, Some(MusicOption::Off), None)),
+        ) {
+            Ok(mut loaded_screen) => {
                 let build_date = option_env!("ICY_BUILD_DATE").unwrap_or("-").to_string();
-                replace_version_marker(&mut buffer, &VERSION, Some(build_date));
-                screen.buffer = buffer;
+                replace_version_marker(&mut loaded_screen.buffer, &VERSION, Some(build_date));
+                screen = loaded_screen;
             }
             Err(e) => {
                 panic!("Failed to load about ANSI: {}", e);

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crc32fast::Hasher;
-use icy_engine::{SaveOptions, Screen, TextBuffer, TextPane, TextScreen};
+use icy_engine::{SaveOptions, Screen, TextPane, TextScreen, formats::FileFormat};
 use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
@@ -163,11 +163,11 @@ fn main() {
                 }
             },
             _ => {
-                let buffer = TextBuffer::load_buffer(&path, true, None);
-                if let Ok(buffer) = buffer {
-                    let mut screen = TextScreen::new(buffer.get_size());
-                    screen.buffer = buffer;
-                    show_buffer(&mut io, &mut screen, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
+                let ext = path.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+                if let Some(format) = FileFormat::from_extension(&ext) {
+                    if let Ok(mut screen) = format.load(&path) {
+                        show_buffer(&mut io, &mut screen, true, &args, &Terminal::Unknown, Vec::new()).unwrap();
+                    }
                 }
             }
         }

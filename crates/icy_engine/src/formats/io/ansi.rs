@@ -1,22 +1,20 @@
+//! ANSI format (.ans, .ice, .diz) I/O implementation.
+
 use std::collections::HashMap;
 use std::path::Path;
 
 use codepages::tables::UNICODE_TO_CP437;
 
 use crate::{
-    ANSI_FONTS, AttributedChar, BitFont, BufferFeatures, DOS_DEFAULT_PALETTE, OutputFormat, Rectangle, Tag, TagPlacement, TextBuffer, TextPane,
+    ANSI_FONTS, AttributedChar, BitFont, Color, DOS_DEFAULT_PALETTE, EditableScreen, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, TextScreen,
     XTERM_256_PALETTE, analyze_font_usage,
 };
-use crate::{Color, EditableScreen, TextScreen};
+
+use super::super::{ControlCharHandling, LoadData, SaveOptions, ScreenPreperation};
 
 const COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
-use super::{LoadData, SaveOptions};
-
-#[derive(Default)]
-pub(crate) struct Ansi {}
-
-fn uses_ice_colors(buf: &mut crate::TextBuffer) -> bool {
+fn uses_ice_colors(buf: &TextBuffer) -> bool {
     for layer in &buf.layers {
         for y in 0..layer.get_height() {
             for x in 0..layer.get_width() {
@@ -31,70 +29,63 @@ fn uses_ice_colors(buf: &mut crate::TextBuffer) -> bool {
     false
 }
 
-impl OutputFormat for Ansi {
-    fn get_file_extension(&self) -> &str {
-        "ans"
-    }
+/// Load an ANSI file into a TextScreen.
+pub(crate) fn load_ansi(file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+    let load_data = load_data_opt.unwrap_or_default();
+    let width = load_data.default_terminal_width.unwrap_or(80);
+    let mut result = TextScreen::new((width, 25));
+    result.terminal_state_mut().is_terminal_buffer = false;
 
-    fn get_alt_extensions(&self) -> Vec<String> {
-        vec!["ice".to_string(), "diz".to_string()]
-    }
-
-    fn get_name(&self) -> &str {
-        "Ansi"
-    }
-
-    fn analyze_features(&self, _features: &BufferFeatures) -> String {
-        String::new()
-    }
-
-    fn to_bytes(&self, buf: &mut crate::TextBuffer, options: &SaveOptions) -> crate::Result<Vec<u8>> {
-        let mut result: Vec<u8> = Vec::new();
-
-        let mut str_gen = StringGenerator::new(options.clone());
-        str_gen.use_ice_colors = uses_ice_colors(buf);
-        str_gen.tags = buf.tags.clone();
-        str_gen.screen_prep(buf);
-        let state = str_gen.generate(buf, buf);
-        str_gen.screen_end(buf, state);
-        str_gen.add_sixels(buf);
-        result.extend(str_gen.get_data());
-
-        if let Some(sauce) = &options.save_sauce {
-            sauce.write(&mut result)?;
+    result.buffer.file_name = Some(file_name.into());
+    let mut min_height = -1;
+    if let Some(sauce) = &load_data.sauce_opt {
+        let lines = result.apply_sauce(sauce);
+        if lines.1 > 0 {
+            min_height = lines.1 as i32;
         }
-        Ok(result)
     }
 
-    fn load_buffer(&self, file_name: &Path, data: &[u8], load_data_opt: Option<LoadData>) -> crate::Result<crate::TextBuffer> {
-        let load_data = load_data_opt.unwrap_or_default();
-        let width = load_data.default_terminal_width.unwrap_or(80);
-        let mut result = TextScreen::new((width, 25));
-        result.terminal_state_mut().is_terminal_buffer = false;
-
-        result.buffer.file_name = Some(file_name.into());
-        let mut min_height = -1;
-        if let Some(sauce) = &load_data.sauce_opt {
-            let lines = result.apply_sauce(sauce);
-            if lines.1 > 0 {
-                min_height = lines.1 as i32;
-            }
-        }
-
-        let mut parser = icy_parser_core::AnsiParser::new();
-        if let Some(music) = load_data.ansi_music {
-            parser.set_music_option(music);
-        }
-
-        // Prepare data for parsing
-        let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
-        if is_unicode {
-            result.buffer.buffer_type = crate::BufferType::Unicode;
-        }
-        crate::load_with_parser(&mut result, &mut parser, file_data, true, min_height)?;
-        Ok(result.buffer)
+    let mut parser = icy_parser_core::AnsiParser::new();
+    if let Some(music) = load_data.ansi_music {
+        parser.set_music_option(music);
     }
+
+    // Prepare data for parsing
+    let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
+    if is_unicode {
+        result.buffer.buffer_type = crate::BufferType::Unicode;
+    }
+    crate::load_with_parser(&mut result, &mut parser, file_data, true, min_height)?;
+    Ok(result)
 }
+
+/// Save a TextBuffer to ANSI format.
+pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    let mut result: Vec<u8> = Vec::new();
+
+    let mut str_gen = StringGenerator::new(options.clone());
+    str_gen.use_ice_colors = uses_ice_colors(&buf);
+    str_gen.tags = buf.tags.clone();
+    str_gen.screen_prep(&buf);
+    let state = str_gen.generate(&buf, buf);
+    str_gen.screen_end(&buf, state);
+    str_gen.add_sixels(&buf);
+    result.extend(str_gen.get_data());
+
+    if let Some(sauce) = &options.save_sauce {
+        sauce.write(&mut result)?;
+    }
+    Ok(result)
+}
+
+/// Check if SAUCE is required for saving (width != 80).
+pub fn _get_save_sauce_default_ans(buf: &TextBuffer) -> (bool, String) {
+    if buf.get_width() != 80 {
+        return (true, "width != 80".to_string());
+    }
+    (false, String::new())
+}
+
 #[derive(Debug)]
 struct CharCell {
     ch: char,
@@ -104,6 +95,7 @@ struct CharCell {
     cur_state: AnsiState,
 }
 
+/// ANSI string generator for output.
 pub struct StringGenerator {
     output: Vec<u8>,
     options: SaveOptions,
@@ -244,7 +236,6 @@ impl StringGenerator {
             || !is_crossed_out && state.is_crossed_out
             || !is_concealed && state.is_concealed
             || is_bold && !state.is_bold && !DOS_DEFAULT_PALETTE.iter().any(|c| c.get_rgb() == state.fg.get_rgb())
-        // special case if bold changes but fore color is custom rgb - color needs to reset
         {
             sgr.push(0);
             state.is_bold = false;
@@ -286,7 +277,6 @@ impl StringGenerator {
         if is_blink && !state.is_blink {
             sgr.push(5);
             state.is_blink = true;
-            // when switching to blink in ice mode bg automatically changes to high.
             if self.use_ice_colors && state.bg_idx < 8 {
                 state.bg_idx += 8;
                 state.bg = buf.palette.get_color(bg);
@@ -400,17 +390,11 @@ impl StringGenerator {
                     }
                 }
                 let last = last + 1;
-                if last >= area.get_width() - 1 {
-                    // don't compress if we have only one char, since eol are 2 chars
-                    area.get_width()
-                } else {
-                    last
-                }
+                if last >= area.get_width() - 1 { area.get_width() } else { last }
             } else {
                 area.get_width()
             };
 
-            // previewlen == 0 tags are invisible, so they need to be checked.
             for t in self.tags.iter() {
                 if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y as i32 {
                     len = len.max(t.position.x + t.len() as i32);
@@ -461,7 +445,6 @@ impl StringGenerator {
                 }
                 x += 1;
             }
-            // for longer modern terminal output ecs[0m is needed to reset colors at line end.
             if !self.options.longer_terminal_output && self.options.modern_terminal_output {
                 state.fg = DOS_DEFAULT_PALETTE[7].clone();
                 state.bg = DOS_DEFAULT_PALETTE[0].clone();
@@ -498,11 +481,11 @@ impl StringGenerator {
         }
 
         match self.options.screen_preparation {
-            super::ScreenPreperation::None => {}
-            super::ScreenPreperation::ClearScreen => {
+            ScreenPreperation::None => {}
+            ScreenPreperation::ClearScreen => {
                 self.push_result(&mut b"\x1b[2J".to_vec());
             }
-            super::ScreenPreperation::Home => {
+            ScreenPreperation::Home => {
                 self.push_result(&mut b"\x1b[1;1H".to_vec());
             }
         }
@@ -542,11 +525,6 @@ impl StringGenerator {
         }
     }
 
-    /// .
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
     pub fn generate<T: TextPane>(&mut self, buf: &TextBuffer, layer: &T) -> AnsiState {
         let mut result = Vec::new();
 
@@ -622,7 +600,6 @@ impl StringGenerator {
                         result.extend_from_slice(cell.sgr_tc[idx + i].to_string().as_bytes());
                     }
 
-                    //result.extend_from_slice(cell.sgr_tc[idx + 3].to_string().as_bytes());
                     if self.options.alt_rgb {
                         result.push(b'm');
                         idx += 5;
@@ -650,13 +627,13 @@ impl StringGenerator {
 
                     if StringGenerator::CONTROL_CHARS.contains(ch) {
                         match self.options.control_char_handling {
-                            crate::ControlCharHandling::Ignore => {
+                            ControlCharHandling::Ignore => {
                                 vec![ch as u8]
                             }
-                            crate::ControlCharHandling::IcyTerm => {
+                            ControlCharHandling::IcyTerm => {
                                 vec![b'\x1B', ch as u8]
                             }
-                            crate::ControlCharHandling::FilterOut => {
+                            ControlCharHandling::FilterOut => {
                                 vec![b'.']
                             }
                         }
@@ -673,7 +650,6 @@ impl StringGenerator {
                         }
                         rle += 1;
                     }
-                    // rle is always >= x + 1 but "x - 1" may overflow.
                     rle -= 1;
                     rle -= x;
                     if self.options.use_cursor_forward && line[x].ch == ' ' && line[x].cur_state.bg_idx == 0 && !line[x].cur_state.is_blink {
@@ -714,7 +690,6 @@ impl StringGenerator {
                     result.push(10);
                 } else if x < layer.get_width() as usize && y + 1 < layer.get_height() as usize {
                     if self.options.compress && x + 1 >= layer.get_width() as usize {
-                        // if it's shorter to line break with 1 space, do that
                         result.push(b' ');
                     } else {
                         result.push(13);
@@ -764,12 +739,4 @@ impl StringGenerator {
         self.output.append(result);
         result.clear();
     }
-}
-
-pub fn get_save_sauce_default_ans(buf: &TextBuffer) -> (bool, String) {
-    if buf.get_width() != 80 {
-        return (true, "width != 80".to_string());
-    }
-
-    (false, String::new())
 }

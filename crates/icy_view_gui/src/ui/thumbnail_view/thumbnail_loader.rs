@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use icy_engine::{
-    AttributedChar, BufferType, FORMATS, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane, TextScreen,
+    AttributedChar, BufferType, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane, TextScreen,
     formats::{FileFormat, ImageFormat},
 };
 use icy_net::telnet::TerminalEmulation;
@@ -595,17 +595,7 @@ fn render_with_format(
     let start = Instant::now();
 
     // Find matching format
-    let format_idx = FORMATS.iter().enumerate().find_map(|(i, format)| {
-        if format.get_file_extension().eq_ignore_ascii_case(ext) {
-            return Some(i);
-        }
-        for alt_ext in format.get_alt_extensions() {
-            if alt_ext == ext {
-                return Some(i);
-            }
-        }
-        None
-    })?;
+    let format = FileFormat::from_extension(ext)?;
 
     if cancel_token.is_cancelled() {
         return None;
@@ -614,8 +604,9 @@ fn render_with_format(
     // Use max_height limit for thumbnail loading
     let load_data = LoadData::new(sauce.cloned(), None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
     let path_buf = PathBuf::from(path);
-    match FORMATS[format_idx].load_buffer(&path_buf, data, Some(load_data)) {
-        Ok(buffer) => {
+    match format.from_bytes(&path_buf, data, Some(load_data)) {
+        Ok(screen) => {
+            let buffer = &screen.buffer;
             let buffer_load_elapsed: std::time::Duration = start.elapsed();
             debug!("[TIMING] {} buffer load: {:?}", path, buffer_load_elapsed);
 
@@ -629,8 +620,6 @@ fn render_with_format(
             let width = buffer.get_width();
             let height = buffer.get_height();
 
-            // Use the buffer directly as Screen - no need to
-            let screen = TextScreen { buffer, ..Default::default() };
             let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
 
             debug!("[TIMING] {} total format render ({}x{}): {:?}", path, width, height, total_start.elapsed());

@@ -1,13 +1,13 @@
 use std::fs;
 
-use icy_engine::{Position, TextBuffer, TextPane};
+use icy_engine::{Position, TextBuffer, TextPane, formats::FileFormat};
 
 const TEST_FILE: &str = "tests/output/ar9px/files/aeleus-usta1.ans";
 
 fn load_test_buffer() -> TextBuffer {
     let path = std::path::Path::new(TEST_FILE);
     let data = fs::read(path).expect("Failed to read test file");
-    TextBuffer::from_bytes(path, true, &data, None, None).expect("Failed to parse test file")
+    FileFormat::Ansi.from_bytes(path, &data, None).expect("Failed to parse test file").buffer
 }
 
 /// Test 9px font rendering (letter spacing)
