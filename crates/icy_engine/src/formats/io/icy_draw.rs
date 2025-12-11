@@ -347,10 +347,10 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
     }
 
-    let mut writer = encoder.write_header().unwrap();
+    let mut writer = encoder.write_header()?;
 
     if image_empty {
-        writer.write_image_data(&[0, 0, 0, 0]).unwrap();
+        writer.write_image_data(&[0, 0, 0, 0])?;
     } else {
         let (_, data) = buf.render_to_rgba(
             &crate::Rectangle {
@@ -360,9 +360,9 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             .into(),
             false,
         );
-        writer.write_image_data(&data).unwrap();
+        writer.write_image_data(&data)?;
     }
-    writer.finish().unwrap();
+    writer.finish()?;
 
     Ok(result)
 }

@@ -8,6 +8,9 @@ pub use icons::*;
 mod dialog;
 pub use dialog::*;
 
+mod sauce_helpers;
+pub use sauce_helpers::*;
+
 mod confirmation_dialog;
 pub use confirmation_dialog::*;
 

@@ -11,6 +11,7 @@ mod channels_view;
 mod color_switcher_gpu;
 pub mod constants;
 mod edit_layer_dialog;
+mod file_settings_dialog;
 mod layer_view;
 pub mod menu_bar;
 mod minimap_view;
@@ -23,6 +24,7 @@ mod top_toolbar;
 pub use canvas_view::*;
 pub use color_switcher_gpu::*;
 pub use edit_layer_dialog::*;
+pub use file_settings_dialog::*;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
@@ -868,6 +870,7 @@ impl AnsiEditor {
         let buffer = state.get_buffer();
         let caret = state.get_caret();
         let current_layer = state.get_current_layer().unwrap_or(0);
+        let font_name = buffer.font(0).map(|f| f.name().to_string()).unwrap_or_else(|| "Unknown".to_string());
 
         AnsiStatusInfo {
             cursor_position: (caret.x, caret.y),
@@ -876,6 +879,7 @@ impl AnsiEditor {
             total_layers: buffer.layers.len(),
             current_tool: self.current_tool.name().to_string(),
             insert_mode: caret.insert_mode,
+            font_name,
         }
     }
 }
@@ -889,4 +893,5 @@ pub struct AnsiStatusInfo {
     pub total_layers: usize,
     pub current_tool: String,
     pub insert_mode: bool,
+    pub font_name: String,
 }

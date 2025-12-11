@@ -334,6 +334,11 @@ pub enum Message {
     EditLayerDialog(super::ansi_editor::EditLayerDialogMessage),
     ApplyEditLayer(super::ansi_editor::EditLayerResult),
 
+    // File Settings Dialog
+    ShowFileSettingsDialog,
+    FileSettingsDialog(super::ansi_editor::FileSettingsDialogMessage),
+    ApplyFileSettings(super::ansi_editor::FileSettingsResult),
+
     // Internal
     Tick,
     ViewportTick,
@@ -351,12 +356,15 @@ pub struct StatusBarInfo {
 impl From<AnsiStatusInfo> for StatusBarInfo {
     fn from(info: AnsiStatusInfo) -> Self {
         Self {
-            left: format!(
-                "({}, {})  {}×{}",
-                info.cursor_position.0, info.cursor_position.1, info.buffer_size.0, info.buffer_size.1,
-            ),
+            left: format!("{}  {}×{}", info.font_name, info.buffer_size.0, info.buffer_size.1,),
             center: format!("Layer {}/{}", info.current_layer + 1, info.total_layers,),
-            right: format!("{}  {}", info.current_tool, if info.insert_mode { "INS" } else { "OVR" },),
+            right: format!(
+                "{}  {}  ({}, {})",
+                info.current_tool,
+                if info.insert_mode { "INS" } else { "OVR" },
+                info.cursor_position.0,
+                info.cursor_position.1,
+            ),
         }
     }
 }
@@ -1468,6 +1476,79 @@ impl MainWindow {
                                 log::error!("Failed to resize layer: {}", e);
                             }
                         }
+                    }
+                }
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // File Settings Dialog
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowFileSettingsDialog => {
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        self.dialogs.push(super::ansi_editor::FileSettingsDialog::from_edit_state(state));
+                    }
+                }
+                Task::none()
+            }
+            // FileSettingsDialog messages are routed through DialogStack::update above
+            Message::FileSettingsDialog(_) => Task::none(),
+            Message::ApplyFileSettings(result) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // Apply canvas size
+                        let buffer = state.get_buffer();
+                        let current_size = buffer.size();
+                        if result.width != current_size.width || result.height != current_size.height {
+                            let buffer = state.get_buffer_mut();
+                            buffer.set_size(icy_engine::Size::new(result.width, result.height));
+                        }
+
+                        // Apply SAUCE metadata
+                        let mut sauce_meta = icy_engine_edit::SauceMetaData::default();
+                        sauce_meta.title = result.title.as_str().into();
+                        sauce_meta.author = result.author.as_str().into();
+                        sauce_meta.group = result.group.as_str().into();
+                        for line in result.comments.lines() {
+                            sauce_meta.comments.push(line.into());
+                        }
+                        state.set_sauce_meta(sauce_meta);
+
+                        let buffer = state.get_buffer_mut();
+
+                        // Apply format mode
+                        match result.format_mode {
+                            super::ansi_editor::FormatMode::LegacyDos => {
+                                buffer.palette_mode = icy_engine::PaletteMode::Fixed16;
+                                buffer.font_mode = icy_engine::FontMode::Sauce;
+                            }
+                            super::ansi_editor::FormatMode::XBin => {
+                                buffer.palette_mode = icy_engine::PaletteMode::Free16;
+                                buffer.font_mode = icy_engine::FontMode::Sauce;
+                            }
+                            super::ansi_editor::FormatMode::XBinExtended => {
+                                buffer.palette_mode = icy_engine::PaletteMode::Free8;
+                                buffer.font_mode = icy_engine::FontMode::FixedSize;
+                            }
+                            super::ansi_editor::FormatMode::Unrestricted => {
+                                buffer.palette_mode = icy_engine::PaletteMode::RGB;
+                                buffer.font_mode = icy_engine::FontMode::Unlimited;
+                            }
+                        }
+
+                        // Apply ice mode
+                        buffer.ice_mode = if result.ice_colors {
+                            icy_engine::IceMode::Ice
+                        } else {
+                            icy_engine::IceMode::Blink
+                        };
+
+                        // Apply display options
+                        buffer.set_use_letter_spacing(result.use_9px_font);
+                        buffer.set_use_aspect_ratio(result.legacy_aspect);
                     }
                 }
                 Task::none()

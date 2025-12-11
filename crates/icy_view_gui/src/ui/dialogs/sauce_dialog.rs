@@ -1,74 +1,18 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Color, Element, Length, Theme,
+    Alignment, Element, Length, Theme,
     widget::{Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::{
     dialog_wrapper, section_header,
     ui::{
-        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, StateResult, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small, modal_container,
-        modal_overlay, primary_button, secondary_button, separator,
+        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, SauceFieldColor, StateResult, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small,
+        modal_container, modal_overlay, primary_button, sauce_input_style, secondary_button, separator,
     },
 };
 use icy_sauce::{ArchiveFormat, AudioFormat, BitmapFormat, Capabilities, CharacterFormat, SauceDataType, SauceRecord, VectorFormat};
 
 const FIELD_SPACING: f32 = 4.0;
-
-/// SAUCE field colors for dialog - different for light and dark themes
-#[derive(Clone, Copy)]
-enum SauceFieldColor {
-    Title,
-    Author,
-    Group,
-    Normal,
-}
-
-fn get_sauce_color(field: SauceFieldColor, theme: &Theme) -> Color {
-    let is_dark = theme.extended_palette().is_dark;
-    match field {
-        SauceFieldColor::Title => {
-            if is_dark {
-                Color::from_rgb(0.9, 0.9, 0.6)
-            } else {
-                Color::from_rgb(0.6, 0.5, 0.0)
-            }
-        }
-        SauceFieldColor::Author => {
-            if is_dark {
-                Color::from_rgb(0.6, 0.9, 0.6)
-            } else {
-                Color::from_rgb(0.0, 0.5, 0.0)
-            }
-        }
-        SauceFieldColor::Group => {
-            if is_dark {
-                Color::from_rgb(0.6, 0.8, 0.9)
-            } else {
-                Color::from_rgb(0.0, 0.4, 0.6)
-            }
-        }
-        SauceFieldColor::Normal => theme.palette().text,
-    }
-}
-
-fn sauce_input_style(field: SauceFieldColor) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
-    move |theme: &Theme, _status: text_input::Status| {
-        let palette = theme.extended_palette();
-        let value_color = get_sauce_color(field, theme);
-        text_input::Style {
-            background: iced::Background::Color(palette.background.weak.color),
-            border: iced::Border {
-                color: palette.background.strong.color,
-                width: 1.0,
-                radius: 4.0.into(),
-            },
-            icon: palette.background.strong.text.scale_alpha(0.6),
-            placeholder: palette.background.base.text.scale_alpha(0.5),
-            value: value_color,
-            selection: palette.primary.weak.color.scale_alpha(0.5),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum SauceDialogMessage {

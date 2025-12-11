@@ -49,11 +49,7 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> 
                 (separator()),
                 (menu_item_simple(fl!("menu-mirror_mode"), "", Message::ToggleMirrorMode)),
                 (separator()),
-                (menu_item_simple(fl!("menu-edit-sauce"), "", Message::EditSauce)),
-                (menu_item_simple(fl!("menu-9px-font"), "Ctrl+F", Message::ToggleLGAFont)),
-                (menu_item_simple(fl!("menu-aspect-ratio"), "", Message::ToggleAspectRatio)),
-                (separator()),
-                (menu_item_simple(fl!("menu-set-canvas-size"), "", Message::SetCanvasSize))
+                (menu_item_simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog))
             ))
         ),
         // Selection menu

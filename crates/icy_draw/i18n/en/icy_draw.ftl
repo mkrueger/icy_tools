@@ -14,6 +14,22 @@ menu-edit-sauce=Edit Sauce Info…
 menu-9px-font=9px Font
 menu-aspect-ratio=Legacy Aspect Ratio
 menu-set-canvas-size=Set Canvas Size…
+menu-file-settings=File Settings…
+
+file-settings-dialog-title=File Settings
+file-settings-canvas-size=Canvas Size
+file-settings-format=Format
+file-settings-sauce=SAUCE
+file-settings-title=Title
+file-settings-author=Author
+file-settings-group=Group
+file-settings-ice=Ice
+file-settings-legacy-ar=Legacy Aspect Ratio
+file-settings-9px-font=9px Font
+file-settings-comments-button=Comments…
+file-settings-settings-button=Settings…
+file-settings-comments-title=SAUCE Comments
+file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Close
 menu-save-as=Save As…
 menu-export=Export…
@@ -21,8 +37,8 @@ menu-edit-font-outline=Font Outline…
 menu-show_settings=Settings…
 menu-set-font-size=Set Font Size…
 
-font-size-width=Width:
-font-size-height=Height:
+font-size-width=Width
+font-size-height=Height
 
 menu-edit=Edit
 menu-undo=Undo
@@ -194,13 +210,13 @@ tool-solid=Solid
 tool-character=Character
 tool-shade=Shade
 tool-colorize=Colorize
-tool-size-label=Size:
+tool-size-label=Size
 tool-full-block=Block
 tool-half-block=Half Block
 tool-outline=Outline
 tool-custom-brush=Custom brush
 
-tool-select-label=Selection mode:
+tool-select-label=Selection mode
 tool-select-normal=Rectangle
 tool-select-character=Character
 tool-select-attribute=Attribute
@@ -257,19 +273,19 @@ new-file-cancel=Cancel
 new-file-create=Create
 
 edit-sauce-title=Edit Sauce Info
-edit-sauce-title-label=Title:
+edit-sauce-title-label=Title
 edit-sauce-title-label-length=(35 chars)
-edit-sauce-author-label=Author:
+edit-sauce-author-label=Author
 edit-sauce-author-label-length=(20 chars)
-edit-sauce-group-label=Group:
+edit-sauce-group-label=Group
 edit-sauce-group-label-length=(20 chars)
 edit-sauce-comments-label=Comments (64 chars in line limit)
-edit-sauce-letter-spacing=Use 9px mode:
-edit-sauce-aspect-ratio=Simulate classic aspect ratio:
+edit-sauce-letter-spacing=Use 9px mode
+edit-sauce-aspect-ratio=Simulate classic aspect ratio
 
 edit-canvas-size-title=Set Canvas Size
-edit-canvas-size-width-label=Width:
-edit-canvas-size-height-label=Height:
+edit-canvas-size-width-label=Width
+edit-canvas-size-height-label=Height
 edit-canvas-size-resize=Resize
 edit-canvas-size-resize_layers-label=Resize layers
 
