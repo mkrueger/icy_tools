@@ -229,13 +229,20 @@ impl WindowManager {
             return String::new();
         };
 
+        let zoom_info = w.get_zoom_info_string();
+        let title_with_zoom = if zoom_info.is_empty() {
+            w.title.clone()
+        } else {
+            format!("{} {}", w.title, zoom_info)
+        };
+
         if self.windows.len() == 1 {
-            w.title()
+            title_with_zoom
         } else if w.id <= 10 {
             let display_key = if w.id == 10 { 0 } else { w.id };
-            format!("{} - ⌘{}", w.title(), display_key)
+            format!("{} - ⌘{}", title_with_zoom, display_key)
         } else {
-            w.title()
+            title_with_zoom
         }
     }
 

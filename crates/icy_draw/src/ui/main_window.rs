@@ -412,6 +412,9 @@ pub struct MainWindow {
 
     /// Pending file to open after save (None inside = new file, Some(path) = open path)
     pending_open_path: Option<Option<PathBuf>>,
+
+    /// Cached title string for Window trait (updated when file changes)
+    pub title: String,
 }
 
 impl MainWindow {
@@ -463,7 +466,7 @@ impl MainWindow {
             dialogs.push(error_dialog(title, message, |_| Message::CloseDialog));
         }
 
-        Self {
+        let mut window = Self {
             id,
             mode_state,
             options,
@@ -475,7 +478,10 @@ impl MainWindow {
             last_save,
             close_after_save: false,
             pending_open_path: None,
-        }
+            title: String::new(),
+        };
+        window.update_title();
+        window
     }
 
     /// Create a MainWindow restored from a session
@@ -611,7 +617,7 @@ impl MainWindow {
             dialogs.push(error_dialog(title, message, |_| Message::CloseDialog));
         }
 
-        Self {
+        let mut window = Self {
             id,
             mode_state,
             options,
@@ -623,7 +629,10 @@ impl MainWindow {
             last_save,
             close_after_save: false,
             pending_open_path: None,
-        }
+            title: String::new(),
+        };
+        window.update_title();
+        window
     }
 
     /// Get the current file path
@@ -640,10 +649,11 @@ impl MainWindow {
     /// Mark document as saved - updates last_save to current undo stack length
     pub fn mark_saved(&mut self) {
         self.last_save = self.mode_state.undo_stack_len();
+        self.update_title();
     }
 
-    pub fn title(&self) -> String {
-        let mode = self.mode_state.mode();
+    /// Update the cached title based on current file path and dirty state
+    fn update_title(&mut self) {
         let file_name = self
             .file_path()
             .and_then(|p| p.file_name())
@@ -651,9 +661,18 @@ impl MainWindow {
             .map(|s| s.to_string())
             .unwrap_or_else(|| crate::fl!("unsaved-title"));
 
-        let modified = if self.is_modified() { " •" } else { "" };
+        let modified = if self.is_modified() { "*" } else { "" };
 
-        format!("{}{} - iCY DRAW [{}]", file_name, modified, mode)
+        self.title = format!("{}{}", file_name, modified);
+    }
+
+    /// Get zoom info string for display in title bar (e.g., "[AUTO]" or "[150%]")
+    pub fn get_zoom_info_string(&self) -> String {
+        if let ModeState::Ansi(editor) = &self.mode_state {
+            editor.canvas.monitor_settings.scaling_mode.format_zoom_string()
+        } else {
+            String::new()
+        }
     }
 
     pub fn theme(&self) -> Theme {
@@ -1187,19 +1206,19 @@ impl MainWindow {
             }
             Message::ZoomIn => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.set_zoom(editor.canvas.zoom + 0.25);
+                    editor.canvas.zoom_in();
                 }
                 Task::none()
             }
             Message::ZoomOut => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.set_zoom(editor.canvas.zoom - 0.25);
+                    editor.canvas.zoom_out();
                 }
                 Task::none()
             }
             Message::ZoomReset => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.set_zoom(1.0);
+                    editor.canvas.zoom_reset();
                 }
                 Task::none()
             }
@@ -1255,7 +1274,10 @@ impl MainWindow {
                     Task::none()
                 }
             }
-            Message::Tick => Task::none(),
+            Message::Tick => {
+                self.update_title();
+                Task::none()
+            }
             Message::ViewportTick => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor)
@@ -1275,7 +1297,12 @@ impl MainWindow {
                         .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
                         .map(Message::AnsiEditor);
 
-                    Task::batch([color_task, tool_task])
+                    // Update canvas animations (scrollbar fade, smooth scrolling)
+                    let viewport_task = editor
+                        .update(AnsiEditorMessage::ViewportTick)
+                        .map(Message::AnsiEditor);
+
+                    Task::batch([color_task, tool_task, viewport_task])
                 }
                 ModeState::BitFont(editor) => {
                     let delta = 0.016;
@@ -1679,10 +1706,11 @@ impl icy_engine_gui::Window for MainWindow {
     }
 
     fn title(&self) -> &str {
-        // Return a static reference - we need to store the title
-        // For now, just return a placeholder since title() generates dynamically
-        // The WindowManager will use format_window_title which calls title() separately
-        ""
+        &self.title
+    }
+
+    fn get_zoom_info_string(&self) -> String {
+        MainWindow::get_zoom_info_string(self)
     }
 
     fn update(&mut self, msg: Self::Message) -> Task<Self::Message> {

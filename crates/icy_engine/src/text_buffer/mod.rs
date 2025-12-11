@@ -205,10 +205,6 @@ pub struct TextBuffer {
 
     pub palette: Palette,
 
-    /// the layer the overlay is displayed upon (there could be layers above the overlay layer)
-    overlay_index: usize,
-    overlay_layer: Option<Layer>,
-
     font_table: HashMap<usize, BitFont>,
     /// Cache for 9px converted fonts (lazily populated when use_letter_spacing is true)
     font_table_9px: HashMap<usize, BitFont>,
@@ -274,8 +270,6 @@ impl Clone for TextBuffer {
             palette_mode: self.palette_mode,
             font_mode: self.font_mode,
             palette: self.palette.clone(),
-            overlay_index: self.overlay_index,
-            overlay_layer: self.overlay_layer.clone(),
             font_table: self.font_table.clone(),
             font_table_9px: self.font_table_9px.clone(),
             is_font_table_dirty: self.is_font_table_dirty,
@@ -481,8 +475,6 @@ impl TextBuffer {
             font_table,
             font_table_9px: HashMap::new(),
             is_font_table_dirty: false,
-            overlay_index: 0,
-            overlay_layer: None,
             layers: vec![Layer::new("Background", size)],
             use_letter_spacing: false,
             use_aspect_ratio: false,
@@ -755,20 +747,6 @@ impl TextBuffer {
         res
     }
 
-    pub fn get_overlay_layer(&mut self, index: usize) -> &mut Layer {
-        if self.overlay_layer.is_none() {
-            self.overlay_index = index;
-            let mut l = Layer::new("Overlay", self.get_size());
-            l.properties.has_alpha_channel = true;
-            self.overlay_layer = Some(l);
-        }
-        self.overlay_layer.as_mut().unwrap()
-    }
-
-    pub fn remove_overlay(&mut self) -> Option<Layer> {
-        self.overlay_layer.take()
-    }
-
     #[must_use]
     pub fn get_glyph(&self, ch: &AttributedChar) -> Option<libyaff::GlyphDefinition> {
         if let Some(ext) = &self.get_font(ch.get_font_page()) {
@@ -979,12 +957,6 @@ impl TextPane for TextBuffer {
                 let pos: Position = pos - cur_layer.get_offset();
                 if pos.x >= 0 && pos.y >= 0 && pos.x < cur_layer.get_width() && pos.y < cur_layer.get_height() {
                     self.merge_layer_char(&mut found_char, cur_layer, pos);
-                }
-            }
-
-            if self.overlay_index == i {
-                if let Some(overlay) = &self.overlay_layer {
-                    self.merge_layer_char(&mut found_char, overlay, pos);
                 }
             }
         }

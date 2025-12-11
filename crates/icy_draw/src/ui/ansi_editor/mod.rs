@@ -291,7 +291,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.color_switcher.needs_animation() || self.tool_panel.needs_animation()
+        self.color_switcher.needs_animation() || self.tool_panel.needs_animation() || self.canvas.needs_animation()
     }
 
     /// Update the editor state

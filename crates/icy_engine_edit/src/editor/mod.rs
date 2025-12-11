@@ -218,10 +218,6 @@ impl EditState {
         clipboard::get_text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
     }
 
-    pub fn get_overlay_layer(&mut self, cur_layer: usize) -> &mut Layer {
-        self.screen.buffer.get_overlay_layer(cur_layer)
-    }
-
     /// Returns the get current layer of this [`EditState`].
     ///
     /// # Errors
