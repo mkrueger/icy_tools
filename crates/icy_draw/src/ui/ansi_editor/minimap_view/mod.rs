@@ -229,8 +229,15 @@ impl MinimapView {
         let render_ratio = total_rendered_height / full_h as f32;
 
         // Convert to texture space (divide by render_ratio)
-        let viewport_y_tex = viewport_y / render_ratio.max(0.001);
-        let viewport_h_tex = viewport_height / render_ratio.max(0.001);
+        // Clamp to valid range - if viewport extends beyond rendered texture, clamp it
+        let viewport_y_tex = (viewport_y / render_ratio.max(0.001)).min(1.0);
+        let viewport_h_tex = (viewport_height / render_ratio.max(0.001)).min(1.0 - viewport_y_tex);
+
+        // If the viewport in texture space is invalid or too large, just stay at top
+        if viewport_y_tex >= 1.0 || viewport_h_tex <= 0.0 {
+            *self.scroll_position.borrow_mut() = 0.0;
+            return;
+        }
 
         // Viewport position and size in scaled pixels (minimap screen space)
         let viewport_top_scaled = viewport_y_tex * total_rendered_height * scale;
@@ -247,6 +254,14 @@ impl MinimapView {
         // Visible range in scaled pixels
         let visible_top = current_scroll_px;
         let visible_bottom = current_scroll_px + avail_height;
+
+        // If viewport is larger than visible area, align to viewport top to avoid oscillation
+        if viewport_height_scaled >= avail_height {
+            let new_scroll_px = viewport_top_scaled;
+            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
+            *self.scroll_position.borrow_mut() = new_scroll;
+            return;
+        }
 
         // Check if viewport is above visible area
         if viewport_top_scaled < visible_top {
