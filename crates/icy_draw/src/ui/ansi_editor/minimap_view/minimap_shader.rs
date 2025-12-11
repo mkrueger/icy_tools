@@ -108,9 +108,24 @@ impl MinimapProgram {
         let screen_y = relative_y / bounds.height;
 
         // Convert to texture UV space by mapping through visible range
-        // Clamp to valid UV range (0-1)
-        let norm_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
+        // texture_uv is 0-1 over the rendered texture (which may be smaller than full buffer)
+        let texture_uv_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
+
+        // Convert from texture space to full buffer space
+        // render_ratio is how much of the full buffer we actually rendered
+        let render_ratio = tex_h as f32 / self.full_content_height;
+        let norm_y = (texture_uv_y * render_ratio).clamp(0.0, 1.0);
         let norm_x = (relative_x / bounds.width).clamp(0.0, 1.0);
+
+        println!("[SHADER] calculate_normalized_position:");
+        println!("  relative_pos: ({}, {})", relative_x, relative_y);
+        println!("  bounds: {}x{} at ({}, {})", bounds.width, bounds.height, bounds.x, bounds.y);
+        println!("  tex_size: {}x{}, full_content_height: {}", tex_w, tex_h, self.full_content_height);
+        println!("  scale: {}, scaled_h: {}", scale, scaled_h);
+        println!("  visible_uv_height: {}, scroll_uv_y: {}", visible_uv_height, scroll_uv_y);
+        println!("  screen_y: {}, texture_uv_y: {}", screen_y, texture_uv_y);
+        println!("  render_ratio: {}, norm_y (buffer space): {}", render_ratio, norm_y);
+        println!("  result: norm_x={}, norm_y={}", norm_x, norm_y);
 
         Some((norm_x, norm_y))
     }
@@ -203,6 +218,21 @@ pub struct MinimapPrimitive {
     pub full_content_height: f32,
 }
 
+impl MinimapPrimitive {
+    /// Compute a hash of the texture data pointers to detect changes
+    fn compute_data_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        for slice in &self.slices {
+            // Use the Arc pointer address as a unique identifier
+            let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
+            ptr.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+}
+
 /// Texture slice for GPU
 struct TextureSlice {
     #[allow(dead_code)]
@@ -223,6 +253,8 @@ struct InstanceResources {
     texture_size: (u32, u32),
     /// Number of slices for cache validation
     num_slices: usize,
+    /// Hash of texture data pointers to detect when data changed
+    texture_data_hash: u64,
 }
 
 /// The minimap shader renderer (GPU pipeline) with multi-texture support
@@ -466,40 +498,48 @@ impl shader::Primitive for MinimapPrimitive {
                     uniform_buffer,
                     texture_size: (tex_w, tex_h),
                     num_slices,
+                    texture_data_hash: 0, // Will be updated below
                 },
             );
         }
 
-        let Some(resources) = pipeline.instances.get(&id) else {
+        let Some(resources) = pipeline.instances.get_mut(&id) else {
             return;
         };
 
-        // Upload texture data for each slice
-        for (i, slice_data) in self.slices.iter().enumerate().take(resources.slices.len()) {
-            if !slice_data.rgba_data.is_empty() && i < resources.slices.len() {
-                let slice = &resources.slices[i];
-                let bytes_per_row = 4 * slice_data.width;
+        // Check if texture data has changed using pointer-based hash
+        let current_hash = self.compute_data_hash();
+        let needs_texture_upload = resources.texture_data_hash != current_hash;
 
-                queue.write_texture(
-                    iced::wgpu::TexelCopyTextureInfo {
-                        texture: &slice.texture,
-                        mip_level: 0,
-                        origin: iced::wgpu::Origin3d::ZERO,
-                        aspect: iced::wgpu::TextureAspect::All,
-                    },
-                    &slice_data.rgba_data,
-                    iced::wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(bytes_per_row),
-                        rows_per_image: Some(slice_data.height),
-                    },
-                    iced::wgpu::Extent3d {
-                        width: slice_data.width,
-                        height: slice_data.height,
-                        depth_or_array_layers: 1,
-                    },
-                );
+        // Upload texture data only if changed
+        if needs_texture_upload {
+            for (i, slice_data) in self.slices.iter().enumerate().take(resources.slices.len()) {
+                if !slice_data.rgba_data.is_empty() && i < resources.slices.len() {
+                    let slice = &resources.slices[i];
+                    let bytes_per_row = 4 * slice_data.width;
+
+                    queue.write_texture(
+                        iced::wgpu::TexelCopyTextureInfo {
+                            texture: &slice.texture,
+                            mip_level: 0,
+                            origin: iced::wgpu::Origin3d::ZERO,
+                            aspect: iced::wgpu::TextureAspect::All,
+                        },
+                        &slice_data.rgba_data,
+                        iced::wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(bytes_per_row),
+                            rows_per_image: Some(slice_data.height),
+                        },
+                        iced::wgpu::Extent3d {
+                            width: slice_data.width,
+                            height: slice_data.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
             }
+            resources.texture_data_hash = current_hash;
         }
 
         // Update uniforms
@@ -522,6 +562,19 @@ impl shader::Primitive for MinimapPrimitive {
         let visible_uv_min_y = scroll_uv_y;
         let visible_uv_max_y = scroll_uv_y + visible_uv_height;
 
+        // Convert viewport from full-buffer-space to texture-space
+        // viewport_info is in full buffer coordinates (0-1 over full_content_height)
+        // We need to convert to texture coordinates (0-1 over total_rendered_height)
+        //
+        // Example: full_content_height = 87232px, total_rendered_height = 80000px
+        // render_ratio = 80000/87232 = 0.917
+        // If viewport_info.y = 0.5 (50% of buffer = 43616px)
+        // In texture space: 43616px / 80000px = 0.545
+        // So: viewport_y_tex = viewport_info.y / render_ratio = 0.5 / 0.917 = 0.545
+        let render_ratio = tex_h as f32 / self.full_content_height.max(1.0);
+        let viewport_y_tex = self.viewport_info.y / render_ratio.max(0.001);
+        let viewport_h_tex = self.viewport_info.height / render_ratio.max(0.001);
+
         // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
         let mut packed_heights = [[0.0f32; 4]; 3];
         for (i, &h) in self.slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
@@ -529,7 +582,7 @@ impl shader::Primitive for MinimapPrimitive {
         }
 
         let uniforms = MinimapUniforms {
-            viewport_rect: [self.viewport_info.x, self.viewport_info.y, self.viewport_info.width, self.viewport_info.height],
+            viewport_rect: [self.viewport_info.x, viewport_y_tex, self.viewport_info.width, viewport_h_tex],
             // Modern cyan accent color - vibrant but not overwhelming
             viewport_color: [0.2, 0.8, 0.9, 0.9],
             visible_uv_range: [visible_uv_min_y, visible_uv_max_y, 0.0, 0.0],

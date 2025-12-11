@@ -340,6 +340,13 @@ impl AnsiEditor {
         let target_x = norm_x * content_width - visible_width / 2.0;
         let target_y = norm_y * content_height - visible_height / 2.0;
 
+        println!("=== SCROLL TO NORMALIZED DEBUG ===");
+        println!("Normalized input: ({}, {})", norm_x, norm_y);
+        println!("Content size: {}x{}", content_width, content_height);
+        println!("Visible size: {}x{}", visible_width, visible_height);
+        println!("Target position: ({}, {})", target_x, target_y);
+        println!("==================================");
+
         // Scroll to the target position (clamping is done internally)
         self.canvas.scroll_to(target_x, target_y);
     }

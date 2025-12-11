@@ -373,6 +373,7 @@ impl<'a> CRTShaderProgram<'a> {
                     };
 
                     let render_off = screen.render_region_to_rgba(viewport_region, &base_options_off);
+
                     (render_on, render_off)
                 };
 

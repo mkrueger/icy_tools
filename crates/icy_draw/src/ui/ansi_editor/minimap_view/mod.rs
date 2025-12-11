@@ -184,13 +184,15 @@ impl MinimapView {
     /// Ensure the viewport rectangle is visible in the minimap
     /// Adjusts scroll_position so the viewport is always on screen
     /// Uses interior mutability so it can be called from view()
+    ///
+    /// viewport_y and viewport_height are normalized (0-1) relative to full buffer
     pub fn ensure_viewport_visible(&self, viewport_y: f32, viewport_height: f32) {
         let cache = self.cache.borrow();
-        let render_height = cache.total_rendered_height;
+        let total_rendered_height = cache.total_rendered_height as f32;
         let (full_w, full_h) = cache.full_content_size;
         drop(cache);
 
-        if render_height == 0 || full_h == 0 || full_w == 0 {
+        if total_rendered_height == 0.0 || full_h == 0 || full_w == 0 {
             return;
         }
 
@@ -203,46 +205,61 @@ impl MinimapView {
             return;
         }
 
-        // Calculate scale (same as in view())
+        // Scale factor: minimap fills available width
         let scale = avail_width / full_w as f32;
 
-        // How much of the rendered content is visible on screen (in content pixels)
-        let visible_content_px = avail_height / scale;
+        // Scaled height of the entire rendered content
+        let scaled_content_height = total_rendered_height * scale;
 
-        // visible_uv_height = how much of rendered content is visible (0-1)
-        let visible_uv_height = (visible_content_px / render_height as f32).min(1.0);
-        let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
+        // If content fits in available space, no scrolling needed
+        if scaled_content_height <= avail_height {
+            *self.scroll_position.borrow_mut() = 0.0;
+            return;
+        }
 
+        // Convert viewport from full buffer space to texture space
+        // viewport_y is in full buffer coordinates (0-1 over full_content_height)
+        // We need texture coordinates (0-1 over total_rendered_height)
+        //
+        // Example: full_h = 87232px, total_rendered_height = 80000px
+        // render_ratio = 80000/87232 = 0.917
+        // If viewport_y = 0.5 (50% of buffer = 43616px)
+        // In texture space: 43616px / 80000px = 0.545
+        // So: viewport_y_tex = viewport_y / render_ratio
+        let render_ratio = total_rendered_height / full_h as f32;
+
+        // Convert to texture space (divide by render_ratio)
+        let viewport_y_tex = viewport_y / render_ratio.max(0.001);
+        let viewport_h_tex = viewport_height / render_ratio.max(0.001);
+
+        // Viewport position and size in scaled pixels (minimap screen space)
+        let viewport_top_scaled = viewport_y_tex * total_rendered_height * scale;
+        let viewport_height_scaled = viewport_h_tex * total_rendered_height * scale;
+        let viewport_bottom_scaled = viewport_top_scaled + viewport_height_scaled;
+
+        // Maximum scroll offset in pixels
+        let max_scroll_px = scaled_content_height - avail_height;
+
+        // Current scroll offset in pixels
         let current_scroll = *self.scroll_position.borrow();
+        let current_scroll_px = current_scroll * max_scroll_px;
 
-        // Current visible UV range (in terms of rendered content, not full content)
-        let visible_uv_start = current_scroll * max_scroll_uv;
-        let visible_uv_end = visible_uv_start + visible_uv_height;
-
-        // Convert viewport_y from full content space to rendered content space
-        let rendered_ratio = render_height as f32 / full_h as f32;
-        let viewport_y_rendered = viewport_y * rendered_ratio;
-        let viewport_height_rendered = viewport_height * rendered_ratio;
-        let viewport_end_rendered = viewport_y_rendered + viewport_height_rendered;
+        // Visible range in scaled pixels
+        let visible_top = current_scroll_px;
+        let visible_bottom = current_scroll_px + avail_height;
 
         // Check if viewport is above visible area
-        if viewport_y_rendered < visible_uv_start {
-            let new_scroll_uv = viewport_y_rendered;
-            let new_scroll = if max_scroll_uv > 0.0 {
-                (new_scroll_uv / max_scroll_uv).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
+        if viewport_top_scaled < visible_top {
+            // Scroll up to show viewport at top
+            let new_scroll_px = viewport_top_scaled;
+            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
             *self.scroll_position.borrow_mut() = new_scroll;
         }
         // Check if viewport is below visible area
-        else if viewport_end_rendered > visible_uv_end {
-            let new_scroll_uv = viewport_end_rendered - visible_uv_height;
-            let new_scroll = if max_scroll_uv > 0.0 {
-                (new_scroll_uv / max_scroll_uv).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
+        else if viewport_bottom_scaled > visible_bottom {
+            // Scroll down to show viewport at bottom
+            let new_scroll_px = viewport_bottom_scaled - avail_height;
+            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
             *self.scroll_position.borrow_mut() = new_scroll;
         }
     }
@@ -345,7 +362,6 @@ impl MinimapView {
                 cache.render_height = render_height;
                 cache.version = current_version;
             }
-
             (slices, heights, pixel_height, full_size)
         } else {
             let cache = self.cache.borrow();
@@ -393,42 +409,84 @@ impl MinimapView {
             }
         };
 
-        shader(shader_program).width(Length::Fill).height(Length::Fill).into()
+        let r = shader(shader_program).width(Length::Fill).height(Length::Fill).into();
+
+        r
     }
 
     /// Handle mouse press for click-to-navigate functionality
-    /// Returns the normalized position (0.0-1.0) if clicked within bounds
-    pub fn handle_click(&self, bounds: Size, position: iced::Point) -> Option<(f32, f32)> {
+    /// Returns the normalized position (0.0-1.0) in full buffer space
+    /// This position represents where the CENTER of the viewport should be
+    pub fn handle_click(&self, _bounds: Size, position: iced::Point) -> Option<(f32, f32)> {
         let cache = self.cache.borrow();
         let render_width = if let Some(first) = cache.slices.first() { first.width } else { return None };
-        let render_height = cache.total_rendered_height;
-        let (_full_w, full_h) = cache.full_content_size;
+        let total_rendered_height = cache.total_rendered_height as f32;
+        let (full_w, full_h) = cache.full_content_size;
         drop(cache);
 
-        if render_width == 0 || render_height == 0 || full_h == 0 {
+        if render_width == 0 || total_rendered_height == 0.0 || full_h == 0 || full_w == 0 {
             return None;
         }
 
-        // Fill-width scaling
-        let scale = bounds.width / render_width as f32;
-        let scaled_height = render_height as f32 * scale;
+        let shared = self.shared_state.lock();
+        let avail_width = shared.available_width;
+        let avail_height = shared.available_height;
+        drop(shared);
 
-        // Calculate scroll offset
-        let max_scroll_content = (full_h as f32 - render_height as f32).max(0.0);
-        let scroll_y_content = *self.scroll_position.borrow() * max_scroll_content;
+        if avail_width <= 0.0 || avail_height <= 0.0 {
+            return None;
+        }
 
-        // Check if click is within the rendered minimap area
+        // Scale factor (minimap fills available width)
+        let scale = avail_width / full_w as f32;
+        let scaled_content_height = total_rendered_height * scale;
+
+        // Calculate visible UV range (same logic as in shader prepare())
+        let visible_uv_height = (avail_height / scaled_content_height).min(1.0);
+        let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
+        let scroll_uv = *self.scroll_position.borrow() * max_scroll_uv;
+
+        // Check bounds
         let local_x = position.x;
         let local_y = position.y;
 
-        if local_x >= 0.0 && local_x <= bounds.width && local_y >= 0.0 && local_y <= scaled_height {
-            let norm_x = local_x / bounds.width;
-            // Map Y from rendered region to full content
-            let content_y = (local_y / scale) + scroll_y_content;
-            let norm_y = (content_y / full_h as f32).clamp(0.0, 1.0);
-            Some((norm_x, norm_y))
-        } else {
-            None
+        println!("=== MINIMAP CLICK DEBUG ===");
+        println!("Click position: ({}, {})", local_x, local_y);
+        println!("Avail size: {}x{}", avail_width, avail_height);
+        println!("Full buffer size: {}x{}", full_w, full_h);
+        println!("Total rendered height: {}", total_rendered_height);
+        println!("Scale: {}", scale);
+        println!("Scaled content height: {}", scaled_content_height);
+        println!("Visible UV height: {}", visible_uv_height);
+        println!("Max scroll UV: {}", max_scroll_uv);
+        println!("Current scroll UV: {}", scroll_uv);
+
+        if local_x < 0.0 || local_x > avail_width || local_y < 0.0 || local_y > avail_height {
+            println!("Click out of bounds!");
+            return None;
         }
+
+        // Convert screen position to texture UV
+        // screen_uv_y is 0-1 in the visible area
+        let screen_uv_y = local_y / avail_height;
+        // texture_uv_y is the absolute position in the rendered texture (0-1)
+        let texture_uv_y = scroll_uv + screen_uv_y * visible_uv_height;
+
+        // Convert texture UV to full buffer coordinates
+        // (in case we couldn't render the full buffer due to texture limits)
+        let render_ratio = total_rendered_height / full_h as f32;
+        let buffer_y = texture_uv_y / render_ratio;
+
+        let norm_x = local_x / avail_width;
+        let norm_y = buffer_y.clamp(0.0, 1.0);
+
+        println!("Screen UV Y: {}", screen_uv_y);
+        println!("Texture UV Y: {}", texture_uv_y);
+        println!("Render ratio: {}", render_ratio);
+        println!("Buffer Y (before clamp): {}", buffer_y);
+        println!("Result: norm_x={}, norm_y={}", norm_x, norm_y);
+        println!("===========================");
+
+        Some((norm_x, norm_y))
     }
 }
