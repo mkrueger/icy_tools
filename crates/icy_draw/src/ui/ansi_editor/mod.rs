@@ -115,6 +115,8 @@ pub enum AnsiEditorMessage {
     ToggleRaster,
     /// Toggle line numbers display
     ToggleLineNumbers,
+    /// Toggle layer borders display
+    ToggleLayerBorders,
 }
 
 /// Mouse events on the canvas
@@ -167,6 +169,8 @@ pub struct AnsiEditor {
     pub show_raster: bool,
     /// Whether line numbers are shown at the edges
     pub show_line_numbers: bool,
+    /// Whether layer borders are shown
+    pub show_layer_borders: bool,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -242,6 +246,7 @@ impl AnsiEditor {
             raster: None,
             show_raster: false,
             show_line_numbers: false,
+            show_layer_borders: false,
         }
     }
 
@@ -354,6 +359,7 @@ impl AnsiEditor {
             raster: self.raster.map(|(x, y)| (x as u32, y as u32)),
             raster_visible: self.show_raster,
             line_numbers_visible: self.show_line_numbers,
+            layer_borders_visible: self.show_layer_borders,
         }
     }
 
@@ -536,6 +542,7 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::SelectLayer(idx) => {
                 self.with_edit_state(|state| state.set_current_layer(idx));
+                self.update_layer_bounds();
                 Task::none()
             }
             AnsiEditorMessage::ToggleLayerVisibility(idx) => {
@@ -550,6 +557,7 @@ impl AnsiEditor {
                 let result = self.with_edit_state(|state| state.add_new_layer(current_layer));
                 if result.is_ok() {
                     self.is_modified = true;
+                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -560,6 +568,7 @@ impl AnsiEditor {
                     let result = self.with_edit_state(|state| state.remove_layer(idx));
                     if result.is_ok() {
                         self.is_modified = true;
+                        self.update_layer_bounds();
                     }
                 }
                 Task::none()
@@ -568,6 +577,7 @@ impl AnsiEditor {
                 let result = self.with_edit_state(|state| state.raise_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
+                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -575,6 +585,7 @@ impl AnsiEditor {
                 let result = self.with_edit_state(|state| state.lower_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
+                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -582,6 +593,7 @@ impl AnsiEditor {
                 let result = self.with_edit_state(|state| state.duplicate_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
+                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -589,6 +601,7 @@ impl AnsiEditor {
                 let result = self.with_edit_state(|state| state.merge_layer_down(idx));
                 if result.is_ok() {
                     self.is_modified = true;
+                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -666,6 +679,11 @@ impl AnsiEditor {
                 self.show_line_numbers = !self.show_line_numbers;
                 Task::none()
             }
+            AnsiEditorMessage::ToggleLayerBorders => {
+                self.show_layer_borders = !self.show_layer_borders;
+                self.update_layer_bounds();
+                Task::none()
+            }
         }
     }
 
@@ -712,7 +730,56 @@ impl AnsiEditor {
         }
     }
 
-    /// Set or update the reference image
+    /// Update the layer bounds display based on current layer selection
+    fn update_layer_bounds(&mut self) {
+        if !self.show_layer_borders {
+            self.canvas.set_layer_bounds(None, false);
+            return;
+        }
+
+        // Get current layer info from EditState
+        let layer_bounds = {
+            let mut screen = self.screen.lock();
+            
+            // Get font dimensions for pixel conversion
+            let font = screen.font(0);
+            let (font_width, font_height) = if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0) // Default fallback
+            };
+            
+            // Access the EditState to get buffer and current layer
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                let buffer = edit_state.get_buffer();
+                if let Ok(cur_layer) = edit_state.get_current_layer() {
+                    if let Some(layer) = buffer.layers.get(cur_layer) {
+                        let offset = layer.base_offset();
+                        let size = layer.size();
+                        let width = size.width;
+                        let height = size.height;
+                        
+                        // Convert to pixels
+                        let x = offset.x as f32 * font_width;
+                        let y = offset.y as f32 * font_height;
+                        let w = width as f32 * font_width;
+                        let h = height as f32 * font_height;
+                        
+                        Some((x, y, w, h))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        
+        self.canvas.set_layer_bounds(layer_bounds, true);
+    }    /// Set or update the reference image
     pub fn set_reference_image(&mut self, path: Option<PathBuf>, alpha: f32) {
         self.canvas.set_reference_image(path, alpha);
     }

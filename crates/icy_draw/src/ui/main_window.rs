@@ -1699,7 +1699,12 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::ToggleLayerBorders => Task::none(),
+            Message::ToggleLayerBorders => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ToggleLayerBorders).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
             Message::ToggleLineNumbers => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     return editor.update(AnsiEditorMessage::ToggleLineNumbers).map(Message::AnsiEditor);

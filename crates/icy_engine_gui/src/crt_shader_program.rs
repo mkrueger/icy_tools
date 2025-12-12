@@ -338,7 +338,12 @@ impl<'a> CRTShaderProgram<'a> {
             };
         drop(markers);
 
-        println!("CRTShaderProgram::internal_draw took {:?}", now.elapsed());
+        // Get layer bounds from markers
+        let markers = self.term.markers.read();
+        let layer_rect = markers.layer_bounds.map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let show_layer_bounds = markers.show_layer_bounds;
+        drop(markers);
+
         TerminalShader {
             slices_blink_off,
             slices_blink_on,
@@ -378,6 +383,10 @@ impl<'a> CRTShaderProgram<'a> {
             reference_image_mode,
             reference_image_offset,
             reference_image_scale,
+            // Layer bounds rendering
+            layer_rect,
+            layer_color: [1.0, 1.0, 0.0, 1.0], // Yellow border for layer bounds
+            show_layer_bounds,
         }
     }
 

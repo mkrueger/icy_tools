@@ -119,6 +119,18 @@ struct CRTUniforms {
     ref_image_size: [f32; 2],
     /// Padding for 16-byte alignment
     _ref_padding2: [f32; 2],
+
+    // Layer bounds uniforms (for showing current layer border)
+    /// Layer bounds rectangle in pixels (x, y, x+width, y+height) in document space
+    layer_rect: [f32; 4],
+    /// Layer bounds border color (RGBA)
+    layer_color: [f32; 4],
+    /// Layer bounds enabled (1.0 = enabled, 0.0 = disabled)
+    layer_enabled: f32,
+    /// Padding for 16-byte alignment (must match WGSL struct size)
+    _layer_padding: [f32; 3],
+    /// Additional padding to match WGSL struct alignment (WGSL has stricter alignment rules)
+    _struct_end_padding: [f32; 4],
 }
 
 /// The terminal shader program (high-level interface)
@@ -199,6 +211,14 @@ pub struct TerminalShader {
     pub reference_image_offset: [f32; 2],
     /// Reference image scale factor
     pub reference_image_scale: f32,
+
+    // Layer bounds rendering
+    /// Layer bounds rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
+    pub layer_rect: Option<[f32; 4]>,
+    /// Layer bounds border color (RGBA) - yellow for normal, white for preview
+    pub layer_color: [f32; 4],
+    /// Whether to show layer bounds
+    pub show_layer_bounds: bool,
 }
 
 /// Texture slice for GPU
@@ -915,6 +935,13 @@ impl shader::Primitive for TerminalShader {
             ref_image_scale: [self.reference_image_scale, self.reference_image_scale],
             ref_image_size: self.reference_image_data.as_ref().map_or([1.0, 1.0], |(_, w, h)| [*w as f32, *h as f32]),
             _ref_padding2: [0.0; 2],
+
+            // Layer bounds uniforms
+            layer_rect: self.layer_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
+            layer_color: self.layer_color,
+            layer_enabled: if self.layer_rect.is_some() { 1.0 } else { 0.0 },
+            _layer_padding: [0.0; 3],
+            _struct_end_padding: [0.0; 4],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

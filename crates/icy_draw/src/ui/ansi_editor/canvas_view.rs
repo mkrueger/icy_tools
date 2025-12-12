@@ -208,6 +208,15 @@ impl CanvasView {
         self.terminal.markers.read().guide
     }
 
+    /// Set layer bounds for the current layer (in pixels)
+    /// bounds: (x, y, width, height) in document pixels
+    /// show: whether to show the layer bounds
+    pub fn set_layer_bounds(&mut self, bounds: Option<(f32, f32, f32, f32)>, show: bool) {
+        let mut markers = self.terminal.markers.write();
+        markers.layer_bounds = bounds;
+        markers.show_layer_bounds = show;
+    }
+
     /// Set or update the reference image
     /// The image will be loaded and displayed as an overlay
     pub fn set_reference_image(&mut self, path: Option<std::path::PathBuf>, alpha: f32) {

@@ -559,6 +559,16 @@ pub struct EditorMarkers {
 
     /// Marker visual settings (colors, alphas) from app settings
     pub marker_settings: Option<MarkerSettings>,
+
+    /// Current layer bounds rectangle in pixels (x, y, width, height)
+    /// None = layer bounds not shown
+    pub layer_bounds: Option<(f32, f32, f32, f32)>,
+
+    /// Whether the current layer is selected/highlighted (uses bright color)
+    pub layer_is_selected: bool,
+
+    /// Whether to show layer bounds at all
+    pub show_layer_bounds: bool,
 }
 
 impl EditorMarkers {

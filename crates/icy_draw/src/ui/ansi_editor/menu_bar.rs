@@ -27,6 +27,8 @@ pub struct MarkerMenuState {
     pub raster_visible: bool,
     /// Is line numbers visible
     pub line_numbers_visible: bool,
+    /// Is layer borders visible
+    pub layer_borders_visible: bool,
 }
 
 /// Build the guides submenu with predefined guide sizes
@@ -245,7 +247,12 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 (separator()),
                 (menu_item_submenu(fl!("menu-guides")), guides_submenu),
                 (menu_item_submenu(fl!("menu-raster")), raster_submenu),
-                (menu_item_simple(fl!("menu-show_layer_borders"), "", Message::ToggleLayerBorders)),
+                (menu_item_checkbox(
+                    fl!("menu-show_layer_borders"),
+                    "",
+                    marker_state.layer_borders_visible,
+                    Message::ToggleLayerBorders
+                )),
                 (menu_item_checkbox(fl!("menu-show_line_numbers"), "", marker_state.line_numbers_visible, Message::ToggleLineNumbers)),
                 (separator()),
                 (menu_item_simple(fl!("menu-toggle_left_pane"), "F11", Message::ToggleLeftPanel)),

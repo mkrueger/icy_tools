@@ -80,6 +80,15 @@ struct Uniforms {
     ref_image_scale: vec2<f32>,  // Scale factor (x, y) - for Original mode
     ref_image_size: vec2<f32>,   // Reference image size in pixels (width, height)
     _ref_padding2: vec2<f32>,    // Padding for 16-byte alignment
+
+    // Layer bounds uniforms (for showing current layer border)
+    layer_rect: vec4<f32>,       // Layer bounds rectangle (x, y, x+width, y+height) in document pixels
+    layer_color: vec4<f32>,      // Layer bounds border color (RGBA)
+    layer_enabled: f32,          // 1.0 = enabled, 0.0 = disabled
+    _layer_padding1: f32,        // Padding
+    _layer_padding2: f32,        // Padding
+    _layer_padding3: f32,        // Padding (completes 16-byte alignment)
+    _struct_end_padding: vec4<f32>, // Additional padding to ensure struct sizes match
 }
 
 struct MonitorColor {
@@ -549,6 +558,54 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 let inverted = vec3<f32>(1.0) - color;
                 color = mix(color, inverted, uniforms.guide_alpha);
             }
+        }
+    }
+
+    // Draw layer bounds (dashed border around current layer)
+    // layer_rect contains (x, y, x+width, y+height) in document pixel coordinates
+    if (uniforms.layer_enabled > 0.5) {
+        let layer_left = uniforms.layer_rect.x;
+        let layer_top = uniforms.layer_rect.y;
+        let layer_right = uniforms.layer_rect.z;
+        let layer_bottom = uniforms.layer_rect.w;
+        
+        // Calculate absolute document position (including scroll offset)
+        let visible_w = uniforms.visible_width;
+        let visible_h = uniforms.visible_height;
+        let scroll_x = uniforms.scroll_offset_x;
+        let scroll_y = uniforms.scroll_offset_y;
+        
+        // Screen pixel position
+        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+        
+        // Document pixel position (absolute)
+        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+        
+        // Create dashed pattern (2 pixels on, 2 pixels off) - static, no animation
+        let dash_length = 2.0;
+        // Use both x and y position for diagonal dash pattern (no animation)
+        let dash_offset = doc_pixel.x + doc_pixel.y;
+        let dash_pattern = (dash_offset % (dash_length * 2.0)) < dash_length;
+        
+        // Line thickness
+        let line_thickness = 1.0;
+        
+        // Check if we're on the layer border
+        let in_y_range = doc_pixel.y >= layer_top && doc_pixel.y <= layer_bottom;
+        let in_x_range = doc_pixel.x >= layer_left && doc_pixel.x <= layer_right;
+        
+        // Left border
+        let on_left_border = abs(doc_pixel.x - layer_left) < line_thickness && in_y_range && dash_pattern;
+        // Right border
+        let on_right_border = abs(doc_pixel.x - layer_right) < line_thickness && in_y_range && dash_pattern;
+        // Top border
+        let on_top_border = abs(doc_pixel.y - layer_top) < line_thickness && in_x_range && dash_pattern;
+        // Bottom border
+        let on_bottom_border = abs(doc_pixel.y - layer_bottom) < line_thickness && in_x_range && dash_pattern;
+        
+        if (on_left_border || on_right_border || on_top_border || on_bottom_border) {
+            // Draw with the layer color
+            color = uniforms.layer_color.rgb;
         }
     }
 
