@@ -11,7 +11,7 @@ use iced::advanced::widget::{self, Widget};
 use iced::mouse::ScrollDelta;
 use iced::widget::{container, image as iced_image, stack};
 use iced::{Element, Event, Length, Rectangle, Size, Theme, mouse};
-use icy_engine_gui::{HorizontalScrollbarOverlay, ScalingMode, ScrollbarInfo, ScrollbarOverlay, ScrollbarState, Viewport, ZoomMessage};
+use icy_engine_gui::{HorizontalScrollbarOverlayCallback, ScalingMode, ScrollbarOverlayCallback, ScrollbarState, Viewport, ZoomMessage};
 use parking_lot::RwLock;
 
 /// Arrow key scroll step in pixels
@@ -64,6 +64,26 @@ pub enum ImageViewerMessage {
     Drag((f32, f32)),
     /// Mouse moved (for cursor updates)
     Move(Option<(f32, f32)>),
+}
+
+/// Local scrollbar info for ImageViewer (uses custom viewport, not Terminal)
+struct ImageScrollbarInfo {
+    needs_vscrollbar: bool,
+    needs_hscrollbar: bool,
+    visibility_v: f32,
+    visibility_h: f32,
+    scroll_position_v: f32,
+    scroll_position_h: f32,
+    height_ratio: f32,
+    width_ratio: f32,
+    max_scroll_y: f32,
+    max_scroll_x: f32,
+}
+
+impl ImageScrollbarInfo {
+    fn needs_any_scrollbar(&self) -> bool {
+        self.needs_vscrollbar || self.needs_hscrollbar
+    }
 }
 
 /// Image viewer state with zoom and scroll support
@@ -317,7 +337,7 @@ impl ImageViewer {
     }
 
     /// Get scrollbar info for rendering scrollbars
-    pub fn scrollbar_info(&self) -> ScrollbarInfo {
+    fn scrollbar_info(&self) -> ImageScrollbarInfo {
         let zoomed = self.zoomed_size();
         let vp_w = self.viewport.visible_width;
         let vp_h = self.viewport.visible_height;
@@ -334,7 +354,7 @@ impl ImageViewer {
         let scroll_position_v = if max_y > 0.0 { self.viewport.scroll_y / max_y } else { 0.0 };
         let scroll_position_h = if max_x > 0.0 { self.viewport.scroll_x / max_x } else { 0.0 };
 
-        ScrollbarInfo {
+        ImageScrollbarInfo {
             needs_vscrollbar,
             needs_hscrollbar,
             visibility_v: self.scrollbar.visibility,
@@ -432,7 +452,7 @@ impl ImageViewer {
             if scrollbar_info.needs_vscrollbar {
                 let on_msg = on_message.clone();
                 let on_msg2 = on_message.clone();
-                let vscrollbar = ScrollbarOverlay::new(
+                let vscrollbar = ScrollbarOverlayCallback::new(
                     scrollbar_info.visibility_v,
                     scrollbar_info.scroll_position_v,
                     scrollbar_info.height_ratio,
@@ -451,7 +471,7 @@ impl ImageViewer {
             if scrollbar_info.needs_hscrollbar {
                 let on_msg = on_message.clone();
                 let on_msg2 = on_message.clone();
-                let hscrollbar = HorizontalScrollbarOverlay::new(
+                let hscrollbar = HorizontalScrollbarOverlayCallback::new(
                     scrollbar_info.visibility_h,
                     scrollbar_info.scroll_position_h,
                     scrollbar_info.width_ratio,

@@ -26,10 +26,10 @@ pub mod scrollbar_state;
 pub use scrollbar_state::*;
 
 pub mod scrollbar_overlay;
-pub use scrollbar_overlay::*;
+pub use scrollbar_overlay::{ScrollbarOverlay, ScrollbarOverlayCallback, ScrollbarOverlayState, ViewportAccess};
 
 pub mod horizontal_scrollbar_overlay;
-pub use horizontal_scrollbar_overlay::*;
+pub use horizontal_scrollbar_overlay::{HorizontalScrollbarOverlay, HorizontalScrollbarOverlayCallback, HorizontalScrollbarOverlayState};
 
 pub mod scrollbar_info;
 pub use scrollbar_info::*;

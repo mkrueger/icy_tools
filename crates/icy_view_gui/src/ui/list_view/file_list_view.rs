@@ -13,7 +13,7 @@ use iced::{
     Element, Length, mouse,
     widget::{column, container, row, shader, stack, text},
 };
-use icy_engine_gui::{ScrollbarOverlay, ScrollbarState, Viewport, ui::FileIcon};
+use icy_engine_gui::{ScrollbarOverlayCallback, ScrollbarState, Viewport, ui::FileIcon};
 use parking_lot::Mutex;
 
 use crate::Item;
@@ -549,7 +549,7 @@ impl FileListView {
         let show_scrollbar = self.viewport.content_height > self.viewport.visible_height;
 
         if show_scrollbar {
-            let scrollbar_view = ScrollbarOverlay::new(
+            let scrollbar_view = ScrollbarOverlayCallback::new(
                 scrollbar_visibility,
                 scrollbar_position,
                 scrollbar_height_ratio,

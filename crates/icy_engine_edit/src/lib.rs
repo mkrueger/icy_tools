@@ -1,5 +1,6 @@
 mod editor;
 pub use editor::*;
+// FormatMode is re-exported from editor module
 
 pub mod bitfont;
 pub mod charset;

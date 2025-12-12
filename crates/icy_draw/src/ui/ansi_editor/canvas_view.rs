@@ -15,7 +15,7 @@ use icy_engine::Screen;
 
 use crate::fl;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
+use icy_engine_gui::{MonitorSettings, ScalingMode, ScrollbarOverlay, HorizontalScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::Mutex;
 
 /// Messages for the canvas view
@@ -31,14 +31,6 @@ pub enum CanvasMessage {
     ScrollViewportTo(f32, f32),
     /// Scroll viewport to absolute position with smooth animation (for Home/End)
     ScrollViewportToSmooth(f32, f32),
-    /// Scroll vertical only to absolute Y position immediately (scrollbar drag)
-    ScrollViewportYToImmediate(f32),
-    /// Scroll horizontal only to absolute X position immediately (scrollbar drag)
-    ScrollViewportXToImmediate(f32),
-    /// Scrollbar hover state changed (vertical)
-    ScrollbarHovered(bool),
-    /// Horizontal scrollbar hover state changed
-    HScrollbarHovered(bool),
     /// Unified zoom message
     Zoom(ZoomMessage),
     /// Terminal message from the view
@@ -269,24 +261,6 @@ impl CanvasView {
                 self.scroll_to_smooth(x, y);
                 Task::none()
             }
-            CanvasMessage::ScrollViewportYToImmediate(y) => {
-                self.terminal.scroll_y_to(y);
-                self.terminal.sync_scrollbar_with_viewport();
-                Task::none()
-            }
-            CanvasMessage::ScrollViewportXToImmediate(x) => {
-                self.terminal.scroll_x_to(x);
-                self.terminal.sync_scrollbar_with_viewport();
-                Task::none()
-            }
-            CanvasMessage::ScrollbarHovered(is_hovered) => {
-                self.terminal.scrollbar.set_hovered(is_hovered);
-                Task::none()
-            }
-            CanvasMessage::HScrollbarHovered(is_hovered) => {
-                self.terminal.scrollbar.set_hovered_x(is_hovered);
-                Task::none()
-            }
             CanvasMessage::Zoom(zoom_msg) => {
                 self.apply_zoom(zoom_msg);
                 Task::none()
@@ -404,39 +378,22 @@ impl CanvasView {
         if scrollbar_info.needs_any_scrollbar() {
             let mut layers: Vec<Element<'_, CanvasMessage>> = vec![terminal_view];
 
-            // Add vertical scrollbar if needed
+            // Add vertical scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_vscrollbar {
-                let vscrollbar_view = ScrollbarOverlay::new(
-                    scrollbar_info.visibility_v,
-                    scrollbar_info.scroll_position_v,
-                    scrollbar_info.height_ratio,
-                    scrollbar_info.max_scroll_y,
-                    self.terminal.scrollbar_hover_state.clone(),
-                    |_x, y| CanvasMessage::ScrollViewportYToImmediate(y),
-                    |is_hovered| CanvasMessage::ScrollbarHovered(is_hovered),
-                )
-                .view();
-
+                let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
+                // Map () to CanvasMessage - scrollbar mutates viewport directly via Arc<RwLock>
+                let vscrollbar_mapped: Element<'_, CanvasMessage> = vscrollbar_view.map(|_| unreachable!());
                 let vscrollbar_container: container::Container<'_, CanvasMessage> =
-                    container(vscrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+                    container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
                 layers.push(vscrollbar_container.into());
             }
 
-            // Add horizontal scrollbar if needed
+            // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_hscrollbar {
-                let hscrollbar_view = HorizontalScrollbarOverlay::new(
-                    scrollbar_info.visibility_h,
-                    scrollbar_info.scroll_position_h,
-                    scrollbar_info.width_ratio,
-                    scrollbar_info.max_scroll_x,
-                    self.terminal.hscrollbar_hover_state.clone(),
-                    |x, _y| CanvasMessage::ScrollViewportXToImmediate(x),
-                    |is_hovered| CanvasMessage::HScrollbarHovered(is_hovered),
-                )
-                .view();
-
+                let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
+                let hscrollbar_mapped: Element<'_, CanvasMessage> = hscrollbar_view.map(|_| unreachable!());
                 let hscrollbar_container: container::Container<'_, CanvasMessage> =
-                    container(hscrollbar_view).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
+                    container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
                 layers.push(hscrollbar_container.into());
             }
 
@@ -477,39 +434,21 @@ impl CanvasView {
         if scrollbar_info.needs_any_scrollbar() {
             let mut layers: Vec<Element<'_, CanvasMessage>> = vec![terminal_view];
 
-            // Add vertical scrollbar if needed
+            // Add vertical scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_vscrollbar {
-                let vscrollbar_view = ScrollbarOverlay::new(
-                    scrollbar_info.visibility_v,
-                    scrollbar_info.scroll_position_v,
-                    scrollbar_info.height_ratio,
-                    scrollbar_info.max_scroll_y,
-                    self.terminal.scrollbar_hover_state.clone(),
-                    |_x, y| CanvasMessage::ScrollViewportYToImmediate(y),
-                    |is_hovered| CanvasMessage::ScrollbarHovered(is_hovered),
-                )
-                .view();
-
+                let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
+                let vscrollbar_mapped: Element<'_, CanvasMessage> = vscrollbar_view.map(|_| unreachable!());
                 let vscrollbar_container: container::Container<'_, CanvasMessage> =
-                    container(vscrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+                    container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
                 layers.push(vscrollbar_container.into());
             }
 
-            // Add horizontal scrollbar if needed
+            // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_hscrollbar {
-                let hscrollbar_view = HorizontalScrollbarOverlay::new(
-                    scrollbar_info.visibility_h,
-                    scrollbar_info.scroll_position_h,
-                    scrollbar_info.width_ratio,
-                    scrollbar_info.max_scroll_x,
-                    self.terminal.hscrollbar_hover_state.clone(),
-                    |x, _y| CanvasMessage::ScrollViewportXToImmediate(x),
-                    |is_hovered| CanvasMessage::HScrollbarHovered(is_hovered),
-                )
-                .view();
-
+                let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
+                let hscrollbar_mapped: Element<'_, CanvasMessage> = hscrollbar_view.map(|_| unreachable!());
                 let hscrollbar_container: container::Container<'_, CanvasMessage> =
-                    container(hscrollbar_view).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
+                    container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
                 layers.push(hscrollbar_container.into());
             }
 

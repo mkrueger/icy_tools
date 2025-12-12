@@ -12,7 +12,7 @@ use iced::widget::{container, shader, stack, text};
 use iced::{Color, Element, Length, Point, Rectangle, Shadow};
 use tokio::sync::mpsc;
 
-use icy_engine_gui::{ScrollbarOverlay, Viewport};
+use icy_engine_gui::{ScrollbarOverlayCallback, Viewport};
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
@@ -1596,7 +1596,7 @@ impl TileGridView {
             let scroll_ratio = if max_scroll > 0.0 { (scroll_y / max_scroll).clamp(0.0, 1.0) } else { 0.0 };
             let height_ratio = (height / content_height).clamp(0.0, 1.0);
 
-            let scrollbar_overlay = ScrollbarOverlay::new(
+            let scrollbar_overlay = ScrollbarOverlayCallback::new(
                 scrollbar_visibility,
                 scroll_ratio,
                 height_ratio,

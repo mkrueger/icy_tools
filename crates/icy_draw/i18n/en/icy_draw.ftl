@@ -138,6 +138,21 @@ menu-open_font_manager=Edit Buffer Fonts…
 menu-open_font_directoy=Open Font Directory…
 menu-open_palettes_directoy=Open Palette Directory…
 
+# Font Selector Dialog
+font-selector-title-single=Select Font
+font-selector-title-dual=Select Fonts (2 Slots)
+font-selector-title-full=Font Manager
+font-selector-available=available
+font-selector-filter-placeholder=Filter fonts...
+font-selector-sauce=SAUCE
+font-selector-ansi=ANSI
+font-selector-library=Library
+font-selector-document=Document
+font-selector-no-fonts-installed=No fonts installed
+font-selector-no-fonts-match=No fonts match the filter
+font-selector-no-selection=No font selected
+font-selector-preview-sample=ABCDEFGHIJ abcdefghij 0123456789 !@#$%
+
 menu-help=Help
 menu-discuss=Discuss
 menu-open_log_file=Open log file

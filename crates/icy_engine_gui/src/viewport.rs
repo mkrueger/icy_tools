@@ -11,6 +11,15 @@ pub const DEFAULT_SCROLL_ANIMATION_SPEED: f32 = 15.0;
 /// Default animation tick interval in milliseconds (~60fps)
 pub const ANIMATION_TICK_MS: u64 = 16;
 
+/// Scrollbar layout constants (same as in scrollbar_overlay.rs)
+const SCROLLBAR_MIN_WIDTH: f32 = 3.0;
+const SCROLLBAR_MAX_WIDTH: f32 = 9.0;
+const SCROLLBAR_TOP_PADDING: f32 = 0.0;
+const SCROLLBAR_BOTTOM_PADDING: f32 = 0.0;
+const SCROLLBAR_LEFT_PADDING: f32 = 0.0;
+const SCROLLBAR_RIGHT_PADDING: f32 = 0.0;
+const SCROLLBAR_MIN_THUMB_SIZE: f32 = 30.0;
+
 /// Viewport for managing screen view transformations
 /// Handles scrolling, zooming, and coordinate transformations
 ///
@@ -213,6 +222,7 @@ impl Viewport {
         self.scroll_x += delta;
         self.target_scroll_x = self.scroll_x;
         self.clamp_scroll();
+        self.sync_scrollbar_position();
         self.changed.store(true, Ordering::Relaxed);
     }
 
@@ -221,6 +231,7 @@ impl Viewport {
         self.scroll_y += delta;
         self.target_scroll_y = self.scroll_y;
         self.clamp_scroll();
+        self.sync_scrollbar_position();
         self.changed.store(true, Ordering::Relaxed);
     }
 
@@ -243,6 +254,7 @@ impl Viewport {
         self.scroll_x = x;
         self.target_scroll_x = x;
         self.clamp_scroll();
+        self.sync_scrollbar_position();
         self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -251,6 +263,7 @@ impl Viewport {
         self.scroll_y = y;
         self.target_scroll_y = y;
         self.clamp_scroll();
+        self.sync_scrollbar_position();
         self.changed.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -268,12 +281,10 @@ impl Viewport {
         self.last_update = Some(Instant::now());
     }
 
-    /// Update smooth scrolling animation AND scrollbar animation
-    /// Returns true if the viewport changed and a redraw is needed
+    /// Update smooth scrolling animation
+    /// Note: Called automatically by ScrollbarOverlay (ViewportAccess version).
+    /// Only call manually when using ScrollbarOverlayCallback.
     pub fn update_animation(&mut self) {
-        // Update scrollbar animation
-        self.scrollbar.update_animation();
-
         // Early return if not animating scroll
         if !self.is_animating() {
             return;
@@ -329,11 +340,15 @@ impl Viewport {
     }
 
     /// Check if viewport is currently animating scroll position
+    /// Note: Called automatically by ScrollbarOverlay (ViewportAccess version).
+    /// Only call manually when using ScrollbarOverlayCallback.
     pub fn is_animating(&self) -> bool {
         (self.scroll_x - self.target_scroll_x).abs() > 0.5 || (self.scroll_y - self.target_scroll_y).abs() > 0.5
     }
 
     /// Check if any animation is needed (scroll or scrollbar)
+    /// Note: Called automatically by ScrollbarOverlay (ViewportAccess version).
+    /// Only call manually when using ScrollbarOverlayCallback.
     pub fn needs_animation(&self) -> bool {
         self.is_animating() || self.scrollbar.needs_animation()
     }
@@ -350,5 +365,185 @@ impl Viewport {
         self.content_width = width;
         self.content_height = height;
         self.clamp_scroll();
+    }
+
+    // =========================================================================
+    // Scrollbar event handling - self-contained like iced's built-in widgets
+    // =========================================================================
+
+    /// Get vertical scrollbar height ratio (visible / content)
+    pub fn height_ratio(&self) -> f32 {
+        let visible = self.visible_content_height();
+        visible / self.content_height.max(1.0)
+    }
+
+    /// Get horizontal scrollbar width ratio (visible / content)
+    pub fn width_ratio(&self) -> f32 {
+        let visible = self.visible_content_width();
+        visible / self.content_width.max(1.0)
+    }
+
+    /// Check if vertical scrollbar is needed
+    pub fn needs_vscrollbar(&self) -> bool {
+        self.height_ratio() < 1.0
+    }
+
+    /// Check if horizontal scrollbar is needed
+    pub fn needs_hscrollbar(&self) -> bool {
+        self.width_ratio() < 1.0
+    }
+
+    /// Calculate thumb position and size for vertical scrollbar
+    /// Returns (thumb_y, thumb_height) in bounds coordinates
+    fn calc_vthumb(&self, bounds_height: f32) -> (f32, f32) {
+        let available = bounds_height - SCROLLBAR_TOP_PADDING - SCROLLBAR_BOTTOM_PADDING;
+        let thumb_height = (available * self.height_ratio()).max(SCROLLBAR_MIN_THUMB_SIZE);
+        let max_thumb_offset = available - thumb_height;
+        let thumb_y = SCROLLBAR_TOP_PADDING + (max_thumb_offset * self.scrollbar.scroll_position);
+        (thumb_y, thumb_height)
+    }
+
+    /// Calculate thumb position and size for horizontal scrollbar
+    /// Returns (thumb_x, thumb_width) in bounds coordinates
+    fn calc_hthumb(&self, bounds_width: f32) -> (f32, f32) {
+        let available = bounds_width - SCROLLBAR_LEFT_PADDING - SCROLLBAR_RIGHT_PADDING;
+        let thumb_width = (available * self.width_ratio()).max(SCROLLBAR_MIN_THUMB_SIZE);
+        let max_thumb_offset = available - thumb_width;
+        let thumb_x = SCROLLBAR_LEFT_PADDING + (max_thumb_offset * self.scrollbar.scroll_position_x);
+        (thumb_x, thumb_width)
+    }
+
+    /// Calculate scroll ratio (0.0-1.0) from mouse Y position in vertical scrollbar
+    fn calc_vscroll_ratio_from_y(&self, mouse_y: f32, bounds_height: f32) -> f32 {
+        let available = bounds_height - SCROLLBAR_TOP_PADDING - SCROLLBAR_BOTTOM_PADDING;
+        let (_, thumb_height) = self.calc_vthumb(bounds_height);
+        let click_offset = mouse_y - SCROLLBAR_TOP_PADDING - (thumb_height / 2.0);
+        let max_thumb_offset = available - thumb_height;
+        if max_thumb_offset > 0.0 {
+            (click_offset / max_thumb_offset).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate scroll ratio (0.0-1.0) from mouse X position in horizontal scrollbar
+    fn calc_hscroll_ratio_from_x(&self, mouse_x: f32, bounds_width: f32) -> f32 {
+        let available = bounds_width - SCROLLBAR_LEFT_PADDING - SCROLLBAR_RIGHT_PADDING;
+        let (_, thumb_width) = self.calc_hthumb(bounds_width);
+        let click_offset = mouse_x - SCROLLBAR_LEFT_PADDING - (thumb_width / 2.0);
+        let max_thumb_offset = available - thumb_width;
+        if max_thumb_offset > 0.0 {
+            (click_offset / max_thumb_offset).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Handle vertical scrollbar mouse press
+    /// pos_y: mouse Y position relative to scrollbar bounds
+    /// bounds_height: height of the scrollbar widget
+    /// Returns true if event was consumed
+    pub fn handle_vscrollbar_press(&mut self, pos_y: f32, bounds_height: f32) -> bool {
+        self.scrollbar.set_dragging(true);
+        let ratio = self.calc_vscroll_ratio_from_y(pos_y, bounds_height);
+        let absolute_y = ratio * self.max_scroll_y();
+        self.scroll_y_to(absolute_y);
+        true
+    }
+
+    /// Handle horizontal scrollbar mouse press
+    /// pos_x: mouse X position relative to scrollbar bounds
+    /// bounds_width: width of the scrollbar widget
+    /// Returns true if event was consumed
+    pub fn handle_hscrollbar_press(&mut self, pos_x: f32, bounds_width: f32) -> bool {
+        self.scrollbar.set_dragging_x(true);
+        let ratio = self.calc_hscroll_ratio_from_x(pos_x, bounds_width);
+        let absolute_x = ratio * self.max_scroll_x();
+        self.scroll_x_to(absolute_x);
+        true
+    }
+
+    /// Handle vertical scrollbar mouse release
+    /// Returns true if was dragging
+    pub fn handle_vscrollbar_release(&mut self) -> bool {
+        if self.scrollbar.is_dragging {
+            self.scrollbar.set_dragging(false);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle horizontal scrollbar mouse release
+    /// Returns true if was dragging
+    pub fn handle_hscrollbar_release(&mut self) -> bool {
+        if self.scrollbar.is_dragging_x {
+            self.scrollbar.set_dragging_x(false);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle vertical scrollbar mouse move (while dragging)
+    /// pos_y: mouse Y position (can be outside bounds during drag)
+    /// bounds_height: height of the scrollbar widget
+    /// Returns true if dragging and scroll position changed
+    pub fn handle_vscrollbar_drag(&mut self, pos_y: f32, bounds_height: f32) -> bool {
+        if self.scrollbar.is_dragging {
+            let ratio = self.calc_vscroll_ratio_from_y(pos_y, bounds_height);
+            let absolute_y = ratio * self.max_scroll_y();
+            self.scroll_y_to(absolute_y);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle horizontal scrollbar mouse move (while dragging)
+    /// pos_x: mouse X position (can be outside bounds during drag)
+    /// bounds_width: width of the scrollbar widget
+    /// Returns true if dragging and scroll position changed
+    pub fn handle_hscrollbar_drag(&mut self, pos_x: f32, bounds_width: f32) -> bool {
+        if self.scrollbar.is_dragging_x {
+            let ratio = self.calc_hscroll_ratio_from_x(pos_x, bounds_width);
+            let absolute_x = ratio * self.max_scroll_x();
+            self.scroll_x_to(absolute_x);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle vertical scrollbar hover state change
+    /// Returns true if hover state changed
+    pub fn handle_vscrollbar_hover(&mut self, is_hovered: bool) -> bool {
+        if self.scrollbar.is_hovered != is_hovered {
+            self.scrollbar.set_hovered(is_hovered);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Handle horizontal scrollbar hover state change
+    /// Returns true if hover state changed
+    pub fn handle_hscrollbar_hover(&mut self, is_hovered: bool) -> bool {
+        if self.scrollbar.is_hovered_x != is_hovered {
+            self.scrollbar.set_hovered_x(is_hovered);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get scrollbar layout constants for rendering
+    pub fn scrollbar_width(&self) -> f32 {
+        SCROLLBAR_MIN_WIDTH + (SCROLLBAR_MAX_WIDTH - SCROLLBAR_MIN_WIDTH) * self.scrollbar.visibility
+    }
+
+    /// Get horizontal scrollbar layout constants for rendering
+    pub fn hscrollbar_height(&self) -> f32 {
+        SCROLLBAR_MIN_WIDTH + (SCROLLBAR_MAX_WIDTH - SCROLLBAR_MIN_WIDTH) * self.scrollbar.visibility_x
     }
 }

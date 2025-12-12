@@ -135,21 +135,13 @@ impl TerminalWindow {
                         );
                     }
 
-                    // Add vertical scrollbar if needed
+                    // Add vertical scrollbar if needed - uses viewport directly, no messages needed
                     if show_vscrollbar {
-                        let vscrollbar_view = ScrollbarOverlay::new(
-                            scrollbar_info.visibility_v,
-                            scrollbar_info.scroll_position_v,
-                            scrollbar_info.height_ratio,
-                            scrollbar_info.max_scroll_y,
-                            self.terminal.scrollbar_hover_state.clone(),
-                            |_x, y| Message::ScrollViewportYToImmediate(y),
-                            |is_hovered| Message::ScrollbarHovered(is_hovered),
-                        )
-                        .view();
+                        let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
+                        let vscrollbar_mapped: Element<'_, Message> = vscrollbar_view.map(|_| unreachable!());
 
                         layers.push(
-                            container(vscrollbar_view)
+                            container(vscrollbar_mapped)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
                                 .align_x(iced::alignment::Horizontal::Right)
@@ -158,21 +150,13 @@ impl TerminalWindow {
                         );
                     }
 
-                    // Add horizontal scrollbar if needed
+                    // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
                     if show_hscrollbar {
-                        let hscrollbar_view = HorizontalScrollbarOverlay::new(
-                            scrollbar_info.visibility_h,
-                            scrollbar_info.scroll_position_h,
-                            scrollbar_info.width_ratio,
-                            scrollbar_info.max_scroll_x,
-                            self.terminal.hscrollbar_hover_state.clone(),
-                            |x, _y| Message::ScrollViewportXToImmediate(x),
-                            |is_hovered| Message::HScrollbarHovered(is_hovered),
-                        )
-                        .view();
+                        let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
+                        let hscrollbar_mapped: Element<'_, Message> = hscrollbar_view.map(|_| unreachable!());
 
                         layers.push(
-                            container(hscrollbar_view)
+                            container(hscrollbar_mapped)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
                                 .align_y(iced::alignment::Vertical::Bottom)

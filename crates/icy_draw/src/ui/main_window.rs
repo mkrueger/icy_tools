@@ -255,6 +255,8 @@ pub enum Message {
     // ═══════════════════════════════════════════════════════════════════════════
     SwitchFontMode(icy_engine::FontMode),
     OpenFontSelector,
+    FontSelector(super::ansi_editor::FontSelectorMessage),
+    ApplyFontSelection(super::ansi_editor::FontSelectorResult),
     AddFonts,
     OpenFontManager,
     OpenFontDirectory,
@@ -360,12 +362,14 @@ pub struct StatusBarInfo {
     pub left: String,
     pub center: String,
     pub right: String,
+    /// Optional clickable font name (for ANSI editor)
+    pub font_name: Option<String>,
 }
 
 impl From<AnsiStatusInfo> for StatusBarInfo {
     fn from(info: AnsiStatusInfo) -> Self {
         Self {
-            left: format!("{}  {}×{}", info.font_name, info.buffer_size.0, info.buffer_size.1,),
+            left: format!("{}×{}", info.buffer_size.0, info.buffer_size.1,),
             center: format!("Layer {}/{}", info.current_layer + 1, info.total_layers,),
             right: format!(
                 "{}  {}  ({}, {})",
@@ -374,6 +378,7 @@ impl From<AnsiStatusInfo> for StatusBarInfo {
                 info.cursor_position.0,
                 info.cursor_position.1,
             ),
+            font_name: Some(info.font_name),
         }
     }
 }
@@ -1371,7 +1376,11 @@ impl MainWindow {
                     Task::none()
                 }
             }
-            Message::AnimationTick => match &mut self.mode_state {
+            Message::AnimationTick => {
+                // Update dialog animations first
+                self.dialogs.update_animation();
+
+                match &mut self.mode_state {
                 ModeState::Ansi(editor) => {
                     let delta = 0.016;
 
@@ -1403,7 +1412,7 @@ impl MainWindow {
                         .map(Message::CharFontEditor)
                 }
                 ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
-            },
+            }}
 
             // ═══════════════════════════════════════════════════════════════════
             // Font Import Dialog
@@ -1532,25 +1541,8 @@ impl MainWindow {
 
                         let buffer = state.get_buffer_mut();
 
-                        // Apply format mode
-                        match result.format_mode {
-                            super::ansi_editor::FormatMode::LegacyDos => {
-                                buffer.palette_mode = icy_engine::PaletteMode::Fixed16;
-                                buffer.font_mode = icy_engine::FontMode::Sauce;
-                            }
-                            super::ansi_editor::FormatMode::XBin => {
-                                buffer.palette_mode = icy_engine::PaletteMode::Free16;
-                                buffer.font_mode = icy_engine::FontMode::Sauce;
-                            }
-                            super::ansi_editor::FormatMode::XBinExtended => {
-                                buffer.palette_mode = icy_engine::PaletteMode::Free8;
-                                buffer.font_mode = icy_engine::FontMode::FixedSize;
-                            }
-                            super::ansi_editor::FormatMode::Unrestricted => {
-                                buffer.palette_mode = icy_engine::PaletteMode::RGB;
-                                buffer.font_mode = icy_engine::FontMode::Unlimited;
-                            }
-                        }
+                        // Apply format mode (sets palette_mode and font_mode)
+                        result.format_mode.apply_to_buffer(buffer);
 
                         // Apply ice mode
                         buffer.ice_mode = if result.ice_colors {
@@ -1646,10 +1638,40 @@ impl MainWindow {
             Message::SwitchToDefaultColor => Task::none(),
 
             // ═══════════════════════════════════════════════════════════════════
-            // Font operations (TODO: implement)
+            // Font operations
             // ═══════════════════════════════════════════════════════════════════
             Message::SwitchFontMode(_mode) => Task::none(),
-            Message::OpenFontSelector => Task::none(),
+            Message::OpenFontSelector => {
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        self.dialogs.push(super::ansi_editor::FontSelectorDialog::new(state));
+                    }
+                }
+                Task::none()
+            }
+            // FontSelector messages are routed through DialogStack::update above
+            Message::FontSelector(_) => Task::none(),
+            Message::ApplyFontSelection(result) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        match result {
+                            super::ansi_editor::FontSelectorResult::SingleFont(font) => {
+                                // For single font mode, set the font in slot 0
+                                let buffer = state.get_buffer_mut();
+                                buffer.set_font(0, font);
+                            }
+                            super::ansi_editor::FontSelectorResult::FontForSlot { slot, font } => {
+                                // Set font in the specified slot
+                                let buffer = state.get_buffer_mut();
+                                buffer.set_font(slot, font);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
             Message::AddFonts => Task::none(),
             Message::OpenFontManager => Task::none(),
             Message::OpenFontDirectory => Task::none(),
@@ -1768,6 +1790,11 @@ impl MainWindow {
 
     /// Check if this window needs animation updates
     pub fn needs_animation(&self) -> bool {
+        // Check dialogs first
+        if self.dialogs.needs_animation() {
+            return true;
+        }
+        // Then check editor modes
         match &self.mode_state {
             ModeState::Ansi(editor) => editor.needs_animation(),
             ModeState::BitFont(editor) => editor.needs_animation(),
@@ -1858,14 +1885,40 @@ impl MainWindow {
         // Default status bar for other modes
         let info = self.get_status_info();
 
+        // Build right section - with clickable font name if available
+        let right_section: Element<'_, Message> = if let Some(font_name) = &info.font_name {
+            let font_display = mouse_area(
+                container(text(format!("🔤 {}", font_name)).size(12))
+                    .style(|theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        container::Style {
+                            background: Some(iced::Background::Color(palette.background.weak.color)),
+                            border: iced::Border { radius: 3.0.into(), ..Default::default() },
+                            ..Default::default()
+                        }
+                    })
+                    .padding([2, 6])
+            )
+            .on_press(Message::OpenFontSelector);
+            
+            row![
+                text(format!("{}  ", info.right)).size(12),
+                font_display,
+            ]
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            text(info.right).size(12).into()
+        };
+
         container(
             row![
                 // Left section
                 container(text(info.left).size(12)).width(Length::FillPortion(1)),
                 // Center section
                 container(text(info.center).size(12)).width(Length::FillPortion(1)).center_x(Length::Fill),
-                // Right section
-                container(text(info.right).size(12)).width(Length::FillPortion(1)),
+                // Right section - with clickable font name
+                container(right_section).width(Length::FillPortion(1)).align_x(Alignment::End),
             ]
             .align_y(Alignment::Center)
             .padding([2, 8]),
@@ -1879,11 +1932,11 @@ impl MainWindow {
             ModeState::Ansi(editor) => editor.status_info().into(),
             ModeState::BitFont(editor) => {
                 let (left, center, right) = editor.status_info();
-                StatusBarInfo { left, center, right }
+                StatusBarInfo { left, center, right, font_name: None }
             }
             ModeState::CharFont(editor) => {
                 let (left, center, right) = editor.status_info();
-                StatusBarInfo { left, center, right }
+                StatusBarInfo { left, center, right, font_name: None }
             }
             ModeState::Animation(editor) => {
                 let (line, col) = editor.cursor_position();
@@ -1891,6 +1944,7 @@ impl MainWindow {
                     left: format!("Ln {}, Col {}", line + 1, col + 1),
                     center: String::new(),
                     right: if editor.is_dirty() { "Modified".into() } else { String::new() },
+                    font_name: None,
                 }
             }
         }

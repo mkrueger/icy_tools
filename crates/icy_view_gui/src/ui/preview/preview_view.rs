@@ -1018,39 +1018,21 @@ impl PreviewView {
                 if scrollbar_info.needs_any_scrollbar() {
                     let mut layers: Vec<Element<'_, PreviewMessage>> = vec![terminal_view];
 
-                    // Add vertical scrollbar if needed
+                    // Add vertical scrollbar if needed - uses ViewportAccess to mutate viewport directly
                     if scrollbar_info.needs_vscrollbar {
-                        let vscrollbar_view = ScrollbarOverlay::new(
-                            scrollbar_info.visibility_v,
-                            scrollbar_info.scroll_position_v,
-                            scrollbar_info.height_ratio,
-                            scrollbar_info.max_scroll_y,
-                            self.terminal.scrollbar_hover_state.clone(),
-                            |_x, y| PreviewMessage::ScrollViewportYToImmediate(y),
-                            |is_hovered| PreviewMessage::ScrollbarHovered(is_hovered),
-                        )
-                        .view();
-
+                        let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
+                        let vscrollbar_mapped: Element<'_, PreviewMessage> = vscrollbar_view.map(|_| unreachable!());
                         let vscrollbar_container: container::Container<'_, PreviewMessage> =
-                            container(vscrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+                            container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
                         layers.push(vscrollbar_container.into());
                     }
 
-                    // Add horizontal scrollbar if needed
+                    // Add horizontal scrollbar if needed - uses ViewportAccess to mutate viewport directly
                     if scrollbar_info.needs_hscrollbar {
-                        let hscrollbar_view = HorizontalScrollbarOverlay::new(
-                            scrollbar_info.visibility_h,
-                            scrollbar_info.scroll_position_h,
-                            scrollbar_info.width_ratio,
-                            scrollbar_info.max_scroll_x,
-                            self.terminal.hscrollbar_hover_state.clone(),
-                            |x, _y| PreviewMessage::ScrollViewportXToImmediate(x),
-                            |is_hovered| PreviewMessage::HScrollbarHovered(is_hovered),
-                        )
-                        .view();
-
+                        let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
+                        let hscrollbar_mapped: Element<'_, PreviewMessage> = hscrollbar_view.map(|_| unreachable!());
                         let hscrollbar_container: container::Container<'_, PreviewMessage> =
-                            container(hscrollbar_view).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
+                            container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
                         layers.push(hscrollbar_container.into());
                     }
 

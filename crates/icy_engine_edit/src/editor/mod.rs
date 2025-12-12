@@ -17,6 +17,118 @@ mod font_operations;
 mod selection_operations;
 mod tag_operations;
 
+// ============================================================================
+// Format Mode
+// ============================================================================
+
+/// Document format mode - determines available features
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FormatMode {
+    /// Legacy DOS: 16 fixed colors, single font, no palette editing
+    LegacyDos,
+    /// XBin: 16 colors from selectable palette, single font
+    XBin,
+    /// XBin Extended: 8 colors, custom palette (first 8), dual fonts
+    XBinExtended,
+    /// Unrestricted: Full RGB, unlimited fonts
+    #[default]
+    Unrestricted,
+}
+
+impl FormatMode {
+    /// All available format modes
+    pub const ALL: [FormatMode; 4] = [FormatMode::LegacyDos, FormatMode::XBin, FormatMode::XBinExtended, FormatMode::Unrestricted];
+
+    /// Get the description for this format mode
+    pub fn description(&self) -> &'static str {
+        match self {
+            FormatMode::LegacyDos => "16 fixed colors, single font, no palette editing",
+            FormatMode::XBin => "16 colors from selectable palette, single font",
+            FormatMode::XBinExtended => "8 colors, dual fonts, custom palette",
+            FormatMode::Unrestricted => "Full RGB colors, unlimited fonts",
+        }
+    }
+
+    /// Check if palette editing is allowed
+    pub fn allows_palette_editing(&self) -> bool {
+        matches!(self, FormatMode::XBin | FormatMode::XBinExtended | FormatMode::Unrestricted)
+    }
+
+    /// Check if font selection is allowed
+    pub fn allows_font_selection(&self) -> bool {
+        matches!(self, FormatMode::XBinExtended | FormatMode::Unrestricted)
+    }
+
+    /// Get maximum number of fonts
+    pub fn max_fonts(&self) -> usize {
+        match self {
+            FormatMode::LegacyDos | FormatMode::XBin => 1,
+            FormatMode::XBinExtended => 2,
+            FormatMode::Unrestricted => usize::MAX,
+        }
+    }
+
+    /// Get number of available colors
+    pub fn color_count(&self) -> usize {
+        match self {
+            FormatMode::LegacyDos | FormatMode::XBin => 16,
+            FormatMode::XBinExtended => 8,
+            FormatMode::Unrestricted => 16777216, // 24-bit RGB
+        }
+    }
+
+    /// Derive FormatMode from buffer's palette_mode and font_mode.
+    /// Default is Unrestricted, falls back to LegacyDos if no match.
+    pub fn from_buffer(buffer: &TextBuffer) -> Self {
+        use crate::{FontMode, PaletteMode};
+
+        match (buffer.palette_mode, buffer.font_mode) {
+            (PaletteMode::Fixed16, FontMode::Sauce | FontMode::Single) => FormatMode::LegacyDos,
+            (PaletteMode::Free16, FontMode::Sauce | FontMode::Single) => FormatMode::XBin,
+            (PaletteMode::Free8, FontMode::FixedSize) => FormatMode::XBinExtended,
+            (PaletteMode::RGB, FontMode::Unlimited) => FormatMode::Unrestricted,
+            // Default to Unrestricted, but fall back to LegacyDos for unmatched combinations
+            (PaletteMode::RGB, _) | (_, FontMode::Unlimited) => FormatMode::Unrestricted,
+            _ => FormatMode::LegacyDos,
+        }
+    }
+
+    /// Apply this format mode to a buffer (sets palette_mode and font_mode)
+    pub fn apply_to_buffer(&self, buffer: &mut TextBuffer) {
+        use crate::{FontMode, PaletteMode};
+
+        match self {
+            FormatMode::LegacyDos => {
+                buffer.palette_mode = PaletteMode::Fixed16;
+                buffer.font_mode = FontMode::Sauce;
+            }
+            FormatMode::XBin => {
+                buffer.palette_mode = PaletteMode::Free16;
+                buffer.font_mode = FontMode::Sauce;
+            }
+            FormatMode::XBinExtended => {
+                buffer.palette_mode = PaletteMode::Free8;
+                buffer.font_mode = FontMode::FixedSize;
+            }
+            FormatMode::Unrestricted => {
+                buffer.palette_mode = PaletteMode::RGB;
+                buffer.font_mode = FontMode::Unlimited;
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for FormatMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FormatMode::LegacyDos => write!(f, "Legacy DOS"),
+            FormatMode::XBin => write!(f, "XBin"),
+            FormatMode::XBinExtended => write!(f, "XBin Extended"),
+            FormatMode::Unrestricted => write!(f, "Unrestricted"),
+        }
+    }
+}
+
 use crate::{
     AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
     SauceMetaData, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, clipboard,
@@ -146,6 +258,16 @@ impl EditState {
 
     pub fn get_buffer_mut(&mut self) -> &mut TextBuffer {
         &mut self.screen.buffer
+    }
+
+    /// Get the current format mode, derived from buffer's palette_mode and font_mode
+    pub fn get_format_mode(&self) -> FormatMode {
+        FormatMode::from_buffer(&self.screen.buffer)
+    }
+
+    /// Set the format mode (applies palette_mode and font_mode to the buffer)
+    pub fn set_format_mode(&mut self, mode: FormatMode) {
+        mode.apply_to_buffer(&mut self.screen.buffer);
     }
 
     pub fn is_buffer_dirty(&self) -> bool {

@@ -226,6 +226,24 @@ pub trait Dialog<M> {
     fn style(&self) -> DialogStyle {
         DialogStyle::Modal
     }
+
+    /// Whether this dialog needs animation ticks.
+    ///
+    /// If this returns true, `update_animation()` will be called each frame.
+    /// Use this for scrollbar animations, smooth scrolling, transitions, etc.
+    ///
+    /// Default: false (no animation needed)
+    fn needs_animation(&self) -> bool {
+        false
+    }
+
+    /// Update animation state.
+    ///
+    /// Called each frame when `needs_animation()` returns true.
+    /// Use this to update viewport animations, scrollbar fade, etc.
+    ///
+    /// Default: Do nothing
+    fn update_animation(&mut self) {}
 }
 
 /// A stack of modal dialogs.
@@ -393,6 +411,24 @@ impl<M: Send + 'static> DialogStack<M> {
             }
             DialogAction::SendMessage(msg) => Task::done(msg),
             DialogAction::RunTask(task) => task,
+        }
+    }
+
+    /// Check if any dialog needs animation updates.
+    ///
+    /// Use this to determine if animation tick subscription is needed.
+    pub fn needs_animation(&self) -> bool {
+        self.dialogs.iter().any(|d| d.needs_animation())
+    }
+
+    /// Update animations for all dialogs that need it.
+    ///
+    /// Call this on each animation tick.
+    pub fn update_animation(&mut self) {
+        for dialog in &mut self.dialogs {
+            if dialog.needs_animation() {
+                dialog.update_animation();
+            }
         }
     }
 }

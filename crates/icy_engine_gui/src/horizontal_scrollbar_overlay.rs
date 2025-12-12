@@ -1,40 +1,210 @@
+//! macOS-style horizontal overlay scrollbar widget that integrates directly with Viewport
+//!
+//! This scrollbar mutates the Viewport directly instead of publishing messages,
+//! similar to how iced's built-in widgets (like text_input) work internally.
+//!
+//! Supports both `RefCell<Viewport>` (for dialogs) and `Arc<RwLock<Viewport>>` (for Terminal).
+//! Also provides a callback-based variant for legacy code.
+//!
+//! Animation is self-driven: the widget listens for RedrawRequested events and
+//! schedules the next redraw automatically when animating.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse,
+    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse, window,
     widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Stroke},
 };
 
-/// State for the horizontal scrollbar overlay canvas widget
-#[derive(Debug, Default)]
-pub struct HorizontalScrollbarOverlayState {
-    /// Whether the user is currently dragging the scrollbar
-    pub is_dragging: bool,
-}
-
-pub struct HorizontalScrollbarOverlay<Message> {
-    visibility: f32,
-    scroll_position: f32,
-    width_ratio: f32,
-    max_scroll_x: f32,                           // Maximum scroll value in pixels
-    on_scroll: Box<dyn Fn(f32, f32) -> Message>, // Callback for scroll (x, y)
-    on_hover: Box<dyn Fn(bool) -> Message>,      // Callback for hover state changes
-    last_hover_state: Arc<AtomicBool>,           // Shared atomic state to track hover
-}
+use crate::scrollbar_overlay::ViewportAccess;
 
 const MIN_HEIGHT: f32 = 3.0;
 const MAX_HEIGHT: f32 = 9.0;
 const MIN_ALPHA: f32 = 0.42;
 const MAX_ALPHA: f32 = 0.87;
-// Offset from bottom edge when fully expanded
 const BOTTOM_OFFSET: f32 = 0.0;
-// Left/right padding
 const LEFT_PADDING: f32 = 0.0;
-// Right padding to leave room for vertical scrollbar
 const RIGHT_PADDING: f32 = 0.0;
 
-impl<Message> HorizontalScrollbarOverlay<Message>
+/// Animation frame interval (~60fps)
+const ANIMATION_FRAME_MS: u64 = 16;
+
+/// State for the horizontal scrollbar overlay canvas widget
+#[derive(Debug, Default)]
+pub struct HorizontalScrollbarOverlayState {
+    /// Whether the user is currently dragging the scrollbar (for callback mode)
+    pub is_dragging: bool,
+}
+
+// ============================================================================
+// ViewportAccess-based scrollbar (new API)
+// ============================================================================
+
+/// Horizontal scrollbar overlay that mutates Viewport directly
+pub struct HorizontalScrollbarOverlay<'a, V: ViewportAccess> {
+    viewport: &'a V,
+}
+
+impl<'a, V: ViewportAccess> HorizontalScrollbarOverlay<'a, V> {
+    pub fn new(viewport: &'a V) -> Self {
+        Self { viewport }
+    }
+
+    pub fn view(self) -> Element<'a, ()>
+    where
+        V: 'a,
+    {
+        Canvas::new(self)
+            .width(Length::Fill)
+            .height(Length::Fixed(12.0))
+            .into()
+    }
+
+    fn draw_scrollbar(&self, frame: &mut Frame, size: Size) {
+        let (visibility, scroll_position, width_ratio) = self.viewport.with_viewport(|vp| {
+            (vp.scrollbar.visibility_x, vp.scrollbar.scroll_position_x, vp.width_ratio())
+        });
+
+        draw_horizontal_scrollbar(frame, size, visibility, scroll_position, width_ratio);
+    }
+}
+
+impl<'a, V: ViewportAccess> canvas::Program<()> for HorizontalScrollbarOverlay<'a, V> {
+    type State = HorizontalScrollbarOverlayState;
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<Geometry> {
+        let cache = Cache::new();
+        let geometry = cache.draw(renderer, bounds.size(), |frame| {
+            self.draw_scrollbar(frame, bounds.size());
+        });
+
+        vec![geometry]
+    }
+
+    fn update(
+        &self,
+        _state: &mut Self::State,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<iced::widget::canvas::Action<()>> {
+        let is_hovered = cursor.is_over(bounds);
+
+        match event {
+            // Handle animation: on each redraw, update scrollbar AND scroll animations
+            // This makes the scrollbar self-driving - no manual animation calls needed
+            iced::Event::Window(window::Event::RedrawRequested(now)) => {
+                let needs_more = self.viewport.with_viewport_mut(|vp| {
+                    // Update scrollbar visibility animation
+                    vp.scrollbar.update_animation();
+                    // Update smooth scroll animation (PageUp/PageDown, Home/End, etc.)
+                    vp.update_animation();
+                    // Continue animation if either needs more frames
+                    vp.scrollbar.needs_animation() || vp.is_animating()
+                });
+                
+                if needs_more {
+                    let next_frame = *now + Duration::from_millis(ANIMATION_FRAME_MS);
+                    return Some(iced::widget::canvas::Action::request_redraw_at(next_frame));
+                }
+            }
+            iced::Event::Mouse(mouse_event) => match mouse_event {
+                iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left) => {
+                    if is_hovered {
+                        if let Some(pos) = cursor.position_in(bounds) {
+                            self.viewport.with_viewport_mut(|vp| {
+                                vp.handle_hscrollbar_press(pos.x, bounds.width);
+                            });
+                            return Some(iced::widget::canvas::Action::request_redraw().and_capture());
+                        }
+                    }
+                }
+                iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left) => {
+                    let released = self.viewport.with_viewport_mut(|vp| {
+                        if vp.handle_hscrollbar_release() {
+                            vp.handle_hscrollbar_hover(is_hovered);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if released {
+                        return Some(iced::widget::canvas::Action::request_redraw());
+                    }
+                }
+                iced::mouse::Event::CursorMoved { .. } => {
+                    let result = self.viewport.with_viewport_mut(|vp| {
+                        if vp.scrollbar.is_dragging_x {
+                            // Continue dragging even outside bounds
+                            if let Some(pos) = cursor.position() {
+                                let relative_x = pos.x - bounds.x;
+                                vp.handle_hscrollbar_drag(relative_x, bounds.width);
+                                return Some(true); // dragging
+                            }
+                            None
+                        } else {
+                            // Update hover state
+                            if vp.handle_hscrollbar_hover(is_hovered) {
+                                Some(false) // hover changed
+                            } else {
+                                None
+                            }
+                        }
+                    });
+                    match result {
+                        Some(true) => return Some(iced::widget::canvas::Action::request_redraw().and_capture()),
+                        Some(false) => return Some(iced::widget::canvas::Action::request_redraw()),
+                        None => {}
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+
+        None
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        if cursor.is_over(bounds) {
+            mouse::Interaction::Pointer
+        } else {
+            mouse::Interaction::default()
+        }
+    }
+}
+
+// ============================================================================
+// Callback-based scrollbar (legacy API for custom viewports)
+// ============================================================================
+
+/// Horizontal scrollbar overlay with callbacks (legacy API)
+/// Use this when you have a custom viewport that doesn't implement ViewportAccess
+pub struct HorizontalScrollbarOverlayCallback<Message> {
+    visibility: f32,
+    scroll_position: f32,
+    width_ratio: f32,
+    max_scroll_x: f32,
+    on_scroll: Box<dyn Fn(f32, f32) -> Message>,
+    on_hover: Box<dyn Fn(bool) -> Message>,
+    last_hover_state: Arc<AtomicBool>,
+}
+
+impl<Message> HorizontalScrollbarOverlayCallback<Message>
 where
     Message: Clone + 'static,
 {
@@ -59,75 +229,17 @@ where
     }
 
     pub fn view(self) -> Element<'static, Message> {
-        Canvas::new(self).width(Length::Fill).height(Length::Fixed(12.0)).into()
+        Canvas::new(self)
+            .width(Length::Fill)
+            .height(Length::Fixed(12.0))
+            .into()
     }
 
-    fn draw_scrollbar(&self, frame: &mut Frame, size: Size, animated_visibility: f32) {
-        // Use smoothly animated visibility value
-        let is_thin = animated_visibility <= 0.3;
-
-        if is_thin {
-            // Draw just a thin line at the bottom edge - always visible
-            let line_y = size.height - MIN_HEIGHT; // Bottom edge of canvas
-
-            // Calculate thumb position
-            let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
-            let thumb_width = (available_width * self.width_ratio).max(40.0);
-            let max_thumb_offset = available_width - thumb_width;
-            let thumb_x = LEFT_PADDING + (max_thumb_offset * self.scroll_position);
-
-            // Draw thin thumb indicator - bright white with alpha
-            let thin_thumb = Path::rounded_rectangle(Point::new(thumb_x, line_y), Size::new(thumb_width, MIN_HEIGHT), 1.5.into());
-            frame.fill(&thin_thumb, Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA));
-        } else {
-            // Full scrollbar mode with smooth transition
-            let scrollbar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * self.visibility;
-            // Position scrollbar at bottom edge with offset
-            let scrollbar_y = size.height - scrollbar_height - BOTTOM_OFFSET;
-
-            // Draw background track - subtle dark background
-            let track_path = Path::rectangle(
-                Point::new(LEFT_PADDING, scrollbar_y),
-                Size::new(size.width - LEFT_PADDING - RIGHT_PADDING, scrollbar_height),
-            );
-            frame.fill(&track_path, Color::from_rgba(0.0, 0.0, 0.0, 0.2 * animated_visibility));
-
-            // Calculate thumb position and size
-            let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
-            let thumb_width = (available_width * self.width_ratio).max(30.0);
-            let max_thumb_offset = available_width - thumb_width;
-            let thumb_x = LEFT_PADDING + (max_thumb_offset * self.scroll_position);
-
-            // Draw thumb - bright white
-            let thumb_path = Path::rounded_rectangle(Point::new(thumb_x, scrollbar_y), Size::new(thumb_width, scrollbar_height), 4.0.into());
-            frame.fill(
-                &thumb_path,
-                Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * animated_visibility),
-            );
-
-            // Add subtle border for depth
-            frame.stroke(
-                &thumb_path,
-                Stroke::default()
-                    .with_width(0.5)
-                    .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.3 * animated_visibility)),
-            );
-        }
-    }
-
-    // Calculate scroll ratio (0.0-1.0) from mouse X position
     fn calculate_scroll_from_position(&self, mouse_x: f32, width: f32) -> f32 {
-        // Account for padding
         let available_width = width - LEFT_PADDING - RIGHT_PADDING;
         let thumb_width = (available_width * self.width_ratio).max(30.0);
-
-        // Position the center of the thumb at the mouse position
         let click_offset = mouse_x - LEFT_PADDING - (thumb_width / 2.0);
-
-        // Calculate position accounting for thumb size
         let max_thumb_offset = available_width - thumb_width;
-
-        // Convert to scroll ratio
         if max_thumb_offset > 0.0 {
             (click_offset / max_thumb_offset).clamp(0.0, 1.0)
         } else {
@@ -136,25 +248,34 @@ where
     }
 }
 
-impl<Message> canvas::Program<Message> for HorizontalScrollbarOverlay<Message>
+impl<Message> canvas::Program<Message> for HorizontalScrollbarOverlayCallback<Message>
 where
     Message: Clone + 'static,
 {
     type State = HorizontalScrollbarOverlayState;
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        let animated_visibility = self.visibility;
-
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<Geometry> {
         let cache = Cache::new();
         let geometry = cache.draw(renderer, bounds.size(), |frame| {
-            self.draw_scrollbar(frame, bounds.size(), animated_visibility);
+            draw_horizontal_scrollbar(frame, bounds.size(), self.visibility, self.scroll_position, self.width_ratio);
         });
-
         vec![geometry]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<Message>> {
-        // Canvas is fixed height (12px), so just check if mouse is over bounds
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<iced::widget::canvas::Action<Message>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {
@@ -198,15 +319,77 @@ where
             },
             _ => {}
         }
-
         None
     }
 
-    fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
         if cursor.is_over(bounds) {
             mouse::Interaction::Pointer
         } else {
             mouse::Interaction::default()
         }
+    }
+}
+
+// ============================================================================
+// Shared rendering code
+// ============================================================================
+
+fn draw_horizontal_scrollbar(frame: &mut Frame, size: Size, visibility: f32, scroll_position: f32, width_ratio: f32) {
+    let is_thin = visibility <= 0.3;
+
+    if is_thin {
+        // Thin line mode
+        let line_y = size.height - MIN_HEIGHT;
+        let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
+        let thumb_width = (available_width * width_ratio).max(40.0);
+        let max_thumb_offset = available_width - thumb_width;
+        let thumb_x = LEFT_PADDING + (max_thumb_offset * scroll_position);
+
+        let thin_thumb = Path::rounded_rectangle(
+            Point::new(thumb_x, line_y),
+            Size::new(thumb_width, MIN_HEIGHT),
+            1.5.into(),
+        );
+        frame.fill(&thin_thumb, Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA));
+    } else {
+        // Full scrollbar mode
+        let scrollbar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * visibility;
+        let scrollbar_y = size.height - scrollbar_height - BOTTOM_OFFSET;
+
+        // Background track
+        let track_path = Path::rectangle(
+            Point::new(LEFT_PADDING, scrollbar_y),
+            Size::new(size.width - LEFT_PADDING - RIGHT_PADDING, scrollbar_height),
+        );
+        frame.fill(&track_path, Color::from_rgba(0.0, 0.0, 0.0, 0.2 * visibility));
+
+        // Thumb
+        let available_width = size.width - LEFT_PADDING - RIGHT_PADDING;
+        let thumb_width = (available_width * width_ratio).max(30.0);
+        let max_thumb_offset = available_width - thumb_width;
+        let thumb_x = LEFT_PADDING + (max_thumb_offset * scroll_position);
+
+        let thumb_path = Path::rounded_rectangle(
+            Point::new(thumb_x, scrollbar_y),
+            Size::new(thumb_width, scrollbar_height),
+            4.0.into(),
+        );
+        frame.fill(
+            &thumb_path,
+            Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * visibility),
+        );
+
+        frame.stroke(
+            &thumb_path,
+            Stroke::default()
+                .with_width(0.5)
+                .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.3 * visibility)),
+        );
     }
 }

@@ -18,77 +18,8 @@ use icy_engine_gui::ui::{
 use crate::fl;
 use crate::ui::Message;
 
-// ============================================================================
-// Format Mode
-// ============================================================================
-
-/// Document format mode - determines available features
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FormatMode {
-    /// Legacy DOS: 16 fixed colors, single font, no palette editing
-    #[default]
-    LegacyDos,
-    /// XBin: 16 colors from selectable palette, single font
-    XBin,
-    /// XBin Extended: 8 colors, custom palette (first 8), dual fonts
-    XBinExtended,
-    /// Unrestricted: Full RGB, unlimited fonts
-    Unrestricted,
-}
-
-impl FormatMode {
-    /// All available format modes
-    pub const ALL: [FormatMode; 4] = [FormatMode::LegacyDos, FormatMode::XBin, FormatMode::XBinExtended, FormatMode::Unrestricted];
-
-    /// Get the description for this format mode
-    pub fn description(&self) -> &'static str {
-        match self {
-            FormatMode::LegacyDos => "16 fixed colors, single font, no palette editing",
-            FormatMode::XBin => "16 colors from selectable palette, single font",
-            FormatMode::XBinExtended => "8 colors, dual fonts, custom palette",
-            FormatMode::Unrestricted => "Full RGB colors, unlimited fonts",
-        }
-    }
-
-    /// Check if palette editing is allowed
-    pub fn allows_palette_editing(&self) -> bool {
-        matches!(self, FormatMode::XBin | FormatMode::XBinExtended | FormatMode::Unrestricted)
-    }
-
-    /// Check if font selection is allowed
-    pub fn allows_font_selection(&self) -> bool {
-        matches!(self, FormatMode::XBinExtended | FormatMode::Unrestricted)
-    }
-
-    /// Get maximum number of fonts
-    pub fn max_fonts(&self) -> usize {
-        match self {
-            FormatMode::LegacyDos | FormatMode::XBin => 1,
-            FormatMode::XBinExtended => 2,
-            FormatMode::Unrestricted => usize::MAX,
-        }
-    }
-
-    /// Get number of available colors
-    pub fn color_count(&self) -> usize {
-        match self {
-            FormatMode::LegacyDos | FormatMode::XBin => 16,
-            FormatMode::XBinExtended => 8,
-            FormatMode::Unrestricted => 16777216, // 24-bit RGB
-        }
-    }
-}
-
-impl std::fmt::Display for FormatMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FormatMode::LegacyDos => write!(f, "Legacy DOS"),
-            FormatMode::XBin => write!(f, "XBin"),
-            FormatMode::XBinExtended => write!(f, "XBin Extended"),
-            FormatMode::Unrestricted => write!(f, "Unrestricted"),
-        }
-    }
-}
+// Re-export FormatMode for convenience
+pub use icy_engine_edit::FormatMode;
 
 // ============================================================================
 // Dialog Page
@@ -235,8 +166,8 @@ impl FileSettingsDialog {
         let buffer = state.get_buffer();
         let size = buffer.size();
 
-        // Determine format mode from buffer settings
-        let format_mode = Self::detect_format_mode(buffer);
+        // Determine format mode from edit state (derived from buffer settings)
+        let format_mode = state.get_format_mode();
 
         // Get SAUCE metadata from edit state
         let sauce = state.get_sauce_meta();
@@ -257,19 +188,6 @@ impl FileSettingsDialog {
             buffer.use_letter_spacing(),
             buffer.use_aspect_ratio(),
         )
-    }
-
-    /// Detect format mode from buffer settings
-    fn detect_format_mode(buffer: &icy_engine::TextBuffer) -> FormatMode {
-        use icy_engine::{FontMode, PaletteMode};
-
-        match (buffer.palette_mode, buffer.font_mode) {
-            (PaletteMode::Fixed16, FontMode::Sauce | FontMode::Single) => FormatMode::LegacyDos,
-            (PaletteMode::Free16, FontMode::Sauce | FontMode::Single) => FormatMode::XBin,
-            (PaletteMode::Free8 | PaletteMode::Free16, FontMode::FixedSize) => FormatMode::XBinExtended,
-            (PaletteMode::RGB, _) | (_, FontMode::Unlimited) => FormatMode::Unrestricted,
-            _ => FormatMode::LegacyDos,
-        }
     }
 
     /// Parse width value

@@ -1,11 +1,14 @@
+//! Scrollbar information and helper functions for Terminal-based views
+//!
+//! This module provides utilities for computing scrollbar state from Terminal
+//! and creating scrollbar overlay elements.
+
 use iced::{
     Alignment, Element, Length,
     widget::{container, stack},
 };
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
-use crate::{HorizontalScrollbarOverlay, ScrollbarOverlay, Terminal};
+use crate::{HorizontalScrollbarOverlay, ScrollbarOverlay, Terminal, scrollbar_overlay::ViewportAccess};
 
 /// Information needed to render scrollbars
 /// Computed from Terminal state, shared between icy_term and icy_view
@@ -15,22 +18,6 @@ pub struct ScrollbarInfo {
     pub needs_vscrollbar: bool,
     /// Whether a horizontal scrollbar is needed
     pub needs_hscrollbar: bool,
-    /// Vertical scrollbar visibility (0.0 = invisible, 1.0 = fully visible)
-    pub visibility_v: f32,
-    /// Horizontal scrollbar visibility
-    pub visibility_h: f32,
-    /// Vertical scroll position (0.0 = top, 1.0 = bottom)
-    pub scroll_position_v: f32,
-    /// Horizontal scroll position (0.0 = left, 1.0 = right)
-    pub scroll_position_h: f32,
-    /// Ratio of visible height to content height (for thumb size)
-    pub height_ratio: f32,
-    /// Ratio of visible width to content width (for thumb size)
-    pub width_ratio: f32,
-    /// Maximum scroll Y in content units
-    pub max_scroll_y: f32,
-    /// Maximum scroll X in content units
-    pub max_scroll_x: f32,
 }
 
 impl ScrollbarInfo {
@@ -43,8 +30,6 @@ impl ScrollbarInfo {
         // Use viewport methods which use shader-computed values if available
         let visible_height = vp.visible_content_height();
         let visible_width = vp.visible_content_width();
-        let max_scroll_y = vp.max_scroll_y();
-        let max_scroll_x = vp.max_scroll_x();
 
         drop(vp);
 
@@ -58,14 +43,6 @@ impl ScrollbarInfo {
         Self {
             needs_vscrollbar,
             needs_hscrollbar,
-            visibility_v: terminal.scrollbar.visibility,
-            visibility_h: terminal.scrollbar.visibility_x,
-            scroll_position_v: terminal.scrollbar.scroll_position,
-            scroll_position_h: terminal.scrollbar.scroll_position_x,
-            height_ratio,
-            width_ratio,
-            max_scroll_y,
-            max_scroll_x,
         }
     }
 
@@ -73,81 +50,53 @@ impl ScrollbarInfo {
     pub fn needs_any_scrollbar(&self) -> bool {
         self.needs_vscrollbar || self.needs_hscrollbar
     }
+}
 
-    /// Create a vertical scrollbar overlay element
-    pub fn create_vscrollbar<Message: Clone + 'static>(
-        &self,
-        hover_state: Arc<AtomicBool>,
-        on_scroll: impl Fn(f32, f32) -> Message + 'static,
-        on_hover: impl Fn(bool) -> Message + 'static,
-    ) -> Element<'static, Message> {
-        ScrollbarOverlay::new(
-            self.visibility_v,
-            self.scroll_position_v,
-            self.height_ratio,
-            self.max_scroll_y,
-            hover_state,
-            on_scroll,
-            on_hover,
-        )
-        .view()
+/// Create a vertical scrollbar overlay element that mutates viewport directly
+pub fn create_vscrollbar<'a, V: ViewportAccess + 'a>(viewport: &'a V) -> Element<'a, ()> {
+    ScrollbarOverlay::new(viewport).view()
+}
+
+/// Create a horizontal scrollbar overlay element that mutates viewport directly
+pub fn create_hscrollbar<'a, V: ViewportAccess + 'a>(viewport: &'a V) -> Element<'a, ()> {
+    HorizontalScrollbarOverlay::new(viewport).view()
+}
+
+/// Wrap content with scrollbar overlays that mutate viewport directly
+/// Returns a stack element with content and scrollbars overlaid
+/// The scrollbars produce () messages (no external messages needed)
+pub fn wrap_with_scrollbars<'a, Message: 'a, V: ViewportAccess + 'a>(
+    content: Element<'a, Message>,
+    viewport: &'a V,
+    needs_vscrollbar: bool,
+    needs_hscrollbar: bool,
+) -> Element<'a, Message> {
+    if !needs_vscrollbar && !needs_hscrollbar {
+        return content;
     }
 
-    /// Create a horizontal scrollbar overlay element
-    pub fn create_hscrollbar<Message: Clone + 'static>(
-        &self,
-        hover_state: Arc<AtomicBool>,
-        on_scroll: impl Fn(f32, f32) -> Message + 'static,
-        on_hover: impl Fn(bool) -> Message + 'static,
-    ) -> Element<'static, Message> {
-        HorizontalScrollbarOverlay::new(
-            self.visibility_h,
-            self.scroll_position_h,
-            self.width_ratio,
-            self.max_scroll_x,
-            hover_state,
-            on_scroll,
-            on_hover,
-        )
-        .view()
+    let mut layers: Vec<Element<'a, Message>> = vec![content];
+
+    // Add vertical scrollbar if needed
+    if needs_vscrollbar {
+        let vscrollbar_view: Element<'a, ()> = create_vscrollbar(viewport);
+        // Map () to Message - this is a no-op since scrollbar mutates viewport directly
+        let vscrollbar_mapped: Element<'a, Message> = vscrollbar_view.map(|_| unreachable!());
+        let vscrollbar_container: container::Container<'a, Message> =
+            container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
+        layers.push(vscrollbar_container.into());
     }
 
-    /// Create both scrollbars as a stack with the terminal content
-    /// Returns a stack element with terminal view and scrollbars overlaid
-    pub fn wrap_with_scrollbars<'a, Message: Clone + 'static>(
-        &self,
-        content: Element<'a, Message>,
-        vscrollbar_hover_state: Arc<AtomicBool>,
-        hscrollbar_hover_state: Arc<AtomicBool>,
-        on_scroll_v: impl Fn(f32, f32) -> Message + 'static,
-        on_hover_v: impl Fn(bool) -> Message + 'static,
-        on_scroll_h: impl Fn(f32, f32) -> Message + 'static,
-        on_hover_h: impl Fn(bool) -> Message + 'static,
-    ) -> Element<'a, Message> {
-        if !self.needs_any_scrollbar() {
-            return content;
-        }
-
-        let mut layers: Vec<Element<'a, Message>> = vec![content];
-
-        // Add vertical scrollbar if needed
-        if self.needs_vscrollbar {
-            let vscrollbar_view = self.create_vscrollbar(vscrollbar_hover_state, on_scroll_v, on_hover_v);
-            let vscrollbar_container: container::Container<'a, Message> =
-                container(vscrollbar_view).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
-            layers.push(vscrollbar_container.into());
-        }
-
-        // Add horizontal scrollbar if needed
-        if self.needs_hscrollbar {
-            let hscrollbar_view = self.create_hscrollbar(hscrollbar_hover_state, on_scroll_h, on_hover_h);
-            let hscrollbar_container: container::Container<'a, Message> =
-                container(hscrollbar_view).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
-            layers.push(hscrollbar_container.into());
-        }
-
-        stack(layers).into()
+    // Add horizontal scrollbar if needed
+    if needs_hscrollbar {
+        let hscrollbar_view: Element<'a, ()> = create_hscrollbar(viewport);
+        let hscrollbar_mapped: Element<'a, Message> = hscrollbar_view.map(|_| unreachable!());
+        let hscrollbar_container: container::Container<'a, Message> =
+            container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
+        layers.push(hscrollbar_container.into());
     }
+
+    stack(layers).into()
 }
 
 impl Terminal {
