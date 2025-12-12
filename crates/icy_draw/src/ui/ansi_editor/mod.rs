@@ -13,6 +13,7 @@ pub mod constants;
 mod edit_layer_dialog;
 mod file_settings_dialog;
 mod layer_view;
+mod line_numbers;
 pub mod menu_bar;
 mod minimap_view;
 mod palette_grid;
@@ -112,6 +113,8 @@ pub enum AnsiEditorMessage {
     ToggleGuide,
     /// Toggle raster/grid visibility
     ToggleRaster,
+    /// Toggle line numbers display
+    ToggleLineNumbers,
 }
 
 /// Mouse events on the canvas
@@ -162,6 +165,8 @@ pub struct AnsiEditor {
     pub raster: Option<(f32, f32)>,
     /// Whether raster is currently visible
     pub show_raster: bool,
+    /// Whether line numbers are shown at the edges
+    pub show_line_numbers: bool,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -236,6 +241,7 @@ impl AnsiEditor {
             show_guide: false,
             raster: None,
             show_raster: false,
+            show_line_numbers: false,
         }
     }
 
@@ -347,6 +353,7 @@ impl AnsiEditor {
             guide_visible: self.show_guide,
             raster: self.raster.map(|(x, y)| (x as u32, y as u32)),
             raster_visible: self.show_raster,
+            line_numbers_visible: self.show_line_numbers,
         }
     }
 
@@ -655,6 +662,10 @@ impl AnsiEditor {
                 self.update_markers();
                 Task::none()
             }
+            AnsiEditorMessage::ToggleLineNumbers => {
+                self.show_line_numbers = !self.show_line_numbers;
+                Task::none()
+            }
         }
     }
 
@@ -928,15 +939,22 @@ impl AnsiEditor {
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = column![palette_view, tool_panel,].spacing(4);
 
         // === TOP TOOLBAR (with color switcher on the left) ===
-        // Get caret colors from the edit state
-        let (caret_fg, caret_bg) = {
+        // Get caret position and colors from the edit state
+        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width) = {
             let mut screen_guard = self.screen.lock();
             let state = screen_guard
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
             let caret = state.get_caret();
-            (caret.attribute.foreground(), caret.attribute.background())
+            let buffer = state.get_buffer();
+            let fg = caret.attribute.foreground();
+            let bg = caret.attribute.background();
+            let caret_x = caret.x;
+            let caret_y = caret.y;
+            let height = buffer.height();
+            let width = buffer.width();
+            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize)
         };
 
         // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
@@ -965,15 +983,58 @@ impl AnsiEditor {
             .view(&self.screen, &viewport_info, Some(render_cache))
             .map(AnsiEditorMessage::RightPanel);
 
+        // === LINE NUMBERS (optional) ===
+        // Get scroll position from viewport for line numbers
+        let (scroll_x, scroll_y) = {
+            let vp = self.canvas.terminal.viewport.read();
+            (vp.scroll_x, vp.scroll_y)
+        };
+
+        // Get font dimensions for line numbers positioning
+        let (font_width, font_height) = {
+            let screen = self.screen.lock();
+            let font = screen.font(0);
+            if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0) // Default fallback
+            }
+        };
+
+        // Build the center area with optional line numbers overlay
+        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers {
+            // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
+            let line_numbers_overlay = line_numbers::line_numbers_overlay(
+                self.canvas.terminal.render_info.clone(),
+                buffer_width,
+                buffer_height as usize,
+                font_width,
+                font_height,
+                caret_row,
+                caret_col,
+                scroll_x,
+                scroll_y,
+            );
+
+            // Use a stack to overlay line numbers on top of the canvas
+            iced::widget::stack![container(canvas).width(Length::Fill).height(Length::Fill), line_numbers_overlay,]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            container(canvas).width(Length::Fill).height(Length::Fill).into()
+        };
+
         // Main layout:
         // Top row: Full-width toolbar (with color switcher)
-        // Bottom row: Left sidebar | Canvas | Right panel
+        // Bottom row: Left sidebar | Canvas (with optional line numbers) | Right panel
 
         let bottom_row = row![
             // Left sidebar - dynamic width based on palette size
             container(left_sidebar).width(Length::Fixed(sidebar_width)),
-            // Center - canvas
-            container(canvas).width(Length::Fill).height(Length::Fill),
+            // Center - canvas with optional line numbers
+            center_area,
             // Right panel - fixed width (320pt for 80-char buffer display)
             container(right_panel).width(Length::Fixed(RIGHT_PANEL_BASE_WIDTH)),
         ];

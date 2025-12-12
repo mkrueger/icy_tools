@@ -9,7 +9,8 @@ use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
 use crate::ui::main_window::Message;
 use crate::ui::menu::{
-    UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu, menu_item_undo, separator,
+    UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu,
+    menu_item_undo, separator,
 };
 use icy_engine_gui::commands::cmd;
 
@@ -24,6 +25,8 @@ pub struct MarkerMenuState {
     pub raster: Option<(u32, u32)>,
     /// Is raster visibility enabled
     pub raster_visible: bool,
+    /// Is line numbers visible
+    pub line_numbers_visible: bool,
 }
 
 /// Build the guides submenu with predefined guide sizes
@@ -243,7 +246,7 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 (menu_item_submenu(fl!("menu-guides")), guides_submenu),
                 (menu_item_submenu(fl!("menu-raster")), raster_submenu),
                 (menu_item_simple(fl!("menu-show_layer_borders"), "", Message::ToggleLayerBorders)),
-                (menu_item_simple(fl!("menu-show_line_numbers"), "", Message::ToggleLineNumbers)),
+                (menu_item_checkbox(fl!("menu-show_line_numbers"), "", marker_state.line_numbers_visible, Message::ToggleLineNumbers)),
                 (separator()),
                 (menu_item_simple(fl!("menu-toggle_left_pane"), "F11", Message::ToggleLeftPanel)),
                 (menu_item_simple(fl!("menu-toggle_right_pane"), "F12", Message::ToggleRightPanel)),

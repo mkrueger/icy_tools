@@ -1700,7 +1700,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ToggleLayerBorders => Task::none(),
-            Message::ToggleLineNumbers => Task::none(),
+            Message::ToggleLineNumbers => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ToggleLineNumbers).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
             Message::ToggleLeftPanel => {
                 self.show_left_panel = !self.show_left_panel;
                 Task::none()

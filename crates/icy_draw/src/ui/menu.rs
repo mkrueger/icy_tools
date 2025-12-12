@@ -184,6 +184,31 @@ pub fn menu_item_simple(label: String, hotkey: &str, msg: Message) -> Element<'s
     .into()
 }
 
+/// Create a menu item with checkbox indicator
+pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Message) -> Element<'static, Message> {
+    let hotkey_text = hotkey.to_string();
+    let checkbox_indicator = if checked { "✓" } else { " " };
+
+    button(
+        row![
+            text(checkbox_indicator).size(14).width(Length::Fixed(16.0)),
+            text(label).size(14).width(Length::Fill),
+            text(hotkey_text).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(menu_item_style)
+    .on_press(msg)
+    .into()
+}
+
 /// Create a separator line
 pub fn separator() -> quad::Quad {
     quad::Quad {
