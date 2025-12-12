@@ -36,7 +36,7 @@ pub fn test_custom_palette() {
 #[test]
 pub fn test_custom_font() {
     let mut buffer = create_buffer();
-    buffer.set_font(0, BitFont::from_ansi_font_page(42, 25).unwrap());
+    buffer.set_font(0, BitFont::from_ansi_font_page(42, 16).unwrap().clone());
     buffer.ice_mode = IceMode::Ice;
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, IceMode::Blink)));
     test_artworx(&mut buffer);

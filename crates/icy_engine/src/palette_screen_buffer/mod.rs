@@ -12,7 +12,7 @@ use crate::{
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     limits,
-    palette_screen_buffer::rip_impl::{RIP_SCREEN_SIZE},
+    palette_screen_buffer::rip_impl::RIP_SCREEN_SIZE,
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;

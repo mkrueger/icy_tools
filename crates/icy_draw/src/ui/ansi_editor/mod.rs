@@ -5,6 +5,22 @@
 //! - Top toolbar: Tool-specific options
 //! - Center: Terminal/Canvas view
 //! - Right panel: Minimap, Layers, Channels
+//!
+//! # Important: Editing Buffer State
+//!
+//! **Use `icy_engine_edit::EditState` functions for all buffer modifications.**
+//! These functions generate proper undo actions.
+//!
+//! **DO NOT ALTER BUFFER OR SCREEN STATE DIRECTLY!!!**
+//!
+//! ## Examples:
+//! - Font changes: Use `state.set_font()` or `state.set_font_in_slot(slot, font)`
+//! - Layer operations: Use `state.add_layer()`, `state.remove_layer()`, etc.
+//! - Character changes: Use `state.set_char()`, etc.
+//! - Selection operations: Use corresponding EditState methods
+//!
+//! Direct buffer modifications bypass the undo system and will cause
+//! inconsistent state when users try to undo/redo.
 
 mod canvas_view;
 mod channels_view;
@@ -13,6 +29,7 @@ pub mod constants;
 mod edit_layer_dialog;
 mod file_settings_dialog;
 mod font_selector_dialog;
+mod font_slot_manager_dialog;
 mod layer_view;
 mod line_numbers;
 pub mod menu_bar;
@@ -29,6 +46,7 @@ pub use color_switcher_gpu::*;
 pub use edit_layer_dialog::*;
 pub use file_settings_dialog::*;
 pub use font_selector_dialog::*;
+pub use font_slot_manager_dialog::*;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
@@ -314,12 +332,12 @@ impl AnsiEditor {
     /// Save the document to the given path
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+        if let Some(edit_state) = screen.as_any_mut().downcast_ref::<EditState>() {
             // Determine format from extension
             let format = FileFormat::from_path(path).ok_or_else(|| "Unknown file format".to_string())?;
 
             // Get buffer and save with default options
-            let buffer = edit_state.get_buffer_mut();
+            let buffer = edit_state.get_buffer();
             let options = icy_engine::formats::SaveOptions::default();
             let bytes = format.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
 
@@ -335,10 +353,10 @@ impl AnsiEditor {
     /// Get bytes for autosave (saves in ICY format with thumbnail skipped for performance)
     pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
         let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+        if let Some(edit_state) = screen.as_any_mut().downcast_ref::<EditState>() {
             // Use ICY format for autosave to preserve all data (layers, fonts, etc.)
             let format = FileFormat::IcyDraw;
-            let buffer = edit_state.get_buffer_mut();
+            let buffer = edit_state.get_buffer();
             // Skip thumbnail generation for faster autosave
             let mut options = icy_engine::formats::SaveOptions::default();
             options.skip_thumbnail = true;
@@ -488,25 +506,14 @@ impl AnsiEditor {
                     }
                     ColorSwitcherMessage::AnimationComplete => {
                         // Animation finished - now actually swap the colors
-                        let (fg, bg) = self.with_edit_state(|state| {
-                            let caret: &mut icy_engine::Caret = state.get_caret_mut();
-                            let fg = caret.attribute.foreground();
-                            let bg = caret.attribute.background();
-                            caret.attribute.set_foreground(bg);
-                            caret.attribute.set_background(fg);
-                            (bg, fg)
-                        });
+                        let (fg, bg) = self.with_edit_state(|state| state.swap_caret_colors());
                         self.palette_grid.set_foreground(fg);
                         self.palette_grid.set_background(bg);
                         // Confirm the swap so the shader resets to normal display
                         self.color_switcher.confirm_swap();
                     }
                     ColorSwitcherMessage::ResetToDefault => {
-                        self.with_edit_state(|state| {
-                            let caret = state.get_caret_mut();
-                            caret.attribute.set_foreground(7);
-                            caret.attribute.set_background(0);
-                        });
+                        self.with_edit_state(|state| state.reset_caret_colors());
                         self.palette_grid.set_foreground(7);
                         self.palette_grid.set_background(0);
                     }
@@ -522,15 +529,11 @@ impl AnsiEditor {
             AnsiEditorMessage::PaletteGrid(msg) => {
                 match msg {
                     PaletteGridMessage::SetForeground(color) => {
-                        self.with_edit_state(|state| {
-                            state.get_caret_mut().attribute.set_foreground(color);
-                        });
+                        self.with_edit_state(|state| state.set_caret_foreground(color));
                         self.palette_grid.set_foreground(color);
                     }
                     PaletteGridMessage::SetBackground(color) => {
-                        self.with_edit_state(|state| {
-                            state.get_caret_mut().attribute.set_background(color);
-                        });
+                        self.with_edit_state(|state| state.set_caret_background(color));
                         self.palette_grid.set_background(color);
                     }
                 }
@@ -840,16 +843,15 @@ impl AnsiEditor {
                     iced::keyboard::Key::Named(named) => {
                         self.with_edit_state(|state| {
                             let buffer_width = state.get_buffer().width();
-                            let caret = state.get_caret_mut();
                             match named {
-                                Named::ArrowUp => caret.y = (caret.y - 1).max(0),
-                                Named::ArrowDown => caret.y += 1,
-                                Named::ArrowLeft => caret.x = (caret.x - 1).max(0),
-                                Named::ArrowRight => caret.x += 1,
-                                Named::Home => caret.x = 0,
-                                Named::End => caret.x = buffer_width - 1,
-                                Named::PageUp => caret.y = (caret.y - 24).max(0),
-                                Named::PageDown => caret.y += 24,
+                                Named::ArrowUp => state.move_caret_up(1),
+                                Named::ArrowDown => state.move_caret_down(1),
+                                Named::ArrowLeft => state.move_caret_left(1),
+                                Named::ArrowRight => state.move_caret_right(1),
+                                Named::Home => state.set_caret_x(0),
+                                Named::End => state.set_caret_x(buffer_width - 1),
+                                Named::PageUp => state.move_caret_up(24),
+                                Named::PageDown => state.move_caret_down(24),
                                 _ => {}
                             }
                         });
@@ -908,11 +910,7 @@ impl AnsiEditor {
         match self.current_tool {
             Tool::Click => {
                 // Move cursor to clicked position
-                self.with_edit_state(|state| {
-                    let caret = state.get_caret_mut();
-                    caret.x = pos.x;
-                    caret.y = pos.y;
-                });
+                self.with_edit_state(|state| state.set_caret_position(pos));
                 ToolEvent::Redraw
             }
             Tool::Select => {
@@ -1139,7 +1137,28 @@ impl AnsiEditor {
         let buffer = state.get_buffer();
         let caret = state.get_caret();
         let current_layer = state.get_current_layer().unwrap_or(0);
-        let font_name = buffer.font(0).map(|f| f.name().to_string()).unwrap_or_else(|| "Unknown".to_string());
+        let format_mode = state.get_format_mode();
+
+        // Get font info based on format mode
+        let (font_name, current_font_slot, slot_fonts) = if format_mode == icy_engine_edit::FormatMode::XBinExtended {
+            let slot0 = buffer.font(0).map(|f| f.name().to_string());
+            let slot1 = buffer.font(1).map(|f| f.name().to_string());
+            let current_slot = caret.font_page().min(1);
+            (
+                slot0.clone().or(slot1.clone()).unwrap_or_else(|| "Unknown".to_string()),
+                current_slot,
+                Some([slot0, slot1]),
+            )
+        } else {
+            // Get font for current slot, falling back to slot 0 if not found
+            let font_page = caret.font_page();
+            let font_name = buffer
+                .font(font_page)
+                .or_else(|| buffer.font(0))
+                .map(|f| f.name().to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+            (font_name, font_page, None)
+        };
 
         AnsiStatusInfo {
             cursor_position: (caret.x, caret.y),
@@ -1149,6 +1168,9 @@ impl AnsiEditor {
             current_tool: self.current_tool.name().to_string(),
             insert_mode: caret.insert_mode,
             font_name,
+            format_mode,
+            current_font_slot,
+            slot_fonts,
         }
     }
 }
@@ -1163,4 +1185,10 @@ pub struct AnsiStatusInfo {
     pub current_tool: String,
     pub insert_mode: bool,
     pub font_name: String,
+    /// Current format mode
+    pub format_mode: icy_engine_edit::FormatMode,
+    /// Currently active font slot (0 or 1 for XBinExtended)
+    pub current_font_slot: usize,
+    /// Font names for slots (only set for XBinExtended)
+    pub slot_fonts: Option<[Option<String>; 2]>,
 }

@@ -4,13 +4,12 @@ use parking_lot::Mutex;
 
 use crate::{BitFont, BitFontType};
 
-
 lazy_static::lazy_static! {
-    
+
     pub static ref FONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
     pub static ref EGA_7x8: BitFont = BitFont::from_bytes("EGA 7x8", include_bytes!("../../data/fonts/Rip/Bm437_EverexME_7x8.yaff")).unwrap();
     pub static ref VGA_8x14: BitFont = BitFont::from_bytes("VGA 8x14", include_bytes!("../../data/fonts/Rip/IBM_VGA_8x14.yaff")).unwrap();
-    
+
     pub static ref VGA_7x14: BitFont = {
         let mut new_font = VGA_8x14.yaff_font.clone();
         new_font.name = Some("VGA 7x14".to_string());
@@ -27,7 +26,7 @@ lazy_static::lazy_static! {
             font_type: BitFontType::BuiltIn,
         }
     };
-    
+
     pub static ref VGA_16x14: BitFont = {
         let mut new_font = VGA_8x14.yaff_font.clone();
         new_font.name = Some("VGA 16x14".to_string());

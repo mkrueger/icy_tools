@@ -8,6 +8,7 @@ use iced::{
     widget::{Space, checkbox, column, container, pick_list, row, text, text_editor, text_input},
 };
 use icy_engine::TextPane;
+use icy_engine_edit::bitfont::{MAX_FONT_HEIGHT, MIN_FONT_HEIGHT};
 use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
@@ -42,6 +43,10 @@ pub enum FileSettingsDialogMessage {
     // Canvas
     SetWidth(String),
     SetHeight(String),
+
+    // Font Dimensions
+    SetFontWidth(String),
+    SetFontHeight(String),
 
     // SAUCE Metadata
     SetTitle(String),
@@ -78,6 +83,11 @@ pub struct FileSettingsResult {
     /// Canvas height
     pub height: i32,
 
+    /// Font cell width
+    pub font_width: i32,
+    /// Font cell height
+    pub font_height: i32,
+
     /// SAUCE title
     pub title: String,
     /// SAUCE author
@@ -111,6 +121,10 @@ pub struct FileSettingsDialog {
     width: String,
     height: String,
 
+    // Font Dimensions
+    font_width: String,
+    font_height: String,
+
     // SAUCE Metadata
     title: String,
     author: String,
@@ -135,6 +149,8 @@ impl FileSettingsDialog {
     pub fn new(
         width: i32,
         height: i32,
+        font_width: i32,
+        font_height: i32,
         title: String,
         author: String,
         group: String,
@@ -148,6 +164,8 @@ impl FileSettingsDialog {
             page: DialogPage::Settings,
             width: width.to_string(),
             height: height.to_string(),
+            font_width: font_width.to_string(),
+            font_height: font_height.to_string(),
             title,
             author,
             group,
@@ -165,6 +183,7 @@ impl FileSettingsDialog {
     pub fn from_edit_state(state: &icy_engine_edit::EditState) -> Self {
         let buffer = state.get_buffer();
         let size = buffer.size();
+        let font_dims = buffer.font_dimensions();
 
         // Determine format mode from edit state (derived from buffer settings)
         let format_mode = state.get_format_mode();
@@ -179,6 +198,8 @@ impl FileSettingsDialog {
         Self::new(
             size.width,
             size.height,
+            font_dims.width,
+            font_dims.height,
             title,
             author,
             group,
@@ -203,9 +224,14 @@ impl FileSettingsDialog {
             .filter(|&h| h >= 1 && h <= icy_engine::limits::MAX_BUFFER_HEIGHT)
     }
 
+    /// Parse font height value using constants from icy_engine_edit
+    fn parsed_font_height(&self) -> Option<i32> {
+        self.font_height.parse::<i32>().ok().filter(|&h| h >= MIN_FONT_HEIGHT && h <= MAX_FONT_HEIGHT)
+    }
+
     /// Check if all inputs are valid
     fn is_valid(&self) -> bool {
-        self.parsed_width().is_some() && self.parsed_height().is_some()
+        self.parsed_width().is_some() && self.parsed_height().is_some() && self.parsed_font_height().is_some()
     }
 
     /// Get comments text from editor
@@ -218,6 +244,8 @@ impl FileSettingsDialog {
         Some(FileSettingsResult {
             width: self.parsed_width()?,
             height: self.parsed_height()?,
+            font_width: 8, // Fixed width for CP437 (XBin format)
+            font_height: self.parsed_font_height()?,
             title: self.title.clone(),
             author: self.author.clone(),
             group: self.group.clone(),
@@ -233,7 +261,7 @@ impl FileSettingsDialog {
     fn view_settings(&self) -> Element<'_, Message> {
         let title = dialog_title(fl!("file-settings-dialog-title"));
 
-        let label_width = Length::Fixed(80.0);
+        let label_width = Length::Fixed(130.0);
 
         // ═══════════════════════════════════════════════════════════════════════
         // Canvas Size: [Width] x [Height]
@@ -257,6 +285,24 @@ impl FileSettingsDialog {
             width_input,
             text(" x ").size(TEXT_SIZE_NORMAL),
             height_input,
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center);
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Font Height: [Height] px
+        // ═══════════════════════════════════════════════════════════════════════
+        let font_height_valid = self.parsed_font_height().is_some();
+        let font_height_input = text_input("", &self.font_height)
+            .on_input(|s| Message::FileSettingsDialog(FileSettingsDialogMessage::SetFontHeight(s)))
+            .size(TEXT_SIZE_NORMAL)
+            .width(Length::Fixed(50.0))
+            .style(validated_input_style(font_height_valid));
+
+        let font_dims_row = row![
+            container(text(fl!("file-settings-font-height")).size(TEXT_SIZE_NORMAL)).width(label_width),
+            font_height_input,
+            text("px").size(TEXT_SIZE_SMALL),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
@@ -369,6 +415,7 @@ impl FileSettingsDialog {
         // ═══════════════════════════════════════════════════════════════════════
         let content_column = column![
             canvas_row,
+            font_dims_row,
             format_row,
             Space::new().height(DIALOG_SPACING),
             sauce_section,
@@ -489,6 +536,16 @@ impl Dialog<Message> for FileSettingsDialog {
             }
             FileSettingsDialogMessage::SetHeight(h) => {
                 self.height = h.clone();
+                Some(DialogAction::None)
+            }
+
+            // Font dimensions
+            FileSettingsDialogMessage::SetFontWidth(w) => {
+                self.font_width = w.clone();
+                Some(DialogAction::None)
+            }
+            FileSettingsDialogMessage::SetFontHeight(h) => {
+                self.font_height = h.clone();
                 Some(DialogAction::None)
             }
 

@@ -9,8 +9,9 @@ use crate::{BitFont, Color, Layer, LoadingError, Palette, Position, Result, Sixe
 use super::super::{LoadData, SaveOptions};
 
 mod constants {
-    pub const ICED_VERSION: u16 = 0;
-    pub const ICED_HEADER_SIZE: usize = 19;
+    pub const ICED_VERSION: u16 = 1;
+    pub const ICED_HEADER_SIZEV0: usize = 19;
+    pub const ICED_HEADER_SIZE: usize = 21;
     pub mod layer {
         pub const IS_VISIBLE: u32 = 0b0000_0001;
         pub const POS_LOCK: u32 = 0b0000_0010;
@@ -66,6 +67,10 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
         result.extend(u32::to_le_bytes(buf.width() as u32));
         result.extend(u32::to_le_bytes(buf.height() as u32));
+
+        result.push(buf.font_dimensions().width as u8);
+        result.push(buf.font_dimensions().height as u8);
+
         let sauce_data = general_purpose::STANDARD.encode(&result);
         if let Err(err) = encoder.add_ztxt_chunk("ICED".to_string(), sauce_data) {
             return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
@@ -416,7 +421,7 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                             }
                             "ICED" => {
                                 let mut o: usize = 0;
-                                if bytes.len() != constants::ICED_HEADER_SIZE {
+                                if bytes.len() != constants::ICED_HEADER_SIZE && bytes.len() != constants::ICED_HEADER_SIZEV0 {
                                     return Err(crate::EngineError::UnsupportedFormat {
                                         description: format!("unsupported header size {}", bytes.len()),
                                     });
@@ -442,7 +447,16 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                 let width: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
                                 o += 4;
                                 let height: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
+                                o += 4;
                                 result.set_size((width, height));
+
+                                if bytes.len() >= constants::ICED_HEADER_SIZE {
+                                    let font_width = bytes[o] as i32;
+                                    o += 1;
+                                    let font_height = bytes[o] as i32;
+                                    // o += 1;
+                                    result.set_font_dimensions((font_width, font_height).into());
+                                }
                             }
 
                             "PALETTE" => {

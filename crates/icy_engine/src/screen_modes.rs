@@ -1,7 +1,9 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen, VIEWDATA, VIEWDATA_PALETTE, amiga_screen_buffer, seq_prepare
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
+    C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen, VIEWDATA,
+    VIEWDATA_PALETTE, amiga_screen_buffer, fonts::ansi::font_height_for_lines, seq_prepare,
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CaretShape, CommandParser, MusicOption};
@@ -248,7 +250,7 @@ impl ScreenMode {
         match self {
             ScreenMode::Vga(_x, y) => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", if *y >= 50 { IBM_VGA50_SAUCE } else { CP437 }).unwrap());
+                screen.set_font(0, BitFont::from_ansi_font_page(0, font_height_for_lines(*y as usize)).unwrap().clone());
                 *screen.buffer_type_mut() = BufferType::CP437;
             }
             ScreenMode::Unicode(_x, _y) => {

@@ -25,7 +25,7 @@ impl EditState {
     pub fn add_ansi_font(&mut self, page: usize) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
-                let new_font = BitFont::from_ansi_font_page(page, 25)?;
+                let new_font = BitFont::from_ansi_font_page(page, 16).unwrap().clone();
                 let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
@@ -39,7 +39,7 @@ impl EditState {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
-                let new_font = BitFont::from_ansi_font_page(page, 25)?;
+                let new_font = BitFont::from_ansi_font_page(page, 16).unwrap().clone();
                 if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
@@ -48,7 +48,7 @@ impl EditState {
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
-                let new_font = BitFont::from_ansi_font_page(page, 25)?;
+                let new_font = BitFont::from_ansi_font_page(page, 16).unwrap().clone();
                 if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
@@ -121,6 +121,20 @@ impl EditState {
                     Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
+        }
+    }
+
+    /// Set a font in a specific slot (with undo support).
+    /// Use this for XBin Extended mode where you need to set fonts in specific slots.
+    pub fn set_font_in_slot(&mut self, slot: usize, new_font: BitFont) -> Result<()> {
+        if let Some(old_font) = self.get_buffer().font(slot) {
+            let op = super::undo_operations::SetFont::new(slot, old_font.clone(), new_font);
+            self.push_undo_action(Box::new(op))
+        } else {
+            // Slot doesn't exist yet - just set it directly for now
+            // TODO: Consider adding an AddFont undo operation for new slots
+            self.get_buffer_mut().set_font(slot, new_font);
+            Ok(())
         }
     }
 

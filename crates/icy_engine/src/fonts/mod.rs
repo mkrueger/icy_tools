@@ -8,18 +8,17 @@ use parking_lot::Mutex;
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 
 pub mod ansi;
-pub mod sauce;
-pub mod rip;
-pub mod skypix;
 pub mod legacy;
-
+pub mod rip;
+pub mod sauce;
+pub mod skypix;
 
 use super::Size;
 
 // Re-export key items from submodules
-pub use ansi::{ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, DEFAULT_FONT_NAME, CP437, load_ansi_font, font_height_for_lines};
-pub use sauce::{SAUCE_FONT_MAP, SAUCE_FONT_NAMES, IBM_VGA50_SAUCE, load_sauce_font, get_sauce_font_names};
-pub use legacy::{ATARI_XEP80, ATARI_XEP80_INT, VIEWDATA, C64_UNSHIFTED, C64_SHIFTED, ATARI};
+pub use ansi::{ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME, font_height_for_lines, get_ansi_font};
+pub use legacy::{ATARI, ATARI_XEP80, ATARI_XEP80_INT, C64_SHIFTED, C64_UNSHIFTED, VIEWDATA};
+pub use sauce::{SAUCE_FONT_MAP, get_sauce_font_names, load_sauce_font};
 // Re-export byte data with short names for screen_modes compatibility
 pub use skypix::get_amiga_font_by_name;
 
@@ -61,13 +60,17 @@ impl Clone for BitFont {
 
 impl Default for BitFont {
     fn default() -> Self {
-        BitFont::from_ansi_font_page(0, 16).unwrap()
+        BitFont::from_ansi_font_page(0, 16).unwrap().clone()
     }
 }
 
 impl BitFont {
     pub fn name(&self) -> &str {
         self.yaff_font.name.as_deref().unwrap_or("")
+    }
+
+    pub fn set_name(&mut self, name: &str) {
+        self.yaff_font.name = Some(name.to_string());
     }
 
     pub fn size(&self) -> Size {
@@ -485,24 +488,25 @@ impl BitFont {
             font_type: self.font_type,
         }
     }
-    
+
     /// Load font from ANSI font slot (0-42)
-    /// 
+    ///
     /// # Arguments
     /// * `font_page` - Font slot number (0-42)
-    /// 
+    /// * `font_height` - Desired font height in pixels (8, 14, or 16)
+    ///
     /// # Returns
-    /// * `Ok(BitFont)` - The loaded font (f16 variant by default)
+    /// * `Ok(BitFont)` - The loaded font (cached for performance)
     /// * `Err` - If the slot is invalid
-    pub fn from_ansi_font_page(font_page: usize, screen_height: i32) -> crate::Result<Self> {
-        ansi::load_ansi_font(font_page, screen_height)
+    pub fn from_ansi_font_page(font_page: usize, font_height: u8) -> Option<&'static Self> {
+        ansi::get_ansi_font(font_page, font_height)
     }
-    
+
     /// Load font from SAUCE font name
-    /// 
+    ///
     /// # Arguments
     /// * `sauce_name` - SAUCE font name (e.g., "IBM VGA", "Amiga Topaz 1")
-    /// 
+    ///
     /// # Returns
     /// * `Ok(BitFont)` - The loaded font
     /// * `Err` - If the font name is not supported
@@ -519,8 +523,6 @@ impl FromStr for BitFont {
         BitFont::from_sauce_name(s)
     }
 }
-
-
 
 // ========================================
 // Legacy Constants for Backward Compatibility

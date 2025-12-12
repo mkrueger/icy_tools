@@ -20,7 +20,7 @@ pub use color_optimization::*;
 
 pub use io::seq::seq_prepare;
 
-use crate::{ANSI_FONTS, BitFont, EditableScreen, Layer, Result, Role, SAUCE_FONT_NAMES, Screen, Size, TextPane, TextScreen};
+use crate::{ANSI_FONTS, BitFont, EditableScreen, Layer, Result, Role, Screen, Size, TextPane, TextScreen, get_sauce_font_names};
 use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
@@ -333,14 +333,14 @@ pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
 
 pub fn guess_font_name(font: &BitFont) -> String {
     for i in 0..ANSI_FONTS {
-        if let Ok(ansi_font) = BitFont::from_ansi_font_page(i, 16) {
-            if ansi_font == *font {
+        if let Some(ansi_font) = BitFont::from_ansi_font_page(i, 16) {
+            if *ansi_font == *font {
                 return ansi_font.name().to_string();
             }
         }
     }
 
-    for name in SAUCE_FONT_NAMES {
+    for name in get_sauce_font_names() {
         if let Ok(sauce_font) = BitFont::from_sauce_name(name) {
             if sauce_font == *font {
                 return sauce_font.name().to_string();

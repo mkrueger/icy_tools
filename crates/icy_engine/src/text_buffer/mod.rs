@@ -214,6 +214,10 @@ pub struct TextBuffer {
     /// Maximum number of lines to keep in scrollback (0 = unlimited)
     pub max_scrollback_lines: usize,
 
+    /// Font cell size for this document (determines rendering and layout)
+    /// This is the expected font size - fonts with different sizes will be clipped/padded
+    font_cell_size: Size,
+
     /// Dirty flag: set when buffer content changes, cleared when rendered
     buffer_dirty: std::sync::atomic::AtomicBool,
 
@@ -268,6 +272,7 @@ impl Clone for TextBuffer {
             show_tags: self.show_tags,
             tags: self.tags.clone(),
             max_scrollback_lines: self.max_scrollback_lines,
+            font_cell_size: self.font_cell_size,
             buffer_dirty: std::sync::atomic::AtomicBool::new(self.buffer_dirty.load(std::sync::atomic::Ordering::Relaxed)),
             buffer_version: std::sync::atomic::AtomicU64::new(self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)),
         }
@@ -443,7 +448,8 @@ impl TextBuffer {
             show_tags: true,
             tags: Vec::new(),
             //            ansi_music: Vec::new(),
-            max_scrollback_lines: 10000, // Reasonable default
+            max_scrollback_lines: 10000,      // Reasonable default
+            font_cell_size: Size::new(8, 16), // Default VGA 8x16 font
 
             buffer_dirty: std::sync::atomic::AtomicBool::new(true),
             buffer_version: std::sync::atomic::AtomicU64::new(0),
@@ -514,7 +520,13 @@ impl TextBuffer {
     }
 
     pub fn font(&self, font_number: usize) -> Option<&BitFont> {
-        self.font_table.get(&font_number)
+        if let Some(font) = self.font_table.get(&font_number) {
+            Some(font)
+        } else if let Some(font) = BitFont::from_ansi_font_page(font_number, self.font_cell_size.height as u8) {
+            Some(font)
+        } else {
+            None
+        }
     }
 
     /// Get the appropriate font for rendering, considering letter spacing setting.
@@ -719,7 +731,15 @@ impl TextBuffer {
 
     #[must_use]
     pub fn font_dimensions(&self) -> Size {
-        if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
+        self.font_cell_size
+    }
+
+    /// Set the font cell size for this document
+    pub fn set_font_dimensions(&mut self, size: Size) {
+        if self.font_cell_size != size {
+            self.font_cell_size = size;
+            self.mark_dirty();
+        }
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {

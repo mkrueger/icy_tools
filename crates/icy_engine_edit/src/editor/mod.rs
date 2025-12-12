@@ -256,7 +256,7 @@ impl EditState {
         &self.screen.buffer
     }
 
-    pub fn get_buffer_mut(&mut self) -> &mut TextBuffer {
+    pub(crate) fn get_buffer_mut(&mut self) -> &mut TextBuffer {
         &mut self.screen.buffer
     }
 
@@ -325,12 +325,132 @@ impl EditState {
         &self.screen.caret
     }
 
-    pub fn get_caret_mut(&mut self) -> &mut Caret {
+    pub(crate) fn get_caret_mut(&mut self) -> &mut Caret {
         &mut self.screen.caret
     }
 
-    pub fn get_buffer_and_caret_mut(&mut self) -> (&mut TextBuffer, &mut Caret) {
-        (&mut self.screen.buffer, &mut self.screen.caret)
+    // =========================================================================
+    // Public caret manipulation methods (safe API without exposing &mut Caret)
+    // =========================================================================
+
+    /// Set the caret position
+    pub fn set_caret_position(&mut self, pos: Position) {
+        self.screen.caret.set_position(pos);
+    }
+
+    /// Set the caret X coordinate
+    pub fn set_caret_x(&mut self, x: i32) {
+        self.screen.caret.x = x;
+    }
+
+    /// Set the caret Y coordinate
+    pub fn set_caret_y(&mut self, y: i32) {
+        self.screen.caret.y = y;
+    }
+
+    /// Set the caret foreground color
+    pub fn set_caret_foreground(&mut self, color: u32) {
+        self.screen.caret.attribute.set_foreground(color);
+    }
+
+    /// Set the caret background color
+    pub fn set_caret_background(&mut self, color: u32) {
+        self.screen.caret.attribute.set_background(color);
+    }
+
+    /// Swap foreground and background colors, returns (new_fg, new_bg)
+    pub fn swap_caret_colors(&mut self) -> (u32, u32) {
+        let fg = self.screen.caret.attribute.foreground();
+        let bg = self.screen.caret.attribute.background();
+        self.screen.caret.attribute.set_foreground(bg);
+        self.screen.caret.attribute.set_background(fg);
+        (bg, fg)
+    }
+
+    /// Reset caret colors to default (fg=7, bg=0)
+    pub fn reset_caret_colors(&mut self) {
+        self.screen.caret.attribute.set_foreground(7);
+        self.screen.caret.attribute.set_background(0);
+    }
+
+    /// Set the caret's font page
+    pub fn set_caret_font_page(&mut self, page: usize) {
+        self.screen.caret.set_font_page(page);
+    }
+
+    /// Move caret up by given amount (clamped to 0)
+    pub fn move_caret_up(&mut self, amount: i32) {
+        self.screen.caret.y = (self.screen.caret.y - amount).max(0);
+    }
+
+    /// Move caret down by given amount
+    pub fn move_caret_down(&mut self, amount: i32) {
+        self.screen.caret.y += amount;
+    }
+
+    /// Move caret left by given amount (clamped to 0)
+    pub fn move_caret_left(&mut self, amount: i32) {
+        self.screen.caret.x = (self.screen.caret.x - amount).max(0);
+    }
+
+    /// Move caret right by given amount
+    pub fn move_caret_right(&mut self, amount: i32) {
+        self.screen.caret.x += amount;
+    }
+
+    /// Set caret visibility
+    pub fn set_caret_visible(&mut self, visible: bool) {
+        self.screen.caret.visible = visible;
+    }
+
+    // =========================================================================
+    // Public buffer manipulation methods (safe API)
+    // =========================================================================
+
+    /// Mark the buffer as dirty
+    pub fn mark_buffer_dirty(&mut self) {
+        self.screen.buffer.mark_dirty();
+    }
+
+    /// Set buffer size (without undo - use for initialization only)
+    pub fn set_buffer_size_no_undo(&mut self, size: icy_engine::Size) {
+        self.screen.buffer.set_size(size);
+    }
+
+    /// Set buffer width (without undo - use for initialization only)
+    pub fn set_buffer_width_no_undo(&mut self, width: i32) {
+        self.screen.buffer.set_width(width);
+    }
+
+    /// Set font dimensions (without undo - use for initialization only)
+    pub fn set_font_dimensions_no_undo(&mut self, size: icy_engine::Size) {
+        self.screen.buffer.set_font_dimensions(size);
+    }
+
+    /// Set letter spacing mode directly (without undo - use for initialization only)
+    pub fn set_use_letter_spacing_no_undo(&mut self, use_spacing: bool) {
+        self.screen.buffer.set_use_letter_spacing(use_spacing);
+    }
+
+    /// Set aspect ratio mode directly (without undo - use for initialization only)
+    pub fn set_use_aspect_ratio_no_undo(&mut self, use_ratio: bool) {
+        self.screen.buffer.set_use_aspect_ratio(use_ratio);
+    }
+
+    /// Set ice mode directly (without undo - use for initialization only)
+    pub fn set_ice_mode_no_undo(&mut self, mode: icy_engine::IceMode) {
+        self.screen.buffer.ice_mode = mode;
+    }
+
+    /// Get mutable reference to buffer layers (for rendering into buffer)
+    pub fn get_layers_mut(&mut self) -> &mut Vec<Layer> {
+        &mut self.screen.buffer.layers
+    }
+
+    /// Execute a callback with mutable buffer access.
+    /// WARNING: This bypasses undo! Use only for initialization or rendering.
+    pub fn with_buffer_mut_no_undo<R, F: FnOnce(&mut TextBuffer) -> R>(&mut self, f: F) -> R {
+        f(&mut self.screen.buffer)
     }
 
     pub fn copy_text(&self) -> Option<String> {

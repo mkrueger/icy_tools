@@ -326,23 +326,23 @@ impl CharFontEditor {
         let selected_char = self.charset_state.selected_char();
 
         let mut state = self.edit_state.lock();
-        let buffer = state.get_buffer_mut();
-        set_up_buffer(buffer);
+        state.with_buffer_mut_no_undo(|buffer| set_up_buffer(buffer));
         state.set_current_layer(0);
-        state.get_caret_mut().set_position(icy_engine::Position::new(0, 0));
+        state.set_caret_position(icy_engine::Position::new(0, 0));
 
         if let Some(ch) = selected_char {
             // Use TdfBufferRenderer to render the glyph
             if let Some(glyph) = font.glyph(ch) {
-                let buffer = state.get_buffer_mut();
-                let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
-                let options = RenderOptions::default();
-                let _ = glyph.render(&mut renderer, &options);
+                state.with_buffer_mut_no_undo(|buffer| {
+                    let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
+                    let options = RenderOptions::default();
+                    let _ = glyph.render(&mut renderer, &options);
+                });
             }
         }
 
         // Mark buffer as dirty to trigger re-render
-        state.get_buffer_mut().mark_dirty();
+        state.mark_buffer_dirty();
         state.get_undo_stack().lock().unwrap().clear();
 
         // Update the preview terminal with the rendered character
@@ -364,23 +364,23 @@ impl CharFontEditor {
 
         // The screen is a Box<dyn Screen>, we need to cast it to EditState to access the buffer
         if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            let buffer = edit_state.get_buffer_mut();
-            set_up_buffer(buffer);
+            edit_state.with_buffer_mut_no_undo(|buffer| set_up_buffer(buffer));
             edit_state.set_current_layer(0);
-            edit_state.get_caret_mut().set_position(icy_engine::Position::new(0, 0));
+            edit_state.set_caret_position(icy_engine::Position::new(0, 0));
 
             if let Some(ch) = selected_char {
                 // Use TdfBufferRenderer to render the glyph
                 if let Some(glyph) = font.glyph(ch) {
-                    let buffer = edit_state.get_buffer_mut();
-                    let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
-                    let options = RenderOptions::default();
-                    let _ = glyph.render(&mut renderer, &options);
+                    edit_state.with_buffer_mut_no_undo(|buffer| {
+                        let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
+                        let options = RenderOptions::default();
+                        let _ = glyph.render(&mut renderer, &options);
+                    });
                 }
             }
 
             // Mark buffer as dirty to trigger re-render
-            edit_state.get_buffer_mut().mark_dirty();
+            edit_state.mark_buffer_dirty();
             edit_state.get_undo_stack().lock().unwrap().clear();
         }
     }
@@ -408,21 +408,15 @@ impl CharFontEditor {
                     }
                     ColorSwitcherMessage::AnimationComplete => {
                         let mut state = self.edit_state.lock();
-                        let caret = state.get_caret_mut();
-                        let fg = caret.attribute.foreground();
-                        let bg = caret.attribute.background();
-                        caret.attribute.set_foreground(bg);
-                        caret.attribute.set_background(fg);
+                        let (fg, bg) = state.swap_caret_colors();
                         drop(state);
-                        self.palette_grid.set_foreground(bg);
-                        self.palette_grid.set_background(fg);
+                        self.palette_grid.set_foreground(fg);
+                        self.palette_grid.set_background(bg);
                         self.color_switcher.confirm_swap();
                     }
                     ColorSwitcherMessage::ResetToDefault => {
                         let mut state = self.edit_state.lock();
-                        let caret = state.get_caret_mut();
-                        caret.attribute.set_foreground(7);
-                        caret.attribute.set_background(0);
+                        state.reset_caret_colors();
                         drop(state);
                         self.palette_grid.set_foreground(7);
                         self.palette_grid.set_background(0);
@@ -439,13 +433,13 @@ impl CharFontEditor {
                 match msg {
                     PaletteGridMessage::SetForeground(color) => {
                         let mut state = self.edit_state.lock();
-                        state.get_caret_mut().attribute.set_foreground(color);
+                        state.set_caret_foreground(color);
                         drop(state);
                         self.palette_grid.set_foreground(color);
                     }
                     PaletteGridMessage::SetBackground(color) => {
                         let mut state = self.edit_state.lock();
-                        state.get_caret_mut().attribute.set_background(color);
+                        state.set_caret_background(color);
                         drop(state);
                         self.palette_grid.set_background(color);
                     }

@@ -3,8 +3,22 @@
 //! Multi-Size Varianten (f08, f14, f16)
 //! Auswahl basierend auf Zeilenzahl: 50→f08, 28→f14, 25→f16
 
+use std::sync::OnceLock;
+
 use super::BitFont;
 use crate::ParserError;
+
+/// Macro to create array of OnceLock
+macro_rules! once_lock_array {
+    ($n:expr) => {{
+        const INIT: [OnceLock<BitFont>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
+        [INIT; $n]
+    }};
+}
+
+/// Static cache for each slot/height combination: [slot][height_index]
+/// height_index: 0=8px, 1=14px, 2=16px
+static FONT_CACHE: [[OnceLock<BitFont>; 3]; ANSI_SLOT_COUNT] = once_lock_array!(ANSI_SLOT_COUNT);
 
 /// ANSI Font Slot mit optionalen Größenvarianten
 pub struct AnsiSlotFont {
@@ -547,7 +561,7 @@ pub static ANSI_SLOT_FONTS: [AnsiSlotFont; ANSI_SLOT_COUNT] = [
 /// * `font_height` - Desired font height (8, 14, or 16)
 ///
 /// # Returns
-/// * `Ok(BitFont)` - The loaded font
+/// * `Ok(&BitFont)` - Reference to the cached font
 /// * `Err` - If the slot is invalid or no font variant is available
 ///
 /// # Fallback behavior
@@ -555,25 +569,51 @@ pub static ANSI_SLOT_FONTS: [AnsiSlotFont; ANSI_SLOT_COUNT] = [
 /// - f16 (preferred fallback)
 /// - f14 (secondary fallback)  
 /// - f08 (last resort)
-pub fn load_ansi_font(slot: usize, screen_height: i32) -> crate::Result<BitFont> {
+///
+/// # Caching
+/// Fonts are cached after first load for performance.
+pub fn get_ansi_font(slot: usize, font_height: u8) -> Option<&'static BitFont> {
     if slot >= ANSI_SLOT_COUNT {
-        return Err(ParserError::UnsupportedFont(slot).into());
+        log::warn!("Requested ANSI font slot {} is out of range", slot);
+        return None;
     }
 
+    // Map height to cache index: 0=8px, 1=14px, 2=16px
+    let height_index = match font_height {
+        8 => 0,
+        14 => 1,
+        _ => 2,
+    };
+
+    // Try to get from cache
+    if let Some(font) = FONT_CACHE[slot][height_index].get() {
+        return Some(font);
+    }
+
+    // Load font
     let slot_font = &ANSI_SLOT_FONTS[slot];
 
     // Try to get the exact height variant, with fallbacks
-    let font_data = if screen_height < 28 {
-        slot_font.f16.or(slot_font.f14).or(slot_font.f08)
-    } else if screen_height < 43 {
-        slot_font.f14.or(slot_font.f16).or(slot_font.f08)
-    } else {
-        slot_font.f16.or(slot_font.f14).or(slot_font.f08)
+    let font_data = match font_height {
+        8 => slot_font.f08.or(slot_font.f14).or(slot_font.f16),
+        14 => slot_font.f14.or(slot_font.f16).or(slot_font.f08),
+        _ => slot_font.f16.or(slot_font.f14).or(slot_font.f08),
     };
 
     match font_data {
-        Some(data) => BitFont::from_bytes(slot_font.name, data),
-        None => Err(ParserError::UnsupportedFont(slot).into()),
+        Some(data) => {
+            let Ok(font) = BitFont::from_bytes(slot_font.name, data) else {
+                log::error!("Failed to parse font data for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
+                return None;
+            };
+            // Store in cache and return reference
+            let _ = FONT_CACHE[slot][height_index].set(font);
+            Some(FONT_CACHE[slot][height_index].get().unwrap())
+        }
+        None => {
+            log::warn!("No font data available for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
+            None
+        }
     }
 }
 
@@ -602,8 +642,5 @@ pub fn get_slot_font_names() -> Vec<&'static str> {
 /// Find a slot by name (case-insensitive partial match)
 pub fn find_slot_by_name(name: &str) -> Option<usize> {
     let name_lower = name.to_lowercase();
-    ANSI_SLOT_FONTS
-        .iter()
-        .find(|f| f.name.to_lowercase().contains(&name_lower))
-        .map(|f| f.slot)
+    ANSI_SLOT_FONTS.iter().find(|f| f.name.to_lowercase().contains(&name_lower)).map(|f| f.slot)
 }

@@ -1,4 +1,3 @@
-
 // ========================================
 // Amiga Workbench Fonts (Name + Size lookup)
 // ========================================
@@ -85,4 +84,3 @@ amiga_fonts![
     (AMIGA_COURIER_30, "workbench-3.1/Courier_30.yaff", "Courier.font", 30),
     (AMIGA_COURIER_36, "workbench-3.1/Courier_36.yaff", "Courier.font", 36),
 ];
-

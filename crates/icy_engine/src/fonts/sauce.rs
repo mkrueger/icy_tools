@@ -4,7 +4,7 @@
 //! Implements fallback chain according to SAUCE specification.
 
 use super::BitFont;
-use super::ansi::load_ansi_font;
+use super::ansi::get_ansi_font;
 
 /// Source for a SAUCE font - either an ANSI slot or a dedicated file
 pub enum SauceFontSource {
@@ -46,7 +46,7 @@ const C64_PETSCII_SHIFTED: &[u8] = include_bytes!("../../data/fonts/Commodore/C6
 const ATARI_ATASCII: &[u8] = include_bytes!("../../data/fonts/Atari/Atari_ATASCII.psf");
 
 /// Complete SAUCE font mapping table
-/// 
+///
 /// According to SAUCE spec, these are the standard font names.
 /// See: https://www.acid.org/info/sauce/sauce.htm
 pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
@@ -73,7 +73,6 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
         sauce_name: "IBM EGA43",
         source: SauceFontSource::Dedicated(IBM_EGA43), // CP437 8x8 for 43-line mode
     },
-    
     // ========================================
     // IBM PC VGA Fonts with Codepages
     // ========================================
@@ -102,7 +101,6 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
         sauce_name: "IBM VGA 1251",
         source: SauceFontSource::AnsiSlot(20),
     },
-    
     // ========================================
     // Amiga Fonts
     // ========================================
@@ -138,7 +136,6 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
         sauce_name: "Amiga mOsOul",
         source: SauceFontSource::Dedicated(AMIGA_MOSOUL),
     },
-    
     // ========================================
     // Commodore 64 Fonts
     // ========================================
@@ -150,7 +147,6 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
         sauce_name: "C64 PETSCII shifted",
         source: SauceFontSource::Dedicated(C64_PETSCII_SHIFTED),
     },
-    
     // ========================================
     // Atari Fonts
     // ========================================
@@ -179,19 +175,15 @@ pub fn load_sauce_font(sauce_name: &str) -> crate::Result<BitFont> {
     if let Some(font) = try_load_sauce_font(sauce_name) {
         return Ok(font);
     }
-    
+
     // Fallback 1: For "IBM VGA ###" or "IBM EGA ###", try base name
     if sauce_name.starts_with("IBM VGA ") || sauce_name.starts_with("IBM EGA ") {
-        let base_name = if sauce_name.starts_with("IBM VGA") {
-            "IBM VGA"
-        } else {
-            "IBM EGA"
-        };
+        let base_name = if sauce_name.starts_with("IBM VGA") { "IBM VGA" } else { "IBM EGA" };
         if let Some(font) = try_load_sauce_font(base_name) {
             return Ok(font);
         }
     }
-    
+
     // Fallback 2: For "Amiga Font+" → try "Amiga Font"
     if sauce_name.ends_with('+') {
         let base_name = &sauce_name[..sauce_name.len() - 1];
@@ -199,9 +191,9 @@ pub fn load_sauce_font(sauce_name: &str) -> crate::Result<BitFont> {
             return Ok(font);
         }
     }
-    
+
     // Fallback 3: Default to IBM VGA (slot 0)
-    load_ansi_font(0, 16)
+    Ok(get_ansi_font(0, 16).cloned().unwrap())
 }
 
 /// Try to load a SAUCE font by exact name match
@@ -210,11 +202,10 @@ fn try_load_sauce_font(sauce_name: &str) -> Option<BitFont> {
         if mapping.sauce_name.eq_ignore_ascii_case(sauce_name) {
             return match &mapping.source {
                 SauceFontSource::AnsiSlot(slot) => {
-                    load_ansi_font(*slot, 16).ok()
+                    // Load ANSI font but rename it to the SAUCE name
+                    get_ansi_font(*slot, 16).cloned()
                 }
-                SauceFontSource::Dedicated(data) => {
-                    BitFont::from_bytes(mapping.sauce_name, *data).ok()
-                }
+                SauceFontSource::Dedicated(data) => BitFont::from_bytes(mapping.sauce_name, *data).ok(),
             };
         }
     }
@@ -226,6 +217,7 @@ pub fn get_sauce_font_names() -> Vec<&'static str> {
     SAUCE_FONT_MAP.iter().map(|m| m.sauce_name).collect()
 }
 
+/*
 /// All SAUCE font names as a static slice
 pub static SAUCE_FONT_NAMES: &[&str] = &[
     "IBM VGA",
@@ -356,26 +348,24 @@ pub static SAUCE_FONT_NAMES: &[&str] = &[
     "Atari ATASCII",
 ];
 
-/// Export the IBM VGA50 font data for use by screen_modes
-pub const IBM_VGA50_SAUCE: &[u8] = IBM_VGA50;
-
 /// Check if a SAUCE font name is supported
 pub fn is_sauce_font_supported(sauce_name: &str) -> bool {
     // Check exact match
     if SAUCE_FONT_MAP.iter().any(|m| m.sauce_name.eq_ignore_ascii_case(sauce_name)) {
         return true;
     }
-    
+
     // Check if it's a codepage variant that can fall back
     if sauce_name.starts_with("IBM VGA ") || sauce_name.starts_with("IBM EGA ") {
         return true;
     }
-    
+
     // Check if it's an Amiga+ variant
     if sauce_name.ends_with('+') && sauce_name.starts_with("Amiga ") {
         let base_name = &sauce_name[..sauce_name.len() - 1];
         return SAUCE_FONT_MAP.iter().any(|m| m.sauce_name.eq_ignore_ascii_case(base_name));
     }
-    
+
     false
 }
+*/

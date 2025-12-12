@@ -273,14 +273,39 @@ pub fn any_window_needs_animation<W: Window>(windows: &BTreeMap<window::Id, W>) 
 // Re-export ANIMATION_TICK_MS from viewport module for convenience
 pub use crate::viewport::ANIMATION_TICK_MS;
 
-/// Check if a keyboard event is Alt/Cmd+Number for focusing windows.
-/// Returns Some(target_window_id) if the key combination matches (Alt/Cmd + 0-9),
-/// or None if not a window focus key.
+/// Result of keyboard handling for window manager actions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyboardAction {
+    /// Focus a specific window by ID (1-10)
+    FocusWindow(usize),
+    /// Focus next widget (Tab)
+    FocusNext,
+    /// Focus previous widget (Shift+Tab)
+    FocusPrevious,
+}
+
+/// Check if a keyboard event is a window manager action.
+///
+/// Returns `Some(KeyboardAction)` for:
+/// - Alt/Cmd + 0-9: Focus window by ID
+/// - Tab: Focus next widget
+/// - Shift+Tab: Focus previous widget
 ///
 /// Window IDs: 1-9 map to windows 1-9, 0 maps to window 10.
 ///
 /// Note: Uses Alt on all platforms. On macOS, Cmd is also accepted (without Ctrl).
-pub fn check_window_focus_key(key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> Option<usize> {
+pub fn handle_window_manager_keyboard_press(key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> Option<KeyboardAction> {
+    use iced::keyboard::key::Named;
+
+    // Handle Tab / Shift+Tab for focus navigation
+    if let iced::keyboard::Key::Named(Named::Tab) = key {
+        if modifiers.shift() {
+            return Some(KeyboardAction::FocusPrevious);
+        } else {
+            return Some(KeyboardAction::FocusNext);
+        }
+    }
+
     // Alt+Number works on all platforms
     // Cmd+Number works on macOS (command() returns true for Cmd on macOS, Ctrl on Linux/Windows)
     // We accept Alt always, or Cmd without Ctrl (to avoid Ctrl+Number conflicts)
@@ -293,7 +318,7 @@ pub fn check_window_focus_key(key: &iced::keyboard::Key, modifiers: &iced::keybo
                     let target_id = digit.to_digit(10).unwrap() as usize;
                     // Special case: Alt+0 focuses window 10
                     let target_id = if target_id == 0 { 10 } else { target_id };
-                    return Some(target_id);
+                    return Some(KeyboardAction::FocusWindow(target_id));
                 }
             }
         }

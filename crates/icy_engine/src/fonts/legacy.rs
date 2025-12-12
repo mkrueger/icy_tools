@@ -19,4 +19,3 @@ lazy_static::lazy_static! {
     // Atari font
     pub static ref ATARI: BitFont = BitFont::from_bytes("Atari ATASCII", include_bytes!("../../data/fonts/Atari/Atari_ATASCII.psf")).unwrap();
 }
-

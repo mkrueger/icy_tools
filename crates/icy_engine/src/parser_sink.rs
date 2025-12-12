@@ -648,13 +648,12 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 if self.screen().font(nr).is_some() {
                     self.set_font_selection_success(nr);
                 }
-                match BitFont::from_ansi_font_page(nr, self.screen().height()) {
-                    Ok(font) => {
-                        self.screen_mut().set_font(nr, font);
+                match BitFont::from_ansi_font_page(nr, self.screen().font_dimensions().height as u8) {
+                    Some(font) => {
+                        self.screen_mut().set_font(nr, font.clone());
                         self.set_font_selection_success(nr);
                     }
-                    Err(err) => {
-                        log::error!("failed font selection: {}", err);
+                    None => {
                         self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
                     }
                 }

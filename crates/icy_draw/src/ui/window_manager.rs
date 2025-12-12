@@ -84,6 +84,10 @@ pub enum WindowManagerMessage {
     WindowCloseRequested(window::Id),
     WindowOpened(window::Id),
     FocusWindow(usize),
+    /// Focus next widget (Tab)
+    FocusNext,
+    /// Focus previous widget (Shift+Tab)
+    FocusPrevious,
     WindowClosed(window::Id),
     /// Window was moved - save session with new position
     WindowMoved(window::Id, Point),
@@ -524,6 +528,10 @@ impl WindowManager {
 
             WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
+            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
+
+            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+
             WindowManagerMessage::AnimationTick => {
                 // Send tick to all windows that need animation
                 let tasks: Vec<_> = self
@@ -688,9 +696,14 @@ impl WindowManager {
                         None
                     }
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Alt+Number to focus window
-                        if let Some(target_id) = icy_engine_gui::check_window_focus_key(key, modifiers) {
-                            return Some(WindowManagerMessage::FocusWindow(target_id));
+                        // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
+                        if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
+                            use icy_engine_gui::KeyboardAction;
+                            return match action {
+                                KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
+                                KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
+                                KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
+                            };
                         }
                         Some(WindowManagerMessage::Event(window_id, event))
                     }

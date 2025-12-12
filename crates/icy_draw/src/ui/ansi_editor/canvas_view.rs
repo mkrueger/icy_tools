@@ -15,7 +15,7 @@ use icy_engine::Screen;
 
 use crate::fl;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::{MonitorSettings, ScalingMode, ScrollbarOverlay, HorizontalScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
+use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::Mutex;
 
 /// Messages for the canvas view

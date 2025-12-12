@@ -3,13 +3,13 @@
 //! Each MainWindow represents one editing window with its own state and mode.
 //! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
-use std::{path::PathBuf, sync::Arc};
+use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
 use iced::{
     Alignment, Element, Event, Length, Task, Theme,
-    widget::{column, container, mouse_area, row, rule, text},
+    widget::{Space, column, container, mouse_area, row, rule, text},
 };
 use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
@@ -254,9 +254,14 @@ pub enum Message {
     // Fonts
     // ═══════════════════════════════════════════════════════════════════════════
     SwitchFontMode(icy_engine::FontMode),
+    SwitchFontSlot(usize),
     OpenFontSelector,
+    OpenFontSelectorForSlot(usize),
     FontSelector(super::ansi_editor::FontSelectorMessage),
     ApplyFontSelection(super::ansi_editor::FontSelectorResult),
+    OpenFontSlotManager,
+    FontSlotManager(super::ansi_editor::FontSlotManagerMessage),
+    ApplyFontSlotChange(super::ansi_editor::FontSlotManagerResult),
     AddFonts,
     OpenFontManager,
     OpenFontDirectory,
@@ -364,10 +369,30 @@ pub struct StatusBarInfo {
     pub right: String,
     /// Optional clickable font name (for ANSI editor)
     pub font_name: Option<String>,
+    /// For XBinExtended: slot font info
+    pub slot_fonts: Option<SlotFontsInfo>,
+}
+
+/// Font slot information for XBinExtended mode
+#[derive(Clone, Debug)]
+pub struct SlotFontsInfo {
+    pub current_slot: usize,
+    pub slot0_name: Option<String>,
+    pub slot1_name: Option<String>,
 }
 
 impl From<AnsiStatusInfo> for StatusBarInfo {
     fn from(info: AnsiStatusInfo) -> Self {
+        let slot_fonts = if info.format_mode == icy_engine_edit::FormatMode::XBinExtended {
+            info.slot_fonts.map(|fonts| SlotFontsInfo {
+                current_slot: info.current_font_slot,
+                slot0_name: fonts[0].clone(),
+                slot1_name: fonts[1].clone(),
+            })
+        } else {
+            None
+        };
+
         Self {
             left: format!("{}×{}", info.buffer_size.0, info.buffer_size.1,),
             center: format!("Layer {}/{}", info.current_layer + 1, info.total_layers,),
@@ -378,7 +403,8 @@ impl From<AnsiStatusInfo> for StatusBarInfo {
                 info.cursor_position.0,
                 info.cursor_position.1,
             ),
-            font_name: Some(info.font_name),
+            font_name: if slot_fonts.is_some() { None } else { Some(info.font_name) },
+            slot_fonts,
         }
     }
 }
@@ -436,6 +462,9 @@ pub struct MainWindow {
 
     /// Cached title string for Window trait (updated when file changes)
     pub title: String,
+
+    /// Double-click detector for font slot buttons in status bar
+    slot_double_click: RefCell<icy_view_gui::DoubleClickDetector<usize>>,
 }
 
 impl MainWindow {
@@ -514,6 +543,7 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
+            slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
         };
         window.update_title();
         window
@@ -693,6 +723,7 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
+            slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
         };
         window.update_title();
         window
@@ -1381,38 +1412,39 @@ impl MainWindow {
                 self.dialogs.update_animation();
 
                 match &mut self.mode_state {
-                ModeState::Ansi(editor) => {
-                    let delta = 0.016;
+                    ModeState::Ansi(editor) => {
+                        let delta = 0.016;
 
-                    let color_task = editor
-                        .update(AnsiEditorMessage::ColorSwitcher(crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta)))
-                        .map(Message::AnsiEditor);
+                        let color_task = editor
+                            .update(AnsiEditorMessage::ColorSwitcher(crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta)))
+                            .map(Message::AnsiEditor);
 
-                    let tool_task = editor
-                        .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
-                        .map(Message::AnsiEditor);
+                        let tool_task = editor
+                            .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
+                            .map(Message::AnsiEditor);
 
-                    // Update canvas animations (scrollbar fade, smooth scrolling)
-                    let viewport_task = editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor);
+                        // Update canvas animations (scrollbar fade, smooth scrolling)
+                        let viewport_task = editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor);
 
-                    Task::batch([color_task, tool_task, viewport_task])
+                        Task::batch([color_task, tool_task, viewport_task])
+                    }
+                    ModeState::BitFont(editor) => {
+                        let delta = 0.016;
+                        editor
+                            .update(BitFontEditorMessage::TopToolbar(BitFontTopToolbarMessage::ColorSwitcher(
+                                crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta),
+                            )))
+                            .map(Message::BitFontEditor)
+                    }
+                    ModeState::CharFont(editor) => {
+                        let delta = 0.016;
+                        editor
+                            .update(super::charfont_editor::CharFontEditorMessage::Tick(delta))
+                            .map(Message::CharFontEditor)
+                    }
+                    ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
                 }
-                ModeState::BitFont(editor) => {
-                    let delta = 0.016;
-                    editor
-                        .update(BitFontEditorMessage::TopToolbar(BitFontTopToolbarMessage::ColorSwitcher(
-                            crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta),
-                        )))
-                        .map(Message::BitFontEditor)
-                }
-                ModeState::CharFont(editor) => {
-                    let delta = 0.016;
-                    editor
-                        .update(super::charfont_editor::CharFontEditorMessage::Tick(delta))
-                        .map(Message::CharFontEditor)
-                }
-                ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
-            }}
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Font Import Dialog
@@ -1522,12 +1554,13 @@ impl MainWindow {
                     let mut screen = editor.screen.lock();
                     if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
                         // Apply canvas size
-                        let buffer = state.get_buffer();
-                        let current_size = buffer.size();
+                        let current_size = state.get_buffer().size();
                         if result.width != current_size.width || result.height != current_size.height {
-                            let buffer = state.get_buffer_mut();
-                            buffer.set_size(icy_engine::Size::new(result.width, result.height));
+                            state.set_buffer_size_no_undo(icy_engine::Size::new(result.width, result.height));
                         }
+
+                        // Apply font cell size
+                        state.set_font_dimensions_no_undo(icy_engine::Size::new(result.font_width, result.font_height));
 
                         // Apply SAUCE metadata
                         let mut sauce_meta = icy_engine_edit::SauceMetaData::default();
@@ -1539,21 +1572,20 @@ impl MainWindow {
                         }
                         state.set_sauce_meta(sauce_meta);
 
-                        let buffer = state.get_buffer_mut();
-
                         // Apply format mode (sets palette_mode and font_mode)
-                        result.format_mode.apply_to_buffer(buffer);
+                        state.set_format_mode(result.format_mode);
 
                         // Apply ice mode
-                        buffer.ice_mode = if result.ice_colors {
+                        let ice_mode = if result.ice_colors {
                             icy_engine::IceMode::Ice
                         } else {
                             icy_engine::IceMode::Blink
                         };
+                        state.set_ice_mode_no_undo(ice_mode);
 
                         // Apply display options
-                        buffer.set_use_letter_spacing(result.use_9px_font);
-                        buffer.set_use_aspect_ratio(result.legacy_aspect);
+                        state.set_use_letter_spacing_no_undo(result.use_9px_font);
+                        state.set_use_aspect_ratio_no_undo(result.legacy_aspect);
                     }
                 }
                 Task::none()
@@ -1641,10 +1673,45 @@ impl MainWindow {
             // Font operations
             // ═══════════════════════════════════════════════════════════════════
             Message::SwitchFontMode(_mode) => Task::none(),
+            Message::SwitchFontSlot(slot) => {
+                // Check for double-click - if so, switch slot AND open font selector
+                let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
+
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // Always switch to the clicked slot
+                        state.set_caret_font_page(slot);
+
+                        // On double-click, also open the font selector
+                        if is_double_click {
+                            self.dialogs.push(super::ansi_editor::FontSelectorDialog::new(state));
+                        }
+                    }
+                }
+                Task::none()
+            }
             Message::OpenFontSelector => {
                 if let ModeState::Ansi(editor) = &self.mode_state {
                     let mut screen = editor.screen.lock();
                     if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // In Unrestricted mode, open the Font Slot Manager instead
+                        // The user can then select a slot and the FontSelector will be opened for that slot
+                        if state.get_format_mode() == icy_engine_edit::FormatMode::Unrestricted {
+                            self.dialogs.push(super::ansi_editor::FontSlotManagerDialog::new(state));
+                        } else {
+                            self.dialogs.push(super::ansi_editor::FontSelectorDialog::new(state));
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::OpenFontSelectorForSlot(slot) => {
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // Set caret to the target slot before opening font selector
+                        state.set_caret_font_page(slot);
                         self.dialogs.push(super::ansi_editor::FontSelectorDialog::new(state));
                     }
                 }
@@ -1656,16 +1723,65 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let mut screen = editor.screen.lock();
                     if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        // Use EditState methods for proper undo support!
+                        // DO NOT use buffer.set_font() directly - it bypasses undo.
                         match result {
                             super::ansi_editor::FontSelectorResult::SingleFont(font) => {
                                 // For single font mode, set the font in slot 0
-                                let buffer = state.get_buffer_mut();
-                                buffer.set_font(0, font);
+                                if let Err(e) = state.set_font_in_slot(0, font) {
+                                    log::error!("Failed to set font: {}", e);
+                                }
                             }
                             super::ansi_editor::FontSelectorResult::FontForSlot { slot, font } => {
                                 // Set font in the specified slot
-                                let buffer = state.get_buffer_mut();
-                                buffer.set_font(slot, font);
+                                if let Err(e) = state.set_font_in_slot(slot, font) {
+                                    log::error!("Failed to set font in slot {}: {}", slot, e);
+                                }
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::OpenFontSlotManager => {
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        self.dialogs.push(super::ansi_editor::FontSlotManagerDialog::new(state));
+                    }
+                }
+                Task::none()
+            }
+            // FontSlotManager messages are routed through DialogStack::update above
+            Message::FontSlotManager(_) => Task::none(),
+            Message::ApplyFontSlotChange(result) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let mut screen = editor.screen.lock();
+                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                        match result {
+                            super::ansi_editor::FontSlotManagerResult::SelectSlot { slot } => {
+                                // Set the selected slot as the active font page
+                                state.set_caret_font_page(slot);
+                            }
+                            super::ansi_editor::FontSlotManagerResult::ResetSlot { slot, font } => {
+                                if let Some(font) = font {
+                                    if let Err(e) = state.set_font_in_slot(slot, font) {
+                                        log::error!("Failed to reset font in slot {}: {}", slot, e);
+                                    }
+                                }
+                            }
+                            super::ansi_editor::FontSlotManagerResult::RemoveSlot { slot } => {
+                                if let Err(e) = state.remove_font(slot) {
+                                    log::error!("Failed to remove font slot {}: {}", slot, e);
+                                }
+                            }
+                            super::ansi_editor::FontSlotManagerResult::OpenFontSelector { slot: _ } => {
+                                // This should not happen - OpenFontSelectorForSlot is used instead
+                            }
+                            super::ansi_editor::FontSlotManagerResult::AddSlot { slot, font } => {
+                                if let Err(e) = state.set_font_in_slot(slot, font) {
+                                    log::error!("Failed to add font slot {}: {}", slot, e);
+                                }
                             }
                         }
                     }
@@ -1885,28 +2001,45 @@ impl MainWindow {
         // Default status bar for other modes
         let info = self.get_status_info();
 
-        // Build right section - with clickable font name if available
-        let right_section: Element<'_, Message> = if let Some(font_name) = &info.font_name {
+        // Build right section - with slot buttons for XBinExtended or clickable font name
+        let right_section: Element<'_, Message> = if let Some(slots) = &info.slot_fonts {
+            // XBinExtended mode: show two slot buttons
+            let slot0_name = slots.slot0_name.as_deref().unwrap_or("Slot 0");
+            let slot1_name = slots.slot1_name.as_deref().unwrap_or("Slot 1");
+
+            let slot0_style = if slots.current_slot == 0 { active_slot_style } else { inactive_slot_style };
+            let slot1_style = if slots.current_slot == 1 { active_slot_style } else { inactive_slot_style };
+
+            let slot0_btn =
+                mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6])).on_press(Message::SwitchFontSlot(0));
+
+            let slot1_btn =
+                mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6])).on_press(Message::SwitchFontSlot(1));
+
+            row![text(format!("{}  ", info.right)).size(12), slot0_btn, Space::new().width(4.0), slot1_btn,]
+                .align_y(Alignment::Center)
+                .into()
+        } else if let Some(font_name) = &info.font_name {
             let font_display = mouse_area(
                 container(text(format!("🔤 {}", font_name)).size(12))
                     .style(|theme: &Theme| {
                         let palette = theme.extended_palette();
                         container::Style {
                             background: Some(iced::Background::Color(palette.background.weak.color)),
-                            border: iced::Border { radius: 3.0.into(), ..Default::default() },
+                            border: iced::Border {
+                                radius: 3.0.into(),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         }
                     })
-                    .padding([2, 6])
+                    .padding([2, 6]),
             )
             .on_press(Message::OpenFontSelector);
-            
-            row![
-                text(format!("{}  ", info.right)).size(12),
-                font_display,
-            ]
-            .align_y(Alignment::Center)
-            .into()
+
+            row![text(format!("{}  ", info.right)).size(12), font_display,]
+                .align_y(Alignment::Center)
+                .into()
         } else {
             text(info.right).size(12).into()
         };
@@ -1932,11 +2065,23 @@ impl MainWindow {
             ModeState::Ansi(editor) => editor.status_info().into(),
             ModeState::BitFont(editor) => {
                 let (left, center, right) = editor.status_info();
-                StatusBarInfo { left, center, right, font_name: None }
+                StatusBarInfo {
+                    left,
+                    center,
+                    right,
+                    font_name: None,
+                    slot_fonts: None,
+                }
             }
             ModeState::CharFont(editor) => {
                 let (left, center, right) = editor.status_info();
-                StatusBarInfo { left, center, right, font_name: None }
+                StatusBarInfo {
+                    left,
+                    center,
+                    right,
+                    font_name: None,
+                    slot_fonts: None,
+                }
             }
             ModeState::Animation(editor) => {
                 let (line, col) = editor.cursor_position();
@@ -1945,6 +2090,7 @@ impl MainWindow {
                     center: String::new(),
                     right: if editor.is_dirty() { "Modified".into() } else { String::new() },
                     font_name: None,
+                    slot_fonts: None,
                 }
             }
         }
@@ -2058,5 +2204,36 @@ impl icy_engine_gui::Window for MainWindow {
 
     fn needs_animation(&self) -> bool {
         self.needs_animation()
+    }
+}
+
+// ============================================================================
+// Style functions for status bar slot buttons
+// ============================================================================
+
+fn active_slot_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(iced::Background::Color(palette.primary.base.color)),
+        text_color: Some(palette.primary.base.text),
+        border: iced::Border {
+            radius: 3.0.into(),
+            width: 1.0,
+            color: palette.primary.strong.color,
+        },
+        ..Default::default()
+    }
+}
+
+fn inactive_slot_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(iced::Background::Color(palette.background.weak.color)),
+        text_color: Some(palette.background.base.text),
+        border: iced::Border {
+            radius: 3.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }

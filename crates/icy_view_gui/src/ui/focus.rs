@@ -244,6 +244,7 @@ where
                 if let Some(on_focus) = &self.on_focus {
                     shell.publish(on_focus.clone());
                 }
+                shell.capture_event();
             }
 
             if state.is_focused && !cursor.is_over(layout.bounds()) {
@@ -253,8 +254,6 @@ where
                     shell.publish(on_blur.clone());
                 }
             }
-
-            shell.capture_event();
         }
 
         // Call on_focus/on_blur if focus state changed from outside

@@ -15,8 +15,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse, window,
+    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse,
     widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Stroke},
+    window,
 };
 use parking_lot::RwLock;
 
@@ -82,16 +83,13 @@ impl<'a, V: ViewportAccess> ScrollbarOverlay<'a, V> {
     where
         V: 'a,
     {
-        Canvas::new(self)
-            .width(Length::Fixed(12.0))
-            .height(Length::Fill)
-            .into()
+        Canvas::new(self).width(Length::Fixed(12.0)).height(Length::Fill).into()
     }
 
     fn draw_scrollbar(&self, frame: &mut Frame, size: Size) {
-        let (visibility, scroll_position, height_ratio) = self.viewport.with_viewport(|vp| {
-            (vp.scrollbar.visibility, vp.scrollbar.scroll_position, vp.height_ratio())
-        });
+        let (visibility, scroll_position, height_ratio) = self
+            .viewport
+            .with_viewport(|vp| (vp.scrollbar.visibility, vp.scrollbar.scroll_position, vp.height_ratio()));
 
         draw_vertical_scrollbar(frame, size, visibility, scroll_position, height_ratio);
     }
@@ -100,14 +98,7 @@ impl<'a, V: ViewportAccess> ScrollbarOverlay<'a, V> {
 impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
     type State = ScrollbarOverlayState;
 
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let cache = Cache::new();
         let geometry = cache.draw(renderer, bounds.size(), |frame| {
             self.draw_scrollbar(frame, bounds.size());
@@ -116,13 +107,7 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
         vec![geometry]
     }
 
-    fn update(
-        &self,
-        _state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<iced::widget::canvas::Action<()>> {
+    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<()>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {
@@ -137,7 +122,7 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
                     // Continue animation if either needs more frames
                     vp.scrollbar.needs_animation() || vp.is_animating()
                 });
-                
+
                 if needs_more {
                     let next_frame = *now + Duration::from_millis(ANIMATION_FRAME_MS);
                     return Some(iced::widget::canvas::Action::request_redraw_at(next_frame));
@@ -200,12 +185,7 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
         None
     }
 
-    fn mouse_interaction(
-        &self,
-        _state: &Self::State,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> mouse::Interaction {
+    fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
         if cursor.is_over(bounds) {
             mouse::Interaction::Pointer
         } else {
@@ -255,10 +235,7 @@ where
     }
 
     pub fn view(self) -> Element<'static, Message> {
-        Canvas::new(self)
-            .width(Length::Fixed(12.0))
-            .height(Length::Fill)
-            .into()
+        Canvas::new(self).width(Length::Fixed(12.0)).height(Length::Fill).into()
     }
 
     fn calculate_scroll_from_position(&self, mouse_y: f32, height: f32) -> f32 {
@@ -280,14 +257,7 @@ where
 {
     type State = ScrollbarOverlayState;
 
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let cache = Cache::new();
         let geometry = cache.draw(renderer, bounds.size(), |frame| {
             draw_vertical_scrollbar(frame, bounds.size(), self.visibility, self.scroll_position, self.height_ratio);
@@ -295,13 +265,7 @@ where
         vec![geometry]
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<iced::widget::canvas::Action<Message>> {
+    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<Message>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {
@@ -348,12 +312,7 @@ where
         None
     }
 
-    fn mouse_interaction(
-        &self,
-        _state: &Self::State,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> mouse::Interaction {
+    fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
         if cursor.is_over(bounds) {
             mouse::Interaction::Pointer
         } else {
@@ -377,11 +336,7 @@ fn draw_vertical_scrollbar(frame: &mut Frame, size: Size, visibility: f32, scrol
         let max_thumb_offset = available_height - thumb_height;
         let thumb_y = TOP_PADDING + (max_thumb_offset * scroll_position);
 
-        let thin_thumb = Path::rounded_rectangle(
-            Point::new(line_x, thumb_y),
-            Size::new(MIN_WIDTH, thumb_height),
-            1.5.into(),
-        );
+        let thin_thumb = Path::rounded_rectangle(Point::new(line_x, thumb_y), Size::new(MIN_WIDTH, thumb_height), 1.5.into());
         frame.fill(&thin_thumb, Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA));
     } else {
         // Full scrollbar mode
@@ -390,10 +345,7 @@ fn draw_vertical_scrollbar(frame: &mut Frame, size: Size, visibility: f32, scrol
 
         // Background track
         let track_height = size.height - TOP_PADDING - BOTTOM_PADDING;
-        let track_path = Path::rectangle(
-            Point::new(scrollbar_x, TOP_PADDING),
-            Size::new(scrollbar_width, track_height),
-        );
+        let track_path = Path::rectangle(Point::new(scrollbar_x, TOP_PADDING), Size::new(scrollbar_width, track_height));
         frame.fill(&track_path, Color::from_rgba(0.0, 0.0, 0.0, 0.2 * visibility));
 
         // Thumb
@@ -402,21 +354,12 @@ fn draw_vertical_scrollbar(frame: &mut Frame, size: Size, visibility: f32, scrol
         let max_thumb_offset = available_height - thumb_height;
         let thumb_y = TOP_PADDING + (max_thumb_offset * scroll_position);
 
-        let thumb_path = Path::rounded_rectangle(
-            Point::new(scrollbar_x, thumb_y),
-            Size::new(scrollbar_width, thumb_height),
-            4.0.into(),
-        );
-        frame.fill(
-            &thumb_path,
-            Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * visibility),
-        );
+        let thumb_path = Path::rounded_rectangle(Point::new(scrollbar_x, thumb_y), Size::new(scrollbar_width, thumb_height), 4.0.into());
+        frame.fill(&thumb_path, Color::from_rgba(1.0, 1.0, 1.0, MIN_ALPHA + (MAX_ALPHA - MIN_ALPHA) * visibility));
 
         frame.stroke(
             &thumb_path,
-            Stroke::default()
-                .with_width(0.5)
-                .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.3 * visibility)),
+            Stroke::default().with_width(0.5).with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.3 * visibility)),
         );
     }
 }

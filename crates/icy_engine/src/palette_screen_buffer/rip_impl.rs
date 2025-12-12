@@ -16,7 +16,6 @@ use icy_parser_core::{FillStyle, ImagePasteMode, LineStyle, RipCommand, WriteMod
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 pub static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
-
 // Helper function that takes mutable references separately to avoid borrow checker issues
 fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipCommand) {
     match cmd {
