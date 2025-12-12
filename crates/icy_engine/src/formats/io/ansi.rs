@@ -158,17 +158,42 @@ impl StringGenerator {
         let mut sgr = Vec::new();
         let mut sgr_tc = Vec::new();
 
-        let fg = attr.foreground();
-        let cur_fore_color = buf.palette.color(fg);
-        let cur_fore_rgb = cur_fore_color.rgb();
+        // Track if color is from extended palette (256-color)
+        let fg_is_ext = attr.is_foreground_ext();
+        let bg_is_ext = attr.is_background_ext();
 
-        let bg = if self.use_ice_colors && attr.is_blinking() {
+        // Get foreground color - check if stored as direct RGB or extended palette
+        let (cur_fore_rgb, cur_fore_color) = if attr.is_foreground_rgb() {
+            let rgb = attr.foreground_rgb();
+            (rgb, crate::Color::new(rgb.0, rgb.1, rgb.2))
+        } else if fg_is_ext {
+            let idx = attr.foreground_ext() as usize;
+            let col = &XTERM_256_PALETTE[idx].1;
+            (col.rgb(), col.clone())
+        } else {
+            let fg = attr.foreground();
+            let cur_fore_color = buf.palette.color(fg);
+            (cur_fore_color.rgb(), cur_fore_color)
+        };
+
+        // Get background color - check if stored as direct RGB or extended palette
+        let bg_value = if self.use_ice_colors && attr.is_blinking() && !attr.is_background_rgb() && !bg_is_ext {
             attr.background() + 8
         } else {
             attr.background()
         };
-        let cur_back_color = buf.palette.color(bg);
-        let cur_back_rgb = cur_back_color.rgb();
+
+        let (cur_back_rgb, cur_back_color) = if attr.is_background_rgb() {
+            let rgb = attr.background_rgb();
+            (rgb, crate::Color::new(rgb.0, rgb.1, rgb.2))
+        } else if bg_is_ext {
+            let idx = attr.background_ext() as usize;
+            let col = &XTERM_256_PALETTE[idx].1;
+            (col.rgb(), col.clone())
+        } else {
+            let cur_back_color = buf.palette.color(bg_value);
+            (cur_back_color.rgb(), cur_back_color)
+        };
 
         let mut fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_fore_rgb);
         let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_back_rgb);
@@ -277,7 +302,7 @@ impl StringGenerator {
             state.is_blink = true;
             if self.use_ice_colors && state.bg_idx < 8 {
                 state.bg_idx += 8;
-                state.bg = buf.palette.color(bg);
+                state.bg = buf.palette.color(bg_value);
             }
         }
 
@@ -297,7 +322,12 @@ impl StringGenerator {
         }
 
         if cur_fore_rgb != state.fg.rgb() && !ch.is_transparent() {
-            if let Some(fg_idx) = fore_idx {
+            if fg_is_ext {
+                // Extended palette color - write directly as 38;5;n
+                sgr.push(38);
+                sgr.push(5);
+                sgr.push(attr.foreground_ext());
+            } else if let Some(fg_idx) = fore_idx {
                 sgr.push(COLOR_OFFSETS[fg_idx] + 30);
             } else if let Some(ext_color) = self.extended_color_hash.get(&cur_fore_rgb) {
                 sgr.push(38);
@@ -314,11 +344,16 @@ impl StringGenerator {
                 sgr_tc.push(cur_fore_rgb.1);
                 sgr_tc.push(cur_fore_rgb.2);
             }
-            state.fg_idx = fg;
+            state.fg_idx = attr.foreground();
             state.fg = cur_fore_color;
         }
         if cur_back_rgb != state.bg.rgb() {
-            if let Some(bg_idx) = back_idx {
+            if bg_is_ext {
+                // Extended palette color - write directly as 48;5;n
+                sgr.push(48);
+                sgr.push(5);
+                sgr.push(attr.background_ext());
+            } else if let Some(bg_idx) = back_idx {
                 sgr.push(COLOR_OFFSETS[bg_idx] + 40);
                 state.bg_idx = bg_idx as u32;
             } else if let Some(ext_color) = self.extended_color_hash.get(&cur_back_rgb) {
@@ -335,7 +370,7 @@ impl StringGenerator {
                 sgr_tc.push(cur_back_rgb.0);
                 sgr_tc.push(cur_back_rgb.1);
                 sgr_tc.push(cur_back_rgb.2);
-                state.bg_idx = bg;
+                state.bg_idx = bg_value;
             }
             state.bg = cur_back_color;
         }

@@ -928,7 +928,7 @@ pub const ATARI_XEP80_PALETTE: [Color; 16] = [
 
 #[rustfmt::skip]
 pub const EGA_PALETTE: [Color; 64] = [
-    //                                       R       G       B
+    //                  R        G        B
     Color { name: None, r: 0x00, g: 0x00, b: 0x00 }, //  0
     Color { name: None, r: 0x00, g: 0x00, b: 0xAA }, //  1
     Color { name: None, r: 0x00, g: 0xAA, b: 0x00 }, //  2

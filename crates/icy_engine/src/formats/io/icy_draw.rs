@@ -199,7 +199,12 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                     let ch = layer.char_at((x, y).into());
                     let mut attr = ch.attribute.attr;
 
-                    let is_short = if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255 {
+                    let is_short = if ch.is_visible()
+                        && ch.ch as u32 <= 255
+                        && ch.attribute.foreground_color <= 255
+                        && ch.attribute.background_color <= 255
+                        && ch.attribute.ext_attr == 0
+                    {
                         attr |= attribute::SHORT_DATA;
                         true
                     } else {
@@ -215,12 +220,13 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         result.push(ch.ch as u8);
                         result.push(ch.attribute.foreground_color as u8);
                         result.push(ch.attribute.background_color as u8);
-                        result.push(ch.attribute.font_page as u8);
+                        result.push(ch.attribute.font_page);
                     } else {
                         result.extend(u32::to_le_bytes(ch.ch as u32));
                         result.extend(u32::to_le_bytes(ch.attribute.foreground_color));
                         result.extend(u32::to_le_bytes(ch.attribute.background_color));
-                        result.extend(u16::to_le_bytes(ch.attribute.font_page as u16));
+                        result.push(ch.attribute.font_page);
+                        result.push(ch.attribute.ext_attr);
                     }
                 }
                 if layer.width() > real_length {
@@ -247,7 +253,11 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         let ch = layer.char_at((x, y).into());
                         let mut attr = ch.attribute.attr;
 
-                        let is_short = if ch.is_visible() && ch.ch as u32 <= 255 && ch.attribute.foreground_color <= 255 && ch.attribute.background_color <= 255
+                        let is_short = if ch.is_visible()
+                            && ch.ch as u32 <= 255
+                            && ch.attribute.foreground_color <= 255
+                            && ch.attribute.background_color <= 255
+                            && ch.attribute.ext_attr == 0
                         {
                             attr |= attribute::SHORT_DATA;
                             true
@@ -263,12 +273,13 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                             result.push(ch.ch as u8);
                             result.push(ch.attribute.foreground_color as u8);
                             result.push(ch.attribute.background_color as u8);
-                            result.push(ch.attribute.font_page as u8);
+                            result.push(ch.attribute.font_page);
                         } else {
                             result.extend(u32::to_le_bytes(ch.ch as u32));
                             result.extend(u32::to_le_bytes(ch.attribute.foreground_color));
                             result.extend(u32::to_le_bytes(ch.attribute.background_color));
-                            result.extend(u16::to_le_bytes(ch.attribute.font_page as u16));
+                            result.push(ch.attribute.font_page);
+                            result.push(ch.attribute.ext_attr);
                         }
                     }
                     if layer.width() > real_length {
@@ -534,6 +545,7 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                             foreground_color: fg,
                                             background_color: bg,
                                             font_page: font_page as u8,
+                                            ext_attr: 0,
                                             attr,
                                         },
                                     });
@@ -592,16 +604,16 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                         continue;
                                                     }
 
-                                                    let (ch, fg, bg, font_page) = if is_short {
+                                                    let (ch, fg, bg, ext_attr, font_page) = if is_short {
                                                         let ch = bytes[o] as u32;
                                                         o += 1;
                                                         let fg = bytes[o] as u32;
                                                         o += 1;
                                                         let bg = bytes[o] as u32;
                                                         o += 1;
-                                                        let font_page = bytes[o] as u16;
+                                                        let font_page = bytes[o];
                                                         o += 1;
-                                                        (ch, fg, bg, font_page)
+                                                        (ch, fg, bg, 0, font_page)
                                                     } else {
                                                         let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                                                         o += 4;
@@ -609,9 +621,11 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                         o += 4;
                                                         let bg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                                                         o += 4;
-                                                        let font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                                        o += 2;
-                                                        (ch, fg, bg, font_page)
+                                                        let font_page = bytes[o];
+                                                        o += 1;
+                                                        let ext_attr = bytes[o];
+                                                        o += 1;
+                                                        (ch, fg, bg, ext_attr, font_page)
                                                     };
 
                                                     layer.set_char(
@@ -621,7 +635,8 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                             attribute: crate::TextAttribute {
                                                                 foreground_color: fg,
                                                                 background_color: bg,
-                                                                font_page: font_page as u8,
+                                                                font_page,
+                                                                ext_attr,
                                                                 attr,
                                                             },
                                                         },
@@ -749,7 +764,7 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                 continue;
                                             }
 
-                                            let (ch, fg, bg, font_page) = if is_short {
+                                            let (ch, fg, bg, ext_attr, font_page) = if is_short {
                                                 if o + 3 > bytes.len() {
                                                     return Err(crate::EngineError::OutOfBounds { offset: o + 3 });
                                                 }
@@ -760,9 +775,9 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                 o += 1;
                                                 let bg = bytes[o] as u32;
                                                 o += 1;
-                                                let font_page = bytes[o] as u16;
+                                                let font_page = bytes[o];
                                                 o += 1;
-                                                (ch, fg, bg, font_page)
+                                                (ch, fg, bg, 0u8, font_page)
                                             } else {
                                                 if o + 14 > bytes.len() {
                                                     return Err(crate::EngineError::OutOfBounds { offset: o + 14 });
@@ -775,9 +790,11 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                 let bg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                                                 o += 4;
 
-                                                let font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                                o += 2;
-                                                (ch, fg, bg, font_page)
+                                                let font_page = bytes[o];
+                                                o += 1;
+                                                let ext_attr = bytes[o];
+                                                o += 1;
+                                                (ch, fg, bg, ext_attr, font_page)
                                             };
 
                                             layer.set_char(
@@ -787,7 +804,8 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                                     attribute: crate::TextAttribute {
                                                         foreground_color: fg,
                                                         background_color: bg,
-                                                        font_page: font_page as u8,
+                                                        font_page,
+                                                        ext_attr,
                                                         attr,
                                                     },
                                                 },

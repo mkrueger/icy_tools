@@ -25,6 +25,7 @@ lazy_static::lazy_static! {
                 font_page: 0,
                 foreground_color: fg,
                 background_color: bg,
+                ext_attr: 0,
                 attr: attribute::NONE,
             };
         }
@@ -42,6 +43,7 @@ lazy_static::lazy_static! {
                 font_page,
                 foreground_color: actual_fg,
                 background_color: bg,
+                ext_attr: 0,
                 attr: attribute::NONE,
             };
         }
@@ -59,6 +61,7 @@ lazy_static::lazy_static! {
                 font_page: 0,
                 foreground_color: fg,
                 background_color: bg,
+                ext_attr: 0,
                 attr: if blink { attribute::BLINK } else { attribute::NONE },
             };
         }
@@ -77,6 +80,7 @@ lazy_static::lazy_static! {
                 font_page,
                 foreground_color: actual_fg,
                 background_color: bg,
+                ext_attr: 0,
                 attr: if blink { attribute::BLINK } else { attribute::NONE },
             };
         }

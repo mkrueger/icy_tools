@@ -1,4 +1,4 @@
-use crate::{BufferType, Position, Rectangle, RenderOptions, TextBuffer, TextPane};
+use crate::{BufferType, Position, Rectangle, RenderOptions, TextBuffer, TextPane, XTERM_256_PALETTE};
 
 use super::Size;
 
@@ -348,13 +348,17 @@ impl TextBuffer {
 
                 // Foreground index (apply bold high bit)
                 let mut fg = ch.attribute.foreground();
-                if ch.attribute.is_bold() && fg < 8 {
+                if ch.attribute.is_bold() && !ch.attribute.is_foreground_rgb() && !ch.attribute.is_foreground_ext() && fg < 8 {
                     fg += 8;
                 }
                 let bg = ch.attribute.background();
 
+                let mut fg_is_rgb = ch.attribute.is_foreground_rgb();
+                let bg_is_rgb = ch.attribute.is_background_rgb();
+
                 if ch.attribute.is_blinking() && !options.blink_on {
                     fg = bg;
+                    fg_is_rgb = bg_is_rgb;
                 }
 
                 let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
@@ -365,17 +369,53 @@ impl TextBuffer {
                         (sel_fg, sel_bg)
                     } else {
                         // Invert fallback - swap fg and bg
-                        let bg_idx = bg as usize;
-                        let fg_idx = fg as usize;
-                        let fg_color = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg };
-                        let bg_color = if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg };
+                        let fg_color = if bg_is_rgb {
+                            let (r, g, b) = ch.attribute.background_rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else if ch.attribute.is_background_ext() {
+                            let idx = ch.attribute.background_ext() as usize;
+                            let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else {
+                            let bg_idx = bg as usize;
+                            if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                        };
+                        let bg_color = if fg_is_rgb {
+                            let (r, g, b) = ch.attribute.foreground_rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else if ch.attribute.is_foreground_ext() {
+                            let idx = ch.attribute.foreground_ext() as usize;
+                            let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else {
+                            let fg_idx = fg as usize;
+                            if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                        };
                         (fg_color, bg_color)
                     }
                 } else {
-                    let fg_idx = fg as usize;
-                    let bg_idx = bg as usize;
-                    let fg_color = if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg };
-                    let bg_color = if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg };
+                    let fg_color = if fg_is_rgb {
+                        let (r, g, b) = ch.attribute.foreground_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if ch.attribute.is_foreground_ext() {
+                        let idx = ch.attribute.foreground_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else {
+                        let fg_idx = fg as usize;
+                        if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                    };
+                    let bg_color = if bg_is_rgb {
+                        let (r, g, b) = ch.attribute.background_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if ch.attribute.is_background_ext() {
+                        let idx = ch.attribute.background_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else {
+                        let bg_idx = bg as usize;
+                        if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                    };
                     (fg_color, bg_color)
                 };
 
@@ -509,12 +549,17 @@ impl TextBuffer {
                     if !above_ch.attribute.is_double_height() {
                         // Character above is not double-height, just render blank space
                         // Background fill only (no glyph)
-                        let bg = above_ch.attribute.background();
-                        let bg_idx = bg as usize;
-                        let bg_u32 = if bg_idx < palette_cache.len() {
-                            palette_cache[bg_idx]
+                        let bg_u32 = if above_ch.attribute.is_background_rgb() {
+                            let (r, g, b) = above_ch.attribute.background_rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
                         } else {
-                            Palette::rgb_to_rgba_u32(0, 0, 0)
+                            let bg = above_ch.attribute.background();
+                            let bg_idx = bg as usize;
+                            if bg_idx < palette_cache.len() {
+                                palette_cache[bg_idx]
+                            } else {
+                                Palette::rgb_to_rgba_u32(0, 0, 0)
+                            }
                         };
 
                         let cell_pixel_w = font_size.width;
@@ -556,13 +601,17 @@ impl TextBuffer {
 
             // Foreground index (apply bold high bit)
             let mut fg = render_ch.attribute.foreground();
-            if render_ch.attribute.is_bold() && fg < 8 {
+            if render_ch.attribute.is_bold() && !render_ch.attribute.is_foreground_rgb() && !render_ch.attribute.is_foreground_ext() && fg < 8 {
                 fg += 8;
             }
             let bg = render_ch.attribute.background();
 
+            let mut fg_is_rgb = render_ch.attribute.is_foreground_rgb();
+            let bg_is_rgb = render_ch.attribute.is_background_rgb();
+
             if render_ch.attribute.is_blinking() && !options.blink_on || render_ch.attribute.is_concealed() {
                 fg = bg;
+                fg_is_rgb = bg_is_rgb;
             }
 
             let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
@@ -571,39 +620,71 @@ impl TextBuffer {
                 if let Some((sel_fg_u32, sel_bg_u32)) = explicit_sel_colors {
                     (sel_fg_u32, sel_bg_u32)
                 } else {
-                    // Invert fallback - handle transparent colors
-                    let bg_idx = bg as usize;
-                    let fg_idx = fg as usize;
-
-                    let fg_u32 = if bg_idx < palette_cache.len() {
-                        palette_cache[bg_idx]
+                    // Invert fallback - swap fg and bg
+                    let fg_color = if bg_is_rgb {
+                        let (r, g, b) = render_ch.attribute.background_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if render_ch.attribute.is_background_ext() {
+                        let idx = render_ch.attribute.background_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
                     } else {
-                        Palette::rgb_to_rgba_u32(0, 0, 0)
+                        let bg_idx = bg as usize;
+                        if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            Palette::rgb_to_rgba_u32(0, 0, 0)
+                        }
                     };
-                    let bg_u32 = if fg_idx < palette_cache.len() {
+                    let bg_color = if fg_is_rgb {
+                        let (r, g, b) = render_ch.attribute.foreground_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if render_ch.attribute.is_foreground_ext() {
+                        let idx = render_ch.attribute.foreground_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else {
+                        let fg_idx = fg as usize;
+                        if fg_idx < palette_cache.len() {
+                            palette_cache[fg_idx]
+                        } else {
+                            Palette::rgb_to_rgba_u32(255, 255, 255)
+                        }
+                    };
+                    (fg_color, bg_color)
+                }
+            } else {
+                let fg_color = if fg_is_rgb {
+                    let (r, g, b) = render_ch.attribute.foreground_rgb();
+                    Palette::rgb_to_rgba_u32(r, g, b)
+                } else if render_ch.attribute.is_foreground_ext() {
+                    let idx = render_ch.attribute.foreground_ext() as usize;
+                    let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                    Palette::rgb_to_rgba_u32(r, g, b)
+                } else {
+                    let fg_idx = fg as usize;
+                    if fg_idx < palette_cache.len() {
                         palette_cache[fg_idx]
                     } else {
                         Palette::rgb_to_rgba_u32(255, 255, 255)
-                    };
-
-                    (fg_u32, bg_u32)
-                }
-            } else {
-                let fg_idx = fg as usize;
-                let bg_idx = bg as usize;
-
-                let fg_u32 = if fg_idx < palette_cache.len() {
-                    palette_cache[fg_idx]
-                } else {
-                    Palette::rgb_to_rgba_u32(255, 255, 255)
+                    }
                 };
-                let bg_u32 = if bg_idx < palette_cache.len() {
-                    palette_cache[bg_idx]
+                let bg_color = if bg_is_rgb {
+                    let (r, g, b) = render_ch.attribute.background_rgb();
+                    Palette::rgb_to_rgba_u32(r, g, b)
+                } else if render_ch.attribute.is_background_ext() {
+                    let idx = render_ch.attribute.background_ext() as usize;
+                    let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                    Palette::rgb_to_rgba_u32(r, g, b)
                 } else {
-                    Palette::rgb_to_rgba_u32(0, 0, 0)
+                    let bg_idx = bg as usize;
+                    if bg_idx < palette_cache.len() {
+                        palette_cache[bg_idx]
+                    } else {
+                        Palette::rgb_to_rgba_u32(0, 0, 0)
+                    }
                 };
-
-                (fg_u32, bg_u32)
+                (fg_color, bg_color)
             };
 
             let cell_pixel_w = font_size.width;

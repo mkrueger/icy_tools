@@ -22,7 +22,7 @@ use icy_parser_core::{
     Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping,
 };
 
-use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, XTERM_256_PALETTE};
+use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel};
 /// Adapter that implements CommandSink for any type implementing EditableScreen.
 /// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
 pub struct ScreenSink<'a> {
@@ -143,24 +143,13 @@ impl<'a> ScreenSink<'a> {
                         return;
                     }
                     Color::Extended(c) => {
-                        let color_val = {
-                            let _ = attr;
-                            let pal = XTERM_256_PALETTE[c as usize].1.clone();
-                            self.screen.palette_mut().insert_color(pal)
-                        };
-                        self.screen.caret_mut().set_foreground(color_val);
+                        // Extended colors (256-color palette) - store as extended palette index
+                        self.screen.caret_mut().attribute.set_foreground_ext(c);
                         return;
                     }
                     Color::Rgb(r, g, b) => {
-                        // Need to release attr borrow before calling palette_mut
-                        let color_val = {
-                            // This scope ends the attr borrow
-                            let _ = attr;
-                            self.screen.palette_mut().insert_color_rgb(r, g, b)
-                        };
-                        // Re-borrow attr
-                        self.screen.caret_mut().attribute.set_foreground(color_val);
-                        return; // Early return to avoid code after match
+                        self.screen.caret_mut().attribute.set_foreground_rgb(r, g, b);
+                        return;
                     }
                     Color::Default => {
                         attr.set_foreground(7);
@@ -177,24 +166,13 @@ impl<'a> ScreenSink<'a> {
                         self.screen.caret_mut().attribute.set_background(col);
                     }
                     Color::Extended(c) => {
-                        let color_val = {
-                            let _ = attr;
-                            let pal = XTERM_256_PALETTE[c as usize].1.clone();
-                            self.screen.palette_mut().insert_color(pal)
-                        };
-                        self.screen.caret_mut().set_background(color_val);
+                        // Extended colors (256-color palette) - store as extended palette index
+                        self.screen.caret_mut().attribute.set_background_ext(c);
                         return;
                     }
                     Color::Rgb(r, g, b) => {
-                        // Need to release attr borrow before calling palette_mut
-                        let color_val = {
-                            // This scope ends the attr borrow
-                            let _ = attr;
-                            self.screen.palette_mut().insert_color_rgb(r, g, b)
-                        };
-                        // Re-borrow attr
-                        self.screen.caret_mut().attribute.set_background(color_val);
-                        return; // Early return to avoid code after match
+                        self.screen.caret_mut().attribute.set_background_rgb(r, g, b);
+                        return;
                     }
                     Color::Default => {
                         attr.set_background(0);

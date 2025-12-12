@@ -23,7 +23,8 @@ pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &Select
             let c = buffer.buffer_type.convert_to_unicode(ch.ch);
             data.extend(u32::to_le_bytes(c as u32));
             data.extend(u16::to_le_bytes(ch.attribute.attr));
-            data.extend(u16::to_le_bytes(ch.attribute.font_page as u16));
+            data.push(ch.attribute.font_page);
+            data.push(ch.attribute.ext_attr);
             data.extend(u32::to_le_bytes(ch.attribute.background_color));
             data.extend(u32::to_le_bytes(ch.attribute.foreground_color));
         }
@@ -58,9 +59,10 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
                 ch,
                 attribute: TextAttribute {
                     attr: u16::from_le_bytes(data[4..6].try_into().unwrap()),
-                    font_page: u16::from_le_bytes(data[6..8].try_into().unwrap()) as u8,
+                    font_page: data[6],
                     background_color: u32::from_le_bytes(data[8..12].try_into().unwrap()),
                     foreground_color: u32::from_le_bytes(data[12..16].try_into().unwrap()),
+                    ext_attr: data[7],
                 },
             };
             layer.set_char((x as i32, y as i32), attr_ch);

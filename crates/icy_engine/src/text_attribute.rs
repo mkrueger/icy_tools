@@ -23,11 +23,27 @@ pub mod attribute {
     pub const INVISIBLE_SHORT: u16 = 0b1100_0000_0000_0000;
 }
 
+pub mod extended_attribute {
+    pub const NONE: u8 = 0;
+    /// Foreground color is stored as direct RGB (r, g, b encoded in foreground_color)
+    pub const FG_RGBA: u8 = 0b0000_0001;
+    /// Background color is stored as direct RGB (r, g, b encoded in background_color)  
+    pub const BG_RGBA: u8 = 0b0000_0010;
+
+    /// Foreground extended palette index
+    pub const FG_EXT: u8 = 0b0000_0100;
+
+    /// Background extended palette index
+    pub const BG_EXT: u8 = 0b0000_1000;
+}
+
 #[derive(Clone, Copy)]
 pub struct TextAttribute {
     pub(super) font_page: u8,
     pub(super) foreground_color: u32,
     pub(super) background_color: u32,
+
+    pub ext_attr: u8,
     pub attr: u16,
 }
 
@@ -47,6 +63,8 @@ impl Default for TextAttribute {
         Self {
             foreground_color: 7,
             background_color: 0,
+            ext_attr: 0,
+
             attr: attribute::NONE,
             font_page: 0,
         }
@@ -125,16 +143,22 @@ impl TextAttribute {
         self.foreground_color
     }
 
+    /// Set foreground color (as palette index).
+    /// Note: This clears the RGB and EXT flags. Use set_foreground_rgb() or set_foreground_ext() for other color types.
     pub fn set_foreground(&mut self, color: u32) {
         self.foreground_color = color;
+        self.ext_attr &= !(extended_attribute::FG_RGBA | extended_attribute::FG_EXT);
     }
 
     pub fn background(self) -> u32 {
         self.background_color
     }
 
+    /// Set background color (as palette index).
+    /// Note: This clears the RGB and EXT flags. Use set_background_rgb() or set_background_ext() for other color types.
     pub fn set_background(&mut self, color: u32) {
         self.background_color = color;
+        self.ext_attr &= !(extended_attribute::BG_RGBA | extended_attribute::BG_EXT);
     }
 
     pub fn is_bold(self) -> bool {
@@ -276,10 +300,101 @@ impl TextAttribute {
             ..*self
         }
     }
+
+    /// Returns true if the foreground color is stored as direct RGB
+    pub fn is_foreground_rgb(self) -> bool {
+        (self.ext_attr & extended_attribute::FG_RGBA) != 0
+    }
+
+    /// Returns true if the background color is stored as direct RGB
+    pub fn is_background_rgb(self) -> bool {
+        (self.ext_attr & extended_attribute::BG_RGBA) != 0
+    }
+
+    /// Set foreground color as palette index
+    pub fn set_foreground_palette(&mut self, color: u32) {
+        self.foreground_color = color;
+        self.ext_attr &= !extended_attribute::FG_RGBA;
+    }
+
+    /// Set foreground color as direct RGB
+    pub fn set_foreground_rgb(&mut self, r: u8, g: u8, b: u8) {
+        // Pack RGB into u32: 0x00RRGGBB
+        self.foreground_color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        self.ext_attr |= extended_attribute::FG_RGBA;
+    }
+
+    /// Set background color as palette index
+    pub fn set_background_palette(&mut self, color: u32) {
+        self.background_color = color;
+        self.ext_attr &= !extended_attribute::BG_RGBA;
+    }
+
+    /// Set background color as direct RGB
+    pub fn set_background_rgb(&mut self, r: u8, g: u8, b: u8) {
+        // Pack RGB into u32: 0x00RRGGBB
+        self.background_color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        self.ext_attr |= extended_attribute::BG_RGBA;
+    }
+
+    /// Get foreground RGB values (only valid if is_foreground_rgb() is true)
+    pub fn foreground_rgb(self) -> (u8, u8, u8) {
+        let r = (self.foreground_color >> 16) as u8;
+        let g = (self.foreground_color >> 8) as u8;
+        let b = self.foreground_color as u8;
+        (r, g, b)
+    }
+
+    /// Get background RGB values (only valid if is_background_rgb() is true)
+    pub fn background_rgb(self) -> (u8, u8, u8) {
+        let r = (self.background_color >> 16) as u8;
+        let g = (self.background_color >> 8) as u8;
+        let b = self.background_color as u8;
+        (r, g, b)
+    }
+
+    /// Returns true if the foreground color is an extended palette index (0-255)
+    pub fn is_foreground_ext(self) -> bool {
+        (self.ext_attr & extended_attribute::FG_EXT) != 0
+    }
+
+    /// Returns true if the background color is an extended palette index (0-255)
+    pub fn is_background_ext(self) -> bool {
+        (self.ext_attr & extended_attribute::BG_EXT) != 0
+    }
+
+    /// Set foreground color as extended palette index (0-255)
+    pub fn set_foreground_ext(&mut self, index: u8) {
+        self.foreground_color = index as u32;
+        // Clear RGB flag, set EXT flag
+        self.ext_attr &= !extended_attribute::FG_RGBA;
+        self.ext_attr |= extended_attribute::FG_EXT;
+    }
+
+    /// Set background color as extended palette index (0-255)
+    pub fn set_background_ext(&mut self, index: u8) {
+        self.background_color = index as u32;
+        // Clear RGB flag, set EXT flag
+        self.ext_attr &= !extended_attribute::BG_RGBA;
+        self.ext_attr |= extended_attribute::BG_EXT;
+    }
+
+    /// Get foreground extended palette index (only valid if is_foreground_ext() is true)
+    pub fn foreground_ext(self) -> u8 {
+        self.foreground_color as u8
+    }
+
+    /// Get background extended palette index (only valid if is_background_ext() is true)
+    pub fn background_ext(self) -> u8 {
+        self.background_color as u8
+    }
 }
 
 impl PartialEq for TextAttribute {
     fn eq(&self, other: &TextAttribute) -> bool {
-        self.foreground_color == other.foreground_color && self.background_color == other.background_color && self.attr == other.attr
+        self.foreground_color == other.foreground_color
+            && self.background_color == other.background_color
+            && self.attr == other.attr
+            && self.ext_attr == other.ext_attr
     }
 }
