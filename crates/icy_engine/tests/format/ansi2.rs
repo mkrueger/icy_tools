@@ -1,5 +1,4 @@
 use icy_engine::{AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
-use std::path::PathBuf;
 
 fn test_ansi(data: &[u8]) {
     let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().buffer;

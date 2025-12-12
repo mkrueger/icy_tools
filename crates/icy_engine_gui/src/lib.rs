@@ -64,6 +64,12 @@ pub use crt_shader_state::*;
 pub mod crt_shader_program;
 pub use crt_shader_program::*;
 
+pub mod tile_cache;
+pub use tile_cache::*;
+
+pub mod shared_render_cache;
+pub use shared_render_cache::*;
+
 pub mod ui;
 pub use ui::*;
 

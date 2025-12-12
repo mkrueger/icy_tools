@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, UnicodeGlyphCache, Viewport};
+use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, TextureSliceData, UnicodeGlyphCache, Viewport};
 use iced::Element;
 use iced::widget::shader;
 use icy_engine::GraphicsType;
@@ -54,7 +54,6 @@ pub fn is_command_pressed() -> bool {
 
 /// Cached screen info for mouse mapping calculations and cache invalidation
 /// Updated during internal_draw to avoid extra locks in internal_update
-#[derive(Clone)]
 pub struct CachedScreenInfo {
     pub font_w: f32,
     pub font_h: f32,
@@ -72,6 +71,27 @@ pub struct CachedScreenInfo {
     pub graphics_type: GraphicsType,
     /// Last bounds size for detecting window resize
     pub last_bounds_size: (f32, f32),
+    /// Last scroll Y position for cache invalidation
+    pub last_scroll_y: std::sync::atomic::AtomicU32,
+}
+
+impl Clone for CachedScreenInfo {
+    fn clone(&self) -> Self {
+        Self {
+            font_w: self.font_w,
+            font_h: self.font_h,
+            screen_width: self.screen_width,
+            screen_height: self.screen_height,
+            resolution: self.resolution,
+            scan_lines: self.scan_lines,
+            render_size: self.render_size,
+            last_selection_state: self.last_selection_state,
+            last_buffer_version: self.last_buffer_version,
+            graphics_type: self.graphics_type,
+            last_bounds_size: self.last_bounds_size,
+            last_scroll_y: std::sync::atomic::AtomicU32::new(self.last_scroll_y.load(std::sync::atomic::Ordering::Relaxed)),
+        }
+    }
 }
 
 impl Default for CachedScreenInfo {
@@ -88,6 +108,7 @@ impl Default for CachedScreenInfo {
             last_buffer_version: u64::MAX,
             graphics_type: GraphicsType::Text,
             last_bounds_size: (0.0, 0.0),
+            last_scroll_y: std::sync::atomic::AtomicU32::new(0),
         }
     }
 }
@@ -115,8 +136,14 @@ pub struct CRTShaderState {
 
     pub unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
 
-    pub cached_rgba_blink_on: parking_lot::Mutex<Vec<u8>>,
-    pub cached_rgba_blink_off: parking_lot::Mutex<Vec<u8>>,
+    /// Cached texture slices for blink_on state (with stable Arc pointers)
+    pub cached_slices_blink_on: parking_lot::Mutex<Vec<TextureSliceData>>,
+    /// Cached texture slices for blink_off state (with stable Arc pointers)
+    pub cached_slices_blink_off: parking_lot::Mutex<Vec<TextureSliceData>>,
+    /// Cached slice heights for blink_on
+    pub cached_slice_heights_blink_on: parking_lot::Mutex<Vec<u32>>,
+    /// Cached slice heights for blink_off  
+    pub cached_slice_heights_blink_off: parking_lot::Mutex<Vec<u32>>,
 }
 
 impl CRTShaderState {
@@ -134,8 +161,10 @@ impl CRTShaderState {
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
-            cached_rgba_blink_on: parking_lot::Mutex::new(Vec::new()),
-            cached_rgba_blink_off: parking_lot::Mutex::new(Vec::new()),
+            cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),
+            cached_slices_blink_off: parking_lot::Mutex::new(Vec::new()),
+            cached_slice_heights_blink_on: parking_lot::Mutex::new(Vec::new()),
+            cached_slice_heights_blink_off: parking_lot::Mutex::new(Vec::new()),
         }
     }
 
@@ -238,8 +267,10 @@ impl Default for CRTShaderState {
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
 
-            cached_rgba_blink_on: parking_lot::Mutex::new(Vec::new()),
-            cached_rgba_blink_off: parking_lot::Mutex::new(Vec::new()),
+            cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),
+            cached_slices_blink_off: parking_lot::Mutex::new(Vec::new()),
+            cached_slice_heights_blink_on: parking_lot::Mutex::new(Vec::new()),
+            cached_slice_heights_blink_off: parking_lot::Mutex::new(Vec::new()),
         }
     }
 }

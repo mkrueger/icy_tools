@@ -10,6 +10,7 @@ use iced::{
 };
 
 use icy_engine::Screen;
+use icy_engine_gui::SharedRenderCacheHandle;
 use parking_lot::Mutex;
 
 use crate::ui::{LayerMessage, LayerView, MinimapMessage, MinimapView, ViewportInfo};
@@ -61,9 +62,14 @@ impl RightPanel {
 
     /// Render the right panel
     /// The panel has a fixed width of RIGHT_PANEL_BASE_WIDTH (320pt at 100% scale)
-    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, viewport_info: &ViewportInfo) -> Element<'a, RightPanelMessage> {
+    pub fn view<'a>(
+        &'a self, 
+        screen: &'a Arc<Mutex<Box<dyn Screen>>>, 
+        viewport_info: &ViewportInfo,
+        render_cache: Option<&'a SharedRenderCacheHandle>,
+    ) -> Element<'a, RightPanelMessage> {
         // Minimap fills available space above the layer view (no padding)
-        let minimap = self.minimap.view(screen, viewport_info).map(RightPanelMessage::Minimap);
+        let minimap = self.minimap.view(screen, viewport_info, render_cache).map(RightPanelMessage::Minimap);
 
         // Layer view with fixed height at bottom
         let layers = self.layers.view(screen).map(RightPanelMessage::Layers);

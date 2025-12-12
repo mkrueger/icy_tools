@@ -1,8 +1,6 @@
-//! Minimap shader implementation with texture slicing
+//! Minimap shader implementation with sliding window texture support
 //!
-//! A GPU shader for rendering the minimap that supports very tall content
-//! (up to 80,000 pixels) by splitting into multiple texture slices.
-//! Each slice is max 8000px tall, with up to 10 slices supported.
+//! Uses 3 texture slices (matching Terminal's sliding window).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,7 +10,10 @@ use iced::mouse;
 use iced::widget::shader;
 use parking_lot::Mutex;
 
-use super::{MAX_TEXTURE_SLICES, MinimapMessage, SharedMinimapState, TextureSliceData};
+use super::{MinimapMessage, SharedMinimapState, TextureSliceData};
+
+/// Maximum number of texture slices (matches Terminal's sliding window)
+const MAX_TEXTURE_SLICES: usize = 3;
 
 /// Uniform data for the minimap shader (multi-texture version)
 #[repr(C, align(16))]
@@ -71,6 +72,8 @@ pub struct MinimapProgram {
     pub available_height: f32,
     /// Full content height in pixels (for proper viewport scaling)
     pub full_content_height: f32,
+    /// Where the first slice starts in document Y coordinates
+    pub first_slice_start_y: f32,
     /// Shared state for communicating bounds back to MinimapView
     pub shared_state: Arc<Mutex<SharedMinimapState>>,
 }
@@ -117,16 +120,6 @@ impl MinimapProgram {
         let norm_y = (texture_uv_y * render_ratio).clamp(0.0, 1.0);
         let norm_x = (relative_x / bounds.width).clamp(0.0, 1.0);
 
-        println!("[SHADER] calculate_normalized_position:");
-        println!("  relative_pos: ({}, {})", relative_x, relative_y);
-        println!("  bounds: {}x{} at ({}, {})", bounds.width, bounds.height, bounds.x, bounds.y);
-        println!("  tex_size: {}x{}, full_content_height: {}", tex_w, tex_h, self.full_content_height);
-        println!("  scale: {}, scaled_h: {}", scale, scaled_h);
-        println!("  visible_uv_height: {}, scroll_uv_y: {}", visible_uv_height, scroll_uv_y);
-        println!("  screen_y: {}, texture_uv_y: {}", screen_y, texture_uv_y);
-        println!("  render_ratio: {}, norm_y (buffer space): {}", render_ratio, norm_y);
-        println!("  result: norm_x={}, norm_y={}", norm_x, norm_y);
-
         Some((norm_x, norm_y))
     }
 }
@@ -153,6 +146,7 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             scroll_offset: self.scroll_offset,
             available_height: bounds.height,
             full_content_height: self.full_content_height,
+            first_slice_start_y: self.first_slice_start_y,
         }
     }
 
@@ -216,6 +210,8 @@ pub struct MinimapPrimitive {
     pub available_height: f32,
     /// Full content height in pixels
     pub full_content_height: f32,
+    /// Where the first slice starts in document Y coordinates
+    pub first_slice_start_y: f32,
 }
 
 impl MinimapPrimitive {
@@ -253,6 +249,8 @@ struct InstanceResources {
     texture_size: (u32, u32),
     /// Number of slices for cache validation
     num_slices: usize,
+    /// Individual slice sizes (width, height) for cache validation
+    slice_sizes: Vec<(u32, u32)>,
     /// Hash of texture data pointers to detect when data changed
     texture_data_hash: u64,
 }
@@ -412,8 +410,17 @@ impl shader::Primitive for MinimapPrimitive {
         let tex_h = self.total_rendered_height.max(1);
 
         // Check if we need to recreate resources
+        let current_slice_sizes: Vec<(u32, u32)> = self.slices.iter()
+            .take(MAX_TEXTURE_SLICES)
+            .map(|s| (s.width, s.height))
+            .collect();
+        
         let needs_recreate = match pipeline.instances.get(&id) {
-            Some(resources) => resources.texture_size != (tex_w, tex_h) || resources.num_slices != num_slices,
+            Some(resources) => {
+                resources.texture_size != (tex_w, tex_h) 
+                || resources.num_slices != num_slices
+                || resources.slice_sizes != current_slice_sizes
+            },
             None => true,
         };
 
@@ -498,6 +505,7 @@ impl shader::Primitive for MinimapPrimitive {
                     uniform_buffer,
                     texture_size: (tex_w, tex_h),
                     num_slices,
+                    slice_sizes: current_slice_sizes.clone(),
                     texture_data_hash: 0, // Will be updated below
                 },
             );
@@ -575,11 +583,14 @@ impl shader::Primitive for MinimapPrimitive {
         let viewport_y_tex = self.viewport_info.y / render_ratio.max(0.001);
         let viewport_h_tex = self.viewport_info.height / render_ratio.max(0.001);
 
-        // Pack slice heights into 3 vec4s (12 floats for 10 slices + 2 padding)
+        // Pack slice heights into 3 vec4s
+        // Like Terminal shader: slice_heights[0] = [h0, h1, h2, first_slice_start_y]
         let mut packed_heights = [[0.0f32; 4]; 3];
         for (i, &h) in self.slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
-            packed_heights[i / 4][i % 4] = h as f32;
+            packed_heights[0][i] = h as f32;
         }
+        // Store first_slice_start_y in the 4th element (w component) - same as Terminal
+        packed_heights[0][3] = self.first_slice_start_y;
 
         let uniforms = MinimapUniforms {
             viewport_rect: [self.viewport_info.x, viewport_y_tex, self.viewport_info.width, viewport_h_tex],

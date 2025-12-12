@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use iced::{Color, mouse, widget};
 use icy_engine::Screen;
 
-use crate::{RenderInfo, ScrollbarState, Viewport};
+use crate::{RenderInfo, ScrollbarState, SharedRenderCacheHandle, Viewport, create_shared_render_cache};
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
@@ -26,6 +26,8 @@ pub struct Terminal {
     pub id: widget::Id,
     pub has_focus: bool,
     pub background_color: Arc<RwLock<[f32; 4]>>,
+    /// Shared render cache for tiles - accessible by both Terminal shader and Minimap
+    pub render_cache: SharedRenderCacheHandle,
 }
 
 impl Terminal {
@@ -53,6 +55,7 @@ impl Terminal {
             id: widget::Id::unique(),
             has_focus: false,
             background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default dark background
+            render_cache: create_shared_render_cache(),
         }
     }
 

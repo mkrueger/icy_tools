@@ -342,13 +342,6 @@ impl AnsiEditor {
         let target_x = norm_x * content_width - visible_width / 2.0;
         let target_y = norm_y * content_height - visible_height / 2.0;
 
-        println!("=== SCROLL TO NORMALIZED DEBUG ===");
-        println!("Normalized input: ({}, {})", norm_x, norm_y);
-        println!("Content size: {}x{}", content_width, content_height);
-        println!("Visible size: {}x{}", visible_width, visible_height);
-        println!("Target position: ({}, {})", target_x, target_y);
-        println!("==================================");
-
         // Scroll to the target position (clamping is done internally)
         self.canvas.scroll_to(target_x, target_y);
     }
@@ -815,16 +808,19 @@ impl AnsiEditor {
 
         let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4);
 
+        // === CENTER: Canvas ===
+        // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
+        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
+
         // === RIGHT PANEL ===
-        // NOTE: Right panel must be created BEFORE canvas because canvas.view()
-        // may clear the dirty state, and minimap needs to see it first to cache properly
+        // Right panel created AFTER canvas because minimap uses Terminal's render cache
+        // which is populated when canvas.view() calls the Terminal shader
 
         // Compute viewport info for the minimap from the canvas terminal
         let viewport_info = self.compute_viewport_info();
-        let right_panel = self.right_panel.view(&self.screen, &viewport_info).map(AnsiEditorMessage::RightPanel);
-
-        // === CENTER: Canvas ===
-        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
+        // Pass the terminal's render cache to the minimap for shared texture access
+        let render_cache = &self.canvas.terminal.render_cache;
+        let right_panel = self.right_panel.view(&self.screen, &viewport_info, Some(render_cache)).map(AnsiEditorMessage::RightPanel);
 
         // Main layout:
         // Top row: Full-width toolbar (with color switcher)

@@ -765,8 +765,8 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                                             }
 
                                             let (ch, fg, bg, ext_attr, font_page) = if is_short {
-                                                if o + 3 > bytes.len() {
-                                                    return Err(crate::EngineError::OutOfBounds { offset: o + 3 });
+                                                if o + 4 > bytes.len() {
+                                                    return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
                                                 }
 
                                                 let ch = bytes[o] as u32;

@@ -1,9 +1,13 @@
+// CRT Terminal Shader with sliding window texture slicing
+// Uses 3 texture slices: previous, current, next (relative to scroll position)
+// Each slice is max 8000px tall
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) tex_coord: vec2<f32>,
 }
 
-// Match Rust layout: scalars + vec2 + scalars + padding + vec4
+// Match Rust layout: scalars + vec2 + scalars + padding + vec4 + slicing data
 struct Uniforms {
     time: f32,
     brightness: f32,
@@ -31,16 +35,32 @@ struct Uniforms {
 
     _padding: vec2<f32>,  // Padding to align background_color to 16 bytes
     background_color: vec4<f32>,
+    
+    // Slicing uniforms
+    num_slices: f32,             // Number of texture slices (1-3)
+    total_image_height: f32,     // Total height in pixels across all slices
+    scroll_offset_y: f32,        // Current scroll offset in pixels
+    visible_height: f32,         // Visible viewport height in pixels
+    slice_heights: vec4<f32>,    // Heights of each slice (x=slice0, y=slice1, z=slice2, w=first_slice_start_y)
 }
 
 struct MonitorColor {
     color: vec4<f32>,
 }
 
-@group(0) @binding(0) var terminal_texture: texture_2d<f32>;
-@group(0) @binding(1) var terminal_sampler: sampler;
-@group(0) @binding(2) var<uniform> uniforms: Uniforms;
-@group(0) @binding(3) var<uniform> monitor_color: MonitorColor;
+// 3 texture slots for sliding window
+@group(0) @binding(0) var t_slice0: texture_2d<f32>;
+@group(0) @binding(1) var t_slice1: texture_2d<f32>;
+@group(0) @binding(2) var t_slice2: texture_2d<f32>;
+
+// Sampler at binding 3
+@group(0) @binding(3) var terminal_sampler: sampler;
+
+// Uniforms at binding 4
+@group(0) @binding(4) var<uniform> uniforms: Uniforms;
+
+// Monitor color at binding 5
+@group(0) @binding(5) var<uniform> monitor_color: MonitorColor;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -50,6 +70,81 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     out.position = vec4<f32>(x, y, 0.0, 1.0);
     out.tex_coord = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
     return out;
+}
+
+// Get slice height from vec4 (x=slice0, y=slice1, z=slice2)
+fn get_slice_height(index: i32) -> f32 {
+    if index == 0 { return uniforms.slice_heights.x; }
+    else if index == 1 { return uniforms.slice_heights.y; }
+    else { return uniforms.slice_heights.z; }
+}
+
+// Sample from the appropriate texture slice based on pixel Y coordinate
+// Uses sliding window approach: 3 slices covering current viewport area
+fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
+    let total_height = uniforms.total_image_height;
+    if total_height <= 0.0 {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    
+    // uv.y goes 0-1 over the visible viewport
+    // scroll_offset_y tells us where in the full document we're looking
+    // visible_height tells us how much of the document is visible
+    
+    let visible_h = uniforms.visible_height;
+    let max_scroll = max(0.0, total_height - visible_h);
+    let scroll_y = clamp(uniforms.scroll_offset_y, 0.0, max_scroll);
+    
+    // Screen pixel Y (relative to visible viewport)
+    let screen_pixel_y = uv.y * visible_h;
+    
+    // Document pixel Y (absolute position in full document)
+    let doc_pixel_y = scroll_y + screen_pixel_y;
+    
+    // Check if we're outside the document
+    if doc_pixel_y < 0.0 || doc_pixel_y >= total_height {
+        return uniforms.background_color;
+    }
+    
+    // first_slice_start_y tells us where our sliding window starts in document space
+    let first_slice_start_y = uniforms.slice_heights.w;
+    
+    // Convert document Y to sliding window Y
+    let window_y = doc_pixel_y - first_slice_start_y;
+    
+    // If outside our rendered window, show background
+    if window_y < 0.0 {
+        return uniforms.background_color;
+    }
+    
+    // Find which slice contains this Y coordinate
+    var cumulative_height: f32 = 0.0;
+    let num_slices = i32(uniforms.num_slices);
+    
+    for (var i: i32 = 0; i < num_slices; i++) {
+        let slice_height = get_slice_height(i);
+        let next_cumulative = cumulative_height + slice_height;
+        
+        if window_y < next_cumulative || i == num_slices - 1 {
+            // This is the slice we need
+            let local_y = (window_y - cumulative_height) / slice_height;
+            let slice_uv = vec2<f32>(uv.x, clamp(local_y, 0.0, 1.0));
+            
+            // Sample from the appropriate texture (3 slices)
+            if i == 0 { return textureSample(t_slice0, terminal_sampler, slice_uv); }
+            else if i == 1 { return textureSample(t_slice1, terminal_sampler, slice_uv); }
+            else { return textureSample(t_slice2, terminal_sampler, slice_uv); }
+        }
+        cumulative_height = next_cumulative;
+    }
+    
+    // Fallback - outside rendered area
+    return uniforms.background_color;
+}
+
+// Sample for bloom - needs to handle slicing too
+fn sample_sliced_texture_for_bloom(uv: vec2<f32>) -> vec4<f32> {
+    return sample_sliced_texture(uv);
 }
 
 fn adjust_color(base: vec3<f32>) -> vec3<f32> {
@@ -170,7 +265,7 @@ fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
     }
 
     // Sample the original texture (before effects)
-    let center_color = textureSample(terminal_texture, terminal_sampler, uv).rgb;
+    let center_color = sample_sliced_texture_for_bloom(uv).rgb;
     let adjusted = adjust_color(center_color);
     let center_luma = dot(adjusted, vec3<f32>(0.299, 0.587, 0.114));
 
@@ -188,7 +283,7 @@ fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
             let offset = vec2<f32>(dx, dy) * px;
             let sample_uv = clamp(uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
             
-            let sample_color = textureSample(terminal_texture, terminal_sampler, sample_uv).rgb;
+            let sample_color = sample_sliced_texture_for_bloom(sample_uv).rgb;
             let sample_adjusted = adjust_color(sample_color);
             let sample_luma = dot(sample_adjusted, vec3<f32>(0.299, 0.587, 0.114));
             
@@ -223,8 +318,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return uniforms.background_color;
     }
 
-    // Sample from undistorted UV for bloom (before curvature warping)
-    let tex_color = textureSample(terminal_texture, terminal_sampler, distorted_uv);
+    // Sample from sliced textures with scroll offset handling
+    let tex_color = sample_sliced_texture(distorted_uv);
     var color = adjust_color(tex_color.rgb);
 
     // Calculate bloom from original undistorted coordinates

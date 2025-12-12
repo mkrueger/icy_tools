@@ -1,12 +1,20 @@
+//! CRT Shader Program with sliding window rendering
+//!
+//! This module implements the shader program for terminal rendering using
+//! a sliding window of 3 texture slices that cover the visible area plus
+//! one tile above and below for smooth scrolling.
+
 use crate::{
-    CRTShaderState, Message, MonitorSettings, RenderUnicodeOptions, Terminal, TerminalMouseEvent, TerminalShader, is_alt_pressed, is_ctrl_pressed,
-    is_shift_pressed, render_unicode_to_rgba,
+    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, 
+    is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
+    shared_render_cache::{SharedCachedTile, TileCacheKey, TILE_HEIGHT},
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
 use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton};
+use std::sync::Arc;
 
-// Program wrapper that renders the terminal and creates the shader
+/// Program wrapper that renders the terminal using sliding window tile approach
 pub struct CRTShaderProgram<'a> {
     pub term: &'a Terminal,
     pub monitor_settings: MonitorSettings,
@@ -27,9 +35,212 @@ impl<'a> CRTShaderProgram<'a> {
         }
     }
 
+    fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
+        let mut font_w = 0usize;
+        let mut font_h = 0usize;
+        let scan_lines;
+        let scroll_offset_y: f32;
+        let visible_height: f32;
+        let full_content_height: f32;
+        let texture_width: u32;
+
+        let mut slices: Vec<TextureSliceData> = Vec::new();
+        let mut slice_heights: Vec<u32> = Vec::new();
+        #[allow(unused_assignments)]
+        let mut first_slice_start_y: f32 = 0.0;
+
+        {
+            let screen = self.term.screen.lock();
+            scan_lines = screen.scan_lines();
+            if let Some(font) = screen.font(0) {
+                font_w = font.size().width as usize;
+                font_h = font.size().height as usize;
+            }
+
+            state.update_cached_screen_info(&**screen);
+            *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
+
+            let current_buffer_version = screen.version();
+            let blink_on = state.character_blink.is_on();
+
+            // Get viewport info
+            let vp = self.term.viewport.read();
+            let scale_factor = crate::get_scale_factor();
+            let physical_bounds_height = bounds.height * scale_factor;
+            let physical_bounds_width = bounds.width * scale_factor;
+
+            let effective_zoom = self.monitor_settings.scaling_mode.compute_zoom(
+                vp.content_width,
+                vp.content_height,
+                physical_bounds_width,
+                physical_bounds_height,
+                self.monitor_settings.use_integer_scaling,
+            );
+
+            visible_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
+            let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
+
+            // Store computed visible dimensions
+            vp.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
+            vp.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
+            vp.computed_visible_height.store(visible_height.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            vp.computed_visible_width.store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
+
+            let max_scroll_y = (vp.content_height - visible_height).max(0.0);
+            scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+            full_content_height = vp.content_height;
+            texture_width = screen.resolution().width as u32;
+            
+            // Clear viewport changed flag
+            if vp.changed.load(std::sync::atomic::Ordering::Acquire) {
+                vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+
+            // Check for content changes that require full cache invalidation
+            // Use the shared render cache from Terminal
+            {
+                let mut cache = self.term.render_cache.write();
+                cache.invalidate(current_buffer_version);
+                cache.content_height = full_content_height;
+                cache.content_width = texture_width;
+                cache.last_blink_state = blink_on;
+                
+                // Also check selection changes
+                let mut info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
+                info.last_buffer_version = current_buffer_version;
+                
+                let selection = screen.selection();
+                let sel_anchor = selection.as_ref().map(|s| s.anchor);
+                let sel_lead = selection.as_ref().map(|s| s.lead);
+                let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
+
+                if info.last_selection_state.0 != sel_anchor 
+                    || info.last_selection_state.1 != sel_lead 
+                    || info.last_selection_state.2 != sel_locked 
+                {
+                    info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
+                    cache.clear();
+                }
+
+                info.last_bounds_size = (bounds.width, bounds.height);
+            }
+
+            // Calculate which tiles we need based on scroll position
+            // Each tile is TILE_HEIGHT pixels tall
+            let tile_height = TILE_HEIGHT as f32;
+            
+            // Current tile index based on scroll position
+            let current_tile_idx = (scroll_offset_y / tile_height).floor() as i32;
+            
+            // We need: previous tile, current tile, next tile
+            let first_tile_idx = (current_tile_idx - 1).max(0);
+            let max_tile_idx = ((full_content_height / tile_height).ceil() as i32 - 1).max(0);
+            
+            // Calculate tile indices to render (up to 3)
+            let mut tile_indices: Vec<i32> = Vec::new();
+            for i in first_tile_idx..=first_tile_idx + 2 {
+                if i <= max_tile_idx {
+                    tile_indices.push(i);
+                }
+            }
+
+            first_slice_start_y = first_tile_idx as f32 * tile_height;
+
+            // Get or render each tile using the shared cache
+            let resolution = screen.resolution();
+            let selection = screen.selection();
+            let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
+            for tile_idx in tile_indices {
+                let tile_start_y = tile_idx as f32 * tile_height;
+                let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height);
+                let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
+                // Check shared render cache
+                let cache_key = TileCacheKey::new(tile_idx, blink_on);
+                let cached_tile = self.term.render_cache.read().get(&cache_key).cloned();
+                if cached_tile.is_none() {
+                    println!("Requesting tile {} (y: {} to {}, height: {}) found : {}", tile_idx, tile_start_y, tile_end_y, actual_tile_height, screen.version());
+                }
+                if let Some(cached) = cached_tile {
+                    slices.push(cached.texture);
+                    slice_heights.push(cached.height);
+                } else {
+                    // Render this tile
+                    let tile_region = icy_engine::Rectangle::from(
+                        0,
+                        tile_start_y as i32,
+                        resolution.width,
+                        actual_tile_height as i32,
+                    );
+
+                    let render_options = icy_engine::RenderOptions {
+                        rect: icy_engine::Rectangle {
+                            start: icy_engine::Position::new(0, tile_start_y as i32),
+                            size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
+                        }.into(),
+                        blink_on,
+                        selection: selection.clone(),
+                        selection_fg: Some(fg_sel.clone()),
+                        selection_bg: Some(bg_sel.clone()),
+                        override_scan_lines: None,
+                    };
+                    println!("Rendering tile {} (y: {} to {}, height: {})", tile_idx, tile_start_y, tile_end_y, actual_tile_height);
+                    let (render_size, rgba_data) = screen.render_region_to_rgba(tile_region, &render_options);
+                    let width = render_size.width as u32;
+                    let height = render_size.height as u32;
+
+                    let slice = TextureSliceData {
+                        rgba_data: Arc::new(rgba_data),
+                        width,
+                        height,
+                    };
+
+                    // Cache this tile in the shared render cache
+                    let cached_tile = SharedCachedTile {
+                        texture: slice.clone(),
+                        height,
+                        start_y: tile_start_y,
+                    };
+                    self.term.render_cache.write().insert(cache_key, cached_tile);
+
+                    slices.push(slice);
+                    slice_heights.push(height);
+                }
+            }
+        }
+
+        // Ensure we have at least one slice
+        if slices.is_empty() {
+            slices.push(TextureSliceData {
+                rgba_data: Arc::new(vec![0u8; 4]),
+                width: 1,
+                height: 1,
+            });
+            slice_heights.push(1);
+            first_slice_start_y = 0.0;
+        }
+
+        let zoom = self.term.viewport.read().zoom;
+
+        TerminalShader {
+            slices,
+            slice_heights,
+            texture_width,
+            total_content_height: full_content_height,
+            monitor_settings: self.monitor_settings.clone(),
+            instance_id: state.instance_id,
+            zoom,
+            render_info: self.term.render_info.clone(),
+            font_width: font_w as f32,
+            font_height: font_h as f32,
+            scan_lines,
+            background_color: *self.term.background_color.read(),
+            scroll_offset_y,
+            visible_height,
+            first_slice_start_y,
+        }
+    }
+
     /// Simplified internal_update that only handles coordinate mapping and event emission.
-    /// All application-specific logic (selection, RIP fields, mouse tracking) is delegated
-    /// to the consuming application via Message variants.
     pub fn internal_update(
         &self,
         state: &mut CRTShaderState,
@@ -39,8 +250,6 @@ impl<'a> CRTShaderProgram<'a> {
     ) -> Option<iced::widget::Action<Message>> {
         let now = crate::Blink::now_ms();
 
-        // Synchronize blink rates with buffer type (only if screen is available without blocking)
-        // This handles cases where buffer type changes during runtime
         if let Some(screen) = self.term.screen.try_lock() {
             let buffer_type = screen.buffer_type();
             state.caret_blink.set_rate(buffer_type.caret_blink_rate() as u128);
@@ -50,25 +259,18 @@ impl<'a> CRTShaderProgram<'a> {
         state.caret_blink.update(now);
         state.character_blink.update(now);
 
-        // Check if cursor is over bounds
         let is_over = cursor.is_over(bounds);
 
-        // Handle mouse events - always process Release events and Drag events while dragging
-        // to support "snapped" drag behavior (like scrollbars)
         if let iced::Event::Mouse(mouse_event) = event {
-            // Read viewport and render_info for mouse coordinate calculations
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
 
-            // Handle Release events globally (even when cursor is outside bounds)
-            // This ensures drag state is properly cleaned up
             if let mouse::Event::ButtonReleased(button) = mouse_event {
                 if state.dragging && matches!(button, mouse::Button::Left) {
                     state.dragging = false;
                     state.drag_anchor = None;
                     state.last_drag_position = None;
 
-                    // Get position (may be outside bounds, that's ok)
                     let (pixel_pos, cell_pos) = if let Some(position) = cursor.position() {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
@@ -83,7 +285,6 @@ impl<'a> CRTShaderProgram<'a> {
                 }
             }
 
-            // Handle Drag events while dragging (even when cursor is outside bounds)
             if state.dragging {
                 if let mouse::Event::CursorMoved { .. } = mouse_event {
                     if let Some(position) = cursor.position() {
@@ -97,7 +298,6 @@ impl<'a> CRTShaderProgram<'a> {
                 }
             }
 
-            // For other events, only process if cursor is over bounds
             if !is_over {
                 return None;
             }
@@ -108,7 +308,6 @@ impl<'a> CRTShaderProgram<'a> {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
-                        // Update hovered cell for mouse_interaction cursor changes
                         if state.hovered_cell != cell_pos {
                             state.hovered_cell = cell_pos;
                         }
@@ -117,7 +316,6 @@ impl<'a> CRTShaderProgram<'a> {
                         let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
 
-                        // Emit Drag if dragging, otherwise Move
                         if state.dragging {
                             return Some(iced::widget::Action::publish(Message::Drag(evt)));
                         } else {
@@ -131,7 +329,6 @@ impl<'a> CRTShaderProgram<'a> {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
-                        // Convert iced mouse button to our MouseButton type
                         let mouse_button = match button {
                             mouse::Button::Left => MouseButton::Left,
                             mouse::Button::Middle => MouseButton::Middle,
@@ -139,7 +336,6 @@ impl<'a> CRTShaderProgram<'a> {
                             _ => return None,
                         };
 
-                        // Update drag state for left button
                         if matches!(button, mouse::Button::Left) {
                             state.dragging = true;
                             state.drag_anchor = cell_pos;
@@ -154,13 +350,11 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::ButtonReleased(button) => {
-                    // Only handle non-left-button releases here (left-button is handled above for drag snapping)
                     if !matches!(button, mouse::Button::Left) {
                         if let Some(position) = cursor.position() {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
-                            // Convert iced mouse button to our MouseButton type
                             let mouse_button = match button {
                                 mouse::Button::Middle => MouseButton::Middle,
                                 mouse::Button::Right => MouseButton::Right,
@@ -173,7 +367,6 @@ impl<'a> CRTShaderProgram<'a> {
                             return Some(iced::widget::Action::publish(Message::Release(evt)));
                         }
                     } else if !state.dragging {
-                        // Left button release when not dragging (e.g., simple click release)
                         if let Some(position) = cursor.position() {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
@@ -193,12 +386,10 @@ impl<'a> CRTShaderProgram<'a> {
                 mouse::Event::WheelScrolled { delta } => {
                     let modifiers = Self::get_modifiers();
 
-                    // Check if Cmd/Ctrl is held for zooming
                     if modifiers.ctrl || crate::is_command_pressed() {
                         return Some(iced::widget::Action::publish(Message::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 
-                    // Pass the scroll delta directly (WheelDelta is a re-export of ScrollDelta)
                     return Some(iced::widget::Action::publish(Message::Scroll(*delta)));
                 }
 
@@ -206,243 +397,6 @@ impl<'a> CRTShaderProgram<'a> {
             }
         }
         None
-    }
-
-    fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
-        // Fast path: reuse cached buffer if content not dirty; only reapply caret/blink overlays.
-        let mut rgba_data: Vec<u8>;
-        let size: (u32, u32);
-        let mut font_w = 0usize;
-        let mut font_h = 0usize;
-        let scan_lines;
-        // Check if we need to re-render based on buffer version and blink state
-        let mut needs_full_render = false;
-        {
-            let screen = self.term.screen.lock();
-            scan_lines = screen.scan_lines();
-            if let Some(font) = screen.font(0) {
-                font_w = font.size().width as usize;
-                font_h = font.size().height as usize;
-            }
-
-            // Cache screen info and mouse state for use in internal_update (avoids extra locks there)
-            state.update_cached_screen_info(&**screen);
-            *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
-
-            let current_buffer_version = screen.version();
-            let blink_on = state.character_blink.is_on();
-
-            // Check if buffer version or selection changed (need single lock for cached_screen_info)
-            let selection = screen.selection();
-            let sel_anchor = selection.as_ref().map(|s| s.anchor);
-            let sel_lead = selection.as_ref().map(|s| s.lead);
-            let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
-
-            {
-                let mut info = state.cached_screen_info.lock();
-                let vp = self.term.viewport.read();
-
-                // Check if buffer version changed (content modified)
-                if current_buffer_version != info.last_buffer_version || vp.changed.load(std::sync::atomic::Ordering::Acquire) {
-                    needs_full_render = true;
-                    vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
-                    info.last_buffer_version = current_buffer_version;
-                }
-
-                // Check if selection changed (affects highlighting)
-                if info.last_selection_state.0 != sel_anchor || info.last_selection_state.1 != sel_lead || info.last_selection_state.2 != sel_locked {
-                    needs_full_render = true;
-                    info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
-                }
-
-                // Check if bounds size changed (window resize) - need to re-render with new visible height
-                let current_bounds = (bounds.width, bounds.height);
-                if (info.last_bounds_size.0 - current_bounds.0).abs() > 0.5 || (info.last_bounds_size.1 - current_bounds.1).abs() > 0.5 {
-                    needs_full_render = true;
-                    info.last_bounds_size = current_bounds;
-                }
-            }
-
-            if needs_full_render {
-                // Full re-render - generate both blink on and blink off versions
-                let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
-
-                // Render both versions
-                let (render_blink_on, render_blink_off) = if matches!(screen.buffer_type(), icy_engine::BufferType::Unicode) {
-                    let render_on = render_unicode_to_rgba(
-                        &**screen,
-                        &RenderUnicodeOptions {
-                            selection,
-                            selection_fg: Some(fg_sel.clone()),
-                            selection_bg: Some(bg_sel.clone()),
-                            blink_on: true,
-                            font_px_size: Some(font_h as f32),
-                            glyph_cache: state.unicode_glyph_cache.clone(),
-                        },
-                    );
-                    let render_off = render_unicode_to_rgba(
-                        &**screen,
-                        &RenderUnicodeOptions {
-                            selection,
-                            selection_fg: Some(fg_sel.clone()),
-                            selection_bg: Some(bg_sel.clone()),
-                            blink_on: false,
-                            font_px_size: Some(font_h as f32),
-                            glyph_cache: state.unicode_glyph_cache.clone(),
-                        },
-                    );
-                    (render_on, render_off)
-                } else {
-                    // Use viewport-based region rendering for both normal and scrollback mode
-                    // Get the actual content resolution
-                    let resolution = screen.resolution();
-
-                    let vp = self.term.viewport.read();
-
-                    // bounds are in logical pixels, but we need physical pixels for the texture
-                    // The shader's clip_bounds will be in physical pixels (bounds * scale_factor)
-                    let scale_factor = crate::get_scale_factor();
-                    let physical_bounds_height = bounds.height * scale_factor;
-                    let physical_bounds_width = bounds.width * scale_factor;
-
-                    // Calculate effective zoom: for Auto mode, compute from bounds; for Manual, use viewport zoom
-                    let effective_zoom = self.monitor_settings.scaling_mode.compute_zoom(
-                        vp.content_width,
-                        vp.content_height,
-                        physical_bounds_width,
-                        physical_bounds_height,
-                        self.monitor_settings.use_integer_scaling,
-                    );
-
-                    // Calculate how many content pixels can be shown in the available screen space
-                    // At zoom=1: visible_content = physical_bounds (in content pixels)
-                    // At zoom=2: visible_content = physical_bounds/2 (we see half as much content)
-                    let visible_content_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
-                    let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
-
-                    // Store computed visible dimensions in viewport for scrollbar calculations
-                    // These are stored as f32 bits in atomic fields for thread-safe access
-                    vp.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
-                    vp.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
-                    vp.computed_visible_height
-                        .store(visible_content_height.to_bits(), std::sync::atomic::Ordering::Relaxed);
-                    vp.computed_visible_width
-                        .store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
-
-                    // Clamp scroll to valid range based on current visible content
-                    // This prevents rendering past the content bounds
-                    let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
-                    let max_scroll_x = (vp.content_width - visible_content_width).max(0.0);
-                    let clamped_scroll_y = vp.scroll_y.clamp(0.0, max_scroll_y);
-                    let clamped_scroll_x = vp.scroll_x.clamp(0.0, max_scroll_x);
-
-                    // Create viewport region - scroll_x/y are already in content coordinates
-                    let viewport_region = icy_engine::Rectangle::from(
-                        clamped_scroll_x as i32,
-                        clamped_scroll_y as i32,
-                        visible_content_width as i32,
-                        visible_content_height as i32,
-                    );
-
-                    let base_options = icy_engine::RenderOptions {
-                        rect: icy_engine::Rectangle {
-                            start: icy_engine::Position::new(0, 0),
-                            size: icy_engine::Size::new(resolution.width, visible_content_height as i32),
-                        }
-                        .into(),
-                        blink_on: true,
-                        selection,
-                        selection_fg: Some(fg_sel.clone()),
-                        selection_bg: Some(bg_sel.clone()),
-                        override_scan_lines: None,
-                    };
-
-                    let render_on = screen.render_region_to_rgba(viewport_region, &base_options);
-
-                    let base_options_off = icy_engine::RenderOptions {
-                        rect: icy_engine::Rectangle {
-                            start: icy_engine::Position::new(0, 0),
-                            size: icy_engine::Size::new(resolution.width, visible_content_height as i32),
-                        }
-                        .into(),
-                        blink_on: false,
-                        selection,
-                        selection_fg: Some(fg_sel.clone()),
-                        selection_bg: Some(bg_sel.clone()),
-                        override_scan_lines: None,
-                    };
-
-                    let render_off = screen.render_region_to_rgba(viewport_region, &base_options_off);
-
-                    (render_on, render_off)
-                };
-
-                size = (render_blink_on.0.width as u32, render_blink_on.0.height as u32);
-
-                // Use the appropriate version based on current blink state
-                rgba_data = if blink_on { render_blink_on.1.clone() } else { render_blink_off.1.clone() };
-
-                // Cache both versions
-                {
-                    let mut cached_on = state.cached_rgba_blink_on.lock();
-                    if cached_on.len() != render_blink_on.1.len() {
-                        cached_on.clear();
-                        cached_on.reserve(render_blink_on.1.len());
-                    }
-                    cached_on.clone_from(&render_blink_on.1);
-
-                    let mut cached_off = state.cached_rgba_blink_off.lock();
-                    if cached_off.len() != render_blink_off.1.len() {
-                        cached_off.clear();
-                        cached_off.reserve(render_blink_off.1.len());
-                    }
-                    cached_off.clone_from(&render_blink_off.1);
-                }
-                state.cached_screen_info.lock().render_size = size;
-            } else {
-                // Reuse cached images - just pick the right one based on blink state
-                size = state.cached_screen_info.lock().render_size;
-                rgba_data = if blink_on {
-                    state.cached_rgba_blink_on.lock().clone()
-                } else {
-                    state.cached_rgba_blink_off.lock().clone()
-                };
-            }
-
-            // Always overlay the caret if visible and blinking is on
-            // Caret is just an inversion overlay, no need to track changes
-            if state.caret_blink.is_on() {
-                let vp = self.term.viewport.read();
-                let scroll_x = vp.scroll_x as i32;
-                let scroll_y = vp.scroll_y as i32;
-                drop(vp);
-                self.draw_caret(&screen.caret(), state, &mut rgba_data, size, font_w, font_h, scan_lines, scroll_x, scroll_y);
-            }
-        }
-
-        if rgba_data.len() != (size.0 as usize * size.1 as usize * 4) {
-            panic!(
-                "RGBA data size mismatch (expected {}, got {})",
-                size.0 as usize * size.1 as usize * 4,
-                rgba_data.len()
-            );
-        }
-
-        // Get zoom level from viewport
-        let zoom = self.term.viewport.read().zoom;
-
-        TerminalShader {
-            terminal_rgba: rgba_data,
-            terminal_size: size,
-            monitor_settings: self.monitor_settings.clone(),
-            instance_id: state.instance_id,
-            zoom,
-            render_info: self.term.render_info.clone(),
-            font_width: font_w as f32,
-            font_height: font_h as f32,
-            scan_lines,
-            background_color: *self.term.background_color.read(),
-        }
     }
 
     pub fn draw_caret(
@@ -457,7 +411,6 @@ impl<'a> CRTShaderProgram<'a> {
         scroll_x: i32,
         scroll_y: i32,
     ) {
-        // Check both the caret's is_blinking property and the blink timer state
         let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
         let font_w = font_w as i32;
         let font_h = font_h as i32;
@@ -466,7 +419,6 @@ impl<'a> CRTShaderProgram<'a> {
             let caret_pos = caret.position();
             if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
                 let line_bytes = (size.0 as i32) * 4;
-                // Adjust caret position by scroll offset
                 let cell_x = caret_pos.x;
                 let cell_y = caret_pos.y;
 
@@ -476,16 +428,14 @@ impl<'a> CRTShaderProgram<'a> {
                     } else {
                         (
                             cell_x * font_w - scroll_x,
-                            // In scanline mode, y-position and height are doubled
                             if scan_lines { cell_y * font_h * 2 } else { cell_y * font_h } - scroll_y,
                         )
                     };
                     let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
-                    // Check bounds: px_x/px_y can be negative due to scrolling
+
                     if px_x >= 0 && px_y >= 0 && px_x + font_w <= size.0 as i32 && px_y + actual_font_h <= size.1 as i32 {
                         match caret.shape {
                             CaretShape::Bar => {
-                                // Draw a vertical bar on the left edge of the character cell
                                 let bar_width = if caret.insert_mode { font_w / 2 } else { 2.min(font_w) };
 
                                 for row in 0..actual_font_h {
@@ -539,24 +489,18 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
     type Primitive = TerminalShader;
 
     fn draw(&self, state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
-        //let start = std::time::Instant::now();
-        let res = self.internal_draw(state, _cursor, _bounds);
-        //println!("CRTShaderProgram::draw took {:?}", start.elapsed());
-        res
+        self.internal_draw(state, _cursor, _bounds)
     }
 
     fn update(&self, state: &mut CRTShaderState, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
-        let res = self.internal_update(state, event, bounds, cursor);
-        res
+        self.internal_update(state, event, bounds, cursor)
     }
 
     fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
-        // Only show custom cursors when mouse is over the widget
         if !cursor.is_over(bounds) {
             return mouse::Interaction::default();
         }
 
-        // Let the application (icy_term, icy_view, etc.) control the cursor
         self.term.cursor_icon.read().unwrap_or_default()
     }
 }

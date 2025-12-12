@@ -1,14 +1,22 @@
+//! Terminal shader with multi-texture slicing support
+//!
+//! A GPU shader for rendering the terminal that supports very tall content
+//! (up to 80,000 pixels) by splitting into multiple texture slices.
+//! Each slice is max 8000px tall, with up to 10 slices supported.
+
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, RenderInfo, now_ms, set_scale_factor};
+use crate::tile_cache::MAX_TEXTURE_SLICES;
+use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, RenderInfo, TextureSliceData, now_ms, set_scale_factor};
 use iced::Rectangle;
 use iced::widget::shader;
 
 /// Maximum texture dimension supported by most GPUs
 const MAX_TEXTURE_DIMENSION: u32 = 8192;
 
+/// Uniform data for the CRT shader (multi-texture version with slicing)
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
 struct CRTUniforms {
@@ -40,43 +48,84 @@ struct CRTUniforms {
 
     _padding: [f32; 2], // Padding to align background_color to 16 bytes
     background_color: [f32; 4],
+
+    // Slicing uniforms
+    num_slices: f32,
+    total_image_height: f32,
+    scroll_offset_y: f32,
+    visible_height: f32,
+    // x=slice0 height, y=slice1 height, z=slice2 height, w=first_slice_start_y
+    slice_heights: [f32; 4],
 }
 
-// Define your shader primitive - store rendered data, not references
+/// The terminal shader program (high-level interface)
 #[derive(Debug, Clone)]
 pub struct TerminalShader {
-    // Store the rendered terminal as RGBA data
-    pub terminal_rgba: Vec<u8>,
-    pub terminal_size: (u32, u32),
-    // Store the monitor settings for CRT effects
+    /// Texture slices (up to MAX_TEXTURE_SLICES)
+    pub slices: Vec<TextureSliceData>,
+    /// Heights of each slice in pixels
+    pub slice_heights: Vec<u32>,
+    /// Width of the texture (same for all slices)
+    pub texture_width: u32,
+    /// Total content height (full document)
+    pub total_content_height: f32,
+    /// Store the monitor settings for CRT effects
     pub monitor_settings: MonitorSettings,
+    /// Unique instance ID
     pub instance_id: u64,
-    // Zoom level (1.0 = 100%)
+    /// Zoom level (1.0 = 100%)
     pub zoom: f32,
-    // Shared render info for mouse mapping
+    /// Shared render info for mouse mapping
     pub render_info: Arc<RwLock<RenderInfo>>,
-    // Font dimensions for mouse mapping
+    /// Font dimensions for mouse mapping
     pub font_width: f32,
     pub font_height: f32,
     pub scan_lines: bool,
-    // Background color for out-of-bounds areas
+    /// Background color for out-of-bounds areas
     pub background_color: [f32; 4],
+    /// Scroll offset in pixels
+    pub scroll_offset_y: f32,
+    /// Visible height in pixels
+    pub visible_height: f32,
+    /// Where the first slice starts in document Y coordinates
+    pub first_slice_start_y: f32,
 }
 
-// Add per-instance resources struct
-struct InstanceResources {
+/// Texture slice for GPU
+#[allow(dead_code)]
+struct TextureSlice {
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
-    monitor_color_buffer: iced::wgpu::Buffer,
-    texture_size: (u32, u32),
+    height: u32,
 }
-// Renderer struct for GPU resources
+
+/// Per-instance GPU resources with texture slicing
+struct InstanceResources {
+    /// Texture slices (1-10 slices depending on content height)
+    _slices: Vec<TextureSlice>,
+    /// Bind group for rendering (includes all texture slots)
+    bind_group: iced::wgpu::BindGroup,
+    /// Uniform buffer
+    uniform_buffer: iced::wgpu::Buffer,
+    /// Monitor color buffer
+    monitor_color_buffer: iced::wgpu::Buffer,
+    /// Texture width for cache validation
+    texture_width: u32,
+    /// Total texture height for cache validation
+    total_height: u32,
+    /// Number of slices for cache validation
+    num_slices: usize,
+    /// Hash of texture data pointers to detect when data changed
+    texture_data_hash: u64,
+}
+
+/// The terminal shader renderer (GPU pipeline) with multi-texture support
 pub struct TerminalShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
+    /// 1x1 transparent texture for unused texture slots
+    dummy_texture_view: iced::wgpu::TextureView,
     instances: HashMap<u64, InstanceResources>,
 }
 
@@ -94,46 +143,58 @@ impl shader::Pipeline for TerminalShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
         });
 
+        // Create bind group layout with 10 texture slots + sampler + uniforms + monitor_color
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
+
+        // Add 10 texture bindings (0-9)
+        for i in 0..MAX_TEXTURE_SLICES {
+            entries.push(iced::wgpu::BindGroupLayoutEntry {
+                binding: i as u32,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            });
+        }
+
+        // Sampler at binding 10
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: MAX_TEXTURE_SLICES as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+            count: None,
+        });
+
+        // Uniforms at binding 11
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 1) as u32,
+            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: iced::wgpu::BindingType::Buffer {
+                ty: iced::wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+
+        // Monitor color at binding 12
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 2) as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Buffer {
+                ty: iced::wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some(&format!("Terminal Shader Bind Group Layout {}", renderer_id)),
-            entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                iced::wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &entries,
         });
 
         let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
@@ -187,12 +248,44 @@ impl shader::Pipeline for TerminalShaderRenderer {
             ..Default::default()
         });
 
+        // Create 1x1 dummy texture for unused slots
+        let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some("Terminal Dummy Texture"),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
         TerminalShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
+            dummy_texture_view,
             instances: HashMap::new(),
         }
+    }
+}
+
+impl TerminalShader {
+    /// Compute a hash of the texture data pointers to detect changes
+    fn compute_data_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        for slice in &self.slices {
+            let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
+            ptr.hash(&mut hasher);
+        }
+        hasher.finish()
     }
 }
 
@@ -217,10 +310,7 @@ impl shader::Primitive for TerminalShader {
         };
         if desired_filter != unsafe { FILTER_MODE } {
             unsafe { FILTER_MODE = desired_filter };
-            // Recreate sampler if filter mode changed
-            // We need to track the current filter mode in the renderer
-            // For now, recreate it every frame (small overhead but ensures correctness)
-            let new_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+            pipeline.sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
                 label: Some("Terminal Texture Sampler"),
                 address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
                 address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
@@ -230,36 +320,11 @@ impl shader::Primitive for TerminalShader {
                 mipmap_filter: iced::wgpu::FilterMode::Nearest,
                 ..Default::default()
             });
-
-            pipeline.sampler = new_sampler;
-            // Update ALL existing instances' bind groups with the new sampler
-            for (_instance_id, resources) in pipeline.instances.iter_mut() {
-                let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                    label: Some(&format!("Terminal BindGroup Instance {}", _instance_id)),
-                    layout: &pipeline.bind_group_layout,
-                    entries: &[
-                        iced::wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: iced::wgpu::BindingResource::TextureView(&resources.texture_view),
-                        },
-                        iced::wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler), // Use new sampler
-                        },
-                        iced::wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: resources.uniform_buffer.as_entire_binding(),
-                        },
-                        iced::wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: resources.monitor_color_buffer.as_entire_binding(),
-                        },
-                    ],
-                });
-                resources.bind_group = bind_group;
-            }
+            // Clear all instances to force bind group recreation
+            pipeline.instances.clear();
         }
 
+        // Remove pending instances
         {
             let mut pending = PENDING_INSTANCE_REMOVALS.lock();
             for id in pending.drain(..) {
@@ -268,14 +333,78 @@ impl shader::Primitive for TerminalShader {
         }
 
         let id = self.instance_id;
-        let (w, h) = self.terminal_size;
-        // Clamp dimensions to GPU texture limits
-        let w = w.min(MAX_TEXTURE_DIMENSION);
-        let h = h.min(MAX_TEXTURE_DIMENSION);
+        let data_hash = self.compute_data_hash();
+        let num_slices = self.slices.len();
+        let texture_width = self.texture_width.min(MAX_TEXTURE_DIMENSION);
+        let total_height = self.total_content_height as u32;
 
-        // Get or create per-instance resources
-        let resources = pipeline.instances.entry(id).or_insert_with(|| {
-            // Create per-instance resources
+        // Check if we need to recreate resources
+        let needs_recreate = match pipeline.instances.get(&id) {
+            None => true,
+            Some(resources) => {
+                resources.texture_data_hash != data_hash
+                    || resources.num_slices != num_slices
+                    || resources.texture_width != texture_width
+                    || resources.total_height != total_height
+            }
+        };
+
+        if needs_recreate {
+            // Create new slice textures
+            let mut gpu_slices = Vec::with_capacity(num_slices);
+
+            for (i, slice_data) in self.slices.iter().enumerate() {
+                let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
+                let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
+
+                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                    label: Some(&format!("Terminal Slice {} Instance {}", i, id)),
+                    size: iced::wgpu::Extent3d {
+                        width: w.max(1),
+                        height: h.max(1),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: iced::wgpu::TextureDimension::D2,
+                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                // Upload texture data
+                if !slice_data.rgba_data.is_empty() {
+                    queue.write_texture(
+                        iced::wgpu::TexelCopyTextureInfo {
+                            texture: &texture,
+                            mip_level: 0,
+                            origin: iced::wgpu::Origin3d::ZERO,
+                            aspect: iced::wgpu::TextureAspect::All,
+                        },
+                        &slice_data.rgba_data,
+                        iced::wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(4 * w),
+                            rows_per_image: Some(h),
+                        },
+                        iced::wgpu::Extent3d {
+                            width: w.max(1),
+                            height: h.max(1),
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+
+                gpu_slices.push(TextureSlice {
+                    texture,
+                    texture_view,
+                    height: h,
+                });
+            }
+
+            // Create uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
                 label: Some(&format!("Terminal Uniforms Instance {}", id)),
                 size: std::mem::size_of::<CRTUniforms>() as u64,
@@ -290,156 +419,85 @@ impl shader::Primitive for TerminalShader {
                 mapped_at_creation: false,
             });
 
-            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some(&format!("Terminal Texture Instance {}", id)),
-                size: iced::wgpu::Extent3d {
-                    width: w.max(1),
-                    height: h.max(1),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
+            // Build bind group entries
+            let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
 
-            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-            let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                label: Some(&format!("Terminal BindGroup Instance {}", id)),
-                layout: &pipeline.bind_group_layout,
-                entries: &[
-                    iced::wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: iced::wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: monitor_color_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
-            InstanceResources {
-                texture,
-                texture_view,
-                bind_group,
-                uniform_buffer,
-                monitor_color_buffer,
-                texture_size: (w, h),
+            // Add texture bindings (0-9), using dummy for unused slots
+            for i in 0..MAX_TEXTURE_SLICES {
+                let view = if i < gpu_slices.len() {
+                    &gpu_slices[i].texture_view
+                } else {
+                    &pipeline.dummy_texture_view
+                };
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: i as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(view),
+                });
             }
-        });
 
-        // Recreate texture if size changed
-        if resources.texture_size != (w, h) {
-            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                label: Some(&format!("Terminal Texture Instance {}", id)),
-                size: iced::wgpu::Extent3d {
-                    width: w.max(1),
-                    height: h.max(1),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
+            // Sampler at binding 10
+            bind_entries.push(iced::wgpu::BindGroupEntry {
+                binding: MAX_TEXTURE_SLICES as u32,
+                resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
             });
 
-            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+            // Uniforms at binding 11
+            bind_entries.push(iced::wgpu::BindGroupEntry {
+                binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                resource: uniform_buffer.as_entire_binding(),
+            });
+
+            // Monitor color at binding 12
+            bind_entries.push(iced::wgpu::BindGroupEntry {
+                binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                resource: monitor_color_buffer.as_entire_binding(),
+            });
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Terminal BindGroup Instance {}", id)),
                 layout: &pipeline.bind_group_layout,
-                entries: &[
-                    iced::wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: iced::wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: resources.uniform_buffer.as_entire_binding(),
-                    },
-                    iced::wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: resources.monitor_color_buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &bind_entries,
             });
 
-            resources.texture = texture;
-            resources.texture_view = texture_view;
-            resources.bind_group = bind_group;
-            resources.texture_size = (w, h);
-        }
-
-        // Upload texture data for this instance
-        if !self.terminal_rgba.is_empty() {
-            // Get original dimensions
-            let (orig_w, orig_h) = self.terminal_size;
-            // Calculate bytes per row for original data
-            let orig_bytes_per_row = 4 * orig_w;
-
-            // If dimensions were clamped, we need to use only the portion that fits
-            let data_to_upload: &[u8] = if orig_w > MAX_TEXTURE_DIMENSION || orig_h > MAX_TEXTURE_DIMENSION {
-                // Calculate how many bytes we can upload
-                let max_bytes = (orig_bytes_per_row * h.min(orig_h)) as usize;
-                &self.terminal_rgba[..max_bytes.min(self.terminal_rgba.len())]
-            } else {
-                &self.terminal_rgba
-            };
-
-            queue.write_texture(
-                iced::wgpu::TexelCopyTextureInfo {
-                    texture: &resources.texture,
-                    mip_level: 0,
-                    origin: iced::wgpu::Origin3d::ZERO,
-                    aspect: iced::wgpu::TextureAspect::All,
-                },
-                data_to_upload,
-                iced::wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * orig_w.min(MAX_TEXTURE_DIMENSION)),
-                    rows_per_image: Some(h),
-                },
-                iced::wgpu::Extent3d {
-                    width: w.max(1),
-                    height: h.max(1),
-                    depth_or_array_layers: 1,
+            pipeline.instances.insert(
+                id,
+                InstanceResources {
+                    _slices: gpu_slices,
+                    bind_group,
+                    uniform_buffer,
+                    monitor_color_buffer,
+                    texture_width,
+                    total_height,
+                    num_slices,
+                    texture_data_hash: data_hash,
                 },
             );
         }
 
-        // Display the texture at the given zoom level
-        // The texture contains the visible content, and we display it at exactly zoom * texture_size
-        let term_w = w.max(1) as f32;
-        let term_h = h.max(1) as f32;
+        // Update uniforms every frame
+        let Some(resources) = pipeline.instances.get(&id) else {
+            return;
+        };
 
-        // Calculate the zoom/scale factor using centralized compute_zoom
-        let use_int = self.monitor_settings.use_integer_scaling;
+        // Calculate display size
+        let term_w = self.texture_width.max(1) as f32;
+        let term_h = self.visible_height.max(1.0);
         let avail_w = _bounds.width.max(1.0);
         let avail_h = _bounds.height.max(1.0);
+        let use_int = self.monitor_settings.use_integer_scaling;
         let final_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
-
         let scaled_w = term_w * final_scale;
         let scaled_h = term_h * final_scale;
 
-        // ...rest of uniform data setup unchanged...
+        // Pack slice heights into array: [slice0, slice1, slice2, first_slice_start_y]
+        let mut slice_heights = [0.0f32; 4];
+        for (i, &height) in self.slice_heights.iter().enumerate() {
+            if i < 3 {
+                slice_heights[i] = height as f32;
+            }
+        }
+        slice_heights[3] = self.first_slice_start_y;
+
         let monitor_color = match self.monitor_settings.monitor_type {
             crate::MonitorType::Color => [1.0, 1.0, 1.0, 1.0],
             crate::MonitorType::Grayscale => [1.0, 1.0, 1.0, 1.0],
@@ -517,9 +575,13 @@ impl shader::Primitive for TerminalShader {
             enable_bloom: if self.monitor_settings.use_bloom { 1.0 } else { 0.0 },
             _padding: [0.0; 2],
             background_color: self.background_color,
+            num_slices: self.slices.len() as f32,
+            total_image_height: self.total_content_height,
+            scroll_offset_y: self.scroll_offset_y,
+            visible_height: self.visible_height,
+            slice_heights,
         };
 
-        // Write to this instance's uniform buffers
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
 
@@ -530,29 +592,30 @@ impl shader::Primitive for TerminalShader {
     fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         encoder.push_debug_group(&format!("Terminal Instance {} Render", self.instance_id));
 
-        // Get this instance's resources
         let Some(resources) = pipeline.instances.get(&self.instance_id) else {
             encoder.pop_debug_group();
             return;
         };
 
-        // Use clamped dimensions for rendering
-        let term_w = self.terminal_size.0.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
-        let term_h = self.terminal_size.1.min(MAX_TEXTURE_DIMENSION).max(1) as f32;
+        // GPU dimension limits
+        const MAX_VIEWPORT_DIM: f32 = 8192.0;
 
-        // Center the texture within the available clip bounds
+        // Use visible dimensions for rendering, clamped to GPU limits
+        let term_w = (self.texture_width.max(1) as f32).min(MAX_VIEWPORT_DIM);
+        let term_h = self.visible_height.max(1.0).min(MAX_VIEWPORT_DIM);
+
         let avail_w = clip_bounds.width.max(1) as f32;
         let avail_h = clip_bounds.height.max(1) as f32;
 
-        // Calculate the zoom/scale factor using centralized compute_zoom
         let use_int = self.monitor_settings.use_integer_scaling;
         let display_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
 
-        let scaled_w = term_w * display_scale;
-        let scaled_h = term_h * display_scale;
+        // Clamp scaled dimensions to available space to prevent negative offsets
+        let scaled_w = (term_w * display_scale).min(avail_w);
+        let scaled_h = (term_h * display_scale).min(avail_h);
 
-        let offset_x = (avail_w - scaled_w) / 2.0;
-        let offset_y = (avail_h - scaled_h) / 2.0;
+        let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
+        let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
 
         let (vp_x, vp_y, vp_w, vp_h) = if use_int {
             (
@@ -600,17 +663,20 @@ impl shader::Primitive for TerminalShader {
             occlusion_query_set: None,
         });
 
-        // Always use the original clip_bounds as scissor rect to ensure proper clipping
         let scissor_x = clip_bounds.x;
         let scissor_y = clip_bounds.y;
         let scissor_width = clip_bounds.width;
         let scissor_height = clip_bounds.height;
 
+        // Final clamp of viewport dimensions (should already be clamped, but ensure safety)
+        let vp_w = vp_w.min(MAX_VIEWPORT_DIM);
+        let vp_h = vp_h.min(MAX_VIEWPORT_DIM);
+
         if scissor_width > 0 && scissor_height > 0 && vp_w > 0.0 && vp_h > 0.0 {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             render_pass.set_pipeline(&pipeline.pipeline);
-            render_pass.set_bind_group(0, &resources.bind_group, &[]); // Use instance-specific bind group
+            render_pass.set_bind_group(0, &resources.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
 

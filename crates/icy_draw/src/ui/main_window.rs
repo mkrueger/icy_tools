@@ -437,6 +437,7 @@ impl MainWindow {
                         Ok(editor) => (ModeState::BitFont(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading Font".to_string(), e));
+                            log::error!("Error loading BitFont file '{}': {}", p.display(), error.as_ref().unwrap().1);
                             (ModeState::BitFont(BitFontEditor::new()), error)
                         }
                     }
@@ -447,6 +448,7 @@ impl MainWindow {
                         Ok(editor) => (ModeState::Animation(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading Animation".to_string(), e));
+                            log::error!("Error loading Animation file '{}': {}", p.display(), error.as_ref().unwrap().1);
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
                     }
@@ -457,6 +459,7 @@ impl MainWindow {
                         Ok(editor) => (ModeState::CharFont(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                            log::error!("Error loading TDF Font file '{}': {}", p.display(), error.as_ref().unwrap().1);
                             (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
                         }
                     }
@@ -467,6 +470,7 @@ impl MainWindow {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
+                            log::error!("Error loading file '{}': {}", p.display(), error.as_ref().unwrap().1);
                             (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
                         }
                     }
