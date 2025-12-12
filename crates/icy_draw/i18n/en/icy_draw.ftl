@@ -658,3 +658,12 @@ animation-no-frames=No frames generated
 animation-preparing=Preparing preview...
 animation-no-log=No log entries
 animation-frame-display=Frame { $current } / { $total }
+
+# Reference Image Dialog
+reference-image-dialog-title=Reference Image
+reference-image-path=Path
+reference-image-path-placeholder=Select an image file...
+reference-image-browse=Browse...
+reference-image-alpha=Opacity
+reference-image-info=The reference image will be displayed as an overlay on the canvas.
+reference-image-clear=Clear

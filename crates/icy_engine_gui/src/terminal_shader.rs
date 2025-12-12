@@ -74,6 +74,51 @@ struct CRTUniforms {
     caret_mode: f32,
     /// Padding for 16-byte alignment
     _caret_padding: [f32; 2],
+
+    // Marker uniforms (raster grid and guide crosshair)
+    /// Raster grid spacing in pixels (cell_width, cell_height), (0,0) = disabled
+    raster_spacing: [f32; 2],
+    /// Padding to align raster_color to 16-byte boundary (vec4 requires 16-byte alignment)
+    _raster_spacing_padding: [f32; 2],
+    /// Raster grid color (RGBA)
+    raster_color: [f32; 4],
+    /// Raster grid alpha (0.0 - 1.0)
+    raster_alpha: f32,
+    /// Raster grid enabled (1.0 = enabled, 0.0 = disabled)
+    raster_enabled: f32,
+    /// Padding for 16-byte alignment
+    _raster_padding: [f32; 2],
+
+    /// Guide crosshair position in pixels (x, y), negative = disabled
+    guide_pos: [f32; 2],
+    /// Padding to align guide_color to 16-byte boundary (vec4 requires 16-byte alignment)
+    _guide_pos_padding: [f32; 2],
+    /// Guide crosshair color (RGBA)
+    guide_color: [f32; 4],
+    /// Guide crosshair alpha (0.0 - 1.0)
+    guide_alpha: f32,
+    /// Guide crosshair enabled (1.0 = enabled, 0.0 = disabled)
+    guide_enabled: f32,
+    /// Padding for 16-byte alignment
+    _marker_padding: [f32; 2],
+
+    // Reference image uniforms
+    /// Reference image enabled (1.0 = enabled, 0.0 = disabled)
+    ref_image_enabled: f32,
+    /// Reference image alpha/opacity (0.0 - 1.0)
+    ref_image_alpha: f32,
+    /// Reference image mode: 0 = Stretch, 1 = Original, 2 = Tile
+    ref_image_mode: f32,
+    /// Padding for alignment
+    _ref_padding: f32,
+    /// Reference image offset in pixels (x, y)
+    ref_image_offset: [f32; 2],
+    /// Reference image scale factor (x, y)
+    ref_image_scale: [f32; 2],
+    /// Reference image size in pixels (width, height)
+    ref_image_size: [f32; 2],
+    /// Padding for 16-byte alignment
+    _ref_padding2: [f32; 2],
 }
 
 /// The terminal shader program (high-level interface)
@@ -125,6 +170,35 @@ pub struct TerminalShader {
     pub caret_mode: u8,
     /// Current blink state (for selecting which bind group to use)
     pub blink_on: bool,
+
+    // Marker rendering (raster grid and guide crosshair)
+    /// Raster grid spacing in pixels (cell_width, cell_height), None = disabled
+    pub raster_spacing: Option<(f32, f32)>,
+    /// Raster grid color (RGBA)
+    pub raster_color: [f32; 4],
+    /// Raster grid alpha (0.0 - 1.0)
+    pub raster_alpha: f32,
+
+    /// Guide crosshair position in pixels (x, y), None = disabled
+    pub guide_pos: Option<(f32, f32)>,
+    /// Guide crosshair color (RGBA)
+    pub guide_color: [f32; 4],
+    /// Guide crosshair alpha (0.0 - 1.0)
+    pub guide_alpha: f32,
+
+    // Reference image rendering
+    /// Reference image texture data (RGBA bytes), None = no image
+    pub reference_image_data: Option<(Vec<u8>, u32, u32)>, // (data, width, height)
+    /// Reference image enabled
+    pub reference_image_enabled: bool,
+    /// Reference image alpha/opacity (0.0 - 1.0)
+    pub reference_image_alpha: f32,
+    /// Reference image mode: 0 = Stretch, 1 = Original, 2 = Tile
+    pub reference_image_mode: u8,
+    /// Reference image offset in pixels (x, y)
+    pub reference_image_offset: [f32; 2],
+    /// Reference image scale factor
+    pub reference_image_scale: f32,
 }
 
 /// Texture slice for GPU
@@ -159,6 +233,10 @@ struct InstanceResources {
     texture_data_hash_blink_off: u64,
     /// Hash of texture data pointers for blink_on=true
     texture_data_hash_blink_on: u64,
+    /// Reference image texture (optional)
+    reference_image_texture: Option<TextureSlice>,
+    /// Hash of reference image data for cache validation
+    reference_image_hash: u64,
 }
 
 /// The terminal shader renderer (GPU pipeline) with multi-texture support
@@ -185,10 +263,10 @@ impl shader::Pipeline for TerminalShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
         });
 
-        // Create bind group layout with 10 texture slots + sampler + uniforms + monitor_color
-        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
+        // Create bind group layout with 10 texture slots + sampler + uniforms + monitor_color + reference_image
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
 
-        // Add 10 texture bindings (0-9)
+        // Add 3 texture bindings (0-2)
         for i in 0..MAX_TEXTURE_SLICES {
             entries.push(iced::wgpu::BindGroupLayoutEntry {
                 binding: i as u32,
@@ -202,7 +280,7 @@ impl shader::Pipeline for TerminalShaderRenderer {
             });
         }
 
-        // Sampler at binding 10
+        // Sampler at binding 3
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: MAX_TEXTURE_SLICES as u32,
             visibility: iced::wgpu::ShaderStages::FRAGMENT,
@@ -210,7 +288,7 @@ impl shader::Pipeline for TerminalShaderRenderer {
             count: None,
         });
 
-        // Uniforms at binding 11
+        // Uniforms at binding 4
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 1) as u32,
             visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -222,7 +300,7 @@ impl shader::Pipeline for TerminalShaderRenderer {
             count: None,
         });
 
-        // Monitor color at binding 12
+        // Monitor color at binding 5
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 2) as u32,
             visibility: iced::wgpu::ShaderStages::FRAGMENT,
@@ -230,6 +308,18 @@ impl shader::Pipeline for TerminalShaderRenderer {
                 ty: iced::wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
                 min_binding_size: None,
+            },
+            count: None,
+        });
+
+        // Reference image texture at binding 6
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 3) as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Texture {
+                multisampled: false,
+                view_dimension: iced::wgpu::TextureViewDimension::D2,
+                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
             },
             count: None,
         });
@@ -326,6 +416,26 @@ impl TerminalShader {
         for slice in slices {
             let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
             ptr.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Compute a hash for reference image data
+    fn compute_ref_image_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        match data {
+            Some((bytes, w, h)) => {
+                // Use data pointer and dimensions for hash
+                bytes.as_ptr().hash(&mut hasher);
+                bytes.len().hash(&mut hasher);
+                w.hash(&mut hasher);
+                h.hash(&mut hasher);
+            }
+            None => {
+                0u64.hash(&mut hasher);
+            }
         }
         hasher.finish()
     }
@@ -470,10 +580,10 @@ impl shader::Primitive for TerminalShader {
             });
 
             // Helper to create bind group for a set of GPU slices
-            let create_bind_group = |gpu_slices: &[TextureSlice], label: &str| -> iced::wgpu::BindGroup {
-                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
+            let create_bind_group = |gpu_slices: &[TextureSlice], ref_image_view: &iced::wgpu::TextureView, label: &str| -> iced::wgpu::BindGroup {
+                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
 
-                // Add texture bindings (0-9), using dummy for unused slots
+                // Add texture bindings (0-2), using dummy for unused slots
                 for i in 0..MAX_TEXTURE_SLICES {
                     let view = if i < gpu_slices.len() {
                         &gpu_slices[i].texture_view
@@ -486,22 +596,28 @@ impl shader::Primitive for TerminalShader {
                     });
                 }
 
-                // Sampler at binding 10
+                // Sampler at binding 3
                 bind_entries.push(iced::wgpu::BindGroupEntry {
                     binding: MAX_TEXTURE_SLICES as u32,
                     resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
                 });
 
-                // Uniforms at binding 11
+                // Uniforms at binding 4
                 bind_entries.push(iced::wgpu::BindGroupEntry {
                     binding: (MAX_TEXTURE_SLICES + 1) as u32,
                     resource: uniform_buffer.as_entire_binding(),
                 });
 
-                // Monitor color at binding 12
+                // Monitor color at binding 5
                 bind_entries.push(iced::wgpu::BindGroupEntry {
                     binding: (MAX_TEXTURE_SLICES + 2) as u32,
                     resource: monitor_color_buffer.as_entire_binding(),
+                });
+
+                // Reference image at binding 6
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 3) as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(ref_image_view),
                 });
 
                 device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
@@ -511,9 +627,9 @@ impl shader::Primitive for TerminalShader {
                 })
             };
 
-            // Create bind groups for both blink states
-            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, "BlinkOff");
-            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, "BlinkOn");
+            // Create bind groups for both blink states (using dummy for reference image initially)
+            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, &pipeline.dummy_texture_view, "BlinkOff");
+            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, &pipeline.dummy_texture_view, "BlinkOn");
 
             pipeline.instances.insert(
                 id,
@@ -529,8 +645,128 @@ impl shader::Primitive for TerminalShader {
                     num_slices,
                     texture_data_hash_blink_off: hash_blink_off,
                     texture_data_hash_blink_on: hash_blink_on,
+                    reference_image_texture: None,
+                    reference_image_hash: 0,
                 },
             );
+        }
+
+        // Check if reference image changed and needs update
+        let ref_image_hash = Self::compute_ref_image_hash(&self.reference_image_data);
+        let needs_ref_image_update = match pipeline.instances.get(&id) {
+            Some(resources) => resources.reference_image_hash != ref_image_hash,
+            None => false,
+        };
+
+        if needs_ref_image_update {
+            if let Some(resources) = pipeline.instances.get_mut(&id) {
+                // Create or update reference image texture
+                if let Some((data, width, height)) = &self.reference_image_data {
+                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
+                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
+
+                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        label: Some(&format!("Reference Image Instance {}", id)),
+                        size: iced::wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: iced::wgpu::TextureDimension::D2,
+                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+
+                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                    // Write image data to texture
+                    if !data.is_empty() {
+                        queue.write_texture(
+                            iced::wgpu::TexelCopyTextureInfo {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: iced::wgpu::Origin3d::ZERO,
+                                aspect: iced::wgpu::TextureAspect::All,
+                            },
+                            data,
+                            iced::wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(4 * w),
+                                rows_per_image: Some(h),
+                            },
+                            iced::wgpu::Extent3d {
+                                width: w,
+                                height: h,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+
+                    resources.reference_image_texture = Some(TextureSlice {
+                        texture,
+                        texture_view,
+                        height: h,
+                    });
+                } else {
+                    resources.reference_image_texture = None;
+                }
+
+                // Helper to create bind group
+                let create_bind_group = |gpu_slices: &[TextureSlice], ref_view: &iced::wgpu::TextureView, label: &str| -> iced::wgpu::BindGroup {
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
+
+                    for i in 0..MAX_TEXTURE_SLICES {
+                        let view = if i < gpu_slices.len() {
+                            &gpu_slices[i].texture_view
+                        } else {
+                            &pipeline.dummy_texture_view
+                        };
+                        bind_entries.push(iced::wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: iced::wgpu::BindingResource::TextureView(view),
+                        });
+                    }
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: MAX_TEXTURE_SLICES as u32,
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                        resource: resources.uniform_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                        resource: resources.monitor_color_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                    });
+
+                    device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
+                        layout: &pipeline.bind_group_layout,
+                        entries: &bind_entries,
+                    })
+                };
+
+                // Recreate bind groups with new reference image
+                let ref_view = resources
+                    .reference_image_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, "BlinkOn");
+                resources.reference_image_hash = ref_image_hash;
+            }
         }
 
         // Update uniforms every frame
@@ -650,6 +886,35 @@ impl shader::Primitive for TerminalShader {
             caret_visible: if self.caret_visible { 1.0 } else { 0.0 },
             caret_mode: self.caret_mode as f32,
             _caret_padding: [0.0; 2],
+
+            // Marker uniforms
+            raster_spacing: self.raster_spacing.map_or([0.0, 0.0], |(w, h)| [w, h]),
+            _raster_spacing_padding: [0.0; 2],
+            raster_color: self.raster_color,
+            raster_alpha: self.raster_alpha,
+            raster_enabled: if self.raster_spacing.is_some() { 1.0 } else { 0.0 },
+            _raster_padding: [0.0; 2],
+
+            guide_pos: self.guide_pos.map_or([-1.0, -1.0], |(x, y)| [x, y]),
+            _guide_pos_padding: [0.0; 2],
+            guide_color: self.guide_color,
+            guide_alpha: self.guide_alpha,
+            guide_enabled: if self.guide_pos.is_some() { 1.0 } else { 0.0 },
+            _marker_padding: [0.0; 2],
+
+            // Reference image uniforms
+            ref_image_enabled: if self.reference_image_enabled && self.reference_image_data.is_some() {
+                1.0
+            } else {
+                0.0
+            },
+            ref_image_alpha: self.reference_image_alpha,
+            ref_image_mode: self.reference_image_mode as f32,
+            _ref_padding: 0.0,
+            ref_image_offset: self.reference_image_offset,
+            ref_image_scale: [self.reference_image_scale, self.reference_image_scale],
+            ref_image_size: self.reference_image_data.as_ref().map_or([1.0, 1.0], |(_, w, h)| [*w as f32, *h as f32]),
+            _ref_padding2: [0.0; 2],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

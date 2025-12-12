@@ -17,6 +17,7 @@ use crate::{
     fl,
     ui::{animation_editor, ansi_editor, bitfont_editor, charfont_editor},
 };
+pub use ansi_editor::menu_bar::MarkerMenuState;
 
 /// Information about current undo/redo state for menu display
 #[derive(Default, Clone)]
@@ -46,9 +47,9 @@ impl MenuBarState {
     }
 
     /// Build the menu bar view based on the current edit mode
-    pub fn view(&self, mode: &EditMode, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'_, Message> {
+    pub fn view(&self, mode: &EditMode, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, marker_state: &MarkerMenuState) -> Element<'_, Message> {
         match mode {
-            EditMode::Ansi => ansi_editor::menu_bar::view_ansi(recent_files, undo_info),
+            EditMode::Ansi => ansi_editor::menu_bar::view_ansi(recent_files, undo_info, marker_state),
             EditMode::BitFont => {
                 bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
             }

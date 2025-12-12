@@ -1,6 +1,6 @@
 //! ANSI Editor menu bar
 
-use iced::{Border, Color, Element, Theme, border::Radius};
+use iced::{Border, Color, Element, Length, Theme, border::Radius, widget::button};
 use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
@@ -9,13 +9,141 @@ use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
 use crate::ui::main_window::Message;
 use crate::ui::menu::{
-    UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_submenu, menu_item_undo, separator,
+    UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu, menu_item_undo, separator,
 };
 use icy_engine_gui::commands::cmd;
 
+/// Current state of guides/raster for menu display
+#[derive(Clone, Debug, Default)]
+pub struct MarkerMenuState {
+    /// Currently selected guide (column, row), or None if off
+    pub guide: Option<(u32, u32)>,
+    /// Is guide visibility enabled
+    pub guide_visible: bool,
+    /// Currently selected raster (width, height), or None if off  
+    pub raster: Option<(u32, u32)>,
+    /// Is raster visibility enabled
+    pub raster_visible: bool,
+}
+
+/// Build the guides submenu with predefined guide sizes
+fn build_guides_submenu(state: &MarkerMenuState) -> Menu<'static, Message, Theme, iced::Renderer> {
+    use iced::widget::text;
+
+    // Predefined guide sizes (common ANSI art formats)
+    let guides: [(&str, i32, i32); 4] = [
+        ("Smallscale 80x25", 80, 25),
+        ("Square 80x40", 80, 40),
+        ("Instagram 80x50", 80, 50),
+        ("File_ID.DIZ 44x22", 44, 22),
+    ];
+
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+
+    // Off option
+    let off_selected = state.guide.is_none();
+    let off_label = if off_selected { "● Off" } else { "   Off" };
+    items.push(iced_aw::menu::Item::new(
+        button(text(off_label).size(14))
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(menu_item_style)
+            .on_press(Message::ClearGuide),
+    ));
+
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    for (name, x, y) in guides {
+        let is_selected = state.guide == Some((x as u32, y as u32));
+        let label = if is_selected { format!("● {}", name) } else { format!("   {}", name) };
+        items.push(iced_aw::menu::Item::new(
+            button(text(label).size(14))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(menu_item_style)
+                .on_press(Message::SetGuide(x, y)),
+        ));
+    }
+
+    // Add separator and visibility toggle
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    let visibility_label = if state.guide_visible {
+        format!("☑ {}", fl!("menu-toggle_guide"))
+    } else {
+        format!("☐ {}", fl!("menu-toggle_guide"))
+    };
+    items.push(iced_aw::menu::Item::new(
+        button(text(visibility_label).size(14))
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(menu_item_style)
+            .on_press(Message::ToggleGuides),
+    ));
+
+    Menu::new(items).width(200.0).offset(5.0)
+}
+
+/// Build the raster/grid submenu with predefined grid sizes
+fn build_raster_submenu(state: &MarkerMenuState) -> Menu<'static, Message, Theme, iced::Renderer> {
+    use iced::widget::text;
+
+    // Predefined raster sizes
+    let rasters: [(i32, i32); 10] = [(1, 1), (2, 2), (4, 2), (4, 4), (8, 2), (8, 4), (8, 8), (16, 4), (16, 8), (16, 16)];
+
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+
+    // Off option
+    let off_selected = state.raster.is_none();
+    let off_label = if off_selected { "● Off" } else { "   Off" };
+    items.push(iced_aw::menu::Item::new(
+        button(text(off_label).size(14))
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(menu_item_style)
+            .on_press(Message::ClearRaster),
+    ));
+
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    for (x, y) in rasters {
+        let is_selected = state.raster == Some((x as u32, y as u32));
+        let label = if is_selected { format!("● {}x{}", x, y) } else { format!("   {}x{}", x, y) };
+        items.push(iced_aw::menu::Item::new(
+            button(text(label).size(14))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(menu_item_style)
+                .on_press(Message::SetRaster(x, y)),
+        ));
+    }
+
+    // Add separator and visibility toggle
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    let visibility_label = if state.raster_visible {
+        format!("☑ {}", fl!("menu-toggle_raster"))
+    } else {
+        format!("☐ {}", fl!("menu-toggle_raster"))
+    };
+    items.push(iced_aw::menu::Item::new(
+        button(text(visibility_label).size(14))
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(menu_item_style)
+            .on_press(Message::ToggleRaster),
+    ));
+
+    Menu::new(items).width(150.0).offset(5.0)
+}
+
 /// Build the ANSI editor menu bar (full menu)
-pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'static, Message> {
+pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, marker_state: &MarkerMenuState) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
+
+    // Build submenus with current state
+    let guides_submenu = build_guides_submenu(marker_state);
+    let raster_submenu = build_raster_submenu(marker_state);
 
     let mb = menu_bar!(
         // File menu
@@ -112,8 +240,8 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> 
                 (menu_item_simple("1:2 50%".to_string(), "", Message::SetZoom(0.5))),
                 (menu_item_simple("1:4 25%".to_string(), "", Message::SetZoom(0.25))),
                 (separator()),
-                (menu_item_simple(fl!("menu-toggle_raster"), "Ctrl+'", Message::ToggleRaster)),
-                (menu_item_simple(fl!("menu-toggle_guide"), "Ctrl+;", Message::ToggleGuides)),
+                (menu_item_submenu(fl!("menu-guides")), guides_submenu),
+                (menu_item_submenu(fl!("menu-raster")), raster_submenu),
                 (menu_item_simple(fl!("menu-show_layer_borders"), "", Message::ToggleLayerBorders)),
                 (menu_item_simple(fl!("menu-show_line_numbers"), "", Message::ToggleLineNumbers)),
                 (separator()),
@@ -121,9 +249,8 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> 
                 (menu_item_simple(fl!("menu-toggle_right_pane"), "F12", Message::ToggleRightPanel)),
                 (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
                 (separator()),
-                (menu_item_simple(fl!("menu-reference-image"), "Ctrl+Shift+O", Message::SetReferenceImage)),
-                (menu_item_simple(fl!("menu-toggle-reference-image"), "Ctrl+Tab", Message::ToggleReferenceImage)),
-                (menu_item_simple(fl!("menu-clear-reference-image"), "", Message::ClearReferenceImage))
+                (menu_item_simple(fl!("menu-reference-image"), "Ctrl+Shift+O", Message::ShowReferenceImageDialog)),
+                (menu_item_simple(fl!("menu-toggle-reference-image"), "Ctrl+Tab", Message::ToggleReferenceImage))
             ))
         ),
         // Plugins menu

@@ -16,6 +16,7 @@ mod layer_view;
 pub mod menu_bar;
 mod minimap_view;
 mod palette_grid;
+mod reference_image_dialog;
 mod right_panel;
 mod tool_panel;
 mod tool_panel_wrapper;
@@ -30,6 +31,7 @@ use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
 pub use minimap_view::*;
 pub use palette_grid::*;
+pub use reference_image_dialog::*;
 pub use right_panel::*;
 // Use shared GPU-accelerated tool panel via wrapper
 pub use tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
@@ -94,6 +96,22 @@ pub enum AnsiEditorMessage {
     KeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
     /// Mouse event on canvas
     CanvasMouseEvent(CanvasMouseEvent),
+
+    // === Marker/Guide Messages ===
+    /// Set guide position (in characters, e.g. 80x25)
+    /// Use (0, 0) or negative values to clear
+    SetGuide(i32, i32),
+    /// Clear guide
+    ClearGuide,
+    /// Set raster/grid spacing (in characters, e.g. 8x8)
+    /// Use (0, 0) or negative values to clear
+    SetRaster(i32, i32),
+    /// Clear raster/grid
+    ClearRaster,
+    /// Toggle guide visibility
+    ToggleGuide,
+    /// Toggle raster/grid visibility
+    ToggleRaster,
 }
 
 /// Mouse events on the canvas
@@ -132,6 +150,18 @@ pub struct AnsiEditor {
     pub options: Arc<Mutex<SharedOptions>>,
     /// Whether the document is modified
     pub is_modified: bool,
+
+    // === Marker/Guide State ===
+    /// Guide position in characters (e.g. 80x25 for a smallscale boundary)
+    /// None = guide disabled
+    pub guide: Option<(f32, f32)>,
+    /// Whether guide is currently visible
+    pub show_guide: bool,
+    /// Raster/grid spacing in characters (e.g. 8x8)
+    /// None = raster disabled
+    pub raster: Option<(f32, f32)>,
+    /// Whether raster is currently visible
+    pub show_raster: bool,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -201,6 +231,11 @@ impl AnsiEditor {
             right_panel: RightPanel::new(),
             options,
             is_modified: false,
+            // Marker/guide state - disabled by default
+            guide: None,
+            show_guide: false,
+            raster: None,
+            show_raster: false,
         }
     }
 
@@ -303,6 +338,16 @@ impl AnsiEditor {
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
         self.color_switcher.needs_animation() || self.tool_panel.needs_animation() || self.canvas.needs_animation()
+    }
+
+    /// Get the current marker state for menu display
+    pub fn get_marker_menu_state(&self) -> crate::ui::ansi_editor::menu_bar::MarkerMenuState {
+        crate::ui::ansi_editor::menu_bar::MarkerMenuState {
+            guide: self.guide.map(|(x, y)| (x as u32, y as u32)),
+            guide_visible: self.show_guide,
+            raster: self.raster.map(|(x, y)| (x as u32, y as u32)),
+            raster_visible: self.show_raster,
+        }
     }
 
     /// Compute viewport info for the minimap overlay
@@ -568,7 +613,102 @@ impl AnsiEditor {
                 // It's emitted from here and intercepted at a higher level
                 Task::none()
             }
+
+            // === Marker/Guide Messages ===
+            AnsiEditorMessage::SetGuide(x, y) => {
+                if x <= 0 && y <= 0 {
+                    self.guide = None;
+                } else {
+                    self.guide = Some((x as f32, y as f32));
+                    self.show_guide = true;
+                }
+                self.update_markers();
+                Task::none()
+            }
+            AnsiEditorMessage::ClearGuide => {
+                self.guide = None;
+                self.update_markers();
+                Task::none()
+            }
+            AnsiEditorMessage::SetRaster(x, y) => {
+                if x <= 0 && y <= 0 {
+                    self.raster = None;
+                } else {
+                    self.raster = Some((x as f32, y as f32));
+                    self.show_raster = true;
+                }
+                self.update_markers();
+                Task::none()
+            }
+            AnsiEditorMessage::ClearRaster => {
+                self.raster = None;
+                self.update_markers();
+                Task::none()
+            }
+            AnsiEditorMessage::ToggleGuide => {
+                self.show_guide = !self.show_guide;
+                self.update_markers();
+                Task::none()
+            }
+            AnsiEditorMessage::ToggleRaster => {
+                self.show_raster = !self.show_raster;
+                self.update_markers();
+                Task::none()
+            }
         }
+    }
+
+    /// Update the canvas markers based on current guide/raster settings
+    fn update_markers(&mut self) {
+        // Get font dimensions from screen for pixel conversion
+        let (font_width, font_height) = {
+            let screen = self.screen.lock();
+            let font = screen.font(0);
+            if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0) // Default fallback
+            }
+        };
+
+        // Update raster grid in pixel coordinates
+        if self.show_raster {
+            if let Some((cols, rows)) = self.raster {
+                // Convert character spacing to pixel spacing
+                let pixel_width = cols * font_width;
+                let pixel_height = rows * font_height;
+                self.canvas.set_raster(Some((pixel_width, pixel_height)));
+            } else {
+                self.canvas.set_raster(None);
+            }
+        } else {
+            self.canvas.set_raster(None);
+        }
+
+        // Update guide crosshair in pixel coordinates
+        if self.show_guide {
+            if let Some((col, row)) = self.guide {
+                // Convert character position to pixel position
+                let pixel_x = col * font_width;
+                let pixel_y = row * font_height;
+                self.canvas.set_guide(Some((pixel_x, pixel_y)));
+            } else {
+                self.canvas.set_guide(None);
+            }
+        } else {
+            self.canvas.set_guide(None);
+        }
+    }
+
+    /// Set or update the reference image
+    pub fn set_reference_image(&mut self, path: Option<PathBuf>, alpha: f32) {
+        self.canvas.set_reference_image(path, alpha);
+    }
+
+    /// Toggle reference image visibility
+    pub fn toggle_reference_image(&mut self) {
+        self.canvas.toggle_reference_image();
     }
 
     /// Handle key press events

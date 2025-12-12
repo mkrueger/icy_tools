@@ -634,3 +634,12 @@ animation-no-frames=Keine Frames generiert
 animation-preparing=Bereite Vorschau vor...
 animation-no-log=Keine Log-Einträge
 animation-frame-display=Frame { $current } / { $total }
+
+# Reference Image Dialog
+reference-image-dialog-title=Referenzbild
+reference-image-path=Pfad
+reference-image-path-placeholder=Bilddatei auswählen...
+reference-image-browse=Durchsuchen...
+reference-image-alpha=Deckkraft
+reference-image-info=Das Referenzbild wird als Overlay auf der Leinwand angezeigt.
+reference-image-clear=Löschen

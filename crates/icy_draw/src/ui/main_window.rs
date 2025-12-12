@@ -19,7 +19,7 @@ use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
 use icy_engine_gui::ui::{DialogResult, DialogStack, confirm_yes_no_cancel, error_dialog};
 
 use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
-use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo};
+use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage};
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
 use super::{
@@ -268,17 +268,26 @@ pub enum Message {
     SetZoom(f32),
     ToggleFitWidth,
     SetGuide(i32, i32),
+    ClearGuide,
     ToggleGuides,
     SetRaster(i32, i32),
+    ClearRaster,
     ToggleRaster,
     ToggleLayerBorders,
     ToggleLineNumbers,
     ToggleLeftPanel,
     ToggleRightPanel,
     ToggleFullscreen,
-    SetReferenceImage,
-    ToggleReferenceImage,
+    /// Show the reference image dialog
+    ShowReferenceImageDialog,
+    /// Apply reference image settings from dialog
+    ApplyReferenceImage(std::path::PathBuf, f32), // (path, alpha)
+    /// Clear the reference image
     ClearReferenceImage,
+    /// Toggle reference image visibility
+    ToggleReferenceImage,
+    /// Reference image dialog messages
+    ReferenceImageDialog(ReferenceImageDialogMessage),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Plugins
@@ -1654,10 +1663,42 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::SetGuide(_x, _y) => Task::none(),
-            Message::SetRaster(_x, _y) => Task::none(),
-            Message::ToggleGuides => Task::none(),
-            Message::ToggleRaster => Task::none(),
+            Message::SetGuide(x, y) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::SetGuide(x, y)).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
+            Message::ClearGuide => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ClearGuide).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
+            Message::SetRaster(x, y) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::SetRaster(x, y)).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
+            Message::ClearRaster => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ClearRaster).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
+            Message::ToggleGuides => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ToggleGuide).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
+            Message::ToggleRaster => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    return editor.update(AnsiEditorMessage::ToggleRaster).map(Message::AnsiEditor);
+                }
+                Task::none()
+            }
             Message::ToggleLayerBorders => Task::none(),
             Message::ToggleLineNumbers => Task::none(),
             Message::ToggleLeftPanel => {
@@ -1665,9 +1706,34 @@ impl MainWindow {
                 Task::none()
             }
             Message::ToggleFullscreen => Task::none(),
-            Message::SetReferenceImage => Task::none(),
-            Message::ToggleReferenceImage => Task::none(),
-            Message::ClearReferenceImage => Task::none(),
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Reference Image
+            // ═══════════════════════════════════════════════════════════════════
+            Message::ShowReferenceImageDialog => {
+                use super::ansi_editor::ReferenceImageDialog;
+                self.dialogs.push(ReferenceImageDialog::new());
+                Task::none()
+            }
+            Message::ReferenceImageDialog(msg) => self.dialogs.update(&Message::ReferenceImageDialog(msg.clone())).unwrap_or_else(Task::none),
+            Message::ApplyReferenceImage(path, alpha) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.set_reference_image(Some(path.clone()), alpha);
+                }
+                Task::none()
+            }
+            Message::ClearReferenceImage => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.set_reference_image(None, 0.0);
+                }
+                Task::none()
+            }
+            Message::ToggleReferenceImage => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.toggle_reference_image();
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Plugin operations (TODO: implement)
@@ -1706,7 +1772,14 @@ impl MainWindow {
 
         // Get undo/redo descriptions for menu
         let undo_info = self.get_undo_info();
-        let menu_bar = self.menu_state.view(&self.mode_state.mode(), recent_files, &undo_info);
+
+        // Get marker state for menu display
+        let marker_state = match &self.mode_state {
+            ModeState::Ansi(editor) => editor.get_marker_menu_state(),
+            _ => crate::ui::menu::MarkerMenuState::default(),
+        };
+
+        let menu_bar = self.menu_state.view(&self.mode_state.mode(), recent_files, &undo_info, &marker_state);
 
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),

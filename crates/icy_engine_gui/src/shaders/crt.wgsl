@@ -55,6 +55,31 @@ struct Uniforms {
     caret_visible: f32,          // 1.0 = visible, 0.0 = hidden (for blinking)
     caret_mode: f32,             // 0 = Bar, 1 = Block, 2 = Underline
     _caret_padding: vec2<f32>,   // Padding for 16-byte alignment
+
+    // Marker uniforms (raster grid and guide crosshair)
+    raster_spacing: vec2<f32>,   // Raster grid spacing in pixels (cell_width, cell_height), (0,0) = disabled
+    _raster_spacing_padding: vec2<f32>,  // Padding to align raster_color to 16-byte boundary
+    raster_color: vec4<f32>,     // Raster grid color (RGBA)
+    raster_alpha: f32,           // Raster grid alpha (0.0 - 1.0)
+    raster_enabled: f32,         // 1.0 = enabled, 0.0 = disabled
+    _raster_padding: vec2<f32>,  // Padding for 16-byte alignment
+
+    guide_pos: vec2<f32>,        // Guide crosshair position in pixels (x, y), negative = disabled
+    _guide_pos_padding: vec2<f32>,  // Padding to align guide_color to 16-byte boundary
+    guide_color: vec4<f32>,      // Guide crosshair color (RGBA)
+    guide_alpha: f32,            // Guide crosshair alpha (0.0 - 1.0)
+    guide_enabled: f32,          // 1.0 = enabled, 0.0 = disabled
+    _marker_padding: vec2<f32>,  // Padding for 16-byte alignment
+
+    // Reference image uniforms
+    ref_image_enabled: f32,      // 1.0 = enabled, 0.0 = disabled
+    ref_image_alpha: f32,        // Alpha/opacity (0.0 - 1.0)
+    ref_image_mode: f32,         // 0 = Stretch, 1 = Original, 2 = Tile
+    _ref_padding: f32,           // Padding for alignment
+    ref_image_offset: vec2<f32>, // Offset in pixels (x, y)
+    ref_image_scale: vec2<f32>,  // Scale factor (x, y) - for Original mode
+    ref_image_size: vec2<f32>,   // Reference image size in pixels (width, height)
+    _ref_padding2: vec2<f32>,    // Padding for 16-byte alignment
 }
 
 struct MonitorColor {
@@ -74,6 +99,9 @@ struct MonitorColor {
 
 // Monitor color at binding 5
 @group(0) @binding(5) var<uniform> monitor_color: MonitorColor;
+
+// Reference image texture at binding 6
+@group(0) @binding(6) var t_reference_image: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -357,6 +385,51 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = sample_sliced_texture(distorted_uv);
     var color = adjust_color(tex_color.rgb);
 
+    // Blend reference image (if enabled)
+    if (uniforms.ref_image_enabled > 0.5) {
+        let visible_w = uniforms.visible_width;
+        let visible_h = uniforms.visible_height;
+        let scroll_x = uniforms.scroll_offset_x;
+        let scroll_y = uniforms.scroll_offset_y;
+        
+        // Screen pixel position
+        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+        
+        // Document pixel position (absolute)
+        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+        
+        // Apply offset
+        let adjusted_pixel = doc_pixel - uniforms.ref_image_offset;
+        
+        // Calculate reference image UV based on mode
+        var ref_uv: vec2<f32>;
+        var in_bounds = true;
+        
+        if (uniforms.ref_image_mode < 0.5) {
+            // Mode 0: Stretch - stretch reference image to cover entire document
+            let doc_size = vec2<f32>(uniforms.texture_width, uniforms.total_image_height);
+            ref_uv = adjusted_pixel / doc_size;
+            in_bounds = ref_uv.x >= 0.0 && ref_uv.x <= 1.0 && ref_uv.y >= 0.0 && ref_uv.y <= 1.0;
+        } else if (uniforms.ref_image_mode < 1.5) {
+            // Mode 1: Original - display at original size with scale
+            let scaled_size = uniforms.ref_image_size * uniforms.ref_image_scale;
+            ref_uv = adjusted_pixel / scaled_size;
+            in_bounds = ref_uv.x >= 0.0 && ref_uv.x <= 1.0 && ref_uv.y >= 0.0 && ref_uv.y <= 1.0;
+        } else {
+            // Mode 2: Tile - tile the reference image
+            let scaled_size = uniforms.ref_image_size * uniforms.ref_image_scale;
+            ref_uv = fract(adjusted_pixel / scaled_size);
+            in_bounds = true; // Always in bounds for tiling
+        }
+        
+        if (in_bounds) {
+            let ref_color = textureSample(t_reference_image, terminal_sampler, ref_uv);
+            // Blend with alpha: result = ref * alpha + color * (1 - alpha * ref_alpha)
+            let blend_alpha = uniforms.ref_image_alpha * ref_color.a;
+            color = mix(color, ref_color.rgb, blend_alpha);
+        }
+    }
+
     // Draw caret by inverting pixels (rendered in shader to avoid cache invalidation)
     // caret_pos and caret_size are in normalized UV coordinates (0-1)
     if (uniforms.caret_visible > 0.5) {
@@ -388,6 +461,94 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         if (in_caret) {
             // Invert colors for caret
             color = vec3<f32>(1.0) - color;
+        }
+    }
+
+    // Draw raster grid (Moebius-style: dashed vertical/horizontal lines)
+    // raster_spacing defines the grid cell size in pixels
+    // Lines are drawn at every grid interval, with scrolling taken into account
+    if (uniforms.raster_enabled > 0.5) {
+        let raster_w = uniforms.raster_spacing.x;
+        let raster_h = uniforms.raster_spacing.y;
+        
+        if (raster_w > 0.0 && raster_h > 0.0) {
+            // Calculate absolute document position (including scroll offset)
+            let visible_w = uniforms.visible_width;
+            let visible_h = uniforms.visible_height;
+            let scroll_x = uniforms.scroll_offset_x;
+            let scroll_y = uniforms.scroll_offset_y;
+            
+            // Screen pixel position
+            let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+            
+            // Document pixel position (absolute)
+            let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+            
+            // Check if we're on a grid line
+            // Use modulo to find position within grid cell
+            let cell_x = doc_pixel.x % raster_w;
+            let cell_y = doc_pixel.y % raster_h;
+            
+            // Create dotted/short-dash pattern like Moebius (2 pixels on, 2 pixels off)
+            let dash_length = 2.0;
+            let dash_pattern_x = (doc_pixel.y % (dash_length * 2.0)) < dash_length;
+            let dash_pattern_y = (doc_pixel.x % (dash_length * 2.0)) < dash_length;
+            
+            // Draw line if at grid edge (1 pixel thick)
+            let line_thickness = 1.0;
+            let on_vertical_line = cell_x < line_thickness && dash_pattern_x;
+            let on_horizontal_line = cell_y < line_thickness && dash_pattern_y;
+            
+            if (on_vertical_line || on_horizontal_line) {
+                // Use "difference" blending: invert pixels so lines are always visible
+                // On dark background -> bright line, on bright background -> dark line
+                let inverted = vec3<f32>(1.0) - color;
+                color = mix(color, inverted, uniforms.raster_alpha);
+            }
+        }
+    }
+
+    // Draw guide (Moebius-style: dashed border at right and bottom edge)
+    // guide_pos defines the boundary size in pixels (width, height)
+    if (uniforms.guide_enabled > 0.5) {
+        let guide_w = uniforms.guide_pos.x;
+        let guide_h = uniforms.guide_pos.y;
+        
+        if (guide_w > 0.0 && guide_h > 0.0) {
+            // Calculate absolute document position (including scroll offset)
+            let visible_w = uniforms.visible_width;
+            let visible_h = uniforms.visible_height;
+            let scroll_x = uniforms.scroll_offset_x;
+            let scroll_y = uniforms.scroll_offset_y;
+            
+            // Screen pixel position
+            let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+            
+            // Document pixel position (absolute)
+            let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+            
+            // Create dashed pattern (4 pixels on, 4 pixels off)
+            let dash_length = 4.0;
+            let dash_pattern_x = (doc_pixel.y % (dash_length * 2.0)) < dash_length;
+            let dash_pattern_y = (doc_pixel.x % (dash_length * 2.0)) < dash_length;
+            
+            // Draw vertical line at guide_w (right edge of guide area)
+            let line_thickness = 1.0;
+            let on_right_border = abs(doc_pixel.x - guide_w) < line_thickness && 
+                                  doc_pixel.y >= 0.0 && doc_pixel.y <= guide_h &&
+                                  dash_pattern_x;
+            
+            // Draw horizontal line at guide_h (bottom edge of guide area)
+            let on_bottom_border = abs(doc_pixel.y - guide_h) < line_thickness && 
+                                   doc_pixel.x >= 0.0 && doc_pixel.x <= guide_w &&
+                                   dash_pattern_y;
+            
+            if (on_right_border || on_bottom_border) {
+                // Use "difference" blending: invert pixels so lines are always visible
+                // On dark background -> bright line, on bright background -> dark line
+                let inverted = vec3<f32>(1.0) - color;
+                color = mix(color, inverted, uniforms.guide_alpha);
+            }
         }
     }
 

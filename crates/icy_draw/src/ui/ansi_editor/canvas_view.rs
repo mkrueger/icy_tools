@@ -178,6 +178,65 @@ impl CanvasView {
         self.monitor_settings = settings;
     }
 
+    /// Set marker settings (colors, alphas) from app settings
+    pub fn set_marker_settings(&mut self, settings: icy_engine_gui::MarkerSettings) {
+        let mut markers = self.terminal.markers.write();
+        markers.marker_settings = Some(settings);
+    }
+
+    /// Set raster grid spacing (in characters/pixels)
+    /// Use None to disable the raster grid
+    pub fn set_raster(&mut self, spacing: Option<(f32, f32)>) {
+        let mut markers = self.terminal.markers.write();
+        markers.raster = spacing;
+    }
+
+    /// Set guide crosshair position (in pixels)
+    /// Use None to disable the guide crosshair
+    pub fn set_guide(&mut self, position: Option<(f32, f32)>) {
+        let mut markers = self.terminal.markers.write();
+        markers.guide = position;
+    }
+
+    /// Get current raster spacing
+    pub fn get_raster(&self) -> Option<(f32, f32)> {
+        self.terminal.markers.read().raster
+    }
+
+    /// Get current guide position
+    pub fn get_guide(&self) -> Option<(f32, f32)> {
+        self.terminal.markers.read().guide
+    }
+
+    /// Set or update the reference image
+    /// The image will be loaded and displayed as an overlay
+    pub fn set_reference_image(&mut self, path: Option<std::path::PathBuf>, alpha: f32) {
+        let mut markers = self.terminal.markers.write();
+        if let Some(p) = path {
+            markers.reference_image = Some(icy_engine_gui::ReferenceImageSettings {
+                path: p,
+                alpha,
+                offset: (0.0, 0.0),
+                scale: 1.0,
+                lock_aspect_ratio: true,
+                mode: icy_engine_gui::ReferenceImageMode::Stretch,
+                visible: true,
+                cached_data: None,
+                cached_path_hash: 0,
+            });
+        } else {
+            markers.reference_image = None;
+        }
+    }
+
+    /// Toggle reference image visibility
+    pub fn toggle_reference_image(&mut self) {
+        let mut markers = self.terminal.markers.write();
+        if let Some(ref mut settings) = markers.reference_image {
+            settings.visible = !settings.visible;
+        }
+    }
+
     /// Update the canvas view state
     pub fn update(&mut self, message: CanvasMessage) -> Task<CanvasMessage> {
         match message {

@@ -397,6 +397,210 @@ impl Default for MarkerSettings {
     }
 }
 
+// ============================================================================
+// Reference Image Settings - serialized per document in .icy files
+// ============================================================================
+
+/// Display mode for reference images
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum ReferenceImageMode {
+    /// Original size, positioned at offset
+    #[default]
+    Original,
+    /// Stretch to fill canvas (ignores aspect ratio unless locked)
+    Stretch,
+    /// Fit to canvas width, maintain aspect ratio
+    FitWidth,
+    /// Fit to canvas height, maintain aspect ratio
+    FitHeight,
+    /// Fit to canvas (contain), maintain aspect ratio
+    Contain,
+    /// Tile the image
+    Tile,
+}
+
+/// Reference image settings - serialized per document in .icy files
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReferenceImageSettings {
+    /// Path to the reference image file (relative to document or absolute)
+    pub path: std::path::PathBuf,
+
+    /// Alpha/transparency (0.0 = invisible, 1.0 = opaque)
+    pub alpha: f32,
+
+    /// Position offset in characters (can be negative)
+    pub offset: (f32, f32),
+
+    /// Scale factor (1.0 = original size, 2.0 = double)
+    pub scale: f32,
+
+    /// Lock aspect ratio when scaling
+    pub lock_aspect_ratio: bool,
+
+    /// Display mode
+    pub mode: ReferenceImageMode,
+
+    /// Is the reference image currently visible
+    pub visible: bool,
+
+    /// Cached RGBA image data (not serialized)
+    #[serde(skip)]
+    pub cached_data: Option<(Vec<u8>, u32, u32)>,
+
+    /// Path hash when cached_data was loaded (to detect changes)
+    #[serde(skip)]
+    pub cached_path_hash: u64,
+}
+
+impl PartialEq for ReferenceImageSettings {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare only serialized fields, ignore cache
+        self.path == other.path
+            && self.alpha == other.alpha
+            && self.offset == other.offset
+            && self.scale == other.scale
+            && self.lock_aspect_ratio == other.lock_aspect_ratio
+            && self.mode == other.mode
+            && self.visible == other.visible
+    }
+}
+
+impl Default for ReferenceImageSettings {
+    fn default() -> Self {
+        Self {
+            path: std::path::PathBuf::new(),
+            alpha: 0.2,
+            offset: (0.0, 0.0),
+            scale: 1.0,
+            lock_aspect_ratio: true,
+            mode: ReferenceImageMode::Original,
+            visible: true,
+            cached_data: None,
+            cached_path_hash: 0,
+        }
+    }
+}
+
+impl ReferenceImageSettings {
+    /// Compute a hash of the path for cache invalidation
+    fn compute_path_hash(path: &std::path::Path) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Load and cache the reference image data
+    /// Returns the cached RGBA data (bytes, width, height) or None if loading fails
+    pub fn load_and_cache(&mut self) -> Option<&(Vec<u8>, u32, u32)> {
+        let path_hash = Self::compute_path_hash(&self.path);
+
+        // Return cached data if path hasn't changed
+        if self.cached_path_hash == path_hash && self.cached_data.is_some() {
+            return self.cached_data.as_ref();
+        }
+
+        // Clear old cache
+        self.cached_data = None;
+        self.cached_path_hash = 0;
+
+        // Check if path exists
+        if self.path.as_os_str().is_empty() || !self.path.exists() {
+            return None;
+        }
+
+        // Try to load the image
+        match image::open(&self.path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                let data = rgba.into_raw();
+                self.cached_data = Some((data, width, height));
+                self.cached_path_hash = path_hash;
+                self.cached_data.as_ref()
+            }
+            Err(e) => {
+                log::warn!("Failed to load reference image {:?}: {}", self.path, e);
+                None
+            }
+        }
+    }
+
+    /// Get cached data without loading (returns None if not cached)
+    pub fn get_cached(&self) -> Option<&(Vec<u8>, u32, u32)> {
+        self.cached_data.as_ref()
+    }
+
+    /// Clear the cached image data
+    pub fn clear_cache(&mut self) {
+        self.cached_data = None;
+        self.cached_path_hash = 0;
+    }
+} // ============================================================================
+// Editor Markers - active marker state for current editor session
+// ============================================================================
+
+/// Active marker state for current editor session
+/// This is NOT serialized in app settings - raster/guide are per-session,
+/// reference_image is serialized per-document in .icy files
+#[derive(Debug, Clone, Default)]
+pub struct EditorMarkers {
+    /// Raster grid spacing in characters (None = disabled)
+    /// Example: Some((8.0, 8.0)) for an 8x8 character grid
+    pub raster: Option<(f32, f32)>,
+
+    /// Guide crosshair position in characters (None = disabled)
+    /// Example: Some((40.0, 12.0)) for a guide at column 40, row 12
+    pub guide: Option<(f32, f32)>,
+
+    /// Reference image settings (serialized per-document in .icy files)
+    pub reference_image: Option<ReferenceImageSettings>,
+
+    /// Marker visual settings (colors, alphas) from app settings
+    pub marker_settings: Option<MarkerSettings>,
+}
+
+impl EditorMarkers {
+    /// Create new empty markers
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set raster grid spacing (in pixels)
+    pub fn set_raster(&mut self, width: f32, height: f32) {
+        if width > 0.0 && height > 0.0 {
+            self.raster = Some((width, height));
+        } else {
+            self.raster = None;
+        }
+    }
+
+    /// Clear raster grid
+    pub fn clear_raster(&mut self) {
+        self.raster = None;
+    }
+
+    /// Set guide crosshair position (in pixels)
+    pub fn set_guide(&mut self, x: f32, y: f32) {
+        if x > 0.0 || y > 0.0 {
+            self.guide = Some((x, y));
+        } else {
+            self.guide = None;
+        }
+    }
+
+    /// Clear guide crosshair
+    pub fn clear_guide(&mut self) {
+        self.guide = None;
+    }
+
+    /// Check if any markers are active
+    pub fn has_active_markers(&self) -> bool {
+        self.raster.is_some() || self.guide.is_some() || self.reference_image.as_ref().is_some_and(|r| r.visible)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BackgroundEffect {
     None,

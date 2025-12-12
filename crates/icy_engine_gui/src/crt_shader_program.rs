@@ -291,6 +291,53 @@ impl<'a> CRTShaderProgram<'a> {
         }
 
         let zoom = self.term.viewport.read().zoom;
+
+        // Read marker settings from terminal
+        let mut markers = self.term.markers.write();
+        // Raster and guide are stored in pixel coordinates (already converted by the editor)
+        let raster_spacing = markers.raster;
+        let guide_pos = markers.guide;
+
+        // Get marker colors from marker_settings if available
+        let (raster_color, raster_alpha, guide_color, guide_alpha) = if let Some(ref settings) = markers.marker_settings {
+            let (rr, rg, rb) = settings.raster_color.rgb();
+            let (gr, gg, gb) = settings.guide_color.rgb();
+            (
+                [rr as f32 / 255.0, rg as f32 / 255.0, rb as f32 / 255.0, 1.0],
+                settings.raster_alpha,
+                [gr as f32 / 255.0, gg as f32 / 255.0, gb as f32 / 255.0, 1.0],
+                settings.guide_alpha,
+            )
+        } else {
+            // Default colors: white raster, cyan guide
+            ([1.0, 1.0, 1.0, 1.0], 0.5, [0.0, 1.0, 1.0, 1.0], 0.8)
+        };
+
+        // Load reference image data from markers
+        let (reference_image_data, reference_image_enabled, reference_image_alpha, reference_image_mode, reference_image_offset, reference_image_scale) =
+            if let Some(ref mut ref_img) = markers.reference_image {
+                if ref_img.visible && !ref_img.path.as_os_str().is_empty() {
+                    // Load and cache the image data
+                    if let Some((data, w, h)) = ref_img.load_and_cache() {
+                        (
+                            Some((data.clone(), *w, *h)),
+                            true,
+                            ref_img.alpha,
+                            ref_img.mode as u8,
+                            [ref_img.offset.0, ref_img.offset.1],
+                            ref_img.scale,
+                        )
+                    } else {
+                        (None, false, 0.5, 0, [0.0, 0.0], 1.0)
+                    }
+                } else {
+                    (None, false, 0.5, 0, [0.0, 0.0], 1.0)
+                }
+            } else {
+                (None, false, 0.5, 0, [0.0, 0.0], 1.0)
+            };
+        drop(markers);
+
         println!("CRTShaderProgram::internal_draw took {:?}", now.elapsed());
         TerminalShader {
             slices_blink_off,
@@ -317,6 +364,20 @@ impl<'a> CRTShaderProgram<'a> {
             caret_visible,
             caret_mode,
             blink_on,
+            // Marker rendering in shader
+            raster_spacing,
+            raster_color,
+            raster_alpha,
+            guide_pos,
+            guide_color,
+            guide_alpha,
+            // Reference image rendering
+            reference_image_data,
+            reference_image_enabled,
+            reference_image_alpha,
+            reference_image_mode,
+            reference_image_offset,
+            reference_image_scale,
         }
     }
 
