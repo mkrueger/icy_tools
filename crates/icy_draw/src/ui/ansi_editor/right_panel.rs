@@ -63,8 +63,8 @@ impl RightPanel {
     /// Render the right panel
     /// The panel has a fixed width of RIGHT_PANEL_BASE_WIDTH (320pt at 100% scale)
     pub fn view<'a>(
-        &'a self, 
-        screen: &'a Arc<Mutex<Box<dyn Screen>>>, 
+        &'a self,
+        screen: &'a Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&'a SharedRenderCacheHandle>,
     ) -> Element<'a, RightPanelMessage> {

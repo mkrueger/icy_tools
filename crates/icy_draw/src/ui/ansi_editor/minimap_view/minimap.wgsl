@@ -5,6 +5,7 @@ struct Uniforms {
     viewport_rect: vec4<f32>,    // x, y, width, height (normalized 0-1 in texture space)
     viewport_color: vec4<f32>,   // RGBA color for viewport (primary accent)
     visible_uv_range: vec4<f32>, // min_y, max_y, unused, unused (what part of texture is visible)
+    render_dimensions: vec4<f32>, // texture_width, texture_height, available_width, available_height
     border_thickness: f32,       // Border thickness in pixels
     show_viewport: f32,          // 1.0 to show, 0.0 to hide
     num_slices: f32,             // Number of texture slices (1-3)
@@ -146,20 +147,50 @@ fn is_inside_rect(uv: vec2<f32>, rect: vec4<f32>) -> bool {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let screen_uv = input.uv;
     
+    // Get render dimensions for aspect-ratio-correct rendering
+    let tex_w = uniforms.render_dimensions.x;
+    let tex_h = uniforms.render_dimensions.y;
+    let avail_w = uniforms.render_dimensions.z;
+    let avail_h = uniforms.render_dimensions.w;
+    
+    // Calculate the scale factor (X fills available width)
+    let scale = avail_w / tex_w;
+    
+    // Scaled height of content (maintaining aspect ratio)
+    let scaled_h = tex_h * scale;
+    
+    // Calculate what fraction of available height is actually used
+    let used_height_ratio = min(scaled_h / avail_h, 1.0);
+    
+    // Background color (dark theme)
+    let bg_color = vec4<f32>(0.12, 0.12, 0.14, 1.0);
+    
+    // If we're below the content area, show background
+    if screen_uv.y > used_height_ratio {
+        return bg_color;
+    }
+    
+    // Remap screen UV to texture space (only the used portion)
+    // screen_uv.y goes from 0 to used_height_ratio for the content
+    let content_uv_y = screen_uv.y / used_height_ratio;
+    
     // Get the visible UV range (what part of the texture is currently shown on screen)
     let visible_min_y = uniforms.visible_uv_range.x;
     let visible_max_y = uniforms.visible_uv_range.y;
     let visible_height = visible_max_y - visible_min_y;
     
-    // Transform screen UV to texture UV based on visible range
-    // screen_uv.y=0 maps to visible_min_y, screen_uv.y=1 maps to visible_max_y
-    let texture_uv = vec2<f32>(screen_uv.x, visible_min_y + screen_uv.y * visible_height);
+    // Transform content UV to texture UV based on visible range
+    // content_uv_y=0 maps to visible_min_y, content_uv_y=1 maps to visible_max_y
+    let texture_uv = vec2<f32>(screen_uv.x, visible_min_y + content_uv_y * visible_height);
     
     // Sample the texture using multi-slice approach with transformed UV
     var color = sample_sliced_texture(texture_uv);
     
     // Use total image height for calculations
     let tex_height = uniforms.total_image_height;
+    
+    // For viewport overlay, we need to work in content space (0 to used_height_ratio)
+    let content_uv = vec2<f32>(screen_uv.x, content_uv_y);
     
     // Apply viewport overlay if enabled
     if uniforms.show_viewport > 0.5 {
@@ -173,19 +204,19 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let vp_visible_end = min(vp_y_end, visible_max_y);
         
         if vp_visible_end > vp_visible_start {
-            // Transform to screen UV space (0-1 in the visible area)
-            let screen_y = (vp_visible_start - visible_min_y) / visible_height;
-            let screen_h = (vp_visible_end - vp_visible_start) / visible_height;
+            // Transform to content UV space (0-1 in the visible content area)
+            let content_y = (vp_visible_start - visible_min_y) / visible_height;
+            let content_h = (vp_visible_end - vp_visible_start) / visible_height;
             
             // X stays the same (full width rendering)
-            let screen_rect = vec4<f32>(uniforms.viewport_rect.x, screen_y, uniforms.viewport_rect.z, screen_h);
+            let content_rect = vec4<f32>(uniforms.viewport_rect.x, content_y, uniforms.viewport_rect.z, content_h);
             
-            let rect_min = screen_rect.xy;
-            let rect_max = screen_rect.xy + screen_rect.zw;
-            let inside_viewport = is_inside_rect(screen_uv, screen_rect);
+            let rect_min = content_rect.xy;
+            let rect_max = content_rect.xy + content_rect.zw;
+            let inside_viewport = is_inside_rect(content_uv, content_rect);
             
             // Calculate signed distance to rectangle border
-            let dist = sd_rect(screen_uv, rect_min, rect_max);
+            let dist = sd_rect(content_uv, rect_min, rect_max);
             
             // Convert border thickness from pixels to UV space
             let visible_pixel_height = tex_height * visible_height;

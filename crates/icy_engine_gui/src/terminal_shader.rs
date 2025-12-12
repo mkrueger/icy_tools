@@ -56,14 +56,34 @@ struct CRTUniforms {
     visible_height: f32,
     // x=slice0 height, y=slice1 height, z=slice2 height, w=first_slice_start_y
     slice_heights: [f32; 4],
+
+    // X-axis scrolling uniforms (for zoom/pan)
+    scroll_offset_x: f32,
+    visible_width: f32,
+    texture_width: f32,
+    _x_padding: f32, // Padding for alignment
+
+    // Caret uniforms (rendered in shader to avoid texture cache invalidation)
+    /// Caret position in pixels (x, y) relative to viewport
+    caret_pos: [f32; 2],
+    /// Caret size in pixels (width, height)
+    caret_size: [f32; 2],
+    /// Caret visibility (1.0 = visible, 0.0 = hidden for blinking)
+    caret_visible: f32,
+    /// Caret mode: 0 = Bar, 1 = Block, 2 = Underline
+    caret_mode: f32,
+    /// Padding for 16-byte alignment
+    _caret_padding: [f32; 2],
 }
 
 /// The terminal shader program (high-level interface)
 #[derive(Debug, Clone)]
 pub struct TerminalShader {
-    /// Texture slices (up to MAX_TEXTURE_SLICES)
-    pub slices: Vec<TextureSliceData>,
-    /// Heights of each slice in pixels
+    /// Texture slices for blink_off state
+    pub slices_blink_off: Vec<TextureSliceData>,
+    /// Texture slices for blink_on state
+    pub slices_blink_on: Vec<TextureSliceData>,
+    /// Heights of each slice in pixels (same for both blink states)
     pub slice_heights: Vec<u32>,
     /// Width of the texture (same for all slices)
     pub texture_width: u32,
@@ -83,12 +103,28 @@ pub struct TerminalShader {
     pub scan_lines: bool,
     /// Background color for out-of-bounds areas
     pub background_color: [f32; 4],
-    /// Scroll offset in pixels
+    /// Scroll offset in pixels (Y axis)
     pub scroll_offset_y: f32,
     /// Visible height in pixels
     pub visible_height: f32,
     /// Where the first slice starts in document Y coordinates
     pub first_slice_start_y: f32,
+    /// Scroll offset in pixels (X axis)
+    pub scroll_offset_x: f32,
+    /// Visible width in pixels
+    pub visible_width: f32,
+
+    // Caret rendering (in shader)
+    /// Caret position in pixels (x, y) relative to viewport
+    pub caret_pos: [f32; 2],
+    /// Caret size in pixels (width, height)
+    pub caret_size: [f32; 2],
+    /// Caret visibility (for blinking)
+    pub caret_visible: bool,
+    /// Caret mode: 0 = Bar, 1 = Block, 2 = Underline
+    pub caret_mode: u8,
+    /// Current blink state (for selecting which bind group to use)
+    pub blink_on: bool,
 }
 
 /// Texture slice for GPU
@@ -101,13 +137,17 @@ struct TextureSlice {
 
 /// Per-instance GPU resources with texture slicing
 struct InstanceResources {
-    /// Texture slices (1-10 slices depending on content height)
-    _slices: Vec<TextureSlice>,
-    /// Bind group for rendering (includes all texture slots)
-    bind_group: iced::wgpu::BindGroup,
-    /// Uniform buffer
+    /// Texture slices for blink_off state (slots 0-2)
+    _slices_blink_off: Vec<TextureSlice>,
+    /// Texture slices for blink_on state (slots 3-5)  
+    _slices_blink_on: Vec<TextureSlice>,
+    /// Bind group for blink_off state
+    bind_group_blink_off: iced::wgpu::BindGroup,
+    /// Bind group for blink_on state
+    bind_group_blink_on: iced::wgpu::BindGroup,
+    /// Uniform buffer (shared between both states)
     uniform_buffer: iced::wgpu::Buffer,
-    /// Monitor color buffer
+    /// Monitor color buffer (shared between both states)
     monitor_color_buffer: iced::wgpu::Buffer,
     /// Texture width for cache validation
     texture_width: u32,
@@ -115,8 +155,10 @@ struct InstanceResources {
     total_height: u32,
     /// Number of slices for cache validation
     num_slices: usize,
-    /// Hash of texture data pointers to detect when data changed
-    texture_data_hash: u64,
+    /// Hash of texture data pointers for blink_on=false
+    texture_data_hash_blink_off: u64,
+    /// Hash of texture data pointers for blink_on=true
+    texture_data_hash_blink_on: u64,
 }
 
 /// The terminal shader renderer (GPU pipeline) with multi-texture support
@@ -276,12 +318,12 @@ impl shader::Pipeline for TerminalShaderRenderer {
 }
 
 impl TerminalShader {
-    /// Compute a hash of the texture data pointers to detect changes
-    fn compute_data_hash(&self) -> u64 {
+    /// Compute a hash of the texture data pointers for a slice set
+    fn compute_data_hash(slices: &[TextureSliceData]) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
-        for slice in &self.slices {
+        for slice in slices {
             let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
             ptr.hash(&mut hasher);
         }
@@ -333,16 +375,19 @@ impl shader::Primitive for TerminalShader {
         }
 
         let id = self.instance_id;
-        let data_hash = self.compute_data_hash();
-        let num_slices = self.slices.len();
+        let hash_blink_off = Self::compute_data_hash(&self.slices_blink_off);
+        let hash_blink_on = Self::compute_data_hash(&self.slices_blink_on);
+        let num_slices = self.slices_blink_off.len(); // Both should have same count
         let texture_width = self.texture_width.min(MAX_TEXTURE_DIMENSION);
         let total_height = self.total_content_height as u32;
 
-        // Check if we need to recreate resources
+        // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
             None => true,
             Some(resources) => {
-                resources.texture_data_hash != data_hash
+                // Recreate if any structural parameter changed or if either blink state data changed
+                resources.texture_data_hash_blink_off != hash_blink_off
+                    || resources.texture_data_hash_blink_on != hash_blink_on
                     || resources.num_slices != num_slices
                     || resources.texture_width != texture_width
                     || resources.total_height != total_height
@@ -350,61 +395,66 @@ impl shader::Primitive for TerminalShader {
         };
 
         if needs_recreate {
-            // Create new slice textures
-            let mut gpu_slices = Vec::with_capacity(num_slices);
+            // Helper function to create GPU slices from texture data
+            let create_gpu_slices = |slices: &[TextureSliceData], label_prefix: &str| -> Vec<TextureSlice> {
+                let mut gpu_slices = Vec::with_capacity(slices.len());
+                for (i, slice_data) in slices.iter().enumerate() {
+                    let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
+                    let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
 
-            for (i, slice_data) in self.slices.iter().enumerate() {
-                let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
-                let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
-
-                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                    label: Some(&format!("Terminal Slice {} Instance {}", i, id)),
-                    size: iced::wgpu::Extent3d {
-                        width: w.max(1),
-                        height: h.max(1),
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: iced::wgpu::TextureDimension::D2,
-                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
-
-                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                // Upload texture data
-                if !slice_data.rgba_data.is_empty() {
-                    queue.write_texture(
-                        iced::wgpu::TexelCopyTextureInfo {
-                            texture: &texture,
-                            mip_level: 0,
-                            origin: iced::wgpu::Origin3d::ZERO,
-                            aspect: iced::wgpu::TextureAspect::All,
-                        },
-                        &slice_data.rgba_data,
-                        iced::wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(4 * w),
-                            rows_per_image: Some(h),
-                        },
-                        iced::wgpu::Extent3d {
+                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        label: Some(&format!("Terminal {} Slice {} Instance {}", label_prefix, i, id)),
+                        size: iced::wgpu::Extent3d {
                             width: w.max(1),
                             height: h.max(1),
                             depth_or_array_layers: 1,
                         },
-                    );
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: iced::wgpu::TextureDimension::D2,
+                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+
+                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                    if !slice_data.rgba_data.is_empty() {
+                        queue.write_texture(
+                            iced::wgpu::TexelCopyTextureInfo {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: iced::wgpu::Origin3d::ZERO,
+                                aspect: iced::wgpu::TextureAspect::All,
+                            },
+                            &slice_data.rgba_data,
+                            iced::wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(4 * w),
+                                rows_per_image: Some(h),
+                            },
+                            iced::wgpu::Extent3d {
+                                width: w.max(1),
+                                height: h.max(1),
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+
+                    gpu_slices.push(TextureSlice {
+                        texture,
+                        texture_view,
+                        height: h,
+                    });
                 }
+                gpu_slices
+            };
 
-                gpu_slices.push(TextureSlice {
-                    texture,
-                    texture_view,
-                    height: h,
-                });
-            }
+            // Create GPU slices for both blink states
+            let gpu_slices_blink_off = create_gpu_slices(&self.slices_blink_off, "BlinkOff");
+            let gpu_slices_blink_on = create_gpu_slices(&self.slices_blink_on, "BlinkOn");
 
-            // Create uniform buffer
+            // Create shared uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
                 label: Some(&format!("Terminal Uniforms Instance {}", id)),
                 size: std::mem::size_of::<CRTUniforms>() as u64,
@@ -419,57 +469,66 @@ impl shader::Primitive for TerminalShader {
                 mapped_at_creation: false,
             });
 
-            // Build bind group entries
-            let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
+            // Helper to create bind group for a set of GPU slices
+            let create_bind_group = |gpu_slices: &[TextureSlice], label: &str| -> iced::wgpu::BindGroup {
+                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 3);
 
-            // Add texture bindings (0-9), using dummy for unused slots
-            for i in 0..MAX_TEXTURE_SLICES {
-                let view = if i < gpu_slices.len() {
-                    &gpu_slices[i].texture_view
-                } else {
-                    &pipeline.dummy_texture_view
-                };
+                // Add texture bindings (0-9), using dummy for unused slots
+                for i in 0..MAX_TEXTURE_SLICES {
+                    let view = if i < gpu_slices.len() {
+                        &gpu_slices[i].texture_view
+                    } else {
+                        &pipeline.dummy_texture_view
+                    };
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: i as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(view),
+                    });
+                }
+
+                // Sampler at binding 10
                 bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: i as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(view),
+                    binding: MAX_TEXTURE_SLICES as u32,
+                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
                 });
-            }
 
-            // Sampler at binding 10
-            bind_entries.push(iced::wgpu::BindGroupEntry {
-                binding: MAX_TEXTURE_SLICES as u32,
-                resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-            });
+                // Uniforms at binding 11
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                    resource: uniform_buffer.as_entire_binding(),
+                });
 
-            // Uniforms at binding 11
-            bind_entries.push(iced::wgpu::BindGroupEntry {
-                binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                resource: uniform_buffer.as_entire_binding(),
-            });
+                // Monitor color at binding 12
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                    resource: monitor_color_buffer.as_entire_binding(),
+                });
 
-            // Monitor color at binding 12
-            bind_entries.push(iced::wgpu::BindGroupEntry {
-                binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                resource: monitor_color_buffer.as_entire_binding(),
-            });
+                device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                    label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
+                    layout: &pipeline.bind_group_layout,
+                    entries: &bind_entries,
+                })
+            };
 
-            let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
-                label: Some(&format!("Terminal BindGroup Instance {}", id)),
-                layout: &pipeline.bind_group_layout,
-                entries: &bind_entries,
-            });
+            // Create bind groups for both blink states
+            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, "BlinkOff");
+            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, "BlinkOn");
 
             pipeline.instances.insert(
                 id,
                 InstanceResources {
-                    _slices: gpu_slices,
-                    bind_group,
+                    _slices_blink_off: gpu_slices_blink_off,
+                    _slices_blink_on: gpu_slices_blink_on,
+                    bind_group_blink_off,
+                    bind_group_blink_on,
                     uniform_buffer,
                     monitor_color_buffer,
                     texture_width,
                     total_height,
                     num_slices,
-                    texture_data_hash: data_hash,
+                    texture_data_hash_blink_off: hash_blink_off,
+                    texture_data_hash_blink_on: hash_blink_on,
                 },
             );
         }
@@ -575,11 +634,22 @@ impl shader::Primitive for TerminalShader {
             enable_bloom: if self.monitor_settings.use_bloom { 1.0 } else { 0.0 },
             _padding: [0.0; 2],
             background_color: self.background_color,
-            num_slices: self.slices.len() as f32,
+            num_slices: self.slices_blink_off.len() as f32, // Both have same count
             total_image_height: self.total_content_height,
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,
             slice_heights,
+            // X-axis scrolling uniforms
+            scroll_offset_x: self.scroll_offset_x,
+            visible_width: self.visible_width,
+            texture_width: self.texture_width as f32,
+            _x_padding: 0.0,
+            // Caret uniforms
+            caret_pos: self.caret_pos,
+            caret_size: self.caret_size,
+            caret_visible: if self.caret_visible { 1.0 } else { 0.0 },
+            caret_mode: self.caret_mode as f32,
+            _caret_padding: [0.0; 2],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
@@ -676,7 +746,13 @@ impl shader::Primitive for TerminalShader {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             render_pass.set_pipeline(&pipeline.pipeline);
-            render_pass.set_bind_group(0, &resources.bind_group, &[]);
+            // Select bind group based on current blink state
+            let bind_group = if self.blink_on {
+                &resources.bind_group_blink_on
+            } else {
+                &resources.bind_group_blink_off
+            };
+            render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
 

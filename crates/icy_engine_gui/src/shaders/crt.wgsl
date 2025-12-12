@@ -42,6 +42,19 @@ struct Uniforms {
     scroll_offset_y: f32,        // Current scroll offset in pixels
     visible_height: f32,         // Visible viewport height in pixels
     slice_heights: vec4<f32>,    // Heights of each slice (x=slice0, y=slice1, z=slice2, w=first_slice_start_y)
+
+    // X-axis scrolling uniforms (for zoom/pan)
+    scroll_offset_x: f32,        // Current horizontal scroll offset in pixels
+    visible_width: f32,          // Visible viewport width in pixels  
+    texture_width: f32,          // Total texture width in pixels
+    _x_padding: f32,             // Padding for alignment
+
+    // Caret uniforms (rendered in shader to avoid texture cache invalidation)
+    caret_pos: vec2<f32>,        // Caret position in pixels (x, y) relative to viewport
+    caret_size: vec2<f32>,       // Caret size in pixels (width, height)
+    caret_visible: f32,          // 1.0 = visible, 0.0 = hidden (for blinking)
+    caret_mode: f32,             // 0 = Bar, 1 = Block, 2 = Underline
+    _caret_padding: vec2<f32>,   // Padding for 16-byte alignment
 }
 
 struct MonitorColor {
@@ -83,17 +96,39 @@ fn get_slice_height(index: i32) -> f32 {
 // Uses sliding window approach: 3 slices covering current viewport area
 fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     let total_height = uniforms.total_image_height;
-    if total_height <= 0.0 {
+    let tex_width = uniforms.texture_width;
+    if total_height <= 0.0 || tex_width <= 0.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
     
-    // uv.y goes 0-1 over the visible viewport
+    // X-axis: uv.x goes 0-1 over the visible viewport width
+    // scroll_offset_x tells us where in the full texture we're looking
+    // visible_width tells us how much of the texture is visible
+    let visible_w = uniforms.visible_width;
+    let max_scroll_x = max(0.0, tex_width - visible_w);
+    let scroll_x = clamp(uniforms.scroll_offset_x, 0.0, max_scroll_x);
+    
+    // Screen pixel X (relative to visible viewport)
+    let screen_pixel_x = uv.x * visible_w;
+    
+    // Document pixel X (absolute position in full texture)
+    let doc_pixel_x = scroll_x + screen_pixel_x;
+    
+    // Convert to texture UV
+    let tex_uv_x = doc_pixel_x / tex_width;
+    
+    // Check if we're outside the texture in X
+    if tex_uv_x < 0.0 || tex_uv_x > 1.0 {
+        return uniforms.background_color;
+    }
+    
+    // Y-axis: uv.y goes 0-1 over the visible viewport
     // scroll_offset_y tells us where in the full document we're looking
     // visible_height tells us how much of the document is visible
     
     let visible_h = uniforms.visible_height;
-    let max_scroll = max(0.0, total_height - visible_h);
-    let scroll_y = clamp(uniforms.scroll_offset_y, 0.0, max_scroll);
+    let max_scroll_y = max(0.0, total_height - visible_h);
+    let scroll_y = clamp(uniforms.scroll_offset_y, 0.0, max_scroll_y);
     
     // Screen pixel Y (relative to visible viewport)
     let screen_pixel_y = uv.y * visible_h;
@@ -128,7 +163,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
         if window_y < next_cumulative || i == num_slices - 1 {
             // This is the slice we need
             let local_y = (window_y - cumulative_height) / slice_height;
-            let slice_uv = vec2<f32>(uv.x, clamp(local_y, 0.0, 1.0));
+            let slice_uv = vec2<f32>(tex_uv_x, clamp(local_y, 0.0, 1.0));
             
             // Sample from the appropriate texture (3 slices)
             if i == 0 { return textureSample(t_slice0, terminal_sampler, slice_uv); }
@@ -321,6 +356,40 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample from sliced textures with scroll offset handling
     let tex_color = sample_sliced_texture(distorted_uv);
     var color = adjust_color(tex_color.rgb);
+
+    // Draw caret by inverting pixels (rendered in shader to avoid cache invalidation)
+    // caret_pos and caret_size are in normalized UV coordinates (0-1)
+    if (uniforms.caret_visible > 0.5) {
+        let uv = distorted_uv;
+        let caret_x = uniforms.caret_pos.x;
+        let caret_y = uniforms.caret_pos.y;
+        let caret_w = uniforms.caret_size.x;
+        let caret_h = uniforms.caret_size.y;
+
+        var in_caret = false;
+
+        if (uniforms.caret_mode < 0.5) {
+            // Bar mode: thin vertical line on left
+            let bar_width = max(0.001, caret_w * 0.15);
+            in_caret = uv.x >= caret_x && uv.x < caret_x + bar_width &&
+                       uv.y >= caret_y && uv.y < caret_y + caret_h;
+        } else if (uniforms.caret_mode < 1.5) {
+            // Block mode: full character cell
+            in_caret = uv.x >= caret_x && uv.x < caret_x + caret_w &&
+                       uv.y >= caret_y && uv.y < caret_y + caret_h;
+        } else {
+            // Underline mode: thin horizontal line at bottom
+            let underline_height = max(0.001, caret_h * 0.15);
+            let underline_y = caret_y + caret_h - underline_height;
+            in_caret = uv.x >= caret_x && uv.x < caret_x + caret_w &&
+                       uv.y >= underline_y && uv.y < caret_y + caret_h;
+        }
+
+        if (in_caret) {
+            // Invert colors for caret
+            color = vec3<f32>(1.0) - color;
+        }
+    }
 
     // Calculate bloom from original undistorted coordinates
     let bloom_glow = apply_bloom(distorted_uv);

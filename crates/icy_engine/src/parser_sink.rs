@@ -356,6 +356,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
             }
         }
+        self.screen.mark_dirty();
     }
 
     fn emit(&mut self, cmd: TerminalCommand) {
@@ -367,10 +368,12 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 } else {
                     self.screen.cr();
                 }
+                self.screen.mark_dirty();
             }
             TerminalCommand::LineFeed => {
                 if !self.screen.terminal_state().cr_is_if {
                     self.screen.lf();
+                    self.screen.mark_dirty();
                 }
             }
             TerminalCommand::Backspace => {
@@ -381,12 +384,14 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
             TerminalCommand::FormFeed => {
                 self.screen.ff();
+                self.screen.mark_dirty();
             }
             TerminalCommand::Bell => {
                 // Bell is typically handled by the application layer
             }
             TerminalCommand::Delete => {
                 self.screen.del();
+                self.screen.mark_dirty();
             }
 
             // Cursor movement
@@ -429,32 +434,38 @@ impl<'a> CommandSink for ScreenSink<'a> {
             }
 
             // Erase operations
-            TerminalCommand::CsiEraseInDisplay(mode) => match mode {
-                EraseInDisplayMode::CursorToEnd => {
-                    self.screen.clear_buffer_down();
+            TerminalCommand::CsiEraseInDisplay(mode) => {
+                match mode {
+                    EraseInDisplayMode::CursorToEnd => {
+                        self.screen.clear_buffer_down();
+                    }
+                    EraseInDisplayMode::StartToCursor => {
+                        self.screen.clear_buffer_up();
+                    }
+                    EraseInDisplayMode::All => {
+                        self.screen.clear_screen();
+                    }
+                    EraseInDisplayMode::AllAndScrollback => {
+                        self.screen.clear_screen();
+                        self.screen.clear_scrollback();
+                    }
                 }
-                EraseInDisplayMode::StartToCursor => {
-                    self.screen.clear_buffer_up();
+                self.screen.mark_dirty();
+            }
+            TerminalCommand::CsiEraseInLine(mode) => {
+                match mode {
+                    EraseInLineMode::CursorToEnd => {
+                        self.screen.clear_line_end();
+                    }
+                    EraseInLineMode::StartToCursor => {
+                        self.screen.clear_line_start();
+                    }
+                    EraseInLineMode::All => {
+                        self.screen.clear_line();
+                    }
                 }
-                EraseInDisplayMode::All => {
-                    self.screen.clear_screen();
-                }
-                EraseInDisplayMode::AllAndScrollback => {
-                    self.screen.clear_screen();
-                    self.screen.clear_scrollback();
-                }
-            },
-            TerminalCommand::CsiEraseInLine(mode) => match mode {
-                EraseInLineMode::CursorToEnd => {
-                    self.screen.clear_line_end();
-                }
-                EraseInLineMode::StartToCursor => {
-                    self.screen.clear_line_start();
-                }
-                EraseInLineMode::All => {
-                    self.screen.clear_line();
-                }
-            },
+                self.screen.mark_dirty();
+            }
 
             // Scrolling
             TerminalCommand::CsiScroll(direction, n) => {
@@ -466,6 +477,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                         Direction::Right => self.screen.scroll_right(),
                     }
                 }
+                self.screen.mark_dirty();
             }
 
             // Attributes
@@ -478,11 +490,13 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 for _ in 0..n {
                     self.screen.ins();
                 }
+                self.screen.mark_dirty();
             }
             TerminalCommand::CsiDeleteCharacter(n) => {
                 for _ in 0..n {
                     self.screen.del();
                 }
+                self.screen.mark_dirty();
             }
             TerminalCommand::CsiEraseCharacter(n) => {
                 let pos = self.screen.caret_position();
@@ -493,16 +507,19 @@ impl<'a> CommandSink for ScreenSink<'a> {
                         self.screen.set_char(Position::new(x, pos.y), blank);
                     }
                 }
+                self.screen.mark_dirty();
             }
             TerminalCommand::CsiInsertLine(n) => {
                 for _ in 0..n {
                     self.screen.insert_terminal_line(self.screen.caret_position().y);
                 }
+                self.screen.mark_dirty();
             }
             TerminalCommand::CsiDeleteLine(n) => {
                 for _ in 0..n {
                     self.screen.remove_terminal_line(self.screen.caret_position().y);
                 }
+                self.screen.mark_dirty();
             }
 
             // Vertical positioning
@@ -747,16 +764,19 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let _ = (direction, num_lines, top, left, bottom, right);
                 // TODO:
                 //self.screen.scroll_area(direction, num_lines as i32, top as i32, left as i32, bottom as i32, right as i32);
+                self.screen.mark_dirty();
             }
             TerminalCommand::AvatarClearArea { attr, lines, columns } => {
                 // Avatar clear area
                 let _ = (attr, lines, columns);
                 // TODO: Implement Avatar clear area
+                self.screen.mark_dirty();
             }
             TerminalCommand::AvatarInitArea { attr, ch, lines, columns } => {
                 // Avatar init area
                 let _ = (attr, ch, lines, columns);
                 // TODO: Implement Avatar init area
+                self.screen.mark_dirty();
             }
         }
     }
@@ -793,13 +813,16 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 self.screen.caret_mut().attribute.set_foreground(7);
                 self.screen.caret_mut().attribute.set_background(0);
                 self.screen.terminal_state_mut().vd_last_row = 0;
+                self.screen.mark_dirty();
             }
             ViewDataCommand::FillToEol => {
                 self.vd_fill_to_eol();
+                self.screen.mark_dirty();
             }
             ViewDataCommand::DoubleHeight(enabled) => {
                 self.screen.caret_mut().attribute.set_is_double_height(enabled);
                 self.vd_fill_to_eol();
+                self.screen.mark_dirty();
             }
             ViewDataCommand::ResetRowColors => {
                 // For Viewdata, default foreground is white (color 7), not black
@@ -857,6 +880,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             ViewDataCommand::SetChar(ch) => {
                 let ch = AttributedChar::new(ch as char, self.display_attribute());
                 self.screen.set_char(self.screen.caret_position(), ch);
+                self.screen.mark_dirty();
             }
         }
         false

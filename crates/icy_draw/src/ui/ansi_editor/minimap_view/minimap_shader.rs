@@ -25,6 +25,8 @@ struct MinimapUniforms {
     viewport_color: [f32; 4],
     /// Visible UV range (what part of texture is currently shown): min_y, max_y, unused, unused
     visible_uv_range: [f32; 4],
+    /// Render dimensions: texture_width, texture_height, available_width, available_height
+    render_dimensions: [f32; 4],
     /// Viewport border thickness in pixels
     border_thickness: f32,
     /// Whether to show viewport overlay
@@ -410,17 +412,10 @@ impl shader::Primitive for MinimapPrimitive {
         let tex_h = self.total_rendered_height.max(1);
 
         // Check if we need to recreate resources
-        let current_slice_sizes: Vec<(u32, u32)> = self.slices.iter()
-            .take(MAX_TEXTURE_SLICES)
-            .map(|s| (s.width, s.height))
-            .collect();
-        
+        let current_slice_sizes: Vec<(u32, u32)> = self.slices.iter().take(MAX_TEXTURE_SLICES).map(|s| (s.width, s.height)).collect();
+
         let needs_recreate = match pipeline.instances.get(&id) {
-            Some(resources) => {
-                resources.texture_size != (tex_w, tex_h) 
-                || resources.num_slices != num_slices
-                || resources.slice_sizes != current_slice_sizes
-            },
+            Some(resources) => resources.texture_size != (tex_w, tex_h) || resources.num_slices != num_slices || resources.slice_sizes != current_slice_sizes,
             None => true,
         };
 
@@ -597,6 +592,8 @@ impl shader::Primitive for MinimapPrimitive {
             // Modern cyan accent color - vibrant but not overwhelming
             viewport_color: [0.2, 0.8, 0.9, 0.9],
             visible_uv_range: [visible_uv_min_y, visible_uv_max_y, 0.0, 0.0],
+            // Pass texture and available dimensions for aspect-ratio-correct rendering
+            render_dimensions: [tex_w as f32, tex_h as f32, bounds.width, bounds.height],
             border_thickness: 2.5,
             show_viewport,
             num_slices: num_slices as f32,

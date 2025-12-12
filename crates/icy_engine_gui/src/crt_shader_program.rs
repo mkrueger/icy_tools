@@ -5,13 +5,13 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, 
-    is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
-    shared_render_cache::{SharedCachedTile, TileCacheKey, TILE_HEIGHT},
+    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, is_alt_pressed, is_ctrl_pressed,
+    is_shift_pressed,
+    shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse};
-use icy_engine::{Caret, CaretShape, KeyModifiers, MouseButton};
+use icy_engine::{CaretShape, KeyModifiers, MouseButton};
 use std::sync::Arc;
 
 /// Program wrapper that renders the terminal using sliding window tile approach
@@ -40,14 +40,24 @@ impl<'a> CRTShaderProgram<'a> {
         let mut font_h = 0usize;
         let scan_lines;
         let scroll_offset_y: f32;
+        let scroll_offset_x: f32;
         let visible_height: f32;
+        let visible_width: f32;
         let full_content_height: f32;
         let texture_width: u32;
+        let blink_on: bool;
 
-        let mut slices: Vec<TextureSliceData> = Vec::new();
+        let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
+        let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
         let mut slice_heights: Vec<u32> = Vec::new();
         #[allow(unused_assignments)]
         let mut first_slice_start_y: f32 = 0.0;
+
+        // Caret rendering data (computed from screen, rendered in shader)
+        let mut caret_pos: [f32; 2] = [0.0, 0.0];
+        let mut caret_size: [f32; 2] = [0.0, 0.0];
+        let mut caret_visible: bool = false;
+        let mut caret_mode: u8 = 0;
 
         {
             let screen = self.term.screen.lock();
@@ -61,7 +71,7 @@ impl<'a> CRTShaderProgram<'a> {
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
 
             let current_buffer_version = screen.version();
-            let blink_on = state.character_blink.is_on();
+            blink_on = state.character_blink.is_on();
 
             // Get viewport info
             let vp = self.term.viewport.read();
@@ -79,18 +89,24 @@ impl<'a> CRTShaderProgram<'a> {
 
             visible_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
             let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
+            visible_width = visible_content_width;
 
             // Store computed visible dimensions
             vp.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
             vp.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
             vp.computed_visible_height.store(visible_height.to_bits(), std::sync::atomic::Ordering::Relaxed);
-            vp.computed_visible_width.store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            vp.computed_visible_width
+                .store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
 
             let max_scroll_y = (vp.content_height - visible_height).max(0.0);
             scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+
+            let max_scroll_x = (vp.content_width - visible_width).max(0.0);
+            scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+
             full_content_height = vp.content_height;
             texture_width = screen.resolution().width as u32;
-            
+
             // Clear viewport changed flag
             if vp.changed.load(std::sync::atomic::Ordering::Acquire) {
                 vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -99,25 +115,27 @@ impl<'a> CRTShaderProgram<'a> {
             // Check for content changes that require full cache invalidation
             // Use the shared render cache from Terminal
             {
-                let mut cache = self.term.render_cache.write();
+                let mut cache: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, crate::SharedRenderCache> = self.term.render_cache.write();
+                let cache_version = cache.content_version();
+                // Cache invalidation when buffer version changes
+                if current_buffer_version != cache_version {
+                    // Tiles will be cleared by invalidate()
+                }
                 cache.invalidate(current_buffer_version);
                 cache.content_height = full_content_height;
                 cache.content_width = texture_width;
                 cache.last_blink_state = blink_on;
-                
+
                 // Also check selection changes
                 let mut info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
                 info.last_buffer_version = current_buffer_version;
-                
+
                 let selection = screen.selection();
                 let sel_anchor = selection.as_ref().map(|s| s.anchor);
                 let sel_lead = selection.as_ref().map(|s| s.lead);
                 let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
 
-                if info.last_selection_state.0 != sel_anchor 
-                    || info.last_selection_state.1 != sel_lead 
-                    || info.last_selection_state.2 != sel_locked 
-                {
+                if info.last_selection_state.0 != sel_anchor || info.last_selection_state.1 != sel_lead || info.last_selection_state.2 != sel_locked {
                     info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
                     cache.clear();
                 }
@@ -125,17 +143,61 @@ impl<'a> CRTShaderProgram<'a> {
                 info.last_bounds_size = (bounds.width, bounds.height);
             }
 
+            // Compute caret position for shader rendering
+            // This must happen AFTER cache invalidation to ensure caret state matches buffer state
+            {
+                let caret = screen.caret();
+                let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on()) && self.term.has_focus;
+
+                if should_draw && font_w > 0 && font_h > 0 {
+                    let caret_cell_pos = caret.position();
+                    let scroll_x = vp.scroll_x as i32;
+                    let scroll_y_px = scroll_offset_y as i32;
+
+                    // Convert cell position to pixel position (viewport-relative)
+                    let (px_x, px_y) = if caret.use_pixel_positioning {
+                        let scan_mult = if scan_lines { 2 } else { 1 };
+                        (caret_cell_pos.x - scroll_x, caret_cell_pos.y * scan_mult - scroll_y_px)
+                    } else {
+                        let scan_mult = if scan_lines { 2 } else { 1 };
+                        (
+                            caret_cell_pos.x * font_w as i32 - scroll_x,
+                            caret_cell_pos.y * font_h as i32 * scan_mult - scroll_y_px,
+                        )
+                    };
+
+                    let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
+
+                    // Only draw if caret is in visible area
+                    // Convert to normalized UV coordinates (0-1) so it works with any zoom level
+                    let tex_w = texture_width as f32;
+                    let vis_h = visible_height;
+
+                    if px_x >= 0 && px_y >= 0 && (px_x as f32) < tex_w && (px_y as f32) < vis_h {
+                        // Normalize to 0-1 UV coordinates
+                        caret_pos = [px_x as f32 / tex_w, px_y as f32 / vis_h];
+                        caret_size = [font_w as f32 / tex_w, actual_font_h as f32 / vis_h];
+                        caret_visible = true;
+                        caret_mode = match caret.shape {
+                            CaretShape::Bar => 0,
+                            CaretShape::Block => 1,
+                            CaretShape::Underline => 2,
+                        };
+                    }
+                }
+            }
+
             // Calculate which tiles we need based on scroll position
             // Each tile is TILE_HEIGHT pixels tall
             let tile_height = TILE_HEIGHT as f32;
-            
+
             // Current tile index based on scroll position
             let current_tile_idx = (scroll_offset_y / tile_height).floor() as i32;
-            
+
             // We need: previous tile, current tile, next tile
             let first_tile_idx = (current_tile_idx - 1).max(0);
             let max_tile_idx = ((full_content_height / tile_height).ceil() as i32 - 1).max(0);
-            
+
             // Calculate tile indices to render (up to 3)
             let mut tile_indices: Vec<i32> = Vec::new();
             for i in first_tile_idx..=first_tile_idx + 2 {
@@ -146,75 +208,82 @@ impl<'a> CRTShaderProgram<'a> {
 
             first_slice_start_y = first_tile_idx as f32 * tile_height;
 
-            // Get or render each tile using the shared cache
+            // Get or render each tile using the shared cache for BOTH blink states
             let resolution = screen.resolution();
             let selection = screen.selection();
             let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
-            for tile_idx in tile_indices {
-                let tile_start_y = tile_idx as f32 * tile_height;
-                let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height);
-                let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
-                // Check shared render cache
-                let cache_key = TileCacheKey::new(tile_idx, blink_on);
-                let cached_tile = self.term.render_cache.read().get(&cache_key).cloned();
-                if cached_tile.is_none() {
-                    println!("Requesting tile {} (y: {} to {}, height: {}) found : {}", tile_idx, tile_start_y, tile_end_y, actual_tile_height, screen.version());
+
+            // Helper to get or render tiles for a specific blink state
+            let get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
+                for &tile_idx in &tile_indices {
+                    let tile_start_y = tile_idx as f32 * tile_height;
+                    let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height);
+                    let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
+
+                    let cache_key = TileCacheKey::new(tile_idx, blink_state);
+                    let cached_tile = self.term.render_cache.read().get(&cache_key).cloned();
+
+                    if let Some(cached) = cached_tile {
+                        slices.push(cached.texture);
+                        if heights.len() < tile_indices.len() {
+                            heights.push(cached.height);
+                        }
+                    } else {
+                        // Render this tile
+                        let tile_region = icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
+
+                        let render_options = icy_engine::RenderOptions {
+                            rect: icy_engine::Rectangle {
+                                start: icy_engine::Position::new(0, tile_start_y as i32),
+                                size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
+                            }
+                            .into(),
+                            blink_on: blink_state,
+                            selection: selection.clone(),
+                            selection_fg: Some(fg_sel.clone()),
+                            selection_bg: Some(bg_sel.clone()),
+                            override_scan_lines: None,
+                        };
+                        let (render_size, rgba_data) = screen.render_region_to_rgba(tile_region, &render_options);
+                        let width = render_size.width as u32;
+                        let height = render_size.height as u32;
+
+                        let slice = TextureSliceData {
+                            rgba_data: Arc::new(rgba_data),
+                            width,
+                            height,
+                        };
+
+                        // Cache this tile
+                        let cached_tile = SharedCachedTile {
+                            texture: slice.clone(),
+                            height,
+                            start_y: tile_start_y,
+                        };
+                        self.term.render_cache.write().insert(cache_key, cached_tile);
+
+                        slices.push(slice);
+                        if heights.len() < tile_indices.len() {
+                            heights.push(height);
+                        }
+                    }
                 }
-                if let Some(cached) = cached_tile {
-                    slices.push(cached.texture);
-                    slice_heights.push(cached.height);
-                } else {
-                    // Render this tile
-                    let tile_region = icy_engine::Rectangle::from(
-                        0,
-                        tile_start_y as i32,
-                        resolution.width,
-                        actual_tile_height as i32,
-                    );
+            };
 
-                    let render_options = icy_engine::RenderOptions {
-                        rect: icy_engine::Rectangle {
-                            start: icy_engine::Position::new(0, tile_start_y as i32),
-                            size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
-                        }.into(),
-                        blink_on,
-                        selection: selection.clone(),
-                        selection_fg: Some(fg_sel.clone()),
-                        selection_bg: Some(bg_sel.clone()),
-                        override_scan_lines: None,
-                    };
-                    println!("Rendering tile {} (y: {} to {}, height: {})", tile_idx, tile_start_y, tile_end_y, actual_tile_height);
-                    let (render_size, rgba_data) = screen.render_region_to_rgba(tile_region, &render_options);
-                    let width = render_size.width as u32;
-                    let height = render_size.height as u32;
-
-                    let slice = TextureSliceData {
-                        rgba_data: Arc::new(rgba_data),
-                        width,
-                        height,
-                    };
-
-                    // Cache this tile in the shared render cache
-                    let cached_tile = SharedCachedTile {
-                        texture: slice.clone(),
-                        height,
-                        start_y: tile_start_y,
-                    };
-                    self.term.render_cache.write().insert(cache_key, cached_tile);
-
-                    slices.push(slice);
-                    slice_heights.push(height);
-                }
-            }
+            // Get tiles for both blink states
+            get_or_render_tiles(false, &mut slices_blink_off, &mut slice_heights);
+            get_or_render_tiles(true, &mut slices_blink_on, &mut slice_heights);
         }
 
-        // Ensure we have at least one slice
-        if slices.is_empty() {
-            slices.push(TextureSliceData {
+        // Ensure we have at least one slice for both states
+        if slices_blink_off.is_empty() {
+            let empty_slice = TextureSliceData {
                 rgba_data: Arc::new(vec![0u8; 4]),
                 width: 1,
                 height: 1,
-            });
+            };
+            slices_blink_off.push(empty_slice.clone());
+            slices_blink_on.push(empty_slice);
             slice_heights.push(1);
             first_slice_start_y = 0.0;
         }
@@ -222,7 +291,8 @@ impl<'a> CRTShaderProgram<'a> {
         let zoom = self.term.viewport.read().zoom;
 
         TerminalShader {
-            slices,
+            slices_blink_off,
+            slices_blink_on,
             slice_heights,
             texture_width,
             total_content_height: full_content_height,
@@ -237,6 +307,14 @@ impl<'a> CRTShaderProgram<'a> {
             scroll_offset_y,
             visible_height,
             first_slice_start_y,
+            scroll_offset_x,
+            visible_width,
+            // Caret rendering in shader
+            caret_pos,
+            caret_size,
+            caret_visible,
+            caret_mode,
+            blink_on,
         }
     }
 
@@ -397,90 +475,6 @@ impl<'a> CRTShaderProgram<'a> {
             }
         }
         None
-    }
-
-    pub fn draw_caret(
-        &self,
-        caret: &Caret,
-        state: &CRTShaderState,
-        rgba_data: &mut Vec<u8>,
-        size: (u32, u32),
-        font_w: usize,
-        font_h: usize,
-        scan_lines: bool,
-        scroll_x: i32,
-        scroll_y: i32,
-    ) {
-        let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on());
-        let font_w = font_w as i32;
-        let font_h = font_h as i32;
-
-        if should_draw && self.term.has_focus {
-            let caret_pos = caret.position();
-            if font_w > 0 && font_h > 0 && size.0 > 0 && size.1 > 0 {
-                let line_bytes = (size.0 as i32) * 4;
-                let cell_x = caret_pos.x;
-                let cell_y = caret_pos.y;
-
-                if cell_x >= 0 && cell_y >= 0 {
-                    let (px_x, px_y) = if caret.use_pixel_positioning {
-                        (caret_pos.x - scroll_x, caret_pos.y * if scan_lines { 2 } else { 1 } - scroll_y)
-                    } else {
-                        (
-                            cell_x * font_w - scroll_x,
-                            if scan_lines { cell_y * font_h * 2 } else { cell_y * font_h } - scroll_y,
-                        )
-                    };
-                    let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
-
-                    if px_x >= 0 && px_y >= 0 && px_x + font_w <= size.0 as i32 && px_y + actual_font_h <= size.1 as i32 {
-                        match caret.shape {
-                            CaretShape::Bar => {
-                                let bar_width = if caret.insert_mode { font_w / 2 } else { 2.min(font_w) };
-
-                                for row in 0..actual_font_h {
-                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
-                                    let slice = &mut rgba_data[row_offset..row_offset + bar_width as usize * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                            CaretShape::Block => {
-                                let start = if caret.insert_mode { actual_font_h / 2 } else { 0 };
-                                for row in start..actual_font_h {
-                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w as usize * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                            CaretShape::Underline => {
-                                let start_row = if caret.insert_mode {
-                                    actual_font_h / 2
-                                } else {
-                                    actual_font_h.saturating_sub(2)
-                                };
-                                for row in start_row..actual_font_h {
-                                    let row_offset = ((px_y + row) * line_bytes + px_x * 4) as usize;
-                                    let slice = &mut rgba_data[row_offset..row_offset + font_w as usize * 4];
-                                    for p in slice.chunks_exact_mut(4) {
-                                        p[0] = 255 - p[0];
-                                        p[1] = 255 - p[1];
-                                        p[2] = 255 - p[2];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

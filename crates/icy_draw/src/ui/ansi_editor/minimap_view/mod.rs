@@ -7,13 +7,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
 use icy_engine::Screen;
-use icy_engine_gui::{SharedRenderCacheHandle, TileCacheKey, TILE_HEIGHT};
+use icy_engine_gui::{SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;
 pub use minimap_shader::ViewportInfo;
-
-
 
 static MINIMAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -56,7 +54,7 @@ pub enum MinimapMessage {
 /// A minimap view that displays a scaled-down version of the buffer
 /// with a viewport rectangle overlay showing the current visible area.
 /// The minimap fills the available width and is scrollable vertically.
-/// 
+///
 /// This view uses the Terminal's shared render cache for textures,
 /// but maintains its own scroll position that syncs with the terminal viewport.
 pub struct MinimapView {
@@ -178,8 +176,8 @@ impl MinimapView {
     /// Uses tiles from the Terminal's shared render cache.
     /// The Terminal must have rendered before calling this.
     pub fn view(
-        &self, 
-        _screen: &Arc<Mutex<Box<dyn Screen>>>, 
+        &self,
+        _screen: &Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
@@ -192,35 +190,35 @@ impl MinimapView {
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
             let shared_cache = cache_handle.read();
-            
+
             // Check if shared cache has tiles
             if shared_cache.tile_count() > 0 && shared_cache.content_width > 0 {
                 let content_width = shared_cache.content_width as f32;
                 let content_height = shared_cache.content_height as f32;
-                
+
                 // Auto-scroll to keep viewport visible
                 self.ensure_viewport_visible(viewport_info.y, viewport_info.height, content_width, content_height);
-                
+
                 // Use tiles from shared cache with the same blink state as Terminal
                 let blink_state = shared_cache.last_blink_state;
-                
+
                 // Calculate which 3 tiles to select based on visible area (like CRT shader)
                 let tile_height = TILE_HEIGHT as f32;
-                let scroll_normalized = *self.scroll_position.borrow();  // 0.0 - 1.0
-                
+                let scroll_normalized = *self.scroll_position.borrow(); // 0.0 - 1.0
+
                 // Convert normalized scroll position to pixel Y in document space
                 let scroll_pixel_y = scroll_normalized * content_height;
-                
+
                 // Calculate current tile based on pixel position
                 let current_tile_idx = (scroll_pixel_y / tile_height).floor() as i32;
                 let first_tile_idx = (current_tile_idx - 1).max(0);
                 let max_tile_idx = shared_cache.max_tile_index();
-                
+
                 let mut slices = Vec::new();
                 let mut heights = Vec::new();
                 let mut total_height = 0u32;
                 let first_slice_start_y = first_tile_idx as f32 * tile_height;
-                
+
                 // Select exactly 3 tiles like CRT shader does
                 for i in 0..3 {
                     let tile_idx = first_tile_idx + i;
@@ -239,19 +237,19 @@ impl MinimapView {
                         total_height += tile.height;
                     }
                 }
-                
+
                 // Use dimensions from shared cache - they match what Terminal rendered
                 let full_size = (shared_cache.content_width, shared_cache.content_height as u32);
-                
+
                 if !slices.is_empty() {
                     drop(shared_cache);
-                    
+
                     return self.create_shader_element(
-                        slices, 
-                        heights, 
-                        total_height, 
-                        full_size, 
-                        viewport_info, 
+                        slices,
+                        heights,
+                        total_height,
+                        full_size,
+                        viewport_info,
                         avail_height,
                         scroll_normalized,
                         first_slice_start_y,
@@ -281,7 +279,7 @@ impl MinimapView {
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()
     }
-    
+
     /// Helper function to create the shader element
     fn create_shader_element(
         &self,
@@ -310,19 +308,14 @@ impl MinimapView {
             first_slice_start_y,
             shared_state: Arc::clone(&self.shared_state),
         };
-        
+
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()
     }
 
     /// Handle mouse press for click-to-navigate functionality
     /// Returns the normalized position (0.0-1.0) in full buffer space
     /// This position represents where the CENTER of the viewport should be
-    pub fn handle_click(
-        &self, 
-        _bounds: Size, 
-        position: iced::Point,
-        render_cache: Option<&SharedRenderCacheHandle>,
-    ) -> Option<(f32, f32)> {
+    pub fn handle_click(&self, _bounds: Size, position: iced::Point, render_cache: Option<&SharedRenderCacheHandle>) -> Option<(f32, f32)> {
         // Get tile info from shared cache
         let (render_width, total_rendered_height, full_w, full_h) = if let Some(cache_handle) = render_cache {
             let shared_cache = cache_handle.read();

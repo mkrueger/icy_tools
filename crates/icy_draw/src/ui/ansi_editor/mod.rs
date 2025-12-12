@@ -820,7 +820,10 @@ impl AnsiEditor {
         let viewport_info = self.compute_viewport_info();
         // Pass the terminal's render cache to the minimap for shared texture access
         let render_cache = &self.canvas.terminal.render_cache;
-        let right_panel = self.right_panel.view(&self.screen, &viewport_info, Some(render_cache)).map(AnsiEditorMessage::RightPanel);
+        let right_panel = self
+            .right_panel
+            .view(&self.screen, &viewport_info, Some(render_cache))
+            .map(AnsiEditorMessage::RightPanel);
 
         // Main layout:
         // Top row: Full-width toolbar (with color switcher)

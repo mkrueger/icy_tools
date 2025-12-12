@@ -224,14 +224,20 @@ impl Screen for TextScreen {
     }
 
     fn set_selection(&mut self, sel: Selection) -> Result<()> {
-        self.selection_opt = Some(sel);
-        self.mark_dirty();
+        // Only mark dirty if selection actually changed
+        if self.selection_opt.as_ref() != Some(&sel) {
+            self.selection_opt = Some(sel);
+            self.mark_dirty();
+        }
         Ok(())
     }
 
     fn clear_selection(&mut self) -> Result<()> {
-        self.selection_opt = None;
-        self.mark_dirty();
+        // Only mark dirty if there was a selection to clear
+        if self.selection_opt.is_some() {
+            self.selection_opt = None;
+            self.mark_dirty();
+        }
         Ok(())
     }
 

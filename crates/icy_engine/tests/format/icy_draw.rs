@@ -1,4 +1,3 @@
-
 use super::ansi2::{CompareOptions, compare_buffers};
 use icy_engine::{AttributedChar, Color, FileFormat, Layer, SaveOptions, TextAttribute, TextBuffer, TextPane};
 /*

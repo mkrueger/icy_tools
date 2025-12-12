@@ -369,14 +369,20 @@ impl Screen for ScrollbackBuffer {
     }
 
     fn set_selection(&mut self, sel: Selection) -> Result<()> {
-        self.selection = Some(sel);
-        self.version += 1;
+        // Only increment version if selection actually changed
+        if self.selection.as_ref() != Some(&sel) {
+            self.selection = Some(sel);
+            self.version += 1;
+        }
         Ok(())
     }
 
     fn clear_selection(&mut self) -> Result<()> {
-        self.selection = None;
-        self.version += 1;
+        // Only increment version if there was a selection to clear
+        if self.selection.is_some() {
+            self.selection = None;
+            self.version += 1;
+        }
         Ok(())
     }
 

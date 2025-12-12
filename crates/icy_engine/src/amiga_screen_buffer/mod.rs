@@ -827,7 +827,6 @@ impl EditableScreen for AmigaScreenBuffer {
 
         // Clear the freed top region
         self.screen[0..line_height * row_len].fill(0);
-
         self.mark_dirty();
     }
 

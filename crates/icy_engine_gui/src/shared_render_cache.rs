@@ -69,14 +69,12 @@ impl SharedRenderCache {
 
     /// Clear all cached tiles
     pub fn clear(&mut self) {
-        println!("Clearing entire shared render cache");
         self.tiles.clear();
     }
 
     /// Invalidate cache due to content change
     pub fn invalidate(&mut self, new_version: u64) {
         if new_version != self.content_version {
-            println!("Invalidating shared render cache: old_version={}, new_version={}", self.content_version, new_version);
             self.content_version = new_version;
             self.tiles.clear();
         }
@@ -85,7 +83,6 @@ impl SharedRenderCache {
     /// Invalidate cache due to selection change
     pub fn invalidate_selection(&mut self, new_version: u64) {
         if new_version != self.selection_version {
-            println!("Invalidating shared render cache due to selection change: old_version={}, new_version={}", self.selection_version, new_version);
             self.selection_version = new_version;
             self.tiles.clear();
         }
@@ -118,9 +115,7 @@ impl SharedRenderCache {
 
     /// Get tiles in order by index for a specific blink state
     pub fn tiles_in_order(&self, blink_on: bool) -> Vec<(&TileCacheKey, &SharedCachedTile)> {
-        let mut tiles: Vec<_> = self.tiles.iter()
-            .filter(|(k, _)| k.blink_on == blink_on)
-            .collect();
+        let mut tiles: Vec<_> = self.tiles.iter().filter(|(k, _)| k.blink_on == blink_on).collect();
         tiles.sort_by_key(|(k, _)| k.tile_index);
         tiles
     }
@@ -132,7 +127,7 @@ impl SharedRenderCache {
         let last_tile = (end_y / tile_height).ceil() as i32;
         (first_tile.max(0)..=last_tile).collect()
     }
-    
+
     /// Get the maximum tile index based on content height
     pub fn max_tile_index(&self) -> i32 {
         ((self.content_height / TILE_HEIGHT as f32).ceil() as i32 - 1).max(0)
