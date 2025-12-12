@@ -2,6 +2,7 @@
 use crate::{MonitorSettings, Terminal, ZoomMessage, create_crt_shader};
 use iced::Element;
 use icy_engine::{KeyModifiers, MouseButton, Position};
+use std::sync::Arc;
 
 /// Re-export iced's scroll delta for convenience
 pub use iced::mouse::ScrollDelta as WheelDelta;
@@ -84,7 +85,7 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn show_with_effects(term: &'a Terminal, settings: MonitorSettings) -> Element<'a, Message> {
+    pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>) -> Element<'a, Message> {
         iced::widget::container(create_crt_shader(term, settings)).id(term.id.clone()).into()
     }
 }

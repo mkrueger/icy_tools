@@ -103,7 +103,7 @@ pub struct BitFontEditor {
     /// Terminal instance used while preview is visible
     preview_terminal: Option<Terminal>,
     /// Monitor settings applied to preview terminal
-    preview_monitor: MonitorSettings,
+    preview_monitor: Arc<MonitorSettings>,
 }
 
 impl BitFontEditor {
@@ -131,7 +131,7 @@ impl BitFontEditor {
             show_preview: false,
             preview_screen: None,
             preview_terminal: None,
-            preview_monitor: MonitorSettings::default(),
+            preview_monitor: Arc::new(MonitorSettings::default()),
         }
     }
 
@@ -163,7 +163,7 @@ impl BitFontEditor {
             show_preview: false,
             preview_screen: None,
             preview_terminal: None,
-            preview_monitor: MonitorSettings::default(),
+            preview_monitor: Arc::new(MonitorSettings::default()),
             state,
         })
     }
@@ -439,7 +439,7 @@ impl BitFontEditor {
             show_preview: false,
             preview_screen: None,
             preview_terminal: None,
-            preview_monitor: MonitorSettings::default(),
+            preview_monitor: Arc::new(MonitorSettings::default()),
             state,
         })
     }

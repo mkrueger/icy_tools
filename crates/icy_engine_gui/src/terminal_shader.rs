@@ -90,7 +90,7 @@ pub struct TerminalShader {
     /// Total content height (full document)
     pub total_content_height: f32,
     /// Store the monitor settings for CRT effects
-    pub monitor_settings: MonitorSettings,
+    pub monitor_settings: Arc<MonitorSettings>,
     /// Unique instance ID
     pub instance_id: u64,
     /// Zoom level (1.0 = 100%)

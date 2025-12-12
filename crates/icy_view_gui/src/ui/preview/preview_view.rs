@@ -123,8 +123,8 @@ pub struct PreviewView {
     current_file: Option<PathBuf>,
     /// Whether file is currently loading
     is_loading: bool,
-    /// Monitor settings for CRT effects
-    pub monitor_settings: MonitorSettings,
+    /// Monitor settings for CRT effects (cached as Arc for efficient rendering)
+    pub monitor_settings: Arc<MonitorSettings>,
     /// Current baud emulation setting
     baud_emulation: BaudEmulation,
     /// Current preview mode
@@ -167,7 +167,7 @@ impl PreviewView {
             event_rx: Arc::new(Mutex::new(event_rx)),
             current_file: None,
             is_loading: false,
-            monitor_settings: MonitorSettings::default(),
+            monitor_settings: Arc::new(MonitorSettings::default()),
             baud_emulation: BaudEmulation::Off,
             preview_mode: PreviewMode::None,
             current_image_load_id: 0,
@@ -343,7 +343,7 @@ impl PreviewView {
     }
 
     /// Set monitor settings for CRT effects
-    pub fn set_monitor_settings(&mut self, settings: MonitorSettings) {
+    pub fn set_monitor_settings(&mut self, settings: Arc<MonitorSettings>) {
         self.monitor_settings = settings;
     }
 
@@ -860,33 +860,38 @@ impl PreviewView {
                     }
                     icy_engine_gui::Message::Zoom(zoom_msg) => {
                         // Handle zoom via unified ZoomMessage
+                        // Create a new Arc with updated scaling_mode
                         let current_zoom = self.terminal.get_zoom();
                         let use_integer = self.monitor_settings.use_integer_scaling;
-                        self.monitor_settings.scaling_mode = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-                        if let icy_engine_gui::ScalingMode::Manual(z) = self.monitor_settings.scaling_mode {
+                        let mut new_settings = (*self.monitor_settings).clone();
+                        new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                        if let icy_engine_gui::ScalingMode::Manual(z) = new_settings.scaling_mode {
                             self.terminal.set_zoom(z);
                         }
+                        self.monitor_settings = Arc::new(new_settings);
                     }
                 }
                 Task::none()
             }
             PreviewMessage::Zoom(zoom_msg) => {
                 // Unified zoom handling for both terminal and image viewer
+                // Create a new Arc with updated scaling_mode
                 let use_integer = self.monitor_settings.use_integer_scaling;
+                let mut new_settings = (*self.monitor_settings).clone();
                 if let Some(ref mut viewer) = self.image_viewer {
                     // Apply zoom to image viewer
                     let current_zoom = viewer.zoom();
-                    let new_scaling = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    let new_scaling = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
                     match new_scaling {
                         icy_engine_gui::ScalingMode::Auto => viewer.zoom_fit(),
                         icy_engine_gui::ScalingMode::Manual(z) => viewer.set_zoom(z),
                     }
-                    self.monitor_settings.scaling_mode = new_scaling;
+                    new_settings.scaling_mode = new_scaling;
                 } else {
                     // Apply zoom to terminal
                     let current_zoom = self.terminal.get_zoom();
-                    self.monitor_settings.scaling_mode = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-                    match self.monitor_settings.scaling_mode {
+                    new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    match new_settings.scaling_mode {
                         icy_engine_gui::ScalingMode::Auto => {
                             self.terminal.zoom_auto_fit(use_integer);
                         }
@@ -895,6 +900,7 @@ impl PreviewView {
                         }
                     }
                 }
+                self.monitor_settings = Arc::new(new_settings);
                 Task::none()
             }
             PreviewMessage::SauceInfoReceived(sauce_opt, content_size) => {
@@ -913,8 +919,8 @@ impl PreviewView {
 
     /// Create the view with optional monitor settings override
     /// If settings are provided, they override the internal monitor_settings
-    pub fn view_with_settings(&self, settings: Option<&MonitorSettings>) -> Element<'_, PreviewMessage> {
-        let monitor_settings = settings.cloned().unwrap_or_else(|| self.monitor_settings.clone());
+    pub fn view_with_settings(&self, settings: Option<Arc<MonitorSettings>>) -> Element<'_, PreviewMessage> {
+        let monitor_settings = settings.unwrap_or_else(|| self.monitor_settings.clone());
 
         match &self.preview_mode {
             PreviewMode::None => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-no-file-selected")))

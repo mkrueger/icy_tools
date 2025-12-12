@@ -23,7 +23,7 @@ use crate::{
 use clipboard_rs::Clipboard;
 use iced::{Element, Event, Task, Theme, keyboard, window};
 use icy_engine::Position;
-use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack};
+use icy_engine_gui::{MonitorSettings, command_handler, error_dialog, music::music::SoundThread, ui::DialogStack};
 use icy_net::{ConnectionType, telnet::TerminalEmulation};
 use tokio::sync::mpsc;
 
@@ -130,6 +130,8 @@ pub struct MainWindow {
     pub title: String,
     pub effect: i32,
     commands: MainWindowCommands,
+    /// Cached monitor settings as Arc for efficient rendering
+    cached_monitor_settings: Arc<MonitorSettings>,
 }
 
 impl MainWindow {
@@ -150,6 +152,7 @@ impl MainWindow {
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), addresses.clone());
 
         let serial = options.lock().serial.clone();
+        let cached_monitor_settings = Arc::new(options.lock().monitor_settings.clone());
 
         Self {
             effect: 0,
@@ -192,6 +195,7 @@ impl MainWindow {
             pending_script_response: None,
             terminal_emulation: TerminalEmulation::Ansi,
             commands: MainWindowCommands::new(),
+            cached_monitor_settings,
         }
     }
 
@@ -518,10 +522,12 @@ impl MainWindow {
 
                 self.dialogs.push(
                     settings_dialog::settings_dialog_from_msg(state, icy_engine_gui::dialog_msg!(Message::SettingsDialog)).on_save(|result| {
+                        // Always refresh monitor settings cache after settings dialog saves
+                        // The scrollback buffer size change will be handled separately via a batch
                         if let Some(size) = result.new_scrollback_size {
                             Message::SetScrollbackBufferSize(size)
                         } else {
-                            Message::None
+                            Message::RefreshMonitorSettingsCache
                         }
                     }),
                 );
@@ -962,6 +968,13 @@ impl MainWindow {
                     let mut screen = self.terminal_window.terminal.screen.lock();
                     screen.set_scrollback_buffer_size(buffer_size);
                 }
+                // Also refresh monitor settings cache after settings dialog
+                self.cached_monitor_settings = Arc::new(self.options.lock().monitor_settings.clone());
+                Task::none()
+            }
+
+            Message::RefreshMonitorSettingsCache => {
+                self.cached_monitor_settings = Arc::new(self.options.lock().monitor_settings.clone());
                 Task::none()
             }
 
@@ -1178,6 +1191,8 @@ impl MainWindow {
                     self.terminal_window.terminal.set_zoom(z);
                 }
                 opts.monitor_settings.scaling_mode = new_scaling;
+                // Update cached monitor settings
+                self.cached_monitor_settings = Arc::new(opts.monitor_settings.clone());
                 Task::none()
             }
         }
@@ -1553,10 +1568,9 @@ impl MainWindow {
             _ => {}
         }
 
-        let terminal_view = {
-            let settings = &self.options.lock();
-            self.terminal_window.view(settings, &self.pause_message)
-        };
+        let terminal_view = self
+            .terminal_window
+            .view(self.cached_monitor_settings.clone(), &self.options.lock(), &self.pause_message);
 
         let mode_view = match &self.state.mode {
             MainWindowMode::ShowTerminal => terminal_view,

@@ -17,11 +17,11 @@ use std::sync::Arc;
 /// Program wrapper that renders the terminal using sliding window tile approach
 pub struct CRTShaderProgram<'a> {
     pub term: &'a Terminal,
-    pub monitor_settings: MonitorSettings,
+    pub monitor_settings: Arc<MonitorSettings>,
 }
 
 impl<'a> CRTShaderProgram<'a> {
-    pub fn new(term: &'a Terminal, monitor_settings: MonitorSettings) -> Self {
+    pub fn new(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>) -> Self {
         Self { term, monitor_settings }
     }
 
@@ -36,6 +36,7 @@ impl<'a> CRTShaderProgram<'a> {
     }
 
     fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
+        let now = std::time::Instant::now();
         let mut font_w = 0usize;
         let mut font_h = 0usize;
         let scan_lines;
@@ -230,7 +231,8 @@ impl<'a> CRTShaderProgram<'a> {
                         }
                     } else {
                         // Render this tile
-                        let tile_region = icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
+                        let tile_region: icy_engine::Rectangle =
+                            icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
 
                         let render_options = icy_engine::RenderOptions {
                             rect: icy_engine::Rectangle {
@@ -289,7 +291,7 @@ impl<'a> CRTShaderProgram<'a> {
         }
 
         let zoom = self.term.viewport.read().zoom;
-
+        println!("CRTShaderProgram::internal_draw took {:?}", now.elapsed());
         TerminalShader {
             slices_blink_off,
             slices_blink_on,

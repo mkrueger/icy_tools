@@ -47,11 +47,11 @@ pub enum AnimationPane {
 
 /// Create monitor settings optimized for animation preview
 /// Uses auto-scaling without integer scaling for smooth preview
-fn create_preview_monitor_settings() -> MonitorSettings {
+fn create_preview_monitor_settings() -> Arc<MonitorSettings> {
     let mut settings = MonitorSettings::default();
     settings.scaling_mode = ScalingMode::Auto;
     settings.use_integer_scaling = false;
-    settings
+    Arc::new(settings)
 }
 
 /// Animation editor state
@@ -105,7 +105,7 @@ pub struct AnimationEditor {
     preview_terminal: Option<Terminal>,
 
     /// Current monitor settings for preview
-    preview_monitor: MonitorSettings,
+    preview_monitor: Arc<MonitorSettings>,
 
     /// Last displayed frame index (to detect changes)
     last_preview_frame: usize,

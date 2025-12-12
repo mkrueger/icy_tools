@@ -132,7 +132,7 @@ pub struct CharFontEditor {
     /// Terminal for preview rendering
     preview_terminal: Terminal,
     /// Monitor settings for preview (200% zoom)
-    preview_monitor: MonitorSettings,
+    preview_monitor: Arc<MonitorSettings>,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -179,6 +179,7 @@ impl CharFontEditor {
 
         let mut preview_monitor = MonitorSettings::default();
         preview_monitor.scaling_mode = ScalingMode::Manual(2.0); // 200% zoom
+        let preview_monitor = Arc::new(preview_monitor);
 
         let mut editor = Self {
             id,

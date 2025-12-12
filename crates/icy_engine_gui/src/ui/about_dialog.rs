@@ -79,9 +79,11 @@ impl AboutDialogState {
     /// Render the about dialog view
     pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(AboutDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         use iced::mouse;
+        use std::sync::Arc;
 
         let mut settings = MonitorSettings::neutral();
         settings.use_integer_scaling = false;
+        let settings = Arc::new(settings);
 
         let screen = self.terminal.screen.clone();
         let terminal = &self.terminal;

@@ -7,7 +7,7 @@ use iced::{
     widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
-    Toast, ToastManager, command_handler, dialog_msg, error_dialog,
+    MonitorSettings, Toast, ToastManager, command_handler, dialog_msg, error_dialog,
     ui::{DialogStack, ExportDialogMessage, HelpDialogMessage, export_dialog_with_defaults_from_msg},
     version_helper::replace_version_marker,
 };
@@ -206,6 +206,8 @@ pub struct MainWindow {
     sauce_loading_initialized: bool,
     /// Shuffle mode state
     shuffle_mode: super::ShuffleMode,
+    /// Cached monitor settings for efficient rendering
+    cached_monitor_settings: Arc<MonitorSettings>,
 }
 impl MainWindow {
     /// Creates a new MainWindow.
@@ -291,6 +293,9 @@ impl MainWindow {
         // Share the sauce cache with file browser
         file_browser.set_sauce_cache(sauce_cache.clone());
 
+        // Cache monitor settings for efficient rendering
+        let cached_monitor_settings = Arc::new(options.lock().monitor_settings.clone());
+
         (
             Self {
                 id,
@@ -316,6 +321,7 @@ impl MainWindow {
                 sauce_rx: Some(sauce_rx),
                 sauce_loading_initialized: false,
                 shuffle_mode: super::ShuffleMode::new(),
+                cached_monitor_settings,
             },
             initial_message,
         )
@@ -895,6 +901,8 @@ impl MainWindow {
                 // Sync scaling_mode from preview to options after zoom changes
                 if is_zoom_change {
                     self.options.lock().monitor_settings.scaling_mode = self.preview.monitor_settings.scaling_mode.clone();
+                    // Also update cached monitor settings
+                    self.cached_monitor_settings = self.preview.monitor_settings.clone();
                 }
                 result
             }
@@ -1472,7 +1480,8 @@ impl MainWindow {
             }
             Message::CloseSettingsDialog => {
                 // Dialog is closed via DialogStack's request_cancel/confirm
-                // This message is sent as a result of closing
+                // Refresh cached monitor settings in case they were changed
+                self.cached_monitor_settings = Arc::new(self.options.lock().monitor_settings.clone());
                 Task::none()
             }
             Message::ShowHelp => {
@@ -2066,7 +2075,7 @@ impl MainWindow {
                 } else if self.current_file.is_some() {
                     // Show the terminal preview - wrap in focusable for scroll keys
                     let monitor_settings = self.get_current_monitor_settings();
-                    let preview = self.preview.view_with_settings(Some(&monitor_settings)).map(Message::Preview);
+                    let preview = self.preview.view_with_settings(Some(monitor_settings)).map(Message::Preview);
                     focus(preview)
                         .on_event(|event, _id| {
                             if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
@@ -2301,9 +2310,9 @@ impl MainWindow {
         opts.monitor_settings.scaling_mode.format_zoom_string()
     }
 
-    /// Get the current monitor settings
-    fn get_current_monitor_settings(&self) -> icy_engine_gui::MonitorSettings {
-        self.options.lock().monitor_settings.clone()
+    /// Get the current monitor settings as Arc
+    fn get_current_monitor_settings(&self) -> Arc<MonitorSettings> {
+        self.cached_monitor_settings.clone()
     }
 
     /// Get the current view mode from options
@@ -2503,7 +2512,7 @@ impl MainWindow {
 
         // Preview takes full screen - use monitor settings for proper display
         let monitor_settings = self.get_current_monitor_settings();
-        let preview = self.preview.view_with_settings(Some(&monitor_settings)).map(Message::Preview);
+        let preview = self.preview.view_with_settings(Some(monitor_settings)).map(Message::Preview);
 
         // Create mouse area to catch clicks for exiting shuffle mode
         let clickable_preview = mouse_area(preview).on_press(Message::Escape);

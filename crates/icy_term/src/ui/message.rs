@@ -85,6 +85,7 @@ pub enum Message {
     ScrollViewportYToImmediate(f32),  // y absolute position (vertical scrollbar)
     ViewportTick,                     // Update viewport animation
     SetScrollbackBufferSize(usize),   // Set scrollback buffer size
+    RefreshMonitorSettingsCache,      // Refresh cached monitor settings after settings change
     McpCommand(Arc<crate::mcp::McpCommand>),
     ScrollbarHovered(bool),  // Vertical scrollbar hover state changed
     HScrollbarHovered(bool), // Horizontal scrollbar hover state changed

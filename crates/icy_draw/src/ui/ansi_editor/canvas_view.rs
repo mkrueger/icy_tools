@@ -61,8 +61,8 @@ pub enum CanvasMessage {
 pub struct CanvasView {
     /// Terminal widget for rendering
     pub terminal: Terminal,
-    /// Monitor settings for CRT effects
-    pub monitor_settings: MonitorSettings,
+    /// Monitor settings for CRT effects (cached as Arc for efficient rendering)
+    pub monitor_settings: Arc<MonitorSettings>,
 }
 
 impl CanvasView {
@@ -74,7 +74,7 @@ impl CanvasView {
 
         Self {
             terminal,
-            monitor_settings: MonitorSettings::default(),
+            monitor_settings: Arc::new(MonitorSettings::default()),
         }
     }
 
@@ -150,8 +150,10 @@ impl CanvasView {
     fn apply_zoom(&mut self, zoom_msg: ZoomMessage) {
         let current_zoom = self.terminal.get_zoom();
         let use_integer = self.monitor_settings.use_integer_scaling;
-        self.monitor_settings.scaling_mode = self.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-        match self.monitor_settings.scaling_mode {
+        // Create a new Arc with updated scaling_mode
+        let mut new_settings = (*self.monitor_settings).clone();
+        new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+        match new_settings.scaling_mode {
             ScalingMode::Auto => {
                 self.terminal.zoom_auto_fit(use_integer);
             }
@@ -159,6 +161,7 @@ impl CanvasView {
                 self.terminal.set_zoom(z);
             }
         }
+        self.monitor_settings = Arc::new(new_settings);
     }
 
     /// Handle unified terminal mouse events from icy_engine_gui.
@@ -171,7 +174,7 @@ impl CanvasView {
     }
 
     /// Set monitor settings for CRT effects
-    pub fn set_monitor_settings(&mut self, settings: MonitorSettings) {
+    pub fn set_monitor_settings(&mut self, settings: Arc<MonitorSettings>) {
         self.monitor_settings = settings;
     }
 
@@ -394,8 +397,8 @@ impl CanvasView {
     }
 
     /// Render the canvas view with custom monitor settings override
-    pub fn view_with_settings(&self, settings: Option<&MonitorSettings>) -> Element<'_, CanvasMessage> {
-        let monitor_settings = settings.cloned().unwrap_or_else(|| self.monitor_settings.clone());
+    pub fn view_with_settings(&self, settings: Option<Arc<MonitorSettings>>) -> Element<'_, CanvasMessage> {
+        let monitor_settings = settings.unwrap_or_else(|| self.monitor_settings.clone());
 
         // Use TerminalView to render with CRT shader effect
         let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(CanvasMessage::TerminalMessage);

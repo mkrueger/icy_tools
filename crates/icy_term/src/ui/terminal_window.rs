@@ -6,7 +6,7 @@ use iced::{
 use icy_engine::Screen;
 use icy_engine_gui::HorizontalScrollbarOverlay;
 use icy_engine_gui::ui::settings_icon;
-use icy_engine_gui::{ScrollbarOverlay, Terminal, terminal_view::TerminalView};
+use icy_engine_gui::{MonitorSettings, ScrollbarOverlay, Terminal, terminal_view::TerminalView};
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
@@ -59,12 +59,12 @@ impl TerminalWindow {
         }
     }
 
-    pub fn view(&self, options: &Options, pause_message: &Option<String>) -> Element<'_, Message> {
+    pub fn view(&self, monitor_settings: Arc<MonitorSettings>, options: &Options, pause_message: &Option<String>) -> Element<'_, Message> {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, options.monitor_settings.clone()).map(|terminal_msg| match terminal_msg {
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(|terminal_msg| match terminal_msg {
             icy_engine_gui::Message::Press(evt) => Message::MousePress(evt),
             icy_engine_gui::Message::Release(evt) => Message::MouseRelease(evt),
             icy_engine_gui::Message::Move(evt) => Message::MouseMove(evt),
