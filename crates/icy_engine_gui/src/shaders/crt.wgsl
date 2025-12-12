@@ -88,7 +88,18 @@ struct Uniforms {
     _layer_padding1: f32,        // Padding
     _layer_padding2: f32,        // Padding
     _layer_padding3: f32,        // Padding (completes 16-byte alignment)
-    _struct_end_padding: vec4<f32>, // Additional padding to ensure struct sizes match
+
+    // Selection uniforms (for highlighting selected area)
+    selection_rect: vec4<f32>,   // Selection rectangle (x, y, x+width, y+height) in document pixels
+    selection_enabled: f32,      // 1.0 = enabled, 0.0 = disabled
+    selection_mask_enabled: f32, // 1.0 = use texture mask, 0.0 = use rectangle only
+    _selection_padding1: f32,    // Padding
+    _selection_padding2: f32,    // Padding (completes 16-byte alignment)
+
+    // Font dimensions for selection mask sampling
+    font_width: f32,             // Font width in pixels
+    font_height: f32,            // Font height in pixels
+    selection_mask_size: vec2<f32>, // Selection mask size in cells (width, height)
 }
 
 struct MonitorColor {
@@ -111,6 +122,9 @@ struct MonitorColor {
 
 // Reference image texture at binding 6
 @group(0) @binding(6) var t_reference_image: texture_2d<f32>;
+
+// Selection mask texture at binding 7
+@group(0) @binding(7) var t_selection_mask: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -606,6 +620,59 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         if (on_left_border || on_right_border || on_top_border || on_bottom_border) {
             // Draw with the layer color
             color = uniforms.layer_color.rgb;
+        }
+    }
+
+    // Draw selection (inverted colors for selected area)
+    // selection_rect contains (x, y, x+width, y+height) in document pixel coordinates
+    if (uniforms.selection_enabled > 0.5) {
+        let sel_left = uniforms.selection_rect.x;
+        let sel_top = uniforms.selection_rect.y;
+        let sel_right = uniforms.selection_rect.z;
+        let sel_bottom = uniforms.selection_rect.w;
+        
+        // Calculate absolute document position (including scroll offset)
+        let visible_w = uniforms.visible_width;
+        let visible_h = uniforms.visible_height;
+        let scroll_x = uniforms.scroll_offset_x;
+        let scroll_y = uniforms.scroll_offset_y;
+        
+        // Screen pixel position
+        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+        
+        // Document pixel position (absolute)
+        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+        
+        var in_selection = false;
+        
+        // Check if using selection mask texture
+        if (uniforms.selection_mask_enabled > 0.5) {
+            // Calculate cell position from document pixel
+            let cell_x = floor(doc_pixel.x / uniforms.font_width);
+            let cell_y = floor(doc_pixel.y / uniforms.font_height);
+            
+            // Check bounds
+            if (cell_x >= 0.0 && cell_x < uniforms.selection_mask_size.x &&
+                cell_y >= 0.0 && cell_y < uniforms.selection_mask_size.y) {
+                // Sample selection mask texture at cell position
+                // The mask texture has one pixel per cell
+                let mask_uv = vec2<f32>(
+                    (cell_x + 0.5) / uniforms.selection_mask_size.x,
+                    (cell_y + 0.5) / uniforms.selection_mask_size.y
+                );
+                let mask_sample = textureSample(t_selection_mask, terminal_sampler, mask_uv);
+                // White (r > 0.5) means selected
+                in_selection = mask_sample.r > 0.5;
+            }
+        } else {
+            // Use rectangle-based selection
+            in_selection = doc_pixel.x >= sel_left && doc_pixel.x < sel_right &&
+                          doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+        }
+        
+        if (in_selection) {
+            // Invert colors for selection (like the old egui shader)
+            color = vec3<f32>(1.0) - color;
         }
     }
 

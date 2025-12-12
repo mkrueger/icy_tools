@@ -242,6 +242,42 @@ impl CRTShaderState {
 
         Some(Position::new(term_x as i32, term_y as i32))
     }
+
+    /// Map mouse coordinates to cell position without bounds checking.
+    /// Used during drag operations where mouse can leave the viewport.
+    /// Returns absolute document coordinates (with scroll offset applied).
+    pub fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
+        let scale_factor = crate::get_scale_factor();
+
+        // Scale mouse coordinates
+        let scaled_mx = mx * scale_factor;
+        let scaled_my = my * scale_factor;
+
+        // Use unclamped version that doesn't check bounds
+        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels_unclamped(scaled_mx, scaled_my);
+
+        // Handle scanlines (doubled vertical resolution in render)
+        let effective_font_height = if render_info.scan_lines {
+            term_y /= 2.0;
+            render_info.font_height
+        } else {
+            render_info.font_height
+        };
+
+        let font_width = render_info.font_width.max(1.0);
+        let font_height = effective_font_height.max(1.0);
+
+        let cx = (term_x / font_width).floor() as i32;
+        let visible_cy = (term_y / font_height).floor() as i32;
+
+        // scroll_y is in content coordinates - convert to lines
+        let scroll_offset_lines = (viewport.scroll_y / font_height).floor() as i32;
+
+        // Add scroll offset to get absolute document row
+        let cy = visible_cy + scroll_offset_lines;
+
+        Position::new(cx, cy)
+    }
 }
 
 impl Drop for CRTShaderState {

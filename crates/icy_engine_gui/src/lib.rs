@@ -569,6 +569,18 @@ pub struct EditorMarkers {
 
     /// Whether to show layer bounds at all
     pub show_layer_bounds: bool,
+
+    /// Selection rectangle in pixels (x, y, width, height)
+    /// None = no selection
+    pub selection_rect: Option<(f32, f32, f32, f32)>,
+
+    /// Selection mask texture data (RGBA, width in cells, height in cells)
+    /// Each pixel represents one character cell: white (255,255,255,255) = selected, black (0,0,0,255) = not selected
+    /// None = no selection mask (use selection_rect only)
+    pub selection_mask_data: Option<(Vec<u8>, u32, u32)>,
+
+    /// Font dimensions for selection mask rendering (font_width, font_height in pixels)
+    pub font_dimensions: Option<(f32, f32)>,
 }
 
 impl EditorMarkers {

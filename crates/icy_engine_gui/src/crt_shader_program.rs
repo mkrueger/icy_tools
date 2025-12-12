@@ -127,20 +127,10 @@ impl<'a> CRTShaderProgram<'a> {
                 cache.content_width = texture_width;
                 cache.last_blink_state = blink_on;
 
-                // Also check selection changes
+                // Selection is now rendered in the shader, so we don't need to invalidate
+                // the cache when selection changes. This significantly improves performance.
                 let mut info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
                 info.last_buffer_version = current_buffer_version;
-
-                let selection = screen.selection();
-                let sel_anchor = selection.as_ref().map(|s| s.anchor);
-                let sel_lead = selection.as_ref().map(|s| s.lead);
-                let sel_locked = selection.as_ref().map(|s| s.locked).unwrap_or(false);
-
-                if info.last_selection_state.0 != sel_anchor || info.last_selection_state.1 != sel_lead || info.last_selection_state.2 != sel_locked {
-                    info.last_selection_state = (sel_anchor, sel_lead, sel_locked);
-                    cache.clear();
-                }
-
                 info.last_bounds_size = (bounds.width, bounds.height);
             }
 
@@ -211,8 +201,7 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Get or render each tile using the shared cache for BOTH blink states
             let resolution = screen.resolution();
-            let selection = screen.selection();
-            let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
+            // Selection is now rendered in the shader, not in the textures
 
             // Helper to get or render tiles for a specific blink state
             let get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
@@ -230,10 +219,12 @@ impl<'a> CRTShaderProgram<'a> {
                             heights.push(cached.height);
                         }
                     } else {
+                        println!("[CACHE MISS] tile_idx={} blink={}", tile_idx, blink_state);
                         // Render this tile
                         let tile_region: icy_engine::Rectangle =
                             icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
 
+                        // Selection is rendered in the shader now, not in the texture
                         let render_options = icy_engine::RenderOptions {
                             rect: icy_engine::Rectangle {
                                 start: icy_engine::Position::new(0, tile_start_y as i32),
@@ -241,9 +232,9 @@ impl<'a> CRTShaderProgram<'a> {
                             }
                             .into(),
                             blink_on: blink_state,
-                            selection: selection.clone(),
-                            selection_fg: Some(fg_sel.clone()),
-                            selection_bg: Some(bg_sel.clone()),
+                            selection: None,
+                            selection_fg: None,
+                            selection_bg: None,
                             override_scan_lines: None,
                         };
                         let (render_size, rgba_data) = screen.render_region_to_rgba(tile_region, &render_options);
@@ -342,6 +333,9 @@ impl<'a> CRTShaderProgram<'a> {
         let markers = self.term.markers.read();
         let layer_rect = markers.layer_bounds.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let show_layer_bounds = markers.show_layer_bounds;
+        let selection_rect = markers.selection_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let selection_mask_data = markers.selection_mask_data.clone();
+        let font_dimensions = markers.font_dimensions;
         drop(markers);
 
         TerminalShader {
@@ -387,6 +381,10 @@ impl<'a> CRTShaderProgram<'a> {
             layer_rect,
             layer_color: [1.0, 1.0, 0.0, 1.0], // Yellow border for layer bounds
             show_layer_bounds,
+            // Selection rendering
+            selection_rect,
+            selection_mask_data,
+            font_dimensions,
         }
     }
 
@@ -421,10 +419,11 @@ impl<'a> CRTShaderProgram<'a> {
                     state.drag_anchor = None;
                     state.last_drag_position = None;
 
+                    // Use unclamped for drag release to get position even outside viewport
                     let (pixel_pos, cell_pos) = if let Some(position) = cursor.position() {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
-                        (pixel_pos, cell_pos)
+                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
+                        (pixel_pos, Some(cell_pos))
                     } else {
                         ((0.0, 0.0), None)
                     };
@@ -439,10 +438,11 @@ impl<'a> CRTShaderProgram<'a> {
                 if let mouse::Event::CursorMoved { .. } = mouse_event {
                     if let Some(position) = cursor.position() {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        // Use unclamped version during drag to allow selection beyond viewport
+                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
 
                         let modifiers = Self::get_modifiers();
-                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+                        let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), MouseButton::Left, modifiers);
                         return Some(iced::widget::Action::publish(Message::Drag(evt)));
                     }
                 }

@@ -2154,8 +2154,12 @@ impl MainWindow {
 
         // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {
-            ModeState::Ansi(_editor) => {
-                // TODO: Handle ANSI editor events (keyboard, etc.)
+            ModeState::Ansi(editor) => {
+                // Forward keyboard events to AnsiEditor
+                if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+                    let msg = super::ansi_editor::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);
+                    return (Some(Message::AnsiEditor(msg)), Task::none());
+                }
             }
             ModeState::BitFont(state) => {
                 if let Some(msg) = state.handle_event(event) {

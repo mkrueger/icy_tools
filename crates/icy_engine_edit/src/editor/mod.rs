@@ -8,6 +8,8 @@ mod undo_operations;
 mod editor_error;
 pub use editor_error::*;
 
+mod terminal_input;
+
 mod layer_operations;
 pub use layer_operations::*;
 mod area_operations;
@@ -141,6 +143,10 @@ pub struct EditState {
     screen: TextScreen,
     tool_overlay_mask: OverlayMask,
 
+    /// Selection state
+    selection_opt: Option<Selection>,
+    selection_mask: SelectionMask,
+
     current_tag: usize,
 
     outline_style: usize,
@@ -208,6 +214,8 @@ impl Default for EditState {
 
         Self {
             screen,
+            selection_opt: None,
+            selection_mask: SelectionMask::default(),
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Vec::new(),
             current_tag: 0,
@@ -240,7 +248,7 @@ impl EditState {
     }
 
     pub fn set_mask_size(&mut self) {
-        self.screen.selection_mask.set_size(self.screen.buffer.size());
+        self.selection_mask.set_size(self.screen.buffer.size());
         self.tool_overlay_mask.set_size(self.screen.buffer.size());
     }
 
@@ -454,7 +462,7 @@ impl EditState {
     }
 
     pub fn copy_text(&self) -> Option<String> {
-        let Some(selection) = &self.screen.selection_opt else {
+        let Some(selection) = &self.selection_opt else {
             return None;
         };
         clipboard::text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
@@ -524,9 +532,12 @@ impl EditState {
         let Ok(mut stack) = self.undo_stack.lock() else {
             return Err(crate::EngineError::Generic("Failed to lock undo stack".to_string()));
         };
+        if op.changes_data() {
+            self.screen.mark_dirty();
+        }
+
         stack.push(op);
         self.redo_stack.clear();
-        self.screen.mark_dirty();
         Ok(())
     }
 
@@ -690,11 +701,11 @@ impl Screen for EditState {
     }
 
     fn selection(&self) -> Option<Selection> {
-        self.screen.selection()
+        self.selection_opt
     }
 
     fn selection_mask(&self) -> &SelectionMask {
-        self.screen.selection_mask()
+        &self.selection_mask
     }
 
     fn hyperlinks(&self) -> &Vec<HyperLink> {
@@ -706,11 +717,13 @@ impl Screen for EditState {
     }
 
     fn copy_text(&self) -> Option<String> {
-        self.screen.copy_text()
+        let selection = self.selection_opt.as_ref()?;
+        clipboard::text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
     }
 
     fn copy_rich_text(&self) -> Option<String> {
-        self.screen.copy_rich_text()
+        let selection = self.selection_opt.as_ref()?;
+        clipboard::get_rich_text(&self.screen.buffer, selection)
     }
 
     fn clipboard_data(&self) -> Option<Vec<u8>> {
@@ -750,11 +763,19 @@ impl Screen for EditState {
     }
 
     fn set_selection(&mut self, sel: Selection) -> Result<()> {
-        self.screen.set_selection(sel)
+        if self.selection_opt.as_ref() != Some(&sel) {
+            self.selection_opt = Some(sel);
+            self.is_buffer_dirty = true;
+        }
+        Ok(())
     }
 
     fn clear_selection(&mut self) -> Result<()> {
-        self.screen.clear_selection()
+        if self.selection_opt.is_some() {
+            self.selection_opt = None;
+            self.is_buffer_dirty = true;
+        }
+        Ok(())
     }
 
     fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {

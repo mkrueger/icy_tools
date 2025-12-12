@@ -16,8 +16,7 @@ pub struct TextScreen {
 
     pub current_layer: usize,
 
-    pub selection_opt: Option<Selection>,
-    pub selection_mask: SelectionMask,
+    selection_opt: Option<Selection>,
     pub mouse_fields: Vec<MouseField>,
 
     pub saved_caret_pos: Position,
@@ -34,7 +33,6 @@ impl TextScreen {
             buffer: TextBuffer::new(size),
             current_layer: 0,
             selection_opt: None,
-            selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
             saved_caret_pos: Position::default(),
             saved_caret_state: SavedCaretState::default(),
@@ -49,7 +47,6 @@ impl TextScreen {
             buffer,
             current_layer: 0,
             selection_opt: None,
-            selection_mask: SelectionMask::default(),
             mouse_fields: Vec::new(),
             saved_caret_pos: Position::default(),
             saved_caret_state: SavedCaretState::default(),
@@ -147,7 +144,9 @@ impl Screen for TextScreen {
     }
 
     fn selection_mask(&self) -> &crate::SelectionMask {
-        &self.selection_mask
+        // Selection mask now managed by EditState
+        static EMPTY_MASK: std::sync::OnceLock<SelectionMask> = std::sync::OnceLock::new();
+        EMPTY_MASK.get_or_init(SelectionMask::default)
     }
 
     fn hyperlinks(&self) -> &Vec<HyperLink> {
@@ -180,7 +179,7 @@ impl Screen for TextScreen {
     }
 
     fn clipboard_data(&self) -> Option<Vec<u8>> {
-        clipboard::clipboard_data(&self.buffer, self.current_layer, &self.selection_mask, &self.selection_opt)
+        clipboard::clipboard_data(&self.buffer, self.current_layer, self.selection_mask(), &self.selection_opt)
     }
 
     fn mouse_fields(&self) -> &Vec<MouseField> {

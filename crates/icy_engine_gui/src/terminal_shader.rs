@@ -129,8 +129,24 @@ struct CRTUniforms {
     layer_enabled: f32,
     /// Padding for 16-byte alignment (must match WGSL struct size)
     _layer_padding: [f32; 3],
-    /// Additional padding to match WGSL struct alignment (WGSL has stricter alignment rules)
-    _struct_end_padding: [f32; 4],
+
+    // Selection uniforms (for highlighting selected area)
+    /// Selection rectangle in pixels (x, y, x+width, y+height) in document space
+    selection_rect: [f32; 4],
+    /// Selection enabled (1.0 = enabled, 0.0 = disabled)
+    selection_enabled: f32,
+    /// Selection mask enabled (1.0 = use texture mask, 0.0 = use rectangle only)
+    selection_mask_enabled: f32,
+    /// Padding for 16-byte alignment
+    _selection_padding: [f32; 2],
+
+    // Font dimensions for selection mask sampling
+    /// Font width in pixels
+    font_width: f32,
+    /// Font height in pixels  
+    font_height: f32,
+    /// Selection mask size in cells (width, height)
+    selection_mask_size: [f32; 2],
 }
 
 /// The terminal shader program (high-level interface)
@@ -219,6 +235,17 @@ pub struct TerminalShader {
     pub layer_color: [f32; 4],
     /// Whether to show layer bounds
     pub show_layer_bounds: bool,
+
+    // Selection rendering
+    /// Selection rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
+    pub selection_rect: Option<[f32; 4]>,
+
+    // Selection mask rendering (for complex non-rectangular selections)
+    /// Selection mask texture data (RGBA bytes), None = no mask
+    /// Each pixel represents one character cell: white = selected, black = not selected
+    pub selection_mask_data: Option<(Vec<u8>, u32, u32)>, // (data, width_in_cells, height_in_cells)
+    /// Font dimensions for selection mask sampling (font_width, font_height in pixels)
+    pub font_dimensions: Option<(f32, f32)>,
 }
 
 /// Texture slice for GPU
@@ -257,6 +284,10 @@ struct InstanceResources {
     reference_image_texture: Option<TextureSlice>,
     /// Hash of reference image data for cache validation
     reference_image_hash: u64,
+    /// Selection mask texture (optional)
+    selection_mask_texture: Option<TextureSlice>,
+    /// Hash of selection mask data for cache validation
+    selection_mask_hash: u64,
 }
 
 /// The terminal shader renderer (GPU pipeline) with multi-texture support
@@ -335,6 +366,18 @@ impl shader::Pipeline for TerminalShaderRenderer {
         // Reference image texture at binding 6
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 3) as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Texture {
+                multisampled: false,
+                view_dimension: iced::wgpu::TextureViewDimension::D2,
+                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        });
+
+        // Selection mask texture at binding 7
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 4) as u32,
             visibility: iced::wgpu::ShaderStages::FRAGMENT,
             ty: iced::wgpu::BindingType::Texture {
                 multisampled: false,
@@ -459,6 +502,25 @@ impl TerminalShader {
         }
         hasher.finish()
     }
+
+    /// Compute a hash for selection mask data
+    fn compute_selection_mask_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        match data {
+            Some((bytes, w, h)) => {
+                // Use data content for hash (selection changes frequently)
+                bytes.hash(&mut hasher);
+                w.hash(&mut hasher);
+                h.hash(&mut hasher);
+            }
+            None => {
+                0u64.hash(&mut hasher);
+            }
+        }
+        hasher.finish()
+    }
 }
 
 impl shader::Primitive for TerminalShader {
@@ -513,14 +575,26 @@ impl shader::Primitive for TerminalShader {
 
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
-            None => true,
+            None => {
+                println!("[TEXTURE] needs_recreate: true (no existing instance)");
+                true
+            }
             Some(resources) => {
                 // Recreate if any structural parameter changed or if either blink state data changed
-                resources.texture_data_hash_blink_off != hash_blink_off
-                    || resources.texture_data_hash_blink_on != hash_blink_on
-                    || resources.num_slices != num_slices
-                    || resources.texture_width != texture_width
-                    || resources.total_height != total_height
+                let hash_off_changed = resources.texture_data_hash_blink_off != hash_blink_off;
+                let hash_on_changed = resources.texture_data_hash_blink_on != hash_blink_on;
+                let slices_changed = resources.num_slices != num_slices;
+                let width_changed = resources.texture_width != texture_width;
+                let height_changed = resources.total_height != total_height;
+
+                if hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed {
+                    println!(
+                        "[TEXTURE] needs_recreate: hash_off={} hash_on={} slices={} width={} height={}",
+                        hash_off_changed, hash_on_changed, slices_changed, width_changed, height_changed
+                    );
+                }
+
+                hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed
             }
         };
 
@@ -600,8 +674,12 @@ impl shader::Primitive for TerminalShader {
             });
 
             // Helper to create bind group for a set of GPU slices
-            let create_bind_group = |gpu_slices: &[TextureSlice], ref_image_view: &iced::wgpu::TextureView, label: &str| -> iced::wgpu::BindGroup {
-                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
+            let create_bind_group = |gpu_slices: &[TextureSlice],
+                                     ref_image_view: &iced::wgpu::TextureView,
+                                     sel_mask_view: &iced::wgpu::TextureView,
+                                     label: &str|
+             -> iced::wgpu::BindGroup {
+                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
 
                 // Add texture bindings (0-2), using dummy for unused slots
                 for i in 0..MAX_TEXTURE_SLICES {
@@ -640,6 +718,12 @@ impl shader::Primitive for TerminalShader {
                     resource: iced::wgpu::BindingResource::TextureView(ref_image_view),
                 });
 
+                // Selection mask at binding 7
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 4) as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                });
+
                 device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
                     layout: &pipeline.bind_group_layout,
@@ -647,9 +731,9 @@ impl shader::Primitive for TerminalShader {
                 })
             };
 
-            // Create bind groups for both blink states (using dummy for reference image initially)
-            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, &pipeline.dummy_texture_view, "BlinkOff");
-            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, &pipeline.dummy_texture_view, "BlinkOn");
+            // Create bind groups for both blink states (using dummy for reference image and selection mask initially)
+            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, &pipeline.dummy_texture_view, &pipeline.dummy_texture_view, "BlinkOff");
+            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, &pipeline.dummy_texture_view, &pipeline.dummy_texture_view, "BlinkOn");
 
             pipeline.instances.insert(
                 id,
@@ -667,6 +751,8 @@ impl shader::Primitive for TerminalShader {
                     texture_data_hash_blink_on: hash_blink_on,
                     reference_image_texture: None,
                     reference_image_hash: 0,
+                    selection_mask_texture: None,
+                    selection_mask_hash: 0,
                 },
             );
         }
@@ -735,8 +821,12 @@ impl shader::Primitive for TerminalShader {
                 }
 
                 // Helper to create bind group
-                let create_bind_group = |gpu_slices: &[TextureSlice], ref_view: &iced::wgpu::TextureView, label: &str| -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
+                let create_bind_group = |gpu_slices: &[TextureSlice],
+                                         ref_view: &iced::wgpu::TextureView,
+                                         sel_mask_view: &iced::wgpu::TextureView,
+                                         label: &str|
+                 -> iced::wgpu::BindGroup {
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
 
                     for i in 0..MAX_TEXTURE_SLICES {
                         let view = if i < gpu_slices.len() {
@@ -770,6 +860,11 @@ impl shader::Primitive for TerminalShader {
                         resource: iced::wgpu::BindingResource::TextureView(ref_view),
                     });
 
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                    });
+
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
                         layout: &pipeline.bind_group_layout,
@@ -783,9 +878,146 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, "BlinkOn");
+                let sel_mask_view = resources
+                    .selection_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, "BlinkOn");
                 resources.reference_image_hash = ref_image_hash;
+            }
+        }
+
+        // Check if selection mask changed and needs update
+        let sel_mask_hash = Self::compute_selection_mask_hash(&self.selection_mask_data);
+        let needs_sel_mask_update = match pipeline.instances.get(&id) {
+            Some(resources) => resources.selection_mask_hash != sel_mask_hash,
+            None => false,
+        };
+
+        if needs_sel_mask_update {
+            if let Some(resources) = pipeline.instances.get_mut(&id) {
+                // Create or update selection mask texture
+                if let Some((data, width, height)) = &self.selection_mask_data {
+                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
+                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
+
+                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        label: Some(&format!("Selection Mask Instance {}", id)),
+                        size: iced::wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: iced::wgpu::TextureDimension::D2,
+                        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+
+                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                    // Write mask data to texture
+                    if !data.is_empty() {
+                        queue.write_texture(
+                            iced::wgpu::TexelCopyTextureInfo {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: iced::wgpu::Origin3d::ZERO,
+                                aspect: iced::wgpu::TextureAspect::All,
+                            },
+                            data,
+                            iced::wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(4 * w),
+                                rows_per_image: Some(h),
+                            },
+                            iced::wgpu::Extent3d {
+                                width: w,
+                                height: h,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+
+                    resources.selection_mask_texture = Some(TextureSlice {
+                        texture,
+                        texture_view,
+                        height: h,
+                    });
+                } else {
+                    resources.selection_mask_texture = None;
+                }
+
+                // Helper to create bind group
+                let create_bind_group = |gpu_slices: &[TextureSlice],
+                                         ref_view: &iced::wgpu::TextureView,
+                                         sel_mask_view: &iced::wgpu::TextureView,
+                                         label: &str|
+                 -> iced::wgpu::BindGroup {
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
+
+                    for i in 0..MAX_TEXTURE_SLICES {
+                        let view = if i < gpu_slices.len() {
+                            &gpu_slices[i].texture_view
+                        } else {
+                            &pipeline.dummy_texture_view
+                        };
+                        bind_entries.push(iced::wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: iced::wgpu::BindingResource::TextureView(view),
+                        });
+                    }
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: MAX_TEXTURE_SLICES as u32,
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                        resource: resources.uniform_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                        resource: resources.monitor_color_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                    });
+
+                    device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
+                        layout: &pipeline.bind_group_layout,
+                        entries: &bind_entries,
+                    })
+                };
+
+                // Recreate bind groups with new selection mask
+                let ref_view = resources
+                    .reference_image_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                let sel_mask_view = resources
+                    .selection_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, "BlinkOn");
+                resources.selection_mask_hash = sel_mask_hash;
             }
         }
 
@@ -941,7 +1173,25 @@ impl shader::Primitive for TerminalShader {
             layer_color: self.layer_color,
             layer_enabled: if self.layer_rect.is_some() { 1.0 } else { 0.0 },
             _layer_padding: [0.0; 3],
-            _struct_end_padding: [0.0; 4],
+
+            // Selection uniforms
+            selection_rect: self.selection_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
+            selection_enabled: if self.selection_rect.is_some() || self.selection_mask_data.is_some() {
+                1.0
+            } else {
+                0.0
+            },
+            selection_mask_enabled: if self.selection_mask_data.is_some() { 1.0 } else { 0.0 },
+            _selection_padding: [0.0; 2],
+
+            // Font dimensions for selection mask
+            font_width: self.font_dimensions.map(|(w, _)| w).unwrap_or(8.0),
+            font_height: self.font_dimensions.map(|(_, h)| h).unwrap_or(16.0),
+            selection_mask_size: if let Some((_, w, h)) = &self.selection_mask_data {
+                [*w as f32, *h as f32]
+            } else {
+                [1.0, 1.0]
+            },
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };

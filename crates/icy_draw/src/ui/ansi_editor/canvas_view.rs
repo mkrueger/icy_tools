@@ -209,6 +209,22 @@ impl CanvasView {
         markers.show_layer_bounds = show;
     }
 
+    /// Set the selection rectangle for shader rendering (in pixels)
+    /// bounds: (x, y, width, height) in document pixels
+    pub fn set_selection(&mut self, bounds: Option<(f32, f32, f32, f32)>) {
+        let mut markers = self.terminal.markers.write();
+        markers.selection_rect = bounds;
+    }
+
+    /// Set the selection mask for complex (non-rectangular) selections
+    /// mask_data: (RGBA texture data, width in cells, height in cells)
+    /// font_dimensions: (font_width, font_height) in pixels
+    pub fn set_selection_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, font_dimensions: Option<(f32, f32)>) {
+        let mut markers = self.terminal.markers.write();
+        markers.selection_mask_data = mask_data;
+        markers.font_dimensions = font_dimensions;
+    }
+
     /// Set or update the reference image
     /// The image will be loaded and displayed as an overlay
     pub fn set_reference_image(&mut self, path: Option<std::path::PathBuf>, alpha: f32) {

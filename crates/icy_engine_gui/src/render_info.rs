@@ -86,4 +86,23 @@ impl RenderInfo {
 
         Some((cell_x, cell_y))
     }
+
+    /// Convert screen coordinates to terminal-local pixel coordinates for dragging.
+    /// Unlike screen_to_terminal_pixels, this allows coordinates outside the viewport
+    /// for smooth drag operations that extend beyond the canvas bounds.
+    pub fn screen_to_terminal_pixels_unclamped(&self, screen_x: f32, screen_y: f32) -> (f32, f32) {
+        // Convert to widget-local coordinates
+        let local_x = screen_x - self.bounds_x;
+        let local_y = screen_y - self.bounds_y;
+
+        // Calculate position relative to viewport (can be negative or > viewport size)
+        let vp_local_x = local_x - self.viewport_x;
+        let vp_local_y = local_y - self.viewport_y;
+
+        // Convert from screen pixels to terminal pixels (no bounds check)
+        let term_x = vp_local_x / self.display_scale.max(0.001);
+        let term_y = vp_local_y / self.display_scale.max(0.001);
+
+        (term_x, term_y)
+    }
 }

@@ -5,10 +5,62 @@
 
 use iced::{
     Element, Length, Task,
-    widget::{Space, button, container, row, text, toggler},
+    widget::{Space, button, container, radio, row, text, toggler},
 };
 
 use super::tools::Tool;
+
+/// Selection mode for the select tool
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SelectionMode {
+    /// Normal rectangle selection
+    #[default]
+    Normal,
+    /// Select all cells with the same character
+    Character,
+    /// Select all cells with the same attribute
+    Attribute,
+    /// Select all cells with the same foreground color
+    Foreground,
+    /// Select all cells with the same background color
+    Background,
+}
+
+/// Selection modifier based on keyboard modifiers
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SelectionModifier {
+    /// Replace the selection
+    #[default]
+    Replace,
+    /// Add to the selection (Shift)
+    Add,
+    /// Remove from the selection (Ctrl/Cmd)
+    Remove,
+}
+
+impl SelectionModifier {
+    /// Get the response for a selection check
+    /// Returns Some(true) to select, Some(false) to deselect, None to keep
+    pub fn get_response(&self, matches: bool) -> Option<bool> {
+        match self {
+            SelectionModifier::Replace => Some(matches),
+            SelectionModifier::Add => {
+                if matches {
+                    Some(true)
+                } else {
+                    None
+                }
+            }
+            SelectionModifier::Remove => {
+                if matches {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
 
 /// Messages from the top toolbar
 #[derive(Clone, Debug)]
@@ -41,6 +93,8 @@ pub enum TopToolbarMessage {
     NextFKeyPage,
     /// Navigate F-key page
     PrevFKeyPage,
+    /// Set selection mode
+    SetSelectionMode(SelectionMode),
 }
 
 /// Brush mode options
@@ -61,6 +115,7 @@ pub struct BrushOptions {
 pub struct SelectOptions {
     pub current_fkey_page: usize,
     pub selected_fkey: usize,
+    pub selection_mode: SelectionMode,
 }
 
 /// Top toolbar state
@@ -116,6 +171,9 @@ impl TopToolbar {
             TopToolbarMessage::PrevFKeyPage => {
                 self.select_options.current_fkey_page = (self.select_options.current_fkey_page + 9) % 10;
             }
+            TopToolbarMessage::SetSelectionMode(mode) => {
+                self.select_options.selection_mode = mode;
+            }
         }
         Task::none()
     }
@@ -143,32 +201,32 @@ impl TopToolbar {
             .into()
     }
 
-    /// Selection tool panel with F-key slots
+    /// Selection tool panel with selection mode options
     fn view_select_panel(&self) -> Element<'_, TopToolbarMessage> {
-        let fkey_buttons: Vec<Element<'_, TopToolbarMessage>> = (1..=12)
-            .map(|i| {
-                let label = format!("F{}", i);
-                let is_selected = self.select_options.selected_fkey == i - 1;
-                let btn = button(text(label).size(11)).on_press(TopToolbarMessage::SelectFKeySlot(i - 1)).padding(2);
+        let mode = self.select_options.selection_mode;
 
-                if is_selected {
-                    btn.style(iced::widget::button::primary).into()
-                } else {
-                    btn.style(iced::widget::button::secondary).into()
-                }
-            })
-            .collect();
-
-        let page_nav = row![
-            button(text("<").size(12)).on_press(TopToolbarMessage::PrevFKeyPage).padding(2),
-            text(format!("{}", self.select_options.current_fkey_page)).size(12),
-            button(text(">").size(12)).on_press(TopToolbarMessage::NextFKeyPage).padding(2),
+        row![
+            text("Mode:").size(11),
+            radio("Rectangle", SelectionMode::Normal, Some(mode), TopToolbarMessage::SetSelectionMode)
+                .size(14)
+                .text_size(11),
+            radio("Character", SelectionMode::Character, Some(mode), TopToolbarMessage::SetSelectionMode)
+                .size(14)
+                .text_size(11),
+            radio("Attribute", SelectionMode::Attribute, Some(mode), TopToolbarMessage::SetSelectionMode)
+                .size(14)
+                .text_size(11),
+            radio("Foreground", SelectionMode::Foreground, Some(mode), TopToolbarMessage::SetSelectionMode)
+                .size(14)
+                .text_size(11),
+            radio("Background", SelectionMode::Background, Some(mode), TopToolbarMessage::SetSelectionMode)
+                .size(14)
+                .text_size(11),
+            Space::new().width(Length::Fixed(16.0)),
+            text("⇧: add  ⌘/Ctrl: remove").size(10),
         ]
-        .spacing(4);
-
-        row![row(fkey_buttons).spacing(2), Space::new().width(Length::Fixed(16.0)), page_nav,]
-            .spacing(8)
-            .into()
+        .spacing(8)
+        .into()
     }
 
     /// Brush tool panel

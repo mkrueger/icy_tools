@@ -61,7 +61,7 @@ impl EditState {
             let op = Paste::new(self.get_current_layer()?, layer);
             self.push_undo_action(Box::new(op))?;
         }
-        self.screen.selection_opt = None;
+        self.selection_opt = None;
         Ok(())
     }
 
@@ -81,7 +81,7 @@ impl EditState {
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;
-        self.screen.selection_opt = None;
+        self.selection_opt = None;
         Ok(())
     }
 
@@ -108,7 +108,7 @@ impl EditState {
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;
-        self.screen.selection_opt = None;
+        self.selection_opt = None;
         Ok(())
     }
 

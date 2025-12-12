@@ -51,6 +51,9 @@ undo-remove-tag=Remove Tag
 undo-add-tag=Add Tag
 undo-clone-tag=Clone Tag
 undo-show-tags=Show Tags
+undo-type_char=Type
+undo-backspace=Backspace
+undo-delete=Delete
 
 layer-duplicate-name={ $name } copy
 layer-new-name=Layer

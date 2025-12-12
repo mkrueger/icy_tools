@@ -66,11 +66,21 @@ use iced::{
     widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{Screen, TextBuffer, TextPane};
+use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::Mutex;
 
 use crate::ui::SharedOptions;
+
+/// Convert icy_engine MouseButton to iced mouse button
+fn convert_mouse_button(button: MouseButton) -> iced::mouse::Button {
+    match button {
+        MouseButton::Left => iced::mouse::Button::Left,
+        MouseButton::Right => iced::mouse::Button::Right,
+        MouseButton::Middle => iced::mouse::Button::Middle,
+        _ => iced::mouse::Button::Left, // Default to left for other buttons
+    }
+}
 
 /// Messages for the ANSI editor
 #[derive(Clone, Debug)]
@@ -139,13 +149,57 @@ pub enum AnsiEditorMessage {
     ToggleLayerBorders,
 }
 
-/// Mouse events on the canvas
+/// Mouse events on the canvas (using text/buffer coordinates)
 #[derive(Clone, Debug)]
 pub enum CanvasMouseEvent {
-    Press { position: iced::Point, button: iced::mouse::Button },
-    Release { position: iced::Point, button: iced::mouse::Button },
-    Move { position: iced::Point },
-    Scroll { delta: iced::mouse::ScrollDelta },
+    Press {
+        position: icy_engine::Position,
+        button: iced::mouse::Button,
+        modifiers: icy_engine::KeyModifiers,
+    },
+    Release {
+        position: icy_engine::Position,
+        button: iced::mouse::Button,
+    },
+    Move {
+        position: icy_engine::Position,
+    },
+    Scroll {
+        delta: iced::mouse::ScrollDelta,
+    },
+}
+
+/// Selection drag mode - determines what part of selection is being dragged
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+pub enum SelectionDrag {
+    #[default]
+    None,
+    /// Create new selection
+    Create,
+    /// Move existing selection
+    Move,
+    /// Resize from edges/corners
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+/// Drag position tracking for mouse operations
+#[derive(Default, Clone, Copy, Debug)]
+pub struct DragPos {
+    /// Start position in buffer coordinates
+    pub start: icy_engine::Position,
+    /// Current position in buffer coordinates
+    pub cur: icy_engine::Position,
+    /// Start position absolute (including scroll offset)
+    pub start_abs: icy_engine::Position,
+    /// Current position absolute (including scroll offset)
+    pub cur_abs: icy_engine::Position,
 }
 
 /// The main ANSI editor component
@@ -175,6 +229,16 @@ pub struct AnsiEditor {
     pub options: Arc<Mutex<SharedOptions>>,
     /// Whether the document is modified
     pub is_modified: bool,
+
+    // === Selection/Drag State ===
+    /// Current drag positions for mouse operations
+    pub drag_pos: DragPos,
+    /// Whether mouse is currently dragging
+    pub is_dragging: bool,
+    /// Current selection drag mode
+    pub selection_drag: SelectionDrag,
+    /// Selection state at start of drag (for resize operations)
+    pub start_selection: Option<icy_engine::Rectangle>,
 
     // === Marker/Guide State ===
     /// Guide position in characters (e.g. 80x25 for a smallscale boundary)
@@ -260,6 +324,11 @@ impl AnsiEditor {
             right_panel: RightPanel::new(),
             options,
             is_modified: false,
+            // Selection/drag state
+            drag_pos: DragPos::default(),
+            is_dragging: false,
+            selection_drag: SelectionDrag::None,
+            start_selection: None,
             // Marker/guide state - disabled by default
             guide: None,
             show_guide: false,
@@ -317,6 +386,20 @@ impl AnsiEditor {
             .downcast_mut::<EditState>()
             .expect("AnsiEditor screen should always be EditState");
         f(edit_state)
+    }
+
+    /// Get the character at the given position from the current layer
+    fn get_char_at(&self, pos: icy_engine::Position) -> icy_engine::AttributedChar {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Some(cur_layer) = edit_state.get_cur_layer() {
+                cur_layer.char_at(pos - cur_layer.offset())
+            } else {
+                icy_engine::AttributedChar::invisible()
+            }
+        } else {
+            icy_engine::AttributedChar::invisible()
+        }
     }
 
     /// Get undo stack length for dirty tracking
@@ -441,7 +524,41 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::Canvas(msg) => self.canvas.update(msg).map(AnsiEditorMessage::Canvas),
+            AnsiEditorMessage::Canvas(msg) => {
+                // Intercept terminal mouse events and forward to tool handling
+                match &msg {
+                    CanvasMessage::TerminalMessage(terminal_msg) => match terminal_msg {
+                        icy_engine_gui::Message::Press(evt) => {
+                            if let Some(text_pos) = evt.text_position {
+                                let event = CanvasMouseEvent::Press {
+                                    position: text_pos,
+                                    button: convert_mouse_button(evt.button),
+                                    modifiers: evt.modifiers.clone(),
+                                };
+                                self.handle_canvas_mouse_event(event);
+                            }
+                        }
+                        icy_engine_gui::Message::Release(evt) => {
+                            if let Some(text_pos) = evt.text_position {
+                                let event = CanvasMouseEvent::Release {
+                                    position: text_pos,
+                                    button: convert_mouse_button(evt.button),
+                                };
+                                self.handle_canvas_mouse_event(event);
+                            }
+                        }
+                        icy_engine_gui::Message::Move(evt) | icy_engine_gui::Message::Drag(evt) => {
+                            if let Some(text_pos) = evt.text_position {
+                                let event = CanvasMouseEvent::Move { position: text_pos };
+                                self.handle_canvas_mouse_event(event);
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+                self.canvas.update(msg).map(AnsiEditorMessage::Canvas)
+            }
             AnsiEditorMessage::RightPanel(msg) => {
                 // Handle minimap click-to-navigate before passing to right_panel
                 if let RightPanelMessage::Minimap(ref minimap_msg) = msg {
@@ -745,7 +862,7 @@ impl AnsiEditor {
         // Get current layer info from EditState
         let layer_bounds = {
             let mut screen = self.screen.lock();
-            
+
             // Get font dimensions for pixel conversion
             let font = screen.font(0);
             let (font_width, font_height) = if let Some(f) = font {
@@ -754,7 +871,7 @@ impl AnsiEditor {
             } else {
                 (8.0, 16.0) // Default fallback
             };
-            
+
             // Access the EditState to get buffer and current layer
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                 let buffer = edit_state.get_buffer();
@@ -764,13 +881,13 @@ impl AnsiEditor {
                         let size = layer.size();
                         let width = size.width;
                         let height = size.height;
-                        
+
                         // Convert to pixels
                         let x = offset.x as f32 * font_width;
                         let y = offset.y as f32 * font_height;
                         let w = width as f32 * font_width;
                         let h = height as f32 * font_height;
-                        
+
                         Some((x, y, w, h))
                     } else {
                         None
@@ -782,9 +899,94 @@ impl AnsiEditor {
                 None
             }
         };
-        
+
         self.canvas.set_layer_bounds(layer_bounds, true);
-    }    /// Set or update the reference image
+    }
+
+    /// Update the selection display in the shader
+    fn update_selection_display(&mut self) {
+        // Get selection from EditState and convert to pixel coordinates
+        let (selection_rect, selection_mask_data, font_dimensions) = {
+            let mut screen = self.screen.lock();
+
+            // Get font dimensions for pixel conversion
+            let font = screen.font(0);
+            let (font_width, font_height) = if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0) // Default fallback
+            };
+
+            // Access the EditState to get selection
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                // Get the selection mask
+                let selection_mask = edit_state.selection_mask();
+                let selection = edit_state.selection();
+
+                // Check if selection mask has content
+                if !selection_mask.is_empty() {
+                    // Generate texture data from selection mask
+                    let mask_rect = selection_mask.selected_rectangle(&selection);
+                    let width = (mask_rect.width() + 1).max(1) as u32;
+                    let height = (mask_rect.height() + 1).max(1) as u32;
+
+                    // Create RGBA texture data (4 bytes per pixel)
+                    let mut rgba_data = vec![0u8; (width * height * 4) as usize];
+
+                    for y in 0..height {
+                        for x in 0..width {
+                            let doc_x = mask_rect.left() + x as i32;
+                            let doc_y = mask_rect.top() + y as i32;
+
+                            let is_selected = selection_mask.selected_in_selection(icy_engine::Position::new(doc_x, doc_y), &selection);
+
+                            let pixel_idx = ((y * width + x) * 4) as usize;
+                            if is_selected {
+                                // White = selected
+                                rgba_data[pixel_idx] = 255;
+                                rgba_data[pixel_idx + 1] = 255;
+                                rgba_data[pixel_idx + 2] = 255;
+                                rgba_data[pixel_idx + 3] = 255;
+                            } else {
+                                // Black = not selected
+                                rgba_data[pixel_idx] = 0;
+                                rgba_data[pixel_idx + 1] = 0;
+                                rgba_data[pixel_idx + 2] = 0;
+                                rgba_data[pixel_idx + 3] = 255;
+                            }
+                        }
+                    }
+
+                    // Convert selection rectangle to pixel coordinates for bounds
+                    let x = mask_rect.left() as f32 * font_width;
+                    let y = mask_rect.top() as f32 * font_height;
+                    let w = width as f32 * font_width;
+                    let h = height as f32 * font_height;
+
+                    (Some((x, y, w, h)), Some((rgba_data, width, height)), Some((font_width, font_height)))
+                } else if let Some(sel) = selection {
+                    // No mask, but have selection rectangle
+                    let rect = sel.as_rectangle();
+                    let x = rect.left() as f32 * font_width;
+                    let y = rect.top() as f32 * font_height;
+                    let w = (rect.width() + 1) as f32 * font_width;
+                    let h = (rect.height() + 1) as f32 * font_height;
+
+                    (Some((x, y, w, h)), None, Some((font_width, font_height)))
+                } else {
+                    (None, None, None)
+                }
+            } else {
+                (None, None, None)
+            }
+        };
+
+        self.canvas.set_selection(selection_rect);
+        self.canvas.set_selection_mask(selection_mask_data, font_dimensions);
+    }
+
+    /// Set or update the reference image
     pub fn set_reference_image(&mut self, path: Option<PathBuf>, alpha: f32) {
         self.canvas.set_reference_image(path, alpha);
     }
@@ -796,8 +998,11 @@ impl AnsiEditor {
 
     /// Handle key press events
     fn handle_key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
-        // Check for tool shortcuts (single character keys)
-        if !modifiers.control() && !modifiers.alt() {
+        // Click and Font tools handle character input directly, skip tool shortcuts
+        let skip_tool_shortcuts = matches!(self.current_tool, Tool::Click | Tool::Font);
+
+        // Check for tool shortcuts (single character keys) - but not when in text input mode
+        if !skip_tool_shortcuts && !modifiers.control() && !modifiers.alt() {
             if let iced::keyboard::Key::Character(c) = &key {
                 if let Some(ch) = c.chars().next() {
                     // Find tool with this shortcut
@@ -825,7 +1030,6 @@ impl AnsiEditor {
     /// Handle tool-specific key events based on current tool
     fn handle_tool_key(&mut self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
         use iced::keyboard::key::Named;
-
         match self.current_tool {
             Tool::Click | Tool::Font => {
                 // Handle typing and cursor movement
@@ -833,29 +1037,105 @@ impl AnsiEditor {
                     iced::keyboard::Key::Character(c) => {
                         if !modifiers.control() && !modifiers.alt() {
                             if let Some(ch) = c.chars().next() {
-                                // Type character at cursor
-                                // TODO: Actually insert into buffer
-                                let _ = ch;
+                                // Convert Unicode to CP437 for ANSI art
+                                let cp437_char = self.with_edit_state(|state| state.get_buffer().buffer_type.convert_from_unicode(ch));
+                                // Type character at cursor using terminal_input
+                                let result = self.with_edit_state(|state| state.type_key(cp437_char));
+                                if let Err(e) = result {
+                                    log::warn!("Failed to type character: {}", e);
+                                }
                                 return ToolEvent::Commit("Type character".to_string());
                             }
                         }
                     }
                     iced::keyboard::Key::Named(named) => {
-                        self.with_edit_state(|state| {
-                            let buffer_width = state.get_buffer().width();
-                            match named {
-                                Named::ArrowUp => state.move_caret_up(1),
-                                Named::ArrowDown => state.move_caret_down(1),
-                                Named::ArrowLeft => state.move_caret_left(1),
-                                Named::ArrowRight => state.move_caret_right(1),
-                                Named::Home => state.set_caret_x(0),
-                                Named::End => state.set_caret_x(buffer_width - 1),
-                                Named::PageUp => state.move_caret_up(24),
-                                Named::PageDown => state.move_caret_down(24),
-                                _ => {}
+                        match named {
+                            // Cursor movement
+                            Named::ArrowUp => {
+                                self.with_edit_state(|state| state.move_caret_up(1));
+                                return ToolEvent::Redraw;
                             }
-                        });
-                        return ToolEvent::Redraw;
+                            Named::ArrowDown => {
+                                self.with_edit_state(|state| state.move_caret_down(1));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::ArrowLeft => {
+                                self.with_edit_state(|state| state.move_caret_left(1));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::ArrowRight => {
+                                self.with_edit_state(|state| state.move_caret_right(1));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::Home => {
+                                self.with_edit_state(|state| state.set_caret_x(0));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::End => {
+                                let width = self.with_edit_state(|state| state.get_buffer().width());
+                                self.with_edit_state(|state| state.set_caret_x(width - 1));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::PageUp => {
+                                self.with_edit_state(|state| state.move_caret_up(24));
+                                return ToolEvent::Redraw;
+                            }
+                            Named::PageDown => {
+                                self.with_edit_state(|state| state.move_caret_down(24));
+                                return ToolEvent::Redraw;
+                            }
+                            // Text editing
+                            Named::Backspace => {
+                                let result = self.with_edit_state(|state| state.backspace());
+                                if let Err(e) = result {
+                                    log::warn!("Failed to backspace: {}", e);
+                                }
+                                return ToolEvent::Commit("Backspace".to_string());
+                            }
+                            Named::Delete => {
+                                let result = self.with_edit_state(|state| state.delete_key());
+                                if let Err(e) = result {
+                                    log::warn!("Failed to delete: {}", e);
+                                }
+                                return ToolEvent::Commit("Delete".to_string());
+                            }
+                            Named::Enter => {
+                                let result = self.with_edit_state(|state| state.new_line());
+                                if let Err(e) = result {
+                                    log::warn!("Failed to new line: {}", e);
+                                }
+                                return ToolEvent::Commit("New line".to_string());
+                            }
+                            Named::Tab => {
+                                if modifiers.shift() {
+                                    self.with_edit_state(|state| state.handle_reverse_tab());
+                                } else {
+                                    self.with_edit_state(|state| state.handle_tab());
+                                }
+                                return ToolEvent::Redraw;
+                            }
+                            Named::Insert => {
+                                self.with_edit_state(|state| state.toggle_insert_mode());
+                                return ToolEvent::Redraw;
+                            }
+                            Named::Space => {
+                                // Space is a named key in iced, treat as character input
+                                let result = self.with_edit_state(|state| state.type_key(' '));
+                                if let Err(e) = result {
+                                    log::warn!("Failed to type space: {}", e);
+                                }
+                                return ToolEvent::Commit("Type character".to_string());
+                            }
+                            Named::Escape => {
+                                // Clear selection
+                                self.with_edit_state(|state| {
+                                    let _ = state.clear_selection();
+                                });
+                                self.update_selection_display();
+                                return ToolEvent::Redraw;
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }
@@ -869,29 +1149,22 @@ impl AnsiEditor {
 
     /// Handle canvas mouse events by forwarding to current tool
     fn handle_canvas_mouse_event(&mut self, event: CanvasMouseEvent) {
-        use icy_engine::Position;
-
-        // Convert screen position to buffer position
-        // TODO: Use actual terminal rendering info for accurate conversion
-        let to_buffer_pos = |point: iced::Point| -> Position {
-            // Approximate conversion - should use render_info from terminal
-            Position::new(point.x as i32 / 8, point.y as i32 / 16)
-        };
-
+        // Position is already in text/buffer coordinates from TerminalMouseEvent
         match event {
-            CanvasMouseEvent::Press { position, button: _ } => {
-                let pos = to_buffer_pos(position);
-                let tool_event = self.handle_tool_mouse_down(pos);
+            CanvasMouseEvent::Press {
+                position,
+                button: _,
+                modifiers,
+            } => {
+                let tool_event = self.handle_tool_mouse_down(position, modifiers);
                 self.handle_tool_event(tool_event);
             }
             CanvasMouseEvent::Release { position, button: _ } => {
-                let pos = to_buffer_pos(position);
-                let tool_event = self.handle_tool_mouse_up(pos);
+                let tool_event = self.handle_tool_mouse_up(position);
                 self.handle_tool_event(tool_event);
             }
             CanvasMouseEvent::Move { position } => {
-                let pos = to_buffer_pos(position);
-                let tool_event = self.handle_tool_mouse_move(pos);
+                let tool_event = self.handle_tool_mouse_move(position);
                 self.handle_tool_event(tool_event);
             }
             CanvasMouseEvent::Scroll { delta } => match delta {
@@ -906,15 +1179,104 @@ impl AnsiEditor {
     }
 
     /// Handle mouse down based on current tool
-    fn handle_tool_mouse_down(&mut self, pos: icy_engine::Position) -> ToolEvent {
+    fn handle_tool_mouse_down(&mut self, pos: icy_engine::Position, modifiers: icy_engine::KeyModifiers) -> ToolEvent {
         match self.current_tool {
-            Tool::Click => {
-                // Move cursor to clicked position
-                self.with_edit_state(|state| state.set_caret_position(pos));
+            Tool::Click | Tool::Font => {
+                // Check if clicking inside existing selection for drag/resize
+                let selection_drag = self.get_selection_drag_at(pos);
+
+                if selection_drag != SelectionDrag::None {
+                    // Start dragging existing selection
+                    self.selection_drag = selection_drag;
+                    self.is_dragging = true;
+                    self.drag_pos.start = pos;
+                    self.drag_pos.cur = pos;
+                    self.drag_pos.start_abs = pos;
+                    self.drag_pos.cur_abs = pos;
+
+                    // Save selection state for resize operations
+                    self.start_selection = self.with_edit_state(|state| state.selection().map(|s| s.as_rectangle()));
+                } else {
+                    // Clear selection and move cursor, or start new selection
+                    self.with_edit_state(|state| {
+                        let _ = state.clear_selection();
+                        state.set_caret_position(pos);
+                    });
+                    self.update_selection_display();
+
+                    // Start new selection drag
+                    self.selection_drag = SelectionDrag::Create;
+                    self.is_dragging = true;
+                    self.drag_pos.start = pos;
+                    self.drag_pos.cur = pos;
+                    self.drag_pos.start_abs = pos;
+                    self.drag_pos.cur_abs = pos;
+                    self.start_selection = None;
+                }
                 ToolEvent::Redraw
             }
             Tool::Select => {
-                // Start selection - TODO: implement selection in EditState
+                use crate::ui::ansi_editor::top_toolbar::{SelectionMode, SelectionModifier};
+                let selection_mode = self.top_toolbar.select_options.selection_mode;
+
+                // Determine modifier from keyboard state
+                let selection_modifier = if modifiers.shift {
+                    SelectionModifier::Add
+                } else if modifiers.ctrl || modifiers.meta {
+                    SelectionModifier::Remove
+                } else {
+                    SelectionModifier::Replace
+                };
+
+                match selection_mode {
+                    SelectionMode::Normal => {
+                        // Rectangle selection tool - always create selection
+                        self.selection_drag = SelectionDrag::Create;
+                        self.is_dragging = true;
+                        self.drag_pos.start = pos;
+                        self.drag_pos.cur = pos;
+                        self.drag_pos.start_abs = pos;
+                        self.drag_pos.cur_abs = pos;
+                        self.start_selection = None;
+
+                        // Only clear if not adding/removing
+                        if selection_modifier == SelectionModifier::Replace {
+                            self.with_edit_state(|state| {
+                                let _ = state.clear_selection();
+                            });
+                        }
+                        self.update_selection_display();
+                    }
+                    SelectionMode::Character => {
+                        // Get character at clicked position
+                        let cur_ch = self.get_char_at(pos);
+                        self.with_edit_state(|state| {
+                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.ch == cur_ch.ch));
+                        });
+                        self.update_selection_display();
+                    }
+                    SelectionMode::Attribute => {
+                        let cur_ch = self.get_char_at(pos);
+                        self.with_edit_state(|state| {
+                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute == cur_ch.attribute));
+                        });
+                        self.update_selection_display();
+                    }
+                    SelectionMode::Foreground => {
+                        let cur_ch = self.get_char_at(pos);
+                        self.with_edit_state(|state| {
+                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute.foreground() == cur_ch.attribute.foreground()));
+                        });
+                        self.update_selection_display();
+                    }
+                    SelectionMode::Background => {
+                        let cur_ch = self.get_char_at(pos);
+                        self.with_edit_state(|state| {
+                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute.background() == cur_ch.attribute.background()));
+                        });
+                        self.update_selection_display();
+                    }
+                }
                 ToolEvent::Redraw
             }
             Tool::Pencil | Tool::Brush => {
@@ -937,8 +1299,28 @@ impl AnsiEditor {
 
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position) -> ToolEvent {
+        if self.is_dragging {
+            self.is_dragging = false;
+
+            // Finalize selection
+            if self.selection_drag == SelectionDrag::Create {
+                // If start == cur, clear selection (was just a click)
+                if self.drag_pos.start == self.drag_pos.cur {
+                    self.with_edit_state(|state| {
+                        let _ = state.clear_selection();
+                    });
+                    self.update_selection_display();
+                } else {
+                    self.update_selection_display();
+                }
+            }
+
+            self.selection_drag = SelectionDrag::None;
+            self.start_selection = None;
+            return ToolEvent::Redraw;
+        }
+
         match self.current_tool {
-            Tool::Select => ToolEvent::Redraw,
             Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Commit the drawn shape
                 ToolEvent::Commit(format!("{} drawn", self.current_tool.name()))
@@ -948,10 +1330,21 @@ impl AnsiEditor {
     }
 
     /// Handle mouse move based on current tool
-    fn handle_tool_mouse_move(&mut self, _pos: icy_engine::Position) -> ToolEvent {
+    fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position) -> ToolEvent {
+        if !self.is_dragging {
+            // Just hovering - update cursor based on position
+            return ToolEvent::None;
+        }
+
+        self.drag_pos.cur = pos;
+        self.drag_pos.cur_abs = pos;
+
         match self.current_tool {
-            Tool::Select
-            | Tool::Pencil
+            Tool::Click | Tool::Font | Tool::Select => {
+                self.update_selection_from_drag();
+                ToolEvent::Redraw
+            }
+            Tool::Pencil
             | Tool::Brush
             | Tool::Erase
             | Tool::Line
@@ -963,6 +1356,196 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             _ => ToolEvent::None,
+        }
+    }
+
+    /// Get what kind of selection drag would happen at this position
+    fn get_selection_drag_at(&mut self, pos: icy_engine::Position) -> SelectionDrag {
+        let selection = self.with_edit_state(|state| state.selection());
+
+        if let Some(selection) = selection {
+            let rect = selection.as_rectangle();
+
+            if rect.contains_pt(pos) {
+                // Check edges/corners (within 2 chars)
+                let left = pos.x - rect.left() < 2;
+                let top = pos.y - rect.top() < 2;
+                let right = rect.right() - pos.x < 2;
+                let bottom = rect.bottom() - pos.y < 2;
+
+                // Corners first
+                if left && top {
+                    return SelectionDrag::TopLeft;
+                }
+                if right && top {
+                    return SelectionDrag::TopRight;
+                }
+                if left && bottom {
+                    return SelectionDrag::BottomLeft;
+                }
+                if right && bottom {
+                    return SelectionDrag::BottomRight;
+                }
+
+                // Edges
+                if left {
+                    return SelectionDrag::Left;
+                }
+                if right {
+                    return SelectionDrag::Right;
+                }
+                if top {
+                    return SelectionDrag::Top;
+                }
+                if bottom {
+                    return SelectionDrag::Bottom;
+                }
+
+                // Inside - move
+                return SelectionDrag::Move;
+            }
+        }
+
+        SelectionDrag::None
+    }
+
+    /// Update selection based on current drag state
+    fn update_selection_from_drag(&mut self) {
+        use icy_engine::{Rectangle, Selection};
+
+        match self.selection_drag {
+            SelectionDrag::None => {}
+            SelectionDrag::Create => {
+                // Create new selection from drag start to current
+                let selection = Selection {
+                    anchor: self.drag_pos.start_abs,
+                    lead: self.drag_pos.cur_abs,
+                    locked: false,
+                    shape: icy_engine::Shape::Rectangle,
+                    add_type: icy_engine::AddType::Default,
+                };
+                self.with_edit_state(|state| {
+                    let _ = state.set_selection(selection);
+                });
+            }
+            SelectionDrag::Move => {
+                // Move entire selection
+                if let Some(start_rect) = self.start_selection {
+                    let delta_x = self.drag_pos.cur_abs.x - self.drag_pos.start_abs.x;
+                    let delta_y = self.drag_pos.cur_abs.y - self.drag_pos.start_abs.y;
+
+                    let new_rect = Rectangle::from(start_rect.left() + delta_x, start_rect.top() + delta_y, start_rect.width(), start_rect.height());
+
+                    self.with_edit_state(|state| {
+                        let _ = state.set_selection(Selection::from(new_rect));
+                    });
+                }
+            }
+            SelectionDrag::Left => {
+                self.resize_selection_left();
+            }
+            SelectionDrag::Right => {
+                self.resize_selection_right();
+            }
+            SelectionDrag::Top => {
+                self.resize_selection_top();
+            }
+            SelectionDrag::Bottom => {
+                self.resize_selection_bottom();
+            }
+            SelectionDrag::TopLeft => {
+                self.resize_selection_left();
+                self.resize_selection_top();
+            }
+            SelectionDrag::TopRight => {
+                self.resize_selection_right();
+                self.resize_selection_top();
+            }
+            SelectionDrag::BottomLeft => {
+                self.resize_selection_left();
+                self.resize_selection_bottom();
+            }
+            SelectionDrag::BottomRight => {
+                self.resize_selection_right();
+                self.resize_selection_bottom();
+            }
+        }
+
+        // Update the shader's selection display
+        self.update_selection_display();
+    }
+
+    fn resize_selection_left(&mut self) {
+        use icy_engine::{Rectangle, Selection};
+        if let Some(start_rect) = self.start_selection {
+            let delta = self.drag_pos.start_abs.x - self.drag_pos.cur_abs.x;
+            let mut new_left = start_rect.left() - delta;
+            let mut new_width = start_rect.width() + delta;
+
+            if new_width < 0 {
+                new_width = new_left - start_rect.right();
+                new_left = start_rect.right();
+            }
+
+            let new_rect = Rectangle::from(new_left, start_rect.top(), new_width, start_rect.height());
+            self.with_edit_state(|state| {
+                let _ = state.set_selection(Selection::from(new_rect));
+            });
+        }
+    }
+
+    fn resize_selection_right(&mut self) {
+        use icy_engine::{Rectangle, Selection};
+        if let Some(start_rect) = self.start_selection {
+            let mut new_width = start_rect.width() - self.drag_pos.start_abs.x + self.drag_pos.cur_abs.x;
+            let mut new_left = start_rect.left();
+
+            if new_width < 0 {
+                new_left = start_rect.left() + new_width;
+                new_width = start_rect.left() - new_left;
+            }
+
+            let new_rect = Rectangle::from(new_left, start_rect.top(), new_width, start_rect.height());
+            self.with_edit_state(|state| {
+                let _ = state.set_selection(Selection::from(new_rect));
+            });
+        }
+    }
+
+    fn resize_selection_top(&mut self) {
+        use icy_engine::{Rectangle, Selection};
+        if let Some(start_rect) = self.start_selection {
+            let delta = self.drag_pos.start_abs.y - self.drag_pos.cur_abs.y;
+            let mut new_top = start_rect.top() - delta;
+            let mut new_height = start_rect.height() + delta;
+
+            if new_height < 0 {
+                new_height = new_top - start_rect.bottom();
+                new_top = start_rect.bottom();
+            }
+
+            let new_rect = Rectangle::from(start_rect.left(), new_top, start_rect.width(), new_height);
+            self.with_edit_state(|state| {
+                let _ = state.set_selection(Selection::from(new_rect));
+            });
+        }
+    }
+
+    fn resize_selection_bottom(&mut self) {
+        use icy_engine::{Rectangle, Selection};
+        if let Some(start_rect) = self.start_selection {
+            let mut new_height = start_rect.height() - self.drag_pos.start_abs.y + self.drag_pos.cur_abs.y;
+            let mut new_top = start_rect.top();
+
+            if new_height < 0 {
+                new_top = start_rect.top() + new_height;
+                new_height = start_rect.top() - new_top;
+            }
+
+            let new_rect = Rectangle::from(start_rect.left(), new_top, start_rect.width(), new_height);
+            self.with_edit_state(|state| {
+                let _ = state.set_selection(Selection::from(new_rect));
+            });
         }
     }
 
