@@ -492,7 +492,7 @@ impl StringGenerator {
 
         let mut ansi_fonts = Vec::new();
         for i in 0..ANSI_FONTS {
-            ansi_fonts.push(BitFont::from_ansi_font_page(i).unwrap());
+            ansi_fonts.push(BitFont::from_ansi_font_page(i, buf.height()).unwrap());
         }
         for (page, font) in buf.font_iter() {
             let mut to_page = *page;

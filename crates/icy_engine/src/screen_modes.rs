@@ -1,9 +1,7 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
-    C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen,
-    VIEWDATA, VIEWDATA_PALETTE, amiga_screen_buffer, seq_prepare,
+    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, IBM_VGA50_SAUCE, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen, VIEWDATA, VIEWDATA_PALETTE, amiga_screen_buffer, seq_prepare
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CaretShape, CommandParser, MusicOption};
@@ -263,8 +261,8 @@ impl ScreenMode {
             }
             ScreenMode::Vic => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", C64_UNSHIFTED).unwrap());
-                screen.set_font(1, BitFont::from_bytes("", C64_SHIFTED).unwrap());
+                screen.set_font(0, C64_UNSHIFTED.clone());
+                screen.set_font(1, C64_SHIFTED.clone());
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Petscii;
 
@@ -273,7 +271,7 @@ impl ScreenMode {
             ScreenMode::Atascii(i) => {
                 screen.clear_font_table();
                 if *i == 40 {
-                    screen.set_font(0, BitFont::from_bytes("", ATARI).unwrap());
+                    screen.set_font(0, ATARI.clone());
                     *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
                 } else {
                     screen.set_font(0, ATARI_XEP80.clone());
@@ -284,7 +282,7 @@ impl ScreenMode {
             }
             ScreenMode::Videotex | ScreenMode::Mode7 => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", VIEWDATA).unwrap());
+                screen.set_font(0, VIEWDATA.clone());
                 *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Viewdata;
             }

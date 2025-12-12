@@ -7,11 +7,11 @@ use libyaff::GlyphDefinition;
 
 use crate::{
     AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
-    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
+    RenderOptions, Result,  SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
     TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs, limits,
-    rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    rip_impl::RIP_SCREEN_SIZE,
 };
 use parking_lot::Mutex;
 use skypix_impl::{SKYPIX_DEFAULT_FONT, SKYPIX_SCREEN_SIZE};
@@ -85,11 +85,11 @@ impl AmigaScreenBuffer {
         let mut font_table: HashMap<usize, BitFont> = HashMap::new();
         match graphics_type {
             GraphicsType::Rip => {
-                font_table.insert(0, RIP_FONT.clone());
-                font_table.insert(1, crate::EGA_7x8.clone());
-                font_table.insert(2, crate::VGA_8x14.clone());
-                font_table.insert(3, crate::VGA_7x14.clone());
-                font_table.insert(4, crate::VGA_16x14.clone());
+                font_table.insert(0, crate::rip::FONT.clone());
+                font_table.insert(1, crate::rip::EGA_7x8.clone());
+                font_table.insert(2, crate::rip::VGA_8x14.clone());
+                font_table.insert(3, crate::rip::VGA_7x14.clone());
+                font_table.insert(4, crate::rip::VGA_16x14.clone());
             }
             GraphicsType::IGS(_) => {
                 font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());

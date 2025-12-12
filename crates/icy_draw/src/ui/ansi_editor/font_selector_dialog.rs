@@ -1,29 +1,26 @@
-//! Font Selector Dialog
+//! Font Selector Dialog - Split-View Design
 //!
-//! A unified font selector that adapts to the current FormatMode.
-//! Uses Canvas-based rendering for smooth scrolling with font preview images.
+//! A unified font selector with:
+//! - Left panel: Search + grouped font list  
+//! - Right panel: Large preview + font details
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use iced::{
-    Alignment, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
-    mouse,
+    Alignment, Color, Element, Length, Theme,
     widget::{
-        Space, button,
-        canvas::{self, Cache, Frame, Geometry, Image, Path},
-        column, container, image, row, stack, text, text_input,
+        Space, button, scrollable, rule,
+        column, container, image, row, text, text_input,
     },
 };
 use icy_engine::{AttributedChar, BitFont, FontMode, RenderOptions, SAUCE_FONT_NAMES, TextAttribute, TextBuffer};
 use icy_engine_edit::FormatMode;
 use icy_engine_gui::ButtonType;
-use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, Dialog, DialogAction, TEXT_SIZE_SMALL, dialog_area, dialog_title, modal_container, primary_button,
+    DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button,
     secondary_button, separator,
 };
-use icy_engine_gui::{ScrollbarOverlay, Viewport};
 
 use crate::fl;
 use crate::ui::Message;
@@ -32,15 +29,19 @@ use crate::ui::Message;
 // Constants
 // ============================================================================
 
-/// Preview grid: 64 chars wide, 4 chars tall = 256 chars
-const PREVIEW_CHARS_WIDTH: i32 = 64;
-const PREVIEW_CHARS_HEIGHT: i32 = 4;
-/// List viewport height in pixels
-const LIST_HEIGHT: f32 = 400.0;
-/// Row height including padding
-const FONT_ROW_HEIGHT: f32 = 82.0;
-/// Preview height within a row
-const PREVIEW_HEIGHT: f32 = 52.0;
+/// Dialog dimensions
+const DIALOG_WIDTH: f32 = 800.0;
+const DIALOG_HEIGHT: f32 = 520.0;
+
+/// Left panel (font list) width
+const LEFT_PANEL_WIDTH: f32 = 280.0;
+
+/// Preview dimensions - 16x16 grid for all 256 characters
+const PREVIEW_CHARS_WIDTH: i32 = 16;
+const PREVIEW_CHARS_HEIGHT: i32 = 16;
+
+/// Fixed preview scale factor
+const PREVIEW_SCALE: f32 = 2.0;
 
 // ============================================================================
 // Cached Image Handle
@@ -52,6 +53,35 @@ struct CachedPreview {
     handle: image::Handle,
     width: u32,
     height: u32,
+}
+
+// ============================================================================
+// Font Category
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum FontCategory {
+    Sauce,
+    Ansi,
+    Library,
+}
+
+impl FontCategory {
+    fn label(&self) -> &'static str {
+        match self {
+            FontCategory::Sauce => "SAUCE Fonts",
+            FontCategory::Ansi => "ANSI Fonts",
+            FontCategory::Library => "Bibliothek",
+        }
+    }
+
+    fn icon(&self) -> &'static str {
+        match self {
+            FontCategory::Sauce => "🏷️",
+            FontCategory::Ansi => "💻",
+            FontCategory::Library => "📚",
+        }
+    }
 }
 
 // ============================================================================
@@ -69,6 +99,18 @@ pub struct FontSource {
     pub document_slot: Option<usize>,
     /// From font library
     pub is_library: bool,
+}
+
+impl FontSource {
+    fn primary_category(&self) -> FontCategory {
+        if self.sauce_name.is_some() {
+            FontCategory::Sauce
+        } else if self.ansi_slot.is_some() {
+            FontCategory::Ansi
+        } else {
+            FontCategory::Library
+        }
+    }
 }
 
 // ============================================================================
@@ -93,14 +135,8 @@ pub enum FontSelectorMessage {
     /// Clear filter
     ClearFilter,
 
-    /// Toggle SAUCE fonts visibility
-    ToggleSauce,
-    /// Toggle ANSI fonts visibility
-    ToggleAnsi,
-    /// Toggle library fonts visibility
-    ToggleLibrary,
-    /// Toggle document fonts visibility
-    ToggleDocument,
+    /// Toggle category expand/collapse
+    ToggleCategory(FontCategory),
 
     /// Select a font by index
     SelectFont(usize),
@@ -131,6 +167,13 @@ pub enum FontSelectorResult {
 // Dialog State
 // ============================================================================
 
+/// Category state for collapsible sections
+struct CategoryState {
+    expanded: bool,
+    visible: bool,
+    font_indices: Vec<usize>,
+}
+
 /// State for the Font Selector dialog
 pub struct FontSelectorDialog {
     /// Current format mode - determines dialog behavior
@@ -142,17 +185,18 @@ pub struct FontSelectorDialog {
     /// Currently selected font index
     selected_index: usize,
 
+    /// Current font (the one in use before opening dialog)
+    current_font_name: String,
+    current_font_size: (i32, i32),
+
     /// Filter string
     filter: String,
 
-    /// Show SAUCE fonts
-    show_sauce: bool,
-    /// Show ANSI fonts
-    show_ansi: bool,
-    /// Show library fonts
-    show_library: bool,
-    /// Show document fonts
-    show_document: bool,
+    /// Category states for collapsible sections
+    categories: HashMap<FontCategory, CategoryState>,
+
+    /// Only show SAUCE-compatible fonts
+    only_sauce_fonts: bool,
 
     /// For XBin Extended: which slot is being edited (0 or 1)
     active_slot: usize,
@@ -160,26 +204,8 @@ pub struct FontSelectorDialog {
     /// For XBin Extended: current fonts in slots
     slot_fonts: [Option<BitFont>; 2],
 
-    /// Only show SAUCE-compatible fonts
-    only_sauce_fonts: bool,
-
-    /// Cached filtered indices
-    filtered_indices: Vec<usize>,
-
-    /// Cached image handles for font previews (RGBA data)
-    image_cache: RefCell<HashMap<usize, CachedPreview>>,
-
-    /// Viewport for scroll management
-    viewport: RefCell<Viewport>,
-
-    /// Canvas cache for rendering
-    canvas_cache: Cache,
-
-    /// Last scroll position (for cache invalidation)
-    last_scroll_y: RefCell<f32>,
-
-    /// Last known cursor position (for drag handling)
-    last_cursor_pos: Option<Point>,
+    /// Cached preview for large display
+    large_preview_cache: RefCell<Option<(usize, CachedPreview)>>,
 }
 
 impl FontSelectorDialog {
@@ -216,7 +242,7 @@ impl FontSelectorDialog {
         // Add ANSI fonts (if not in SAUCE-only mode)
         if !only_sauce_fonts {
             for slot in 0..icy_engine::ANSI_FONTS {
-                if let Ok(ansi_font) = BitFont::from_ansi_font_page(slot) {
+                if let Ok(ansi_font) = BitFont::from_ansi_font_page(slot, 25) {
                     let key = font_key(&ansi_font);
                     if let Some(&existing_idx) = font_key_map.get(&key) {
                         fonts[existing_idx].source.ansi_slot = Some(slot);
@@ -235,18 +261,26 @@ impl FontSelectorDialog {
             }
         }
 
-        // Add fonts from current document
+        // Track current font from document
         let current_font_page = state.get_caret().font_page();
         let mut selected_index = 0;
+        let mut current_font_name = String::new();
+        let mut current_font_size = (8, 16);
 
+        // Mark document fonts and find current font
         for (slot, doc_font) in buffer.font_iter() {
             let key = font_key(doc_font);
+            if *slot == current_font_page {
+                current_font_name = doc_font.name().to_string();
+                current_font_size = (doc_font.size().width, doc_font.size().height);
+            }
             if let Some(&existing_idx) = font_key_map.get(&key) {
                 fonts[existing_idx].source.document_slot = Some(*slot);
                 if *slot == current_font_page {
                     selected_index = existing_idx;
                 }
             } else {
+                // Document-only fonts that don't match SAUCE/ANSI - add to library
                 let idx = fonts.len();
                 if *slot == current_font_page {
                     selected_index = idx;
@@ -255,6 +289,7 @@ impl FontSelectorDialog {
                 fonts.push(FontEntry {
                     font: doc_font.clone(),
                     source: FontSource {
+                        is_library: true, // Treat as library font
                         document_slot: Some(*slot),
                         ..Default::default()
                     },
@@ -268,56 +303,74 @@ impl FontSelectorDialog {
             [None, None]
         };
 
-        let mut dialog = Self {
+        // Build category states (without Document category)
+        let mut categories = HashMap::new();
+        for cat in [FontCategory::Sauce, FontCategory::Ansi, FontCategory::Library] {
+            let font_indices: Vec<usize> = fonts
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| f.source.primary_category() == cat)
+                .map(|(i, _)| i)
+                .collect();
+
+            let visible = match cat {
+                FontCategory::Sauce => true,
+                FontCategory::Ansi => !only_sauce_fonts,
+                FontCategory::Library => !only_sauce_fonts,
+            };
+
+            categories.insert(
+                cat,
+                CategoryState {
+                    expanded: true,
+                    visible: visible && !font_indices.is_empty(),
+                    font_indices,
+                },
+            );
+        }
+
+        Self {
             format_mode,
             fonts,
             selected_index,
+            current_font_name,
+            current_font_size,
             filter: String::new(),
-            show_sauce: true,
-            show_ansi: !only_sauce_fonts,
-            show_library: !only_sauce_fonts,
-            show_document: true,
+            categories,
+            only_sauce_fonts,
             active_slot: 0,
             slot_fonts,
-            only_sauce_fonts,
-            filtered_indices: Vec::new(),
-            image_cache: RefCell::new(HashMap::new()),
-            viewport: RefCell::new(Viewport::default()),
-            canvas_cache: Cache::new(),
-            last_scroll_y: RefCell::new(0.0),
-            last_cursor_pos: None,
-        };
-
-        dialog.update_filtered_indices();
-        dialog
+            large_preview_cache: RefCell::new(None),
+        }
     }
 
-    /// Total content height
-    fn content_height(&self) -> f32 {
-        self.filtered_indices.len() as f32 * FONT_ROW_HEIGHT
+    fn selected_font(&self) -> Option<&FontEntry> {
+        self.fonts.get(self.selected_index)
     }
 
-    /// Update viewport content size
-    fn update_viewport_size(&self) {
-        let mut vp = self.viewport.borrow_mut();
-        vp.set_visible_size(DIALOG_WIDTH_LARGE as f32 - 40.0, LIST_HEIGHT);
-        vp.set_content_size(DIALOG_WIDTH_LARGE as f32 - 40.0, self.content_height());
+    fn matches_filter(&self, entry: &FontEntry) -> bool {
+        if self.filter.is_empty() {
+            return true;
+        }
+        entry
+            .font
+            .name()
+            .to_lowercase()
+            .contains(&self.filter.to_lowercase())
     }
 
-
-    /// Generate preview image for a font
-    fn generate_preview(&self, font_idx: usize) -> Option<CachedPreview> {
+    /// Generate preview showing all 256 characters in a 16x16 grid
+    fn generate_large_preview(&self, font_idx: usize) -> Option<CachedPreview> {
         let entry = self.fonts.get(font_idx)?;
         let font = &entry.font;
 
-        // Create a temporary buffer with this font
         let mut buffer = TextBuffer::new((PREVIEW_CHARS_WIDTH, PREVIEW_CHARS_HEIGHT));
         buffer.set_font(0, font.clone());
 
-        // Fill with all 256 characters
+        // Fill with all 256 characters in a 16x16 grid
         for ch_code in 0..256u32 {
-            let x = (ch_code % 64) as i32;
-            let y = (ch_code / 64) as i32;
+            let x = (ch_code % 16) as i32;
+            let y = (ch_code / 16) as i32;
             let ch = unsafe { char::from_u32_unchecked(ch_code) };
             buffer.layers[0].set_char(
                 (x, y),
@@ -325,10 +378,10 @@ impl FontSelectorDialog {
             );
         }
 
-        // Render to RGBA
         let options = RenderOptions::default();
         let region = icy_engine::Rectangle::from(
-            0, 0,
+            0,
+            0,
             PREVIEW_CHARS_WIDTH * font.size().width,
             PREVIEW_CHARS_HEIGHT * font.size().height,
         );
@@ -346,184 +399,23 @@ impl FontSelectorDialog {
         })
     }
 
-    /// Get or generate preview for a font
-    fn get_preview(&self, font_idx: usize) -> Option<CachedPreview> {
-        if let Some(preview) = self.image_cache.borrow().get(&font_idx) {
-            return Some(preview.clone());
+    fn get_large_preview(&self, font_idx: usize) -> Option<CachedPreview> {
+        // Check cache
+        if let Some((cached_idx, preview)) = self.large_preview_cache.borrow().as_ref() {
+            if *cached_idx == font_idx {
+                return Some(preview.clone());
+            }
         }
 
-        if let Some(preview) = self.generate_preview(font_idx) {
-            self.image_cache.borrow_mut().insert(font_idx, preview.clone());
+        // Generate and cache
+        if let Some(preview) = self.generate_large_preview(font_idx) {
+            *self.large_preview_cache.borrow_mut() = Some((font_idx, preview.clone()));
             return Some(preview);
         }
 
         None
     }
 
-    /// Update filtered indices
-    fn update_filtered_indices(&mut self) {
-        self.filtered_indices.clear();
-        let filter_lower = self.filter.to_lowercase();
-
-        for (idx, entry) in self.fonts.iter().enumerate() {
-            let visible = (self.show_sauce && entry.source.sauce_name.is_some())
-                || (self.show_ansi && entry.source.ansi_slot.is_some())
-                || (self.show_library && entry.source.is_library)
-                || (self.show_document && entry.source.document_slot.is_some());
-
-            if !visible {
-                continue;
-            }
-
-            if !filter_lower.is_empty() && !entry.font.name().to_lowercase().contains(&filter_lower) {
-                continue;
-            }
-
-            self.filtered_indices.push(idx);
-        }
-
-        // Reset scroll and update viewport
-        {
-            let mut vp = self.viewport.borrow_mut();
-            vp.scroll_y_to(0.0);
-        }
-        self.update_viewport_size();
-
-        if !self.filtered_indices.is_empty() && !self.filtered_indices.contains(&self.selected_index) {
-            self.selected_index = self.filtered_indices[0];
-        }
-    }
-
-    /// Scroll to ensure selected item is visible
-    fn scroll_to_selected(&self) {
-        if let Some(pos) = self.filtered_indices.iter().position(|&i| i == self.selected_index) {
-            let item_top = pos as f32 * FONT_ROW_HEIGHT;
-            let item_bottom = item_top + FONT_ROW_HEIGHT;
-            
-            let mut vp = self.viewport.borrow_mut();
-            let view_top = vp.scroll_y;
-            let view_bottom = view_top + LIST_HEIGHT;
-            
-            if item_top < view_top {
-                // Item is above viewport, scroll up
-                vp.scroll_y_to_smooth(item_top);
-            } else if item_bottom > view_bottom {
-                // Item is below viewport, scroll down
-                vp.scroll_y_to_smooth(item_bottom - LIST_HEIGHT);
-            }
-            vp.scrollbar.mark_interaction(true);
-        }
-    }
-
-    /// Get currently selected font entry
-    fn selected_font(&self) -> Option<&FontEntry> {
-        self.fonts.get(self.selected_index)
-    }
-
-    /// Get dialog title
-    fn title(&self) -> String {
-        let count = self.filtered_indices.len();
-        match self.format_mode {
-            FormatMode::LegacyDos | FormatMode::XBin => format!("{} ({} {})", fl!("font-selector-title-single"), count, fl!("font-selector-available")),
-            FormatMode::XBinExtended => format!("{} ({} {})", fl!("font-selector-title-dual"), count, fl!("font-selector-available")),
-            FormatMode::Unrestricted => format!("{} ({} {})", fl!("font-selector-title-full"), count, fl!("font-selector-available")),
-        }
-    }
-
-
-
-    /// Main view
-    fn view_single_mode(&self) -> Element<'_, Message> {
-        let title = dialog_title(self.title());
-
-        let filter_placeholder = fl!("font-selector-filter-placeholder");
-        let sauce_label = fl!("font-selector-sauce");
-        let ansi_label = fl!("font-selector-ansi");
-        let library_label = fl!("font-selector-library");
-        let document_label = fl!("font-selector-document");
-
-        // Filter row
-        let filter_input = text_input(&filter_placeholder, &self.filter)
-            .on_input(|s| Message::FontSelector(FontSelectorMessage::SetFilter(s)))
-            .width(Length::Fixed(200.0));
-
-        let clear_button = secondary_button("✕".to_string(), Some(Message::FontSelector(FontSelectorMessage::ClearFilter)));
-
-        let mut filter_row = row![filter_input, clear_button].spacing(DIALOG_SPACING).align_y(Alignment::Center);
-
-        if !self.only_sauce_fonts {
-            filter_row = filter_row.push(Space::new().width(Length::Fixed(20.0)));
-            filter_row = filter_row.push(toggle_button(sauce_label, self.show_sauce, FontSelectorMessage::ToggleSauce));
-            filter_row = filter_row.push(toggle_button(ansi_label, self.show_ansi, FontSelectorMessage::ToggleAnsi));
-            filter_row = filter_row.push(toggle_button(library_label, self.show_library, FontSelectorMessage::ToggleLibrary));
-            filter_row = filter_row.push(toggle_button(document_label, self.show_document, FontSelectorMessage::ToggleDocument));
-        }
-
-        // Virtualized font list
-        let font_list = self.view_font_list();
-
-        let content = column![filter_row, Space::new().height(DIALOG_SPACING), font_list].spacing(DIALOG_SPACING);
-
-        let content_box = effect_box(content.into());
-
-        // Buttons
-        let button_row = row![
-            Space::new().width(Length::Fill),
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontSelector(FontSelectorMessage::Cancel))),
-            primary_button(format!("{}", ButtonType::Ok), self.selected_font().map(|_| Message::FontSelector(FontSelectorMessage::Apply))),
-        ]
-        .spacing(DIALOG_SPACING)
-        .align_y(Alignment::Center);
-
-        let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
-        let button_area = dialog_area(button_row.into());
-
-        modal_container(
-            column![container(dialog_content).height(Length::Shrink), separator(), button_area].into(),
-            DIALOG_WIDTH_LARGE,
-        )
-        .into()
-    }
-
-    /// View font list with Canvas-based smooth scrolling
-    fn view_font_list(&self) -> Element<'_, Message> {
-        // Ensure viewport size is up to date
-        self.update_viewport_size();
-
-        // Check if scroll position changed - if so, we need to redraw
-        let current_scroll = self.viewport.borrow().scroll_y;
-        let last_scroll = *self.last_scroll_y.borrow();
-        if (current_scroll - last_scroll).abs() > 0.1 {
-            *self.last_scroll_y.borrow_mut() = current_scroll;
-            self.canvas_cache.clear();
-        }
-
-        // Create canvas widget
-        let canvas_widget = canvas::Canvas::new(FontListCanvas { dialog: self })
-            .width(Length::Fill)
-            .height(Length::Fixed(LIST_HEIGHT));
-
-        // Use ScrollbarOverlay from icy_engine_gui
-        if self.content_height() > LIST_HEIGHT {
-            let scrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.viewport).view();
-            let scrollbar_mapped: Element<'_, Message> = scrollbar_view.map(|_| unreachable!());
-            let scrollbar_container = container(scrollbar_mapped)
-                .width(Length::Fill)
-                .height(Length::Fixed(LIST_HEIGHT))
-                .align_x(Alignment::End);
-            
-            stack![canvas_widget, scrollbar_container].into()
-        } else {
-            canvas_widget.into()
-        }
-    }
-
-    /// Get the filtered font indices
-    fn get_filtered_indices(&self) -> &[usize] {
-        &self.filtered_indices
-    }
-
-    /// Create result
     fn create_result(&self) -> Option<FontSelectorResult> {
         let entry = self.selected_font()?;
 
@@ -535,245 +427,341 @@ impl FontSelectorDialog {
             }),
             FormatMode::Unrestricted => {
                 let slot = entry.source.document_slot.unwrap_or(0);
-                Some(FontSelectorResult::FontForSlot { slot, font: entry.font.clone() })
+                Some(FontSelectorResult::FontForSlot {
+                    slot,
+                    font: entry.font.clone(),
+                })
             }
         }
     }
-}
 
-// ============================================================================
-// Canvas Program Implementation for smooth scrolling
-// ============================================================================
-
-struct FontListCanvas<'a> {
-    dialog: &'a FontSelectorDialog,
-}
-
-impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &Renderer,
-        theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry<Renderer>> {
-        let geometry = self.dialog.canvas_cache.draw(renderer, bounds.size(), |frame| {
-            let palette = theme.extended_palette();
-            let scroll_y = self.dialog.viewport.borrow().scroll_y;
-            let visible_fonts = self.dialog.get_filtered_indices();
-            
-            // Calculate which rows are visible
-            let first_visible = (scroll_y / FONT_ROW_HEIGHT).floor() as usize;
-            let last_visible = ((scroll_y + LIST_HEIGHT) / FONT_ROW_HEIGHT).ceil() as usize;
-            
-            // Draw each visible row
-            for idx in first_visible..=last_visible.min(visible_fonts.len().saturating_sub(1)) {
-                if idx >= visible_fonts.len() {
-                    break;
-                }
-                
-                let font_idx = visible_fonts[idx];
-                let entry = &self.dialog.fonts[font_idx];
-                let is_selected = self.dialog.selected_index == font_idx;
-                
-                // Calculate row position (relative to scroll)
-                let row_y = idx as f32 * FONT_ROW_HEIGHT - scroll_y;
-                
-                // Skip if completely outside visible area
-                if row_y + FONT_ROW_HEIGHT < 0.0 || row_y > LIST_HEIGHT {
-                    continue;
-                }
-                
-                // Draw row background
-                let bg_color = if is_selected {
-                    palette.primary.weak.color
-                } else {
-                    Color::TRANSPARENT
-                };
-                
-                let path = Path::rectangle(Point::new(0.0, row_y), Size::new(bounds.width, FONT_ROW_HEIGHT));
-                frame.fill(&path, bg_color);
-                
-                // Draw font name
-                let text_color = if is_selected {
-                    palette.primary.weak.text
-                } else {
-                    palette.background.base.text
-                };
-                
-                frame.fill_text(canvas::Text {
-                    content: entry.font.name().to_string(),
-                    position: Point::new(8.0, row_y + 8.0),
-                    color: text_color,
-                    size: iced::Pixels(14.0),
-                    ..Default::default()
-                });
-                
-                // Draw source badges
-                let mut badge_x = bounds.width - 8.0;
-                
-                if entry.source.is_library {
-                    badge_x -= 60.0;
-                    draw_badge(frame, "LIBRARY", badge_x, row_y + 6.0, palette.background.weak.color, palette.background.weak.text);
-                }
-                if entry.source.ansi_slot.is_some() {
-                    badge_x -= 45.0;
-                    draw_badge(frame, "ANSI", badge_x, row_y + 6.0, palette.background.weak.color, palette.background.weak.text);
-                }
-                if entry.source.sauce_name.is_some() {
-                    badge_x -= 50.0;
-                    draw_badge(frame, "SAUCE", badge_x, row_y + 6.0, palette.secondary.base.color, palette.secondary.base.text);
-                }
-                if entry.source.document_slot.is_some() {
-                    badge_x -= 40.0;
-                    draw_badge(frame, "FILE", badge_x, row_y + 6.0, palette.background.weak.color, palette.background.weak.text);
-                }
-                
-                // Draw preview image - get or generate from cache
-                if let Some(cached) = self.dialog.get_preview(font_idx) {
-                    // Scale to fit
-                    let scale = (PREVIEW_HEIGHT / cached.height as f32).min(1.0);
-                    let display_width = cached.width as f32 * scale;
-                    let display_height = cached.height as f32 * scale;
-                    
-                    // Draw the preview image using Canvas Image
-                    let preview_image = Image::new(cached.handle.clone())
-                        .snap(true);
-                    
-                    frame.draw_image(
-                        Rectangle::new(
-                            Point::new(8.0, row_y + 26.0),
-                            Size::new(display_width, display_height),
-                        ),
-                        preview_image,
-                    );
-                } else {
-                    // Draw placeholder for preview
-                    let placeholder_rect = Path::rectangle(
-                        Point::new(8.0, row_y + 26.0),
-                        Size::new(200.0, PREVIEW_HEIGHT),
-                    );
-                    frame.fill(&placeholder_rect, palette.background.weak.color);
-                }
-                
-                // Draw separator line at bottom of row
-                let separator_path = Path::line(
-                    Point::new(0.0, row_y + FONT_ROW_HEIGHT - 1.0),
-                    Point::new(bounds.width, row_y + FONT_ROW_HEIGHT - 1.0),
-                );
-                frame.stroke(&separator_path, canvas::Stroke::default().with_color(palette.background.weak.color).with_width(1.0));
-            }
-        });
-
-        vec![geometry]
-    }
-
-    fn update(
-        &self,
-        _state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<Message>> {
-        match event {
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                let scroll_delta = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => -y * 40.0,
-                    mouse::ScrollDelta::Pixels { y, .. } => -y,
-                };
-                self.dialog.viewport.borrow_mut().scroll_y_by(scroll_delta);
-                self.dialog.canvas_cache.clear();
-                Some(canvas::Action::request_redraw().and_capture())
-            }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    let scroll_y = self.dialog.viewport.borrow().scroll_y;
-                    let clicked_row = ((pos.y + scroll_y) / FONT_ROW_HEIGHT).floor() as usize;
-                    
-                    let visible_fonts = self.dialog.get_filtered_indices();
-                    if clicked_row < visible_fonts.len() {
-                        let font_idx = visible_fonts[clicked_row];
-                        return Some(canvas::Action::publish(
-                            Message::FontSelector(FontSelectorMessage::SelectFont(font_idx))
-                        ).and_capture());
+    fn get_visible_fonts(&self) -> Vec<usize> {
+        let mut result = Vec::new();
+        for cat in [
+            FontCategory::Sauce,
+            FontCategory::Ansi,
+            FontCategory::Library,
+        ] {
+            if let Some(state) = self.categories.get(&cat) {
+                if state.visible && state.expanded {
+                    for &idx in &state.font_indices {
+                        if self.matches_filter(&self.fonts[idx]) {
+                            result.push(idx);
+                        }
                     }
                 }
-                None
             }
-            _ => None,
         }
+        result
     }
 
-    fn mouse_interaction(
-        &self,
-        _state: &Self::State,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> mouse::Interaction {
-        if cursor.is_over(bounds) {
-            mouse::Interaction::Pointer
+    fn find_prev_font(&self) -> Option<usize> {
+        let visible_fonts = self.get_visible_fonts();
+        let current_pos = visible_fonts.iter().position(|&i| i == self.selected_index)?;
+        if current_pos > 0 {
+            Some(visible_fonts[current_pos - 1])
         } else {
-            mouse::Interaction::default()
+            None
         }
     }
-}
 
-/// Draw a badge on the canvas
-fn draw_badge(frame: &mut Frame, label: &str, x: f32, y: f32, bg_color: Color, text_color: Color) {
-    let badge_width = label.len() as f32 * 7.0 + 12.0;
-    let badge_height = 16.0;
-    
-    // Draw background with rounded corners (approximated with rectangle for now)
-    let badge_path = Path::rectangle(Point::new(x, y), Size::new(badge_width, badge_height));
-    frame.fill(&badge_path, bg_color);
-    
-    // Draw text
-    frame.fill_text(canvas::Text {
-        content: label.to_string(),
-        position: Point::new(x + 6.0, y + 2.0),
-        color: text_color,
-        size: iced::Pixels(10.0),
-        ..Default::default()
-    });
+    fn find_next_font(&self) -> Option<usize> {
+        let visible_fonts = self.get_visible_fonts();
+        let current_pos = visible_fonts.iter().position(|&i| i == self.selected_index)?;
+        if current_pos + 1 < visible_fonts.len() {
+            Some(visible_fonts[current_pos + 1])
+        } else {
+            None
+        }
+    }
+
+    // ========================================================================
+    // View Methods
+    // ========================================================================
+
+    fn view_split_layout(&self) -> Element<'_, Message> {
+        // Left panel: Search + Font List
+        let left_panel = self.view_left_panel();
+
+        // Right panel: Preview + Details
+        let right_panel = self.view_right_panel();
+
+        // Main content with split
+        let content = row![
+            container(left_panel)
+                .width(Length::Fixed(LEFT_PANEL_WIDTH))
+                .height(Length::Fixed(DIALOG_HEIGHT - 80.0)), // Leave room for current font + buttons
+            rule::vertical(1),
+            container(right_panel)
+                .width(Length::Fill)
+                .height(Length::Fixed(DIALOG_HEIGHT - 80.0)),
+        ]
+        .spacing(0);
+
+        // Current font info bar
+        let current_font_bar = self.view_current_font();
+
+        // Buttons
+        let button_row = row![
+            Space::new().width(Length::Fill),
+            secondary_button(
+                format!("{}", ButtonType::Cancel),
+                Some(Message::FontSelector(FontSelectorMessage::Cancel))
+            ),
+            primary_button(
+                format!("{}", ButtonType::Ok),
+                self.selected_font()
+                    .map(|_| Message::FontSelector(FontSelectorMessage::Apply))
+            ),
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center);
+
+        let dialog_content = dialog_area(content.into());
+        let current_font_area = dialog_area(current_font_bar.into());
+        let button_area = dialog_area(button_row.into());
+
+        modal_container(
+            column![
+                container(dialog_content).height(Length::Shrink),
+                separator(),
+                current_font_area,
+                separator(),
+                button_area
+            ]
+            .into(),
+            DIALOG_WIDTH,
+        )
+        .into()
+    }
+
+    fn view_current_font(&self) -> Element<'_, Message> {
+        row![
+            text("Aktueller Font:").size(12),
+            Space::new().width(8.0),
+            text(&self.current_font_name).size(12),
+            Space::new().width(Length::Fill),
+            text(format!("{}×{}", self.current_font_size.0, self.current_font_size.1))
+                .size(12)
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+        ]
+        .align_y(Alignment::Center)
+        .into()
+    }
+
+    fn view_left_panel(&self) -> Element<'_, Message> {
+        // Search input
+        let search_input = text_input(&fl!("font-selector-filter-placeholder"), &self.filter)
+            .on_input(|s| Message::FontSelector(FontSelectorMessage::SetFilter(s)))
+            .width(Length::Fill)
+            .padding(8);
+
+        // Font list with categories
+        let font_list = self.view_font_list();
+
+        column![container(search_input).padding(8), font_list,].into()
+    }
+
+    fn view_font_list(&self) -> Element<'_, Message> {
+        let mut list_content = column![].spacing(0);
+
+        for cat in [
+            FontCategory::Sauce,
+            FontCategory::Ansi,
+            FontCategory::Library,
+        ] {
+            if let Some(state) = self.categories.get(&cat) {
+                if !state.visible {
+                    continue;
+                }
+
+                // Filter fonts
+                let filtered_fonts: Vec<usize> = state
+                    .font_indices
+                    .iter()
+                    .copied()
+                    .filter(|&idx| self.matches_filter(&self.fonts[idx]))
+                    .collect();
+
+                if filtered_fonts.is_empty() {
+                    continue;
+                }
+
+                // Category header
+                let header = self.view_category_header(cat, filtered_fonts.len());
+                list_content = list_content.push(header);
+
+                // Font items (if expanded)
+                if state.expanded {
+                    for &font_idx in &filtered_fonts {
+                        let item = self.view_font_item(font_idx);
+                        list_content = list_content.push(item);
+                    }
+                }
+            }
+        }
+
+        scrollable(list_content).height(Length::Fill).into()
+    }
+
+    fn view_category_header(&self, category: FontCategory, count: usize) -> Element<'_, Message> {
+        let state = self.categories.get(&category);
+        let expanded = state.map(|s| s.expanded).unwrap_or(true);
+        let arrow = if expanded { "▼" } else { "▶" };
+
+        let header_content = row![
+            text(format!("{} {} {}", arrow, category.icon(), category.label())).size(13),
+            Space::new().width(Length::Fill),
+            text(format!("({})", count)).size(11),
+        ]
+        .align_y(Alignment::Center)
+        .padding([6, 12]);
+
+        button(header_content)
+            .on_press(Message::FontSelector(FontSelectorMessage::ToggleCategory(
+                category,
+            )))
+            .style(category_header_style)
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn view_font_item(&self, font_idx: usize) -> Element<'_, Message> {
+        let entry = &self.fonts[font_idx];
+        let is_selected = self.selected_index == font_idx;
+
+        let item_content = row![
+            Space::new().width(Length::Fixed(24.0)),
+            text(entry.font.name()).size(12),
+            Space::new().width(Length::Fill),
+            text(format!(
+                "{}×{}",
+                entry.font.size().width,
+                entry.font.size().height
+            ))
+            .size(10)
+            .color(Color::from_rgb(0.5, 0.5, 0.5)),
+        ]
+        .align_y(Alignment::Center)
+        .padding([4, 12]);
+
+        let style = if is_selected {
+            selected_item_style
+        } else {
+            normal_item_style
+        };
+
+        button(item_content)
+            .on_press(Message::FontSelector(FontSelectorMessage::SelectFont(
+                font_idx,
+            )))
+            .style(style)
+            .width(Length::Fill)
+            .into()
+    }
+
+    fn view_right_panel(&self) -> Element<'_, Message> {
+        let Some(entry) = self.selected_font() else {
+            return container(text("Keine Schrift ausgewählt").size(14))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into();
+        };
+
+        // Preview image with fixed scaling showing all 256 chars
+        let preview: Element<'_, Message> = if let Some(cached) = self.get_large_preview(self.selected_index) {
+            // Fixed 2x scaling for crisp pixel display
+            let display_width = cached.width as f32 * PREVIEW_SCALE;
+            let display_height = cached.height as f32 * PREVIEW_SCALE;
+
+            container(
+                image(cached.handle)
+                    .width(Length::Fixed(display_width))
+                    .height(Length::Fixed(display_height)),
+            )
+            .style(preview_container_style)
+            .padding(12)
+            .into()
+        } else {
+            container(text("Vorschau wird generiert...").size(12))
+                .center_x(Length::Fill)
+                .height(Length::Fixed(200.0))
+                .into()
+        };
+
+        // Compact font info line: Name left, dimensions right
+        let font_info = row![
+            text(entry.font.name()).size(14),
+            Space::new().width(Length::Fill),
+            text(format!("{}×{}", entry.font.size().width, entry.font.size().height))
+                .size(12)
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+        ]
+        .align_y(Alignment::Center)
+        .padding([0, 16]);
+
+        column![
+            Space::new().height(16.0),
+            container(preview).center_x(Length::Fill),
+            Space::new().height(Length::Fill),
+            font_info,
+            Space::new().height(8.0),
+        ]
+        .into()
+    }
 }
 
 // ============================================================================
 // Helper functions
 // ============================================================================
 
-fn toggle_button(label: String, active: bool, msg: FontSelectorMessage) -> Element<'static, Message> {
-    let style = if active { active_toggle_style } else { inactive_toggle_style };
+// ============================================================================
+// Styles
+// ============================================================================
 
-    button(text(label).size(TEXT_SIZE_SMALL))
-        .on_press(Message::FontSelector(msg))
-        .style(style)
-        .padding([4, 8])
-        .into()
-}
-
-fn active_toggle_style(theme: &Theme, _status: button::Status) -> button::Style {
+fn category_header_style(theme: &Theme, _status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     button::Style {
-        background: Some(iced::Background::Color(palette.primary.base.color)),
-        text_color: palette.primary.base.text,
-        border: iced::Border { radius: 4.0.into(), ..Default::default() },
+        background: Some(iced::Background::Color(palette.background.weak.color)),
+        text_color: palette.background.base.text,
+        border: iced::Border::default(),
         ..Default::default()
     }
 }
 
-fn inactive_toggle_style(theme: &Theme, status: button::Status) -> button::Style {
+fn selected_item_style(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    button::Style {
+        background: Some(iced::Background::Color(palette.primary.weak.color)),
+        text_color: palette.primary.weak.text,
+        border: iced::Border::default(),
+        ..Default::default()
+    }
+}
+
+fn normal_item_style(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     let bg = match status {
-        button::Status::Hovered => palette.background.weak.color,
-        _ => palette.background.strong.color,
+        button::Status::Hovered => Some(iced::Background::Color(palette.background.weak.color)),
+        _ => None,
     };
     button::Style {
-        background: Some(iced::Background::Color(bg)),
+        background: bg,
         text_color: palette.background.base.text,
-        border: iced::Border { radius: 4.0.into(), width: 1.0, color: palette.background.strong.color },
+        border: iced::Border::default(),
+        ..Default::default()
+    }
+}
+
+fn preview_container_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(iced::Background::Color(Color::BLACK)),
+        border: iced::Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
         ..Default::default()
     }
 }
@@ -784,46 +772,31 @@ fn inactive_toggle_style(theme: &Theme, status: button::Status) -> button::Style
 
 impl Dialog<Message> for FontSelectorDialog {
     fn view(&self) -> Element<'_, Message> {
-        self.view_single_mode()
+        self.view_split_layout()
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::FontSelector(msg) = message else { return None; };
+        let Message::FontSelector(msg) = message else {
+            return None;
+        };
 
         match msg {
             FontSelectorMessage::SetFilter(f) => {
                 self.filter = f.clone();
-                self.update_filtered_indices();
                 Some(DialogAction::None)
             }
             FontSelectorMessage::ClearFilter => {
                 self.filter.clear();
-                self.update_filtered_indices();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::ToggleSauce => {
-                self.show_sauce = !self.show_sauce;
-                self.update_filtered_indices();
-                Some(DialogAction::None)
-            }
-            FontSelectorMessage::ToggleAnsi => {
-                self.show_ansi = !self.show_ansi;
-                self.update_filtered_indices();
-                Some(DialogAction::None)
-            }
-            FontSelectorMessage::ToggleLibrary => {
-                self.show_library = !self.show_library;
-                self.update_filtered_indices();
-                Some(DialogAction::None)
-            }
-            FontSelectorMessage::ToggleDocument => {
-                self.show_document = !self.show_document;
-                self.update_filtered_indices();
+            FontSelectorMessage::ToggleCategory(cat) => {
+                if let Some(state) = self.categories.get_mut(cat) {
+                    state.expanded = !state.expanded;
+                }
                 Some(DialogAction::None)
             }
             FontSelectorMessage::SelectFont(idx) => {
                 self.selected_index = *idx;
-                self.canvas_cache.clear(); // Invalidate canvas to show new selection
                 Some(DialogAction::None)
             }
             FontSelectorMessage::SelectSlot(slot) => {
@@ -843,92 +816,31 @@ impl Dialog<Message> for FontSelectorDialog {
 
     fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
         match event {
-            // Mouse wheel scrolling
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                let scroll_amount = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => -y * FONT_ROW_HEIGHT,
-                    mouse::ScrollDelta::Pixels { y, .. } => -y,
-                };
-                
-                let mut vp = self.viewport.borrow_mut();
-                vp.scroll_y_by(scroll_amount);
-                vp.scrollbar.mark_interaction(true);
-                drop(vp);
-                self.canvas_cache.clear();
-                return Some(DialogAction::None);
-            }
-            
-            // Keyboard navigation
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
-                
+                use iced::keyboard::Key;
+
                 match key {
                     Key::Named(Named::ArrowUp) => {
-                        // Select previous font
-                        if let Some(pos) = self.filtered_indices.iter().position(|&i| i == self.selected_index) {
-                            if pos > 0 {
-                                self.selected_index = self.filtered_indices[pos - 1];
-                                self.scroll_to_selected();
-                                self.canvas_cache.clear();
-                                return Some(DialogAction::None);
-                            }
+                        if let Some(prev) = self.find_prev_font() {
+                            self.selected_index = prev;
+                            return Some(DialogAction::None);
                         }
                     }
                     Key::Named(Named::ArrowDown) => {
-                        // Select next font
-                        if let Some(pos) = self.filtered_indices.iter().position(|&i| i == self.selected_index) {
-                            if pos + 1 < self.filtered_indices.len() {
-                                self.selected_index = self.filtered_indices[pos + 1];
-                                self.scroll_to_selected();
-                                self.canvas_cache.clear();
-                                return Some(DialogAction::None);
-                            }
-                        }
-                    }
-                    Key::Named(Named::PageUp) => {
-                        let mut vp = self.viewport.borrow_mut();
-                        vp.scroll_y_by_smooth(-LIST_HEIGHT);
-                        vp.scrollbar.mark_interaction(true);
-                        drop(vp);
-                        self.canvas_cache.clear();
-                        return Some(DialogAction::None);
-                    }
-                    Key::Named(Named::PageDown) => {
-                        let mut vp = self.viewport.borrow_mut();
-                        vp.scroll_y_by_smooth(LIST_HEIGHT);
-                        vp.scrollbar.mark_interaction(true);
-                        drop(vp);
-                        self.canvas_cache.clear();
-                        return Some(DialogAction::None);
-                    }
-                    Key::Named(Named::Home) => {
-                        if !self.filtered_indices.is_empty() {
-                            self.selected_index = self.filtered_indices[0];
-                            let mut vp = self.viewport.borrow_mut();
-                            vp.scroll_y_to_smooth(0.0);
-                            vp.scrollbar.mark_interaction(true);
-                            drop(vp);
-                            self.canvas_cache.clear();
+                        if let Some(next) = self.find_next_font() {
+                            self.selected_index = next;
                             return Some(DialogAction::None);
                         }
                     }
-                    Key::Named(Named::End) => {
-                        if !self.filtered_indices.is_empty() {
-                            self.selected_index = *self.filtered_indices.last().unwrap();
-                            let mut vp = self.viewport.borrow_mut();
-                            let max = vp.max_scroll_y();
-                            vp.scroll_y_to_smooth(max);
-                            vp.scrollbar.mark_interaction(true);
-                            drop(vp);
-                            self.canvas_cache.clear();
-                            return Some(DialogAction::None);
+                    Key::Named(Named::Enter) => {
+                        if let Some(result) = self.create_result() {
+                            return Some(DialogAction::CloseWith(Message::ApplyFontSelection(result)));
                         }
                     }
                     _ => {}
                 }
             }
-            
             _ => {}
         }
         None
@@ -944,13 +856,5 @@ impl Dialog<Message> for FontSelectorDialog {
         } else {
             DialogAction::None
         }
-    }
-
-    fn needs_animation(&self) -> bool {
-        self.viewport.borrow().needs_animation()
-    }
-
-    fn update_animation(&mut self) {
-        self.viewport.borrow_mut().update_animation();
     }
 }

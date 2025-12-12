@@ -12,7 +12,7 @@ use crate::{
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     limits,
-    palette_screen_buffer::rip_impl::{RIP_FONT, RIP_SCREEN_SIZE},
+    palette_screen_buffer::rip_impl::{RIP_SCREEN_SIZE},
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -75,17 +75,17 @@ impl PaletteScreenBuffer {
         let mut font_table: HashMap<usize, BitFont> = HashMap::new();
         match graphics_type {
             GraphicsType::Rip => {
-                font_table.insert(0, RIP_FONT.clone());
-                font_table.insert(1, crate::EGA_7x8.clone());
-                font_table.insert(2, crate::VGA_8x14.clone());
-                font_table.insert(3, crate::VGA_7x14.clone());
-                font_table.insert(4, crate::VGA_16x14.clone());
+                font_table.insert(0, crate::rip::FONT.clone());
+                font_table.insert(1, crate::rip::EGA_7x8.clone());
+                font_table.insert(2, crate::rip::VGA_8x14.clone());
+                font_table.insert(3, crate::rip::VGA_7x14.clone());
+                font_table.insert(4, crate::rip::VGA_16x14.clone());
             }
             GraphicsType::IGS(_) => {
                 font_table.insert(0, igs::ATARI_ST_FONT_8x8.clone());
             }
             GraphicsType::Skypix => {
-                font_table.insert(0, RIP_FONT.clone());
+                font_table.insert(0, crate::rip::FONT.clone());
             }
             GraphicsType::Text => unreachable!(),
         };

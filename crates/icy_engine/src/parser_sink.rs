@@ -648,7 +648,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 if self.screen().font(nr).is_some() {
                     self.set_font_selection_success(nr);
                 }
-                match BitFont::from_ansi_font_page(nr) {
+                match BitFont::from_ansi_font_page(nr, self.screen().height()) {
                     Ok(font) => {
                         self.screen_mut().set_font(nr, font);
                         self.set_font_selection_success(nr);

@@ -333,7 +333,7 @@ pub fn convert_ansi_to_utf8(data: &[u8]) -> (String, bool) {
 
 pub fn guess_font_name(font: &BitFont) -> String {
     for i in 0..ANSI_FONTS {
-        if let Ok(ansi_font) = BitFont::from_ansi_font_page(i) {
+        if let Ok(ansi_font) = BitFont::from_ansi_font_page(i, 16) {
             if ansi_font == *font {
                 return ansi_font.name().to_string();
             }

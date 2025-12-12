@@ -25,7 +25,7 @@ impl EditState {
     pub fn add_ansi_font(&mut self, page: usize) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
-                let new_font = BitFont::from_ansi_font_page(page)?;
+                let new_font = BitFont::from_ansi_font_page(page, 25)?;
                 let op = super::undo_operations::AddFont::new(self.screen.caret.font_page(), page, new_font);
                 self.push_undo_action(Box::new(op))
             }
@@ -39,7 +39,7 @@ impl EditState {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
-                let new_font = BitFont::from_ansi_font_page(page)?;
+                let new_font = BitFont::from_ansi_font_page(page, 25)?;
                 if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(0, font.clone(), new_font);
                     self.push_undo_action(Box::new(op))
@@ -48,7 +48,7 @@ impl EditState {
                 }
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
-                let new_font = BitFont::from_ansi_font_page(page)?;
+                let new_font = BitFont::from_ansi_font_page(page, 25)?;
                 if let Some(font) = self.get_buffer().font(0) {
                     let op = super::undo_operations::SetFont::new(self.screen.caret.font_page(), font.clone(), new_font);
                     self.push_undo_action(Box::new(op))

@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    BitFont, EditableScreen, Position, Result, Size,
+    EditableScreen, Position, Result, Size,
     bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode},
 };
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -16,9 +16,6 @@ use icy_parser_core::{FillStyle, ImagePasteMode, LineStyle, RipCommand, WriteMod
 pub const RIP_SCREEN_SIZE: Size = Size { width: 640, height: 350 };
 pub static RIP_TERMINAL_ID: &str = "RIPSCRIP015410\0";
 
-lazy_static::lazy_static! {
-    pub static ref RIP_FONT : BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
-}
 
 // Helper function that takes mutable references separately to avoid borrow checker issues
 fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipCommand) {

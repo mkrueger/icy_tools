@@ -58,7 +58,7 @@ pub fn test_custom_palette() {
 #[test]
 pub fn test_custom_font() {
     let mut buffer = create_xb_buffer();
-    buffer.set_font(0, BitFont::from_ansi_font_page(42).unwrap());
+    buffer.set_font(0, BitFont::from_ansi_font_page(42, 25).unwrap());
     buffer.ice_mode = IceMode::Blink;
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0000_1000, IceMode::Blink)));
     test_xbin(&mut buffer);
@@ -68,7 +68,7 @@ pub fn test_custom_font() {
 pub fn test_extended_font_ice() {
     let mut buffer = create_xb_buffer();
     buffer.ice_mode = IceMode::Ice;
-    buffer.set_font(1, BitFont::from_ansi_font_page(42).unwrap());
+    buffer.set_font(1, BitFont::from_ansi_font_page(42, 25).unwrap());
     let mut attr = TextAttribute::from_u8(0b1111_0111, IceMode::Ice);
     attr.set_font_page(0);
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attr));
@@ -87,7 +87,7 @@ pub fn test_extended_font_ice() {
 pub fn test_extended_font_blink() {
     let mut buffer = create_xb_buffer();
     buffer.ice_mode = IceMode::Blink;
-    buffer.set_font(1, BitFont::from_ansi_font_page(42).unwrap());
+    buffer.set_font(1, BitFont::from_ansi_font_page(42, 25).unwrap());
     let mut attr: TextAttribute = TextAttribute::from_u8(0b1111_0111, IceMode::Blink);
     attr.set_font_page(0);
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attr));

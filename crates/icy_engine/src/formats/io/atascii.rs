@@ -1,5 +1,5 @@
 use super::super::{LoadData, SaveOptions};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, BitFont, EditableScreen, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
+use crate::{ATARI, ATARI_DEFAULT_PALETTE, EditableScreen, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
 
 #[allow(unused)]
 pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
@@ -47,7 +47,7 @@ pub(crate) fn load_atascii(data: &[u8], load_data_opt: Option<LoadData>) -> Resu
     let mut result = TextScreen::new((40, 24));
 
     result.buffer.clear_font_table();
-    let font = BitFont::from_bytes("", ATARI).unwrap();
+    let font = ATARI.clone();
     result.buffer.set_font(0, font);
     result.buffer.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
 
