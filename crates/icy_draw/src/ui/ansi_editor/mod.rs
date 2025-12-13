@@ -39,6 +39,7 @@ mod minimap_view;
 mod palette_grid;
 mod reference_image_dialog;
 mod right_panel;
+mod segmented_control_gpu;
 mod tool_panel;
 mod tool_panel_wrapper;
 mod top_toolbar;
@@ -2270,7 +2271,9 @@ impl AnsiEditor {
                 .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg)
                 .map(AnsiEditorMessage::FKeyToolbar)
         } else {
-            self.top_toolbar.view(self.current_tool, &fkeys, buffer_type).map(AnsiEditorMessage::TopToolbar)
+            self.top_toolbar
+                .view(self.current_tool, &fkeys, buffer_type, font_for_char_selector.clone(), &Theme::Dark)
+                .map(AnsiEditorMessage::TopToolbar)
         };
 
         let toolbar_height = SWITCHER_SIZE;

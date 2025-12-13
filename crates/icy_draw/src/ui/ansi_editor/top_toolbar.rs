@@ -4,13 +4,14 @@
 //! Inspired by Moebius toolbar design.
 
 use iced::{
-    Element, Length, Task,
-    widget::{Space, button, container, radio, row, svg, text, toggler},
+    Element, Length, Task, Theme,
+    widget::{Space, button, container, row, svg, text, toggler},
 };
 
+use super::segmented_control_gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use super::tools::Tool;
 use crate::ui::FKeySets;
-use icy_engine::BufferType;
+use icy_engine::{BitFont, BufferType};
 
 // Navigation icons for F-key set chooser
 const NAV_PREV_SVG: &[u8] = include_bytes!("../../../data/icons/navigate_prev.svg");
@@ -152,6 +153,8 @@ pub struct TopToolbar {
     pub select_options: SelectOptions,
     /// Shape filled toggle
     pub filled: bool,
+    /// GPU Segmented control for selection mode
+    pub selection_mode_control: ShaderSegmentedControl,
 }
 
 impl Default for TopToolbar {
@@ -171,6 +174,7 @@ impl TopToolbar {
             },
             select_options: SelectOptions::default(),
             filled: false,
+            selection_mode_control: ShaderSegmentedControl::new(),
         }
     }
 
@@ -217,10 +221,10 @@ impl TopToolbar {
     }
 
     /// Render the top toolbar based on current tool
-    pub fn view(&self, current_tool: Tool, fkeys: &FKeySets, buffer_type: BufferType) -> Element<'_, TopToolbarMessage> {
+    pub fn view(&self, current_tool: Tool, fkeys: &FKeySets, buffer_type: BufferType, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
-            Tool::Select => self.view_select_panel(),
+            Tool::Select => self.view_select_panel(font, theme),
             Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(),
             Tool::Line => self.view_line_panel(),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
@@ -241,31 +245,35 @@ impl TopToolbar {
             .into()
     }
 
-    /// Selection tool panel with selection mode options
-    fn view_select_panel(&self) -> Element<'_, TopToolbarMessage> {
+    /// Selection tool panel with segmented control for mode selection
+    fn view_select_panel(&self, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
         let mode = self.select_options.selection_mode;
 
+        // Build segments for the segmented control
+        let segments = vec![
+            Segment::text("Rect", SelectionMode::Normal),
+            Segment::text("Char", SelectionMode::Character),
+            Segment::text("Attr", SelectionMode::Attribute),
+            Segment::text("Fg", SelectionMode::Foreground),
+            Segment::text("Bg", SelectionMode::Background),
+        ];
+
+        // Convert SegmentedControlMessage to TopToolbarMessage
+        let segmented_control = self.selection_mode_control.view(segments, mode, font, theme).map(|msg| match msg {
+            SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetSelectionMode(m),
+            SegmentedControlMessage::CharClicked(m) => TopToolbarMessage::SetSelectionMode(m),
+        });
+
+        // Center the control with flexible space on both sides
         row![
-            text("Mode:").size(11),
-            radio("Rectangle", SelectionMode::Normal, Some(mode), TopToolbarMessage::SetSelectionMode)
-                .size(14)
-                .text_size(11),
-            radio("Character", SelectionMode::Character, Some(mode), TopToolbarMessage::SetSelectionMode)
-                .size(14)
-                .text_size(11),
-            radio("Attribute", SelectionMode::Attribute, Some(mode), TopToolbarMessage::SetSelectionMode)
-                .size(14)
-                .text_size(11),
-            radio("Foreground", SelectionMode::Foreground, Some(mode), TopToolbarMessage::SetSelectionMode)
-                .size(14)
-                .text_size(11),
-            radio("Background", SelectionMode::Background, Some(mode), TopToolbarMessage::SetSelectionMode)
-                .size(14)
-                .text_size(11),
-            Space::new().width(Length::Fixed(16.0)),
-            text("⇧: add  ⌘/Ctrl: remove").size(10),
+            Space::new().width(Length::Fill),
+            segmented_control,
+            Space::new().width(Length::Fixed(24.0)),
+            text("⇧: add   ⌃/Ctrl: remove").size(14),
+            Space::new().width(Length::Fill),
         ]
         .spacing(8)
+        .align_y(iced::Alignment::Center)
         .into()
     }
 
