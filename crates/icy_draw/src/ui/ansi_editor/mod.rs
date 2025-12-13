@@ -30,6 +30,7 @@ pub mod constants;
 mod edit_layer_dialog;
 mod file_settings_dialog;
 mod fkey_toolbar;
+mod fkey_toolbar_gpu;
 mod font_selector_dialog;
 mod font_slot_manager_dialog;
 mod layer_view;
@@ -49,7 +50,9 @@ pub use char_selector::*;
 pub use color_switcher_gpu::*;
 pub use edit_layer_dialog::*;
 pub use file_settings_dialog::*;
-pub use fkey_toolbar::*;
+// Old Canvas-based FKeyToolbar - replaced by GPU version
+// pub use fkey_toolbar::*;
+pub use fkey_toolbar_gpu::*;
 pub use font_selector_dialog::*;
 pub use font_slot_manager_dialog::*;
 use icy_engine_edit::EditState;
@@ -231,8 +234,8 @@ pub struct AnsiEditor {
     pub current_tool: Tool,
     /// Top toolbar (tool-specific options)
     pub top_toolbar: TopToolbar,
-    /// F-key toolbar canvas (Click tool only)
-    pub fkey_toolbar: FKeyToolbar,
+    /// F-key toolbar (GPU shader version, Click tool only)
+    pub fkey_toolbar: ShaderFKeyToolbar,
     /// Color switcher (FG/BG display)
     pub color_switcher: ColorSwitcher,
     /// Palette grid
@@ -545,7 +548,7 @@ impl AnsiEditor {
             tool_panel: ToolPanel::new(),
             current_tool: Tool::Click,
             top_toolbar,
-            fkey_toolbar: FKeyToolbar::new(),
+            fkey_toolbar: ShaderFKeyToolbar::new(),
             color_switcher,
             palette_grid,
             canvas,
@@ -2265,10 +2268,10 @@ impl AnsiEditor {
         // Clone font for char selector overlay (will be used later if popup is open)
         let font_for_char_selector = current_font.clone();
 
-        // Use FKeyToolbar canvas for Click tool, regular TopToolbar for other tools
+        // Use GPU FKeyToolbar for Click tool, regular TopToolbar for other tools
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.current_tool == Tool::Click {
             self.fkey_toolbar
-                .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg)
+                .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg, &Theme::Dark)
                 .map(AnsiEditorMessage::FKeyToolbar)
         } else {
             self.top_toolbar
