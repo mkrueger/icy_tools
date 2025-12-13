@@ -516,7 +516,7 @@ impl AnsiEditor {
                     ToolPanelMessage::ClickSlot(_) => {
                         // After the tool panel updates, sync our current_tool
                         let _ = self.tool_panel.update(msg.clone());
-                        self.current_tool = self.tool_panel.current_tool();
+                        self.change_tool(self.tool_panel.current_tool());
                     }
                     ToolPanelMessage::Tick(delta) => {
                         self.tool_panel.tick(*delta);
@@ -658,7 +658,7 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::SelectTool(idx) => {
                 // Select tool by slot index
-                self.current_tool = tools::click_tool_slot(idx, self.current_tool);
+                self.change_tool(tools::click_tool_slot(idx, self.current_tool));
                 self.tool_panel.set_tool(self.current_tool);
                 Task::none()
             }
@@ -854,11 +854,8 @@ impl AnsiEditor {
 
     /// Update the layer bounds display based on current layer selection
     fn update_layer_bounds(&mut self) {
-        if !self.show_layer_borders {
-            self.canvas.set_layer_bounds(None, false);
-            return;
-        }
-
+        // Always set layer bounds (needed for selection marching ants drawing)
+        self.canvas.set_show_layer_borders(self.show_layer_borders);
         // Get current layer info from EditState
         let layer_bounds = {
             let mut screen = self.screen.lock();
@@ -910,13 +907,9 @@ impl AnsiEditor {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
-            let font = screen.font(0);
-            let (font_width, font_height) = if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0) // Default fallback
-            };
+            let size = screen.font_dimensions();
+            let font_width = size.width as f32;
+            let font_height = size.height as f32;
 
             // Access the EditState to get selection
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
@@ -1008,12 +1001,13 @@ impl AnsiEditor {
                     // Find tool with this shortcut
                     for (slot_idx, pair) in tools::TOOL_SLOTS.iter().enumerate() {
                         if pair.primary.shortcut() == Some(ch) {
-                            self.current_tool = tools::click_tool_slot(slot_idx, self.current_tool);
+                            self.change_tool(tools::click_tool_slot(slot_idx, self.current_tool));
                             self.tool_panel.set_tool(self.current_tool);
                             return;
                         }
                         if pair.secondary.shortcut() == Some(ch) {
-                            self.current_tool = tools::click_tool_slot(slot_idx, self.current_tool);
+                            
+                            self.change_tool(tools::click_tool_slot(slot_idx, self.current_tool));
                             self.tool_panel.set_tool(self.current_tool);
                             return;
                         }
@@ -1040,7 +1034,7 @@ impl AnsiEditor {
                                 // Convert Unicode to CP437 for ANSI art
                                 let cp437_char = self.with_edit_state(|state| state.get_buffer().buffer_type.convert_from_unicode(ch));
                                 // Type character at cursor using terminal_input
-                                let result = self.with_edit_state(|state| state.type_key(cp437_char));
+                                let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| state.type_key(cp437_char));
                                 if let Err(e) = result {
                                     log::warn!("Failed to type character: {}", e);
                                 }
@@ -1642,14 +1636,9 @@ impl AnsiEditor {
 
         // Get font dimensions for line numbers positioning
         let (font_width, font_height) = {
-            let screen = self.screen.lock();
-            let font = screen.font(0);
-            if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0) // Default fallback
-            }
+            let screen: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = self.screen.lock();
+            let size = screen.font_dimensions();
+            (size.width as f32, size.height as f32)
         };
 
         // Build the center area with optional line numbers overlay
@@ -1755,6 +1744,15 @@ impl AnsiEditor {
             current_font_slot,
             slot_fonts,
         }
+    }
+    
+    fn change_tool(&mut self, tool: Tool)  {
+        if self.current_tool == tool {
+            return;
+        }
+        let is_visble = matches!(tool, Tool::Click | Tool::Font);
+        self.with_edit_state(|state| state.set_caret_visible(is_visble));
+        self.current_tool = tool;
     }
 }
 

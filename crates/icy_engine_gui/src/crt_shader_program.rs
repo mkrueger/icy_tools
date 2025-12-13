@@ -10,9 +10,10 @@ use crate::{
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
 };
 use iced::widget::shader;
-use iced::{Rectangle, mouse};
+use iced::{Rectangle, mouse, window};
 use icy_engine::{CaretShape, KeyModifiers, MouseButton};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Program wrapper that renders the terminal using sliding window tile approach
 pub struct CRTShaderProgram<'a> {
@@ -36,7 +37,6 @@ impl<'a> CRTShaderProgram<'a> {
     }
 
     fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
-        let now = std::time::Instant::now();
         let mut font_w = 0usize;
         let mut font_h = 0usize;
         let scan_lines;
@@ -63,10 +63,10 @@ impl<'a> CRTShaderProgram<'a> {
         {
             let screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
-            if let Some(font) = screen.font(0) {
-                font_w = font.size().width as usize;
-                font_h = font.size().height as usize;
-            }
+            
+            let font_dims = screen.font_dimensions();
+            font_w = font_dims.width as usize;
+            font_h = font_dims.height as usize;
 
             state.update_cached_screen_info(&**screen);
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
@@ -219,7 +219,6 @@ impl<'a> CRTShaderProgram<'a> {
                             heights.push(cached.height);
                         }
                     } else {
-                        println!("[CACHE MISS] tile_idx={} blink={}", tile_idx, blink_state);
                         // Render this tile
                         let tile_region: icy_engine::Rectangle =
                             icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
@@ -408,6 +407,60 @@ impl<'a> CRTShaderProgram<'a> {
         state.character_blink.update(now);
 
         let is_over = cursor.is_over(bounds);
+
+        // Handle animation: on each redraw, check if we need more animation frames
+        if let iced::Event::Window(window::Event::RedrawRequested(_instant)) = event {
+            // Check if we need animation for:
+            // 1. Caret blink
+            // 2. Character blink  
+            // 3. Selection marching ants (always animate if selection is active)
+            // 4. Layer bounds marching ants (when layer overlaps with selection)
+            let needs_caret_blink = state.caret_blink.is_due(now);
+            let needs_char_blink = state.character_blink.is_due(now);
+            
+            // Check if there's an active selection or layer bounds that need marching ants animation
+            let (has_selection, has_layer_bounds) = {
+                let markers = self.term.markers.read();
+                let sel = markers.selection_rect.is_some() || markers.selection_mask_data.is_some();
+                let layer = markers.layer_bounds.is_some() && markers.show_layer_bounds;
+                (sel, layer)
+            };
+            
+            // Layer bounds need animation when both selection and layer are active
+            // (marching ants on layer border inside selection)
+            let needs_marching_ants = has_selection || (has_layer_bounds && has_selection);
+            
+            // Calculate next redraw time
+            let next_blink_time = if needs_caret_blink || needs_char_blink {
+                // If blink is due, request immediate redraw
+                Some(Duration::from_millis(16))
+            } else {
+                // Calculate time until next blink
+                let caret_remaining = state.caret_blink.time_until_next(now);
+                let char_remaining = state.character_blink.time_until_next(now);
+                Some(Duration::from_millis(caret_remaining.min(char_remaining) as u64))
+            };
+            
+            // For marching ants, we need ~30fps animation
+            let selection_frame_time = if needs_marching_ants {
+                Some(Duration::from_millis(33)) // ~30fps for marching ants
+            } else {
+                None
+            };
+            
+            // Use the shorter of the two timings
+            let next_frame = match (next_blink_time, selection_frame_time) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            };
+            
+            if let Some(delay) = next_frame {
+                let next = *_instant + delay;
+                return Some(iced::widget::Action::request_redraw_at(next));
+            }
+        }
 
         if let iced::Event::Mouse(mouse_event) = event {
             let viewport = self.term.viewport.read();

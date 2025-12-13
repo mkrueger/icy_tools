@@ -199,7 +199,7 @@ impl Screen for TextScreen {
     }
 
     fn resolution(&self) -> Size {
-        let font_size = self.font(0).unwrap().size();
+        let font_size = self.font_dimensions();
         let rect = self.terminal_state().size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;
@@ -207,7 +207,7 @@ impl Screen for TextScreen {
     }
 
     fn virtual_size(&self) -> Size {
-        let font_size = self.font(0).unwrap().size();
+        let font_size = self.font_dimensions();
         let rect = self.buffer.size();
         let px_width = rect.width * font_size.width;
         let px_height = rect.height * font_size.height;

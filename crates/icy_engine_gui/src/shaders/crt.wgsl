@@ -100,6 +100,9 @@ struct Uniforms {
     font_width: f32,             // Font width in pixels
     font_height: f32,            // Font height in pixels
     selection_mask_size: vec2<f32>, // Selection mask size in cells (width, height)
+
+    // Terminal area within the full viewport (for rendering selection outside document bounds)
+    terminal_area: vec4<f32>,    // (start_x, start_y, end_x, end_y) in normalized UV coordinates
 }
 
 struct MonitorColor {
@@ -394,33 +397,96 @@ fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
     return vec3<f32>(0.0);
 }
 
+// Render pixels outside the terminal area (but inside the widget)
+// Only draws selection rectangle borders - no terminal content
+fn render_outside_terminal(doc_pixel: vec2<f32>, viewport_uv: vec2<f32>) -> vec4<f32> {
+    var color = uniforms.background_color;
+    
+    // Check if we should draw selection rectangle border
+    if (uniforms.selection_enabled > 0.5 && uniforms.selection_mask_enabled < 0.5) {
+        // Rectangle selection mode - draw marching ants border
+        let sel_left = uniforms.selection_rect.x;
+        let sel_top = uniforms.selection_rect.y;
+        let sel_right = uniforms.selection_rect.z;
+        let sel_bottom = uniforms.selection_rect.w;
+        
+        // Border thickness in pixels
+        let border_thickness = 1.5;
+        
+        // Check if on border (within threshold of selection edges)
+        let on_left_edge = abs(doc_pixel.x - sel_left) < border_thickness && 
+                           doc_pixel.y >= sel_top - border_thickness && doc_pixel.y <= sel_bottom + border_thickness;
+        let on_right_edge = abs(doc_pixel.x - sel_right) < border_thickness && 
+                            doc_pixel.y >= sel_top - border_thickness && doc_pixel.y <= sel_bottom + border_thickness;
+        let on_top_edge = abs(doc_pixel.y - sel_top) < border_thickness && 
+                          doc_pixel.x >= sel_left - border_thickness && doc_pixel.x <= sel_right + border_thickness;
+        let on_bottom_edge = abs(doc_pixel.y - sel_bottom) < border_thickness && 
+                             doc_pixel.x >= sel_left - border_thickness && doc_pixel.x <= sel_right + border_thickness;
+        
+        if (on_left_edge || on_right_edge || on_top_edge || on_bottom_edge) {
+            // Outside the terminal we only render a solid white selection border.
+            color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+        }
+    }
+    
+    return color;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Apply wobble & curvature to display UV
-    let wobbled_uv = apply_sync_wobble(in.tex_coord);
+    // The viewport now covers the entire widget area, not just the terminal.
+    // terminal_area defines where the actual terminal is within the viewport:
+    // (start_x, start_y, end_x, end_y) in normalized UV coordinates (0-1)
+    let term_start = uniforms.terminal_area.xy;
+    let term_end = uniforms.terminal_area.zw;
+    let term_size = term_end - term_start;
+    
+    // Transform viewport UV to terminal UV
+    // viewport_uv is in full widget space, terminal_uv is in terminal space (0-1)
+    let viewport_uv = in.tex_coord;
+    let terminal_uv = (viewport_uv - term_start) / term_size;
+    
+    // Check if we're inside the terminal area
+    let inside_terminal = viewport_uv.x >= term_start.x && viewport_uv.x <= term_end.x &&
+                          viewport_uv.y >= term_start.y && viewport_uv.y <= term_end.y;
+    
+    // Apply wobble & curvature to terminal UV (only meaningful inside terminal)
+    let wobbled_uv = apply_sync_wobble(terminal_uv);
     let distorted_uv = apply_curvature(wobbled_uv);
+    
+    // Scroll and visible dimensions
+    let visible_w = uniforms.visible_width;
+    let visible_h = uniforms.visible_height;
+    let scroll_x = uniforms.scroll_offset_x;
+    let scroll_y = uniforms.scroll_offset_y;
+    
+    // Calculate document pixel position for OUTSIDE terminal (using terminal_uv)
+    // This is used for render_outside_terminal
+    let outside_screen_pixel = terminal_uv * vec2<f32>(visible_w, visible_h);
+    let outside_doc_pixel = outside_screen_pixel + vec2<f32>(scroll_x, scroll_y);
 
+    // If outside terminal area, render background with selection overlay only
+    if (!inside_terminal) {
+        return render_outside_terminal(outside_doc_pixel, viewport_uv);
+    }
+
+    // If UV is outside 0-1 range after curvature (outside curved screen)
     if (distorted_uv.x < 0.0 || distorted_uv.y < 0.0 || distorted_uv.x > 1.0 || distorted_uv.y > 1.0) {
         return uniforms.background_color;
     }
+
+    // Calculate document pixel position for INSIDE terminal (using distorted_uv)
+    // This is used for all effects: selection, layer bounds, caret, etc.
+    let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+    let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
 
     // Sample from sliced textures with scroll offset handling
     let tex_color = sample_sliced_texture(distorted_uv);
     var color = adjust_color(tex_color.rgb);
 
     // Blend reference image (if enabled)
+    // Uses doc_pixel calculated at the beginning of fs_main
     if (uniforms.ref_image_enabled > 0.5) {
-        let visible_w = uniforms.visible_width;
-        let visible_h = uniforms.visible_height;
-        let scroll_x = uniforms.scroll_offset_x;
-        let scroll_y = uniforms.scroll_offset_y;
-        
-        // Screen pixel position
-        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
-        
-        // Document pixel position (absolute)
-        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
-        
         // Apply offset
         let adjusted_pixel = doc_pixel - uniforms.ref_image_offset;
         
@@ -495,17 +561,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let raster_h = uniforms.raster_spacing.y;
         
         if (raster_w > 0.0 && raster_h > 0.0) {
-            // Calculate absolute document position (including scroll offset)
-            let visible_w = uniforms.visible_width;
-            let visible_h = uniforms.visible_height;
-            let scroll_x = uniforms.scroll_offset_x;
-            let scroll_y = uniforms.scroll_offset_y;
-            
-            // Screen pixel position
-            let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
-            
-            // Document pixel position (absolute)
-            let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+            // Use doc_pixel calculated at the beginning of fs_main
             
             // Check if we're on a grid line
             // Use modulo to find position within grid cell
@@ -538,17 +594,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let guide_h = uniforms.guide_pos.y;
         
         if (guide_w > 0.0 && guide_h > 0.0) {
-            // Calculate absolute document position (including scroll offset)
-            let visible_w = uniforms.visible_width;
-            let visible_h = uniforms.visible_height;
-            let scroll_x = uniforms.scroll_offset_x;
-            let scroll_y = uniforms.scroll_offset_y;
-            
-            // Screen pixel position
-            let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
-            
-            // Document pixel position (absolute)
-            let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
+            // Use doc_pixel calculated at the beginning of fs_main
             
             // Create dashed pattern (4 pixels on, 4 pixels off)
             let dash_length = 4.0;
@@ -575,33 +621,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
+
+    let layer_left = uniforms.layer_rect.x;
+    let layer_top = uniforms.layer_rect.y;
+    let layer_right = uniforms.layer_rect.z;
+    let layer_bottom = uniforms.layer_rect.w;
+    
     // Draw layer bounds (dashed border around current layer)
     // layer_rect contains (x, y, x+width, y+height) in document pixel coordinates
-    if (uniforms.layer_enabled > 0.5) {
-        let layer_left = uniforms.layer_rect.x;
-        let layer_top = uniforms.layer_rect.y;
-        let layer_right = uniforms.layer_rect.z;
-        let layer_bottom = uniforms.layer_rect.w;
-        
-        // Calculate absolute document position (including scroll offset)
-        let visible_w = uniforms.visible_width;
-        let visible_h = uniforms.visible_height;
-        let scroll_x = uniforms.scroll_offset_x;
-        let scroll_y = uniforms.scroll_offset_y;
-        
-        // Screen pixel position
-        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
-        
-        // Document pixel position (absolute)
-        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
-        
-        // Create dashed pattern (2 pixels on, 2 pixels off) - static, no animation
-        let dash_length = 2.0;
-        // Use both x and y position for diagonal dash pattern (no animation)
-        let dash_offset = doc_pixel.x + doc_pixel.y;
-        let dash_pattern = (dash_offset % (dash_length * 2.0)) < dash_length;
-        
-        // Line thickness
+    // Inside selection: marching ants (black/white animated) - drawn if selection is active
+    // Outside selection: colored dashed border - only if layer_enabled is on
+    // Only process if layer_enabled is on OR selection is active
+    if (uniforms.layer_enabled > 0.5 || uniforms.selection_enabled > 0.5) {
+        // Line thickness (1 pixel)
         let line_thickness = 1.0;
         
         // Check if we're on the layer border
@@ -609,82 +641,274 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let in_x_range = doc_pixel.x >= layer_left && doc_pixel.x <= layer_right;
         
         // Left border
-        let on_left_border = abs(doc_pixel.x - layer_left) < line_thickness && in_y_range && dash_pattern;
-        // Right border
-        let on_right_border = abs(doc_pixel.x - layer_right) < line_thickness && in_y_range && dash_pattern;
+        let on_left_border = abs(doc_pixel.x - layer_left) < line_thickness && in_y_range;
+        // Right border  
+        let on_right_border = abs(doc_pixel.x - layer_right) < line_thickness && in_y_range;
         // Top border
-        let on_top_border = abs(doc_pixel.y - layer_top) < line_thickness && in_x_range && dash_pattern;
+        let on_top_border = abs(doc_pixel.y - layer_top) < line_thickness && in_x_range;
         // Bottom border
-        let on_bottom_border = abs(doc_pixel.y - layer_bottom) < line_thickness && in_x_range && dash_pattern;
+        let on_bottom_border = abs(doc_pixel.y - layer_bottom) < line_thickness && in_x_range;
         
-        if (on_left_border || on_right_border || on_top_border || on_bottom_border) {
-            // Draw with the layer color
-            color = uniforms.layer_color.rgb;
+        let on_layer_border = on_left_border || on_right_border || on_top_border || on_bottom_border;
+        
+        if (on_layer_border) {
+            // Check if we're inside the selection rectangle
+            let sel_left = uniforms.selection_rect.x;
+            let sel_top = uniforms.selection_rect.y;
+            let sel_right = uniforms.selection_rect.z;
+            let sel_bottom = uniforms.selection_rect.w;
+            
+            let in_selection = uniforms.selection_enabled > 0.5 &&
+                                doc_pixel.x >= sel_left && doc_pixel.x < sel_right &&
+                                doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+            
+            // Create dash pattern - use position along the edge
+            // Vertical edges (left/right) use Y, horizontal edges (top/bottom) use X
+            let dash_length = 4.0;
+            var edge_pos = 0.0;
+            if (on_left_border || on_right_border) {
+                edge_pos = doc_pixel.y;
+            } else {
+                edge_pos = doc_pixel.x;
+            }
+            
+            if (in_selection) {
+                // Inside selection: marching ants (animated black/white)
+                let time_offset = uniforms.time * 8.0;
+                let dash_phase = floor((edge_pos + time_offset) / dash_length);
+                let is_white = (dash_phase % 2.0) == 0.0;
+                
+                if (is_white) {
+                    color = vec3<f32>(1.0, 1.0, 1.0);  // White
+                } else {
+                    color = vec3<f32>(0.0, 0.0, 0.0);  // Black
+                }
+            } else if (uniforms.layer_enabled > 0.5) {
+                // Outside selection: colored dashed border (static)
+                // Only draw if layer_enabled is on
+                let dash_phase = floor(edge_pos / dash_length);
+                let is_color = (dash_phase % 2.0) == 0.0;
+                
+                if (is_color) {
+                    color = uniforms.layer_color.rgb;
+                } else {
+                    color = vec3<f32>(0.0, 0.0, 0.0);  // Black
+                }
+            }
+            // If layer_enabled is off AND not in selection: don't draw anything
         }
     }
 
-    // Draw selection (inverted colors for selected area)
+    // Track if we're drawing selection border (to skip post-processing effects)
+    var on_selection_border = false;
+
+    // Draw selection with animated marching ants border (ported from old egui version)
     // selection_rect contains (x, y, x+width, y+height) in document pixel coordinates
+    // Uses doc_pixel and screen_pixel calculated at the beginning of fs_main
     if (uniforms.selection_enabled > 0.5) {
         let sel_left = uniforms.selection_rect.x;
         let sel_top = uniforms.selection_rect.y;
         let sel_right = uniforms.selection_rect.z;
         let sel_bottom = uniforms.selection_rect.w;
         
-        // Calculate absolute document position (including scroll offset)
-        let visible_w = uniforms.visible_width;
-        let visible_h = uniforms.visible_height;
-        let scroll_x = uniforms.scroll_offset_x;
-        let scroll_y = uniforms.scroll_offset_y;
+        // Check if inside the current layer bounds (for animated vs static marching ants)
+        // layer_rect is (x, y, x+width, y+height) where y increases downward
+        let in_layer = doc_pixel.x >= layer_left && doc_pixel.x < layer_right &&
+                       doc_pixel.y >= layer_top && doc_pixel.y < layer_bottom;
+
+        // Helper function inline: sample selection mask at cell position
+        // Returns true if cell is selected
+        let cell_x = floor(doc_pixel.x / uniforms.font_width);
+        let cell_y = floor(doc_pixel.y / uniforms.font_height);
         
-        // Screen pixel position
-        let screen_pixel = distorted_uv * vec2<f32>(visible_w, visible_h);
+        // Sample current pixel and its 8 neighbors from the selection mask
+        var sel_current = false;
+        var sel_up = false;
+        var sel_down = false;
+        var sel_left_n = false;
+        var sel_right_n = false;
+        var sel_up_left = false;
+        var sel_up_right = false;
+        var sel_down_left = false;
+        var sel_down_right = false;
         
-        // Document pixel position (absolute)
-        let doc_pixel = screen_pixel + vec2<f32>(scroll_x, scroll_y);
-        
-        var in_selection = false;
-        
-        // Check if using selection mask texture
         if (uniforms.selection_mask_enabled > 0.5) {
-            // Calculate cell position from document pixel
-            let cell_x = floor(doc_pixel.x / uniforms.font_width);
-            let cell_y = floor(doc_pixel.y / uniforms.font_height);
+            // Sample at cell level (the mask has one pixel per cell)
+            let mask_w = uniforms.selection_mask_size.x;
+            let mask_h = uniforms.selection_mask_size.y;
             
-            // Check bounds
-            if (cell_x >= 0.0 && cell_x < uniforms.selection_mask_size.x &&
-                cell_y >= 0.0 && cell_y < uniforms.selection_mask_size.y) {
-                // Sample selection mask texture at cell position
-                // The mask texture has one pixel per cell
-                let mask_uv = vec2<f32>(
-                    (cell_x + 0.5) / uniforms.selection_mask_size.x,
-                    (cell_y + 0.5) / uniforms.selection_mask_size.y
-                );
-                let mask_sample = textureSample(t_selection_mask, terminal_sampler, mask_uv);
-                // White (r > 0.5) means selected
-                in_selection = mask_sample.r > 0.5;
+            // Current cell
+            if (cell_x >= 0.0 && cell_x < mask_w && cell_y >= 0.0 && cell_y < mask_h) {
+                let uv = vec2<f32>((cell_x + 0.5) / mask_w, (cell_y + 0.5) / mask_h);
+                sel_current = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            
+            // Up neighbor
+            if (cell_x >= 0.0 && cell_x < mask_w && cell_y - 1.0 >= 0.0 && cell_y - 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x + 0.5) / mask_w, (cell_y - 0.5) / mask_h);
+                sel_up = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            
+            // Down neighbor
+            if (cell_x >= 0.0 && cell_x < mask_w && cell_y + 1.0 >= 0.0 && cell_y + 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x + 0.5) / mask_w, (cell_y + 1.5) / mask_h);
+                sel_down = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            
+            // Left neighbor
+            if (cell_x - 1.0 >= 0.0 && cell_x - 1.0 < mask_w && cell_y >= 0.0 && cell_y < mask_h) {
+                let uv = vec2<f32>((cell_x - 0.5) / mask_w, (cell_y + 0.5) / mask_h);
+                sel_left_n = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            
+            // Right neighbor
+            if (cell_x + 1.0 >= 0.0 && cell_x + 1.0 < mask_w && cell_y >= 0.0 && cell_y < mask_h) {
+                let uv = vec2<f32>((cell_x + 1.5) / mask_w, (cell_y + 0.5) / mask_h);
+                sel_right_n = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            
+            // Diagonal neighbors
+            if (cell_x - 1.0 >= 0.0 && cell_x - 1.0 < mask_w && cell_y - 1.0 >= 0.0 && cell_y - 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x - 0.5) / mask_w, (cell_y - 0.5) / mask_h);
+                sel_up_left = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            if (cell_x + 1.0 >= 0.0 && cell_x + 1.0 < mask_w && cell_y - 1.0 >= 0.0 && cell_y - 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x + 1.5) / mask_w, (cell_y - 0.5) / mask_h);
+                sel_up_right = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            if (cell_x - 1.0 >= 0.0 && cell_x - 1.0 < mask_w && cell_y + 1.0 >= 0.0 && cell_y + 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x - 0.5) / mask_w, (cell_y + 1.5) / mask_h);
+                sel_down_left = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+            }
+            if (cell_x + 1.0 >= 0.0 && cell_x + 1.0 < mask_w && cell_y + 1.0 >= 0.0 && cell_y + 1.0 < mask_h) {
+                let uv = vec2<f32>((cell_x + 1.5) / mask_w, (cell_y + 1.5) / mask_h);
+                sel_down_right = textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
             }
         } else {
-            // Use rectangle-based selection
-            in_selection = doc_pixel.x >= sel_left && doc_pixel.x < sel_right &&
-                          doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+            // Rectangle-based selection - check if pixel is in rectangle
+            sel_current = doc_pixel.x >= sel_left && doc_pixel.x < sel_right &&
+                         doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+            // For rectangle mode, neighbors at +/-1 pixel
+            sel_up = (doc_pixel.y - 1.0) >= sel_top && (doc_pixel.y - 1.0) < sel_bottom &&
+                    doc_pixel.x >= sel_left && doc_pixel.x < sel_right;
+            sel_down = (doc_pixel.y + 1.0) >= sel_top && (doc_pixel.y + 1.0) < sel_bottom &&
+                      doc_pixel.x >= sel_left && doc_pixel.x < sel_right;
+            sel_left_n = (doc_pixel.x - 1.0) >= sel_left && (doc_pixel.x - 1.0) < sel_right &&
+                        doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+            sel_right_n = (doc_pixel.x + 1.0) >= sel_left && (doc_pixel.x + 1.0) < sel_right &&
+                         doc_pixel.y >= sel_top && doc_pixel.y < sel_bottom;
+            sel_up_left = (doc_pixel.x - 1.0) >= sel_left && (doc_pixel.x - 1.0) < sel_right &&
+                         (doc_pixel.y - 1.0) >= sel_top && (doc_pixel.y - 1.0) < sel_bottom;
+            sel_up_right = (doc_pixel.x + 1.0) >= sel_left && (doc_pixel.x + 1.0) < sel_right &&
+                          (doc_pixel.y - 1.0) >= sel_top && (doc_pixel.y - 1.0) < sel_bottom;
+            sel_down_left = (doc_pixel.x - 1.0) >= sel_left && (doc_pixel.x - 1.0) < sel_right &&
+                           (doc_pixel.y + 1.0) >= sel_top && (doc_pixel.y + 1.0) < sel_bottom;
+            sel_down_right = (doc_pixel.x + 1.0) >= sel_left && (doc_pixel.x + 1.0) < sel_right &&
+                            (doc_pixel.y + 1.0) >= sel_top && (doc_pixel.y + 1.0) < sel_bottom;
         }
         
-        if (in_selection) {
-            // Invert colors for selection (like the old egui shader)
-            color = vec3<f32>(1.0) - color;
+        // Check if current pixel is on the edge of selection
+        let is_on_edge = sel_current && (!sel_up || !sel_down || !sel_left_n || !sel_right_n ||
+                                         !sel_up_left || !sel_up_right || !sel_down_left || !sel_down_right);
+        
+        // Check if current pixel is adjacent to selection (for outer border)
+        let is_adjacent = !sel_current && (sel_up || sel_down || sel_left_n || sel_right_n ||
+                                           sel_up_left || sel_up_right || sel_down_left || sel_down_right);
+        
+        if (sel_current) {
+            if (is_on_edge) {
+                // Edge of selection - marching ants
+                // Determine edge position along the edge direction
+                // Check which edge we're on and use the appropriate coordinate
+                var edge_pos = 0.0;
+                let at_left = !sel_left_n;
+                let at_right = !sel_right_n;
+                let at_top = !sel_up;
+                let at_bottom = !sel_down;
+                
+                // For vertical edges use Y, for horizontal edges use X
+                if (at_left || at_right) {
+                    edge_pos = doc_pixel.y;
+                } else {
+                    edge_pos = doc_pixel.x;
+                }
+                
+                on_selection_border = true;
+                if (!in_layer) {
+                    // Outside layer: solid white border
+                    color = vec3<f32>(1.0, 1.0, 1.0);
+                } else {
+                    // Inside layer: marching ants
+                    let dash_length = 4.0;
+                    let dash_phase = floor((edge_pos + uniforms.time * 8.0) / dash_length);
+                    let is_white = (dash_phase % 2.0) == 0.0;
+                    if (is_white) {
+                        color = vec3<f32>(1.0, 1.0, 1.0);  // White
+                    } else {
+                        color = vec3<f32>(0.0, 0.0, 0.0);  // Black
+                    }
+                }
+            } else {
+                // Interior of selection: slightly dim (multiply by 0.9)
+                color = color * 0.9;
+            }
+        } else if (is_adjacent) {
+            // Adjacent to selection - dim the pixels
+            color = color * 0.6;
+        }
+        
+        // Draw selection rectangle border (for selections extending beyond document)
+        // This draws the border of the selection_rect uniform, which can extend beyond buffer
+        // 1 pixel wide border
+        let on_sel_rect_left = abs(doc_pixel.x - sel_left) < 1.0 && 
+                               doc_pixel.y >= sel_top && doc_pixel.y <= sel_bottom;
+        let on_sel_rect_right = abs(doc_pixel.x - sel_right) < 1.0 && 
+                                doc_pixel.y >= sel_top && doc_pixel.y <= sel_bottom;
+        let on_sel_rect_top = abs(doc_pixel.y - sel_top) < 1.0 && 
+                              doc_pixel.x >= sel_left && doc_pixel.x <= sel_right;
+        let on_sel_rect_bottom = abs(doc_pixel.y - sel_bottom) < 1.0 && 
+                                 doc_pixel.x >= sel_left && doc_pixel.x <= sel_right;
+        
+        if (on_sel_rect_left || on_sel_rect_right || on_sel_rect_top || on_sel_rect_bottom) {
+            // Marching ants - pattern runs along the edge
+            on_selection_border = true;
+            if (!in_layer) {
+                // Outside layer: solid white border
+                color = vec3<f32>(1.0, 1.0, 1.0);
+            } else {
+                // Inside layer: marching ants
+                let dash_length = 4.0;
+                
+                // Vertical edges use Y, horizontal edges use X
+                var edge_pos = 0.0;
+                if (on_sel_rect_left || on_sel_rect_right) {
+                    edge_pos = doc_pixel.y;
+                } else {
+                    edge_pos = doc_pixel.x;
+                }
+                
+                let dash_phase = floor((edge_pos + uniforms.time * 8.0) / dash_length);
+                let is_white = (dash_phase % 2.0) == 0.0;
+                if (is_white) {
+                    color = vec3<f32>(1.0, 1.0, 1.0);
+                } else {
+                    color = vec3<f32>(0.0, 0.0, 0.0);
+                }
+            }
         }
     }
 
     // Calculate bloom from original undistorted coordinates
     let bloom_glow = apply_bloom(distorted_uv);
     
-    // Apply post-processing effects
-    color = apply_scanlines(color, distorted_uv);
-    color = apply_noise(color, distorted_uv);
-    
-    // Add bloom on top (much more visible now)
-    color = color + bloom_glow;
+    // Apply post-processing effects (skip for selection border to keep clean marching ants)
+    if (!on_selection_border) {
+        color = apply_scanlines(color, distorted_uv);
+        color = apply_noise(color, distorted_uv);
+        
+        // Add bloom on top (much more visible now)
+        color = color + bloom_glow;
+    }
     
     // Final clamp before monitor type conversion
     color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));

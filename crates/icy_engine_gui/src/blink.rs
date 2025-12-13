@@ -62,4 +62,19 @@ impl Blink {
     pub fn rate(&self) -> u128 {
         self.blink_rate
     }
+
+    /// Check if a blink toggle is due at the given time.
+    pub fn is_due(&self, cur_ms: u128) -> bool {
+        cur_ms - self.last_blink > self.blink_rate
+    }
+
+    /// Calculate time in milliseconds until the next blink toggle.
+    pub fn time_until_next(&self, cur_ms: u128) -> u128 {
+        let elapsed = cur_ms - self.last_blink;
+        if elapsed >= self.blink_rate {
+            0
+        } else {
+            self.blink_rate - elapsed
+        }
+    }
 }

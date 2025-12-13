@@ -184,7 +184,7 @@ impl AmigaScreenBuffer {
         } else {
             &DEFAULT_BITFONT
         };
-        let font_size = font.size();
+        let font_size = self.font_dimensions();
 
         // Get glyph data from font
         let Some(glyph) = font.glyph(ch.ch) else {

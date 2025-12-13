@@ -16,7 +16,7 @@ fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
     if current_page != 0 {
         if let Some(current_font) = buf.font(current_page) {
             let current_height = current_font.size().height;
-            let default_height = buf.font(0).map(|f| f.size().height).unwrap_or(8);
+            let default_height = buf.font_dimensions().height;
 
             let mut pos = buf.caret().position();
             pos.y += current_height - default_height;

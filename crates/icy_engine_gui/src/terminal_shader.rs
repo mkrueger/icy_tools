@@ -147,6 +147,11 @@ struct CRTUniforms {
     font_height: f32,
     /// Selection mask size in cells (width, height)
     selection_mask_size: [f32; 2],
+
+    // Terminal area within the full viewport (for rendering selection outside document bounds)
+    /// Terminal area in normalized UV coordinates (start_x, start_y, end_x, end_y)
+    /// This defines where the actual terminal content is rendered within the full widget area
+    terminal_area: [f32; 4],
 }
 
 /// The terminal shader program (high-level interface)
@@ -576,7 +581,6 @@ impl shader::Primitive for TerminalShader {
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
             None => {
-                println!("[TEXTURE] needs_recreate: true (no existing instance)");
                 true
             }
             Some(resources) => {
@@ -587,12 +591,6 @@ impl shader::Primitive for TerminalShader {
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
 
-                if hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed {
-                    println!(
-                        "[TEXTURE] needs_recreate: hash_off={} hash_on={} slices={} width={} height={}",
-                        hash_off_changed, hash_on_changed, slices_changed, width_changed, height_changed
-                    );
-                }
 
                 hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed
             }
@@ -1033,8 +1031,19 @@ impl shader::Primitive for TerminalShader {
         let avail_h = _bounds.height.max(1.0);
         let use_int = self.monitor_settings.use_integer_scaling;
         let final_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
-        let scaled_w = term_w * final_scale;
-        let scaled_h = term_h * final_scale;
+        let scaled_w = (term_w * final_scale).min(avail_w);
+        let scaled_h = (term_h * final_scale).min(avail_h);
+
+        // Calculate terminal area within the full viewport (normalized 0-1 coordinates)
+        // This tells the shader where the actual terminal content is rendered
+        let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
+        let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
+        let terminal_area = [
+            offset_x / avail_w,                    // start_x (normalized)
+            offset_y / avail_h,                    // start_y (normalized)
+            (offset_x + scaled_w) / avail_w,       // end_x (normalized)
+            (offset_y + scaled_h) / avail_h,       // end_y (normalized)
+        ];
 
         // Pack slice heights into array: [slice0, slice1, slice2, first_slice_start_y]
         let mut slice_heights = [0.0f32; 4];
@@ -1171,7 +1180,7 @@ impl shader::Primitive for TerminalShader {
             // Layer bounds uniforms
             layer_rect: self.layer_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
             layer_color: self.layer_color,
-            layer_enabled: if self.layer_rect.is_some() { 1.0 } else { 0.0 },
+            layer_enabled: if self.show_layer_bounds { 1.0 } else { 0.0 },
             _layer_padding: [0.0; 3],
 
             // Selection uniforms
@@ -1192,8 +1201,10 @@ impl shader::Primitive for TerminalShader {
             } else {
                 [1.0, 1.0]
             },
-        };
 
+            // Terminal area within the full viewport
+            terminal_area,
+        };
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
 
@@ -1229,34 +1240,47 @@ impl shader::Primitive for TerminalShader {
         let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
         let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
 
-        let (vp_x, vp_y, vp_w, vp_h) = if use_int {
-            (
-                clip_bounds.x as f32 + offset_x.round(),
-                clip_bounds.y as f32 + offset_y.round(),
-                scaled_w.round(),
-                scaled_h.round(),
-            )
-        } else {
-            (clip_bounds.x as f32 + offset_x, clip_bounds.y as f32 + offset_y, scaled_w, scaled_h)
-        };
+        // Calculate logical coordinates for mouse mapping
+        // The scale_factor converts between logical and physical coordinates
+        let scale_factor = crate::get_scale_factor();
+        let logical_bounds_x = clip_bounds.x as f32 / scale_factor;
+        let logical_bounds_y = clip_bounds.y as f32 / scale_factor;
+        let logical_avail_w = avail_w / scale_factor;
+        let logical_avail_h = avail_h / scale_factor;
+        let logical_offset_x = offset_x / scale_factor;
+        let logical_offset_y = offset_y / scale_factor;
+        let logical_scaled_w = scaled_w / scale_factor;
+        let logical_scaled_h = scaled_h / scale_factor;
+        let logical_display_scale = display_scale; // Scale ratio stays the same
+
+        // Viewport covers the full clip_bounds area (not just the terminal area)
+        // This allows rendering selection outside the document bounds
+        let (vp_x, vp_y, vp_w, vp_h) = (
+            clip_bounds.x as f32,
+            clip_bounds.y as f32,
+            avail_w.min(MAX_VIEWPORT_DIM),
+            avail_h.min(MAX_VIEWPORT_DIM),
+        );
 
         // Update shared render info for mouse mapping
+        // Use LOGICAL coordinates since mouse events come in logical coordinates
+        // (cursor.position() returns logical coords, not physical)
         {
             let mut info = self.render_info.write();
-            info.display_scale = display_scale;
-            info.viewport_x = if use_int { offset_x.round() } else { offset_x };
-            info.viewport_y = if use_int { offset_y.round() } else { offset_y };
-            info.viewport_width = vp_w;
-            info.viewport_height = vp_h;
+            info.display_scale = logical_display_scale;
+            info.viewport_x = if use_int { logical_offset_x.round() } else { logical_offset_x };
+            info.viewport_y = if use_int { logical_offset_y.round() } else { logical_offset_y };
+            info.viewport_width = logical_scaled_w;
+            info.viewport_height = logical_scaled_h;
             info.terminal_width = term_w;
             info.terminal_height = term_h;
             info.font_width = self.font_width;
             info.font_height = self.font_height;
             info.scan_lines = self.scan_lines;
-            info.bounds_x = clip_bounds.x as f32;
-            info.bounds_y = clip_bounds.y as f32;
-            info.bounds_width = avail_w;
-            info.bounds_height = avail_h;
+            info.bounds_x = logical_bounds_x;
+            info.bounds_y = logical_bounds_y;
+            info.bounds_width = logical_avail_w;
+            info.bounds_height = logical_avail_h;
         }
 
         let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {

@@ -206,6 +206,10 @@ impl CanvasView {
     pub fn set_layer_bounds(&mut self, bounds: Option<(f32, f32, f32, f32)>, show: bool) {
         let mut markers = self.terminal.markers.write();
         markers.layer_bounds = bounds;
+    }
+
+    pub fn set_show_layer_borders(&mut self, show: bool) {
+        let mut markers: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, icy_engine_gui::EditorMarkers> = self.terminal.markers.write();
         markers.show_layer_bounds = show;
     }
 

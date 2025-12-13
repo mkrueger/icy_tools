@@ -195,11 +195,8 @@ impl CRTShaderState {
     /// Map mouse coordinates to cell position using shared RenderInfo from shader.
     /// Returns absolute document coordinates (with scroll offset applied).
     pub fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
-        let scale_factor = crate::get_scale_factor();
-
-        // Scale mouse coordinates
-        let scaled_mx = mx * scale_factor;
-        let scaled_my = my * scale_factor;
+        // RenderInfo is now in logical coordinates, matching mouse coordinates
+        // No need to scale - both are in logical coords
 
         // Use RenderInfo from shader (exact same values used for rendering)
         if render_info.font_width <= 0.0 || render_info.font_height <= 0.0 {
@@ -207,7 +204,7 @@ impl CRTShaderState {
         }
 
         // Convert screen coords to terminal pixel coords using RenderInfo
-        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels(scaled_mx, scaled_my)?;
+        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels(mx, my)?;
 
         // Handle scanlines (doubled vertical resolution in render)
         let effective_font_height = if render_info.scan_lines {
@@ -231,14 +228,11 @@ impl CRTShaderState {
 
     /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
     pub fn map_mouse_to_xy(&self, render_info: &crate::RenderInfo, mx: f32, my: f32) -> Option<Position> {
-        let scale_factor = crate::get_scale_factor();
-
-        // Scale mouse coordinates
-        let scaled_mx = mx * scale_factor;
-        let scaled_my = my * scale_factor;
+        // RenderInfo is now in logical coordinates, matching mouse coordinates
+        // No need to scale - both are in logical coords
 
         // Convert screen coords to terminal pixel coords using RenderInfo
-        let (term_x, term_y) = render_info.screen_to_terminal_pixels(scaled_mx, scaled_my)?;
+        let (term_x, term_y) = render_info.screen_to_terminal_pixels(mx, my)?;
 
         Some(Position::new(term_x as i32, term_y as i32))
     }
@@ -247,14 +241,11 @@ impl CRTShaderState {
     /// Used during drag operations where mouse can leave the viewport.
     /// Returns absolute document coordinates (with scroll offset applied).
     pub fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
-        let scale_factor = crate::get_scale_factor();
-
-        // Scale mouse coordinates
-        let scaled_mx = mx * scale_factor;
-        let scaled_my = my * scale_factor;
+        // RenderInfo is now in logical coordinates, matching mouse coordinates
+        // No need to scale - both are in logical coords
 
         // Use unclamped version that doesn't check bounds
-        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels_unclamped(scaled_mx, scaled_my);
+        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels_unclamped(mx, my);
 
         // Handle scanlines (doubled vertical resolution in render)
         let effective_font_height = if render_info.scan_lines {
