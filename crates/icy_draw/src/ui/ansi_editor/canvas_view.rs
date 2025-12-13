@@ -16,7 +16,7 @@ use icy_engine::Screen;
 use crate::fl;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 /// Messages for the canvas view
 #[derive(Clone, Debug)]
@@ -54,20 +54,17 @@ pub struct CanvasView {
     /// Terminal widget for rendering
     pub terminal: Terminal,
     /// Monitor settings for CRT effects (cached as Arc for efficient rendering)
-    pub monitor_settings: Arc<MonitorSettings>,
+    pub monitor_settings: Arc<RwLock<MonitorSettings>>,
 }
 
 impl CanvasView {
     /// Create a new canvas view with a screen
     /// The screen should be an EditState wrapped as Box<dyn Screen>
-    pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
+    pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>, monitor_settings: Arc<RwLock<MonitorSettings>>) -> Self {
         // Create terminal widget
         let terminal = Terminal::new(screen);
 
-        Self {
-            terminal,
-            monitor_settings: Arc::new(MonitorSettings::default()),
-        }
+        Self { terminal, monitor_settings }
     }
 
     /// Scroll viewport by delta
@@ -141,9 +138,9 @@ impl CanvasView {
     /// Apply a zoom message (unified zoom handling like icy_view)
     fn apply_zoom(&mut self, zoom_msg: ZoomMessage) {
         let current_zoom = self.terminal.get_zoom();
-        let use_integer = self.monitor_settings.use_integer_scaling;
+        let use_integer = self.monitor_settings.read().use_integer_scaling;
         // Create a new Arc with updated scaling_mode
-        let mut new_settings = (*self.monitor_settings).clone();
+        let mut new_settings = self.monitor_settings.read().clone();
         new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
         match new_settings.scaling_mode {
             ScalingMode::Auto => {
@@ -153,7 +150,7 @@ impl CanvasView {
                 self.terminal.set_zoom(z);
             }
         }
-        self.monitor_settings = Arc::new(new_settings);
+        *self.monitor_settings.write() = new_settings;
     }
 
     /// Handle unified terminal mouse events from icy_engine_gui.
@@ -165,8 +162,8 @@ impl CanvasView {
         // Individual tool handling will be added later
     }
 
-    /// Set monitor settings for CRT effects
-    pub fn set_monitor_settings(&mut self, settings: Arc<MonitorSettings>) {
+    /// Overwrite monitor settings (used when switching the backing shared settings)
+    pub fn set_monitor_settings_source(&mut self, settings: Arc<RwLock<MonitorSettings>>) {
         self.monitor_settings = settings;
     }
 
@@ -396,7 +393,7 @@ impl CanvasView {
     /// Render the canvas view with scrollbars
     pub fn view(&self) -> Element<'_, CanvasMessage> {
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone()).map(CanvasMessage::TerminalMessage);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone())).map(CanvasMessage::TerminalMessage);
 
         // Get scrollbar info using shared logic from icy_engine_gui
         let scrollbar_info = self.terminal.scrollbar_info();
@@ -449,7 +446,7 @@ impl CanvasView {
 
     /// Render the canvas view with custom monitor settings override
     pub fn view_with_settings(&self, settings: Option<Arc<MonitorSettings>>) -> Element<'_, CanvasMessage> {
-        let monitor_settings = settings.unwrap_or_else(|| self.monitor_settings.clone());
+        let monitor_settings = settings.unwrap_or_else(|| Arc::new(self.monitor_settings.read().clone()));
 
         // Use TerminalView to render with CRT shader effect
         let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(CanvasMessage::TerminalMessage);

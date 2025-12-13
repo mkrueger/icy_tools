@@ -119,4 +119,29 @@ impl FKeySets {
             }
         }
     }
+
+    /// Returns the codes for the currently selected set.
+    pub fn current_set_codes(&self) -> [u16; 12] {
+        self.sets.get(self.current_set).copied().unwrap_or([32; 12])
+    }
+
+    /// Returns the default codes for a given set index.
+    pub fn default_set_at(set_idx: usize) -> [u16; 12] {
+        let defaults = Self::default();
+        defaults.sets.get(set_idx).copied().unwrap_or([32; 12])
+    }
+
+    /// Checks if the given set is at default values.
+    pub fn is_set_default(&self, set_idx: usize) -> bool {
+        let current = self.sets.get(set_idx).copied().unwrap_or([32; 12]);
+        let default = Self::default_set_at(set_idx);
+        current == default
+    }
+
+    /// Resets the given set to default values.
+    pub fn reset_set(&mut self, set_idx: usize) {
+        if let Some(set_data) = self.sets.get_mut(set_idx) {
+            *set_data = Self::default_set_at(set_idx);
+        }
+    }
 }

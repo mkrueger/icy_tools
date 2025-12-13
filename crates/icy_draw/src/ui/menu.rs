@@ -304,12 +304,8 @@ pub fn menu_button_style(theme: &Theme, status: button::Status) -> button::Style
     };
     match status {
         button::Status::Active => base.with_background(Color::TRANSPARENT),
-        button::Status::Hovered => base.with_background(Color::from_rgb(
-            palette.primary.weak.color.r * 1.2,
-            palette.primary.weak.color.g * 1.2,
-            palette.primary.weak.color.b * 1.2,
-        )),
-        button::Status::Pressed => base.with_background(palette.primary.weak.color),
+        button::Status::Hovered => base.with_background(palette.primary.weak.color),
+        button::Status::Pressed => base.with_background(palette.primary.strong.color),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
     }
 }
@@ -325,11 +321,7 @@ pub fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
 
     match status {
         button::Status::Active => base.with_background(Color::TRANSPARENT),
-        button::Status::Hovered => base.with_background(Color::from_rgb(
-            palette.primary.weak.color.r * 1.2,
-            palette.primary.weak.color.g * 1.2,
-            palette.primary.weak.color.b * 1.2,
-        )),
+        button::Status::Hovered => base.with_background(palette.primary.weak.color),
         button::Status::Pressed => base.with_background(palette.primary.weak.color),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
     }

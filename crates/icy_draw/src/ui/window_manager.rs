@@ -9,13 +9,12 @@ use parking_lot::RwLock;
 
 use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
+use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
+use super::{MainWindow, Options, commands::create_draw_commands};
+use crate::load_window_icon;
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id};
-
-use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
-use super::{FKeySets, MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
-use crate::load_window_icon;
 
 // Generate the WindowCommands struct with handle() method
 command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id => WindowManagerMessage {
@@ -23,23 +22,6 @@ command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id 
     cmd::WINDOW_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
     cmd::FILE_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
 });
-
-/// Shared options between all windows
-pub struct SharedOptions {
-    /// Most recently used files
-    pub recent_files: MostRecentlyUsedFiles,
-    /// Moebius-style F-key character sets
-    pub fkeys: FKeySets,
-}
-
-impl SharedOptions {
-    pub fn load() -> Self {
-        Self {
-            recent_files: MostRecentlyUsedFiles::load(),
-            fkeys: FKeySets::load(),
-        }
-    }
-}
 
 const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
 
@@ -66,7 +48,7 @@ pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
     /// Cached window geometry (position, size) for session saving
     window_geometry: BTreeMap<window::Id, WindowGeometry>,
-    options: Arc<RwLock<SharedOptions>>,
+    options: Arc<RwLock<Options>>,
     /// Pending windows to restore (for session restore)
     pending_restores: Vec<WindowRestoreInfo>,
     /// Session manager for hot exit
@@ -109,7 +91,7 @@ impl WindowManager {
     /// Create a new WindowManager, restoring session if available
     pub fn new() -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
-        let options = SharedOptions::load();
+        let options = Options::load();
         let commands = WindowCommands::new();
 
         // Try to restore session
@@ -128,7 +110,7 @@ impl WindowManager {
         // Clear any existing session when opening via CLI
         session_manager.clear_session();
 
-        let options = SharedOptions::load();
+        let options = Options::load();
         let commands = WindowCommands::new();
 
         Self::open_initial_window(session_manager, options, commands, Some(path))
@@ -138,7 +120,7 @@ impl WindowManager {
     fn restore_session(
         session: SessionState,
         session_manager: SessionManager,
-        options: SharedOptions,
+        options: Options,
         commands: WindowCommands,
     ) -> (Self, Task<WindowManagerMessage>) {
         // Convert all window states to restore info
@@ -191,7 +173,7 @@ impl WindowManager {
     /// Open initial window (no session restore)
     fn open_initial_window(
         session_manager: SessionManager,
-        options: SharedOptions,
+        options: Options,
         commands: WindowCommands,
         path: Option<PathBuf>,
     ) -> (Self, Task<WindowManagerMessage>) {

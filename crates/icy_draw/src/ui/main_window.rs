@@ -24,7 +24,7 @@ use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolb
 use super::commands::create_draw_commands;
 use super::palette_editor::{PaletteEditorDialog, PaletteEditorMessage};
 use super::{
-    SharedOptions,
+    Options,
     menu::{MenuBarState, UndoInfo},
 };
 
@@ -176,6 +176,9 @@ pub enum Message {
     /// Show open file dialog without dirty check (user confirmed "Don't Save")
     ForceShowOpenDialog,
     ShowSettings,
+
+    SettingsDialog(super::settings_dialog::SettingsDialogMessage),
+    SettingsSaved(super::settings_dialog::SettingsResult),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Dialog
@@ -427,6 +430,7 @@ command_handlers! {
         cmd::FILE_OPEN => Message::OpenFile,
         cmd::FILE_SAVE => Message::SaveFile,
         cmd::FILE_SAVE_AS => Message::SaveFileAs,
+        cmd::SETTINGS_OPEN => Message::ShowSettings,
         cmd::VIEW_ZOOM_IN => Message::ZoomIn,
         cmd::VIEW_ZOOM_OUT => Message::ZoomOut,
         cmd::VIEW_ZOOM_RESET => Message::ZoomReset,
@@ -443,7 +447,7 @@ pub struct MainWindow {
     mode_state: ModeState,
 
     /// Shared options
-    options: Arc<RwLock<SharedOptions>>,
+    options: Arc<RwLock<Options>>,
 
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
@@ -477,7 +481,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<SharedOptions>>) -> Self {
+    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<Options>>) -> Self {
         let (mode_state, initial_error) = if let Some(ref p) = path {
             // Determine mode based on file format
             let format = FileFormat::from_path(p);
@@ -566,7 +570,7 @@ impl MainWindow {
     /// When `load_path` differs from `original_path`, it's an autosave file and we use
     /// `load_from_autosave` to load it (since autosave files have .autosave extension
     /// and can't be identified by extension).
-    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<RwLock<SharedOptions>>) -> Self {
+    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<RwLock<Options>>) -> Self {
         let (mode_state, initial_error) = match (&load_path, &original_path) {
             // Case 1: We have an autosave file to load (load_path differs from original_path)
             (Some(autosave), Some(orig)) if autosave != orig => {
@@ -772,14 +776,18 @@ impl MainWindow {
     /// Get zoom info string for display in title bar (e.g., "[AUTO]" or "[150%]")
     pub fn get_zoom_info_string(&self) -> String {
         if let ModeState::Ansi(editor) = &self.mode_state {
-            editor.canvas.monitor_settings.scaling_mode.format_zoom_string()
+            editor.canvas.monitor_settings.read().scaling_mode.format_zoom_string()
         } else {
             String::new()
         }
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dark
+        // Check if any dialog wants to override the theme (e.g., settings preview)
+        if let Some(theme) = self.dialogs.theme() {
+            return theme;
+        }
+        self.options.read().monitor_settings.read().get_theme()
     }
 
     /// Get current edit mode
@@ -1644,7 +1652,26 @@ impl MainWindow {
                 Task::none()
             }
             Message::ExportFile => Task::none(),
-            Message::ShowSettings => Task::none(),
+            Message::ShowSettings => {
+                let preview_font = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.with_edit_state(|state| state.get_buffer().font(0).cloned()),
+                    _ => None,
+                };
+
+                self.dialogs
+                    .push(super::settings_dialog::SettingsDialog::new(self.options.clone(), preview_font));
+                Task::none()
+            }
+            // SettingsDialog messages are routed through DialogStack::update above
+            Message::SettingsDialog(_) => Task::none(),
+            Message::SettingsSaved(_) => {
+                // Apply outline style to current ANSI editor (if any)
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let outline_style = { *self.options.read().font_outline_style.read() };
+                    editor.with_edit_state(|state| state.set_outline_style(outline_style));
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Edit operations (TODO: implement)

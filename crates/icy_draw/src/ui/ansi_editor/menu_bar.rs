@@ -293,12 +293,7 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 radius: Radius::new(6.0),
                 ..Default::default()
             },
-            path: Color::from_rgb(
-                palette.primary.weak.color.r * 1.2,
-                palette.primary.weak.color.g * 1.2,
-                palette.primary.weak.color.b * 1.2,
-            )
-            .into(),
+            path: palette.primary.weak.color.into(),
             ..primary(theme, status)
         }
     });

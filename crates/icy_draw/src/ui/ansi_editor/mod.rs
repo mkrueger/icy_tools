@@ -75,7 +75,7 @@ use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_s
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::{Mutex, RwLock};
 
-use crate::ui::SharedOptions;
+use crate::ui::Options;
 use icy_engine::BufferType;
 
 /// Convert icy_engine MouseButton to iced mouse button
@@ -241,7 +241,7 @@ pub struct AnsiEditor {
     /// Right panel state (minimap, layers)
     pub right_panel: RightPanel,
     /// Shared options
-    pub options: Arc<RwLock<SharedOptions>>,
+    pub options: Arc<RwLock<Options>>,
     /// Whether the document is modified
     pub is_modified: bool,
 
@@ -466,7 +466,7 @@ impl AnsiEditor {
     }
 
     /// Create a new empty ANSI editor
-    pub fn new(options: Arc<RwLock<SharedOptions>>) -> Self {
+    pub fn new(options: Arc<RwLock<Options>>) -> Self {
         let buffer = TextBuffer::create((80, 25));
         Self::with_buffer(buffer, None, options)
     }
@@ -474,7 +474,7 @@ impl AnsiEditor {
     /// Create an ANSI editor with a file
     ///
     /// Returns the editor with the loaded buffer, or an error if loading failed.
-    pub fn with_file(path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>) -> anyhow::Result<Self> {
         // Detect file format
         let format = FileFormat::from_path(&path).ok_or_else(|| anyhow::anyhow!("Unknown file format"))?;
 
@@ -493,7 +493,7 @@ impl AnsiEditor {
     }
 
     /// Create an ANSI editor with an existing buffer
-    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<SharedOptions>>) -> Self {
+    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>) -> Self {
         let id = unsafe {
             NEXT_ID = NEXT_ID.wrapping_add(1);
             NEXT_ID
@@ -507,6 +507,15 @@ impl AnsiEditor {
         let edit_state = EditState::from_buffer(buffer);
         let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(edit_state)));
 
+        // Initialize outline style from shared settings
+        let outline_style = { *options.read().font_outline_style.read() };
+        {
+            let mut guard = screen.lock();
+            if let Some(state) = guard.as_any_mut().downcast_mut::<EditState>() {
+                state.set_outline_style(outline_style);
+            }
+        }
+
         // Create palette components with synced palette
         let mut palette_grid = PaletteGrid::new();
         let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
@@ -515,8 +524,9 @@ impl AnsiEditor {
         let mut color_switcher = ColorSwitcher::new();
         color_switcher.sync_palette(&palette);
 
-        // Create canvas with cloned Arc to screen
-        let canvas = CanvasView::new(screen.clone());
+        // Create canvas with cloned Arc to screen + shared monitor settings
+        let shared_monitor_settings = { options.read().monitor_settings.clone() };
+        let canvas = CanvasView::new(screen.clone(), shared_monitor_settings);
 
         let initial_fkey_set = {
             let mut opts = options.write();
@@ -623,7 +633,7 @@ impl AnsiEditor {
     ///
     /// The autosave file is always saved in ICY format (to preserve layers, fonts, etc.),
     /// but we set the original path so future saves use the correct format.
-    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<RwLock<Options>>) -> anyhow::Result<Self> {
         // Autosaves are always saved in ICY format
         let format = FileFormat::IcyDraw;
 
