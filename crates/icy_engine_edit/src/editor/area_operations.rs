@@ -251,9 +251,7 @@ impl EditState {
     ///
     /// Panics if .
     pub fn erase_selection(&mut self) -> Result<()> {
-        println!("Erase selection called");
         if !self.is_something_selected() {
-            println!("Nothing selected, returning");
             return Ok(());
         }
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
@@ -269,7 +267,6 @@ impl EditState {
                 let pos = Position::new(x, y);
                 if self.is_selected(pos + area.start) {
                     self.screen.buffer.layers.get_mut(layer_idx).unwrap().set_char(pos, AttributedChar::invisible());
-                    println!("Erased char at {:?}", pos + area.start);
                 }
             }
         }

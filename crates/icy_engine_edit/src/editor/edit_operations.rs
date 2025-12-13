@@ -43,6 +43,37 @@ impl EditState {
         }
     }
 
+    /// Set a character without starting its own atomic undo group.
+    ///
+    /// This is intended for tools that manage their own `AtomicUndoGuard` (e.g. brush strokes)
+    /// and need to push many `UndoSetChar` operations into a single undo entry.
+    pub fn set_char_in_atomic(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
+        if let Some(layer) = self.get_cur_layer() {
+            let pos = pos.into();
+            let old = layer.char_at(pos);
+
+            if self.mirror_mode {
+                let mirror_pos = Position::new(layer.width() - pos.x - 1, pos.y);
+                let mirror_old = layer.char_at(mirror_pos);
+                self.push_undo_action(Box::new(UndoSetChar {
+                    pos: mirror_pos,
+                    layer: self.get_current_layer()?,
+                    old: mirror_old,
+                    new: attributed_char,
+                }))?;
+            }
+
+            self.push_undo_action(Box::new(UndoSetChar {
+                pos,
+                layer: self.get_current_layer()?,
+                old,
+                new: attributed_char,
+            }))
+        } else {
+            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
+        }
+    }
+
     pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) -> Result<()> {
         let pos1 = pos1.into();
         let pos2 = pos2.into();

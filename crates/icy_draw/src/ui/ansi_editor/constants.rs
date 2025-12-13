@@ -83,3 +83,10 @@ pub const SIDEBAR_WIDTH: f32 = 64.0;
 
 /// Actual width used for the ANSI editor's left bar (slightly thinner).
 pub const LEFT_BAR_WIDTH: f32 = SIDEBAR_WIDTH - 12.0;
+
+// =============================================================================
+// RIGHT PANEL
+// =============================================================================
+
+/// Width of the right panel (minimap, layers)
+pub const RIGHT_PANEL_WIDTH: f32 = 200.0;

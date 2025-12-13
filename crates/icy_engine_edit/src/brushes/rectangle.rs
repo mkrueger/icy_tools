@@ -5,12 +5,7 @@ use icy_engine::Position;
 use super::{DrawContext, DrawTarget, PointRole};
 
 /// Draw a rectangle outline
-pub fn draw_rectangle<T: DrawTarget>(
-    target: &mut T,
-    ctx: &DrawContext,
-    p0: Position,
-    p1: Position,
-) {
+pub fn draw_rectangle<T: DrawTarget>(target: &mut T, ctx: &DrawContext, p0: Position, p1: Position) {
     let min_x = p0.x.min(p1.x);
     let max_x = p0.x.max(p1.x);
     let min_y = p0.y.min(p1.y);
@@ -84,12 +79,7 @@ pub fn draw_rectangle<T: DrawTarget>(
 }
 
 /// Draw a filled rectangle
-pub fn fill_rectangle<T: DrawTarget>(
-    target: &mut T,
-    ctx: &DrawContext,
-    p0: Position,
-    p1: Position,
-) {
+pub fn fill_rectangle<T: DrawTarget>(target: &mut T, ctx: &DrawContext, p0: Position, p1: Position) {
     let min_x = p0.x.min(p1.x);
     let max_x = p0.x.max(p1.x);
     let min_y = p0.y.min(p1.y);
@@ -162,7 +152,7 @@ mod tests {
     fn test_single_point_rectangle() {
         let ctx = DrawContext::default();
         let mut target = MockTarget::new(80, 25);
-        
+
         // For a single point, we can't easily track without modifying the mock
         // This test just ensures no panic
         draw_rectangle(&mut target, &ctx, Position::new(5, 5), Position::new(5, 5));
@@ -172,7 +162,7 @@ mod tests {
     fn test_vertical_line_rectangle() {
         let ctx = DrawContext::default();
         let mut target = MockTarget::new(80, 25);
-        
+
         draw_rectangle(&mut target, &ctx, Position::new(5, 0), Position::new(5, 3));
         // Should draw 4 points vertically
     }
@@ -181,7 +171,7 @@ mod tests {
     fn test_horizontal_line_rectangle() {
         let ctx = DrawContext::default();
         let mut target = MockTarget::new(80, 25);
-        
+
         draw_rectangle(&mut target, &ctx, Position::new(0, 5), Position::new(3, 5));
         // Should draw 4 points horizontally
     }

@@ -5,10 +5,16 @@
 
 use iced::{
     Element, Length, Task,
-    widget::{Space, button, container, radio, row, text, toggler},
+    widget::{Space, button, container, radio, row, svg, text, toggler},
 };
 
 use super::tools::Tool;
+use crate::ui::FKeySets;
+use icy_engine::BufferType;
+
+// Navigation icons for F-key set chooser
+const NAV_PREV_SVG: &[u8] = include_bytes!("../../../data/icons/navigate_prev.svg");
+const NAV_NEXT_SVG: &[u8] = include_bytes!("../../../data/icons/navigate_next.svg");
 
 /// Selection mode for the select tool
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -65,16 +71,15 @@ impl SelectionModifier {
 /// Messages from the top toolbar
 #[derive(Clone, Debug)]
 pub enum TopToolbarMessage {
-    /// Toggle half-block mode
-    ToggleHalfBlock(bool),
-    /// Toggle shading mode
-    ToggleShading(bool),
-    /// Toggle replace color mode
-    ToggleReplaceColor(bool),
-    /// Toggle blink mode
-    ToggleBlink(bool),
-    /// Toggle colorize mode
-    ToggleColorize(bool),
+    /// Set the primary brush mode (exclusive)
+    SetBrushPrimary(BrushPrimaryMode),
+    /// Clicked the current brush character button.
+    /// If Char mode is already active, this requests opening the char table.
+    BrushCharButton,
+    /// Request to open the brush character table
+    OpenBrushCharTable,
+    /// Set the current brush character
+    SetBrushChar(char),
     /// Toggle colorize foreground only
     ToggleColorizeFg(bool),
     /// Toggle colorize background only
@@ -89,6 +94,8 @@ pub enum TopToolbarMessage {
     ToggleFilled(bool),
     /// Select F-key slot
     SelectFKeySlot(usize),
+    /// Type the character assigned to the given F-key slot
+    TypeFKey(usize),
     /// Navigate F-key page
     NextFKeyPage,
     /// Navigate F-key page
@@ -97,14 +104,33 @@ pub enum TopToolbarMessage {
     SetSelectionMode(SelectionMode),
 }
 
+/// Primary brush mode (exclusive).
+///
+/// Note: only `colorize_fg`/`colorize_bg` are additive flags.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BrushPrimaryMode {
+    /// Paint with a chosen character
+    #[default]
+    Char,
+    /// Half-block drawing mode
+    HalfBlock,
+    /// Shade up/down drawing mode
+    Shading,
+    /// Replace-color mode
+    Replace,
+    /// Blink attribute mode
+    Blink,
+    /// Colorize mode (only affects attributes)
+    Colorize,
+}
+
 /// Brush mode options
 #[derive(Clone, Debug, Default)]
 pub struct BrushOptions {
-    pub half_block: bool,
-    pub shading: bool,
-    pub replace_color: bool,
-    pub blink: bool,
-    pub colorize: bool,
+    /// Primary brush mode (exclusive)
+    pub primary: BrushPrimaryMode,
+    /// Character used when `primary == BrushPrimaryMode::Char`
+    pub paint_char: char,
     pub colorize_fg: bool,
     pub colorize_bg: bool,
     pub brush_size: u32,
@@ -138,6 +164,8 @@ impl TopToolbar {
     pub fn new() -> Self {
         Self {
             brush_options: BrushOptions {
+                primary: BrushPrimaryMode::Char,
+                paint_char: '\u{00B0}',
                 brush_size: 1,
                 ..Default::default()
             },
@@ -149,11 +177,18 @@ impl TopToolbar {
     /// Update the top toolbar state
     pub fn update(&mut self, message: TopToolbarMessage) -> Task<TopToolbarMessage> {
         match message {
-            TopToolbarMessage::ToggleHalfBlock(v) => self.brush_options.half_block = v,
-            TopToolbarMessage::ToggleShading(v) => self.brush_options.shading = v,
-            TopToolbarMessage::ToggleReplaceColor(v) => self.brush_options.replace_color = v,
-            TopToolbarMessage::ToggleBlink(v) => self.brush_options.blink = v,
-            TopToolbarMessage::ToggleColorize(v) => self.brush_options.colorize = v,
+            TopToolbarMessage::SetBrushPrimary(mode) => self.brush_options.primary = mode,
+            TopToolbarMessage::BrushCharButton => {
+                // If Char is already active, request opening the char table.
+                if self.brush_options.primary == BrushPrimaryMode::Char {
+                    return Task::done(TopToolbarMessage::OpenBrushCharTable);
+                }
+                self.brush_options.primary = BrushPrimaryMode::Char;
+            }
+            TopToolbarMessage::OpenBrushCharTable => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::SetBrushChar(ch) => self.brush_options.paint_char = ch,
             TopToolbarMessage::ToggleColorizeFg(v) => self.brush_options.colorize_fg = v,
             TopToolbarMessage::ToggleColorizeBg(v) => self.brush_options.colorize_bg = v,
             TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = s.max(1).min(10),
@@ -165,11 +200,14 @@ impl TopToolbar {
             }
             TopToolbarMessage::ToggleFilled(v) => self.filled = v,
             TopToolbarMessage::SelectFKeySlot(slot) => self.select_options.selected_fkey = slot,
+            TopToolbarMessage::TypeFKey(_) => {
+                // handled at a higher level (AnsiEditor)
+            }
             TopToolbarMessage::NextFKeyPage => {
-                self.select_options.current_fkey_page = (self.select_options.current_fkey_page + 1) % 10;
+                // handled at a higher level (AnsiEditor)
             }
             TopToolbarMessage::PrevFKeyPage => {
-                self.select_options.current_fkey_page = (self.select_options.current_fkey_page + 9) % 10;
+                // handled at a higher level (AnsiEditor)
             }
             TopToolbarMessage::SetSelectionMode(mode) => {
                 self.select_options.selection_mode = mode;
@@ -179,9 +217,10 @@ impl TopToolbar {
     }
 
     /// Render the top toolbar based on current tool
-    pub fn view(&self, current_tool: Tool) -> Element<'_, TopToolbarMessage> {
+    pub fn view(&self, current_tool: Tool, fkeys: &FKeySets, buffer_type: BufferType) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
-            Tool::Click | Tool::Select => self.view_select_panel(),
+            Tool::Click => self.view_click_panel(fkeys, buffer_type),
+            Tool::Select => self.view_select_panel(),
             Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(),
             Tool::Line => self.view_line_panel(),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
@@ -195,8 +234,9 @@ impl TopToolbar {
 
         container(content)
             .width(Length::Fill)
-            .height(Length::Fixed(40.0))
+            .height(Length::Fill)
             .padding(4)
+            .center_y(Length::Fill)
             .style(container::rounded_box)
             .into()
     }
@@ -229,29 +269,107 @@ impl TopToolbar {
         .into()
     }
 
+    fn view_click_panel(&self, fkeys: &FKeySets, buffer_type: BufferType) -> Element<'_, TopToolbarMessage> {
+        let set_idx = self.select_options.current_fkey_page;
+        let set_count = fkeys.set_count();
+
+        let mut keys = row![].spacing(8).align_y(iced::Alignment::Center);
+
+        for slot in 0..12usize {
+            let code = fkeys.code_at(set_idx, slot);
+            let raw = char::from_u32(code as u32).unwrap_or(' ');
+
+            // Interpret stored code as CP437, then map to the current buffer type for display.
+            let unicode_cp437 = BufferType::CP437.convert_to_unicode(raw);
+            let target = buffer_type.convert_from_unicode(unicode_cp437);
+            let display = buffer_type.convert_to_unicode(target);
+
+            // Label + clickable char (no button backdrop)
+            let fkey_label = text(format!("F{}:", slot + 1)).size(12);
+            let char_text = button(text(display.to_string()).size(14))
+                .padding([1, 4])
+                .style(button::text)
+                .on_press(TopToolbarMessage::TypeFKey(slot));
+
+            keys = keys.push(row![fkey_label, char_text].spacing(1).align_y(iced::Alignment::Center));
+        }
+
+        // SVG navigation arrows (no button backdrop)
+        let prev_icon = svg(svg::Handle::from_memory(NAV_PREV_SVG))
+            .width(Length::Fixed(16.0))
+            .height(Length::Fixed(16.0));
+        let next_icon = svg(svg::Handle::from_memory(NAV_NEXT_SVG))
+            .width(Length::Fixed(16.0))
+            .height(Length::Fixed(16.0));
+
+        let chooser = row![
+            button(prev_icon).padding(2).style(button::text).on_press(TopToolbarMessage::PrevFKeyPage),
+            text(format!("{}", set_idx.saturating_add(1).min(set_count).max(1))).size(14),
+            button(next_icon).padding(2).style(button::text).on_press(TopToolbarMessage::NextFKeyPage),
+        ]
+        .spacing(4)
+        .align_y(iced::Alignment::Center);
+
+        let content = row![keys, Space::new().width(Length::Fixed(16.0)), chooser]
+            .spacing(8)
+            .align_y(iced::Alignment::Center);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
+    }
+
     /// Brush tool panel
     fn view_brush_panel(&self) -> Element<'_, TopToolbarMessage> {
+        let primary = self.brush_options.primary;
+        let char_label = format!("{}", self.brush_options.paint_char);
+
+        // fg/bg toggles are only meaningful for Colorize
+        let colorize_extra: Element<'_, TopToolbarMessage> = if primary == BrushPrimaryMode::Colorize {
+            row![
+                Space::new().width(Length::Fixed(8.0)),
+                toggler(self.brush_options.colorize_fg)
+                    .label("fg")
+                    .on_toggle(TopToolbarMessage::ToggleColorizeFg)
+                    .text_size(11),
+                toggler(self.brush_options.colorize_bg)
+                    .label("bg")
+                    .on_toggle(TopToolbarMessage::ToggleColorizeBg)
+                    .text_size(11),
+            ]
+            .spacing(8)
+            .into()
+        } else {
+            Space::new().width(Length::Fixed(0.0)).into()
+        };
+
         row![
-            toggler(self.brush_options.half_block)
+            // Character selector / mode
+            button(text(char_label).size(14)).padding(4).on_press(TopToolbarMessage::BrushCharButton),
+            toggler(primary == BrushPrimaryMode::HalfBlock)
                 .label("Half Block")
-                .on_toggle(TopToolbarMessage::ToggleHalfBlock)
+                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::HalfBlock))
                 .text_size(11),
-            toggler(self.brush_options.shading)
+            toggler(primary == BrushPrimaryMode::Shading)
                 .label("Shading")
-                .on_toggle(TopToolbarMessage::ToggleShading)
+                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Shading))
                 .text_size(11),
-            toggler(self.brush_options.replace_color)
+            toggler(primary == BrushPrimaryMode::Replace)
                 .label("Replace")
-                .on_toggle(TopToolbarMessage::ToggleReplaceColor)
+                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Replace))
                 .text_size(11),
-            toggler(self.brush_options.blink)
+            toggler(primary == BrushPrimaryMode::Blink)
                 .label("Blink")
-                .on_toggle(TopToolbarMessage::ToggleBlink)
+                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Blink))
                 .text_size(11),
-            toggler(self.brush_options.colorize)
+            toggler(primary == BrushPrimaryMode::Colorize)
                 .label("Colorize")
-                .on_toggle(TopToolbarMessage::ToggleColorize)
+                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Colorize))
                 .text_size(11),
+            colorize_extra,
             Space::new().width(Length::Fixed(16.0)),
             text("Size:").size(11),
             button(text("-").size(12)).on_press(TopToolbarMessage::DecrementBrushSize).padding(2),

@@ -5,7 +5,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
@@ -14,7 +14,7 @@ use icy_engine_gui::commands::cmd;
 use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id};
 
 use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
-use super::{MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
+use super::{FKeySets, MainWindow, MostRecentlyUsedFiles, commands::create_draw_commands};
 use crate::load_window_icon;
 
 // Generate the WindowCommands struct with handle() method
@@ -28,12 +28,15 @@ command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id 
 pub struct SharedOptions {
     /// Most recently used files
     pub recent_files: MostRecentlyUsedFiles,
+    /// Moebius-style F-key character sets
+    pub fkeys: FKeySets,
 }
 
 impl SharedOptions {
     pub fn load() -> Self {
         Self {
             recent_files: MostRecentlyUsedFiles::load(),
+            fkeys: FKeySets::load(),
         }
     }
 }
@@ -63,7 +66,7 @@ pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
     /// Cached window geometry (position, size) for session saving
     window_geometry: BTreeMap<window::Id, WindowGeometry>,
-    options: Arc<Mutex<SharedOptions>>,
+    options: Arc<RwLock<SharedOptions>>,
     /// Pending windows to restore (for session restore)
     pending_restores: Vec<WindowRestoreInfo>,
     /// Session manager for hot exit
@@ -169,7 +172,7 @@ impl WindowManager {
         let mut manager = Self {
             windows: BTreeMap::new(),
             window_geometry: BTreeMap::new(),
-            options: Arc::new(Mutex::new(options)),
+            options: Arc::new(RwLock::new(options)),
             pending_restores,
             session_manager,
             restoring_session: true,
@@ -217,7 +220,7 @@ impl WindowManager {
             Self {
                 windows: BTreeMap::new(),
                 window_geometry: BTreeMap::new(),
-                options: Arc::new(Mutex::new(options)),
+                options: Arc::new(RwLock::new(options)),
                 pending_restores: pending,
                 session_manager,
                 restoring_session: false,

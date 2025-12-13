@@ -54,15 +54,10 @@ pub fn draw_line<T: DrawTarget>(target: &mut T, ctx: &DrawContext, p0: Position,
 }
 
 /// Draw a line with outline characters (for TheDraw fonts)
-pub fn draw_line_outline<T: DrawTarget>(
-    target: &mut T, 
-    ctx: &DrawContext, 
-    p0: Position, 
-    p1: Position,
-) {
+pub fn draw_line_outline<T: DrawTarget>(target: &mut T, ctx: &DrawContext, p0: Position, p1: Position) {
     let points = get_line_points(p0, p1);
     let len = points.len();
-    
+
     for (i, pt) in points.iter().enumerate() {
         let role = if len == 1 {
             // Single point - use NW corner as default
@@ -77,7 +72,7 @@ pub fn draw_line_outline<T: DrawTarget>(
             // Middle points
             PointRole::Line
         };
-        
+
         ctx.plot_point(target, *pt, role);
     }
 }
@@ -85,42 +80,26 @@ pub fn draw_line_outline<T: DrawTarget>(
 fn determine_start_role(p0: Position, p1: Position) -> PointRole {
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
-    
+
     if dx.abs() > dy.abs() {
         // More horizontal
-        if dx > 0 {
-            PointRole::LeftSide
-        } else {
-            PointRole::RightSide
-        }
+        if dx > 0 { PointRole::LeftSide } else { PointRole::RightSide }
     } else {
         // More vertical
-        if dy > 0 {
-            PointRole::TopSide
-        } else {
-            PointRole::BottomSide
-        }
+        if dy > 0 { PointRole::TopSide } else { PointRole::BottomSide }
     }
 }
 
 fn determine_end_role(p0: Position, p1: Position) -> PointRole {
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
-    
+
     if dx.abs() > dy.abs() {
         // More horizontal
-        if dx > 0 {
-            PointRole::RightSide
-        } else {
-            PointRole::LeftSide
-        }
+        if dx > 0 { PointRole::RightSide } else { PointRole::LeftSide }
     } else {
         // More vertical
-        if dy > 0 {
-            PointRole::BottomSide
-        } else {
-            PointRole::TopSide
-        }
+        if dy > 0 { PointRole::BottomSide } else { PointRole::TopSide }
     }
 }
 
@@ -134,7 +113,7 @@ mod tests {
         assert_eq!(points.len(), 6);
         assert_eq!(points[0], Position::new(0, 0));
         assert_eq!(points[5], Position::new(5, 0));
-        
+
         // All points should have same y
         for pt in &points {
             assert_eq!(pt.y, 0);
@@ -147,7 +126,7 @@ mod tests {
         assert_eq!(points.len(), 6);
         assert_eq!(points[0], Position::new(0, 0));
         assert_eq!(points[5], Position::new(0, 5));
-        
+
         // All points should have same x
         for pt in &points {
             assert_eq!(pt.x, 0);
@@ -183,7 +162,7 @@ mod tests {
         let points = get_line_points(Position::new(0, 0), Position::new(2, 6));
         assert_eq!(points[0], Position::new(0, 0));
         assert_eq!(points[points.len() - 1], Position::new(2, 6));
-        
+
         // Check that y values are consecutive (no gaps)
         let mut last_y = points[0].y;
         for pt in points.iter().skip(1) {

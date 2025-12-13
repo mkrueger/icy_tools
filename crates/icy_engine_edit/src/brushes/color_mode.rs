@@ -19,12 +19,12 @@ impl ColorMode {
     pub fn affects_foreground(&self) -> bool {
         matches!(self, ColorMode::Foreground | ColorMode::Both)
     }
-    
+
     /// Returns true if background color should be applied
     pub fn affects_background(&self) -> bool {
         matches!(self, ColorMode::Background | ColorMode::Both)
     }
-    
+
     /// Returns true if any color should be applied
     pub fn affects_any(&self) -> bool {
         !matches!(self, ColorMode::None)

@@ -24,10 +24,12 @@
 
 mod canvas_view;
 mod channels_view;
+mod char_selector;
 mod color_switcher_gpu;
 pub mod constants;
 mod edit_layer_dialog;
 mod file_settings_dialog;
+mod fkey_toolbar;
 mod font_selector_dialog;
 mod font_slot_manager_dialog;
 mod layer_view;
@@ -42,9 +44,11 @@ mod tool_panel_wrapper;
 mod top_toolbar;
 
 pub use canvas_view::*;
+pub use char_selector::*;
 pub use color_switcher_gpu::*;
 pub use edit_layer_dialog::*;
 pub use file_settings_dialog::*;
+pub use fkey_toolbar::*;
 pub use font_selector_dialog::*;
 pub use font_slot_manager_dialog::*;
 use icy_engine_edit::EditState;
@@ -63,15 +67,16 @@ use std::sync::Arc;
 
 use iced::{
     Element, Length, Task, Theme,
-    widget::{column, container, row},
+    widget::{button, column, container, row, text},
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use crate::ui::SharedOptions;
+use icy_engine::BufferType;
 
 /// Convert icy_engine MouseButton to iced mouse button
 fn convert_mouse_button(button: MouseButton) -> iced::mouse::Button {
@@ -94,6 +99,10 @@ pub enum AnsiEditorMessage {
     RightPanel(RightPanelMessage),
     /// Top toolbar messages
     TopToolbar(TopToolbarMessage),
+    /// F-key toolbar messages (Click tool)
+    FKeyToolbar(FKeyToolbarMessage),
+    /// Char selector popup messages (F-key character selection)
+    CharSelector(CharSelectorMessage),
     /// Color switcher messages
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
@@ -155,15 +164,18 @@ pub enum AnsiEditorMessage {
 pub enum CanvasMouseEvent {
     Press {
         position: icy_engine::Position,
+        pixel_position: (f32, f32),
         button: iced::mouse::Button,
         modifiers: icy_engine::KeyModifiers,
     },
     Release {
         position: icy_engine::Position,
+        pixel_position: (f32, f32),
         button: iced::mouse::Button,
     },
     Move {
         position: icy_engine::Position,
+        pixel_position: (f32, f32),
     },
     Scroll {
         delta: iced::mouse::ScrollDelta,
@@ -218,6 +230,8 @@ pub struct AnsiEditor {
     pub current_tool: Tool,
     /// Top toolbar (tool-specific options)
     pub top_toolbar: TopToolbar,
+    /// F-key toolbar canvas (Click tool only)
+    pub fkey_toolbar: FKeyToolbar,
     /// Color switcher (FG/BG display)
     pub color_switcher: ColorSwitcher,
     /// Palette grid
@@ -227,7 +241,7 @@ pub struct AnsiEditor {
     /// Right panel state (minimap, layers)
     pub right_panel: RightPanel,
     /// Shared options
-    pub options: Arc<Mutex<SharedOptions>>,
+    pub options: Arc<RwLock<SharedOptions>>,
     /// Whether the document is modified
     pub is_modified: bool,
 
@@ -256,11 +270,186 @@ pub struct AnsiEditor {
     pub show_line_numbers: bool,
     /// Whether layer borders are shown
     pub show_layer_borders: bool,
+
+    // === Brush UI State ===
+    /// If true, show the brush character table overlay.
+    pub show_brush_char_table: bool,
+    /// If Some(slot), show the character selector popup for F-key slot
+    pub char_selector_slot: Option<usize>,
+
+    // === Paint Stroke State (Pencil/Brush/Erase) ===
+    paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
+    paint_last_pos: Option<icy_engine::Position>,
+    paint_button: iced::mouse::Button,
 }
 
 static mut NEXT_ID: u64 = 0;
 
 impl AnsiEditor {
+    // NOTE (Layer-local coordinates)
+    // ============================
+    // The terminal/canvas events provide positions in *document* coordinates.
+    // All *painting* operations (Brush/Pencil/Erase/Shapes) are ALWAYS executed in
+    // *layer-local* coordinates, i.e. relative to the current layer's offset.
+    // Do NOT pass document/global positions into brush algorithms.
+    // Selection/mask operations are handled by EditState and keep using document coords.
+
+    fn doc_to_layer_pos(&mut self, pos: icy_engine::Position) -> icy_engine::Position {
+        self.with_edit_state(|state| if let Some(layer) = state.get_cur_layer() { pos - layer.offset() } else { pos })
+    }
+
+    fn half_block_is_top_from_pixel(&self, pixel_position: (f32, f32)) -> bool {
+        let render_info = self.canvas.terminal.render_info.read();
+        let font_h = render_info.font_height.max(1.0);
+        let scale = render_info.display_scale.max(0.001);
+
+        // pixel_position is widget-local.
+        let mut y = (pixel_position.1 - render_info.viewport_y) / scale;
+        if render_info.scan_lines {
+            y /= 2.0;
+        }
+
+        let cell_y = (y / font_h).floor();
+        let within = y - cell_y * font_h;
+        within < (font_h * 0.5)
+    }
+
+    fn apply_paint_stamp(&mut self, doc_pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) {
+        let tool = self.current_tool;
+
+        let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
+            let opts = &self.top_toolbar.brush_options;
+            (opts.primary, opts.paint_char, opts.brush_size.max(1), opts.colorize_fg, opts.colorize_bg)
+        };
+
+        let swap_colors = button == iced::mouse::Button::Right;
+        let half_block_is_top = self.half_block_is_top_from_pixel(pixel_position);
+
+        self.with_edit_state(|state| {
+            let (offset, layer_w, layer_h) = if let Some(layer) = state.get_cur_layer() {
+                (layer.offset(), layer.width(), layer.height())
+            } else {
+                return;
+            };
+            let use_selection = state.is_something_selected();
+
+            let caret_attr = state.get_caret().attribute;
+            let swap_for_colors = swap_colors && !matches!(primary, BrushPrimaryMode::Shading);
+            let (fg, bg) = if swap_for_colors {
+                (caret_attr.background(), caret_attr.foreground())
+            } else {
+                (caret_attr.foreground(), caret_attr.background())
+            };
+
+            let brush_size = if matches!(tool, Tool::Pencil) { 1 } else { brush_size };
+            let brush_size_i: i32 = brush_size as i32;
+
+            let center = doc_pos - offset;
+            let half = brush_size_i / 2;
+
+            for dy in 0..brush_size_i {
+                for dx in 0..brush_size_i {
+                    let layer_pos = icy_engine::Position::new(center.x + dx - half, center.y + dy - half);
+
+                    // Bounds check against layer.
+                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                        continue;
+                    }
+
+                    // Selection is in document coords.
+                    if use_selection {
+                        let doc_cell = layer_pos + offset;
+                        if !state.is_selected(doc_cell) {
+                            continue;
+                        }
+                    }
+
+                    match tool {
+                        Tool::Erase => {
+                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
+                        }
+                        Tool::Pencil | Tool::Brush => {
+                            use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
+
+                            let brush_mode = match primary {
+                                BrushPrimaryMode::Char => EngineBrushMode::Char(paint_char),
+                                BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
+                                BrushPrimaryMode::Shading => {
+                                    if swap_colors {
+                                        EngineBrushMode::ShadeDown
+                                    } else {
+                                        EngineBrushMode::Shade
+                                    }
+                                }
+                                BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
+                                BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
+                                BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
+                            };
+
+                            let color_mode = if matches!(primary, BrushPrimaryMode::Colorize) {
+                                match (colorize_fg, colorize_bg) {
+                                    (true, true) => EngineColorMode::Both,
+                                    (true, false) => EngineColorMode::Foreground,
+                                    (false, true) => EngineColorMode::Background,
+                                    (false, false) => EngineColorMode::None,
+                                }
+                            } else {
+                                EngineColorMode::Both
+                            };
+
+                            let mut template = caret_attr;
+                            template.set_foreground(fg);
+                            template.set_background(bg);
+
+                            // Use the brush library on a small adapter around the current layer.
+                            struct LayerTarget<'a> {
+                                state: &'a mut icy_engine_edit::EditState,
+                                width: i32,
+                                height: i32,
+                            }
+                            impl<'a> icy_engine_edit::brushes::DrawTarget for LayerTarget<'a> {
+                                fn width(&self) -> i32 {
+                                    self.width
+                                }
+                                fn height(&self) -> i32 {
+                                    self.height
+                                }
+                                fn char_at(&self, pos: icy_engine_edit::Position) -> Option<icy_engine_edit::AttributedChar> {
+                                    self.state.get_cur_layer().map(|l| l.char_at(pos))
+                                }
+                                fn set_char(&mut self, pos: icy_engine_edit::Position, ch: icy_engine_edit::AttributedChar) {
+                                    let _ = self.state.set_char_in_atomic(pos, ch);
+                                }
+                            }
+
+                            let ctx = DrawContext::default()
+                                .with_brush_mode(brush_mode)
+                                .with_color_mode(color_mode)
+                                .with_foreground(fg)
+                                .with_background(bg)
+                                .with_template_attribute(template)
+                                .with_half_block_is_top(half_block_is_top);
+
+                            let mut target = LayerTarget {
+                                state,
+                                width: layer_w,
+                                height: layer_h,
+                            };
+
+                            ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+    }
+
+    #[allow(dead_code)]
+    fn layer_to_doc_pos(&mut self, pos: icy_engine::Position) -> icy_engine::Position {
+        self.with_edit_state(|state| if let Some(layer) = state.get_cur_layer() { pos + layer.offset() } else { pos })
+    }
+
     fn current_select_add_type(&self) -> icy_engine::AddType {
         if self.current_tool != Tool::Select {
             return icy_engine::AddType::Default;
@@ -277,7 +466,7 @@ impl AnsiEditor {
     }
 
     /// Create a new empty ANSI editor
-    pub fn new(options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn new(options: Arc<RwLock<SharedOptions>>) -> Self {
         let buffer = TextBuffer::create((80, 25));
         Self::with_buffer(buffer, None, options)
     }
@@ -285,7 +474,7 @@ impl AnsiEditor {
     /// Create an ANSI editor with a file
     ///
     /// Returns the editor with the loaded buffer, or an error if loading failed.
-    pub fn with_file(path: PathBuf, options: Arc<Mutex<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
         // Detect file format
         let format = FileFormat::from_path(&path).ok_or_else(|| anyhow::anyhow!("Unknown file format"))?;
 
@@ -304,7 +493,7 @@ impl AnsiEditor {
     }
 
     /// Create an ANSI editor with an existing buffer
-    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<SharedOptions>>) -> Self {
         let id = unsafe {
             NEXT_ID = NEXT_ID.wrapping_add(1);
             NEXT_ID
@@ -329,13 +518,23 @@ impl AnsiEditor {
         // Create canvas with cloned Arc to screen
         let canvas = CanvasView::new(screen.clone());
 
+        let initial_fkey_set = {
+            let mut opts = options.write();
+            opts.fkeys.clamp_current_set();
+            opts.fkeys.current_set
+        };
+
+        let mut top_toolbar = TopToolbar::new();
+        top_toolbar.select_options.current_fkey_page = initial_fkey_set;
+
         Self {
             id,
             file_path,
             screen,
             tool_panel: ToolPanel::new(),
             current_tool: Tool::Click,
-            top_toolbar: TopToolbar::new(),
+            top_toolbar,
+            fkey_toolbar: FKeyToolbar::new(),
             color_switcher,
             palette_grid,
             canvas,
@@ -354,6 +553,51 @@ impl AnsiEditor {
             show_raster: false,
             show_line_numbers: false,
             show_layer_borders: false,
+
+            show_brush_char_table: false,
+            char_selector_slot: None,
+
+            paint_undo: None,
+            paint_last_pos: None,
+            paint_button: iced::mouse::Button::Left,
+        }
+    }
+
+    fn set_current_fkey_set(&mut self, set_idx: usize) {
+        let fkeys_to_save = {
+            let mut opts = self.options.write();
+            opts.fkeys.clamp_current_set();
+
+            let count = opts.fkeys.set_count();
+            let clamped = if count == 0 { 0 } else { set_idx % count };
+
+            self.top_toolbar.select_options.current_fkey_page = clamped;
+            opts.fkeys.current_set = clamped;
+            opts.fkeys.clone()
+        };
+
+        // Save off-thread to avoid blocking the UI/event loop.
+        std::thread::spawn(move || {
+            let _ = fkeys_to_save.save();
+        });
+    }
+
+    fn type_fkey_slot(&mut self, slot: usize) {
+        let set_idx = self.top_toolbar.select_options.current_fkey_page;
+        let code = {
+            let opts = self.options.read();
+            opts.fkeys.code_at(set_idx, slot)
+        };
+
+        let buffer_type = self.with_edit_state(|state| state.get_buffer().buffer_type);
+
+        let raw = char::from_u32(code as u32).unwrap_or(' ');
+        let unicode_cp437 = BufferType::CP437.convert_to_unicode(raw);
+        let target = buffer_type.convert_from_unicode(unicode_cp437);
+
+        let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| state.type_key(target));
+        if let Err(e) = result {
+            log::warn!("Failed to type fkey (set {}, slot {}): {}", set_idx, slot, e);
         }
     }
 
@@ -379,7 +623,7 @@ impl AnsiEditor {
     ///
     /// The autosave file is always saved in ICY format (to preserve layers, fonts, etc.),
     /// but we set the original path so future saves use the correct format.
-    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<Mutex<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
         // Autosaves are always saved in ICY format
         let format = FileFormat::IcyDraw;
 
@@ -550,6 +794,7 @@ impl AnsiEditor {
                             if let Some(text_pos) = evt.text_position {
                                 let event = CanvasMouseEvent::Press {
                                     position: text_pos,
+                                    pixel_position: evt.pixel_position,
                                     button: convert_mouse_button(evt.button),
                                     modifiers: evt.modifiers.clone(),
                                 };
@@ -560,6 +805,7 @@ impl AnsiEditor {
                             if let Some(text_pos) = evt.text_position {
                                 let event = CanvasMouseEvent::Release {
                                     position: text_pos,
+                                    pixel_position: evt.pixel_position,
                                     button: convert_mouse_button(evt.button),
                                 };
                                 self.handle_canvas_mouse_event(event);
@@ -567,7 +813,10 @@ impl AnsiEditor {
                         }
                         icy_engine_gui::Message::Move(evt) | icy_engine_gui::Message::Drag(evt) => {
                             if let Some(text_pos) = evt.text_position {
-                                let event = CanvasMouseEvent::Move { position: text_pos };
+                                let event = CanvasMouseEvent::Move {
+                                    position: text_pos,
+                                    pixel_position: evt.pixel_position,
+                                };
                                 self.handle_canvas_mouse_event(event);
                             }
                         }
@@ -632,7 +881,95 @@ impl AnsiEditor {
                 }
                 self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel)
             }
-            AnsiEditorMessage::TopToolbar(msg) => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
+            AnsiEditorMessage::TopToolbar(msg) => {
+                // Intercept brush char-table requests here (keeps the dialog local to the editor)
+                match msg {
+                    TopToolbarMessage::OpenBrushCharTable => {
+                        self.show_brush_char_table = true;
+                        Task::none()
+                    }
+                    TopToolbarMessage::SetBrushChar(_) => {
+                        // Selecting a character implicitly closes the overlay.
+                        self.show_brush_char_table = false;
+                        self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar)
+                    }
+                    TopToolbarMessage::TypeFKey(slot) => {
+                        self.type_fkey_slot(slot);
+                        self.handle_tool_event(ToolEvent::Commit("Type fkey".to_string()));
+                        Task::none()
+                    }
+                    TopToolbarMessage::NextFKeyPage => {
+                        let next = self.top_toolbar.select_options.current_fkey_page.saturating_add(1);
+                        self.set_current_fkey_set(next);
+                        Task::none()
+                    }
+                    TopToolbarMessage::PrevFKeyPage => {
+                        let cur = self.top_toolbar.select_options.current_fkey_page;
+                        let prev = {
+                            let opts = self.options.read();
+                            let count = opts.fkeys.set_count();
+                            if count == 0 { 0 } else { (cur + count - 1) % count }
+                        };
+                        self.set_current_fkey_set(prev);
+                        Task::none()
+                    }
+                    _ => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
+                }
+            }
+            AnsiEditorMessage::FKeyToolbar(msg) => {
+                match msg {
+                    FKeyToolbarMessage::TypeFKey(slot) => {
+                        self.type_fkey_slot(slot);
+                        self.handle_tool_event(ToolEvent::Commit("Type fkey".to_string()));
+                        self.fkey_toolbar.clear_cache();
+                    }
+                    FKeyToolbarMessage::OpenCharSelector(slot) => {
+                        // Open the character selector popup for this F-key slot
+                        self.char_selector_slot = Some(slot);
+                    }
+                    FKeyToolbarMessage::NextSet => {
+                        let next = self.top_toolbar.select_options.current_fkey_page.saturating_add(1);
+                        self.set_current_fkey_set(next);
+                        self.fkey_toolbar.clear_cache();
+                    }
+                    FKeyToolbarMessage::PrevSet => {
+                        let cur = self.top_toolbar.select_options.current_fkey_page;
+                        let prev = {
+                            let opts = self.options.read();
+                            let count = opts.fkeys.set_count();
+                            if count == 0 { 0 } else { (cur + count - 1) % count }
+                        };
+                        self.set_current_fkey_set(prev);
+                        self.fkey_toolbar.clear_cache();
+                    }
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::CharSelector(msg) => {
+                match msg {
+                    CharSelectorMessage::SelectChar(code) => {
+                        if let Some(slot) = self.char_selector_slot {
+                            // Update the F-key slot with the selected character
+                            let set_idx = self.top_toolbar.select_options.current_fkey_page;
+                            let fkeys_to_save = {
+                                let mut opts = self.options.write();
+                                opts.fkeys.set_code_at(set_idx, slot, code);
+                                opts.fkeys.clone()
+                            };
+                            // Trigger async save
+                            std::thread::spawn(move || {
+                                let _ = fkeys_to_save.save();
+                            });
+                            self.fkey_toolbar.clear_cache();
+                        }
+                        self.char_selector_slot = None;
+                    }
+                    CharSelectorMessage::Cancel => {
+                        self.char_selector_slot = None;
+                    }
+                }
+                Task::none()
+            }
             AnsiEditorMessage::ColorSwitcher(msg) => {
                 match msg {
                     ColorSwitcherMessage::SwapColors => {
@@ -938,13 +1275,6 @@ impl AnsiEditor {
                 let selection_mask = edit_state.selection_mask();
                 let selection = edit_state.selection();
 
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[DEBUG] update_selection_display - mask.is_empty: {}, selection: {:?}",
-                    selection_mask.is_empty(),
-                    selection.map(|s| (s.as_rectangle(), s.add_type))
-                );
-
                 // Determine selection color based on add_type
                 let selection_color = match selection.map(|s| s.add_type) {
                     Some(AddType::Add) => selection_colors::ADD,
@@ -1037,6 +1367,14 @@ impl AnsiEditor {
 
     /// Handle key press events
     fn handle_key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
+        // Brush char table overlay has priority and is closed with Escape.
+        if self.show_brush_char_table {
+            if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                self.show_brush_char_table = false;
+                return;
+            }
+        }
+
         // Click and Font tools handle character input directly, skip tool shortcuts
         let skip_tool_shortcuts = matches!(self.current_tool, Tool::Click | Tool::Font);
 
@@ -1089,6 +1427,44 @@ impl AnsiEditor {
                     }
                     iced::keyboard::Key::Named(named) => {
                         match named {
+                            Named::F1
+                            | Named::F2
+                            | Named::F3
+                            | Named::F4
+                            | Named::F5
+                            | Named::F6
+                            | Named::F7
+                            | Named::F8
+                            | Named::F9
+                            | Named::F10
+                            | Named::F11
+                            | Named::F12 => {
+                                let slot = match named {
+                                    Named::F1 => 0,
+                                    Named::F2 => 1,
+                                    Named::F3 => 2,
+                                    Named::F4 => 3,
+                                    Named::F5 => 4,
+                                    Named::F6 => 5,
+                                    Named::F7 => 6,
+                                    Named::F8 => 7,
+                                    Named::F9 => 8,
+                                    Named::F10 => 9,
+                                    Named::F11 => 10,
+                                    Named::F12 => 11,
+                                    _ => 0,
+                                };
+
+                                // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
+                                if modifiers.alt() && slot < 10 {
+                                    let base = if modifiers.shift() { 10 } else { 0 };
+                                    self.set_current_fkey_set(base + slot);
+                                    return ToolEvent::Redraw;
+                                }
+
+                                self.type_fkey_slot(slot);
+                                return ToolEvent::Commit("Type fkey".to_string());
+                            }
                             // Cursor movement
                             Named::ArrowUp => {
                                 self.with_edit_state(|state| state.move_caret_up(1));
@@ -1197,8 +1573,7 @@ impl AnsiEditor {
                 if let iced::keyboard::Key::Named(named) = key {
                     match named {
                         Named::Delete | Named::Backspace => {
-                            let result = self.with_edit_state(|state| {
-                                println!("DELETE: {}", state.is_something_selected());
+                            let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| {
                                 if state.is_something_selected() {
                                     state.erase_selection()
                                 } else {
@@ -1236,18 +1611,23 @@ impl AnsiEditor {
         match event {
             CanvasMouseEvent::Press {
                 position,
-                button: _,
+                pixel_position,
+                button,
                 modifiers,
             } => {
-                let tool_event = self.handle_tool_mouse_down(position, modifiers);
+                let tool_event = self.handle_tool_mouse_down(position, pixel_position, button, modifiers);
                 self.handle_tool_event(tool_event);
             }
-            CanvasMouseEvent::Release { position, button: _ } => {
-                let tool_event = self.handle_tool_mouse_up(position);
+            CanvasMouseEvent::Release {
+                position,
+                pixel_position,
+                button,
+            } => {
+                let tool_event = self.handle_tool_mouse_up(position, pixel_position, button);
                 self.handle_tool_event(tool_event);
             }
-            CanvasMouseEvent::Move { position } => {
-                let tool_event = self.handle_tool_mouse_move(position);
+            CanvasMouseEvent::Move { position, pixel_position } => {
+                let tool_event = self.handle_tool_mouse_move(position, pixel_position);
                 self.handle_tool_event(tool_event);
             }
             CanvasMouseEvent::Scroll { delta } => match delta {
@@ -1262,7 +1642,13 @@ impl AnsiEditor {
     }
 
     /// Handle mouse down based on current tool
-    fn handle_tool_mouse_down(&mut self, pos: icy_engine::Position, _modifiers: icy_engine::KeyModifiers) -> ToolEvent {
+    fn handle_tool_mouse_down(
+        &mut self,
+        pos: icy_engine::Position,
+        pixel_position: (f32, f32),
+        button: iced::mouse::Button,
+        _modifiers: icy_engine::KeyModifiers,
+    ) -> ToolEvent {
         match self.current_tool {
             Tool::Click | Tool::Font => {
                 // Check if clicking inside existing selection for drag/resize
@@ -1402,8 +1788,26 @@ impl AnsiEditor {
                 }
                 ToolEvent::Redraw
             }
-            Tool::Pencil | Tool::Brush => {
-                // Start drawing - TODO: implement drawing state
+            Tool::Pencil | Tool::Brush | Tool::Erase => {
+                // Start paint stroke (layer-local painting; selection stays doc-based)
+                self.selection_drag = SelectionDrag::None;
+                self.is_dragging = true;
+                self.drag_pos.start = pos;
+                self.drag_pos.cur = pos;
+
+                if self.paint_undo.is_none() {
+                    let desc = match self.current_tool {
+                        Tool::Pencil => "Pencil",
+                        Tool::Brush => "Brush",
+                        Tool::Erase => "Erase",
+                        _ => "Paint",
+                    };
+                    self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
+                }
+
+                self.paint_last_pos = Some(pos);
+                self.paint_button = button;
+                self.apply_paint_stamp(pos, pixel_position, button);
                 ToolEvent::Redraw
             }
             Tool::Pipette => {
@@ -1421,8 +1825,8 @@ impl AnsiEditor {
     }
 
     /// Handle mouse up based on current tool
-    fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position) -> ToolEvent {
-        if self.is_dragging {
+    fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
+        if self.is_dragging && self.selection_drag != SelectionDrag::None {
             self.is_dragging = false;
 
             // Finalize selection
@@ -1473,6 +1877,22 @@ impl AnsiEditor {
             return ToolEvent::Redraw;
         }
 
+        if self.is_dragging && matches!(self.current_tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
+            self.is_dragging = false;
+            self.paint_last_pos = None;
+            // Dropping the guard groups everything into one undo entry.
+            self.paint_undo = None;
+            self.paint_button = iced::mouse::Button::Left;
+
+            let desc = match self.current_tool {
+                Tool::Pencil => "Pencil stroke",
+                Tool::Brush => "Brush stroke",
+                Tool::Erase => "Erase stroke",
+                _ => "Stroke",
+            };
+            return ToolEvent::Commit(desc.to_string());
+        }
+
         match self.current_tool {
             Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Commit the drawn shape
@@ -1483,7 +1903,7 @@ impl AnsiEditor {
     }
 
     /// Handle mouse move based on current tool
-    fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position) -> ToolEvent {
+    fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> ToolEvent {
         if !self.is_dragging {
             // Just hovering - update cursor based on position
             return ToolEvent::None;
@@ -1497,14 +1917,21 @@ impl AnsiEditor {
                 self.update_selection_from_drag();
                 ToolEvent::Redraw
             }
-            Tool::Pencil
-            | Tool::Brush
-            | Tool::Erase
-            | Tool::Line
-            | Tool::RectangleOutline
-            | Tool::RectangleFilled
-            | Tool::EllipseOutline
-            | Tool::EllipseFilled => {
+            Tool::Pencil | Tool::Brush | Tool::Erase => {
+                // Paint along the line from the last position to the current position.
+                let Some(last) = self.paint_last_pos else {
+                    self.paint_last_pos = Some(pos);
+                    return ToolEvent::Redraw;
+                };
+
+                let points = icy_engine_edit::brushes::line::get_line_points(last, pos);
+                for p in points {
+                    self.apply_paint_stamp(p, pixel_position, self.paint_button);
+                }
+                self.paint_last_pos = Some(pos);
+                ToolEvent::Redraw
+            }
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Update preview/drawing
                 ToolEvent::Redraw
             }
@@ -1748,7 +2175,7 @@ impl AnsiEditor {
         let sidebar_width = constants::LEFT_BAR_WIDTH;
 
         // Get caret position and colors from the edit state (also used for palette mode decisions)
-        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode) = {
+        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode, buffer_type) = {
             let mut screen_guard = self.screen.lock();
             let state = screen_guard
                 .as_any_mut()
@@ -1763,7 +2190,8 @@ impl AnsiEditor {
             let caret_y = caret.y;
             let height = buffer.height();
             let width = buffer.width();
-            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode)
+            let buffer_type = buffer.buffer_type;
+            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode, buffer_type)
         };
 
         // Palette grid - adapts to sidebar width
@@ -1786,7 +2214,35 @@ impl AnsiEditor {
         // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
         let color_switcher = self.color_switcher.view(caret_fg, caret_bg).map(AnsiEditorMessage::ColorSwitcher);
 
-        let top_toolbar_content = self.top_toolbar.view(self.current_tool).map(AnsiEditorMessage::TopToolbar);
+        // Get FKeys and font/palette for toolbar
+        let (fkeys, current_font, palette) = {
+            let opts = self.options.read();
+            let fkeys = opts.fkeys.clone();
+
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let buffer = state.get_buffer();
+            let caret = state.get_caret();
+            let font_page = caret.font_page();
+            let font = buffer.font(font_page).or_else(|| buffer.font(0)).cloned();
+            let palette = buffer.palette.clone();
+            (fkeys, font, palette)
+        };
+
+        // Clone font for char selector overlay (will be used later if popup is open)
+        let font_for_char_selector = current_font.clone();
+
+        // Use FKeyToolbar canvas for Click tool, regular TopToolbar for other tools
+        let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.current_tool == Tool::Click {
+            self.fkey_toolbar
+                .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg)
+                .map(AnsiEditorMessage::FKeyToolbar)
+        } else {
+            self.top_toolbar.view(self.current_tool, &fkeys, buffer_type).map(AnsiEditorMessage::TopToolbar)
+        };
 
         let toolbar_height = SWITCHER_SIZE;
 
@@ -1823,54 +2279,111 @@ impl AnsiEditor {
             (size.width as f32, size.height as f32)
         };
 
-        // Build the center area with optional line numbers overlay
-        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers {
-            // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
-            let line_numbers_overlay = line_numbers::line_numbers_overlay(
-                self.canvas.terminal.render_info.clone(),
-                buffer_width,
-                buffer_height as usize,
-                font_width,
-                font_height,
-                caret_row,
-                caret_col,
-                scroll_x,
-                scroll_y,
-            );
+        // Build optional brush character table overlay
+        let brush_char_table_overlay: Element<'_, AnsiEditorMessage> = if self.show_brush_char_table {
+            let mut grid = iced::widget::Column::new().spacing(2);
 
-            // Use a stack to overlay line numbers on top of the canvas
-            iced::widget::stack![container(canvas).width(Length::Fill).height(Length::Fill), line_numbers_overlay,]
-                .width(Length::Fill)
-                .height(Length::Fill)
+            for row_idx in 0..16u8 {
+                let mut roww = iced::widget::Row::new().spacing(2);
+                for col_idx in 0..16u8 {
+                    let code = row_idx.wrapping_mul(16).wrapping_add(col_idx);
+                    let raw = code as char;
+                    let display = buffer_type.convert_to_unicode(raw);
+
+                    roww = roww.push(
+                        button(text(display.to_string()).size(14))
+                            .padding(2)
+                            .on_press(AnsiEditorMessage::TopToolbar(TopToolbarMessage::SetBrushChar(raw))),
+                    );
+                }
+                grid = grid.push(roww);
+            }
+
+            container(grid)
+                .padding(6)
+                .style(container::bordered_box)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
                 .into()
+        } else {
+            iced::widget::Space::new().width(Length::Fixed(0.0)).height(Length::Fixed(0.0)).into()
+        };
+
+        // Build the center area with optional overlays
+        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers || self.show_brush_char_table {
+            // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
+            let line_numbers_overlay = if self.show_line_numbers {
+                line_numbers::line_numbers_overlay(
+                    self.canvas.terminal.render_info.clone(),
+                    buffer_width,
+                    buffer_height as usize,
+                    font_width,
+                    font_height,
+                    caret_row,
+                    caret_col,
+                    scroll_x,
+                    scroll_y,
+                )
+            } else {
+                iced::widget::Space::new().width(Length::Fixed(0.0)).height(Length::Fixed(0.0)).into()
+            };
+
+            iced::widget::stack![
+                container(canvas).width(Length::Fill).height(Length::Fill),
+                line_numbers_overlay,
+                brush_char_table_overlay,
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
         } else {
             container(canvas).width(Length::Fill).height(Length::Fill).into()
         };
 
         // Main layout:
-        // Top row: Full-width toolbar (with color switcher)
-        // Bottom row: Left sidebar | Canvas (with optional line numbers) | Right panel
+        // Left column: toolbar on top, then left sidebar + canvas
+        // Right: right panel spanning full height
 
-        let bottom_row = row![
+        let left_content_row = row![
             // Left sidebar - dynamic width based on palette size
             container(left_sidebar).width(Length::Fixed(sidebar_width)),
             // Center - canvas with optional line numbers
             center_area,
-            // Right panel - fixed width (320pt for 80-char buffer display)
-            container(right_panel).width(Length::Fixed(RIGHT_PANEL_BASE_WIDTH)),
         ];
 
-        column![
-            // Top toolbar - full width
+        let left_column = column![
+            // Top toolbar - full width of left area
             container(top_toolbar)
                 .width(Length::Fill)
                 .height(Length::Fixed(toolbar_height))
                 .style(container::rounded_box),
-            // Bottom content
-            bottom_row,
+            // Left sidebar + canvas
+            left_content_row,
         ]
-        .spacing(0)
-        .into()
+        .spacing(0);
+
+        let main_layout: Element<'_, AnsiEditorMessage> = row![
+            left_column,
+            // Right panel - fixed width, full height
+            container(right_panel).width(Length::Fixed(RIGHT_PANEL_BASE_WIDTH)),
+        ]
+        .into();
+
+        // Apply character selector modal overlay if active
+        if let Some(slot) = self.char_selector_slot {
+            let current_code = fkeys.code_at(fkeys.current_set(), slot);
+
+            let selector_canvas = CharSelector::new(slot, current_code)
+                .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
+                .map(AnsiEditorMessage::CharSelector);
+
+            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
+
+            // Use modal() which closes on click outside (on_blur)
+            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
+        } else {
+            main_layout
+        }
     }
 
     /// Sync UI components with the current edit state

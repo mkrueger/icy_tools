@@ -31,16 +31,19 @@ pub use color_mode::ColorMode;
 
 use icy_engine::{AttributedChar, Position, TextAttribute};
 
-/// Standard shade gradient characters (from light to dark)
-pub const SHADE_GRADIENT: [char; 4] = ['░', '▒', '▓', '█'];
+/// Standard CP437 shade gradient characters (from light to dark)
+///
+/// Note: These are stored as CP437 codepoints (0..255) in `char`, matching how
+/// ANSI buffers are represented throughout the editor.
+pub const SHADE_GRADIENT: [char; 4] = ['\u{00B0}', '\u{00B1}', '\u{00B2}', 219 as char];
 
 /// Half-block characters for high-resolution drawing
 pub const HALF_BLOCKS: HalfBlocks = HalfBlocks {
-    upper: '▀',
-    lower: '▄',
-    full: '█',
-    left: '▌',
-    right: '▐',
+    upper: 223 as char,
+    lower: 220 as char,
+    full: 219 as char,
+    left: 221 as char,
+    right: 222 as char,
 };
 
 /// Collection of half-block characters
@@ -90,22 +93,32 @@ pub struct DrawContext {
     /// The background color to use
     pub background: u32,
 
+    /// Base attribute template (font page, blink, etc.) for drawing new chars.
+    /// Colors are still taken from `foreground`/`background` according to `color_mode`.
+    pub template_attribute: TextAttribute,
+
     /// Outline style for TheDraw fonts (0-15)
     pub outline_style: u8,
 
     /// Whether to use character mirroring
     pub mirror_mode: MirrorMode,
+
+    /// For half-block mode: whether the point targets the upper half (true) or lower half (false)
+    pub half_block_is_top: bool,
 }
 
 impl Default for DrawContext {
     fn default() -> Self {
+        let template_attribute = TextAttribute::new(7, 0);
         Self {
             brush_mode: BrushMode::HalfBlock,
             color_mode: ColorMode::Both,
             foreground: 7,
             background: 0,
+            template_attribute,
             outline_style: 0,
             mirror_mode: MirrorMode::None,
+            half_block_is_top: true,
         }
     }
 }
@@ -141,18 +154,34 @@ impl DrawContext {
     /// Set foreground color
     pub fn with_foreground(mut self, fg: u32) -> Self {
         self.foreground = fg;
+        self.template_attribute.set_foreground(fg);
         self
     }
 
     /// Set background color
     pub fn with_background(mut self, bg: u32) -> Self {
         self.background = bg;
+        self.template_attribute.set_background(bg);
+        self
+    }
+
+    /// Set the base attribute template used when drawing new characters.
+    pub fn with_template_attribute(mut self, attr: TextAttribute) -> Self {
+        self.foreground = attr.foreground();
+        self.background = attr.background();
+        self.template_attribute = attr;
         self
     }
 
     /// Set outline style
     pub fn with_outline_style(mut self, style: u8) -> Self {
         self.outline_style = style;
+        self
+    }
+
+    /// Select which half is targeted for `BrushMode::HalfBlock`.
+    pub fn with_half_block_is_top(mut self, is_top: bool) -> Self {
+        self.half_block_is_top = is_top;
         self
     }
 
@@ -175,6 +204,9 @@ impl DrawContext {
             BrushMode::Char(ch) => {
                 self.draw_char(target, pos, *ch);
             }
+            BrushMode::Replace(ch) => {
+                self.replace_char(target, pos, *ch);
+            }
             BrushMode::Shade => {
                 self.draw_shade(target, pos, true);
             }
@@ -183,6 +215,9 @@ impl DrawContext {
             }
             BrushMode::Colorize => {
                 self.colorize(target, pos);
+            }
+            BrushMode::Blink(on) => {
+                self.set_blink(target, pos, *on);
             }
             BrushMode::Custom(brush) => {
                 self.draw_custom_brush(target, pos, brush);
@@ -197,14 +232,19 @@ impl DrawContext {
 
     fn draw_block<T: DrawTarget>(&self, target: &mut T, pos: Position) {
         let attr = self.make_attribute();
-        target.set_char(pos, AttributedChar::new('█', attr));
+        target.set_char(pos, AttributedChar::new(HALF_BLOCKS.full, attr));
     }
 
     fn draw_half_block<T: DrawTarget>(&self, target: &mut T, pos: Position) {
-        // For half-block mode, we typically use the upper half block
-        // The actual half-block logic depends on sub-pixel position
-        let attr = self.make_attribute();
-        target.set_char(pos, AttributedChar::new('▀', attr));
+        // CP437 half-block drawing: update only upper/lower pixel using existing cell state.
+        let Some(current) = target.char_at(pos) else {
+            return;
+        };
+        let hb_pos = Position::new(pos.x, if self.half_block_is_top { 0 } else { 1 });
+        let hb = icy_engine::paint::HalfBlock::from_char(current, hb_pos);
+        let col = self.foreground;
+        let block = hb.get_half_block_char(col, true);
+        target.set_char(pos, block);
     }
 
     fn draw_outline<T: DrawTarget>(&self, target: &mut T, pos: Position, role: PointRole) {
@@ -219,6 +259,14 @@ impl DrawContext {
     fn draw_char<T: DrawTarget>(&self, target: &mut T, pos: Position, ch: char) {
         let attr = self.make_attribute();
         target.set_char(pos, AttributedChar::new(ch, attr));
+    }
+
+    fn replace_char<T: DrawTarget>(&self, target: &mut T, pos: Position, ch: char) {
+        if let Some(mut cur) = target.char_at(pos) {
+            cur.ch = ch;
+            cur.attribute.attr &= !icy_engine::attribute::INVISIBLE;
+            target.set_char(pos, cur);
+        }
     }
 
     fn draw_shade<T: DrawTarget>(&self, target: &mut T, pos: Position, up: bool) {
@@ -247,25 +295,29 @@ impl DrawContext {
     fn colorize<T: DrawTarget>(&self, target: &mut T, pos: Position) {
         if let Some(mut ch) = target.char_at(pos) {
             let mut attr = ch.attribute;
-            
+
             if self.color_mode.affects_foreground() {
                 attr.set_foreground(self.foreground);
             }
             if self.color_mode.affects_background() {
                 attr.set_background(self.background);
             }
-            
+
             ch.attribute = attr;
             target.set_char(pos, ch);
         }
     }
 
-    fn draw_custom_brush<T: DrawTarget>(
-        &self,
-        target: &mut T,
-        pos: Position,
-        brush: &CustomBrush,
-    ) {
+    fn set_blink<T: DrawTarget>(&self, target: &mut T, pos: Position, on: bool) {
+        if let Some(mut ch) = target.char_at(pos) {
+            let mut attr = ch.attribute;
+            attr.set_is_blinking(on);
+            ch.attribute = attr;
+            target.set_char(pos, ch);
+        }
+    }
+
+    fn draw_custom_brush<T: DrawTarget>(&self, target: &mut T, pos: Position, brush: &CustomBrush) {
         let offset_x = brush.width / 2;
         let offset_y = brush.height / 2;
 
@@ -329,23 +381,25 @@ impl DrawContext {
             BrushMode::HalfBlock => self.draw_half_block(target, pos),
             BrushMode::Outline => self.draw_outline(target, pos, role),
             BrushMode::Char(ch) => self.draw_char(target, pos, *ch),
+            BrushMode::Replace(ch) => self.replace_char(target, pos, *ch),
             BrushMode::Shade => self.draw_shade(target, pos, true),
             BrushMode::ShadeDown => self.draw_shade(target, pos, false),
             BrushMode::Colorize => self.colorize(target, pos),
+            BrushMode::Blink(on) => self.set_blink(target, pos, *on),
             BrushMode::Custom(brush) => self.draw_custom_brush(target, pos, brush),
         }
     }
 
     fn make_attribute(&self) -> TextAttribute {
-        let mut attr = TextAttribute::default();
-        
+        let mut attr = self.template_attribute;
+
         if self.color_mode.affects_foreground() {
             attr.set_foreground(self.foreground);
         }
         if self.color_mode.affects_background() {
             attr.set_background(self.background);
         }
-        
+
         attr
     }
 }
@@ -397,10 +451,7 @@ impl TestTarget {
         Self {
             width,
             height,
-            chars: vec![
-                AttributedChar::new(' ', TextAttribute::default());
-                (width * height) as usize
-            ],
+            chars: vec![AttributedChar::new(' ', TextAttribute::default()); (width * height) as usize],
         }
     }
 
@@ -446,20 +497,20 @@ mod tests {
     fn test_draw_block() {
         let mut target = TestTarget::new(80, 25);
         let ctx = DrawContext::default().with_brush_mode(BrushMode::Block);
-        
+
         ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-        
+
         let ch = target.get_at(10, 5);
-        assert_eq!(ch.ch, '█');
+        assert_eq!(ch.ch, HALF_BLOCKS.full);
     }
 
     #[test]
     fn test_draw_char() {
         let mut target = TestTarget::new(80, 25);
         let ctx = DrawContext::default().with_brush_mode(BrushMode::Char('X'));
-        
+
         ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-        
+
         let ch = target.get_at(10, 5);
         assert_eq!(ch.ch, 'X');
     }
@@ -469,40 +520,40 @@ mod tests {
         let mut target = TestTarget::new(80, 25);
         let ctx = DrawContext::default().with_brush_mode(BrushMode::Shade);
         let pos = Position::new(10, 5);
-        
+
         // First stroke
         ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, '░');
-        
+        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[0]);
+
         // Second stroke
         ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, '▒');
-        
+        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[1]);
+
         // Third stroke
         ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, '▓');
-        
+        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[2]);
+
         // Fourth stroke - max
         ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, '█');
+        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[3]);
     }
 
     #[test]
     fn test_colorize() {
         let mut target = TestTarget::new(80, 25);
         let pos = Position::new(10, 5);
-        
+
         // First, draw a character
         target.set_char(pos, AttributedChar::new('A', TextAttribute::default()));
-        
+
         // Now colorize it
         let ctx = DrawContext::default()
             .with_brush_mode(BrushMode::Colorize)
             .with_foreground(4)
             .with_background(1);
-        
+
         ctx.plot_point(&mut target, pos, PointRole::Fill);
-        
+
         let ch = target.get_at(10, 5);
         assert_eq!(ch.ch, 'A'); // Character unchanged
         assert_eq!(ch.attribute.foreground(), 4);
@@ -513,7 +564,7 @@ mod tests {
     fn test_bounds_check() {
         let mut target = TestTarget::new(80, 25);
         let ctx = DrawContext::default().with_brush_mode(BrushMode::Block);
-        
+
         // Should not panic on out-of-bounds
         ctx.plot_point(&mut target, Position::new(-1, 5), PointRole::Fill);
         ctx.plot_point(&mut target, Position::new(100, 5), PointRole::Fill);
@@ -529,12 +580,12 @@ mod tests {
             mirror_mode: MirrorMode::Horizontal,
             ..Default::default()
         };
-        
+
         // Draw at x=10, should also draw at x=69 (mirror around center 40)
         ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-        
-        assert_eq!(target.get_at(10, 5).ch, '█');
-        assert_eq!(target.get_at(69, 5).ch, '█');
+
+        assert_eq!(target.get_at(10, 5).ch, HALF_BLOCKS.full);
+        assert_eq!(target.get_at(69, 5).ch, HALF_BLOCKS.full);
     }
 
     #[test]

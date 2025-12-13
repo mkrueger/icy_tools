@@ -5,7 +5,7 @@
 
 use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use iced::{
     Alignment, Element, Event, Length, Task, Theme,
@@ -443,7 +443,7 @@ pub struct MainWindow {
     mode_state: ModeState,
 
     /// Shared options
-    options: Arc<Mutex<SharedOptions>>,
+    options: Arc<RwLock<SharedOptions>>,
 
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
@@ -477,7 +477,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<SharedOptions>>) -> Self {
         let (mode_state, initial_error) = if let Some(ref p) = path {
             // Determine mode based on file format
             let format = FileFormat::from_path(p);
@@ -566,7 +566,7 @@ impl MainWindow {
     /// When `load_path` differs from `original_path`, it's an autosave file and we use
     /// `load_from_autosave` to load it (since autosave files have .autosave extension
     /// and can't be identified by extension).
-    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<RwLock<SharedOptions>>) -> Self {
         let (mode_state, initial_error) = match (&load_path, &original_path) {
             // Case 1: We have an autosave file to load (load_path differs from original_path)
             (Some(autosave), Some(orig)) if autosave != orig => {
@@ -1008,7 +1008,7 @@ impl MainWindow {
                             Ok(editor) => {
                                 self.mode_state = ModeState::BitFont(editor);
                                 self.mark_saved();
-                                self.options.lock().recent_files.add_recent_file(&path);
+                                self.options.write().recent_files.add_recent_file(&path);
                             }
                             Err(e) => {
                                 self.dialogs.push(error_dialog(
@@ -1025,7 +1025,7 @@ impl MainWindow {
                             Ok(editor) => {
                                 self.mode_state = ModeState::Animation(editor);
                                 self.mark_saved();
-                                self.options.lock().recent_files.add_recent_file(&path);
+                                self.options.write().recent_files.add_recent_file(&path);
                             }
                             Err(e) => {
                                 self.dialogs.push(error_dialog(
@@ -1042,7 +1042,7 @@ impl MainWindow {
                             Ok(editor) => {
                                 self.mode_state = ModeState::CharFont(editor);
                                 self.mark_saved();
-                                self.options.lock().recent_files.add_recent_file(&path);
+                                self.options.write().recent_files.add_recent_file(&path);
                             }
                             Err(e) => {
                                 self.dialogs.push(error_dialog(
@@ -1059,7 +1059,7 @@ impl MainWindow {
                             Ok(editor) => {
                                 self.mode_state = ModeState::Ansi(editor);
                                 self.mark_saved();
-                                self.options.lock().recent_files.add_recent_file(&path);
+                                self.options.write().recent_files.add_recent_file(&path);
                             }
                             Err(e) => {
                                 self.dialogs.push(error_dialog(
@@ -1160,7 +1160,7 @@ impl MainWindow {
                         self.mode_state.set_file_path(path.clone());
                         self.mark_saved();
                         // Add to recent files
-                        self.options.lock().recent_files.add_recent_file(&path);
+                        self.options.write().recent_files.add_recent_file(&path);
 
                         // Check if we should close after save
                         if self.close_after_save {
@@ -1640,7 +1640,7 @@ impl MainWindow {
             // File operations (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
             Message::ClearRecentFiles => {
-                self.options.lock().recent_files.clear_recent_files();
+                self.options.write().recent_files.clear_recent_files();
                 Task::none()
             }
             Message::ExportFile => Task::none(),
@@ -2009,7 +2009,7 @@ impl MainWindow {
 
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
-        let recent_files = &self.options.lock().recent_files;
+        let recent_files = &self.options.read().recent_files;
 
         // Get undo/redo descriptions for menu
         let undo_info = self.get_undo_info();

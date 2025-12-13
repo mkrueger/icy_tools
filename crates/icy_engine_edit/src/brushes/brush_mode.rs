@@ -13,12 +13,18 @@ pub enum BrushMode {
     Outline,
     /// Draw a specific character
     Char(char),
+
+    /// Replace only the character, keeping existing attributes
+    Replace(char),
     /// Shade mode - increases shade level on each stroke
     Shade,
     /// Shade down - decreases shade level on each stroke
     ShadeDown,
     /// Colorize mode - only changes colors, keeps existing characters
     Colorize,
+
+    /// Set blinking attribute (true = on, false = off)
+    Blink(bool),
     /// Custom brush (e.g., from clipboard or stamp)
     Custom(Arc<CustomBrush>),
 }
@@ -95,17 +101,17 @@ impl PointRole {
     pub fn outline_char(&self, outline_style: u8) -> char {
         // Map PointRole to TheDraw character index (A=0, B=1, C=2, ...)
         let ch = match self {
-            PointRole::TopSide => b'A',     // top outer
-            PointRole::BottomSide => b'A',  // (no separate bottom, reuse top)
-            PointRole::LeftSide => b'C',    // left outer
-            PointRole::RightSide => b'C',   // (no separate right, reuse left as vertical)
-            PointRole::NWCorner => b'E',    // NW outer/outer
-            PointRole::NECorner => b'F',    // NW outer/inner (used for NE)
-            PointRole::SWCorner => b'I',    // SW outer/outer
-            PointRole::SECorner => b'J',    // SW outer/inner (used for SE)
+            PointRole::TopSide => b'A',    // top outer
+            PointRole::BottomSide => b'A', // (no separate bottom, reuse top)
+            PointRole::LeftSide => b'C',   // left outer
+            PointRole::RightSide => b'C',  // (no separate right, reuse left as vertical)
+            PointRole::NWCorner => b'E',   // NW outer/outer
+            PointRole::NECorner => b'F',   // NW outer/inner (used for NE)
+            PointRole::SWCorner => b'I',   // SW outer/outer
+            PointRole::SECorner => b'J',   // SW outer/inner (used for SE)
             PointRole::Fill | PointRole::Line => return ' ',
         };
-        
+
         retrofont::transform_outline(outline_style as usize, ch)
     }
 }

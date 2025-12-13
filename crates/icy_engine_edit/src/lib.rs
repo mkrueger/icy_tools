@@ -5,6 +5,8 @@ pub use editor::*;
 pub mod bitfont;
 pub mod charset;
 
+pub mod brushes;
+
 mod layer_utils;
 pub use layer_utils::{layer_from_area, stamp_layer};
 

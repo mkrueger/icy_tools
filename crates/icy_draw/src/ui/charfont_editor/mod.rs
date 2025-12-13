@@ -27,7 +27,7 @@ use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, TdfFont, l
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use retrofont::RenderOptions;
 
 use crate::ui::SharedOptions;
@@ -128,7 +128,7 @@ pub struct CharFontEditor {
     /// Last update preview undo length
     last_update_preview: usize,
     /// Shared options
-    pub options: Arc<Mutex<SharedOptions>>,
+    pub options: Arc<RwLock<SharedOptions>>,
     /// Terminal for preview rendering
     preview_terminal: Terminal,
     /// Monitor settings for preview (200% zoom)
@@ -139,13 +139,13 @@ static mut NEXT_ID: u64 = 0;
 
 impl CharFontEditor {
     /// Create a new empty CharFont editor
-    pub fn new(options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn new(options: Arc<RwLock<SharedOptions>>) -> Self {
         let charset_state = CharSetEditState::new();
         Self::with_charset_state(charset_state, options)
     }
 
     /// Create a CharFont editor from CharSetEditState
-    fn with_charset_state(charset_state: CharSetEditState, options: Arc<Mutex<SharedOptions>>) -> Self {
+    fn with_charset_state(charset_state: CharSetEditState, options: Arc<RwLock<SharedOptions>>) -> Self {
         let id = unsafe {
             NEXT_ID = NEXT_ID.wrapping_add(1);
             NEXT_ID
@@ -202,13 +202,13 @@ impl CharFontEditor {
     }
 
     /// Create a CharFont editor from TDF fonts
-    pub fn with_fonts(fonts: Vec<TdfFont>, file_path: Option<PathBuf>, options: Arc<Mutex<SharedOptions>>) -> Self {
+    pub fn with_fonts(fonts: Vec<TdfFont>, file_path: Option<PathBuf>, options: Arc<RwLock<SharedOptions>>) -> Self {
         let charset_state = CharSetEditState::with_fonts(fonts, file_path);
         Self::with_charset_state(charset_state, options)
     }
 
     /// Create a CharFont editor with a file
-    pub fn with_file(path: PathBuf, options: Arc<Mutex<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
         let charset_state = CharSetEditState::load_from_file(path)?;
         Ok(Self::with_charset_state(charset_state, options))
     }
@@ -253,7 +253,7 @@ impl CharFontEditor {
     }
 
     /// Load from an autosave file
-    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<Mutex<SharedOptions>>) -> anyhow::Result<Self> {
+    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<RwLock<SharedOptions>>) -> anyhow::Result<Self> {
         let data = std::fs::read(autosave_path)?;
         let fonts = load_tdf_fonts(&data)?;
         if fonts.is_empty() {
