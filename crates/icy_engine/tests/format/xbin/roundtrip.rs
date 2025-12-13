@@ -8,25 +8,25 @@ use std::path::Path;
 /// Test roundtrip for AK-TORCH.icy
 #[test]
 fn roundtrip_ak_torch() {
-    test_icy_xbin_roundtrip("AK-TORCH.icy", 25104);
+    test_icy_xbin_roundtrip("AK-TORCH.icy", 24847);
 }
 
 /// Test roundtrip for dZ-taos1.icy  
 #[test]
 fn roundtrip_dz_taos1() {
-    test_icy_xbin_roundtrip("dZ-taos1.icy", 155746);
+    test_icy_xbin_roundtrip("dZ-taos1.icy", 154872);
 }
 
 /// Test roundtrip for om-nouchka2.icy
 #[test]
 fn roundtrip_om_nouchka2() {
-    test_icy_xbin_roundtrip("om-nouchka2.icy", 14199);
+    test_icy_xbin_roundtrip("om-nouchka2.icy", 14143);
 }
 
 /// Test roundtrip for r-tribut.icy
 #[test]
 fn roundtrip_r_tribut() {
-    test_icy_xbin_roundtrip("r-tribut.icy", 88474);
+    test_icy_xbin_roundtrip("r-tribut.icy", 88018);
 }
 
 fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {

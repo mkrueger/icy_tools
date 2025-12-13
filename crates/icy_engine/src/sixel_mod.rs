@@ -14,6 +14,7 @@ pub struct Sixel {
 
     pub vertical_scale: i32,
     pub horizontal_scale: i32,
+    /// Raw sixel data (RGBA format)
     pub picture_data: Vec<u8>,
 
     size: Size,

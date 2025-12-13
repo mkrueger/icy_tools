@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Alignment;
 
 pub mod buffers_rendering;
@@ -365,16 +365,42 @@ impl TextBuffer {
 }
 
 pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<usize> {
-    let mut hash_set = HashSet::new();
+    // Fast path for the common case (typically <= 2 font pages) without hashing.
+    // Fallback to an ordered set if the number of distinct pages grows.
+    let mut small: Vec<usize> = Vec::new();
+    let mut set: Option<std::collections::BTreeSet<usize>> = None;
+
     for y in 0..buf.height() {
         for x in 0..buf.width() {
-            let ch = buf.char_at((x, y).into());
-            hash_set.insert(ch.font_page());
+            let page = buf.char_at((x, y).into()).font_page();
+
+            if let Some(set) = set.as_mut() {
+                set.insert(page);
+                continue;
+            }
+
+            if small.iter().any(|&p| p == page) {
+                continue;
+            }
+
+            small.push(page);
+            // Switch to a BTreeSet if we see many distinct pages.
+            if small.len() >= 16 {
+                let mut tree = std::collections::BTreeSet::new();
+                for p in small.drain(..) {
+                    tree.insert(p);
+                }
+                set = Some(tree);
+            }
         }
     }
-    let mut v: Vec<usize> = hash_set.into_iter().collect();
-    v.sort_unstable();
-    v
+
+    if let Some(set) = set {
+        set.into_iter().collect()
+    } else {
+        small.sort_unstable();
+        small
+    }
 }
 
 #[derive(Default)]
