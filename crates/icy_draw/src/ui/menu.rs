@@ -15,7 +15,7 @@ use super::MostRecentlyUsedFiles;
 use super::main_window::{EditMode, Message};
 use crate::{
     fl,
-    ui::{animation_editor, ansi_editor, bitfont_editor, charfont_editor},
+    ui::{animation_editor, ansi_editor, bitfont_editor, charfont_editor, plugins::Plugin},
 };
 pub use ansi_editor::menu_bar::MarkerMenuState;
 
@@ -47,9 +47,17 @@ impl MenuBarState {
     }
 
     /// Build the menu bar view based on the current edit mode
-    pub fn view(&self, mode: &EditMode, recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, marker_state: &MarkerMenuState) -> Element<'_, Message> {
+    pub fn view(
+        &self,
+        mode: &EditMode,
+        recent_files: &MostRecentlyUsedFiles,
+        undo_info: &UndoInfo,
+        marker_state: &MarkerMenuState,
+        plugins: &[Plugin],
+        mirror_mode: bool,
+    ) -> Element<'_, Message> {
         match mode {
-            EditMode::Ansi => ansi_editor::menu_bar::view_ansi(recent_files, undo_info, marker_state),
+            EditMode::Ansi => ansi_editor::menu_bar::view_ansi(recent_files, undo_info, marker_state, plugins, mirror_mode),
             EditMode::BitFont => {
                 bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
             }

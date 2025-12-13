@@ -2,6 +2,7 @@
 //!
 //! Contains the window manager and main window implementation.
 
+pub mod about_dialog;
 pub mod animation_editor;
 mod ansi_editor;
 mod bitfont_editor;
@@ -15,6 +16,7 @@ mod menu;
 pub mod new_file_dialog;
 mod options;
 pub mod palette_editor;
+pub mod plugins;
 mod recent_files;
 mod session;
 mod settings_dialog;

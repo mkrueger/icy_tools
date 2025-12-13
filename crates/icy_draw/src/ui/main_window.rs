@@ -7,6 +7,7 @@ use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
 use parking_lot::RwLock;
 
+use crate::fl;
 use iced::{
     Alignment, Element, Event, Length, Task, Theme,
     widget::{Space, column, container, mouse_area, row, rule, text},
@@ -23,6 +24,7 @@ use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, Referenc
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
 use super::palette_editor::{PaletteEditorDialog, PaletteEditorMessage};
+use super::plugins::Plugin;
 use super::{
     Options,
     menu::{MenuBarState, UndoInfo},
@@ -351,15 +353,14 @@ pub enum Message {
     // Plugins
     // ═══════════════════════════════════════════════════════════════════════════
     RunPlugin(usize),
-    OpenPluginDirectory,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Help
     // ═══════════════════════════════════════════════════════════════════════════
     OpenDiscussions,
     ReportBug,
-    OpenLogFile,
     ShowAbout,
+    AboutDialog(icy_engine_gui::ui::AboutDialogMessage),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Mode switching
@@ -521,6 +522,9 @@ pub struct MainWindow {
 
     /// Double-click detector for font slot buttons in status bar
     slot_double_click: RefCell<icy_view_gui::DoubleClickDetector<usize>>,
+
+    /// Loaded plugins from the plugin directory
+    plugins: Vec<Plugin>,
 }
 
 impl MainWindow {
@@ -601,6 +605,7 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
+            plugins: Plugin::read_plugin_directory(),
         };
         window.update_title();
         window
@@ -782,6 +787,7 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
+            plugins: Plugin::read_plugin_directory(),
         };
         window.update_title();
         window
@@ -1410,7 +1416,13 @@ impl MainWindow {
                 Task::none()
             }
             Message::SelectAll => {
-                // TODO: Implement select all
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let w = state.get_buffer().width();
+                        let h = state.get_buffer().height();
+                        let _ = state.set_selection(icy_engine::Rectangle::from(0, 0, w, h));
+                    });
+                }
                 Task::none()
             }
             Message::ZoomIn => {
@@ -2025,7 +2037,12 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             // Document settings (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
-            Message::ToggleMirrorMode => Task::none(),
+            Message::ToggleMirrorMode => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.toggle_mirror_mode();
+                }
+                Task::none()
+            }
             Message::EditSauce => Task::none(),
             Message::ToggleLGAFont => Task::none(),
             Message::ToggleAspectRatio => Task::none(),
@@ -2043,13 +2060,77 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::NextFgColor => Task::none(),
-            Message::PrevFgColor => Task::none(),
-            Message::NextBgColor => Task::none(),
-            Message::PrevBgColor => Task::none(),
-            Message::PickAttributeUnderCaret => Task::none(),
-            Message::ToggleColor => Task::none(),
-            Message::SwitchToDefaultColor => Task::none(),
+            Message::NextFgColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let palette_len = state.get_buffer().palette.len() as u32;
+                        let fg = state.get_caret().attribute.foreground();
+                        state.set_caret_foreground((fg + 1) % palette_len);
+                    });
+                }
+                Task::none()
+            }
+            Message::PrevFgColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let palette_len = state.get_buffer().palette.len() as u32;
+                        let fg = state.get_caret().attribute.foreground();
+                        state.set_caret_foreground((fg + palette_len - 1) % palette_len);
+                    });
+                }
+                Task::none()
+            }
+            Message::NextBgColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let palette_len = state.get_buffer().palette.len() as u32;
+                        let bg = state.get_caret().attribute.background();
+                        state.set_caret_background((bg + 1) % palette_len);
+                    });
+                }
+                Task::none()
+            }
+            Message::PrevBgColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let palette_len = state.get_buffer().palette.len() as u32;
+                        let bg = state.get_caret().attribute.background();
+                        state.set_caret_background((bg + palette_len - 1) % palette_len);
+                    });
+                }
+                Task::none()
+            }
+            Message::PickAttributeUnderCaret => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        let pos = state.get_caret().position();
+                        let attr = if let Some(layer) = state.get_cur_layer() {
+                            layer.char_at(pos + layer.offset()).attribute
+                        } else {
+                            state.get_buffer().char_at(pos).attribute
+                        };
+                        state.set_caret_foreground(attr.foreground());
+                        state.set_caret_background(attr.background());
+                    });
+                }
+                Task::none()
+            }
+            Message::ToggleColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        state.swap_caret_colors();
+                    });
+                }
+                Task::none()
+            }
+            Message::SwitchToDefaultColor => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    editor.with_edit_state(|state| {
+                        state.reset_caret_colors();
+                    });
+                }
+                Task::none()
+            }
 
             Message::PaletteEditorApplied(pal) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
@@ -2285,18 +2366,56 @@ impl MainWindow {
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Plugin operations (TODO: implement)
+            // Plugin operations
             // ═══════════════════════════════════════════════════════════════════
-            Message::RunPlugin(_id) => Task::none(),
-            Message::OpenPluginDirectory => Task::none(),
+            Message::RunPlugin(id) => {
+                if let Some(plugin) = self.plugins.get(id) {
+                    if let ModeState::Ansi(editor) = &mut self.mode_state {
+                        let plugin = plugin.clone();
+                        if let Err(err) = plugin.run_plugin(&editor.screen) {
+                            self.dialogs
+                                .push(error_dialog(fl!("error-plugin-title"), format!("{}", err), |_| Message::CloseDialog));
+                        }
+                    }
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Help operations (TODO: implement)
+            // Help operations
             // ═══════════════════════════════════════════════════════════════════
-            Message::OpenDiscussions => Task::none(),
-            Message::ReportBug => Task::none(),
-            Message::OpenLogFile => Task::none(),
-            Message::ShowAbout => Task::none(),
+            Message::OpenDiscussions => {
+                if let Err(e) = open::that("https://github.com/mkrueger/icy_tools/discussions") {
+                    log::error!("Failed to open discussions URL: {}", e);
+                }
+                Task::none()
+            }
+            Message::ReportBug => {
+                if let Err(e) = open::that("https://github.com/mkrueger/icy_tools/issues") {
+                    log::error!("Failed to open issues URL: {}", e);
+                }
+                Task::none()
+            }
+            Message::ShowAbout => {
+                self.dialogs.push(crate::ui::about_dialog::about_dialog(Message::AboutDialog, |msg| match msg {
+                    Message::AboutDialog(m) => Some(m),
+                    _ => None,
+                }));
+                Task::none()
+            }
+            Message::AboutDialog(ref msg) => {
+                // Handle OpenLink messages from the about dialog
+                if let icy_engine_gui::ui::AboutDialogMessage::OpenLink(url) = msg {
+                    if let Err(e) = open::that(url) {
+                        log::error!("Failed to open URL {}: {}", url, e);
+                    }
+                }
+                // Route to dialog stack for other messages
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Other view operations
@@ -2333,7 +2452,15 @@ impl MainWindow {
             _ => crate::ui::menu::MarkerMenuState::default(),
         };
 
-        let menu_bar = self.menu_state.view(&self.mode_state.mode(), recent_files, &undo_info, &marker_state);
+        // Get mirror mode state from editor
+        let mirror_mode = match &self.mode_state {
+            ModeState::Ansi(editor) => editor.get_mirror_mode(),
+            _ => false,
+        };
+
+        let menu_bar = self
+            .menu_state
+            .view(&self.mode_state.mode(), recent_files, &undo_info, &marker_state, &self.plugins, mirror_mode);
 
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),

@@ -39,6 +39,10 @@ icy_engine_edit = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_view_gui = { workspace = true }
+
+# Lua scripting for plugins
+mlua = { workspace = true }
+regex = { workspace = true }
 icy_sauce = { workspace = true }
 retrofont = { workspace = true }
 
@@ -93,6 +97,7 @@ default = []
 
 [build-dependencies]
 winres = "0.1"
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 
 [package.metadata.bundle]
 name = "Icy Draw"

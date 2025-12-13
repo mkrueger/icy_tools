@@ -22,7 +22,7 @@ mod ui;
 use ui::WindowManager;
 
 lazy_static! {
-    static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    pub static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
 }
 
 lazy_static! {

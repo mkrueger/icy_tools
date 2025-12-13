@@ -265,7 +265,6 @@ impl BitFontMenu {
             help: vec![
                 MenuItem::simple(fl!("menu-discuss"), "", Message::OpenDiscussions),
                 MenuItem::simple(fl!("menu-report-bug"), "", Message::ReportBug),
-                MenuItem::simple(fl!("menu-open_log_file"), "", Message::OpenLogFile),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::HELP_ABOUT, Message::ShowAbout),
             ],

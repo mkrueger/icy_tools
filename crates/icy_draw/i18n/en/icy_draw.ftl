@@ -161,9 +161,12 @@ menu-open_log_file=Open log file
 menu-report-bug=Report Bug
 menu-about=About…
 menu-plugins=Plugins
-menu-open_plugin_directory=Open Plugin Directory…
+menu-no_plugins=No plugins found
 
 menu-upgrade_version=Upgrade to { $version }
+
+# Plugin errors
+error-plugin-title=Plugin Error
 
 # BitFont Editor menu items
 menu-clear-glyph=Clear Glyph
@@ -528,6 +531,7 @@ minimap_tool_title=Preview
 
 no_document_selected=No document selected
 
+undo-plugin=Plugin: { $title }
 undo-draw-ellipse=Draw ellipse
 undo-draw-rectangle=Draw rectangle
 undo-paint-brush=Paintbrush

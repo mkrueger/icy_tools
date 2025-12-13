@@ -62,7 +62,7 @@ impl UserData for LuaLayer {
         // Buffer dimensions
         fields.add_field_method_get("height", |_, this| Ok(this.screen.lock().height()));
         fields.add_field_method_set("height", |_, this, val| {
-            let mut screen = this.screen.lock();
+            let mut screen: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
                 editable.set_height(val);
                 Ok(())

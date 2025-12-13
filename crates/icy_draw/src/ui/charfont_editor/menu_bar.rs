@@ -87,7 +87,6 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
             menu_template(menu_items!(
                 (menu_item_simple(fl!("menu-discuss"), "", Message::OpenDiscussions)),
                 (menu_item_simple(fl!("menu-report-bug"), "", Message::ReportBug)),
-                (menu_item_simple(fl!("menu-open_log_file"), "", Message::OpenLogFile)),
                 (separator()),
                 (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
             ))

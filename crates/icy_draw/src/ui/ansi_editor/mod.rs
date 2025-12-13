@@ -738,6 +738,25 @@ impl AnsiEditor {
         }
     }
 
+    /// Get the current mirror mode state
+    pub fn get_mirror_mode(&self) -> bool {
+        let mut screen = self.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
+            state.get_mirror_mode()
+        } else {
+            false
+        }
+    }
+
+    /// Toggle mirror mode
+    pub fn toggle_mirror_mode(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            let current = state.get_mirror_mode();
+            state.set_mirror_mode(!current);
+        }
+    }
+
     /// Compute viewport info for the minimap overlay
     /// Returns normalized coordinates (0.0-1.0) representing the visible area in the terminal
     fn compute_viewport_info(&self) -> ViewportInfo {
