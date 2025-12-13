@@ -13,6 +13,9 @@ mod image_format;
 use icy_sauce::SauceRecord;
 pub use image_format::*;
 
+mod palette_format;
+pub use palette_format::*;
+
 use serde::{Deserialize, Serialize};
 
 mod color_optimization;

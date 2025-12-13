@@ -99,7 +99,7 @@ menu-palette-mode-dos=Dos 16
 menu-palette-mode-free=Free 16
 menu-palette-mode-free8=Free 8
 
-menu-select_palette=Select Palette
+menu-edit_palette=Edit Palette…
 menu-next_fg_color=Next Foreground Color
 menu-next_bg_color=Next Background Color
 menu-prev_fg_color=Previous Foreground Color
@@ -139,7 +139,6 @@ menu-open_font_slot_manager=Manage Font Slots…
 menu-add_fonts=Add Fonts…
 menu-open_font_manager=Edit Buffer Fonts…
 menu-open_font_directoy=Open Font Directory…
-menu-open_palettes_directoy=Open Palette Directory…
 
 # Font Selector Dialog
 font-selector-title-single=Select Font
@@ -465,6 +464,10 @@ font_selector-sauce_font=SAUCE
 select-palette-dialog-title=Select Palette ({ $count } available)
 select-palette-dialog-builtin_palette=BUILTIN
 select-palette-dialog-no-matching-palettes=No palettes found matching search critearia.
+
+palette-editor-import=Import…
+palette-editor-export=Export…
+palette-editor-invalid-hex=Invalid hex color
 
 autosave-dialog-title=Autosave
 autosave-dialog-description=Found an autosave for this file.

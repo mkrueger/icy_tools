@@ -22,6 +22,7 @@ use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage};
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
+use super::palette_editor::{PaletteEditorDialog, PaletteEditorMessage};
 use super::{
     SharedOptions,
     menu::{MenuBarState, UndoInfo},
@@ -240,8 +241,7 @@ pub enum Message {
     // ═══════════════════════════════════════════════════════════════════════════
     SwitchIceMode(icy_engine::IceMode),
     SwitchPaletteMode(icy_engine::PaletteMode),
-    SelectPalette,
-    OpenPalettesDirectory,
+    EditPalette,
     NextFgColor,
     PrevFgColor,
     NextBgColor,
@@ -295,6 +295,10 @@ pub enum Message {
     ToggleReferenceImage,
     /// Reference image dialog messages
     ReferenceImageDialog(ReferenceImageDialogMessage),
+
+    // Palette Editor Dialog
+    PaletteEditor(PaletteEditorMessage),
+    PaletteEditorApplied(icy_engine::Palette),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Plugins
@@ -1047,6 +1051,7 @@ impl MainWindow {
                 self.dialogs.pop();
                 Task::none()
             }
+            Message::PaletteEditor(_) => Task::none(),
             Message::SaveFile => {
                 // If we have a file path, save directly; otherwise show SaveAs dialog
                 if let Some(path) = self.mode_state.file_path().cloned() {
@@ -1215,12 +1220,16 @@ impl MainWindow {
                 match &mut self.mode_state {
                     ModeState::Ansi(editor) => {
                         // Access EditState through the screen
-                        let mut screen = editor.screen.lock();
-                        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                            if let Err(e) = edit_state.undo() {
-                                log::error!("Undo failed: {}", e);
+                        {
+                            let mut screen = editor.screen.lock();
+                            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                                if let Err(e) = edit_state.undo() {
+                                    log::error!("Undo failed: {}", e);
+                                }
                             }
                         }
+                        // Sync UI after undo (palette may have changed)
+                        editor.sync_ui();
                         Task::none()
                     }
                     ModeState::BitFont(editor) => {
@@ -1236,12 +1245,16 @@ impl MainWindow {
                 match &mut self.mode_state {
                     ModeState::Ansi(editor) => {
                         // Access EditState through the screen
-                        let mut screen = editor.screen.lock();
-                        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                            if let Err(e) = edit_state.redo() {
-                                log::error!("Redo failed: {}", e);
+                        {
+                            let mut screen = editor.screen.lock();
+                            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                                if let Err(e) = edit_state.redo() {
+                                    log::error!("Redo failed: {}", e);
+                                }
                             }
                         }
+                        // Sync UI after redo (palette may have changed)
+                        editor.sync_ui();
                         Task::none()
                     }
                     ModeState::BitFont(editor) => {
@@ -1687,8 +1700,13 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             Message::SwitchIceMode(_mode) => Task::none(),
             Message::SwitchPaletteMode(_mode) => Task::none(),
-            Message::SelectPalette => Task::none(),
-            Message::OpenPalettesDirectory => Task::none(),
+            Message::EditPalette => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let pal = editor.with_edit_state(|state| state.get_buffer().palette.clone());
+                    self.dialogs.push(PaletteEditorDialog::new(pal));
+                }
+                Task::none()
+            }
             Message::NextFgColor => Task::none(),
             Message::PrevFgColor => Task::none(),
             Message::NextBgColor => Task::none(),
@@ -1696,6 +1714,17 @@ impl MainWindow {
             Message::PickAttributeUnderCaret => Task::none(),
             Message::ToggleColor => Task::none(),
             Message::SwitchToDefaultColor => Task::none(),
+
+            Message::PaletteEditorApplied(pal) => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let res = editor.with_edit_state(|state| state.switch_to_palette(pal.clone()));
+                    if res.is_ok() {
+                        editor.is_modified = true;
+                        editor.sync_ui();
+                    }
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Font operations

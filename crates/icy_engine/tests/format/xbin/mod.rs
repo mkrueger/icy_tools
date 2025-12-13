@@ -1,7 +1,6 @@
-
-mod roundtrip;
 mod optional_components;
- 
+mod roundtrip;
+
 use super::ansi2::{CompareOptions, compare_buffers};
 use icy_engine::{AttributedChar, BitFont, Color, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer, TextPane};
 
@@ -18,8 +17,6 @@ pub fn test_blink() {
     assert_eq!(ch.attribute.background(), 0b0000);
     assert!(ch.attribute.is_blinking());
 }
-
-
 
 #[test]
 pub fn test_ice() {

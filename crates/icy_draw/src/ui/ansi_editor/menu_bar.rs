@@ -206,8 +206,7 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
         (
             menu_button(fl!("menu-colors")),
             menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-select_palette"), "", Message::SelectPalette)),
-                (menu_item_simple(fl!("menu-open_palettes_directoy"), "", Message::OpenPalettesDirectory)),
+                (menu_item_simple(fl!("menu-edit_palette"), "", Message::EditPalette)),
                 (separator()),
                 (menu_item_simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::NextFgColor)),
                 (menu_item_simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::PrevFgColor)),

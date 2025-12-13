@@ -13,10 +13,7 @@ use std::path::Path;
 // ============================================================================
 
 fn load_all_xbin_files() -> Vec<icy_engine::TextBuffer> {
-    let base_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("benches")
-        .join("data")
-        .join("xb_uncompressed");
+    let base_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("benches").join("data").join("xb_uncompressed");
 
     let mut buffers = Vec::new();
     if let Ok(entries) = fs::read_dir(&base_path) {

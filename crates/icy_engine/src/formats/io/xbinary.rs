@@ -127,11 +127,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     if buf.has_fonts() {
         // Fast path: if only 1 font slot, skip expensive analyze_font_usage (~21% hash overhead)
         let font_count = buf.font_count();
-        fonts = if font_count <= 1 {
-            vec![0]
-        } else {
-            analyze_font_usage(buf)
-        };
+        fonts = if font_count <= 1 { vec![0] } else { analyze_font_usage(buf) };
         let primary_slot = *fonts.first().unwrap_or(&0);
         let Some(font) = buf.font(primary_slot) else {
             return Err(SavingError::NoFontFound.into());
@@ -777,7 +773,7 @@ fn compress_line_optimal(
                     *dp_mode_ptr.add(end) = Compression::Off;
                 }
             }
-            
+
             run_len += 1;
         }
 

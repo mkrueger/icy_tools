@@ -28,7 +28,7 @@ use unarc_rs::unified::ArchiveFormat;
 
 use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextScreen};
 
-use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, SaveOptions, io};
+use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, PaletteFormat, SaveOptions, io};
 
 /// Represents all supported file formats for ANSI art and related files.
 ///
@@ -86,6 +86,10 @@ pub enum FileFormat {
     /// IcyDraw animation format (.icyanim)
     IcyAnim,
 
+    // Palette formats
+    /// Palette file formats (.pal, .gpl, .hex, ...)
+    Palette(PaletteFormat),
+
     // Font formats
     /// Bitmap font format (.yaff, .psf, .fXX)
     BitFont(BitFontFormat),
@@ -127,6 +131,12 @@ impl FileFormat {
         FileFormat::TundraDraw,
         FileFormat::Artworx,
         FileFormat::IcyAnim,
+        FileFormat::Palette(PaletteFormat::Pal),
+        FileFormat::Palette(PaletteFormat::Gpl),
+        FileFormat::Palette(PaletteFormat::Hex),
+        FileFormat::Palette(PaletteFormat::Txt),
+        FileFormat::Palette(PaletteFormat::Ice),
+        FileFormat::Palette(PaletteFormat::Ase),
         FileFormat::BitFont(BitFontFormat::Yaff),
         FileFormat::BitFont(BitFontFormat::Psf),
         FileFormat::BitFont(BitFontFormat::Raw(4)),
@@ -284,6 +294,15 @@ impl FileFormat {
             // IcyDraw animation
             "icyanim" => Some(FileFormat::IcyAnim),
 
+            // Palette formats
+            // Note: `.txt` remains mapped to Ascii (ambiguous). Use `FileFormat::load_palette()`.
+            "pal" => Some(FileFormat::Palette(PaletteFormat::Pal)),
+            "gpl" => Some(FileFormat::Palette(PaletteFormat::Gpl)),
+            "hex" => Some(FileFormat::Palette(PaletteFormat::Hex)),
+            "ase" => Some(FileFormat::Palette(PaletteFormat::Ase)),
+            // Avoid collision with `.ice` ANSI. Provide an explicit extension for ICE palette files.
+            "icepal" => Some(FileFormat::Palette(PaletteFormat::Ice)),
+
             // Image formats
             "png" => Some(FileFormat::Image(ImageFormat::Png)),
             "gif" => Some(FileFormat::Image(ImageFormat::Gif)),
@@ -352,6 +371,7 @@ impl FileFormat {
             FileFormat::TundraDraw => "tnd",
             FileFormat::Artworx => "adf",
             FileFormat::IcyAnim => "icyanim",
+            FileFormat::Palette(fmt) => fmt.extension(),
             FileFormat::BitFont(font_fmt) => match font_fmt {
                 BitFontFormat::Yaff => "yaff",
                 BitFontFormat::Psf => "psf",
@@ -418,6 +438,7 @@ impl FileFormat {
             FileFormat::TundraDraw => &["tnd"],
             FileFormat::Artworx => &["adf"],
             FileFormat::IcyAnim => &["icyanim"],
+            FileFormat::Palette(fmt) => fmt.all_extensions(),
             FileFormat::BitFont(BitFontFormat::Yaff) => &["yaff"],
             FileFormat::BitFont(BitFontFormat::Psf) => &["psf"],
             FileFormat::BitFont(BitFontFormat::Raw(_)) => &["f04", "f05", "f06", "f07", "f08", "f09", "f10", "f12", "f14", "f16", "f19", "f20", "f24", "f32"],
@@ -468,6 +489,7 @@ impl FileFormat {
             FileFormat::TundraDraw => "TundraDraw",
             FileFormat::Artworx => "Artworx",
             FileFormat::IcyAnim => "IcyDraw Animation",
+            FileFormat::Palette(fmt) => fmt.name(),
             FileFormat::BitFont(font_fmt) => font_fmt.name(),
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.name(),
             FileFormat::Image(img) => img.name(),
@@ -647,6 +669,9 @@ impl FileFormat {
 
             // Archive formats don't contain displayable content directly
             FileFormat::Archive(_) => &[],
+
+            // Palette formats don't contain text buffer content
+            FileFormat::Palette(_) => &[],
         }
     }
 
@@ -747,7 +772,8 @@ impl FileFormat {
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
-            | FileFormat::Archive(_) => None,
+            | FileFormat::Archive(_)
+            | FileFormat::Palette(_) => None,
         }
     }
 
@@ -782,6 +808,7 @@ impl FileFormat {
             FileFormat::CharacterFont(_) => ScreenMode::Vga(80, 25), // Default for character fonts
             FileFormat::Image(_) => ScreenMode::Vga(80, 25),         // Default for images
             FileFormat::Archive(_) => ScreenMode::Vga(80, 25),       // Default for archives
+            FileFormat::Palette(_) => ScreenMode::Vga(80, 25),       // Default for palettes
         }
     }
 
@@ -834,7 +861,8 @@ impl FileFormat {
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
-            | FileFormat::Archive(_) => None,
+            | FileFormat::Archive(_)
+            | FileFormat::Palette(_) => None,
         }
     }
 

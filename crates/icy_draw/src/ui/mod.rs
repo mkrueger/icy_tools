@@ -11,6 +11,7 @@ pub mod font_export;
 pub mod font_import;
 mod main_window;
 mod menu;
+pub mod palette_editor;
 mod recent_files;
 mod session;
 pub mod tool_panel;

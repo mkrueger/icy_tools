@@ -1,28 +1,7 @@
 #![allow(clippy::many_single_char_names)]
-use std::{fmt::Display, path::Path};
+use std::{fmt::Display, fs::File, path::Path};
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-
-lazy_static::lazy_static! {
-    static ref HEX_REGEX: Regex = Regex::new(r"([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
-
-    static ref PAL_REGEX: Regex = Regex::new(r"(\d+)\s+(\d+)\s+(\d+)").unwrap();
-
-    static ref GPL_COLOR_REGEX: Regex = Regex::new(r"(\d+)\s+(\d+)\s+(\d+)\s+(.+)").unwrap();
-    static ref GPL_NAME_REGEX: Regex = Regex::new(r"\s*#Palette Name:\s*(.*)\s*").unwrap();
-    static ref GPL_DESCRIPTION_REGEX: Regex = Regex::new(r"\s*#Description:\s*(.*)\s*").unwrap();
-
-    static ref TXT_COLOR_REGEX: Regex = Regex::new(r"([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
-    static ref TXT_NAME_REGEX: Regex = Regex::new(r"\s*;Palette Name:\s*(.*)\s*").unwrap();
-    static ref TXT_DESCRIPTION_REGEX: Regex = Regex::new(r"\s*;Description:\s*(.*)\s*").unwrap();
-
-    static ref ICE_COLOR_REGEX: Regex = Regex::new(r"([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
-    static ref ICE_PALETTE_NAME_REGEX: Regex = Regex::new(r"\s*#Palette Name:\s*(.*)\s*").unwrap();
-    static ref ICE_AUTHOR_REGEX: Regex = Regex::new(r"\s*#Author:\s*(.*)\s*").unwrap();
-    static ref ICE_DESCRIPTION_REGEX: Regex = Regex::new(r"\s*#Description:\s*(.*)\s*").unwrap();
-    static ref ICE_COLOR_NAME_REGEX: Regex = Regex::new(r"\s*#Name:\s*(.*)\s*").unwrap();
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Color {
@@ -37,6 +16,10 @@ impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{Color: r={:02X}, g={:02X}, b{:02X}}}", self.r, self.g, self.b)
     }
+}
+
+lazy_static::lazy_static! {
+    static ref ICE_COLOR_REGEX: regex::Regex = regex::Regex::new(r"^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
 }
 
 impl Color {
@@ -152,14 +135,7 @@ impl From<Color> for [f32; 3] {
     }
 }
 
-pub enum PaletteFormat {
-    Ice,
-    Hex,
-    Pal,
-    Gpl,
-    Txt,
-    Ase,
-}
+use crate::{FileFormat, formats::PaletteFormat};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Palette {
@@ -251,235 +227,17 @@ impl Palette {
     }
 
     /// .
-    ///
     /// # Panics
-    ///
-    /// Panics if .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn load_palette(format: &PaletteFormat, bytes: &[u8]) -> crate::Result<Self> {
-        let mut colors = Vec::new();
-        let mut title = String::new();
-        let mut author = String::new();
-        let mut description = String::new();
+    pub fn export_palette(&self, format: &FileFormat) -> crate::Result<Vec<u8>> {
         match format {
-            PaletteFormat::Hex => match String::from_utf8(bytes.to_vec()) {
-                Ok(data) => {
-                    for (_, [r, g, b]) in HEX_REGEX.captures_iter(&data).map(|c| c.extract()) {
-                        let r = u32::from_str_radix(r, 16)?;
-                        let g = u32::from_str_radix(g, 16)?;
-                        let b = u32::from_str_radix(b, 16)?;
-                        colors.push(Color::new(r as u8, g as u8, b as u8));
-                    }
-                }
-                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
-            },
-            PaletteFormat::Pal => {
-                match String::from_utf8(bytes.to_vec()) {
-                    Ok(data) => {
-                        for (i, line) in data.lines().enumerate() {
-                            match i {
-                                0 => {
-                                    if line != "JASC-PAL" {
-                                        return Err(crate::EngineError::UnsupportedPaletteFormat {
-                                            expected: "JASC-PAL".to_string(),
-                                        });
-                                    }
-                                }
-                                1 | 2 => {
-                                    // Ignore
-                                }
-                                _ => {
-                                    for (_, [r, g, b]) in PAL_REGEX.captures_iter(line).map(|c| c.extract()) {
-                                        let r = r.parse::<u32>()?;
-                                        let g = g.parse::<u32>()?;
-                                        let b = b.parse::<u32>()?;
-                                        colors.push(Color::new(r as u8, g as u8, b as u8));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
-                }
-            }
-            PaletteFormat::Gpl => match String::from_utf8(bytes.to_vec()) {
-                Ok(data) => {
-                    for (i, line) in data.lines().enumerate() {
-                        match i {
-                            0 => {
-                                if line != "GIMP Palette" {
-                                    return Err(crate::EngineError::UnsupportedPaletteFormat {
-                                        expected: "GIMP Palette".to_string(),
-                                    });
-                                }
-                            }
-                            _ => {
-                                if line.starts_with('#') {
-                                    if let Some(cap) = GPL_NAME_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            title = name.as_str().to_string();
-                                        }
-                                    }
-                                    if let Some(cap) = GPL_DESCRIPTION_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            description = name.as_str().to_string();
-                                        }
-                                    }
-                                } else if let Some(cap) = GPL_COLOR_REGEX.captures(line) {
-                                    let (_, [r, g, b, descr]) = cap.extract();
-
-                                    let r = r.parse::<u32>()?;
-                                    let g = g.parse::<u32>()?;
-                                    let b = b.parse::<u32>()?;
-                                    let mut c = Color::new(r as u8, g as u8, b as u8);
-                                    if !descr.is_empty() {
-                                        c.name = Some(descr.to_string());
-                                    }
-                                    colors.push(c);
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
-            },
-            PaletteFormat::Ice => match String::from_utf8(bytes.to_vec()) {
-                Ok(data) => {
-                    let mut next_color_name = String::new();
-                    for (i, line) in data.lines().enumerate() {
-                        match i {
-                            0 => {
-                                if line != "ICE Palette" {
-                                    return Err(crate::EngineError::UnsupportedPaletteFormat {
-                                        expected: "ICE Palette".to_string(),
-                                    });
-                                }
-                            }
-                            _ => {
-                                if line.starts_with('#') {
-                                    if let Some(cap) = ICE_PALETTE_NAME_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            title = name.as_str().to_string();
-                                        }
-                                    }
-                                    if let Some(cap) = ICE_DESCRIPTION_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            description = name.as_str().to_string();
-                                        }
-                                    }
-                                    if let Some(cap) = ICE_AUTHOR_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            author = name.as_str().to_string();
-                                        }
-                                    }
-                                    if let Some(cap) = ICE_COLOR_NAME_REGEX.captures(line) {
-                                        if let Some(name) = cap.get(1) {
-                                            next_color_name = name.as_str().to_string();
-                                        }
-                                    }
-                                } else if let Some(cap) = ICE_COLOR_REGEX.captures(line) {
-                                    let (_, [r, g, b]) = cap.extract();
-                                    let r = u32::from_str_radix(r, 16)?;
-                                    let g = u32::from_str_radix(g, 16)?;
-                                    let b = u32::from_str_radix(b, 16)?;
-                                    let mut col = Color::new(r as u8, g as u8, b as u8);
-                                    if !next_color_name.is_empty() {
-                                        col.name = Some(next_color_name.clone());
-                                        next_color_name.clear();
-                                    }
-                                    colors.push(col);
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
-            },
-
-            PaletteFormat::Txt => match String::from_utf8(bytes.to_vec()) {
-                Ok(data) => {
-                    for line in data.lines() {
-                        if line.starts_with(';') {
-                            if let Some(cap) = TXT_NAME_REGEX.captures(line) {
-                                if let Some(name) = cap.get(1) {
-                                    title = name.as_str().to_string();
-                                }
-                            }
-                            if let Some(cap) = TXT_DESCRIPTION_REGEX.captures(line) {
-                                if let Some(name) = cap.get(1) {
-                                    description = name.as_str().to_string();
-                                }
-                            }
-                        } else if let Some(cap) = TXT_COLOR_REGEX.captures(line) {
-                            let (_, [_a, r, g, b]) = cap.extract();
-
-                            let r = u32::from_str_radix(r, 16)?;
-                            let g = u32::from_str_radix(g, 16)?;
-                            let b = u32::from_str_radix(b, 16)?;
-                            colors.push(Color::new(r as u8, g as u8, b as u8));
-                        }
-                    }
-                }
-                Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
-            },
-            PaletteFormat::Ase => todo!(),
-        }
-        let palette_cache_rgba = colors.iter().map(|c| Self::rgb_to_rgba_u32(c.r, c.g, c.b)).collect();
-        Ok(Self {
-            title,
-            description,
-            author,
-            colors,
-            old_checksum: 0,
-            checksum: 0,
-            palette_cache_rgba,
-        })
-    }
-
-    /// .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn import_palette(file_name: &Path, bytes: &[u8]) -> crate::Result<Self> {
-        let Some(ext) = file_name.extension() else {
-            return Err(crate::EngineError::InvalidPaletteFormat {
-                message: "No file extension".to_string(),
-            });
-        };
-        let ascii_lowercase = &ext.to_ascii_lowercase();
-        let Some(ext) = ascii_lowercase.to_str() else {
-            return Err(crate::EngineError::InvalidPaletteFormat {
-                message: "Error in string conversion".to_string(),
-            });
-        };
-
-        match ext {
-            "pal" => Palette::load_palette(&PaletteFormat::Pal, bytes),
-            "gpl" => Palette::load_palette(&PaletteFormat::Gpl, bytes),
-            "txt" => Palette::load_palette(&PaletteFormat::Txt, bytes),
-            "hex" => Palette::load_palette(&PaletteFormat::Hex, bytes),
-            _ => Err(crate::EngineError::UnsupportedPaletteFormat {
-                expected: format!("pal, gpl, txt, or hex (got: {})", ext),
-            }),
-        }
-    }
-
-    /// .
-    /// # Panics
-    pub fn export_palette(&self, format: &PaletteFormat) -> Vec<u8> {
-        match format {
-            PaletteFormat::Hex => {
+            FileFormat::Palette(PaletteFormat::Hex) => {
                 let mut res = String::new();
                 for c in &self.colors {
                     res.push_str(format!("{:02x}{:02x}{:02x}\n", c.r, c.g, c.b).as_str());
                 }
-                return res.as_bytes().to_vec();
+                return Ok(res.as_bytes().to_vec());
             }
-            PaletteFormat::Pal => {
+            FileFormat::Palette(PaletteFormat::Pal) => {
                 let mut res = String::new();
                 res.push_str("JASC-PAL\n");
                 res.push_str("0100\n");
@@ -489,9 +247,9 @@ impl Palette {
                     res.push_str(format!("{} {} {}\n", c.r, c.g, c.b).as_str());
                 }
 
-                return res.as_bytes().to_vec();
+                return Ok(res.as_bytes().to_vec());
             }
-            PaletteFormat::Gpl => {
+            FileFormat::Palette(PaletteFormat::Gpl) => {
                 let mut res = String::new();
                 res.push_str("GIMP Palette\n");
 
@@ -504,10 +262,10 @@ impl Palette {
                     res.push_str(format!("{:3} {:3} {:3} {}\n", c.r, c.g, c.b, self.description).as_str());
                 }
 
-                return res.as_bytes().to_vec();
+                return Ok(res.as_bytes().to_vec());
             }
 
-            PaletteFormat::Ice => {
+            FileFormat::Palette(PaletteFormat::Ice) => {
                 let mut res = String::new();
                 res.push_str("ICE Palette\n");
 
@@ -522,9 +280,9 @@ impl Palette {
                     }
                     res.push_str(format!("{:02x}{:02x}{:02x}\n", c.r, c.g, c.b).as_str());
                 }
-                return res.as_bytes().to_vec();
+                return Ok(res.as_bytes().to_vec());
             }
-            PaletteFormat::Txt => {
+            FileFormat::Palette(PaletteFormat::Txt) => {
                 let mut res = String::new();
                 res.push_str(";paint.net Palette File\n");
 
@@ -537,9 +295,15 @@ impl Palette {
                     res.push_str(format!("FF{:02x}{:02x}{:02x}\n", c.r, c.g, c.b,).as_str());
                 }
 
-                return res.as_bytes().to_vec();
+                return Ok(res.as_bytes().to_vec());
             }
-            PaletteFormat::Ase => todo!(),
+            FileFormat::Palette(PaletteFormat::Ase) => return Ok(Vec::new()),
+            FileFormat::XBin => {
+                todo!("Exporting XBin palettes is not implemented yet");
+            }
+            _ => Err(crate::EngineError::InvalidPaletteFormat {
+                message: format!("Invalid palette format"),
+            }),
         }
     }
 
@@ -736,6 +500,20 @@ impl Palette {
             res.push(col.b >> 2);
         }
         res
+    }
+
+    pub(crate) fn from_data(title: String, description: String, author: String, colors: Vec<Color>) -> Self {
+        let palette_cache_rgba = colors.iter().map(|c| Self::rgb_to_rgba_u32(c.r, c.g, c.b)).collect();
+        Self {
+            title,
+            description,
+            author,
+            colors,
+
+            old_checksum: 0,
+            checksum: 0,
+            palette_cache_rgba,
+        }
     }
 }
 

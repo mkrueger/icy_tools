@@ -1,7 +1,7 @@
 // XBin roundtrip tests: Load .icy -> Save as XBin -> Load XBin -> Compare with original
 // Run with: cargo test --package icy_engine --test mod -- format::xbin::roundtrip --nocapture
 
-use super::super::ansi2::{compare_buffers, CompareOptions};
+use super::super::ansi2::{CompareOptions, compare_buffers};
 use icy_engine::{FileFormat, SaveOptions, TextPane};
 use std::path::Path;
 

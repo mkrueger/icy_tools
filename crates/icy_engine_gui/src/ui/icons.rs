@@ -228,6 +228,9 @@ impl FileIcon {
 
             // Font formats
             FileFormat::BitFont(_) | FileFormat::CharacterFont(_) => FileIcon::Binary,
+
+            // Palette formats (mostly text-based)
+            FileFormat::Palette(_) => FileIcon::Text,
         }
     }
 

@@ -87,7 +87,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     }
 
     if !buf.palette.is_default() {
-        let pal_data = buf.palette.export_palette(&crate::PaletteFormat::Ice);
+        let pal_data = buf.palette.export_palette(&crate::FileFormat::Palette(crate::PaletteFormat::Ice)).unwrap();
         let palette_data = general_purpose::STANDARD.encode(pal_data);
         if let Err(err) = encoder.add_ztxt_chunk("PALETTE".to_string(), palette_data) {
             return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
@@ -460,7 +460,7 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                             }
 
                             "PALETTE" => {
-                                result.palette = Palette::load_palette(&crate::PaletteFormat::Ice, &bytes)?;
+                                result.palette = crate::FileFormat::Palette(crate::PaletteFormat::Ice).load_palette(&bytes)?;
                             }
 
                             "SAUCE" => {
