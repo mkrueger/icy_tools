@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "xbin_loading"
 harness = false
+
+[[bench]]
+name = "xbin_encoding"
+harness = false

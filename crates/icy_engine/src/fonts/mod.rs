@@ -179,16 +179,10 @@ impl BitFont {
                 let matches = g.labels.iter().any(|label| match label {
                     Label::Codepoint(codes) => {
                         let match_found = codes.contains(&(ch as u16));
-                        if match_found {
-                            eprintln!("  Found via Codepoint label: {:?}", codes);
-                        }
                         match_found
                     }
                     Label::Unicode(codes) => {
                         let match_found = codes.contains(&(ch as u32));
-                        if match_found {
-                            eprintln!("  Found via Unicode label: {:?}", codes);
-                        }
                         match_found
                     }
                     _ => false,

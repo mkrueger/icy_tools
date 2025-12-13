@@ -10,7 +10,7 @@ pub const MAX_BUFFER_WIDTH: i32 = 1000;
 /// Maximum height in lines (rows)
 /// 5000 lines allows ~250KB of typical ANSI content while preventing
 /// memory exhaustion from malformed files
-pub const MAX_BUFFER_HEIGHT: i32 = 5000;
+pub const MAX_BUFFER_HEIGHT: i32 = 20000;
 
 /// Check if dimensions are within safe limits
 #[inline]
