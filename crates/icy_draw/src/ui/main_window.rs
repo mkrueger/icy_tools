@@ -271,10 +271,8 @@ pub enum Message {
 
     // Edit - Document
     ToggleMirrorMode,
-    EditSauce,
     ToggleLGAFont,
     ToggleAspectRatio,
-    SetCanvasSize,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Selection
@@ -285,7 +283,6 @@ pub enum Message {
     // Colors
     // ═══════════════════════════════════════════════════════════════════════════
     SwitchIceMode(icy_engine::IceMode),
-    SwitchPaletteMode(icy_engine::PaletteMode),
     EditPalette,
     NextFgColor,
     PrevFgColor,
@@ -298,7 +295,6 @@ pub enum Message {
     // ═══════════════════════════════════════════════════════════════════════════
     // Fonts
     // ═══════════════════════════════════════════════════════════════════════════
-    SwitchFontMode(icy_engine::FontMode),
     SwitchFontSlot(usize),
     OpenFontSelector,
     OpenFontSelectorForSlot(usize),
@@ -903,9 +899,8 @@ impl MainWindow {
 
                 match template {
                     FileTemplate::Animation => {
-                        // Create ANSI editor for animation
-                        let buf = create_buffer_for_template(template, width, height);
-                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone()));
+                        // Create Animation editor
+                        self.mode_state = ModeState::Animation(AnimationEditor::new());
                     }
                     FileTemplate::BitFont => {
                         self.mode_state = ModeState::BitFont(BitFontEditor::new());
@@ -2043,16 +2038,13 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::EditSauce => Task::none(),
             Message::ToggleLGAFont => Task::none(),
             Message::ToggleAspectRatio => Task::none(),
-            Message::SetCanvasSize => Task::none(),
 
             // ═══════════════════════════════════════════════════════════════════
             // Color operations (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
             Message::SwitchIceMode(_mode) => Task::none(),
-            Message::SwitchPaletteMode(_mode) => Task::none(),
             Message::EditPalette => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let pal = editor.with_edit_state(|state| state.get_buffer().palette.clone());
@@ -2146,7 +2138,6 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             // Font operations
             // ═══════════════════════════════════════════════════════════════════
-            Message::SwitchFontMode(_mode) => Task::none(),
             Message::SwitchFontSlot(slot) => {
                 // Check for double-click - if so, switch slot AND open font selector
                 let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
