@@ -14,9 +14,9 @@ use iced::{
 use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
-use icy_engine_gui::command_handlers;
-use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
+use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog, export_dialog_with_defaults_from_msg};
+use icy_engine_gui::{command_handler, command_handlers};
 
 use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage};
@@ -40,6 +40,43 @@ pub enum EditMode {
     /// Animation editor for Lua-scripted ANSI animations
     Animation,
 }
+
+use super::commands::{area_cmd, selection_cmd};
+
+// Command handler for MainWindow keyboard shortcuts
+command_handler!(MainWindowCommands, create_draw_commands(), => Message {
+    // View
+    cmd::VIEW_FULLSCREEN => Message::ToggleFullscreen,
+    cmd::HELP_ABOUT => Message::ShowAbout,
+    // Selection
+    selection_cmd::SELECT_NONE => Message::Deselect,
+    selection_cmd::SELECT_INVERSE => Message::InverseSelection,
+    selection_cmd::SELECT_ERASE => Message::DeleteSelection,
+    selection_cmd::SELECT_FLIP_X => Message::FlipX,
+    selection_cmd::SELECT_FLIP_Y => Message::FlipY,
+    selection_cmd::SELECT_CROP => Message::Crop,
+    selection_cmd::SELECT_JUSTIFY_LEFT => Message::JustifyLeft,
+    selection_cmd::SELECT_JUSTIFY_CENTER => Message::JustifyCenter,
+    selection_cmd::SELECT_JUSTIFY_RIGHT => Message::JustifyRight,
+    // Area operations
+    area_cmd::JUSTIFY_LINE_LEFT => Message::JustifyLineLeft,
+    area_cmd::JUSTIFY_LINE_CENTER => Message::JustifyLineCenter,
+    area_cmd::JUSTIFY_LINE_RIGHT => Message::JustifyLineRight,
+    area_cmd::INSERT_ROW => Message::InsertRow,
+    area_cmd::DELETE_ROW => Message::DeleteRow,
+    area_cmd::INSERT_COLUMN => Message::InsertColumn,
+    area_cmd::DELETE_COLUMN => Message::DeleteColumn,
+    area_cmd::ERASE_ROW => Message::EraseRow,
+    area_cmd::ERASE_ROW_TO_START => Message::EraseRowToStart,
+    area_cmd::ERASE_ROW_TO_END => Message::EraseRowToEnd,
+    area_cmd::ERASE_COLUMN => Message::EraseColumn,
+    area_cmd::ERASE_COLUMN_TO_START => Message::EraseColumnToStart,
+    area_cmd::ERASE_COLUMN_TO_END => Message::EraseColumnToEnd,
+    area_cmd::SCROLL_UP => Message::ScrollAreaUp,
+    area_cmd::SCROLL_DOWN => Message::ScrollAreaDown,
+    area_cmd::SCROLL_LEFT => Message::ScrollAreaLeft,
+    area_cmd::SCROLL_RIGHT => Message::ScrollAreaRight,
+});
 
 impl Default for EditMode {
     fn default() -> Self {
@@ -461,11 +498,14 @@ pub struct MainWindow {
     /// Show right panel (layers, minimap)
     show_right_panel: bool,
 
+    /// Fullscreen mode toggle
+    is_fullscreen: bool,
+
     /// Dialog stack for modal dialogs
     dialogs: DialogStack<Message>,
 
     /// Command set for hotkey handling
-    commands: CommandSet,
+    commands: MainWindowCommands,
 
     /// Undo stack length at last save - for dirty tracking
     last_save: usize,
@@ -553,8 +593,9 @@ impl MainWindow {
             menu_state: MenuBarState::new(),
             show_left_panel: true,
             show_right_panel: true,
+            is_fullscreen: false,
             dialogs,
-            commands: create_draw_commands(),
+            commands: MainWindowCommands::new(),
             last_save,
             close_after_save: false,
             pending_open_path: None,
@@ -733,8 +774,9 @@ impl MainWindow {
             menu_state: MenuBarState::new(),
             show_left_panel: true,
             show_right_panel: true,
+            is_fullscreen: false,
             dialogs,
-            commands: create_draw_commands(),
+            commands: MainWindowCommands::new(),
             last_save,
             close_after_save: false,
             pending_open_path: None,
@@ -1766,35 +1808,219 @@ impl MainWindow {
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Area operations (TODO: implement)
+            // Area operations
             // ═══════════════════════════════════════════════════════════════════
-            Message::JustifyLineCenter => Task::none(),
-            Message::JustifyLineLeft => Task::none(),
-            Message::JustifyLineRight => Task::none(),
-            Message::InsertRow => Task::none(),
-            Message::DeleteRow => Task::none(),
-            Message::InsertColumn => Task::none(),
-            Message::DeleteColumn => Task::none(),
-            Message::EraseRow => Task::none(),
-            Message::EraseRowToStart => Task::none(),
-            Message::EraseRowToEnd => Task::none(),
-            Message::EraseColumn => Task::none(),
-            Message::EraseColumnToStart => Task::none(),
-            Message::EraseColumnToEnd => Task::none(),
-            Message::ScrollAreaUp => Task::none(),
-            Message::ScrollAreaDown => Task::none(),
-            Message::ScrollAreaLeft => Task::none(),
-            Message::ScrollAreaRight => Task::none(),
+            Message::JustifyLineCenter => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.center_line());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::JustifyLineLeft => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.justify_line_left());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::JustifyLineRight => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.justify_line_right());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::InsertRow => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.insert_row());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::DeleteRow => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.delete_row());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::InsertColumn => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.insert_column());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::DeleteColumn => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.delete_column());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseRow => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_row());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseRowToStart => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_row_to_start());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseRowToEnd => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_row_to_end());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseColumn => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_column());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseColumnToStart => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_column_to_start());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::EraseColumnToEnd => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.erase_column_to_end());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::ScrollAreaUp => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.scroll_area_up());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::ScrollAreaDown => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.scroll_area_down());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::ScrollAreaLeft => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.scroll_area_left());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::ScrollAreaRight => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.scroll_area_right());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Transform operations (TODO: implement)
+            // Transform operations
             // ═══════════════════════════════════════════════════════════════════
-            Message::FlipX => Task::none(),
-            Message::FlipY => Task::none(),
-            Message::Crop => Task::none(),
-            Message::JustifyCenter => Task::none(),
-            Message::JustifyLeft => Task::none(),
-            Message::JustifyRight => Task::none(),
+            Message::FlipX => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.flip_x());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::FlipY => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.flip_y());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::Crop => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.crop());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::JustifyCenter => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.center());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::JustifyLeft => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.justify_left());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::JustifyRight => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| state.justify_right());
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Document settings (TODO: implement)
@@ -2020,7 +2246,15 @@ impl MainWindow {
                 self.show_left_panel = !self.show_left_panel;
                 Task::none()
             }
-            Message::ToggleFullscreen => Task::none(),
+            Message::ToggleFullscreen => {
+                self.is_fullscreen = !self.is_fullscreen;
+                let mode = if self.is_fullscreen {
+                    iced::window::Mode::Fullscreen
+                } else {
+                    iced::window::Mode::Windowed
+                };
+                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Reference Image
@@ -2282,20 +2516,16 @@ impl MainWindow {
 
     /// Handle events passed from the window manager
     pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
+        // Try the command handler first for both keyboard and mouse events
+        if let Some(msg) = self.commands.handle(event) {
+            return (Some(msg), Task::none());
+        }
+
         // If dialogs are open, route events there first
         if !self.dialogs.is_empty() {
             let task = self.dialogs.handle_event(event);
             // Dialogs consume all events when open
             return (None, task);
-        }
-
-        // Try to match hotkeys via command system (global commands)
-        if let Some(hotkey) = event.into_hotkey() {
-            if let Some(cmd_id) = self.commands.match_hotkey(&hotkey) {
-                if let Some(msg) = handle_main_window_command(cmd_id) {
-                    return (Some(msg), Task::none());
-                }
-            }
         }
 
         // Handle mode-specific menu commands

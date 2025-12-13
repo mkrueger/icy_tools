@@ -1,12 +1,18 @@
 //! ANSI Editor menu bar
 
-use iced::{Border, Color, Element, Length, Theme, border::Radius, widget::button};
+use iced::{
+    Border, Color, Element, Length, Theme,
+    border::Radius,
+    widget::{button, text},
+};
 use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
 
 use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
+use crate::ui::commands::area_cmd;
+use crate::ui::commands::selection_cmd;
 use crate::ui::main_window::Message;
 use crate::ui::menu::{
     UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu,
@@ -142,6 +148,70 @@ fn build_raster_submenu(state: &MarkerMenuState) -> Menu<'static, Message, Theme
     Menu::new(items).width(150.0).offset(5.0)
 }
 
+/// Build the zoom submenu with zoom levels
+fn build_zoom_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
+    use icy_engine_gui::commands::cmd;
+
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+
+    // Zoom commands
+    items.push(iced_aw::menu::Item::new(menu_item(&cmd::VIEW_ZOOM_RESET, Message::ZoomReset)));
+    items.push(iced_aw::menu::Item::new(menu_item(&cmd::VIEW_ZOOM_IN, Message::ZoomIn)));
+    items.push(iced_aw::menu::Item::new(menu_item(&cmd::VIEW_ZOOM_OUT, Message::ZoomOut)));
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Preset zoom levels
+    for (label, zoom) in [("4:1 400%", 4.0), ("2:1 200%", 2.0), ("1:1 100%", 1.0), ("1:2 50%", 0.5), ("1:4 25%", 0.25)] {
+        items.push(iced_aw::menu::Item::new(
+            button(text(label).size(14))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(menu_item_style)
+                .on_press(Message::SetZoom(zoom)),
+        ));
+    }
+
+    Menu::new(items).width(200.0).offset(5.0)
+}
+
+/// Build the area operations submenu
+fn build_area_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+
+    // Line justify operations
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_LEFT, Message::JustifyLineLeft)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_CENTER, Message::JustifyLineCenter)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_RIGHT, Message::JustifyLineRight)));
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Row/column insert/delete
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_ROW, Message::InsertRow)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_ROW, Message::DeleteRow)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_COLUMN, Message::InsertColumn)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_COLUMN, Message::DeleteColumn)));
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Erase operations
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW, Message::EraseRow)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_START, Message::EraseRowToStart)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_END, Message::EraseRowToEnd)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN, Message::EraseColumn)));
+    items.push(iced_aw::menu::Item::new(menu_item(
+        &area_cmd::ERASE_COLUMN_TO_START,
+        Message::EraseColumnToStart,
+    )));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN_TO_END, Message::EraseColumnToEnd)));
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Scroll operations
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_UP, Message::ScrollAreaUp)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_DOWN, Message::ScrollAreaDown)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_LEFT, Message::ScrollAreaLeft)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_RIGHT, Message::ScrollAreaRight)));
+
+    Menu::new(items).width(250.0).offset(5.0)
+}
+
 /// Build the ANSI editor menu bar (full menu)
 pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, marker_state: &MarkerMenuState) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
@@ -180,6 +250,10 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 (menu_item(&cmd::EDIT_COPY, Message::Copy)),
                 (menu_item(&cmd::EDIT_PASTE, Message::Paste)),
                 (separator()),
+                (menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
+                (separator()),
+                (menu_item_simple(fl!("menu-open_font_selector"), "", Message::OpenFontSelector)),
+                (separator()),
                 (menu_item_simple(fl!("menu-mirror_mode"), "", Message::ToggleMirrorMode)),
                 (separator()),
                 (menu_item_simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog))
@@ -190,16 +264,16 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
             menu_button(fl!("menu-selection")),
             menu_template(menu_items!(
                 (menu_item(&cmd::EDIT_SELECT_ALL, Message::SelectAll)),
-                (menu_item_simple(fl!("menu-select_nothing"), "Ctrl+D", Message::Deselect)),
-                (menu_item_simple(fl!("menu-inverse_selection"), "Ctrl+Shift+I", Message::InverseSelection)),
+                (menu_item(&selection_cmd::SELECT_NONE, Message::Deselect)),
+                (menu_item(&selection_cmd::SELECT_INVERSE, Message::InverseSelection)),
                 (separator()),
-                (menu_item_simple(fl!("menu-erase"), "Del", Message::DeleteSelection)),
-                (menu_item_simple(fl!("menu-flipx"), "", Message::FlipX)),
-                (menu_item_simple(fl!("menu-flipy"), "", Message::FlipY)),
-                (menu_item_simple(fl!("menu-justifycenter"), "", Message::JustifyCenter)),
-                (menu_item_simple(fl!("menu-justifyleft"), "", Message::JustifyLeft)),
-                (menu_item_simple(fl!("menu-justifyright"), "", Message::JustifyRight)),
-                (menu_item_simple(fl!("menu-crop"), "", Message::Crop))
+                (menu_item(&selection_cmd::SELECT_ERASE, Message::DeleteSelection)),
+                (menu_item(&selection_cmd::SELECT_FLIP_X, Message::FlipX)),
+                (menu_item(&selection_cmd::SELECT_FLIP_Y, Message::FlipY)),
+                (menu_item(&selection_cmd::SELECT_JUSTIFY_CENTER, Message::JustifyCenter)),
+                (menu_item(&selection_cmd::SELECT_JUSTIFY_LEFT, Message::JustifyLeft)),
+                (menu_item(&selection_cmd::SELECT_JUSTIFY_RIGHT, Message::JustifyRight)),
+                (menu_item(&selection_cmd::SELECT_CROP, Message::Crop))
             ))
         ),
         // Colors menu
@@ -219,30 +293,11 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 (menu_item_simple(fl!("menu-default_color"), "", Message::SwitchToDefaultColor))
             ))
         ),
-        // Fonts menu
-        (
-            menu_button(fl!("menu-fonts")),
-            menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-open_font_selector"), "", Message::OpenFontSelector)),
-                (menu_item_simple(fl!("menu-add_fonts"), "", Message::AddFonts)),
-                (menu_item_simple(fl!("menu-open_font_manager"), "", Message::OpenFontManager)),
-                (separator()),
-                (menu_item_simple(fl!("menu-open_font_directoy"), "", Message::OpenFontDirectory))
-            ))
-        ),
         // View menu
         (
             menu_button(fl!("menu-view")),
             menu_template(menu_items!(
-                (menu_item(&cmd::VIEW_ZOOM_RESET, Message::ZoomReset)),
-                (menu_item(&cmd::VIEW_ZOOM_IN, Message::ZoomIn)),
-                (menu_item(&cmd::VIEW_ZOOM_OUT, Message::ZoomOut)),
-                (separator()),
-                (menu_item_simple("4:1 400%".to_string(), "", Message::SetZoom(4.0))),
-                (menu_item_simple("2:1 200%".to_string(), "", Message::SetZoom(2.0))),
-                (menu_item_simple("1:1 100%".to_string(), "", Message::SetZoom(1.0))),
-                (menu_item_simple("1:2 50%".to_string(), "", Message::SetZoom(0.5))),
-                (menu_item_simple("1:4 25%".to_string(), "", Message::SetZoom(0.25))),
+                (menu_item_submenu(fl!("menu-zoom")), build_zoom_submenu()),
                 (separator()),
                 (menu_item_submenu(fl!("menu-guides")), guides_submenu),
                 (menu_item_submenu(fl!("menu-raster")), raster_submenu),
@@ -254,8 +309,6 @@ pub fn view_ansi(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo, mar
                 )),
                 (menu_item_checkbox(fl!("menu-show_line_numbers"), "", marker_state.line_numbers_visible, Message::ToggleLineNumbers)),
                 (separator()),
-                (menu_item_simple(fl!("menu-toggle_left_pane"), "F11", Message::ToggleLeftPanel)),
-                (menu_item_simple(fl!("menu-toggle_right_pane"), "F12", Message::ToggleRightPanel)),
                 (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
                 (separator()),
                 (menu_item_simple(fl!("menu-reference-image"), "Ctrl+Shift+O", Message::ShowReferenceImageDialog)),

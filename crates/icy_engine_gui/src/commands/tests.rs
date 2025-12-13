@@ -60,7 +60,7 @@ fn test_typical_editor_commands() {
             hotkey_mac: ["Cmd+0"]
         },
         "fullscreen" {
-            hotkey: ["F11", "Alt+Enter"]
+            hotkey: ["Alt+Enter"]
             hotkey_mac: ["Cmd+Ctrl+F"]
         },
         "quit" {
@@ -86,8 +86,7 @@ fn test_typical_editor_commands() {
         assert_eq!(set.match_key(KeyCode::Plus, Modifiers::CTRL), Some("zoom_in"));
         assert_eq!(set.match_key(KeyCode::Equals, Modifiers::CTRL), Some("zoom_in"));
 
-        // Fullscreen with multiple bindings
-        assert_eq!(set.match_key(KeyCode::F11, Modifiers::NONE), Some("fullscreen"));
+        // Fullscreen with Alt+Enter
         assert_eq!(set.match_key(KeyCode::Enter, Modifiers::ALT), Some("fullscreen"));
     }
 }

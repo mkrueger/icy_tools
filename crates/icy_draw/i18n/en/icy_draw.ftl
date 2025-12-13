@@ -173,6 +173,112 @@ menu-flip-x=Flip Horizontal
 menu-flip-y=Flip Vertical
 menu-deselect=Deselect
 
+# Selection Commands
+cmd-select-none-action = Deselect
+cmd-select-none-desc = Clear the current selection
+cmd-select-none-menu = Deselect
+
+cmd-select-inverse-action = Inverse Selection
+cmd-select-inverse-desc = Inverse the current selection
+cmd-select-inverse-menu = Inverse Selection
+
+cmd-select-erase-action = Erase
+cmd-select-erase-desc = Erase the selected area
+cmd-select-erase-menu = Erase
+
+cmd-select-flip_x-action = Flip X
+cmd-select-flip_x-desc = Flip selection horizontally
+cmd-select-flip_x-menu = Flip X
+
+cmd-select-flip_y-action = Flip Y
+cmd-select-flip_y-desc = Flip selection vertically
+cmd-select-flip_y-menu = Flip Y
+
+cmd-select-crop-action = Crop
+cmd-select-crop-desc = Crop to selection
+cmd-select-crop-menu = Crop
+
+cmd-select-justify_left-action = Justify Left
+cmd-select-justify_left-desc = Align selection to the left
+cmd-select-justify_left-menu = Justify Left
+
+cmd-select-justify_center-action = Center
+cmd-select-justify_center-desc = Center the selection
+cmd-select-justify_center-menu = Center
+
+cmd-select-justify_right-action = Justify Right
+cmd-select-justify_right-desc = Align selection to the right
+cmd-select-justify_right-menu = Justify Right
+
+# Area Operations Commands
+cmd-area-justify_line_left-action = Justify Line Left
+cmd-area-justify_line_left-desc = Left justify current line
+cmd-area-justify_line_left-menu = Justify Line Left
+
+cmd-area-justify_line_center-action = Center Line
+cmd-area-justify_line_center-desc = Center current line
+cmd-area-justify_line_center-menu = Center Line
+
+cmd-area-justify_line_right-action = Justify Line Right
+cmd-area-justify_line_right-desc = Right justify current line
+cmd-area-justify_line_right-menu = Justify Line Right
+
+cmd-area-insert_row-action = Insert Row
+cmd-area-insert_row-desc = Insert a new row at cursor position
+cmd-area-insert_row-menu = Insert Row
+
+cmd-area-delete_row-action = Delete Row
+cmd-area-delete_row-desc = Delete the row at cursor position
+cmd-area-delete_row-menu = Delete Row
+
+cmd-area-insert_column-action = Insert Column
+cmd-area-insert_column-desc = Insert a new column at cursor position
+cmd-area-insert_column-menu = Insert Column
+
+cmd-area-delete_column-action = Delete Column
+cmd-area-delete_column-desc = Delete the column at cursor position
+cmd-area-delete_column-menu = Delete Column
+
+cmd-area-erase_row-action = Erase Row
+cmd-area-erase_row-desc = Erase the entire row at cursor
+cmd-area-erase_row-menu = Erase Row
+
+cmd-area-erase_row_to_start-action = Erase Row to Start
+cmd-area-erase_row_to_start-desc = Erase from start of row to cursor
+cmd-area-erase_row_to_start-menu = Erase Row to Start
+
+cmd-area-erase_row_to_end-action = Erase Row to End
+cmd-area-erase_row_to_end-desc = Erase from cursor to end of row
+cmd-area-erase_row_to_end-menu = Erase Row to End
+
+cmd-area-erase_column-action = Erase Column
+cmd-area-erase_column-desc = Erase the entire column at cursor
+cmd-area-erase_column-menu = Erase Column
+
+cmd-area-erase_column_to_start-action = Erase Column to Start
+cmd-area-erase_column_to_start-desc = Erase from start of column to cursor
+cmd-area-erase_column_to_start-menu = Erase Column to Start
+
+cmd-area-erase_column_to_end-action = Erase Column to End
+cmd-area-erase_column_to_end-desc = Erase from cursor to end of column
+cmd-area-erase_column_to_end-menu = Erase Column to End
+
+cmd-area-scroll_up-action = Scroll Area Up
+cmd-area-scroll_up-desc = Scroll selected area up
+cmd-area-scroll_up-menu = Scroll Area Up
+
+cmd-area-scroll_down-action = Scroll Area Down
+cmd-area-scroll_down-desc = Scroll selected area down
+cmd-area-scroll_down-menu = Scroll Area Down
+
+cmd-area-scroll_left-action = Scroll Area Left
+cmd-area-scroll_left-desc = Scroll selected area left
+cmd-area-scroll_left-menu = Scroll Area Left
+
+cmd-area-scroll_right-action = Scroll Area Right
+cmd-area-scroll_right-desc = Scroll selected area right
+cmd-area-scroll_right-menu = Scroll Area Right
+
 # BitFont Editor Commands
 cmd-bitfont-clear-action = Clear
 cmd-bitfont-clear-desc = Clear the current glyph

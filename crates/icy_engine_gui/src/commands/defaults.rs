@@ -131,7 +131,6 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(set.match_key(KeyCode::F11, Modifiers::NONE), Some(cmd::VIEW_FULLSCREEN.command_id()));
             assert_eq!(set.match_key(KeyCode::Enter, Modifiers::ALT), Some(cmd::VIEW_FULLSCREEN.command_id()));
         }
     }

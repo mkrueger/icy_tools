@@ -125,7 +125,7 @@ category = "view"
 
 [[commands]]
 id = "view.fullscreen"
-hotkey = ["F11", "Alt+Enter"]
+hotkey = ["Alt+Enter"]
 hotkey_mac = ["Cmd+Ctrl+F"]
 category = "view"
 

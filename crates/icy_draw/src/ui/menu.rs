@@ -187,7 +187,7 @@ pub fn menu_item_simple(label: String, hotkey: &str, msg: Message) -> Element<'s
 /// Create a menu item with checkbox indicator
 pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Message) -> Element<'static, Message> {
     let hotkey_text = hotkey.to_string();
-    let checkbox_indicator = if checked { "✓" } else { " " };
+    let checkbox_indicator = if checked { "☑" } else { "☐" };
 
     button(
         row![

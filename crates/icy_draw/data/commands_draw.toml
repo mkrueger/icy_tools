@@ -68,6 +68,122 @@ hotkey = ["Ctrl+Shift+I"]
 hotkey_mac = ["Cmd+Shift+I"]
 category = "selection"
 
+[[commands]]
+id = "select.erase"
+hotkey = ["Delete"]
+hotkey_mac = ["Backspace"]
+category = "selection"
+
+[[commands]]
+id = "select.flip_x"
+category = "selection"
+
+[[commands]]
+id = "select.flip_y"
+category = "selection"
+
+[[commands]]
+id = "select.crop"
+category = "selection"
+
+[[commands]]
+id = "select.justify_left"
+category = "selection"
+
+[[commands]]
+id = "select.justify_center"
+category = "selection"
+
+[[commands]]
+id = "select.justify_right"
+category = "selection"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Area Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "area.justify_line_left"
+hotkey = ["Alt+L"]
+category = "area"
+
+[[commands]]
+id = "area.justify_line_center"
+hotkey = ["Alt+C"]
+category = "area"
+
+[[commands]]
+id = "area.justify_line_right"
+hotkey = ["Alt+R"]
+category = "area"
+
+[[commands]]
+id = "area.insert_row"
+hotkey = ["Alt+Up"]
+category = "area"
+
+[[commands]]
+id = "area.delete_row"
+hotkey = ["Alt+Down"]
+category = "area"
+
+[[commands]]
+id = "area.insert_column"
+hotkey = ["Alt+Right"]
+category = "area"
+
+[[commands]]
+id = "area.delete_column"
+hotkey = ["Alt+Left"]
+category = "area"
+
+[[commands]]
+id = "area.erase_row"
+hotkey = ["Alt+E"]
+category = "area"
+
+[[commands]]
+id = "area.erase_row_to_start"
+hotkey = ["Alt+Home"]
+category = "area"
+
+[[commands]]
+id = "area.erase_row_to_end"
+hotkey = ["Alt+End"]
+category = "area"
+
+[[commands]]
+id = "area.erase_column"
+category = "area"
+
+[[commands]]
+id = "area.erase_column_to_start"
+category = "area"
+
+[[commands]]
+id = "area.erase_column_to_end"
+category = "area"
+
+[[commands]]
+id = "area.scroll_up"
+hotkey = ["Ctrl+Alt+Up"]
+category = "area"
+
+[[commands]]
+id = "area.scroll_down"
+hotkey = ["Ctrl+Alt+Down"]
+category = "area"
+
+[[commands]]
+id = "area.scroll_left"
+hotkey = ["Ctrl+Alt+Left"]
+category = "area"
+
+[[commands]]
+id = "area.scroll_right"
+hotkey = ["Ctrl+Alt+Right"]
+category = "area"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tools
 # ═══════════════════════════════════════════════════════════════════════════════
