@@ -16,7 +16,7 @@ use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::command_handlers;
 use icy_engine_gui::commands::{CommandSet, IntoHotkey, cmd};
-use icy_engine_gui::ui::{DialogResult, DialogStack, confirm_yes_no_cancel, error_dialog};
+use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog, export_dialog_with_defaults_from_msg};
 
 use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
 use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage};
@@ -179,6 +179,9 @@ pub enum Message {
 
     SettingsDialog(super::settings_dialog::SettingsDialogMessage),
     SettingsSaved(super::settings_dialog::SettingsResult),
+
+    ExportDialog(ExportDialogMessage),
+    ExportComplete(PathBuf),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Dialog
@@ -1651,7 +1654,56 @@ impl MainWindow {
                 self.options.write().recent_files.clear_recent_files();
                 Task::none()
             }
-            Message::ExportFile => Task::none(),
+            Message::ExportFile => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    // Get buffer type and screen
+                    let buffer_type = editor.with_edit_state(|state| state.get_buffer().buffer_type);
+                    let screen = editor.screen.clone();
+
+                    // Get export path from file path or default
+                    let export_path = self
+                        .file_path()
+                        .and_then(|p| p.file_stem())
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("export")
+                        .to_string();
+
+                    // Get export directory from file path or documents
+                    let export_dir = self
+                        .file_path()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+                    self.dialogs.push(
+                        export_dialog_with_defaults_from_msg(
+                            export_path,
+                            buffer_type,
+                            screen,
+                            move || export_dir.clone(),
+                            (Message::ExportDialog, |msg: &Message| match msg {
+                                Message::ExportDialog(inner) => Some(inner),
+                                _ => None,
+                            }),
+                        )
+                        .on_confirm(Message::ExportComplete)
+                        .on_cancel(|| Message::CloseDialog),
+                    );
+                }
+                Task::none()
+            }
+            Message::ExportDialog(_) => {
+                // ExportDialog messages are routed through DialogStack::update above
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
+                Task::none()
+            }
+            Message::ExportComplete(path) => {
+                log::info!("Export complete: {:?}", path);
+                // TODO: Could show a toast notification here
+                Task::none()
+            }
             Message::ShowSettings => {
                 let preview_font = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.with_edit_state(|state| state.get_buffer().font(0).cloned()),
