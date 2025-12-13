@@ -70,10 +70,20 @@ impl PaletteGrid {
         self.font_mode = mode;
     }
 
-    /// Sync palette from edit state
-    pub fn sync_palette(&mut self, palette: &Palette) {
+    /// Sync palette from edit state.
+    ///
+    /// `color_limit` is only used to clamp the stored FG/BG marker indices.
+    /// The palette itself is kept unmodified so switching format modes can
+    /// immediately show more colors again.
+    pub fn sync_palette(&mut self, palette: &Palette, color_limit: Option<usize>) {
+        if let Some(limit) = color_limit {
+            let max_index = limit.saturating_sub(1) as u32;
+            self.foreground = self.foreground.min(max_index);
+            self.background = self.background.min(max_index);
+        }
+
         // Only clone if different
-        if self.cached_palette.len() != palette.len() {
+        if self.cached_palette != *palette {
             self.cached_palette = palette.clone();
         }
     }
@@ -141,9 +151,32 @@ impl PaletteGrid {
         width + 8.0 // Add padding
     }
 
-    /// Render the palette grid with a specific available width
-    pub fn view_with_width(&self, available_width: f32) -> Element<'_, PaletteGridMessage> {
-        let (items_per_row, cell_size, width, height) = Self::calculate_layout_for_width(self.cached_palette.len(), available_width);
+    /// Render the palette grid with a specific available width.
+    ///
+    /// `color_limit` restricts display/selection to the first N colors.
+    pub fn view_with_width(&self, available_width: f32, color_limit: Option<usize>) -> Element<'_, PaletteGridMessage> {
+        let palette_len = self.cached_palette.len();
+        let visible_len = color_limit.map(|l| l.min(palette_len)).unwrap_or(palette_len);
+
+        // Special layouts:
+        // - 16 colors: 8 rows × 2 columns (vertical), square cells, fill full available width
+        // -  8 colors: 8 rows × 1 column (vertical), same total height as 16 colors
+        let (items_per_row, cell_width, cell_height, width, height, x_offset) = if visible_len == 16 || visible_len == 8 {
+            let items_per_row = if visible_len == 16 { 2 } else { 1 };
+
+            // For 8 colors we still base the cell size on a 2-column layout so
+            // the overall height matches the 16-color palette.
+            let sizing_cols = 2.0;
+            let cell_size = (available_width / sizing_cols).max(1.0);
+
+            let used_width = cell_size * items_per_row as f32;
+            let x_offset = ((available_width - used_width) / 2.0).max(0.0);
+
+            (items_per_row, cell_size, cell_size, available_width, cell_size * 8.0, x_offset)
+        } else {
+            let (items_per_row, cell_size, width, height) = Self::calculate_layout_for_width(visible_len, available_width);
+            (items_per_row, cell_size, cell_size, width, height, 0.0)
+        };
 
         Canvas::new(PaletteGridProgram {
             foreground: self.foreground,
@@ -151,8 +184,11 @@ impl PaletteGrid {
             ice_mode: self.ice_mode,
             font_mode: self.font_mode,
             cached_palette: self.cached_palette.clone(),
+            visible_len,
             items_per_row,
-            cell_size,
+            cell_width,
+            cell_height,
+            x_offset,
         })
         .width(Length::Fixed(width))
         .height(Length::Fixed(height))
@@ -163,6 +199,7 @@ impl PaletteGrid {
     /// Call sync_palette before this to ensure the cached palette is up to date
     pub fn view(&self) -> Element<'_, PaletteGridMessage> {
         let (items_per_row, cell_size, width, height) = Self::calculate_layout(self.cached_palette.len(), 200.0);
+        let visible_len = self.cached_palette.len();
 
         Canvas::new(PaletteGridProgram {
             foreground: self.foreground,
@@ -170,8 +207,11 @@ impl PaletteGrid {
             ice_mode: self.ice_mode,
             font_mode: self.font_mode,
             cached_palette: self.cached_palette.clone(),
+            visible_len,
             items_per_row,
-            cell_size,
+            cell_width: cell_size,
+            cell_height: cell_size,
+            x_offset: 0.0,
         })
         .width(Length::Fixed(width))
         .height(Length::Fixed(height))
@@ -182,9 +222,11 @@ impl PaletteGrid {
     /// All colors in one row
     pub fn view_horizontal(&self) -> Element<'_, PaletteGridMessage> {
         let palette_len = self.cached_palette.len();
-        let cell_size = 16.0;
-        let width = cell_size * palette_len as f32;
-        let height = cell_size;
+        let cell_height = 16.0;
+        let cell_width = cell_height;
+        let width = cell_width * palette_len as f32;
+        let height = cell_height;
+        let visible_len = palette_len;
 
         Canvas::new(PaletteGridProgram {
             foreground: self.foreground,
@@ -192,8 +234,11 @@ impl PaletteGrid {
             ice_mode: self.ice_mode,
             font_mode: self.font_mode,
             cached_palette: self.cached_palette.clone(),
+            visible_len,
             items_per_row: palette_len,
-            cell_size,
+            cell_width,
+            cell_height,
+            x_offset: 0.0,
         })
         .width(Length::Fixed(width))
         .height(Length::Fixed(height))
@@ -208,8 +253,11 @@ struct PaletteGridProgram {
     ice_mode: IceMode,
     font_mode: FontMode,
     cached_palette: Palette,
+    visible_len: usize,
     items_per_row: usize,
-    cell_size: f32,
+    cell_width: f32,
+    cell_height: f32,
+    x_offset: f32,
 }
 
 impl Program<PaletteGridMessage> for PaletteGridProgram {
@@ -218,25 +266,30 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
     fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        let cell_size = self.cell_size;
-        let upper_limit = ((self.cached_palette.len() as f32 / self.items_per_row as f32).ceil() as usize) * self.items_per_row;
+        let cell_width = self.cell_width;
+        let cell_height = self.cell_height;
+        let upper_limit = ((self.visible_len as f32 / self.items_per_row as f32).ceil() as usize) * self.items_per_row;
 
         // Draw color cells
-        for i in 0..upper_limit.min(self.cached_palette.len()) {
+        for i in 0..upper_limit.min(self.visible_len) {
             let col = i % self.items_per_row;
             let row = i / self.items_per_row;
-            let x = col as f32 * cell_size;
-            let y = row as f32 * cell_size;
+            let x = self.x_offset + col as f32 * cell_width;
+            let y = row as f32 * cell_height;
 
             let (r, g, b) = self.cached_palette.rgb(i as u32);
-            frame.fill_rectangle(Point::new(x, y), Size::new(cell_size, cell_size), Color::from_rgb8(r, g, b));
+            frame.fill_rectangle(Point::new(x, y), Size::new(cell_width, cell_height), Color::from_rgb8(r, g, b));
         }
 
         // Draw foreground marker (triangle top-left)
-        let marker_len = cell_size / 3.0;
-        let fg_col = self.foreground as usize % self.items_per_row;
-        let fg_row = self.foreground as usize / self.items_per_row;
-        let fg_origin = Point::new(fg_col as f32 * cell_size, fg_row as f32 * cell_size);
+        let marker_len = cell_width.min(cell_height) / 3.0;
+        let max_index = self.visible_len.saturating_sub(1) as u32;
+        let foreground = self.foreground.min(max_index);
+        let background = self.background.min(max_index);
+
+        let fg_col = foreground as usize % self.items_per_row;
+        let fg_row = foreground as usize / self.items_per_row;
+        let fg_origin = Point::new(self.x_offset + fg_col as f32 * cell_width, fg_row as f32 * cell_height);
 
         let fg_marker = Path::new(|builder| {
             builder.move_to(fg_origin);
@@ -249,9 +302,9 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
         frame.stroke(&fg_marker, Stroke::default().with_color(Color::from_rgb8(128, 128, 128)).with_width(1.0));
 
         // Draw background marker (triangle bottom-right)
-        let bg_col = self.background as usize % self.items_per_row;
-        let bg_row = self.background as usize / self.items_per_row;
-        let bg_origin = Point::new((bg_col + 1) as f32 * cell_size, (bg_row + 1) as f32 * cell_size);
+        let bg_col = background as usize % self.items_per_row;
+        let bg_row = background as usize / self.items_per_row;
+        let bg_origin = Point::new(self.x_offset + (bg_col + 1) as f32 * cell_width, (bg_row + 1) as f32 * cell_height);
 
         let bg_marker = Path::new(|builder| {
             builder.move_to(bg_origin);
@@ -267,15 +320,23 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
     }
 
     fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<PaletteGridMessage>> {
-        let cell_size = self.cell_size;
+        let cell_width = self.cell_width;
+        let cell_height = self.cell_height;
+        let used_width = cell_width * self.items_per_row as f32;
 
         match event {
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let col = (pos.x / cell_size) as u32;
-                    let row = (pos.y / cell_size) as u32;
+                    let local_x = pos.x - self.x_offset;
+                    if local_x < 0.0 || local_x >= used_width {
+                        *state = None;
+                        return None;
+                    }
+
+                    let col = (local_x / cell_width) as u32;
+                    let row = (pos.y / cell_height) as u32;
                     let color = col + row * self.items_per_row as u32;
-                    if color < self.cached_palette.len() as u32 {
+                    if color < self.visible_len as u32 {
                         *state = Some(color);
                     } else {
                         *state = None;
@@ -285,21 +346,26 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
             }
             iced::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let col = (pos.x / cell_size) as u32;
-                    let row = (pos.y / cell_size) as u32;
+                    let local_x = pos.x - self.x_offset;
+                    if local_x < 0.0 || local_x >= used_width {
+                        return None;
+                    }
+
+                    let col = (local_x / cell_width) as u32;
+                    let row = (pos.y / cell_height) as u32;
                     let color = col + row * self.items_per_row as u32;
 
-                    if color < self.cached_palette.len() as u32 {
+                    if color < self.visible_len as u32 {
                         match button {
                             mouse::Button::Left => {
                                 // Check if high foreground color is allowed
-                                if color < 8 || self.font_mode.has_high_fg_colors() || self.cached_palette.len() > 16 {
+                                if color < 8 || self.font_mode.has_high_fg_colors() || self.visible_len > 16 {
                                     return Some(canvas::Action::publish(PaletteGridMessage::SetForeground(color)));
                                 }
                             }
                             mouse::Button::Right => {
                                 // Check if high background color is allowed
-                                if color < 8 || self.ice_mode.has_high_bg_colors() || self.cached_palette.len() > 16 {
+                                if color < 8 || self.ice_mode.has_high_bg_colors() || self.visible_len > 16 {
                                     return Some(canvas::Action::publish(PaletteGridMessage::SetBackground(color)));
                                 }
                             }

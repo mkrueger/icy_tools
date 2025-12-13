@@ -1233,7 +1233,7 @@ impl BitFontEditor {
         let bg_weakest = main_area_background(&Theme::Dark);
 
         // Palette grid + Tool panel
-        let palette_view = self.palette_grid.view_with_width(SIDEBAR_WIDTH).map(BitFontEditorMessage::PaletteGrid);
+        let palette_view = self.palette_grid.view_with_width(SIDEBAR_WIDTH, None).map(BitFontEditorMessage::PaletteGrid);
         let tool_panel = self.tool_panel.view_with_config(SIDEBAR_WIDTH, bg_weakest).map(BitFontEditorMessage::ToolPanel);
         let left_sidebar = column![palette_view, tool_panel,].spacing(4);
 

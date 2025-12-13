@@ -296,6 +296,7 @@ impl AnsiEditor {
 
         // Clone the palette before moving buffer into EditState
         let palette = buffer.palette.clone();
+        let format_mode = icy_engine_edit::FormatMode::from_buffer(&buffer);
 
         // Create EditState and wrap as Box<dyn Screen> for Terminal compatibility
         let edit_state = EditState::from_buffer(buffer);
@@ -303,7 +304,8 @@ impl AnsiEditor {
 
         // Create palette components with synced palette
         let mut palette_grid = PaletteGrid::new();
-        palette_grid.sync_palette(&palette);
+        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
+        palette_grid.sync_palette(&palette, palette_limit);
 
         let mut color_switcher = ColorSwitcher::new();
         color_switcher.sync_palette(&palette);
@@ -1006,7 +1008,6 @@ impl AnsiEditor {
                             return;
                         }
                         if pair.secondary.shortcut() == Some(ch) {
-                            
                             self.change_tool(tools::click_tool_slot(slot_idx, self.current_tool));
                             self.tool_panel.set_tool(self.current_tool);
                             return;
@@ -1570,10 +1571,34 @@ impl AnsiEditor {
     pub fn view(&self) -> Element<'_, AnsiEditorMessage> {
         // === LEFT SIDEBAR ===
         // Fixed sidebar width - palette and tool panel adapt to this
-        let sidebar_width = 64.0; // Fixed width for sidebar
+        let sidebar_width = constants::LEFT_BAR_WIDTH;
+
+        // Get caret position and colors from the edit state (also used for palette mode decisions)
+        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode) = {
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let caret = state.get_caret();
+            let buffer = state.get_buffer();
+            let format_mode = state.get_format_mode();
+            let fg = caret.attribute.foreground();
+            let bg = caret.attribute.background();
+            let caret_x = caret.x;
+            let caret_y = caret.y;
+            let height = buffer.height();
+            let width = buffer.width();
+            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode)
+        };
 
         // Palette grid - adapts to sidebar width
-        let palette_view = self.palette_grid.view_with_width(sidebar_width).map(AnsiEditorMessage::PaletteGrid);
+        // In XBinExtended only 8 colors are available
+        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
+        let palette_view = self
+            .palette_grid
+            .view_with_width(sidebar_width, palette_limit)
+            .map(AnsiEditorMessage::PaletteGrid);
 
         // Tool panel - calculate columns based on sidebar width
         // Use theme's main area background color
@@ -1583,23 +1608,6 @@ impl AnsiEditor {
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = column![palette_view, tool_panel,].spacing(4);
 
         // === TOP TOOLBAR (with color switcher on the left) ===
-        // Get caret position and colors from the edit state
-        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width) = {
-            let mut screen_guard = self.screen.lock();
-            let state = screen_guard
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-            let caret = state.get_caret();
-            let buffer = state.get_buffer();
-            let fg = caret.attribute.foreground();
-            let bg = caret.attribute.background();
-            let caret_x = caret.x;
-            let caret_y = caret.y;
-            let height = buffer.height();
-            let width = buffer.width();
-            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize)
-        };
 
         // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
         let color_switcher = self.color_switcher.view(caret_fg, caret_bg).map(AnsiEditorMessage::ColorSwitcher);
@@ -1694,8 +1702,9 @@ impl AnsiEditor {
     /// Sync UI components with the current edit state
     /// Call this after operations that may change the palette
     pub fn sync_ui(&mut self) {
-        let palette = self.with_edit_state(|state| state.get_buffer().palette.clone());
-        self.palette_grid.sync_palette(&palette);
+        let (palette, format_mode) = self.with_edit_state(|state| (state.get_buffer().palette.clone(), state.get_format_mode()));
+        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
+        self.palette_grid.sync_palette(&palette, palette_limit);
         self.color_switcher.sync_palette(&palette);
     }
 
@@ -1745,8 +1754,8 @@ impl AnsiEditor {
             slot_fonts,
         }
     }
-    
-    fn change_tool(&mut self, tool: Tool)  {
+
+    fn change_tool(&mut self, tool: Tool) {
         if self.current_tool == tool {
             return;
         }

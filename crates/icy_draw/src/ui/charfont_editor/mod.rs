@@ -23,7 +23,7 @@ use iced::{
 };
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::{AttributedChar, BitFont, Layer, Screen, Size, TextAttribute, TextBuffer};
-use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, TdfFont, TdfFontExt, load_tdf_fonts};
+use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, TdfFont, load_tdf_fonts};
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView};
@@ -163,7 +163,7 @@ impl CharFontEditor {
         let edit_state = Arc::new(Mutex::new(EditState::from_buffer(buffer)));
 
         let mut palette_grid = PaletteGrid::new();
-        palette_grid.sync_palette(&palette);
+        palette_grid.sync_palette(&palette, None);
 
         let mut color_switcher = ColorSwitcher::new();
         color_switcher.sync_palette(&palette);
@@ -693,7 +693,7 @@ impl CharFontEditor {
         };
 
         let color_switcher = self.color_switcher.view(caret_fg, caret_bg).map(CharFontEditorMessage::ColorSwitcher);
-        let palette_view = self.palette_grid.view_with_width(64.0).map(CharFontEditorMessage::PaletteGrid);
+        let palette_view = self.palette_grid.view_with_width(64.0, None).map(CharFontEditorMessage::PaletteGrid);
         let bg_weakest = main_area_background(&Theme::Dark);
         let tool_panel = self.tool_panel.view_with_config(64.0, bg_weakest).map(CharFontEditorMessage::ToolPanel);
 

@@ -71,10 +71,6 @@ impl Blink {
     /// Calculate time in milliseconds until the next blink toggle.
     pub fn time_until_next(&self, cur_ms: u128) -> u128 {
         let elapsed = cur_ms - self.last_blink;
-        if elapsed >= self.blink_rate {
-            0
-        } else {
-            self.blink_rate - elapsed
-        }
+        if elapsed >= self.blink_rate { 0 } else { self.blink_rate - elapsed }
     }
 }

@@ -63,7 +63,7 @@ impl<'a> CRTShaderProgram<'a> {
         {
             let screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
-            
+
             let font_dims = screen.font_dimensions();
             font_w = font_dims.width as usize;
             font_h = font_dims.height as usize;
@@ -412,12 +412,12 @@ impl<'a> CRTShaderProgram<'a> {
         if let iced::Event::Window(window::Event::RedrawRequested(_instant)) = event {
             // Check if we need animation for:
             // 1. Caret blink
-            // 2. Character blink  
+            // 2. Character blink
             // 3. Selection marching ants (always animate if selection is active)
             // 4. Layer bounds marching ants (when layer overlaps with selection)
             let needs_caret_blink = state.caret_blink.is_due(now);
             let needs_char_blink = state.character_blink.is_due(now);
-            
+
             // Check if there's an active selection or layer bounds that need marching ants animation
             let (has_selection, has_layer_bounds) = {
                 let markers = self.term.markers.read();
@@ -425,11 +425,11 @@ impl<'a> CRTShaderProgram<'a> {
                 let layer = markers.layer_bounds.is_some() && markers.show_layer_bounds;
                 (sel, layer)
             };
-            
+
             // Layer bounds need animation when both selection and layer are active
             // (marching ants on layer border inside selection)
             let needs_marching_ants = has_selection || (has_layer_bounds && has_selection);
-            
+
             // Calculate next redraw time
             let next_blink_time = if needs_caret_blink || needs_char_blink {
                 // If blink is due, request immediate redraw
@@ -440,14 +440,14 @@ impl<'a> CRTShaderProgram<'a> {
                 let char_remaining = state.character_blink.time_until_next(now);
                 Some(Duration::from_millis(caret_remaining.min(char_remaining) as u64))
             };
-            
+
             // For marching ants, we need ~30fps animation
             let selection_frame_time = if needs_marching_ants {
                 Some(Duration::from_millis(33)) // ~30fps for marching ants
             } else {
                 None
             };
-            
+
             // Use the shorter of the two timings
             let next_frame = match (next_blink_time, selection_frame_time) {
                 (Some(a), Some(b)) => Some(a.min(b)),
@@ -455,7 +455,7 @@ impl<'a> CRTShaderProgram<'a> {
                 (None, Some(b)) => Some(b),
                 (None, None) => None,
             };
-            
+
             if let Some(delay) = next_frame {
                 let next = *_instant + delay;
                 return Some(iced::widget::Action::request_redraw_at(next));

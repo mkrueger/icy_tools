@@ -34,7 +34,7 @@ pub const TOOL_ATLAS_ROWS: u32 = 4;
 // =============================================================================
 
 /// Total size of the color switcher widget (width = height)
-pub const COLOR_SWITCHER_SIZE: f32 = 48.0;
+pub const COLOR_SWITCHER_SIZE: f32 = LEFT_BAR_WIDTH;
 
 /// Size of the main FG/BG color rectangles
 pub const COLOR_SWITCHER_RECT_SIZE: f32 = 26.0;
@@ -80,3 +80,6 @@ pub const COLOR_SWAP_ANIMATION_DURATION: f32 = 0.15;
 
 /// Width of the left sidebar
 pub const SIDEBAR_WIDTH: f32 = 64.0;
+
+/// Actual width used for the ANSI editor's left bar (slightly thinner).
+pub const LEFT_BAR_WIDTH: f32 = SIDEBAR_WIDTH - 12.0;

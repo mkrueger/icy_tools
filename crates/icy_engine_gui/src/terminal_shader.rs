@@ -580,9 +580,7 @@ impl shader::Primitive for TerminalShader {
 
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
-            None => {
-                true
-            }
+            None => true,
             Some(resources) => {
                 // Recreate if any structural parameter changed or if either blink state data changed
                 let hash_off_changed = resources.texture_data_hash_blink_off != hash_blink_off;
@@ -590,7 +588,6 @@ impl shader::Primitive for TerminalShader {
                 let slices_changed = resources.num_slices != num_slices;
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
-
 
                 hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed
             }
@@ -1039,10 +1036,10 @@ impl shader::Primitive for TerminalShader {
         let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
         let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
         let terminal_area = [
-            offset_x / avail_w,                    // start_x (normalized)
-            offset_y / avail_h,                    // start_y (normalized)
-            (offset_x + scaled_w) / avail_w,       // end_x (normalized)
-            (offset_y + scaled_h) / avail_h,       // end_y (normalized)
+            offset_x / avail_w,              // start_x (normalized)
+            offset_y / avail_h,              // start_y (normalized)
+            (offset_x + scaled_w) / avail_w, // end_x (normalized)
+            (offset_y + scaled_h) / avail_h, // end_y (normalized)
         ];
 
         // Pack slice heights into array: [slice0, slice1, slice2, first_slice_start_y]
