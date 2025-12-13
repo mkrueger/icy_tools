@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{Color, FileFormat, Palette};
+use crate::{Color, FileFormat, Palette, Screen, formats::io::load_xbin};
 
 use regex::Regex;
 
@@ -275,12 +275,127 @@ impl FileFormat {
                 Err(err) => return Err(crate::EngineError::InvalidPaletteFormat { message: err.to_string() }),
             },
             FileFormat::Palette(PaletteFormat::Ase) => {
-                return Err(crate::EngineError::UnsupportedPaletteFormat {
-                    expected: "ASE palette loading is not implemented".to_string(),
-                });
+                // Adobe Swatch Exchange format (binary, big-endian)
+                // Header: "ASEF" + version (2x u16) + block count (u32)
+                if bytes.len() < 12 {
+                    return Err(crate::EngineError::InvalidPaletteFormat {
+                        message: "ASE file too short".to_string(),
+                    });
+                }
+                if &bytes[0..4] != b"ASEF" {
+                    return Err(crate::EngineError::InvalidPaletteFormat {
+                        message: "Invalid ASE magic header".to_string(),
+                    });
+                }
+                let mut offset = 12; // Skip header
+
+                while offset + 6 <= bytes.len() {
+                    let block_type = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+                    let block_len = u32::from_be_bytes([bytes[offset + 2], bytes[offset + 3], bytes[offset + 4], bytes[offset + 5]]) as usize;
+                    offset += 6;
+
+                    if offset + block_len > bytes.len() {
+                        break;
+                    }
+
+                    // 0x0001 = Color entry
+                    if block_type == 0x0001 && block_len >= 6 {
+                        let block_data = &bytes[offset..offset + block_len];
+                        // Name length (u16) + name (UTF-16BE, null-terminated)
+                        if block_data.len() < 2 {
+                            offset += block_len;
+                            continue;
+                        }
+                        let name_len = u16::from_be_bytes([block_data[0], block_data[1]]) as usize;
+                        let color_offset = 2 + name_len * 2; // UTF-16BE chars
+
+                        if block_data.len() < color_offset + 6 {
+                            offset += block_len;
+                            continue;
+                        }
+
+                        // Color model (4 chars) + values
+                        let model = &block_data[color_offset..color_offset + 4];
+
+                        if model == b"RGB " && block_data.len() >= color_offset + 16 {
+                            // 3x f32 (big-endian)
+                            let r = f32::from_be_bytes([
+                                block_data[color_offset + 4],
+                                block_data[color_offset + 5],
+                                block_data[color_offset + 6],
+                                block_data[color_offset + 7],
+                            ]);
+                            let g = f32::from_be_bytes([
+                                block_data[color_offset + 8],
+                                block_data[color_offset + 9],
+                                block_data[color_offset + 10],
+                                block_data[color_offset + 11],
+                            ]);
+                            let b = f32::from_be_bytes([
+                                block_data[color_offset + 12],
+                                block_data[color_offset + 13],
+                                block_data[color_offset + 14],
+                                block_data[color_offset + 15],
+                            ]);
+                            colors.push(Color::new(
+                                (r * 255.0).clamp(0.0, 255.0) as u8,
+                                (g * 255.0).clamp(0.0, 255.0) as u8,
+                                (b * 255.0).clamp(0.0, 255.0) as u8,
+                            ));
+                        } else if model == b"CMYK" && block_data.len() >= color_offset + 20 {
+                            // 4x f32 (big-endian) - convert CMYK to RGB
+                            let c = f32::from_be_bytes([
+                                block_data[color_offset + 4],
+                                block_data[color_offset + 5],
+                                block_data[color_offset + 6],
+                                block_data[color_offset + 7],
+                            ]);
+                            let m = f32::from_be_bytes([
+                                block_data[color_offset + 8],
+                                block_data[color_offset + 9],
+                                block_data[color_offset + 10],
+                                block_data[color_offset + 11],
+                            ]);
+                            let y = f32::from_be_bytes([
+                                block_data[color_offset + 12],
+                                block_data[color_offset + 13],
+                                block_data[color_offset + 14],
+                                block_data[color_offset + 15],
+                            ]);
+                            let k = f32::from_be_bytes([
+                                block_data[color_offset + 16],
+                                block_data[color_offset + 17],
+                                block_data[color_offset + 18],
+                                block_data[color_offset + 19],
+                            ]);
+                            // CMYK to RGB conversion
+                            let r = (1.0 - c) * (1.0 - k);
+                            let g = (1.0 - m) * (1.0 - k);
+                            let b = (1.0 - y) * (1.0 - k);
+                            colors.push(Color::new(
+                                (r * 255.0).clamp(0.0, 255.0) as u8,
+                                (g * 255.0).clamp(0.0, 255.0) as u8,
+                                (b * 255.0).clamp(0.0, 255.0) as u8,
+                            ));
+                        } else if model == b"Gray" && block_data.len() >= color_offset + 8 {
+                            // 1x f32 (big-endian)
+                            let gray = f32::from_be_bytes([
+                                block_data[color_offset + 4],
+                                block_data[color_offset + 5],
+                                block_data[color_offset + 6],
+                                block_data[color_offset + 7],
+                            ]);
+                            let v = (gray * 255.0).clamp(0.0, 255.0) as u8;
+                            colors.push(Color::new(v, v, v));
+                        }
+                        // LAB not supported - skip
+                    }
+                    offset += block_len;
+                }
             }
             FileFormat::XBin => {
-                todo!("Exporting XBin palettes is not implemented yet");
+                let screen = load_xbin(bytes, None)?;
+                return Ok(screen.palette().clone());
             }
 
             _ => {

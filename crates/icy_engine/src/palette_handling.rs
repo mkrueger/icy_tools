@@ -297,9 +297,63 @@ impl Palette {
 
                 return Ok(res.as_bytes().to_vec());
             }
-            FileFormat::Palette(PaletteFormat::Ase) => return Ok(Vec::new()),
+            FileFormat::Palette(PaletteFormat::Ase) => {
+                // Adobe Swatch Exchange format (binary, big-endian)
+                let mut result = Vec::new();
+
+                // Header: "ASEF"
+                result.extend_from_slice(b"ASEF");
+                // Version: 1.0
+                result.extend_from_slice(&1u16.to_be_bytes());
+                result.extend_from_slice(&0u16.to_be_bytes());
+                // Block count
+                result.extend_from_slice(&(self.colors.len() as u32).to_be_bytes());
+
+                // Color entries
+                for (i, c) in self.colors.iter().enumerate() {
+                    // Block type: 0x0001 = Color entry
+                    result.extend_from_slice(&0x0001u16.to_be_bytes());
+
+                    // Build block data
+                    let mut block_data = Vec::new();
+
+                    // Color name (UTF-16BE, null-terminated)
+                    let default_name = format!("Color {}", i + 1);
+                    let name = c.name.as_deref().unwrap_or(&default_name);
+                    let name_chars: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+                    block_data.extend_from_slice(&(name_chars.len() as u16).to_be_bytes());
+                    for ch in &name_chars {
+                        block_data.extend_from_slice(&ch.to_be_bytes());
+                    }
+
+                    // Color model: "RGB "
+                    block_data.extend_from_slice(b"RGB ");
+
+                    // RGB values as f32 (0.0-1.0)
+                    let r = (c.r as f32) / 255.0;
+                    let g = (c.g as f32) / 255.0;
+                    let b = (c.b as f32) / 255.0;
+                    block_data.extend_from_slice(&r.to_be_bytes());
+                    block_data.extend_from_slice(&g.to_be_bytes());
+                    block_data.extend_from_slice(&b.to_be_bytes());
+
+                    // Color type: 0 = Global, 1 = Spot, 2 = Normal
+                    block_data.extend_from_slice(&0u16.to_be_bytes());
+
+                    // Block length
+                    result.extend_from_slice(&(block_data.len() as u32).to_be_bytes());
+                    result.extend_from_slice(&block_data);
+                }
+
+                return Ok(result);
+            }
             FileFormat::XBin => {
-                todo!("Exporting XBin palettes is not implemented yet");
+                // Create a minimal TextBuffer with just the palette
+                let mut buf = crate::TextBuffer::new((0, 0));
+                buf.palette = self.clone();
+                buf.clear_font_table();
+                let options = crate::SaveOptions::default();
+                return FileFormat::XBin.to_bytes(&buf, &options);
             }
             _ => Err(crate::EngineError::InvalidPaletteFormat {
                 message: format!("Invalid palette format"),

@@ -108,7 +108,7 @@ impl PaletteEditorDialog {
     fn try_load_palette_from_path(path: &PathBuf) -> Result<Palette, String> {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
 
-        if matches!(ext.as_deref(), Some("xb")) {
+        if matches!(ext.as_deref(), Some("xb") | Some("xbin")) {
             let screen = FileFormat::XBin.load(path.as_path(), None).map_err(|e| e.to_string())?;
             let mut pal = screen.palette().clone();
             pal.resize(16);
@@ -121,9 +121,7 @@ impl PaletteEditorDialog {
             Some("hex") => FileFormat::Palette(PaletteFormat::Hex),
             Some("txt") => FileFormat::Palette(PaletteFormat::Txt),
             Some("ice") | Some("icepal") => FileFormat::Palette(PaletteFormat::Ice),
-            Some("ase") => {
-                return Err("ASE palette loading is not implemented".to_string());
-            }
+            Some("ase") => FileFormat::Palette(PaletteFormat::Ase),
             _ => {
                 return Err("Unsupported palette file type".to_string());
             }
@@ -139,7 +137,7 @@ impl PaletteEditorDialog {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
 
         match ext.as_deref() {
-            Some("xb") => {
+            Some("xb") | Some("xbin") => {
                 let mut buffer = TextBuffer::new((1, 1));
                 buffer.palette = self.palette.clone();
                 let mut options = SaveOptions::default();
@@ -179,6 +177,13 @@ impl PaletteEditorDialog {
                 let bytes = self
                     .palette
                     .export_palette(&FileFormat::Palette(PaletteFormat::Ice))
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(path, bytes).map_err(|e| e.to_string())
+            }
+            Some("ase") => {
+                let bytes = self
+                    .palette
+                    .export_palette(&FileFormat::Palette(PaletteFormat::Ase))
                     .map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| e.to_string())
             }
@@ -236,7 +241,7 @@ impl PaletteEditorDialog {
                 let task = Task::perform(
                     async move {
                         rfd::AsyncFileDialog::new()
-                            .add_filter("Palette", &["gpl", "pal", "hex", "txt", "ice", "icepal", "xb"])
+                            .add_filter("Palette", &["gpl", "pal", "hex", "txt", "ice", "icepal", "ase", "xb", "xbin"])
                             .pick_file()
                             .await
                             .map(|h| h.path().to_path_buf())
@@ -274,7 +279,8 @@ impl PaletteEditorDialog {
                             .add_filter("Hex", &["hex"])
                             .add_filter("Text", &["txt"])
                             .add_filter("ICE Palette", &["ice"])
-                            .add_filter("XBin", &["xb"])
+                            .add_filter("Adobe Swatch Exchange", &["ase"])
+                            .add_filter("XBin", &["xb", "xbin"])
                             .save_file()
                             .await
                             .map(|h| h.path().to_path_buf())
