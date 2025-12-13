@@ -300,6 +300,10 @@ pub enum Message {
     PaletteEditor(PaletteEditorMessage),
     PaletteEditorApplied(icy_engine::Palette),
 
+    // New File Dialog
+    NewFileDialog(crate::ui::new_file_dialog::NewFileMessage),
+    NewFileCreated(crate::ui::new_file_dialog::FileTemplate, i32, i32),
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Plugins
     // ═══════════════════════════════════════════════════════════════════════════
@@ -827,8 +831,35 @@ impl MainWindow {
                 // Close the confirmation dialog first (if any)
                 self.dialogs.pop();
 
-                // Create new ANSI document
-                self.mode_state = ModeState::Ansi(AnsiEditor::new(self.options.clone()));
+                // Show New File dialog
+                self.dialogs.push(crate::ui::new_file_dialog::NewFileDialog::new());
+                Task::none()
+            }
+            Message::NewFileDialog(_) => {
+                // Handled by dialog
+                Task::none()
+            }
+            Message::NewFileCreated(template, width, height) => {
+                use crate::ui::new_file_dialog::{FileTemplate, create_buffer_for_template};
+
+                match template {
+                    FileTemplate::Animation => {
+                        // Create ANSI editor for animation
+                        let buf = create_buffer_for_template(template, width, height);
+                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone()));
+                    }
+                    FileTemplate::BitFont => {
+                        self.mode_state = ModeState::BitFont(BitFontEditor::new());
+                    }
+                    FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont => {
+                        self.mode_state = ModeState::CharFont(super::charfont_editor::CharFontEditor::new(self.options.clone()));
+                    }
+                    _ => {
+                        // Create ANSI editor with buffer from template
+                        let buf = create_buffer_for_template(template, width, height);
+                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone()));
+                    }
+                }
                 self.mark_saved();
                 Task::none()
             }

@@ -529,6 +529,17 @@ new-file-template-ansimation-title=Ansimation
 new-file-template-ansimation-description=Eine Ansi-Animation erstellen
 new-file-template-bit_font-title=Bit Font
 new-file-template-bit_font-description=Einen neuen Bit-Font erstellen
+
+new-file-category-ansi=ANSI Art
+new-file-category-fonts=Schriften
+new-file-category-animation=Animation
+
+new-file-editor-ansi=ANSI Art
+new-file-editor-bitfont=Bit Font
+new-file-editor-tdf=TDF Font
+new-file-editor-animation=Animation
+new-file-size-section=Größe
+
 new-file-template-color_font-title=TDF Farb-Font
 new-file-template-color_font-description=Einen neuen TDF Farb-Font erstellen
 new-file-template-block_font-title=TDF Block-Font

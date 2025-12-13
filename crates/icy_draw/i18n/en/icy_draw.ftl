@@ -541,6 +541,16 @@ new-file-template-ansimation-description=Create a new ansi animation file
 new-file-template-bit_font-title=Bit Font
 new-file-template-bit_font-description=Create a new bit font file
 
+new-file-category-ansi=ANSI Art
+new-file-category-fonts=Fonts
+new-file-category-animation=Animation
+
+new-file-editor-ansi=ANSI Art
+new-file-editor-bitfont=Bit Font
+new-file-editor-tdf=TDF Font
+new-file-editor-animation=Animation
+new-file-size-section=Dimensions
+
 new-file-template-color_font-title=TDF Color Font
 new-file-template-color_font-description=Create a new TheDraw color font
 new-file-template-block_font-title=TDF Block Font
