@@ -29,6 +29,22 @@ impl EditState {
         }
     }
 
+    pub fn clear_selection_mask(&mut self) -> Result<()> {
+        if self.selection_mask.is_empty() {
+            return Ok(());
+        }
+
+        let old = self.selection_mask.clone();
+        let mut new = old.clone();
+        new.clear();
+
+        self.push_undo_action(Box::new(undo_operations::SetSelectionMask::new(
+            fl!(crate::LANGUAGE_LOADER, "undo-select-nothing"),
+            old,
+            new,
+        )))
+    }
+
     pub fn deselect(&mut self) -> Result<()> {
         if let Some(sel) = self.selection_opt.take() {
             self.push_undo_action(Box::new(undo_operations::Deselect::new(sel)))
@@ -101,7 +117,7 @@ impl EditState {
             }
         }
         let op = undo_operations::InverseSelection::new(old_selection, old_mask, self.selection_mask.clone());
-        self.set_is_buffer_dirty();
+        self.mark_dirty();
         self.push_plain_undo(Box::new(op))
     }
 
@@ -138,6 +154,6 @@ impl EditState {
             let _ = self.push_plain_undo(Box::new(op));
         }
 
-        self.set_is_buffer_dirty();
+        self.mark_dirty();
     }
 }

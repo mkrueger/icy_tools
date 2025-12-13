@@ -414,6 +414,7 @@ command_handlers! {
     fn handle_main_window_command() -> Option<Message> {
         cmd::EDIT_UNDO => Message::Undo,
         cmd::EDIT_REDO => Message::Redo,
+        cmd::EDIT_DELETE => Message::DeleteSelection,
         cmd::FILE_NEW => Message::NewFile,
         cmd::FILE_OPEN => Message::OpenFile,
         cmd::FILE_SAVE => Message::SaveFile,
@@ -1610,9 +1611,36 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             // Selection operations (TODO: implement)
             // ═══════════════════════════════════════════════════════════════════
-            Message::Deselect => Task::none(),
-            Message::InverseSelection => Task::none(),
-            Message::DeleteSelection => Task::none(),
+            Message::Deselect => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let _ = editor.with_edit_state(|state| state.clear_selection());
+                    editor.refresh_selection_display();
+                }
+                Task::none()
+            }
+            Message::InverseSelection => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let _ = editor.with_edit_state(|state| state.inverse_selection());
+                    editor.refresh_selection_display();
+                }
+                Task::none()
+            }
+            Message::DeleteSelection => {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let result = editor.with_edit_state(|state| {
+                        if state.is_something_selected() {
+                            state.erase_selection()
+                        } else {
+                            state.delete_key()
+                        }
+                    });
+                    if result.is_ok() {
+                        editor.is_modified = true;
+                    }
+                    editor.refresh_selection_display();
+                }
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // Area operations (TODO: implement)
@@ -2154,7 +2182,7 @@ impl MainWindow {
 
         // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {
-            ModeState::Ansi(editor) => {
+            ModeState::Ansi(_editor) => {
                 // Forward keyboard events to AnsiEditor
                 if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
                     let msg = super::ansi_editor::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);

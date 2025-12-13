@@ -133,6 +133,8 @@ struct CRTUniforms {
     // Selection uniforms (for highlighting selected area)
     /// Selection rectangle in pixels (x, y, x+width, y+height) in document space
     selection_rect: [f32; 4],
+    /// Selection border color (RGBA) - white for normal, green for add, red for subtract
+    selection_color: [f32; 4],
     /// Selection enabled (1.0 = enabled, 0.0 = disabled)
     selection_enabled: f32,
     /// Selection mask enabled (1.0 = use texture mask, 0.0 = use rectangle only)
@@ -244,6 +246,9 @@ pub struct TerminalShader {
     // Selection rendering
     /// Selection rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
     pub selection_rect: Option<[f32; 4]>,
+    /// Selection border color (RGBA) - white for normal, green for add, red for subtract
+    /// Default is white [1.0, 1.0, 1.0, 1.0]
+    pub selection_color: [f32; 4],
 
     // Selection mask rendering (for complex non-rectangular selections)
     /// Selection mask texture data (RGBA bytes), None = no mask
@@ -1042,6 +1047,26 @@ impl shader::Primitive for TerminalShader {
             (offset_y + scaled_h) / avail_h, // end_y (normalized)
         ];
 
+        // Mouse events are handled in widget-local logical coordinates.
+        // Keep RenderInfo in the same space (do NOT use clip/scissor rectangles).
+        {
+            let mut info = self.render_info.write();
+            info.display_scale = final_scale;
+            info.viewport_x = if use_int { offset_x.round() } else { offset_x };
+            info.viewport_y = if use_int { offset_y.round() } else { offset_y };
+            info.viewport_width = scaled_w;
+            info.viewport_height = scaled_h;
+            info.terminal_width = term_w;
+            info.terminal_height = term_h;
+            info.font_width = self.font_width;
+            info.font_height = self.font_height;
+            info.scan_lines = self.scan_lines;
+            info.bounds_x = 0.0;
+            info.bounds_y = 0.0;
+            info.bounds_width = avail_w;
+            info.bounds_height = avail_h;
+        }
+
         // Pack slice heights into array: [slice0, slice1, slice2, first_slice_start_y]
         let mut slice_heights = [0.0f32; 4];
         for (i, &height) in self.slice_heights.iter().enumerate() {
@@ -1182,6 +1207,7 @@ impl shader::Primitive for TerminalShader {
 
             // Selection uniforms
             selection_rect: self.selection_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
+            selection_color: self.selection_color,
             selection_enabled: if self.selection_rect.is_some() || self.selection_mask_data.is_some() {
                 1.0
             } else {
@@ -1234,21 +1260,8 @@ impl shader::Primitive for TerminalShader {
         let scaled_w = (term_w * display_scale).min(avail_w);
         let scaled_h = (term_h * display_scale).min(avail_h);
 
-        let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
-        let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
-
-        // Calculate logical coordinates for mouse mapping
-        // The scale_factor converts between logical and physical coordinates
-        let scale_factor = crate::get_scale_factor();
-        let logical_bounds_x = clip_bounds.x as f32 / scale_factor;
-        let logical_bounds_y = clip_bounds.y as f32 / scale_factor;
-        let logical_avail_w = avail_w / scale_factor;
-        let logical_avail_h = avail_h / scale_factor;
-        let logical_offset_x = offset_x / scale_factor;
-        let logical_offset_y = offset_y / scale_factor;
-        let logical_scaled_w = scaled_w / scale_factor;
-        let logical_scaled_h = scaled_h / scale_factor;
-        let logical_display_scale = display_scale; // Scale ratio stays the same
+        let _offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
+        let _offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
 
         // Viewport covers the full clip_bounds area (not just the terminal area)
         // This allows rendering selection outside the document bounds
@@ -1259,26 +1272,8 @@ impl shader::Primitive for TerminalShader {
             avail_h.min(MAX_VIEWPORT_DIM),
         );
 
-        // Update shared render info for mouse mapping
-        // Use LOGICAL coordinates since mouse events come in logical coordinates
-        // (cursor.position() returns logical coords, not physical)
-        {
-            let mut info = self.render_info.write();
-            info.display_scale = logical_display_scale;
-            info.viewport_x = if use_int { logical_offset_x.round() } else { logical_offset_x };
-            info.viewport_y = if use_int { logical_offset_y.round() } else { logical_offset_y };
-            info.viewport_width = logical_scaled_w;
-            info.viewport_height = logical_scaled_h;
-            info.terminal_width = term_w;
-            info.terminal_height = term_h;
-            info.font_width = self.font_width;
-            info.font_height = self.font_height;
-            info.scan_lines = self.scan_lines;
-            info.bounds_x = logical_bounds_x;
-            info.bounds_y = logical_bounds_y;
-            info.bounds_width = logical_avail_w;
-            info.bounds_height = logical_avail_h;
-        }
+        // NOTE: RenderInfo is updated in `prepare()` in widget-local logical coordinates.
+        // Do not overwrite it here with `clip_bounds`-derived values.
 
         let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
             label: Some("Terminal Shader Render Pass"),

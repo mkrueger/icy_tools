@@ -220,6 +220,12 @@ impl CanvasView {
         markers.selection_rect = bounds;
     }
 
+    /// Set the selection border color for marching ants display
+    pub fn set_selection_color(&mut self, color: [f32; 4]) {
+        let mut markers = self.terminal.markers.write();
+        markers.selection_color = color;
+    }
+
     /// Set the selection mask for complex (non-rectangular) selections
     /// mask_data: (RGBA texture data, width in cells, height in cells)
     /// font_dimensions: (font_width, font_height) in pixels

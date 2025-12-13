@@ -41,7 +41,19 @@ impl SelectionMask {
     pub fn add_selection(&mut self, selection: Selection) {
         match selection.shape {
             crate::Shape::Rectangle => {
-                self.add_rectangle(selection.as_rectangle());
+                let rect: Rectangle = selection.as_rectangle();
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[DEBUG] AddSelectionToMask - Adding selection rect: ({}, {}, w={}, h={})",
+                    rect.left(),
+                    rect.top(),
+                    rect.width(),
+                    rect.height()
+                );
+
+                self.add_rectangle(rect);
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG] AddSelectionToMask Mask after adding rect: {:?}", self.is_empty());
             }
             crate::Shape::Lines => {
                 let mut pos = selection.anchor;
@@ -64,7 +76,18 @@ impl SelectionMask {
     pub fn remove_selection(&mut self, selection: Selection) {
         match selection.shape {
             crate::Shape::Rectangle => {
-                self.remove_rectangle(selection.as_rectangle());
+                let rect = selection.as_rectangle();
+
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[DEBUG] AddSelectionToMask::redo - Removing selection rect: ({}, {}, w={}, h={})",
+                    rect.left(),
+                    rect.top(),
+                    rect.width(),
+                    rect.height()
+                );
+
+                self.remove_rectangle(rect);
             }
             crate::Shape::Lines => {
                 let mut pos = selection.anchor;

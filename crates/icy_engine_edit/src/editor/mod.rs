@@ -156,7 +156,6 @@ pub struct EditState {
     redo_stack: Vec<Box<dyn UndoOperation>>,
 
     pub is_palette_dirty: bool,
-    is_buffer_dirty: bool,
 
     /// SAUCE metadata for the file (title, author, group, comments)
     sauce_meta: SauceMetaData,
@@ -212,10 +211,13 @@ impl Default for EditState {
         let mut tool_overlay_mask = OverlayMask::default();
         tool_overlay_mask.set_size(screen.buffer.size());
 
+        let mut selection_mask = SelectionMask::default();
+        selection_mask.set_size(screen.buffer.size());
+
         Self {
             screen,
             selection_opt: None,
-            selection_mask: SelectionMask::default(),
+            selection_mask,
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Vec::new(),
             current_tag: 0,
@@ -223,7 +225,6 @@ impl Default for EditState {
             mirror_mode: false,
             tool_overlay_mask,
             is_palette_dirty: false,
-            is_buffer_dirty: false,
             sauce_meta: SauceMetaData::default(),
         }
     }
@@ -235,11 +236,13 @@ impl EditState {
         let mut tool_overlay_mask = OverlayMask::default();
         tool_overlay_mask.set_size(screen.buffer.size());
 
-        Self {
+        let mut edit_state = Self {
             screen,
             tool_overlay_mask,
             ..Default::default()
-        }
+        };
+        edit_state.set_mask_size();
+        edit_state
     }
 
     pub fn set_buffer(&mut self, buffer: TextBuffer) {
@@ -276,18 +279,6 @@ impl EditState {
     /// Set the format mode (applies palette_mode and font_mode to the buffer)
     pub fn set_format_mode(&mut self, mode: FormatMode) {
         mode.apply_to_buffer(&mut self.screen.buffer);
-    }
-
-    pub fn is_buffer_dirty(&self) -> bool {
-        self.is_buffer_dirty
-    }
-
-    pub fn set_is_buffer_dirty(&mut self) {
-        self.is_buffer_dirty = true;
-    }
-
-    pub fn set_buffer_clean(&mut self) {
-        self.is_buffer_dirty = false;
     }
 
     /// Get a reference to the SAUCE metadata
@@ -527,7 +518,7 @@ impl EditState {
 
     fn push_plain_undo(&mut self, op: Box<dyn UndoOperation>) -> Result<()> {
         if op.changes_data() {
-            self.set_is_buffer_dirty();
+            self.mark_dirty();
         }
         let Ok(mut stack) = self.undo_stack.lock() else {
             return Err(crate::EngineError::Generic("Failed to lock undo stack".to_string()));
@@ -570,6 +561,19 @@ impl EditState {
     pub fn set_mirror_mode(&mut self, mirror_mode: bool) {
         self.mirror_mode = mirror_mode;
     }
+
+    /// Set the selection mask (without undo, just plain operation)
+    #[inline(always)]
+    pub(crate) fn set_selection_mask(&mut self, mask: SelectionMask) {
+        #[cfg(debug_assertions)]
+        eprintln!("[DEBUG] EditState::set_selection_mask - Setting selection mask");
+        self.selection_mask = mask;
+        self.screen.mark_dirty();
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.screen.mark_dirty();
+    }
 }
 
 impl UndoState for EditState {
@@ -586,7 +590,7 @@ impl UndoState for EditState {
             return Ok(());
         };
         if op.changes_data() {
-            self.set_is_buffer_dirty();
+            self.mark_dirty();
         }
 
         let res = op.undo(self);
@@ -605,7 +609,7 @@ impl UndoState for EditState {
     fn redo(&mut self) -> Result<()> {
         if let Some(mut op) = self.redo_stack.pop() {
             if op.changes_data() {
-                self.set_is_buffer_dirty();
+                self.mark_dirty();
             }
             let res = op.redo(self);
             self.undo_stack.lock().unwrap().push(op);
@@ -765,7 +769,7 @@ impl Screen for EditState {
     fn set_selection(&mut self, sel: Selection) -> Result<()> {
         if self.selection_opt.as_ref() != Some(&sel) {
             self.selection_opt = Some(sel);
-            self.is_buffer_dirty = true;
+            self.mark_dirty();
         }
         Ok(())
     }
@@ -773,7 +777,7 @@ impl Screen for EditState {
     fn clear_selection(&mut self) -> Result<()> {
         if self.selection_opt.is_some() {
             self.selection_opt = None;
-            self.is_buffer_dirty = true;
+            self.mark_dirty();
         }
         Ok(())
     }

@@ -175,7 +175,6 @@ pub struct Palette {
 
 impl Palette {
     /// Convert RGB to packed RGBA u32 (little-endian: 0xAABBGGRR in memory)
-    #[inline(always)]
     pub fn rgb_to_rgba_u32(r: u8, g: u8, b: u8) -> u32 {
         u32::from_ne_bytes([r, g, b, 255])
     }

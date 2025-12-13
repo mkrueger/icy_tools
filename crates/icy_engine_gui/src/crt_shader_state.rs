@@ -52,6 +52,16 @@ pub fn is_command_pressed() -> bool {
     GLOBAL_COMMAND_PRESSED.load(Ordering::Relaxed)
 }
 
+/// Selection color constants for different selection modes
+pub mod selection_colors {
+    /// White - default selection color (normal/replace mode)
+    pub const DEFAULT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    /// Light green - add to selection mode (Shift+Select)
+    pub const ADD: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
+    /// Light red - remove from selection mode (Ctrl/Cmd+Select)
+    pub const SUBTRACT: [f32; 4] = [1.0, 0.5, 0.5, 1.0];
+}
+
 /// Cached screen info for mouse mapping calculations and cache invalidation
 /// Updated during internal_draw to avoid extra locks in internal_update
 pub struct CachedScreenInfo {

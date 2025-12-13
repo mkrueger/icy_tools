@@ -333,6 +333,7 @@ impl<'a> CRTShaderProgram<'a> {
         let layer_rect = markers.layer_bounds.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let show_layer_bounds = markers.show_layer_bounds;
         let selection_rect = markers.selection_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let selection_color = markers.selection_color;
         let selection_mask_data = markers.selection_mask_data.clone();
         let font_dimensions = markers.font_dimensions;
         drop(markers);
@@ -382,6 +383,7 @@ impl<'a> CRTShaderProgram<'a> {
             show_layer_bounds,
             // Selection rendering
             selection_rect,
+            selection_color,
             selection_mask_data,
             font_dimensions,
         }
@@ -466,6 +468,14 @@ impl<'a> CRTShaderProgram<'a> {
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
 
+            // Mouse events should be relative to the terminal widget.
+            // `TerminalMouseEvent.pixel_position` is documented as widget-relative.
+            let local_pos_in_bounds = cursor.position_in(bounds);
+            let local_pos_unclamped = cursor.position().map(|p| iced::Point {
+                x: p.x - bounds.x,
+                y: p.y - bounds.y,
+            });
+
             if let mouse::Event::ButtonReleased(button) = mouse_event {
                 if state.dragging && matches!(button, mouse::Button::Left) {
                     state.dragging = false;
@@ -473,7 +483,7 @@ impl<'a> CRTShaderProgram<'a> {
                     state.last_drag_position = None;
 
                     // Use unclamped for drag release to get position even outside viewport
-                    let (pixel_pos, cell_pos) = if let Some(position) = cursor.position() {
+                    let (pixel_pos, cell_pos) = if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
                         (pixel_pos, Some(cell_pos))
@@ -489,7 +499,7 @@ impl<'a> CRTShaderProgram<'a> {
 
             if state.dragging {
                 if let mouse::Event::CursorMoved { .. } = mouse_event {
-                    if let Some(position) = cursor.position() {
+                    if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
                         // Use unclamped version during drag to allow selection beyond viewport
                         let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
@@ -507,7 +517,7 @@ impl<'a> CRTShaderProgram<'a> {
 
             match mouse_event {
                 mouse::Event::CursorMoved { .. } => {
-                    if let Some(position) = cursor.position() {
+                    if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
@@ -528,7 +538,7 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::ButtonPressed(button) => {
-                    if let Some(position) = cursor.position() {
+                    if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
@@ -554,7 +564,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                 mouse::Event::ButtonReleased(button) => {
                     if !matches!(button, mouse::Button::Left) {
-                        if let Some(position) = cursor.position() {
+                        if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
@@ -570,7 +580,7 @@ impl<'a> CRTShaderProgram<'a> {
                             return Some(iced::widget::Action::publish(Message::Release(evt)));
                         }
                     } else if !state.dragging {
-                        if let Some(position) = cursor.position() {
+                        if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 

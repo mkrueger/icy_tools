@@ -67,6 +67,7 @@ use iced::{
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
+use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::Mutex;
 
@@ -260,6 +261,21 @@ pub struct AnsiEditor {
 static mut NEXT_ID: u64 = 0;
 
 impl AnsiEditor {
+    fn current_select_add_type(&self) -> icy_engine::AddType {
+        if self.current_tool != Tool::Select {
+            return icy_engine::AddType::Default;
+        }
+
+        // Modifiers are read from global state because event modifiers may be unreliable.
+        if is_ctrl_pressed() || is_command_pressed() {
+            icy_engine::AddType::Subtract
+        } else if is_shift_pressed() {
+            icy_engine::AddType::Add
+        } else {
+            icy_engine::AddType::Default
+        }
+    }
+
     /// Create a new empty ANSI editor
     pub fn new(options: Arc<Mutex<SharedOptions>>) -> Self {
         let buffer = TextBuffer::create((80, 25));
@@ -381,7 +397,7 @@ impl AnsiEditor {
 
     /// Access the EditState via downcast from the Screen trait object
     /// Panics if the screen is not an EditState (should never happen in AnsiEditor)
-    fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
+    pub(crate) fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
         let mut screen = self.screen.lock();
         let edit_state = screen
             .as_any_mut()
@@ -904,8 +920,11 @@ impl AnsiEditor {
 
     /// Update the selection display in the shader
     fn update_selection_display(&mut self) {
+        use icy_engine::AddType;
+        use icy_engine_gui::selection_colors;
+
         // Get selection from EditState and convert to pixel coordinates
-        let (selection_rect, selection_mask_data, font_dimensions) = {
+        let (selection_rect, selection_color, selection_mask_data, font_dimensions) = {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
@@ -919,22 +938,37 @@ impl AnsiEditor {
                 let selection_mask = edit_state.selection_mask();
                 let selection = edit_state.selection();
 
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[DEBUG] update_selection_display - mask.is_empty: {}, selection: {:?}",
+                    selection_mask.is_empty(),
+                    selection.map(|s| (s.as_rectangle(), s.add_type))
+                );
+
+                // Determine selection color based on add_type
+                let selection_color = match selection.map(|s| s.add_type) {
+                    Some(AddType::Add) => selection_colors::ADD,
+                    Some(AddType::Subtract) => selection_colors::SUBTRACT,
+                    _ => selection_colors::DEFAULT,
+                };
+
                 // Check if selection mask has content
                 if !selection_mask.is_empty() {
-                    // Generate texture data from selection mask
-                    let mask_rect = selection_mask.selected_rectangle(&selection);
-                    let width = (mask_rect.width() + 1).max(1) as u32;
-                    let height = (mask_rect.height() + 1).max(1) as u32;
+                    // Generate texture data from selection mask.
+                    // IMPORTANT: the shader samples this mask in *document cell coordinates* (0..buffer_w/0..buffer_h),
+                    // so the texture must cover the full document size (no cropping/bounding-rect).
+                    let buffer = edit_state.get_buffer();
+                    let width = buffer.width().max(1) as u32;
+                    let height = buffer.height().max(1) as u32;
 
                     // Create RGBA texture data (4 bytes per pixel)
                     let mut rgba_data = vec![0u8; (width * height * 4) as usize];
 
                     for y in 0..height {
                         for x in 0..width {
-                            let doc_x = mask_rect.left() + x as i32;
-                            let doc_y = mask_rect.top() + y as i32;
-
-                            let is_selected = selection_mask.selected_in_selection(icy_engine::Position::new(doc_x, doc_y), &selection);
+                            let doc_x = x as i32;
+                            let doc_y = y as i32;
+                            let is_selected = selection_mask.is_selected(icy_engine::Position::new(doc_x, doc_y));
 
                             let pixel_idx = ((y * width + x) * 4) as usize;
                             if is_selected {
@@ -953,13 +987,22 @@ impl AnsiEditor {
                         }
                     }
 
-                    // Convert selection rectangle to pixel coordinates for bounds
-                    let x = mask_rect.left() as f32 * font_width;
-                    let y = mask_rect.top() as f32 * font_height;
-                    let w = width as f32 * font_width;
-                    let h = height as f32 * font_height;
+                    // Selection rect is the *active* rectangular selection only (if present), not the mask bounds.
+                    let selection_rect = selection.map(|sel| {
+                        let rect = sel.as_rectangle();
+                        let x = rect.left() as f32 * font_width;
+                        let y = rect.top() as f32 * font_height;
+                        let w = (rect.width() + 1) as f32 * font_width;
+                        let h = (rect.height() + 1) as f32 * font_height;
+                        (x, y, w, h)
+                    });
 
-                    (Some((x, y, w, h)), Some((rgba_data, width, height)), Some((font_width, font_height)))
+                    (
+                        selection_rect,
+                        selection_color,
+                        Some((rgba_data, width, height)),
+                        Some((font_width, font_height)),
+                    )
                 } else if let Some(sel) = selection {
                     // No mask, but have selection rectangle
                     let rect = sel.as_rectangle();
@@ -968,16 +1011,17 @@ impl AnsiEditor {
                     let w = (rect.width() + 1) as f32 * font_width;
                     let h = (rect.height() + 1) as f32 * font_height;
 
-                    (Some((x, y, w, h)), None, Some((font_width, font_height)))
+                    (Some((x, y, w, h)), selection_color, None, Some((font_width, font_height)))
                 } else {
-                    (None, None, None)
+                    (None, selection_colors::DEFAULT, None, None)
                 }
             } else {
-                (None, None, None)
+                (None, selection_colors::DEFAULT, None, None)
             }
         };
 
         self.canvas.set_selection(selection_rect);
+        self.canvas.set_selection_color(selection_color);
         self.canvas.set_selection_mask(selection_mask_data, font_dimensions);
     }
 
@@ -1081,17 +1125,31 @@ impl AnsiEditor {
                             }
                             // Text editing
                             Named::Backspace => {
-                                let result = self.with_edit_state(|state| state.backspace());
+                                let result = self.with_edit_state(|state| {
+                                    if state.is_something_selected() {
+                                        state.erase_selection()
+                                    } else {
+                                        state.backspace()
+                                    }
+                                });
                                 if let Err(e) = result {
                                     log::warn!("Failed to backspace: {}", e);
                                 }
+                                self.update_selection_display();
                                 return ToolEvent::Commit("Backspace".to_string());
                             }
                             Named::Delete => {
-                                let result = self.with_edit_state(|state| state.delete_key());
+                                let result = self.with_edit_state(|state| {
+                                    if state.is_something_selected() {
+                                        state.erase_selection()
+                                    } else {
+                                        state.delete_key()
+                                    }
+                                });
                                 if let Err(e) = result {
                                     log::warn!("Failed to delete: {}", e);
                                 }
+                                self.update_selection_display();
                                 return ToolEvent::Commit("Delete".to_string());
                             }
                             Named::Enter => {
@@ -1135,6 +1193,36 @@ impl AnsiEditor {
                     _ => {}
                 }
             }
+            Tool::Select => {
+                if let iced::keyboard::Key::Named(named) = key {
+                    match named {
+                        Named::Delete | Named::Backspace => {
+                            let result = self.with_edit_state(|state| {
+                                println!("DELETE: {}", state.is_something_selected());
+                                if state.is_something_selected() {
+                                    state.erase_selection()
+                                } else {
+                                    // No selection: do nothing in Select tool.
+                                    Ok(())
+                                }
+                            });
+                            if let Err(e) = result {
+                                log::warn!("Failed to delete selection: {}", e);
+                            }
+                            self.update_selection_display();
+                            return ToolEvent::Commit("Delete".to_string());
+                        }
+                        Named::Escape => {
+                            self.with_edit_state(|state| {
+                                let _ = state.clear_selection();
+                            });
+                            self.update_selection_display();
+                            return ToolEvent::Redraw;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => {
                 // Other tools don't handle keyboard in the same way
             }
@@ -1174,7 +1262,7 @@ impl AnsiEditor {
     }
 
     /// Handle mouse down based on current tool
-    fn handle_tool_mouse_down(&mut self, pos: icy_engine::Position, modifiers: icy_engine::KeyModifiers) -> ToolEvent {
+    fn handle_tool_mouse_down(&mut self, pos: icy_engine::Position, _modifiers: icy_engine::KeyModifiers) -> ToolEvent {
         match self.current_tool {
             Tool::Click | Tool::Font => {
                 // Check if clicking inside existing selection for drag/resize
@@ -1214,10 +1302,10 @@ impl AnsiEditor {
                 use crate::ui::ansi_editor::top_toolbar::{SelectionMode, SelectionModifier};
                 let selection_mode = self.top_toolbar.select_options.selection_mode;
 
-                // Determine modifier from keyboard state
-                let selection_modifier = if modifiers.shift {
+                // Determine modifier from *global* keyboard state (event modifiers can be stale).
+                let selection_modifier = if is_shift_pressed() {
                     SelectionModifier::Add
-                } else if modifiers.ctrl || modifiers.meta {
+                } else if is_ctrl_pressed() || is_command_pressed() {
                     SelectionModifier::Remove
                 } else {
                     SelectionModifier::Replace
@@ -1225,21 +1313,61 @@ impl AnsiEditor {
 
                 match selection_mode {
                     SelectionMode::Normal => {
-                        // Rectangle selection tool - always create selection
-                        self.selection_drag = SelectionDrag::Create;
-                        self.is_dragging = true;
-                        self.drag_pos.start = pos;
-                        self.drag_pos.cur = pos;
-                        self.drag_pos.start_abs = pos;
-                        self.drag_pos.cur_abs = pos;
-                        self.start_selection = None;
-
-                        // Only clear if not adding/removing
-                        if selection_modifier == SelectionModifier::Replace {
+                        // In Add/Remove mode we always start a *new* rectangle selection
+                        // (new anchor at mouse-down), even if the click is inside the
+                        // existing selection. Otherwise we would move/resize and reuse
+                        // the old anchor, which looks like the selection is being expanded.
+                        if selection_modifier != SelectionModifier::Replace {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[DEBUG] Mouse down - Add/Remove mode: force new selection (commit old to mask)");
                             self.with_edit_state(|state| {
-                                let _ = state.clear_selection();
+                                let _ = state.add_selection_to_mask();
+                                let _ = state.deselect();
                             });
+
+                            self.selection_drag = SelectionDrag::Create;
+                            self.is_dragging = true;
+                            self.drag_pos.start = pos;
+                            self.drag_pos.cur = pos;
+                            self.drag_pos.start_abs = pos;
+                            self.drag_pos.cur_abs = pos;
+                            self.start_selection = None;
+                        } else {
+                            // Replace: starting a new selection interaction should always start from a clean mask.
+                            // We intentionally keep the active selection so move/resize still works.
+                            self.with_edit_state(|state| {
+                                let _ = state.clear_selection_mask();
+                            });
+
+                            let selection_drag = self.get_selection_drag_at(pos);
+
+                            if selection_drag != SelectionDrag::None {
+                                // Start dragging existing selection
+                                self.selection_drag = selection_drag;
+                                self.is_dragging = true;
+                                self.drag_pos.start = pos;
+                                self.drag_pos.cur = pos;
+                                self.drag_pos.start_abs = pos;
+                                self.drag_pos.cur_abs = pos;
+                                self.start_selection = self.with_edit_state(|state| state.selection().map(|s| s.as_rectangle()));
+                            } else {
+                                // Starting a new selection (replace).
+                                #[cfg(debug_assertions)]
+                                eprintln!("[DEBUG] Mouse down - Replace mode: clearing selection and mask");
+                                self.with_edit_state(|state| {
+                                    let _ = state.clear_selection();
+                                });
+
+                                self.selection_drag = SelectionDrag::Create;
+                                self.is_dragging = true;
+                                self.drag_pos.start = pos;
+                                self.drag_pos.cur = pos;
+                                self.drag_pos.start_abs = pos;
+                                self.drag_pos.cur_abs = pos;
+                                self.start_selection = None;
+                            }
                         }
+
                         self.update_selection_display();
                     }
                     SelectionMode::Character => {
@@ -1299,15 +1427,45 @@ impl AnsiEditor {
 
             // Finalize selection
             if self.selection_drag == SelectionDrag::Create {
-                // If start == cur, clear selection (was just a click)
+                // If start == cur, treat as click
                 if self.drag_pos.start == self.drag_pos.cur {
-                    self.with_edit_state(|state| {
-                        let _ = state.clear_selection();
-                    });
-                    self.update_selection_display();
-                } else {
-                    self.update_selection_display();
+                    if self.current_tool == Tool::Select {
+                        // Keep selection mask intact.
+                        self.with_edit_state(|state| {
+                            let _ = state.deselect();
+                        });
+                    } else {
+                        self.with_edit_state(|state| {
+                            let _ = state.clear_selection();
+                        });
+                    }
+                } else if self.current_tool == Tool::Select {
+                    // Get current add_type before committing
+                    let add_type = self.with_edit_state(|state| state.selection().map(|s| s.add_type));
+
+                    #[cfg(debug_assertions)]
+                    eprintln!("[DEBUG] Mouse up - Tool::Select, add_type: {:?}", add_type);
+
+                    // Only commit to mask for Add/Subtract modes.
+                    // Default mode keeps the selection active (not in mask) so move/resize doesn't leave stale mask artifacts.
+                    match add_type {
+                        Some(icy_engine::AddType::Add) | Some(icy_engine::AddType::Subtract) => {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[DEBUG] Mouse up - Committing selection to mask and deselecting");
+                            self.with_edit_state(|state| {
+                                let _ = state.add_selection_to_mask();
+                                let _ = state.deselect();
+                            });
+                        }
+                        _ => {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[DEBUG] Mouse up - Default mode: keeping selection active");
+                            // Default mode: keep selection active, don't commit to mask
+                        }
+                    }
                 }
+
+                self.update_selection_display();
             }
 
             self.selection_drag = SelectionDrag::None;
@@ -1408,6 +1566,8 @@ impl AnsiEditor {
     fn update_selection_from_drag(&mut self) {
         use icy_engine::{Rectangle, Selection};
 
+        let add_type = self.current_select_add_type();
+
         match self.selection_drag {
             SelectionDrag::None => {}
             SelectionDrag::Create => {
@@ -1417,7 +1577,7 @@ impl AnsiEditor {
                     lead: self.drag_pos.cur_abs,
                     locked: false,
                     shape: icy_engine::Shape::Rectangle,
-                    add_type: icy_engine::AddType::Default,
+                    add_type,
                 };
                 self.with_edit_state(|state| {
                     let _ = state.set_selection(selection);
@@ -1432,7 +1592,9 @@ impl AnsiEditor {
                     let new_rect = Rectangle::from(start_rect.left() + delta_x, start_rect.top() + delta_y, start_rect.width(), start_rect.height());
 
                     self.with_edit_state(|state| {
-                        let _ = state.set_selection(Selection::from(new_rect));
+                        let mut selection = Selection::from(new_rect);
+                        selection.add_type = add_type;
+                        let _ = state.set_selection(selection);
                     });
                 }
             }
@@ -1464,6 +1626,18 @@ impl AnsiEditor {
                 self.resize_selection_right();
                 self.resize_selection_bottom();
             }
+        }
+
+        // Keep add/subtract preview consistent while resizing/moving too.
+        if self.current_tool == Tool::Select {
+            self.with_edit_state(|state| {
+                if let Some(mut sel) = state.selection() {
+                    if sel.add_type != add_type {
+                        sel.add_type = add_type;
+                        let _ = state.set_selection(sel);
+                    }
+                }
+            });
         }
 
         // Update the shader's selection display
@@ -1706,6 +1880,12 @@ impl AnsiEditor {
         let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.palette_grid.sync_palette(&palette, palette_limit);
         self.color_switcher.sync_palette(&palette);
+    }
+
+    /// Refresh selection + selection-mask overlay data sent to the shader.
+    /// Useful for menu/command actions executed outside the editor's own input handling.
+    pub fn refresh_selection_display(&mut self) {
+        self.update_selection_display();
     }
 
     /// Get status bar information for this editor

@@ -544,7 +544,7 @@ impl ReferenceImageSettings {
 /// Active marker state for current editor session
 /// This is NOT serialized in app settings - raster/guide are per-session,
 /// reference_image is serialized per-document in .icy files
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EditorMarkers {
     /// Raster grid spacing in characters (None = disabled)
     /// Example: Some((8.0, 8.0)) for an 8x8 character grid
@@ -574,6 +574,10 @@ pub struct EditorMarkers {
     /// None = no selection
     pub selection_rect: Option<(f32, f32, f32, f32)>,
 
+    /// Selection border color (RGBA) for marching ants
+    /// Use selection_colors::DEFAULT, selection_colors::ADD, or selection_colors::SUBTRACT
+    pub selection_color: [f32; 4],
+
     /// Selection mask texture data (RGBA, width in cells, height in cells)
     /// Each pixel represents one character cell: white (255,255,255,255) = selected, black (0,0,0,255) = not selected
     /// None = no selection mask (use selection_rect only)
@@ -581,6 +585,24 @@ pub struct EditorMarkers {
 
     /// Font dimensions for selection mask rendering (font_width, font_height in pixels)
     pub font_dimensions: Option<(f32, f32)>,
+}
+
+impl Default for EditorMarkers {
+    fn default() -> Self {
+        Self {
+            raster: None,
+            guide: None,
+            reference_image: None,
+            marker_settings: None,
+            layer_bounds: None,
+            layer_is_selected: false,
+            show_layer_bounds: false,
+            selection_rect: None,
+            selection_color: selection_colors::DEFAULT,
+            selection_mask_data: None,
+            font_dimensions: None,
+        }
+    }
 }
 
 impl EditorMarkers {

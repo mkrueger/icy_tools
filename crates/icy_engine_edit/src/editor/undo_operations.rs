@@ -1015,13 +1015,13 @@ impl UndoOperation for Deselect {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = Some(self.sel);
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = None;
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 }
@@ -1049,15 +1049,17 @@ impl UndoOperation for SelectNothing {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = self.sel;
-        edit_state.selection_mask = self.mask.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.mask.clone());
+        edit_state.mark_dirty();
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
+        #[cfg(debug_assertions)]
+        eprintln!("[DEBUG] SelectNothing::redo - Clearing selection and mask");
         edit_state.selection_opt = None;
         edit_state.selection_mask.clear();
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 }
@@ -1085,13 +1087,13 @@ impl UndoOperation for SetSelection {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = self.old;
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = self.new;
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 }
@@ -1119,14 +1121,12 @@ impl UndoOperation for SetSelectionMask {
     }
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
-        edit_state.selection_mask = self.old.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.old.clone());
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
-        edit_state.selection_mask = self.new.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.new.clone());
         Ok(())
     }
 }
@@ -1149,8 +1149,7 @@ impl UndoOperation for AddSelectionToMask {
     }
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
-        edit_state.selection_mask = self.old.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.old.clone());
         Ok(())
     }
 
@@ -1167,7 +1166,7 @@ impl UndoOperation for AddSelectionToMask {
                 edit_state.selection_mask.remove_selection(self.selection);
             }
         }
-        edit_state.set_is_buffer_dirty();
+        edit_state.mark_dirty();
         Ok(())
     }
 }
@@ -1196,15 +1195,13 @@ impl UndoOperation for InverseSelection {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = self.sel;
-        edit_state.selection_mask = self.old.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.old.clone());
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         edit_state.selection_opt = None;
-        edit_state.selection_mask = self.new.clone();
-        edit_state.set_is_buffer_dirty();
+        edit_state.set_selection_mask(self.new.clone());
         Ok(())
     }
 }
