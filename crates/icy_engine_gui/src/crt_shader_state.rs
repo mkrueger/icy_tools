@@ -279,6 +279,41 @@ impl CRTShaderState {
 
         Position::new(cx, cy)
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Half-Block Coordinate Mapping
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Map mouse coordinates to half-block cell position.
+    /// Returns absolute document coordinates with 2x Y resolution.
+    /// In half-block coordinates, Y is doubled: cell row 0 → rows 0,1; cell row 1 → rows 2,3.
+    pub fn map_mouse_to_half_block_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
+        let (cell_x, half_block_y) = render_info.screen_to_half_block_cell(mx, my)?;
+
+        // scroll_y is in content coordinates - convert to half-block lines (2x)
+        let scroll_offset_half_lines = (viewport.scroll_y / render_info.font_height * 2.0).floor() as i32;
+
+        // Add scroll offset to get absolute document half-block row
+        let abs_half_block_y = half_block_y + scroll_offset_half_lines;
+
+        Some(Position::new(cell_x, abs_half_block_y))
+    }
+
+    /// Map mouse coordinates to half-block cell position without bounds checking.
+    /// Used during drag operations where mouse can leave the viewport.
+    /// Returns absolute document coordinates with 2x Y resolution.
+    pub fn map_mouse_to_half_block_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
+        let (cell_x, half_block_y) = render_info.screen_to_half_block_cell_unclamped(mx, my);
+
+        // scroll_y is in content coordinates - convert to half-block lines (2x)
+        let font_height = render_info.font_height.max(1.0);
+        let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
+
+        // Add scroll offset to get absolute document half-block row
+        let abs_half_block_y = half_block_y + scroll_offset_half_lines;
+
+        Position::new(cell_x, abs_half_block_y)
+    }
 }
 
 impl Drop for CRTShaderState {

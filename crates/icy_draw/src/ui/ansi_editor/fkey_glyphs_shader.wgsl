@@ -42,6 +42,7 @@ struct VertexOut {
     @location(1) fg: vec4<f32>,
     @location(2) bg: vec4<f32>,
     @interpolate(flat) @location(3) flags: u32,
+    @location(4) unit_uv: vec2<f32>,  // Original 0..1 UV for procedural shapes
 };
 
 fn glyph_uv_origin(g: u32) -> vec2<f32> {
@@ -60,13 +61,9 @@ fn vs_main(v: VertexIn) -> VertexOut {
     // flip Y (pixel coords grow down)
     let ndc_y = 1.0 - (p.y / u.clip_size.y) * 2.0;
 
-    // atlas UV
-    // Inset by half a texel to avoid sampling bleeding into adjacent glyph cells.
+    // atlas UV - direct mapping without inset since we use Nearest filtering
     let origin = glyph_uv_origin(v.glyph);
-    let half_texel = vec2<f32>(0.5, 0.5);
-    let uv_min = (origin + half_texel) / u.atlas_size;
-    let uv_max = (origin + max(u.glyph_size - half_texel, half_texel)) / u.atlas_size;
-    let uv = uv_min + v.unit_uv * (uv_max - uv_min);
+    let uv = (origin + v.unit_uv * u.glyph_size) / u.atlas_size;
 
     var out: VertexOut;
     out.pos = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
@@ -74,6 +71,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.fg = v.fg;
     out.bg = v.bg;
     out.flags = v.flags;
+    out.unit_uv = v.unit_uv;  // Pass through for procedural shapes
     return out;
 }
 
@@ -82,6 +80,49 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // flags bit 1: background-only (fill quad with bg color)
     if (in.flags & 2u) != 0u {
         return in.bg;
+    }
+
+    // flags bit 2: left arrow (◄) - filled triangle like SVG icon
+    if (in.flags & 4u) != 0u {
+        let uv = in.unit_uv;
+        // Triangle proportions from arrow_left.svg: width 200, height 400 (1:2 ratio)
+        // So half_height should be roughly 2x the half_width
+        let tip_x = 0.3;
+        let base_x = 0.7;
+        let center_y = 0.5;
+        let half_height = 0.4;  // taller triangle (matches SVG proportions)
+        
+        // Check if point is inside triangle
+        let t = (uv.x - tip_x) / (base_x - tip_x);
+        if uv.x >= tip_x && uv.x <= base_x {
+            let y_min = center_y - half_height * t;
+            let y_max = center_y + half_height * t;
+            if uv.y >= y_min && uv.y <= y_max {
+                return in.fg;
+            }
+        }
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+
+    // flags bit 3: right arrow (►) - filled triangle like SVG icon
+    if (in.flags & 8u) != 0u {
+        let uv = in.unit_uv;
+        // Triangle proportions from arrow_right.svg: width 200, height 400 (1:2 ratio)
+        let tip_x = 0.7;
+        let base_x = 0.3;
+        let center_y = 0.5;
+        let half_height = 0.4;  // taller triangle
+        
+        // Check if point is inside triangle (mirrored)
+        let t = (tip_x - uv.x) / (tip_x - base_x);
+        if uv.x >= base_x && uv.x <= tip_x {
+            let y_min = center_y - half_height * t;
+            let y_max = center_y + half_height * t;
+            if uv.y >= y_min && uv.y <= y_max {
+                return in.fg;
+            }
+        }
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
 
     // Atlas is stored as RGBA, we use alpha as mask.

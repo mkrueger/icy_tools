@@ -90,3 +90,16 @@ pub const LEFT_BAR_WIDTH: f32 = SIDEBAR_WIDTH - 12.0;
 
 /// Width of the right panel (minimap, layers)
 pub const RIGHT_PANEL_WIDTH: f32 = 200.0;
+
+// =============================================================================
+// TOP TOOLBAR CONTROLS (FKey toolbar, SegmentedControl)
+// =============================================================================
+
+/// Height of the content area inside toolbar controls (FKey toolbar, SegmentedControl)
+pub const TOP_CONTROL_HEIGHT: f32 = 36.0;
+
+/// Shadow padding around toolbar controls
+pub const TOP_CONTROL_SHADOW_PADDING: f32 = 6.0;
+
+/// Total height of toolbar controls (content + shadow padding)
+pub const TOP_CONTROL_TOTAL_HEIGHT: f32 = TOP_CONTROL_HEIGHT + TOP_CONTROL_SHADOW_PADDING * 2.0 + 4.0;

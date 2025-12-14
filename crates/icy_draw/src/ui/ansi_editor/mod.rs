@@ -29,10 +29,12 @@ mod color_switcher_gpu;
 pub mod constants;
 mod edit_layer_dialog;
 mod file_settings_dialog;
+mod fkey_layout;
 mod fkey_toolbar;
 mod fkey_toolbar_gpu;
 mod font_selector_dialog;
 mod font_slot_manager_dialog;
+mod glyph_renderer;
 mod layer_view;
 mod line_numbers;
 pub mod menu_bar;
@@ -41,6 +43,7 @@ mod palette_grid;
 mod reference_image_dialog;
 mod right_panel;
 mod segmented_control_gpu;
+mod segmented_layout;
 mod tool_panel;
 mod tool_panel_wrapper;
 mod top_toolbar;
@@ -70,7 +73,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Task, Theme,
+    Alignment, Element, Length, Task, Theme,
     widget::{button, column, container, row, text},
 };
 use icy_engine::formats::{FileFormat, LoadData};
@@ -226,6 +229,11 @@ pub struct DragPos {
     pub start_abs: icy_engine::Position,
     /// Current position absolute (including scroll offset)
     pub cur_abs: icy_engine::Position,
+    /// Start position in half-block coordinates (2x Y resolution)
+    /// Used for line/shape tools in half-block mode
+    pub start_half_block: icy_engine::Position,
+    /// Current position in half-block coordinates (2x Y resolution)
+    pub cur_half_block: icy_engine::Position,
 }
 
 /// The main ANSI editor component
@@ -292,6 +300,12 @@ pub struct AnsiEditor {
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
     paint_last_pos: Option<icy_engine::Position>,
     paint_button: iced::mouse::Button,
+
+    // === Half-Block Mode State ===
+    /// Current mouse position in half-block coordinates (2x Y resolution).
+    /// Used for pencil/brush drawing and line interpolation in half-block mode.
+    /// Updated on every mouse move during drag operations.
+    pub half_block_click_pos: icy_engine::Position,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -307,6 +321,48 @@ impl AnsiEditor {
 
     fn doc_to_layer_pos(&mut self, pos: icy_engine::Position) -> icy_engine::Position {
         self.with_edit_state(|state| if let Some(layer) = state.get_cur_layer() { pos - layer.offset() } else { pos })
+    }
+
+    /// Compute half-block coordinates from widget-local pixel position.
+    /// Returns layer-local half-block coordinates (Y has 2x resolution).
+    /// `pixel_position` is widget-local (relative to terminal bounds).
+    fn compute_half_block_pos(&self, pixel_position: (f32, f32)) -> icy_engine::Position {
+        let render_info = self.canvas.terminal.render_info.read();
+        let viewport = self.canvas.terminal.viewport.read();
+
+        // Convert widget-local to screen coordinates (RenderInfo methods expect screen coords)
+        let screen_x = render_info.bounds_x + pixel_position.0;
+        let screen_y = render_info.bounds_y + pixel_position.1;
+
+        // Get visible half-block coordinates (without scroll offset)
+        let (cell_x, half_block_y) = render_info.screen_to_half_block_cell_unclamped(screen_x, screen_y);
+
+        // scroll_y is in content coordinates - convert to half-block lines (2x)
+        let font_height = render_info.font_height.max(1.0);
+        let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
+
+        // Get absolute half-block coordinates (with scroll offset)
+        let abs_half_block = icy_engine::Position::new(cell_x, half_block_y + scroll_offset_half_lines);
+
+        // Convert to layer-local coordinates
+        // In half-block space, layer Y offset is also doubled
+        let layer_offset = self.with_edit_state_readonly(|state| {
+            if let Some(layer) = state.get_cur_layer() {
+                let offset = layer.offset();
+                icy_engine::Position::new(offset.x, offset.y * 2)
+            } else {
+                icy_engine::Position::default()
+            }
+        });
+
+        abs_half_block - layer_offset
+    }
+
+    /// Helper to access EditState without mutable borrow (uses shared lock internally)
+    fn with_edit_state_readonly<R, F: FnOnce(&icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
+        let mut screen = self.screen.lock();
+        let edit_state = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>().expect("screen should be EditState");
+        f(edit_state)
     }
 
     fn half_block_is_top_from_pixel(&self, pixel_position: (f32, f32)) -> bool {
@@ -580,6 +636,8 @@ impl AnsiEditor {
             paint_undo: None,
             paint_last_pos: None,
             paint_button: iced::mouse::Button::Left,
+
+            half_block_click_pos: icy_engine::Position::default(),
         }
     }
 
@@ -1842,6 +1900,12 @@ impl AnsiEditor {
                 self.drag_pos.start = pos;
                 self.drag_pos.cur = pos;
 
+                // Compute and store half-block coordinates for interpolation
+                let half_block_pos = self.compute_half_block_pos(pixel_position);
+                self.half_block_click_pos = half_block_pos;
+                self.drag_pos.start_half_block = half_block_pos;
+                self.drag_pos.cur_half_block = half_block_pos;
+
                 if self.paint_undo.is_none() {
                     let desc = match self.current_tool {
                         Tool::Pencil => "Pencil",
@@ -1965,17 +2029,44 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Pencil | Tool::Brush | Tool::Erase => {
-                // Paint along the line from the last position to the current position.
-                let Some(last) = self.paint_last_pos else {
-                    self.paint_last_pos = Some(pos);
-                    return ToolEvent::Redraw;
-                };
+                // Compute current half-block position
+                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
 
-                let points = icy_engine_edit::brushes::line::get_line_points(last, pos);
-                for p in points {
-                    self.apply_paint_stamp(p, pixel_position, self.paint_button);
+                // Check if we're in half-block mode
+                let is_half_block_mode = matches!(
+                    self.top_toolbar.brush_options.primary,
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
+                );
+
+                if is_half_block_mode {
+                    // Interpolate in half-block coordinates for smooth 2x Y resolution
+                    let mut c_abs = self.half_block_click_pos;
+
+                    while c_abs != new_half_block_pos {
+                        let s = (new_half_block_pos - c_abs).signum();
+                        c_abs = c_abs + s;
+                        self.half_block_click_pos = c_abs;
+
+                        // Convert half-block Y to cell Y for painting
+                        let cell_pos = icy_engine::Position::new(c_abs.x, c_abs.y / 2);
+                        self.apply_paint_stamp(cell_pos, pixel_position, self.paint_button);
+                    }
+                    self.drag_pos.cur_half_block = new_half_block_pos;
+                } else {
+                    // Normal mode: interpolate in cell coordinates
+                    let Some(last) = self.paint_last_pos else {
+                        self.paint_last_pos = Some(pos);
+                        self.half_block_click_pos = new_half_block_pos;
+                        return ToolEvent::Redraw;
+                    };
+
+                    let points = icy_engine_edit::brushes::line::get_line_points(last, pos);
+                    for p in points {
+                        self.apply_paint_stamp(p, pixel_position, self.paint_button);
+                    }
+                    self.paint_last_pos = Some(pos);
+                    self.half_block_click_pos = new_half_block_pos;
                 }
-                self.paint_last_pos = Some(pos);
                 ToolEvent::Redraw
             }
             Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
@@ -2289,13 +2380,22 @@ impl AnsiEditor {
                 .map(AnsiEditorMessage::FKeyToolbar)
         } else {
             self.top_toolbar
-                .view(self.current_tool, &fkeys, buffer_type, font_for_char_selector.clone(), &Theme::Dark)
+                .view(
+                    self.current_tool,
+                    &fkeys,
+                    buffer_type,
+                    font_for_char_selector.clone(),
+                    &Theme::Dark,
+                    caret_fg,
+                    caret_bg,
+                    &palette,
+                )
                 .map(AnsiEditorMessage::TopToolbar)
         };
 
-        let toolbar_height = SWITCHER_SIZE;
+        let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
 
-        let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4);
+        let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4).align_y(Alignment::Start);
 
         // === CENTER: Canvas ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache

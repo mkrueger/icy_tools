@@ -14,8 +14,9 @@ struct Uniforms {
     widget_size: vec2<f32>,
     // Number of segments
     num_segments: u32,
-    // Selected segment index
-    selected_segment: u32,
+    // Selected segment bitmask (bit 0 = segment 0, bit 1 = segment 1, etc.)
+    // Supports multi-select mode where multiple segments can be selected
+    selected_mask: u32,
     // Hovered segment index (0xFFFFFFFF = none)
     hovered_segment: u32,
     // Padding / flags (unused)
@@ -206,7 +207,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let inner_sdf = rounded_rect_sdf(pixel - ctrl_center, inner_half, inner_radius);
     let inner_a = smoothstep(0.5, -0.5, inner_sdf);
 
-    // Content area (inside border)
+    // Content area (inside the border)
+    // Keep X inside the border so segment boundaries line up with the overlay.
+    // Inset Y/H like `fkey_toolbar_shader.wgsl` so the border consumes 1px top/bottom.
     let content_x = ctrl_x + BORDER_WIDTH;
     let content_y = ctrl_y + BORDER_WIDTH;
     let content_w = ctrl_w - BORDER_WIDTH * 2.0;
@@ -220,9 +223,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var border_rgb = BORDER_COLOR;
     if border_seg_idx >= 0 {
         let seg_u = u32(border_seg_idx);
-        let sel_u = uniforms.selected_segment;
         let hov_u = uniforms.hovered_segment;
-        if sel_u < uniforms.num_segments && seg_u == sel_u {
+        // Check if segment is selected using bitmask
+        let is_seg_selected = (uniforms.selected_mask & (1u << seg_u)) != 0u;
+        if is_seg_selected {
             border_rgb = SELECTED_BORDER;
         } else if has_hover && seg_u == hov_u {
             border_rgb = mix(BORDER_COLOR, HOVER_GLOW, 0.6);
@@ -267,7 +271,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         
         let seg_sdf = rounded_rect_sdf_4(pixel - seg_center, seg_half, r_tl, r_tr, r_br, r_bl);
         
-        let is_selected = seg_idx == i32(uniforms.selected_segment);
+        // Check if this segment is selected using bitmask
+        let is_selected = (uniforms.selected_mask & (1u << seg_u)) != 0u;
         let is_hovered = has_hover && seg_u == uniforms.hovered_segment && !is_selected;
 
         // Anti-aliased segment fill (fixes tiny gaps at the rightmost segment due to rounding)
@@ -316,8 +321,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let sep_x = content_x + bounds.x;
         
         // Don't draw separator next to selected or hovered segments
-        let prev_sel = i32(i) - 1 == i32(uniforms.selected_segment);
-        let curr_sel = i == uniforms.selected_segment;
+        let prev_sel = (uniforms.selected_mask & (1u << (i - 1u))) != 0u;
+        let curr_sel = (uniforms.selected_mask & (1u << i)) != 0u;
         let prev_hov = has_hover && i32(i) - 1 == i32(uniforms.hovered_segment);
         let curr_hov = has_hover && i == uniforms.hovered_segment;
         

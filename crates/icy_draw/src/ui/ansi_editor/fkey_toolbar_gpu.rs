@@ -2,71 +2,39 @@
 //!
 //! Renders F1-F12 function key slots with characters from the current font.
 //! Uses WGSL shader for background (drop shadow, borders, hover highlights)
-//! and Canvas overlay for text rendering, plus SVG arrows for navigation.
+//! and glyph atlas shader for text rendering (labels, chars, arrows).
 
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
 };
+use std::num::NonZeroU64;
 
 use codepages::tables::CP437_TO_UNICODE;
 use iced::wgpu::util::DeviceExt;
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme,
+    Color, Element, Length, Point, Rectangle, Theme,
     mouse::{self, Cursor},
-    widget::{self, Space, container, row, shader, svg},
+    widget::{self, container, shader},
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
 
 use crate::ui::FKeySets;
+use super::fkey_layout::{
+    FKeyLayout, HoverState,
+    ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, LABEL_HEIGHT, LABEL_WIDTH,
+    LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X, NAV_SIZE,
+    NO_HOVER, SET_NUM_ICON_GAP, SHADOW_PADDING,
+    SLOT_CHAR_HEIGHT, SLOT_SPACING, SLOT_WIDTH,
+};
 
-// SVG icons for navigation arrows
-const ARROW_LEFT_SVG: &[u8] = include_bytes!("../../../data/icons/arrow_left.svg");
-const ARROW_RIGHT_SVG: &[u8] = include_bytes!("../../../data/icons/arrow_right.svg");
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Layout Constants (matching fkey_toolbar.rs)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/// Character display height (32px = 2x font height)
-const CHAR_DISPLAY_HEIGHT: f32 = 32.0;
-
-/// Width per F-key slot (label + char)
-const SLOT_WIDTH: f32 = 40.0;
-
-/// Label width (01, 02, etc. - 2 chars)
-const LABEL_WIDTH: f32 = 20.0;
-
-/// Spacing between slots
-const SLOT_SPACING: f32 = 4.0;
-
-/// Nav button size
-const NAV_SIZE: f32 = 28.0;
-
-/// Space between nav arrows for label
-const NAV_LABEL_SPACE: f32 = 16.0;
-
-/// Gap before nav section
-const NAV_GAP: f32 = 10.0;
-
-/// Corner radius for rounded rectangles
-const CORNER_RADIUS: f32 = 6.0;
-
-/// Border width
-const BORDER_WIDTH: f32 = 1.0;
-
-/// Extra padding around the control for drop shadow
-const SHADOW_PADDING: f32 = 6.0;
-
-/// Toolbar height - slightly taller than SegmentedControl for character display
-const TOOLBAR_HEIGHT: f32 = 36.0;
-
-/// Left padding before content
-const LEFT_PADDING: f32 = 8.0;
-
-/// No hover marker
-const NO_HOVER: u32 = 0xFFFF_FFFF;
+fn align_up(value: u64, alignment: u64) -> u64 {
+    if alignment == 0 {
+        return value;
+    }
+    ((value + alignment - 1) / alignment) * alignment
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Messages
@@ -83,42 +51,6 @@ pub enum FKeyToolbarMessage {
     PrevSet,
     /// Navigate to next F-key set
     NextSet,
-}
-
-/// Hover state: which element is currently hovered
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HoverState {
-    #[default]
-    None,
-    /// Slot hover (slot_index, is_on_char)
-    Slot(usize, bool),
-    /// Hover over previous-set navigation arrow
-    NavPrev,
-    /// Hover over next-set navigation arrow
-    NavNext,
-}
-
-impl HoverState {
-    fn to_uniforms(&self) -> (u32, u32) {
-        match self {
-            HoverState::None => (NO_HOVER, 0),
-            HoverState::Slot(idx, is_char) => (*idx as u32, if *is_char { 1 } else { 0 }),
-            HoverState::NavPrev => (NO_HOVER, 2),
-            HoverState::NavNext => (NO_HOVER, 3),
-        }
-    }
-
-    fn from_atomics(slot: u32, hover_type: u32) -> Self {
-        if hover_type == 2 {
-            HoverState::NavPrev
-        } else if hover_type == 3 {
-            HoverState::NavNext
-        } else if slot != NO_HOVER {
-            HoverState::Slot(slot as usize, hover_type == 1)
-        } else {
-            HoverState::None
-        }
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -154,6 +86,7 @@ pub struct FKeyToolbarProgram {
     pub bg_color: Color,
     pub hovered_slot: Arc<AtomicU32>,
     pub hover_type: Arc<AtomicU32>,
+    pub nav_label_space_bits: Arc<AtomicU32>,
 }
 
 impl shader::Program<FKeyToolbarMessage> for FKeyToolbarProgram {
@@ -166,14 +99,62 @@ impl shader::Program<FKeyToolbarMessage> for FKeyToolbarProgram {
             bg_color: self.bg_color,
             hovered_slot: self.hovered_slot.load(Ordering::Relaxed),
             hover_type: self.hover_type.load(Ordering::Relaxed),
+            uniform_offset_bytes: Arc::new(AtomicU32::new(0)),
         }
     }
 
-    fn update(&self, _state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: Cursor) -> Option<iced::widget::Action<FKeyToolbarMessage>> {
+    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<iced::widget::Action<FKeyToolbarMessage>> {
+        let nav_label_space = f32::from_bits(self.nav_label_space_bits.load(Ordering::Relaxed)).max(0.0);
+        // Handle mouse movement for hover state
+        if let Some(pos) = cursor.position_in(bounds) {
+            let (slot, hover_type) = compute_hover_state(pos, bounds, nav_label_space);
+            self.hovered_slot.store(slot, Ordering::Relaxed);
+            self.hover_type.store(hover_type, Ordering::Relaxed);
+        } else {
+            // Mouse outside bounds - clear hover
+            self.hovered_slot.store(NO_HOVER, Ordering::Relaxed);
+            self.hover_type.store(0, Ordering::Relaxed);
+        }
+
+        // Handle mouse clicks
+        if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
+            if let Some(pos) = cursor.position_in(bounds) {
+                let (slot, hover_type) = compute_hover_state(pos, bounds, nav_label_space);
+                
+                // Click on slot
+                if slot != NO_HOVER {
+                    let is_on_char = hover_type == 1;
+                    if is_on_char {
+                        // Click on character area - type the F-key
+                        return Some(iced::widget::Action::publish(FKeyToolbarMessage::TypeFKey(slot as usize)));
+                    } else {
+                        // Click on label area - open character selector
+                        return Some(iced::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
+                    }
+                }
+                
+                // Click on nav buttons
+                if hover_type == 2 {
+                    return Some(iced::widget::Action::publish(FKeyToolbarMessage::PrevSet));
+                }
+                if hover_type == 3 {
+                    return Some(iced::widget::Action::publish(FKeyToolbarMessage::NextSet));
+                }
+            }
+        }
+
         None
     }
 
-    fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: Cursor) -> mouse::Interaction {
+    fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: Cursor) -> mouse::Interaction {
+        if let Some(pos) = cursor.position_in(bounds) {
+            let nav_label_space = f32::from_bits(self.nav_label_space_bits.load(Ordering::Relaxed)).max(0.0);
+            let (slot, hover_type) = compute_hover_state(pos, bounds, nav_label_space);
+            // Show pointer cursor over clickable elements
+            if slot != NO_HOVER || hover_type == 2 || hover_type == 3 {
+                return mouse::Interaction::Pointer;
+            }
+        }
         mouse::Interaction::default()
     }
 }
@@ -185,6 +166,8 @@ pub struct FKeyToolbarPrimitive {
     pub bg_color: Color,
     pub hovered_slot: u32,
     pub hover_type: u32,
+    /// Dynamic uniform offset (bytes) into the shared uniform buffer.
+    uniform_offset_bytes: Arc<AtomicU32>,
 }
 
 impl shader::Primitive for FKeyToolbarPrimitive {
@@ -205,7 +188,9 @@ impl shader::Primitive for FKeyToolbarPrimitive {
         let size_h = (bounds.height * scale).round().max(1.0);
 
         let content_start_x = (SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING) * scale;
-        let nav_start_x = content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) * scale + NAV_GAP * scale;
+        // IMPORTANT: 12 slots, but only 11 spacings.
+        let slots_width = (12.0 * SLOT_WIDTH + 11.0 * SLOT_SPACING) * scale;
+        let nav_start_x = content_start_x + slots_width + NAV_GAP * scale;
 
         let uniforms = FKeyToolbarUniforms {
             widget_origin: [origin_x, origin_y],
@@ -225,7 +210,10 @@ impl shader::Primitive for FKeyToolbarPrimitive {
             nav_size: NAV_SIZE * scale,
         };
 
-        queue.write_buffer(&pipeline.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        let slot = pipeline.next_uniform.fetch_add(1, Ordering::Relaxed) % pipeline.uniform_capacity;
+        let offset = (slot as u64) * pipeline.uniform_stride;
+        self.uniform_offset_bytes.store(offset as u32, Ordering::Relaxed);
+        queue.write_buffer(&pipeline.uniform_buffer, offset, bytemuck::bytes_of(&uniforms));
     }
 
     fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
@@ -256,7 +244,8 @@ impl shader::Primitive for FKeyToolbarPrimitive {
                 1.0,
             );
             pass.set_pipeline(&pipeline.pipeline);
-            pass.set_bind_group(0, &pipeline.bind_group, &[]);
+            let offset = self.uniform_offset_bytes.load(Ordering::Relaxed);
+            pass.set_bind_group(0, &pipeline.bind_group, &[offset]);
             pass.draw(0..6, 0..1);
         }
     }
@@ -267,6 +256,9 @@ pub struct FKeyToolbarRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group: iced::wgpu::BindGroup,
     uniform_buffer: iced::wgpu::Buffer,
+    uniform_stride: u64,
+    uniform_capacity: u32,
+    next_uniform: AtomicU32,
 }
 
 impl shader::Pipeline for FKeyToolbarRenderer {
@@ -276,9 +268,15 @@ impl shader::Pipeline for FKeyToolbarRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("fkey_toolbar_shader.wgsl").into()),
         });
 
+        let uniform_size = std::mem::size_of::<FKeyToolbarUniforms>() as u64;
+        let alignment = device.limits().min_uniform_buffer_offset_alignment as u64;
+        let uniform_stride = align_up(uniform_size, alignment);
+        let uniform_capacity: u32 = 1024;
+        let uniform_buffer_size = uniform_stride * (uniform_capacity as u64);
+
         let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("FKey Toolbar Uniforms"),
-            size: std::mem::size_of::<FKeyToolbarUniforms>() as u64,
+            label: Some("FKey Toolbar Uniforms (Dynamic)"),
+            size: uniform_buffer_size,
             usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -290,8 +288,8 @@ impl shader::Pipeline for FKeyToolbarRenderer {
                 visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: iced::wgpu::BindingType::Buffer {
                     ty: iced::wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+                    has_dynamic_offset: true,
+                    min_binding_size: NonZeroU64::new(uniform_size),
                 },
                 count: None,
             }],
@@ -302,7 +300,11 @@ impl shader::Pipeline for FKeyToolbarRenderer {
             layout: &bind_group_layout,
             entries: &[iced::wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                    buffer: &uniform_buffer,
+                    offset: 0,
+                    size: NonZeroU64::new(uniform_size),
+                }),
             }],
         });
 
@@ -345,6 +347,9 @@ impl shader::Pipeline for FKeyToolbarRenderer {
             pipeline,
             bind_group,
             uniform_buffer,
+            uniform_stride,
+            uniform_capacity,
+            next_uniform: AtomicU32::new(0),
         }
     }
 }
@@ -412,15 +417,19 @@ fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
 
     for code in 0u32..256u32 {
-        // Map CP437 code to Unicode char for font lookup
-        let ch = CP437_TO_UNICODE.get(code as usize).copied().unwrap_or(' ');
+        // Fonts in the wild differ:
+        // - some label glyphs by 0..255 "codepoint" slots (CP/ANSI index)
+        // - others label glyphs by Unicode (e.g. box-drawing U+250C)
+        // We build the atlas by CP437 index, but try both lookup strategies.
+        let slot_ch = char::from_u32(code).unwrap_or(' ');
+        let unicode_ch = CP437_TO_UNICODE.get(code as usize).copied().unwrap_or(' ');
         let col = (code % 16) as u32;
         let row = (code / 16) as u32;
         let base_x = col * gw;
         let base_y = row * gh;
 
         // default transparent
-        if let Some(glyph) = font.glyph(ch) {
+        if let Some(glyph) = font.glyph(slot_ch).or_else(|| font.glyph(unicode_ch)) {
             for y in 0..gh as usize {
                 let dst_y = base_y as usize + y;
                 if dst_y >= atlas_h as usize {
@@ -479,6 +488,9 @@ impl shader::Program<FKeyToolbarMessage> for FKeyGlyphProgram {
             bg_color: self.bg_color,
             hovered_slot: self.hovered_slot.load(Ordering::Relaxed),
             hover_type: self.hover_type.load(Ordering::Relaxed),
+            uniform_offset_bytes: Arc::new(AtomicU32::new(0)),
+            instance_offset_bytes: Arc::new(AtomicU32::new(0)),
+            instance_count: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -502,6 +514,12 @@ pub struct FKeyGlyphPrimitive {
     pub bg_color: u32,
     pub hovered_slot: u32,
     pub hover_type: u32,
+    /// Dynamic uniform offset (bytes) into the shared uniform buffer.
+    uniform_offset_bytes: Arc<AtomicU32>,
+    /// Byte offset into the shared instance ring buffer.
+    instance_offset_bytes: Arc<AtomicU32>,
+    /// Number of instances to draw for this primitive.
+    instance_count: Arc<AtomicU32>,
 }
 
 impl shader::Primitive for FKeyGlyphPrimitive {
@@ -543,7 +561,10 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             glyph_size: [glyph_w, glyph_h],
             _pad: [0.0, 0.0],
         };
-        queue.write_buffer(&pipeline.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        let uniform_slot = pipeline.next_uniform.fetch_add(1, Ordering::Relaxed) % pipeline.uniform_capacity;
+        let uniform_offset = (uniform_slot as u64) * pipeline.uniform_stride;
+        self.uniform_offset_bytes.store(uniform_offset as u32, Ordering::Relaxed);
+        queue.write_buffer(&pipeline.uniform_buffer, uniform_offset, bytemuck::bytes_of(&uniforms));
 
         // Build instances (positions are clip-local pixels)
         let (fg_r, fg_g, fg_b) = self.palette.rgb(self.fg_color);
@@ -551,34 +572,33 @@ impl shader::Primitive for FKeyGlyphPrimitive {
         let fg = Color::from_rgb8(fg_r, fg_g, fg_b);
         let bg = Color::from_rgb8(bg_r, bg_g, bg_b);
 
-        let hovered = HoverState::from_atomics(self.hovered_slot, self.hover_type);
+        let hovered = HoverState::from_uniforms(self.hovered_slot, self.hover_type);
         let set_idx = self.fkeys.current_set();
 
         const FLAG_DRAW_BG: u32 = 1;
         const FLAG_BG_ONLY: u32 = 2;
 
-        let control_height = bounds.height - SHADOW_PADDING * 2.0;
-        let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
-        let font_width = self.font.as_ref().map(|f| f.size().width as f32).unwrap_or(8.0);
+        // HiDPI-safe integer magnification in *physical pixels*.
+        // Otherwise, a logical 2x magnify at scale 1.25 becomes 2.5x physical and produces "fragments".
+        let control_height_px = ((bounds.height - SHADOW_PADDING * 2.0) * scale).round().max(1.0);
+        let font_height = glyph_h.max(1.0);
+        let font_width = glyph_w.max(1.0);
 
-        // Integer magnification for crisp pixel rendering
-        // For chars: fit into CHAR_DISPLAY_HEIGHT (32px) with integer scale
-        let max_char_magnify = (CHAR_DISPLAY_HEIGHT / font_height).floor().max(1.0);
-        // For labels: ~60% of char size, also integer
-        let max_label_magnify = (max_char_magnify * 0.6).floor().max(1.0);
+        let target_slot_char_h_px = (SLOT_CHAR_HEIGHT * scale).round().max(1.0);
+        let slot_char_magnify = (target_slot_char_h_px / font_height).floor().max(1.0);
+        let target_label_h_px = LABEL_HEIGHT * scale;
+        let max_label_magnify = (target_label_h_px / font_height).floor().max(1.0);
 
-        // Effective sizes in logical pixels (pre-scale)
-        let char_render_w = font_width * max_char_magnify;
-        let char_render_h = font_height * max_char_magnify;
-        let label_render_w = font_width * max_label_magnify;
-        let label_render_h = font_height * max_label_magnify;
-
-        // Spacing uses the scaled label width
+        // Effective sizes in physical pixels
+        let slot_char_w = (font_width * slot_char_magnify).round().max(1.0);
+        let slot_char_h = (font_height * slot_char_magnify).round().max(1.0);
+        let label_render_w = (font_width * max_label_magnify).round().max(1.0);
+        let label_render_h = (font_height * max_label_magnify).round().max(1.0);
         let label_char_w = label_render_w;
 
-        let content_start_x = SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING;
-        let char_display_y = SHADOW_PADDING + ((control_height - char_render_h) / 2.0).floor();
-        let label_y = SHADOW_PADDING + ((control_height - label_render_h) / 2.0).floor();
+        let content_start_x = ((SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING) * scale).floor();
+        let slot_char_y = (SHADOW_PADDING * scale).floor() + ((control_height_px - slot_char_h) / 2.0).floor();
+        let label_y = (SHADOW_PADDING * scale).floor() + ((control_height_px - label_render_h) / 2.0).floor();
 
         // Small cache for digit y-offsets (0..9) for label scale.
         let mut digit_offset: [f32; 10] = [0.0; 10];
@@ -630,9 +650,9 @@ impl shader::Primitive for FKeyGlyphPrimitive {
 
         // Draw each slot: 2-digit label (no bg) + char (with bg)
         for slot in 0..12usize {
-            let slot_x = (content_start_x + slot as f32 * (SLOT_WIDTH + SLOT_SPACING)).floor();
-            let char_x = (slot_x + LABEL_WIDTH).floor();
-            let label_x = (slot_x - 2.0).floor();
+            let slot_x = (content_start_x + slot as f32 * ((SLOT_WIDTH + SLOT_SPACING) * scale)).floor();
+            let char_x = (slot_x + (LABEL_WIDTH * scale)).floor();
+            let label_x = (slot_x - (2.0 * scale)).floor();
 
             let is_label_hovered = matches!(hovered, HoverState::Slot(s, false) if s == slot);
             let is_char_hovered = matches!(hovered, HoverState::Slot(s, true) if s == slot);
@@ -663,12 +683,12 @@ impl shader::Primitive for FKeyGlyphPrimitive {
                 let x = label_x + i as f32 * label_char_w;
                 let y = label_y + y_off;
 
-                let label_w = (label_render_w * scale).floor();
-                let label_h = (label_render_h * scale).floor();
+                let label_w = label_render_w.floor().max(1.0);
+                let label_h = label_render_h.floor().max(1.0);
 
                 // Shadow
                 instances.push(GlyphInstance {
-                    pos: [((x + 1.0) * scale).floor(), ((y + 1.0) * scale).floor()],
+                    pos: [(x + 1.0).floor(), (y + 1.0).floor()],
                     size: [label_w, label_h],
                     fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
                     bg: [0.0, 0.0, 0.0, 0.0],
@@ -679,7 +699,7 @@ impl shader::Primitive for FKeyGlyphPrimitive {
 
                 // Foreground
                 instances.push(GlyphInstance {
-                    pos: [(x * scale).floor(), (y * scale).floor()],
+                    pos: [x.floor(), y.floor()],
                     size: [label_w, label_h],
                     fg: [label_color.r, label_color.g, label_color.b, label_color.a],
                     bg: [0.0, 0.0, 0.0, 0.0],
@@ -689,10 +709,10 @@ impl shader::Primitive for FKeyGlyphPrimitive {
                 });
             }
 
-            // Char background (full cell)
+            // Slot char background (full cell)
             instances.push(GlyphInstance {
-                pos: [(char_x * scale).floor(), (char_display_y * scale).floor()],
-                size: [(char_render_w * scale).floor(), (char_render_h * scale).floor()],
+                pos: [char_x.floor(), slot_char_y.floor()],
+                size: [slot_char_w.floor(), slot_char_h.floor()],
                 fg: [0.0, 0.0, 0.0, 0.0],
                 bg: [bg.r, bg.g, bg.b, 1.0],
                 glyph: 0,
@@ -700,7 +720,7 @@ impl shader::Primitive for FKeyGlyphPrimitive {
                 _pad: [0, 0],
             });
 
-            // Char glyph (crisp, integer magnification)
+            // Slot char glyph (crisp, integer magnification)
             // code_at returns CP437 code directly - use as atlas index
             let code = self.fkeys.code_at(set_idx, slot);
             let glyph = (code as u32) & 0xFF;
@@ -711,8 +731,8 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             };
 
             instances.push(GlyphInstance {
-                pos: [(char_x * scale).floor(), (char_display_y * scale).floor()],
-                size: [(char_render_w * scale).floor(), (char_render_h * scale).floor()],
+                pos: [char_x.floor(), slot_char_y.floor()],
+                size: [slot_char_w.floor(), slot_char_h.floor()],
                 fg: [char_fg.r, char_fg.g, char_fg.b, 1.0],
                 bg: [0.0, 0.0, 0.0, 0.0],
                 glyph,
@@ -721,18 +741,104 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             });
         }
 
-        // Set number between arrows (no bg), with shadow
-        let nav_x = (content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) + NAV_GAP).floor();
+        // Set number between arrows (no bg), with shadow (physical pixel coordinates)
+        let slot_width_px = (SLOT_WIDTH * scale).round().max(1.0);
+        let slot_spacing_px = (SLOT_SPACING * scale).round().max(0.0);
+        let nav_gap_px = (NAV_GAP * scale).round().max(0.0);
+        let nav_size_px = (NAV_SIZE * scale).round().max(1.0);
+        let arrow_size_px = (ARROW_SIZE * scale).round().max(1.0);
+        let set_num_icon_gap_px = (SET_NUM_ICON_GAP * scale).round().max(0.0);
+        let nav_num_shift_x_px = (NAV_NUM_SHIFT_X * scale).round();
+        let nav_next_shift_x_px = (NAV_NEXT_SHIFT_X * scale).round();
+
+        // nav_x: after 12 slots (each SLOT_WIDTH wide, with SLOT_SPACING between them)
+        let slots_width_px = 12.0 * slot_width_px + 11.0 * slot_spacing_px;
+        let nav_x = (content_start_x + slots_width_px + nav_gap_px).floor();
         let set_num = set_idx + 1;
         let num_str = set_num.to_string();
         let num_width = num_str.len() as f32 * label_char_w;
-        let next_x = nav_x + NAV_SIZE + NAV_LABEL_SPACE;
-        let space_between = next_x - (nav_x + NAV_SIZE);
-        let num_x = nav_x + NAV_SIZE + (space_between - num_width) / 2.0;
+
+        // Fixed spacing: always layout for a 2-character number.
+        // Keep the perceived gap between arrow icon and digits stable (~SET_NUM_ICON_GAP).
+        let icon_side_gap = (nav_size_px - arrow_size_px) / 2.0;
+        let num_padding: f32 = (set_num_icon_gap_px - icon_side_gap).max(0.0);
+        let num_field_width = 2.0 * label_char_w;
+        let label_space = num_field_width + 2.0 * num_padding;
+
+        let next_x = nav_x + nav_size_px + label_space + nav_next_shift_x_px;
+        // Center the actual number inside the 2-character field.
+        let num_x = nav_x + nav_size_px + num_padding + (num_field_width - num_width) / 2.0 + nav_num_shift_x_px;
 
         let label_color = Color::from_rgba(0.55, 0.55, 0.58, 1.0);
+        let label_hover_color = Color::from_rgba(0.85, 0.85, 0.88, 1.0);
         let shadow_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
 
+        // Check hover state for nav arrows
+        let is_prev_hovered = matches!(hovered, HoverState::NavPrev);
+        let is_next_hovered = matches!(hovered, HoverState::NavNext);
+
+        // Navigation arrows - rendered as triangles via shader flags
+        // flags bit 2 = left arrow, bit 3 = right arrow
+        const FLAG_ARROW_LEFT: u32 = 4;
+        const FLAG_ARROW_RIGHT: u32 = 8;
+
+        let arrow_w = arrow_size_px.floor().max(1.0);
+        let arrow_h = arrow_size_px.floor().max(1.0);
+
+        // Center arrows vertically and horizontally within nav button area
+        let arrow_y = (SHADOW_PADDING * scale).floor() + ((control_height_px - arrow_size_px) / 2.0).floor();
+
+        // Left arrow (◄)
+        let left_arrow_x = nav_x + ((nav_size_px - arrow_size_px) / 2.0).floor();
+        let left_arrow_color = if is_prev_hovered { label_hover_color } else { label_color };
+
+        // Shadow (smaller offset for small icons)
+        instances.push(GlyphInstance {
+            pos: [(left_arrow_x + 1.0).floor(), (arrow_y + 1.0).floor()],
+            size: [arrow_w, arrow_h],
+            fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+            bg: [0.0, 0.0, 0.0, 0.0],
+            glyph: 0,
+            flags: FLAG_ARROW_LEFT,
+            _pad: [0, 0],
+        });
+        // Foreground
+        instances.push(GlyphInstance {
+            pos: [left_arrow_x.floor(), arrow_y.floor()],
+            size: [arrow_w, arrow_h],
+            fg: [left_arrow_color.r, left_arrow_color.g, left_arrow_color.b, 1.0],
+            bg: [0.0, 0.0, 0.0, 0.0],
+            glyph: 0,
+            flags: FLAG_ARROW_LEFT,
+            _pad: [0, 0],
+        });
+
+        // Right arrow (►)
+        let right_arrow_x = next_x + ((nav_size_px - arrow_size_px) / 2.0).floor();
+        let right_arrow_color = if is_next_hovered { label_hover_color } else { label_color };
+
+        // Shadow (smaller offset for small icons)
+        instances.push(GlyphInstance {
+            pos: [(right_arrow_x + 1.0).floor(), (arrow_y + 1.0).floor()],
+            size: [arrow_w, arrow_h],
+            fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+            bg: [0.0, 0.0, 0.0, 0.0],
+            glyph: 0,
+            flags: FLAG_ARROW_RIGHT,
+            _pad: [0, 0],
+        });
+        // Foreground
+        instances.push(GlyphInstance {
+            pos: [right_arrow_x.floor(), arrow_y.floor()],
+            size: [arrow_w, arrow_h],
+            fg: [right_arrow_color.r, right_arrow_color.g, right_arrow_color.b, 1.0],
+            bg: [0.0, 0.0, 0.0, 0.0],
+            glyph: 0,
+            flags: FLAG_ARROW_RIGHT,
+            _pad: [0, 0],
+        });
+
+        // Set number digits
         for (i, ch) in num_str.chars().enumerate() {
             let digit = ch.to_digit(10).unwrap_or(0);
             let y_off = glyph_y_offset(digit);
@@ -740,12 +846,12 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             let y = label_y + y_off;
             let glyph = ch as u32;
 
-            let label_w = (label_render_w * scale).floor();
-            let label_h = (label_render_h * scale).floor();
+            let label_w = label_render_w.floor().max(1.0);
+            let label_h = label_render_h.floor().max(1.0);
 
             // Shadow
             instances.push(GlyphInstance {
-                pos: [((x + 1.0) * scale).floor(), ((y + 1.0) * scale).floor()],
+                pos: [(x + 1.0).floor(), (y + 1.0).floor()],
                 size: [label_w, label_h],
                 fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
                 bg: [0.0, 0.0, 0.0, 0.0],
@@ -755,7 +861,7 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             });
             // Foreground
             instances.push(GlyphInstance {
-                pos: [(x * scale).floor(), (y * scale).floor()],
+                pos: [x.floor(), y.floor()],
                 size: [label_w, label_h],
                 fg: [label_color.r, label_color.g, label_color.b, label_color.a],
                 bg: [0.0, 0.0, 0.0, 0.0],
@@ -765,7 +871,18 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             });
         }
 
-        pipeline.upload_instances(queue, &instances);
+        // Upload instances into a fixed-size ring slot to avoid last-write-wins.
+        let slot = pipeline.next_instance_slot.fetch_add(1, Ordering::Relaxed) % pipeline.instance_slots;
+        let instance_offset = (slot as u64) * pipeline.instance_slot_stride;
+        self.instance_offset_bytes.store(instance_offset as u32, Ordering::Relaxed);
+
+        let max_instances = pipeline.instance_capacity_per_primitive as usize;
+        let count = instances.len().min(max_instances);
+        self.instance_count.store(count as u32, Ordering::Relaxed);
+        if count > 0 {
+            let bytes = bytemuck::cast_slice(&instances[..count]);
+            queue.write_buffer(&pipeline.instance_buffer, instance_offset, bytes);
+        }
 
         // suppress unused warnings (origin not used directly - viewport uses clip rect)
         let _ = (origin_x, origin_y);
@@ -800,10 +917,17 @@ impl shader::Primitive for FKeyGlyphPrimitive {
             );
 
             pass.set_pipeline(&pipeline.pipeline);
-            pass.set_bind_group(0, &pipeline.bind_group, &[]);
+            let uniform_offset = self.uniform_offset_bytes.load(Ordering::Relaxed);
+            pass.set_bind_group(0, &pipeline.bind_group, &[uniform_offset]);
             pass.set_vertex_buffer(0, pipeline.quad_vertex_buffer.slice(..));
-            pass.set_vertex_buffer(1, pipeline.instance_buffer.slice(..));
-            pass.draw(0..6, 0..pipeline.instance_count);
+            let instance_count = self.instance_count.load(Ordering::Relaxed);
+            if instance_count == 0 {
+                return;
+            }
+            let instance_offset = self.instance_offset_bytes.load(Ordering::Relaxed) as u64;
+            let instance_bytes = (instance_count as u64) * pipeline.instance_stride;
+            pass.set_vertex_buffer(1, pipeline.instance_buffer.slice(instance_offset..(instance_offset + instance_bytes)));
+            pass.draw(0..6, 0..instance_count);
         }
     }
 }
@@ -812,9 +936,16 @@ pub struct FKeyGlyphRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group: iced::wgpu::BindGroup,
     uniform_buffer: iced::wgpu::Buffer,
+    uniform_stride: u64,
+    uniform_capacity: u32,
+    next_uniform: AtomicU32,
     quad_vertex_buffer: iced::wgpu::Buffer,
     instance_buffer: iced::wgpu::Buffer,
-    instance_count: u32,
+    instance_stride: u64,
+    instance_capacity_per_primitive: u32,
+    instance_slots: u32,
+    instance_slot_stride: u64,
+    next_instance_slot: AtomicU32,
 
     atlas_texture: iced::wgpu::Texture,
     atlas_view: iced::wgpu::TextureView,
@@ -855,7 +986,11 @@ impl FKeyGlyphRenderer {
                 entries: &[
                     iced::wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: self.uniform_buffer.as_entire_binding(),
+                        resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                            buffer: &self.uniform_buffer,
+                            offset: 0,
+                            size: NonZeroU64::new(std::mem::size_of::<FKeyGlyphUniforms>() as u64),
+                        }),
                     },
                     iced::wgpu::BindGroupEntry {
                         binding: 1,
@@ -891,18 +1026,6 @@ impl FKeyGlyphRenderer {
 
         self.atlas_key = Some(key);
     }
-
-    fn upload_instances(&mut self, queue: &iced::wgpu::Queue, instances: &[GlyphInstance]) {
-        let count = instances
-            .len()
-            .min((self.instance_buffer.size() as usize) / std::mem::size_of::<GlyphInstance>());
-        self.instance_count = count as u32;
-        if count == 0 {
-            return;
-        }
-        let bytes = bytemuck::cast_slice(&instances[..count]);
-        queue.write_buffer(&self.instance_buffer, 0, bytes);
-    }
 }
 
 impl shader::Pipeline for FKeyGlyphRenderer {
@@ -912,9 +1035,15 @@ impl shader::Pipeline for FKeyGlyphRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("fkey_glyphs_shader.wgsl").into()),
         });
 
+        let uniform_size = std::mem::size_of::<FKeyGlyphUniforms>() as u64;
+        let alignment = device.limits().min_uniform_buffer_offset_alignment as u64;
+        let uniform_stride = align_up(uniform_size, alignment);
+        let uniform_capacity: u32 = 1024;
+        let uniform_buffer_size = uniform_stride * (uniform_capacity as u64);
+
         let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("FKey Glyphs Uniforms"),
-            size: std::mem::size_of::<FKeyGlyphUniforms>() as u64,
+            label: Some("FKey Glyphs Uniforms (Dynamic)"),
+            size: uniform_buffer_size,
             usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -996,10 +1125,16 @@ impl shader::Pipeline for FKeyGlyphRenderer {
             usage: iced::wgpu::BufferUsages::VERTEX,
         });
 
-        // Instance buffer
+        let instance_stride = std::mem::size_of::<GlyphInstance>() as u64;
+        // Enough for all quads in one toolbar (labels+chars+nav). Increase if needed.
+        let instance_capacity_per_primitive: u32 = 512;
+        let instance_slots: u32 = 256;
+        let instance_slot_stride = instance_stride * (instance_capacity_per_primitive as u64);
+        let instance_buffer_size = instance_slot_stride * (instance_slots as u64);
+
         let instance_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("FKey Glyph Instances"),
-            size: (std::mem::size_of::<GlyphInstance>() * 128) as u64,
+            label: Some("FKey Glyph Instances (Ring)"),
+            size: instance_buffer_size,
             usage: iced::wgpu::BufferUsages::VERTEX | iced::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1013,8 +1148,8 @@ impl shader::Pipeline for FKeyGlyphRenderer {
                     visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: iced::wgpu::BindingType::Buffer {
                         ty: iced::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: NonZeroU64::new(uniform_size),
                     },
                     count: None,
                 },
@@ -1043,7 +1178,11 @@ impl shader::Pipeline for FKeyGlyphRenderer {
             entries: &[
                 iced::wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
+                    resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                        buffer: &uniform_buffer,
+                        offset: 0,
+                        size: NonZeroU64::new(uniform_size),
+                    }),
                 },
                 iced::wgpu::BindGroupEntry {
                     binding: 1,
@@ -1150,9 +1289,16 @@ impl shader::Pipeline for FKeyGlyphRenderer {
             pipeline,
             bind_group,
             uniform_buffer,
+            uniform_stride,
+            uniform_capacity,
+            next_uniform: AtomicU32::new(0),
             quad_vertex_buffer,
             instance_buffer,
-            instance_count: 0,
+            instance_stride,
+            instance_capacity_per_primitive,
+            instance_slots,
+            instance_slot_stride,
+            next_instance_slot: AtomicU32::new(0),
             atlas_texture,
             atlas_view,
             atlas_sampler,
@@ -1167,36 +1313,22 @@ impl shader::Pipeline for FKeyGlyphRenderer {
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Compute hover state from cursor position
-fn compute_hover_state(pos: Point, bounds: Rectangle) -> (u32, u32) {
-    let content_start_x = SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING;
-    let control_height = bounds.height - SHADOW_PADDING * 2.0;
-
-    // Check F-key slots
-    for slot in 0..12usize {
-        let slot_x = content_start_x + slot as f32 * (SLOT_WIDTH + SLOT_SPACING);
-        let char_x = slot_x + LABEL_WIDTH;
-
-        if pos.x >= slot_x && pos.x < slot_x + SLOT_WIDTH && pos.y >= SHADOW_PADDING && pos.y < SHADOW_PADDING + control_height {
-            let is_on_char = pos.x >= char_x;
-            return (slot as u32, if is_on_char { 1 } else { 0 });
-        }
+/// Compute hover state from cursor position using FKeyLayout.
+///
+/// The `nav_label_space` parameter allows overriding the computed label space
+/// (used when we know the exact font dimensions). Pass 0.0 to use default.
+fn compute_hover_state(pos: Point, _bounds: Rectangle, nav_label_space: f32) -> (u32, u32) {
+    // Use default font for hit testing (the exact font doesn't matter much for hit areas)
+    let mut layout = FKeyLayout::default_font();
+    
+    // Override nav_label_space if provided
+    if nav_label_space > 0.0 {
+        layout.nav_label_space = nav_label_space;
+        // Recalculate next_nav_x with the new label space
+        layout.next_nav_x = layout.nav_x + NAV_SIZE + nav_label_space + NAV_NEXT_SHIFT_X;
     }
-
-    // Check nav buttons
-    let nav_x = content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) + NAV_GAP;
-    let nav_y = SHADOW_PADDING + (control_height - NAV_SIZE) / 2.0;
-    let next_x = nav_x + NAV_SIZE + NAV_LABEL_SPACE;
-
-    if pos.x >= nav_x && pos.x < nav_x + NAV_SIZE && pos.y >= nav_y && pos.y < nav_y + NAV_SIZE {
-        return (NO_HOVER, 2); // NavPrev
-    }
-
-    if pos.x >= next_x && pos.x < next_x + NAV_SIZE && pos.y >= nav_y && pos.y < nav_y + NAV_SIZE {
-        return (NO_HOVER, 3); // NavNext
-    }
-
-    (NO_HOVER, 0)
+    
+    layout.hit_test_uniforms(pos)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1207,6 +1339,7 @@ fn compute_hover_state(pos: Point, bounds: Rectangle) -> (u32, u32) {
 pub struct ShaderFKeyToolbar {
     hovered_slot: Arc<AtomicU32>,
     hover_type: Arc<AtomicU32>,
+    nav_label_space_bits: Arc<AtomicU32>,
 }
 
 impl Default for ShaderFKeyToolbar {
@@ -1220,6 +1353,7 @@ impl ShaderFKeyToolbar {
         Self {
             hovered_slot: Arc::new(AtomicU32::new(NO_HOVER)),
             hover_type: Arc::new(AtomicU32::new(0)),
+            nav_label_space_bits: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -1238,10 +1372,14 @@ impl ShaderFKeyToolbar {
         bg_color: u32,
         theme: &Theme,
     ) -> Element<'_, FKeyToolbarMessage> {
-        // Calculate total dimensions
-        let content_width = 12.0 * SLOT_WIDTH + 11.0 * SLOT_SPACING + NAV_GAP + NAV_SIZE * 2.0 + 32.0;
-        let total_width = content_width + SHADOW_PADDING * 2.0 + BORDER_WIDTH * 2.0 + LEFT_PADDING;
-        let total_height = TOOLBAR_HEIGHT + SHADOW_PADDING * 2.0;
+        // Use centralized layout calculations
+        let (font_w, font_h) = font.as_ref()
+            .map(|f| (f.size().width.max(1) as f32, f.size().height.max(1) as f32))
+            .unwrap_or((8.0, 16.0));
+        let layout = FKeyLayout::new(font_w, font_h);
+
+        // Share the exact label-space with hit-testing.
+        self.nav_label_space_bits.store(layout.nav_label_space.to_bits(), Ordering::Relaxed);
 
         let bg_color_themed = main_area_background(theme);
 
@@ -1250,9 +1388,10 @@ impl ShaderFKeyToolbar {
             bg_color: bg_color_themed,
             hovered_slot: self.hovered_slot.clone(),
             hover_type: self.hover_type.clone(),
+            nav_label_space_bits: self.nav_label_space_bits.clone(),
         })
-        .width(Length::Fixed(total_width))
-        .height(Length::Fixed(total_height))
+        .width(Length::Fixed(layout.total_width))
+        .height(Length::Fixed(layout.total_height))
         .into();
 
         // Create glyph overlay (atlas)
@@ -1265,66 +1404,20 @@ impl ShaderFKeyToolbar {
             hovered_slot: self.hovered_slot.clone(),
             hover_type: self.hover_type.clone(),
         })
-        .width(Length::Fixed(total_width))
-        .height(Length::Fixed(total_height))
+        .width(Length::Fixed(layout.total_width))
+        .height(Length::Fixed(layout.total_height))
         .into();
 
-        // Calculate nav arrow positions
-        let content_start_x = SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING;
-        let nav_x = content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) + NAV_GAP;
-        let next_x = nav_x + NAV_SIZE + NAV_LABEL_SPACE;
-        let arrow_size = NAV_SIZE; // SVG arrow size matches nav button size
-
-        // Get current hover state for arrow colors
-        let hover_type = self.hover_type.load(Ordering::Relaxed);
-        let is_prev_hovered = hover_type == 2;
-        let is_next_hovered = hover_type == 3;
-
-        // Arrow colors: dim gray normally, bright white on hover
-        let arrow_normal = Color::from_rgb(0.55, 0.55, 0.58);
-        let arrow_hover = Color::WHITE;
-
-        // Create SVG arrow overlay with hover-dependent colors
-        let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
-            .width(Length::Fixed(arrow_size))
-            .height(Length::Fixed(arrow_size))
-            .style(move |_theme, _status| svg::Style {
-                color: Some(if is_prev_hovered { arrow_hover } else { arrow_normal }),
-            });
-
-        let right_arrow = svg(svg::Handle::from_memory(ARROW_RIGHT_SVG))
-            .width(Length::Fixed(arrow_size))
-            .height(Length::Fixed(arrow_size))
-            .style(move |_theme, _status| svg::Style {
-                color: Some(if is_next_hovered { arrow_hover } else { arrow_normal }),
-            });
-
-        // Space before first arrow (arrow_size now equals NAV_SIZE, so offset is 0)
-        let space_before = nav_x;
-        // Space between arrows
-        let space_between = next_x - nav_x - NAV_SIZE;
-
-        let arrow_overlay: Element<'_, FKeyToolbarMessage> = container(row![
-            Space::new().width(Length::Fixed(space_before)),
-            left_arrow,
-            Space::new().width(Length::Fixed(space_between)),
-            right_arrow,
-        ])
-        .width(Length::Fixed(total_width))
-        .height(Length::Fixed(total_height))
-        .center_y(Length::Fixed(total_height))
-        .into();
-
-        // Stack: shader background, glyph overlay, arrow overlay
-        let toolbar_stack: Element<'_, FKeyToolbarMessage> = widget::stack![shader_bg, glyph_overlay, arrow_overlay]
-            .width(Length::Fixed(total_width))
-            .height(Length::Fixed(total_height))
+        // Stack: shader background + glyph overlay (arrows now rendered via glyph shader)
+        let toolbar_stack: Element<'_, FKeyToolbarMessage> = widget::stack![shader_bg, glyph_overlay]
+            .width(Length::Fixed(layout.total_width))
+            .height(Length::Fixed(layout.total_height))
             .into();
 
         // Wrap in container to center horizontally in parent
         container(toolbar_stack)
             .width(Length::Fill)
-            .height(Length::Fixed(total_height))
+            .height(Length::Fixed(layout.total_height))
             .center_x(Length::Fill)
             .into()
     }

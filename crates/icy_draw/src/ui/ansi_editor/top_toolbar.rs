@@ -11,11 +11,15 @@ use iced::{
 use super::segmented_control_gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use super::tools::Tool;
 use crate::ui::FKeySets;
-use icy_engine::{BitFont, BufferType};
+use icy_engine::{BitFont, BufferType, Palette};
 
 // Navigation icons for F-key set chooser
 const NAV_PREV_SVG: &[u8] = include_bytes!("../../../data/icons/navigate_prev.svg");
 const NAV_NEXT_SVG: &[u8] = include_bytes!("../../../data/icons/navigate_next.svg");
+
+// Arrow icons for brush size selector
+const ARROW_LEFT_SVG: &[u8] = include_bytes!("../../../data/icons/arrow_left.svg");
+const ARROW_RIGHT_SVG: &[u8] = include_bytes!("../../../data/icons/arrow_right.svg");
 
 /// Selection mode for the select tool
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -157,6 +161,8 @@ pub struct TopToolbar {
     pub selection_mode_control: ShaderSegmentedControl,
     /// GPU Segmented control for brush mode
     pub brush_mode_control: ShaderSegmentedControl,
+    /// GPU Segmented control for color filter (FG/BG toggles)
+    pub color_filter_control: ShaderSegmentedControl,
 }
 
 impl Default for TopToolbar {
@@ -172,12 +178,15 @@ impl TopToolbar {
                 primary: BrushPrimaryMode::Char,
                 paint_char: '\u{00B0}',
                 brush_size: 1,
+                colorize_fg: true,
+                colorize_bg: true,
                 ..Default::default()
             },
             select_options: SelectOptions::default(),
             filled: false,
             selection_mode_control: ShaderSegmentedControl::new(),
             brush_mode_control: ShaderSegmentedControl::new(),
+            color_filter_control: ShaderSegmentedControl::new(),
         }
     }
 
@@ -198,9 +207,9 @@ impl TopToolbar {
             TopToolbarMessage::SetBrushChar(ch) => self.brush_options.paint_char = ch,
             TopToolbarMessage::ToggleColorizeFg(v) => self.brush_options.colorize_fg = v,
             TopToolbarMessage::ToggleColorizeBg(v) => self.brush_options.colorize_bg = v,
-            TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = s.max(1).min(10),
+            TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = s.max(1).min(9),
             TopToolbarMessage::IncrementBrushSize => {
-                self.brush_options.brush_size = (self.brush_options.brush_size + 1).min(10);
+                self.brush_options.brush_size = (self.brush_options.brush_size + 1).min(9);
             }
             TopToolbarMessage::DecrementBrushSize => {
                 self.brush_options.brush_size = self.brush_options.brush_size.saturating_sub(1).max(1);
@@ -224,11 +233,23 @@ impl TopToolbar {
     }
 
     /// Render the top toolbar based on current tool
-    pub fn view(&self, current_tool: Tool, fkeys: &FKeySets, buffer_type: BufferType, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
+    pub fn view(
+        &self,
+        current_tool: Tool,
+        fkeys: &FKeySets,
+        buffer_type: BufferType,
+        font: Option<BitFont>,
+        theme: &Theme,
+        caret_fg: u32,
+        caret_bg: u32,
+        palette: &Palette,
+    ) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
             Tool::Select => self.view_select_panel(font.clone(), theme),
-            Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(font, theme),
+            Tool::Pencil | Tool::Brush | Tool::Erase => {
+                self.view_brush_panel(font, theme, caret_fg, caret_bg, palette)
+            }
             Tool::Line => self.view_line_panel(),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
             Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_panel("Ellipse"),
@@ -242,7 +263,9 @@ impl TopToolbar {
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(4)
+            // Keep horizontal spacing, but don't eat vertical height.
+            // Vertical padding here shrinks children (e.g. SegmentedControl) from 54px to 46px.
+            .padding([0, 4])
             .center_y(Length::Fill)
             .style(container::rounded_box)
             .into()
@@ -264,6 +287,7 @@ impl TopToolbar {
         // Convert SegmentedControlMessage to TopToolbarMessage
         let segmented_control = self.selection_mode_control.view(segments, mode, font, theme).map(|msg| match msg {
             SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetSelectionMode(m),
+            SegmentedControlMessage::Toggled(m) => TopToolbarMessage::SetSelectionMode(m),
             SegmentedControlMessage::CharClicked(m) => TopToolbarMessage::SetSelectionMode(m),
         });
 
@@ -334,14 +358,21 @@ impl TopToolbar {
     }
 
     /// Brush tool panel
-    fn view_brush_panel(&self, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
+    fn view_brush_panel(
+        &self,
+        font: Option<BitFont>,
+        theme: &Theme,
+        caret_fg: u32,
+        caret_bg: u32,
+        palette: &Palette,
+    ) -> Element<'_, TopToolbarMessage> {
         let primary = self.brush_options.primary;
 
         // Build segments for the brush mode segmented control
         // First segment shows the current paint char - clicking when selected opens char picker
         let segments = vec![
+            Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
             Segment::char(self.brush_options.paint_char, BrushPrimaryMode::Char),
-            Segment::text("½Block", BrushPrimaryMode::HalfBlock),
             Segment::text("Shade", BrushPrimaryMode::Shading),
             Segment::text("Replace", BrushPrimaryMode::Replace),
             Segment::text("Blink", BrushPrimaryMode::Blink),
@@ -349,43 +380,123 @@ impl TopToolbar {
         ];
 
         // Convert SegmentedControlMessage to TopToolbarMessage
-        let segmented_control = self.brush_mode_control.view(segments, primary, font, theme).map(|msg| match msg {
-            SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetBrushPrimary(m),
-            SegmentedControlMessage::CharClicked(_) => TopToolbarMessage::OpenBrushCharTable,
-        });
+        // Use view_with_char_colors to render Char segments with caret colors
+        let font_for_color_filter = font.clone();
+        let segmented_control = self
+            .brush_mode_control
+            .view_with_char_colors(segments, primary, font, theme, caret_fg, caret_bg, palette)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetBrushPrimary(m),
+                SegmentedControlMessage::Toggled(m) => TopToolbarMessage::SetBrushPrimary(m),
+                SegmentedControlMessage::CharClicked(_) => TopToolbarMessage::OpenBrushCharTable,
+            });
 
-        // fg/bg toggles are only meaningful for Colorize
-        let colorize_extra: Element<'_, TopToolbarMessage> = if primary == BrushPrimaryMode::Colorize {
-            row![
-                toggler(self.brush_options.colorize_fg)
-                    .label("fg")
-                    .on_toggle(TopToolbarMessage::ToggleColorizeFg)
-                    .text_size(11),
-                toggler(self.brush_options.colorize_bg)
-                    .label("bg")
-                    .on_toggle(TopToolbarMessage::ToggleColorizeBg)
-                    .text_size(11),
-            ]
-            .spacing(8)
-            .into()
-        } else {
-            Space::new().width(Length::Fixed(0.0)).into()
-        };
+        // FG/BG color filter toggles - always visible as a pill-pair
+        // Index 0 = FG, Index 1 = BG
+        let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
+        let mut selected_indices = Vec::new();
+        if self.brush_options.colorize_fg {
+            selected_indices.push(0);
+        }
+        if self.brush_options.colorize_bg {
+            selected_indices.push(1);
+        }
+        let color_filter = self
+            .color_filter_control
+            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, theme)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!self.brush_options.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!self.brush_options.colorize_bg),
+                _ => TopToolbarMessage::ToggleColorizeFg(self.brush_options.colorize_fg), // no-op fallback
+            });
+
+        // Brush size selector with SVG arrow icons
+        let secondary_color = theme.extended_palette().secondary.base.color;
+        let base_color = theme.extended_palette().primary.base.color;
+        let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(32.0))
+            .style(move |_theme, status| {
+                let color = match status {
+                    svg::Status::Hovered => base_color,
+                    _ => secondary_color,
+                };
+                svg::Style { color: Some(color) }
+            });
+        let right_arrow = svg(svg::Handle::from_memory(ARROW_RIGHT_SVG))
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(32.0))
+            .style(move |_theme, status| {
+                let color = match status {
+                    svg::Status::Hovered => base_color,
+                    _ => secondary_color,
+                };
+                svg::Style { color: Some(color) }
+            });
+
+        // Size number in secondary color, monospace 14pt
+        let size_text = text(format!("{}", self.brush_options.brush_size))
+            .size(14)
+            .font(iced::Font::MONOSPACE)
+            .style(|theme: &Theme| {
+                text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                }
+            });
 
         // Center the control with flexible space on both sides
         row![
             Space::new().width(Length::Fill),
             segmented_control,
             Space::new().width(Length::Fixed(16.0)),
-            colorize_extra,
+            color_filter,
             Space::new().width(Length::Fixed(16.0)),
-            text("Size:").size(11),
-            button(text("-").size(12)).on_press(TopToolbarMessage::DecrementBrushSize).padding(2),
-            text(format!("{}", self.brush_options.brush_size)).size(12),
-            button(text("+").size(12)).on_press(TopToolbarMessage::IncrementBrushSize).padding(2),
+            button(left_arrow)
+                .on_press(TopToolbarMessage::DecrementBrushSize)
+                .padding(2)
+                .style(|theme: &Theme, status| {
+                    let secondary = theme.extended_palette().secondary.base.color;
+                    let base = theme.extended_palette().primary.base.color;
+                    let text_color = match status {
+                        button::Status::Hovered | button::Status::Pressed => base,
+                        _ => secondary,
+                    };
+                    button::Style {
+                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                        border: iced::Border {
+                            color: iced::Color::TRANSPARENT,
+                            width: 0.0,
+                            radius: 0.0.into(),
+                        },
+                        text_color,
+                        ..Default::default()
+                    }
+                }),
+            size_text,
+            button(right_arrow)
+                .on_press(TopToolbarMessage::IncrementBrushSize)
+                .padding(2)
+                .style(|theme: &Theme, status| {
+                    let secondary = theme.extended_palette().secondary.base.color;
+                    let base = theme.extended_palette().primary.base.color;
+                    let text_color = match status {
+                        button::Status::Hovered | button::Status::Pressed => base,
+                        _ => secondary,
+                    };
+                    button::Style {
+                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                        border: iced::Border {
+                            color: iced::Color::TRANSPARENT,
+                            width: 0.0,
+                            radius: 0.0.into(),
+                        },
+                        text_color,
+                        ..Default::default()
+                    }
+                }),
             Space::new().width(Length::Fill),
         ]
-        .spacing(8)
+        .spacing(4)
         .align_y(iced::Alignment::Center)
         .into()
     }
