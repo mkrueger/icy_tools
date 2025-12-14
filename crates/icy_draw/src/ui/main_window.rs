@@ -2707,10 +2707,17 @@ impl MainWindow {
         // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {
             ModeState::Ansi(_editor) => {
-                // Forward keyboard events to AnsiEditor
-                if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
-                    let msg = super::ansi_editor::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);
-                    return (Some(Message::AnsiEditor(msg)), Task::none());
+                match event {
+                    // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
+                    Event::Window(iced::window::Event::Unfocused) | Event::Mouse(iced::mouse::Event::CursorLeft) => {
+                        return (Some(Message::AnsiEditor(super::ansi_editor::AnsiEditorMessage::CancelShapeDrag)), Task::none());
+                    }
+                    // Forward keyboard events to AnsiEditor
+                    Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        let msg = super::ansi_editor::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);
+                        return (Some(Message::AnsiEditor(msg)), Task::none());
+                    }
+                    _ => {}
                 }
             }
             ModeState::BitFont(state) => {

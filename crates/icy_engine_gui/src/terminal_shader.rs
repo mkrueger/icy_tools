@@ -161,6 +161,10 @@ struct CRTUniforms {
     /// Selection mask size in cells (width, height)
     selection_mask_size: [f32; 2],
 
+    // Tool overlay mask (Moebius-style alpha preview)
+    /// (mask_width_in_cells, mask_height_in_cells, cell_height_scale, enabled)
+    tool_overlay_params: [f32; 4],
+
     // Terminal area within the full viewport (for rendering selection outside document bounds)
     /// Terminal area in normalized UV coordinates (start_x, start_y, end_x, end_y)
     /// This defines where the actual terminal content is rendered within the full widget area
@@ -175,7 +179,7 @@ mod tests {
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
-        assert_eq!(std::mem::size_of::<CRTUniforms>(), 512);
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 528);
     }
 }
 
@@ -280,6 +284,12 @@ pub struct TerminalShader {
     /// Font dimensions for selection mask sampling (font_width, font_height in pixels)
     pub font_dimensions: Option<(f32, f32)>,
 
+    // Tool overlay mask rendering (Moebius-like alpha preview)
+    /// Tool overlay mask texture data (RGBA bytes), None = no overlay
+    pub tool_overlay_mask_data: Option<(Vec<u8>, u32, u32)>, // (data, width_in_cells, height_in_cells)
+    /// Cell height scale for tool overlay sampling (1.0 normal, 0.5 half-block)
+    pub tool_overlay_cell_height_scale: f32,
+
     // Brush/Pencil preview rendering
     /// Preview rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
     pub brush_preview_rect: Option<[f32; 4]>,
@@ -325,6 +335,11 @@ struct InstanceResources {
     selection_mask_texture: Option<TextureSlice>,
     /// Hash of selection mask data for cache validation
     selection_mask_hash: u64,
+
+    /// Tool overlay mask texture (optional)
+    tool_overlay_mask_texture: Option<TextureSlice>,
+    /// Hash of tool overlay mask data for cache validation
+    tool_overlay_mask_hash: u64,
 }
 
 /// The terminal shader renderer (GPU pipeline) with multi-texture support
@@ -351,8 +366,8 @@ impl shader::Pipeline for TerminalShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
         });
 
-        // Create bind group layout with 10 texture slots + sampler + uniforms + monitor_color + reference_image
-        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 4);
+        // Create bind group layout with slices + sampler + uniforms + monitor_color + reference_image + selection_mask + tool_overlay_mask
+        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
 
         // Add 3 texture bindings (0-2)
         for i in 0..MAX_TEXTURE_SLICES {
@@ -415,6 +430,18 @@ impl shader::Pipeline for TerminalShaderRenderer {
         // Selection mask texture at binding 7
         entries.push(iced::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 4) as u32,
+            visibility: iced::wgpu::ShaderStages::FRAGMENT,
+            ty: iced::wgpu::BindingType::Texture {
+                multisampled: false,
+                view_dimension: iced::wgpu::TextureViewDimension::D2,
+                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        });
+
+        // Tool overlay mask texture at binding 8
+        entries.push(iced::wgpu::BindGroupLayoutEntry {
+            binding: (MAX_TEXTURE_SLICES + 5) as u32,
             visibility: iced::wgpu::ShaderStages::FRAGMENT,
             ty: iced::wgpu::BindingType::Texture {
                 multisampled: false,
@@ -548,6 +575,25 @@ impl TerminalShader {
         match data {
             Some((bytes, w, h)) => {
                 // Use data content for hash (selection changes frequently)
+                bytes.hash(&mut hasher);
+                w.hash(&mut hasher);
+                h.hash(&mut hasher);
+            }
+            None => {
+                0u64.hash(&mut hasher);
+            }
+        }
+        hasher.finish()
+    }
+
+    /// Compute a hash for tool overlay mask data
+    fn compute_tool_overlay_mask_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        match data {
+            Some((bytes, w, h)) => {
+                // Overlay changes frequently while dragging
                 bytes.hash(&mut hasher);
                 w.hash(&mut hasher);
                 h.hash(&mut hasher);
@@ -704,9 +750,10 @@ impl shader::Primitive for TerminalShader {
             let create_bind_group = |gpu_slices: &[TextureSlice],
                                      ref_image_view: &iced::wgpu::TextureView,
                                      sel_mask_view: &iced::wgpu::TextureView,
+                                     tool_mask_view: &iced::wgpu::TextureView,
                                      label: &str|
              -> iced::wgpu::BindGroup {
-                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
+                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
 
                 // Add texture bindings (0-2), using dummy for unused slots
                 for i in 0..MAX_TEXTURE_SLICES {
@@ -751,6 +798,12 @@ impl shader::Primitive for TerminalShader {
                     resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
                 });
 
+                // Tool overlay mask at binding 8
+                bind_entries.push(iced::wgpu::BindGroupEntry {
+                    binding: (MAX_TEXTURE_SLICES + 5) as u32,
+                    resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                });
+
                 device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
                     layout: &pipeline.bind_group_layout,
@@ -759,8 +812,20 @@ impl shader::Primitive for TerminalShader {
             };
 
             // Create bind groups for both blink states (using dummy for reference image and selection mask initially)
-            let bind_group_blink_off = create_bind_group(&gpu_slices_blink_off, &pipeline.dummy_texture_view, &pipeline.dummy_texture_view, "BlinkOff");
-            let bind_group_blink_on = create_bind_group(&gpu_slices_blink_on, &pipeline.dummy_texture_view, &pipeline.dummy_texture_view, "BlinkOn");
+            let bind_group_blink_off = create_bind_group(
+                &gpu_slices_blink_off,
+                &pipeline.dummy_texture_view,
+                &pipeline.dummy_texture_view,
+                &pipeline.dummy_texture_view,
+                "BlinkOff",
+            );
+            let bind_group_blink_on = create_bind_group(
+                &gpu_slices_blink_on,
+                &pipeline.dummy_texture_view,
+                &pipeline.dummy_texture_view,
+                &pipeline.dummy_texture_view,
+                "BlinkOn",
+            );
 
             pipeline.instances.insert(
                 id,
@@ -780,6 +845,8 @@ impl shader::Primitive for TerminalShader {
                     reference_image_hash: 0,
                     selection_mask_texture: None,
                     selection_mask_hash: 0,
+                    tool_overlay_mask_texture: None,
+                    tool_overlay_mask_hash: 0,
                 },
             );
         }
@@ -851,9 +918,10 @@ impl shader::Primitive for TerminalShader {
                 let create_bind_group = |gpu_slices: &[TextureSlice],
                                          ref_view: &iced::wgpu::TextureView,
                                          sel_mask_view: &iced::wgpu::TextureView,
+                                         tool_mask_view: &iced::wgpu::TextureView,
                                          label: &str|
                  -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
 
                     for i in 0..MAX_TEXTURE_SLICES {
                         let view = if i < gpu_slices.len() {
@@ -892,6 +960,11 @@ impl shader::Primitive for TerminalShader {
                         resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
                     });
 
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                    });
+
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
                         layout: &pipeline.bind_group_layout,
@@ -910,8 +983,13 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, "BlinkOn");
+                let tool_mask_view = resources
+                    .tool_overlay_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
                 resources.reference_image_hash = ref_image_hash;
             }
         }
@@ -983,9 +1061,10 @@ impl shader::Primitive for TerminalShader {
                 let create_bind_group = |gpu_slices: &[TextureSlice],
                                          ref_view: &iced::wgpu::TextureView,
                                          sel_mask_view: &iced::wgpu::TextureView,
+                                         tool_mask_view: &iced::wgpu::TextureView,
                                          label: &str|
                  -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
 
                     for i in 0..MAX_TEXTURE_SLICES {
                         let view = if i < gpu_slices.len() {
@@ -1024,6 +1103,11 @@ impl shader::Primitive for TerminalShader {
                         resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
                     });
 
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                    });
+
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
                         layout: &pipeline.bind_group_layout,
@@ -1042,9 +1126,158 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, "BlinkOn");
+                let tool_mask_view = resources
+                    .tool_overlay_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
                 resources.selection_mask_hash = sel_mask_hash;
+            }
+        }
+
+        // Check if tool overlay mask changed and needs update
+        let tool_mask_hash = Self::compute_tool_overlay_mask_hash(&self.tool_overlay_mask_data);
+        let needs_tool_mask_update = match pipeline.instances.get(&id) {
+            Some(resources) => resources.tool_overlay_mask_hash != tool_mask_hash,
+            None => false,
+        };
+
+        if needs_tool_mask_update {
+            if let Some(resources) = pipeline.instances.get_mut(&id) {
+                // Create or update tool overlay mask texture
+                if let Some((data, width, height)) = &self.tool_overlay_mask_data {
+                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
+                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
+
+                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        label: Some(&format!("Tool Overlay Mask Instance {}", id)),
+                        size: iced::wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: iced::wgpu::TextureDimension::D2,
+                        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+
+                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+                    // Write mask data to texture
+                    if !data.is_empty() {
+                        queue.write_texture(
+                            iced::wgpu::TexelCopyTextureInfo {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: iced::wgpu::Origin3d::ZERO,
+                                aspect: iced::wgpu::TextureAspect::All,
+                            },
+                            data,
+                            iced::wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(4 * w),
+                                rows_per_image: Some(h),
+                            },
+                            iced::wgpu::Extent3d {
+                                width: w,
+                                height: h,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+
+                    resources.tool_overlay_mask_texture = Some(TextureSlice {
+                        texture,
+                        texture_view,
+                        height: h,
+                    });
+                } else {
+                    resources.tool_overlay_mask_texture = None;
+                }
+
+                // Helper to create bind group
+                let create_bind_group = |gpu_slices: &[TextureSlice],
+                                         ref_view: &iced::wgpu::TextureView,
+                                         sel_mask_view: &iced::wgpu::TextureView,
+                                         tool_mask_view: &iced::wgpu::TextureView,
+                                         label: &str|
+                 -> iced::wgpu::BindGroup {
+                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
+
+                    for i in 0..MAX_TEXTURE_SLICES {
+                        let view = if i < gpu_slices.len() {
+                            &gpu_slices[i].texture_view
+                        } else {
+                            &pipeline.dummy_texture_view
+                        };
+                        bind_entries.push(iced::wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: iced::wgpu::BindingResource::TextureView(view),
+                        });
+                    }
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: MAX_TEXTURE_SLICES as u32,
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
+                        resource: resources.uniform_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
+                        resource: resources.monitor_color_buffer.as_entire_binding(),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                    });
+
+                    bind_entries.push(iced::wgpu::BindGroupEntry {
+                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
+                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                    });
+
+                    device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
+                        layout: &pipeline.bind_group_layout,
+                        entries: &bind_entries,
+                    })
+                };
+
+                // Recreate bind groups with new tool overlay mask
+                let ref_view = resources
+                    .reference_image_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                let sel_mask_view = resources
+                    .selection_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+                let tool_mask_view = resources
+                    .tool_overlay_mask_texture
+                    .as_ref()
+                    .map(|t| &t.texture_view)
+                    .unwrap_or(&pipeline.dummy_texture_view);
+
+                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.tool_overlay_mask_hash = tool_mask_hash;
             }
         }
 
@@ -1255,6 +1488,12 @@ impl shader::Primitive for TerminalShader {
                 [*w as f32, *h as f32]
             } else {
                 [1.0, 1.0]
+            },
+
+            tool_overlay_params: if let Some((_, w, h)) = &self.tool_overlay_mask_data {
+                [*w as f32, *h as f32, self.tool_overlay_cell_height_scale, 1.0]
+            } else {
+                [1.0, 1.0, 1.0, 0.0]
             },
 
             // Terminal area within the full viewport

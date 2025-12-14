@@ -137,6 +137,9 @@ pub enum AnsiEditorMessage {
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
     PaletteGrid(PaletteGridMessage),
+
+    /// Cancel an in-progress shape drag (clears preview overlay).
+    CancelShapeDrag,
     /// Tool selection changed
     SelectTool(usize),
     /// Layer selection changed
@@ -346,6 +349,10 @@ pub struct AnsiEditor {
     /// Used for pencil/brush drawing and line interpolation in half-block mode.
     /// Updated on every mouse move during drag operations.
     pub half_block_click_pos: icy_engine::Position,
+
+    // === Shape Tool State ===
+    /// If true, shape tools clear/erase instead of drawing (Moebius-style shift behavior).
+    shape_clear: bool,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -508,7 +515,13 @@ impl AnsiEditor {
                         Tool::Erase => {
                             let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
                         }
-                        Tool::Pencil | Tool::Brush => {
+                        Tool::Pencil
+                        | Tool::Brush
+                        | Tool::Line
+                        | Tool::RectangleOutline
+                        | Tool::RectangleFilled
+                        | Tool::EllipseOutline
+                        | Tool::EllipseFilled => {
                             use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
 
                             let brush_mode = match primary {
@@ -725,7 +738,183 @@ impl AnsiEditor {
             paint_button: iced::mouse::Button::Left,
 
             half_block_click_pos: icy_engine::Position::default(),
+
+            shape_clear: false,
         }
+    }
+
+    fn clear_tool_overlay(&mut self) {
+        self.canvas.set_tool_overlay_mask(None, 1.0);
+    }
+
+    fn cancel_shape_drag(&mut self) -> bool {
+        if self.is_dragging
+            && matches!(
+                self.current_tool,
+                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+            )
+        {
+            self.is_dragging = false;
+            self.selection_drag = SelectionDrag::None;
+            self.start_selection = None;
+            self.paint_button = iced::mouse::Button::Left;
+            self.shape_clear = false;
+            self.clear_tool_overlay();
+            return true;
+        }
+        false
+    }
+
+    fn shape_points(tool: Tool, p0: icy_engine::Position, p1: icy_engine::Position) -> Vec<icy_engine::Position> {
+        use std::collections::HashSet;
+
+        match tool {
+            Tool::Line => icy_engine_edit::brushes::line::get_line_points(p0, p1),
+            Tool::RectangleOutline | Tool::RectangleFilled => {
+                let min_x = p0.x.min(p1.x);
+                let max_x = p0.x.max(p1.x);
+                let min_y = p0.y.min(p1.y);
+                let max_y = p0.y.max(p1.y);
+
+                let mut pts = Vec::new();
+                if matches!(tool, Tool::RectangleFilled) {
+                    for y in min_y..=max_y {
+                        for x in min_x..=max_x {
+                            pts.push(icy_engine::Position::new(x, y));
+                        }
+                    }
+                } else {
+                    // Outline/perimeter
+                    for x in min_x..=max_x {
+                        pts.push(icy_engine::Position::new(x, min_y));
+                        if max_y != min_y {
+                            pts.push(icy_engine::Position::new(x, max_y));
+                        }
+                    }
+                    for y in (min_y + 1)..=(max_y - 1) {
+                        pts.push(icy_engine::Position::new(min_x, y));
+                        if max_x != min_x {
+                            pts.push(icy_engine::Position::new(max_x, y));
+                        }
+                    }
+                }
+                pts
+            }
+            Tool::EllipseOutline | Tool::EllipseFilled => {
+                let min_x = p0.x.min(p1.x);
+                let max_x = p0.x.max(p1.x);
+                let min_y = p0.y.min(p1.y);
+                let max_y = p0.y.max(p1.y);
+
+                let center = icy_engine::Position::new((min_x + max_x) / 2, (min_y + max_y) / 2);
+                let radius_x = (max_x - min_x) / 2;
+                let radius_y = (max_y - min_y) / 2;
+
+                if matches!(tool, Tool::EllipseOutline) {
+                    let mut set: HashSet<(i32, i32)> = HashSet::new();
+                    let points = icy_engine_edit::brushes::ellipse::get_ellipse_points(center, radius_x, radius_y);
+                    for (p, _) in points {
+                        set.insert((p.x, p.y));
+                    }
+                    set.into_iter().map(|(x, y)| icy_engine::Position::new(x, y)).collect()
+                } else {
+                    // Match `fill_ellipse` scanline logic.
+                    if radius_x <= 0 || radius_y <= 0 {
+                        return vec![center];
+                    }
+
+                    let ry_f = radius_y as f64;
+                    let rx_f = radius_x as f64;
+                    let mut pts = Vec::new();
+
+                    for dy in -radius_y..=radius_y {
+                        let dy_f = dy as f64;
+                        let x_extent = (rx_f * (1.0 - (dy_f / ry_f).powi(2)).sqrt()).round() as i32;
+                        let y = center.y + dy;
+                        for dx in -x_extent..=x_extent {
+                            let x = center.x + dx;
+                            pts.push(icy_engine::Position::new(x, y));
+                        }
+                    }
+                    pts
+                }
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn update_shape_tool_overlay_preview(&mut self) {
+        let is_shape_tool = matches!(
+            self.current_tool,
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+        );
+        if !is_shape_tool || !self.is_dragging {
+            return;
+        }
+
+        let is_half_block_mode = matches!(
+            self.top_toolbar.brush_options.primary,
+            crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
+        );
+
+        let (mask_w, mask_h, cell_height_scale, p0, p1, (r, g, b)) = {
+            let mut screen = self.screen.lock();
+            let palette = screen.palette().clone();
+
+            let edit_state = screen
+                .as_any_mut()
+                .downcast_mut::<icy_engine_edit::EditState>()
+                .expect("screen should be EditState");
+
+            let buffer = edit_state.get_buffer();
+            let w = buffer.width().max(1) as u32;
+            let h_cells = buffer.height().max(1) as u32;
+
+            let caret_attr = edit_state.get_caret().attribute;
+            let (fg, bg) = (caret_attr.foreground(), caret_attr.background());
+            let col_idx: u32 = if self.shape_clear {
+                0
+            } else if self.paint_button == iced::mouse::Button::Right {
+                bg
+            } else {
+                fg
+            };
+            let rgb = palette.rgb(col_idx);
+
+            if is_half_block_mode {
+                // Convert layer-local half-block drag positions to document half-block coordinates.
+                let offset = edit_state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                let hb_off = icy_engine::Position::new(offset.x, offset.y * 2);
+                let start = self.drag_pos.start_half_block + hb_off;
+                let cur = self.drag_pos.cur_half_block + hb_off;
+                (w, h_cells * 2, 0.5, start, cur, rgb)
+            } else {
+                (w, h_cells, 1.0, self.drag_pos.start, self.drag_pos.cur, rgb)
+            }
+        };
+
+        let alpha: u8 = 153; // ~0.6 like Moebius overlay
+        let mut rgba = vec![0u8; (mask_w * mask_h * 4) as usize];
+        let points = Self::shape_points(self.current_tool, p0, p1);
+
+        for p in points {
+            if p.x < 0 || p.y < 0 {
+                continue;
+            }
+            let x = p.x as u32;
+            let y = p.y as u32;
+            if x >= mask_w || y >= mask_h {
+                continue;
+            }
+            let idx = ((y * mask_w + x) * 4) as usize;
+            rgba[idx] = r;
+            rgba[idx + 1] = g;
+            rgba[idx + 2] = b;
+            rgba[idx + 3] = alpha;
+        }
+
+        self.canvas
+            .set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), cell_height_scale);
     }
 
     fn set_current_fkey_set(&mut self, set_idx: usize) {
@@ -1235,6 +1424,7 @@ impl AnsiEditor {
                         self.set_current_fkey_set(prev);
                         Task::none()
                     }
+<<<<<<< HEAD
                     TopToolbarMessage::OpenFontDirectory => {
                         // Open the font directory in the system file manager
                         if let Some(font_dir) = Options::font_dir() {
@@ -1267,6 +1457,26 @@ impl AnsiEditor {
                         // This will be handled by main_window to open the dialog
                         // Return a task that signals this (handled via Message routing)
                         Task::none()
+=======
+                    TopToolbarMessage::ToggleFilled(v) => {
+                        // Keep the tool variant in sync with the filled toggle.
+                        let new_tool = match self.current_tool {
+                            Tool::RectangleOutline | Tool::RectangleFilled => {
+                                if v { Tool::RectangleFilled } else { Tool::RectangleOutline }
+                            }
+                            Tool::EllipseOutline | Tool::EllipseFilled => {
+                                if v { Tool::EllipseFilled } else { Tool::EllipseOutline }
+                            }
+                            other => other,
+                        };
+
+                        if new_tool != self.current_tool {
+                            self.change_tool(new_tool);
+                            self.tool_panel.set_tool(self.current_tool);
+                        }
+
+                        self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar)
+>>>>>>> fb747761 (Implemented overlay view.)
                     }
                     _ => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
                 }
@@ -1475,6 +1685,10 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::KeyPressed(key, modifiers) => {
                 self.handle_key_press(key, modifiers);
+                Task::none()
+            }
+            AnsiEditorMessage::CancelShapeDrag => {
+                let _ = self.cancel_shape_drag();
                 Task::none()
             }
             AnsiEditorMessage::CanvasMouseEvent(event) => {
@@ -2052,6 +2266,13 @@ impl AnsiEditor {
     /// Handle tool-specific key events based on current tool
     fn handle_tool_key(&mut self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
         use iced::keyboard::key::Named;
+
+        // Moebius-style: Escape cancels an in-progress shape drag and clears the preview overlay.
+        if let iced::keyboard::Key::Named(Named::Escape) = key {
+            if self.cancel_shape_drag() {
+                return ToolEvent::Redraw;
+            }
+        }
         match self.current_tool {
             Tool::Click => {
                 // Handle typing and cursor movement for Click tool (normal text input)
@@ -2361,6 +2582,26 @@ impl AnsiEditor {
                 }
                 ToolEvent::Redraw
             }
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                // Start shape drag (preview is rendered as translucent overlay mask like Moebius)
+                self.selection_drag = SelectionDrag::None;
+                self.is_dragging = true;
+                self.drag_pos.start = pos;
+                self.drag_pos.cur = pos;
+                self.drag_pos.start_abs = pos;
+                self.drag_pos.cur_abs = pos;
+
+                self.paint_button = button;
+                self.shape_clear = is_shift_pressed();
+
+                // Track half-block drag positions as well (used when HalfBlock primary mode is active)
+                let half_block_pos = self.compute_half_block_pos(pixel_position);
+                self.drag_pos.start_half_block = half_block_pos;
+                self.drag_pos.cur_half_block = half_block_pos;
+
+                self.update_shape_tool_overlay_preview();
+                ToolEvent::Redraw
+            }
             Tool::Pipette => {
                 // Pick character/color at position
                 // TODO: Actually pick from buffer
@@ -2444,6 +2685,84 @@ impl AnsiEditor {
             return ToolEvent::Commit(desc.to_string());
         }
 
+        if self.is_dragging
+            && matches!(
+                self.current_tool,
+                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+            )
+        {
+            self.is_dragging = false;
+
+            let desc = format!("{} drawn", self.current_tool.name());
+            self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(&desc)));
+
+            let is_half_block_mode = matches!(
+                self.top_toolbar.brush_options.primary,
+                crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
+            );
+
+            if is_half_block_mode {
+                // Convert layer-local half-block drag to document half-block coordinates.
+                let (start_hb_doc, cur_hb_doc) = self.with_edit_state_readonly(|state| {
+                    let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    let hb_off = icy_engine::Position::new(offset.x, offset.y * 2);
+                    (self.drag_pos.start_half_block + hb_off, self.drag_pos.cur_half_block + hb_off)
+                });
+
+                let points = Self::shape_points(self.current_tool, start_hb_doc, cur_hb_doc);
+                if self.shape_clear {
+                    self.with_edit_state(|state| {
+                        let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                        let layer_w = state.get_cur_layer().map(|l| l.width()).unwrap_or(0);
+                        let layer_h = state.get_cur_layer().map(|l| l.height()).unwrap_or(0);
+                        for p in &points {
+                            let cell_doc = icy_engine::Position::new(p.x, p.y / 2);
+                            let layer_pos = cell_doc - offset;
+                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                                continue;
+                            }
+                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
+                        }
+                    });
+                } else {
+                    for p in points {
+                        if p.y < 0 {
+                            continue;
+                        }
+                        let cell_doc = icy_engine::Position::new(p.x, p.y / 2);
+                        let is_top = (p.y % 2) == 0;
+                        self.apply_paint_stamp_with_half_block_info(cell_doc, is_top, self.paint_button);
+                    }
+                }
+            } else {
+                let points = Self::shape_points(self.current_tool, self.drag_pos.start, self.drag_pos.cur);
+                if self.shape_clear {
+                    self.with_edit_state(|state| {
+                        let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                        let layer_w = state.get_cur_layer().map(|l| l.width()).unwrap_or(0);
+                        let layer_h = state.get_cur_layer().map(|l| l.height()).unwrap_or(0);
+                        for p in &points {
+                            let layer_pos = *p - offset;
+                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                                continue;
+                            }
+                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
+                        }
+                    });
+                } else {
+                    for p in points {
+                        self.apply_paint_stamp_with_half_block_info(p, true, self.paint_button);
+                    }
+                }
+            }
+
+            self.paint_undo = None;
+            self.paint_button = iced::mouse::Button::Left;
+            self.shape_clear = false;
+            self.clear_tool_overlay();
+            return ToolEvent::Commit(desc);
+        }
+
         match self.current_tool {
             Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Commit the drawn shape
@@ -2460,6 +2779,12 @@ impl AnsiEditor {
 
         if !self.is_dragging {
             // Just hovering
+            if !matches!(
+                self.current_tool,
+                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+            ) {
+                self.clear_tool_overlay();
+            }
             return ToolEvent::None;
         }
 
@@ -2512,7 +2837,11 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                // TODO: Update preview/drawing
+                // Update half-block drag positions too so half-block previews are correct.
+                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
+                self.drag_pos.cur_half_block = new_half_block_pos;
+
+                self.update_shape_tool_overlay_preview();
                 ToolEvent::Redraw
             }
             _ => ToolEvent::None,
@@ -3087,8 +3416,16 @@ impl AnsiEditor {
         if self.current_tool == tool {
             return;
         }
+
+        // Cancels any in-progress shape preview/drag when switching tools.
+        let _ = self.cancel_shape_drag();
+
         let is_visble = matches!(tool, Tool::Click | Tool::Font);
         self.with_edit_state(|state| state.set_caret_visible(is_visble));
+
+        // Sync toolbar filled toggle with the selected tool.
+        self.top_toolbar.filled = matches!(tool, Tool::RectangleFilled | Tool::EllipseFilled);
+
         self.current_tool = tool;
 
         // Clear tool hover preview when switching tools.

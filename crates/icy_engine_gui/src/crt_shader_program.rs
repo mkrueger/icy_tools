@@ -336,6 +336,8 @@ impl<'a> CRTShaderProgram<'a> {
         let selection_color = markers.selection_color;
         let selection_mask_data = markers.selection_mask_data.clone();
         let font_dimensions = markers.font_dimensions;
+        let tool_overlay_mask_data = markers.tool_overlay_mask_data.clone();
+        let tool_overlay_cell_height_scale = markers.tool_overlay_cell_height_scale;
         let brush_preview_rect = markers.brush_preview_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         drop(markers);
 
@@ -387,6 +389,10 @@ impl<'a> CRTShaderProgram<'a> {
             selection_color,
             selection_mask_data,
             font_dimensions,
+
+            // Tool overlay (Moebius-style alpha preview)
+            tool_overlay_mask_data,
+            tool_overlay_cell_height_scale,
 
             // Brush/Pencil preview rendering
             brush_preview_rect,

@@ -107,6 +107,10 @@ struct Uniforms {
     font_height: f32,            // Font height in pixels
     selection_mask_size: vec2<f32>, // Selection mask size in cells (width, height)
 
+    // Tool overlay mask (Moebius-style alpha preview)
+    // (mask_width_in_cells, mask_height_in_cells, cell_height_scale, enabled)
+    tool_overlay_params: vec4<f32>,
+
     // Terminal area within the full viewport (for rendering selection outside document bounds)
     terminal_area: vec4<f32>,    // (start_x, start_y, end_x, end_y) in normalized UV coordinates
 }
@@ -134,6 +138,9 @@ struct MonitorColor {
 
 // Selection mask texture at binding 7
 @group(0) @binding(7) var t_selection_mask: texture_2d<f32>;
+
+// Tool overlay mask texture at binding 8
+@group(0) @binding(8) var t_tool_overlay_mask: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -285,6 +292,32 @@ fn mask_cell_selected(cell_x: f32, cell_y: f32) -> bool {
 
     let uv = vec2<f32>((cell_x + 0.5) / mask_w, (cell_y + 0.5) / mask_h);
     return textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+}
+
+fn sample_tool_overlay(doc_pixel: vec2<f32>) -> vec4<f32> {
+    if (uniforms.tool_overlay_params.w < 0.5) {
+        return vec4<f32>(0.0);
+    }
+
+    let mask_w = uniforms.tool_overlay_params.x;
+    let mask_h = uniforms.tool_overlay_params.y;
+    if (mask_w <= 0.0 || mask_h <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+
+    let fw = max(uniforms.font_width, 1.0);
+    let fh = max(uniforms.font_height, 1.0);
+    let cell_h_scale = max(uniforms.tool_overlay_params.z, 0.0001);
+
+    let cx = floor(doc_pixel.x / fw);
+    let cy = floor(doc_pixel.y / (fh * cell_h_scale));
+
+    if (cx < 0.0 || cx >= mask_w || cy < 0.0 || cy >= mask_h) {
+        return vec4<f32>(0.0);
+    }
+
+    let uv = vec2<f32>((cx + 0.5) / mask_w, (cy + 0.5) / mask_h);
+    return textureSample(t_tool_overlay_mask, terminal_sampler, uv);
 }
 
 fn apply_curvature(uv_in: vec2<f32>) -> vec2<f32> {
@@ -899,6 +932,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             // Adjacent to selection: dim
             color = color * 0.6;
         }
+    }
+
+    // Tool overlay (Moebius-style alpha preview)
+    // Applied after selection and before post-processing so it stays crisp.
+    let tool_overlay = sample_tool_overlay(doc_pixel);
+    if (tool_overlay.a > 0.001) {
+        on_selection_border = true;
+        color = mix(color, tool_overlay.rgb, tool_overlay.a);
     }
 
     // Brush/Pencil preview rectangle (always-visible via difference/invert blending)

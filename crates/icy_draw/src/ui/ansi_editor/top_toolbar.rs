@@ -293,9 +293,9 @@ impl TopToolbar {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
             Tool::Select => self.view_select_panel(font.clone(), theme),
             Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(font, theme, caret_fg, caret_bg, palette),
-            Tool::Line => self.view_line_panel(),
-            Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
-            Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_panel("Ellipse"),
+            Tool::Line => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false),
+            Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
+            Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
             Tool::Fill => self.view_fill_panel(),
             Tool::Pipette => self.view_sample_panel(),
             Tool::Shifter => self.view_shifter_panel(),
@@ -402,6 +402,18 @@ impl TopToolbar {
 
     /// Brush tool panel
     fn view_brush_panel(&self, font: Option<BitFont>, theme: &Theme, caret_fg: u32, caret_bg: u32, palette: &Palette) -> Element<'_, TopToolbarMessage> {
+        self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false)
+    }
+
+    fn view_shape_brush_panel(
+        &self,
+        font: Option<BitFont>,
+        theme: &Theme,
+        caret_fg: u32,
+        caret_bg: u32,
+        palette: &Palette,
+        show_filled_toggle: bool,
+    ) -> Element<'_, TopToolbarMessage> {
         let primary = self.brush_options.primary;
 
         // Build segments for the brush mode segmented control
@@ -478,10 +490,22 @@ impl TopToolbar {
                 color: Some(theme.extended_palette().secondary.base.color),
             });
 
+        let filled_toggle: Element<'_, TopToolbarMessage> = if show_filled_toggle {
+            toggler(self.filled)
+                .label("Filled")
+                .on_toggle(TopToolbarMessage::ToggleFilled)
+                .text_size(11)
+                .into()
+        } else {
+            Space::new().width(Length::Fixed(0.0)).into()
+        };
+
         // Center the control with flexible space on both sides
         row![
             Space::new().width(Length::Fill),
             segmented_control,
+            Space::new().width(Length::Fixed(16.0)),
+            filled_toggle,
             Space::new().width(Length::Fixed(16.0)),
             color_filter,
             Space::new().width(Length::Fixed(16.0)),
@@ -532,30 +556,6 @@ impl TopToolbar {
         ]
         .spacing(4)
         .align_y(iced::Alignment::Center)
-        .into()
-    }
-
-    /// Line tool panel
-    fn view_line_panel(&self) -> Element<'_, TopToolbarMessage> {
-        row![
-            text("Line Tool").size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Shift: Constrain to 45°").size(10),
-        ]
-        .spacing(8)
-        .into()
-    }
-
-    /// Shape tool panel (rectangle, ellipse)
-    fn view_shape_panel<'a>(&self, shape_name: &'a str) -> Element<'a, TopToolbarMessage> {
-        row![
-            text(shape_name).size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            toggler(self.filled).label("Filled").on_toggle(TopToolbarMessage::ToggleFilled).text_size(11),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Shift: Square/Circle").size(10),
-        ]
-        .spacing(8)
         .into()
     }
 
