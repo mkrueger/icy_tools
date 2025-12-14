@@ -702,7 +702,7 @@ impl TopToolbar {
         row![
             text("Tag Tool").size(TEXT_SIZE_NORMAL),
             Space::new().width(Length::Fixed(SPACE_16)),
-            text("Click to add annotation tag").size(TEXT_SIZE_SMALL),
+            text("Click an empty cell to add a tag • Use ‘Tags…’ to view/delete").size(TEXT_SIZE_SMALL),
         ]
         .spacing(SPACE_8)
         .into()

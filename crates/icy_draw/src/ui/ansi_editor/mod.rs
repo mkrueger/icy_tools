@@ -46,6 +46,8 @@ mod reference_image_dialog;
 mod right_panel;
 mod segmented_control_gpu;
 mod segmented_layout;
+mod tag_dialog;
+mod tag_list_dialog;
 mod tdf_font_selector;
 mod tool_panel;
 mod tool_panel_wrapper;
@@ -69,6 +71,8 @@ pub use minimap_view::*;
 pub use palette_grid::*;
 pub use reference_image_dialog::*;
 pub use right_panel::*;
+use tag_dialog::{TagDialog, TagDialogMessage};
+use tag_list_dialog::{TagListDialog, TagListDialogMessage, TagListItem};
 pub use tdf_font_selector::{TdfFontSelectorDialog, TdfFontSelectorMessage};
 // Use shared GPU-accelerated tool panel via wrapper
 pub use tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
@@ -82,7 +86,7 @@ use iced::{
     widget::{button, column, container, row, text},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{MouseButton, Position, Screen, TextBuffer, TextPane};
+use icy_engine::{MouseButton, Position, Screen, Tag, TagRole, TextBuffer, TextPane};
 use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::{Mutex, RwLock};
@@ -187,6 +191,14 @@ pub enum AnsiEditorMessage {
     OpenTdfFontSelector,
     /// TDF font selector messages
     TdfFontSelector(TdfFontSelectorMessage),
+
+    /// Tag config dialog messages
+    TagDialog(TagDialogMessage),
+
+    /// Open the tag list dialog
+    OpenTagListDialog,
+    /// Tag list dialog messages
+    TagListDialog(TagListDialogMessage),
 }
 
 /// Mouse events on the canvas (using text/buffer coordinates)
@@ -319,6 +331,10 @@ pub struct AnsiEditor {
     pub tdf_font_selector_open: bool,
     /// TDF font selector dialog state
     pub tdf_font_selector: TdfFontSelectorDialog,
+
+    // === Tag Tool State ===
+    pub tag_dialog: Option<TagDialog>,
+    pub tag_list_dialog: Option<TagListDialog>,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
@@ -701,6 +717,9 @@ impl AnsiEditor {
             tdf_font_selector_open: false,
             tdf_font_selector: TdfFontSelectorDialog::new(font_library),
 
+            tag_dialog: None,
+            tag_list_dialog: None,
+
             paint_undo: None,
             paint_last_pos: None,
             paint_button: iced::mouse::Button::Left,
@@ -726,6 +745,29 @@ impl AnsiEditor {
         std::thread::spawn(move || {
             let _ = fkeys_to_save.save();
         });
+    }
+
+    fn has_tag_at(&mut self, pos: icy_engine::Position) -> bool {
+        self.with_edit_state(|state| state.get_buffer().tags.iter().any(|t| t.contains(pos)))
+    }
+
+    fn snapshot_tags(&mut self) -> Vec<TagListItem> {
+        self.with_edit_state(|state| {
+            state
+                .get_buffer()
+                .tags
+                .iter()
+                .enumerate()
+                .map(|(index, tag)| TagListItem {
+                    index,
+                    is_enabled: tag.is_enabled,
+                    preview: tag.preview.clone(),
+                    replacement_value: tag.replacement_value.clone(),
+                    position: tag.position,
+                    placement: tag.tag_placement,
+                })
+                .collect()
+        })
     }
 
     fn type_fkey_slot(&mut self, slot: usize) {
@@ -942,6 +984,116 @@ impl AnsiEditor {
     /// Update the editor state
     pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
         match message {
+            AnsiEditorMessage::OpenTagListDialog => {
+                // Avoid stacked modals.
+                self.tag_dialog = None;
+                self.tag_list_dialog = Some(TagListDialog::new(self.snapshot_tags()));
+                Task::none()
+            }
+            AnsiEditorMessage::TagListDialog(msg) => match msg {
+                TagListDialogMessage::Close => {
+                    self.tag_list_dialog = None;
+                    Task::none()
+                }
+                TagListDialogMessage::Delete(index) => {
+                    if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
+                        log::warn!("Failed to remove tag: {}", err);
+                        return Task::none();
+                    }
+                    self.handle_tool_event(ToolEvent::Commit("Remove tag".to_string()));
+                    let items = self.snapshot_tags();
+                    if let Some(dialog) = self.tag_list_dialog.as_mut() {
+                        dialog.items = items;
+                    }
+                    Task::none()
+                }
+            },
+            AnsiEditorMessage::TagDialog(msg) => {
+                let Some(dialog) = &mut self.tag_dialog else {
+                    return Task::none();
+                };
+
+                match msg {
+                    TagDialogMessage::SetPreview(s) => {
+                        dialog.preview = s.clone();
+                        Task::none()
+                    }
+                    TagDialogMessage::SetReplacement(s) => {
+                        dialog.replacement_value = s.clone();
+                        Task::none()
+                    }
+                    TagDialogMessage::SetPosX(s) => {
+                        dialog.pos_x = s;
+                        Task::none()
+                    }
+                    TagDialogMessage::SetPosY(s) => {
+                        dialog.pos_y = s;
+                        Task::none()
+                    }
+                    TagDialogMessage::SetPlacement(p) => {
+                        dialog.placement = p;
+                        Task::none()
+                    }
+                    TagDialogMessage::Cancel => {
+                        self.tag_dialog = None;
+                        Task::none()
+                    }
+                    TagDialogMessage::Ok => {
+                        let mut position = dialog.position;
+                        let preview = dialog.preview.trim().to_string();
+                        let replacement_value = dialog.replacement_value.clone();
+                        let placement = dialog.placement;
+                        let pos_x = dialog.pos_x.trim().to_string();
+                        let pos_y = dialog.pos_y.trim().to_string();
+                        self.tag_dialog = None;
+
+                        if preview.is_empty() {
+                            return Task::none();
+                        }
+
+                        if let Ok(x) = pos_x.parse::<i32>() {
+                            position.x = x;
+                        }
+                        if let Ok(y) = pos_y.parse::<i32>() {
+                            position.y = y;
+                        }
+
+                        let attribute = self.with_edit_state(|state| state.get_caret().attribute);
+                        let new_tag = Tag {
+                            is_enabled: true,
+                            preview,
+                            replacement_value,
+                            position,
+                            length: 0,
+                            alignment: std::fmt::Alignment::Left,
+                            tag_placement: placement.to_engine(),
+                            tag_role: TagRole::Displaycode,
+                            attribute,
+                        };
+
+                        if let Err(err) = self.with_edit_state(|state| {
+                            let size = state.get_buffer().size();
+                            let max_x = (size.width - 1).max(0);
+                            let max_y = (size.height - 1).max(0);
+
+                            let mut new_tag = new_tag;
+                            new_tag.position.x = new_tag.position.x.clamp(0, max_x);
+                            new_tag.position.y = new_tag.position.y.clamp(0, max_y);
+
+                            if !state.get_buffer().show_tags {
+                                state.show_tags(true)?;
+                            }
+                            state.add_new_tag(new_tag)
+                        }) {
+                            log::warn!("Failed to add tag: {}", err);
+                            return Task::none();
+                        }
+
+                        self.handle_tool_event(ToolEvent::Commit("Add tag".to_string()));
+                        Task::none()
+                    }
+                }
+            }
             AnsiEditorMessage::ToolPanel(msg) => {
                 // Handle tool panel messages
                 match &msg {
@@ -2021,6 +2173,15 @@ impl AnsiEditor {
         _modifiers: icy_engine::KeyModifiers,
     ) -> ToolEvent {
         match self.current_tool {
+            Tool::Tag => {
+                if button == iced::mouse::Button::Left && !self.has_tag_at(pos) {
+                    self.tag_list_dialog = None;
+                    self.tag_dialog = Some(TagDialog::new(pos));
+                    ToolEvent::Redraw
+                } else {
+                    ToolEvent::None
+                }
+            }
             Tool::Click | Tool::Font => {
                 // Check if clicking inside existing selection for drag/resize
                 let selection_drag = self.get_selection_drag_at(pos);
@@ -2736,7 +2897,9 @@ impl AnsiEditor {
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
 
-        let top_toolbar = row![color_switcher, top_toolbar_content,].spacing(4).align_y(Alignment::Start);
+        let tags_button: Element<'_, AnsiEditorMessage> = icy_engine_gui::ui::secondary_button("Tags…", Some(AnsiEditorMessage::OpenTagListDialog)).into();
+
+        let top_toolbar = row![color_switcher, top_toolbar_content, tags_button,].spacing(4).align_y(Alignment::Start);
 
         // === CENTER: Canvas ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
@@ -2821,8 +2984,14 @@ impl AnsiEditor {
         ]
         .into();
 
-        // Apply character selector modal overlay if active
-        if let Some(target) = self.char_selector_target {
+        // Apply tag dialog modal overlay if active
+        if let Some(tag_dialog) = &self.tag_dialog {
+            let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
+            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
+        } else if let Some(tag_list_dialog) = &self.tag_list_dialog {
+            let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
+            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
+        } else if let Some(target) = self.char_selector_target {
             let current_code = match target {
                 CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
                 CharSelectorTarget::BrushChar => self.top_toolbar.brush_options.paint_char as u16,

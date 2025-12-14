@@ -269,7 +269,6 @@ impl SettingsDialog {
             ]
             .spacing(DIALOG_SPACING)
             .align_y(iced::Alignment::Center),
-
             Space::new().height(Length::Fixed(8.0)),
             section_header("Tags".to_string()),
             tag_render_row,
