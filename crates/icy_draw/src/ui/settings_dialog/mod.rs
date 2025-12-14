@@ -3,7 +3,7 @@ use std::sync::Arc;
 use iced::{
     Border, Color, Element, Event, Length,
     keyboard::{Key, key::Named},
-    widget::{Space, button, column, container, row, scrollable, text, text_input},
+    widget::{Space, button, checkbox, column, container, row, scrollable, text, text_input},
 };
 use icy_engine::BitFont;
 use icy_engine_gui::settings::{MonitorSettingsMessage, effect_box, left_label, show_monitor_settings, update_monitor_settings};
@@ -12,7 +12,7 @@ use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use parking_lot::RwLock;
 
 use crate::fl;
-use crate::ui::{FKeySets, Options};
+use crate::ui::{FKeySets, Options, TagRenderMode};
 
 mod charset_picker;
 mod outline_picker;
@@ -65,6 +65,8 @@ pub enum SettingsDialogMessage {
     OpenFontDir,
     OpenPluginDir,
 
+    SetTagRenderMode(TagRenderMode),
+
     Save,
     Cancel,
 }
@@ -80,6 +82,7 @@ pub struct SettingsDialog {
     temp_outline_style: usize,
     outline_cursor: usize,
     temp_fkeys: FKeySets,
+    temp_tag_render_mode: TagRenderMode,
 
     charset_font: BitFont,
     selected_charset_slot: Option<usize>,
@@ -88,9 +91,14 @@ pub struct SettingsDialog {
 
 impl SettingsDialog {
     pub fn new(options: Arc<RwLock<Options>>, preview_font: Option<BitFont>) -> Self {
-        let (monitor_settings, outline_style, fkeys) = {
+        let (monitor_settings, outline_style, fkeys, tag_render_mode) = {
             let guard = options.read();
-            (guard.monitor_settings.read().clone(), *guard.font_outline_style.read(), guard.fkeys.clone())
+            (
+                guard.monitor_settings.read().clone(),
+                *guard.font_outline_style.read(),
+                guard.fkeys.clone(),
+                *guard.tag_render_mode.read(),
+            )
         };
 
         let mut temp_fkeys = fkeys;
@@ -105,6 +113,7 @@ impl SettingsDialog {
             temp_outline_style: outline_style,
             outline_cursor: outline_style,
             temp_fkeys,
+            temp_tag_render_mode: tag_render_mode,
             charset_font,
             selected_charset_slot: None,
             charset_cursor: 0,
@@ -201,6 +210,27 @@ impl SettingsDialog {
         let font_dir = Options::font_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
         let plugin_dir = Options::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
+        let tag_overlay_checked = self.temp_tag_render_mode == TagRenderMode::Overlay;
+        let tag_render_row = row![
+            left_label("Tag rendering".to_string()),
+            row![
+                checkbox(tag_overlay_checked)
+                    .on_toggle(|v| {
+                        crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::SetTagRenderMode(if v {
+                            TagRenderMode::Overlay
+                        } else {
+                            TagRenderMode::Buffer
+                        }))
+                    })
+                    .size(16),
+                text("Overlay (Option C)").size(TEXT_SIZE_NORMAL),
+            ]
+            .spacing(6)
+            .align_y(iced::Alignment::Center),
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(iced::Alignment::Center);
+
         let inner: Element<'_, crate::ui::main_window::Message> = column![
             row![
                 left_label(fl!("settings-paths-config-dir")),
@@ -239,6 +269,10 @@ impl SettingsDialog {
             ]
             .spacing(DIALOG_SPACING)
             .align_y(iced::Alignment::Center),
+
+            Space::new().height(Length::Fixed(8.0)),
+            section_header("Tags".to_string()),
+            tag_render_row,
         ]
         .spacing(DIALOG_SPACING)
         .into();
@@ -441,12 +475,17 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 }
                 Some(DialogAction::None)
             }
+            SettingsDialogMessage::SetTagRenderMode(mode) => {
+                self.temp_tag_render_mode = *mode;
+                Some(DialogAction::None)
+            }
             SettingsDialogMessage::Save => {
                 // Apply to shared options + persist
                 {
                     let mut guard = self.options.write();
                     *guard.monitor_settings.write() = self.temp_monitor_settings.clone();
                     *guard.font_outline_style.write() = self.temp_outline_style;
+                    *guard.tag_render_mode.write() = self.temp_tag_render_mode;
                     guard.fkeys = self.temp_fkeys.clone();
                     guard.store_persistent();
                     if let Err(err) = guard.fkeys.save() {
@@ -469,6 +508,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
             let mut guard = self.options.write();
             *guard.monitor_settings.write() = self.temp_monitor_settings.clone();
             *guard.font_outline_style.write() = self.temp_outline_style;
+            *guard.tag_render_mode.write() = self.temp_tag_render_mode;
             guard.fkeys = self.temp_fkeys.clone();
             guard.store_persistent();
             if let Err(err) = guard.fkeys.save() {

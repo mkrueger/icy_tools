@@ -464,7 +464,7 @@ impl CharSetEditState {
                     new_glyph: None,
                 });
 
-                self.fonts[self.selected_font].glyphs.remove(&ch);
+                self.fonts[self.selected_font].remove_glyph(ch);
                 self.is_dirty = true;
             }
         }
@@ -508,7 +508,7 @@ impl CharSetEditState {
                     old_glyph,
                     new_glyph: None,
                 });
-                self.fonts[self.selected_font].glyphs.remove(&ch);
+                self.fonts[self.selected_font].remove_glyph(ch);
             }
         }
 
@@ -565,7 +565,7 @@ impl CharSetEditState {
                 new_glyph: Some(glyph.clone()),
             });
 
-            self.fonts[self.selected_font].glyphs.insert(ch, glyph);
+            self.fonts[self.selected_font].add_glyph(ch, glyph);
             self.is_dirty = true;
         }
     }
@@ -608,9 +608,9 @@ impl CharSetEditState {
                 if *font_index < self.fonts.len() {
                     let glyph = if is_undo { old_glyph } else { new_glyph };
                     if let Some(g) = glyph {
-                        self.fonts[*font_index].glyphs.insert(*char_code, g.clone());
+                        self.fonts[*font_index].add_glyph(*char_code, g.clone());
                     } else {
-                        self.fonts[*font_index].glyphs.remove(char_code);
+                        self.fonts[*font_index].remove_glyph(*char_code);
                     }
                 }
             }

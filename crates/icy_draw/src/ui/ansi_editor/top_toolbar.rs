@@ -7,6 +7,7 @@ use iced::{
     Element, Length, Task, Theme,
     widget::{Space, button, container, row, svg, text, toggler},
 };
+use icy_engine_gui::ui::{BUTTON_PADDING_NORMAL, SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
 
 use super::segmented_control_gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use super::tools::Tool;
@@ -107,6 +108,16 @@ pub enum TopToolbarMessage {
     PrevFKeyPage,
     /// Set selection mode
     SetSelectionMode(SelectionMode),
+    /// Open font selection dialog
+    OpenFontSelector,
+    /// Select a font by index
+    SelectFont(i32),
+    /// Open outline style selector
+    OpenOutlineSelector,
+    /// Select outline style
+    SelectOutline(usize),
+    /// Open font directory (when no fonts are installed)
+    OpenFontDirectory,
 }
 
 /// Primary brush mode (exclusive).
@@ -147,6 +158,24 @@ pub struct SelectOptions {
     pub current_fkey_page: usize,
     pub selected_fkey: usize,
     pub selection_mode: SelectionMode,
+}
+
+/// Font panel display information
+#[derive(Clone, Debug, Default)]
+pub struct FontPanelInfo {
+    /// Name of the selected font (empty if no font selected)
+    pub font_name: String,
+    /// Index of the selected font
+    pub selected_font_index: i32,
+    /// Whether any fonts are loaded
+    pub has_fonts: bool,
+    /// Names of all available fonts (for picker)
+    pub font_names: Vec<String>,
+    /// Characters available in the selected font (for preview)
+    /// Each char is paired with whether it's available in the font
+    pub char_availability: Vec<(char, bool)>,
+    /// Current outline style index
+    pub outline_style: usize,
 }
 
 /// Top toolbar state
@@ -228,6 +257,21 @@ impl TopToolbar {
             TopToolbarMessage::SetSelectionMode(mode) => {
                 self.select_options.selection_mode = mode;
             }
+            TopToolbarMessage::OpenFontSelector => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::SelectFont(_) => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::OpenOutlineSelector => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::SelectOutline(_) => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::OpenFontDirectory => {
+                // handled at a higher level (AnsiEditor)
+            }
         }
         Task::none()
     }
@@ -243,6 +287,7 @@ impl TopToolbar {
         caret_fg: u32,
         caret_bg: u32,
         palette: &Palette,
+        font_panel_info: Option<&FontPanelInfo>,
     ) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
@@ -254,7 +299,7 @@ impl TopToolbar {
             Tool::Fill => self.view_fill_panel(),
             Tool::Pipette => self.view_sample_panel(),
             Tool::Shifter => self.view_shifter_panel(),
-            Tool::Font => self.view_font_panel(),
+            Tool::Font => self.view_font_panel(font_panel_info),
             Tool::Tag => self.view_tag_panel(),
         };
 
@@ -548,24 +593,118 @@ impl TopToolbar {
     }
 
     /// Font tool panel
-    fn view_font_panel(&self) -> Element<'_, TopToolbarMessage> {
-        row![
-            text("Font Tool").size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Type with TDF fonts").size(10),
+    ///
+    /// Layout: [Font Button] | [Char Preview (3 rows)] | [Outline Button]
+    /// If no fonts installed: [Label: No fonts] [Open Font Directory Button]
+    fn view_font_panel(&self, font_info: Option<&FontPanelInfo>) -> Element<'_, TopToolbarMessage> {
+        let info = font_info.cloned().unwrap_or_default();
+
+        // No fonts installed - show message and open directory button
+        if !info.has_fonts {
+            let content = row![
+                text("No fonts installed").size(TEXT_SIZE_NORMAL),
+                Space::new().width(Length::Fixed(SPACE_16)),
+                primary_button("Open Font Directory", Some(TopToolbarMessage::OpenFontDirectory)),
+            ]
+            .spacing(SPACE_8)
+            .align_y(iced::Alignment::Center);
+
+            return container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into();
+        }
+
+        // Font selection button - opens the TDF font selector dialog
+        let font_label = if !info.font_name.is_empty() {
+            info.font_name.clone()
+        } else {
+            "Select Font...".to_string()
+        };
+
+        let font_button = primary_button(font_label, Some(TopToolbarMessage::OpenFontSelector));
+
+        // Character preview (3 rows showing which characters are available)
+        let char_preview = self.build_char_preview(&info.char_availability);
+
+        // Outline style names for the button label
+        const OUTLINE_NAMES: [&str; 19] = [
+            "Normal", "Round", "Square", "Shadow", "3D", "Block 1", "Block 2", "Block 3", "Block 4", "Fancy 1", "Fancy 2", "Fancy 3", "Fancy 4", "Fancy 5",
+            "Fancy 6", "Fancy 7", "Fancy 8", "Fancy 9", "Fancy 10",
+        ];
+
+        let outline_label = OUTLINE_NAMES.get(info.outline_style).unwrap_or(&"Normal");
+
+        // Button to open the outline selector popup
+        let outline_button = secondary_button(*outline_label, Some(TopToolbarMessage::OpenOutlineSelector));
+
+        let content = row![
+            font_button,
+            Space::new().width(Length::Fixed(SPACE_8)),
+            char_preview,
+            Space::new().width(Length::Fixed(SPACE_16)),
+            text("Outline:").size(TEXT_SIZE_NORMAL),
+            outline_button,
         ]
-        .spacing(8)
-        .into()
+        .spacing(SPACE_8)
+        .align_y(iced::Alignment::Center);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
+    }
+
+    /// Build the character preview widget showing which chars are in the font
+    fn build_char_preview(&self, char_availability: &[(char, bool)]) -> Element<'_, TopToolbarMessage> {
+        use iced::widget::Column;
+
+        // Split into 3 rows
+        let row1_chars: Vec<_> = char_availability.iter().filter(|(c, _)| *c >= '!' && *c <= 'O').collect();
+        let row2_chars: Vec<_> = char_availability.iter().filter(|(c, _)| *c >= 'P' && *c <= '~').collect();
+
+        println!("Row 1 chars: {} - {}", row1_chars.len(), row2_chars.len());
+        // Build row 1
+        let mut r1 = row![].spacing(0);
+        for (ch, available) in &row1_chars {
+            let t = text(ch.to_string()).font(iced::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
+            if *available {
+                r1 = r1.push(t);
+            } else {
+                r1 = r1.push(t.style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                }));
+            };
+        }
+
+        // Build row 2
+        let mut r2 = row![].spacing(0);
+        for (ch, available) in &row2_chars {
+            let t = text(ch.to_string()).font(iced::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
+            if *available {
+                r2 = r2.push(t);
+            } else {
+                r2 = r2.push(t.style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                }));
+            };
+        }
+
+        Column::new().push(r1).push(r2).spacing(0).into()
     }
 
     /// Tag tool panel
     fn view_tag_panel(&self) -> Element<'_, TopToolbarMessage> {
         row![
-            text("Tag Tool").size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Click to add annotation tag").size(10),
+            text("Tag Tool").size(TEXT_SIZE_NORMAL),
+            Space::new().width(Length::Fixed(SPACE_16)),
+            text("Click to add annotation tag").size(TEXT_SIZE_SMALL),
         ]
-        .spacing(8)
+        .spacing(SPACE_8)
         .into()
     }
 }

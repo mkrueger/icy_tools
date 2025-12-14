@@ -169,6 +169,9 @@ pub enum EngineError {
 
     #[error("{0}")]
     Generic(String),
+
+    #[error("Archive error: {0}")]
+    Archive(#[from] unarc_rs::error::ArchiveError),
 }
 
 /// Result type alias for icy_engine operations

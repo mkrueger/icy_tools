@@ -37,8 +37,8 @@ impl<'a> CRTShaderProgram<'a> {
     }
 
     fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
-        let mut font_w = 0usize;
-        let mut font_h = 0usize;
+        let font_w;
+        let font_h;
         let scan_lines;
         let scroll_offset_y: f32;
         let scroll_offset_x: f32;

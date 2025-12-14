@@ -10,16 +10,19 @@
 )]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use clap::Parser;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
 use lazy_static::lazy_static;
+use parking_lot::RwLock;
 use semver::Version;
 
 mod ui;
+mod util;
 use ui::WindowManager;
+pub use util::*;
 
 lazy_static! {
     pub static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
@@ -102,10 +105,12 @@ fn main() {
 
     iced::daemon(
         move || {
+            let font_library = FontLibrary::create_shared();
+
             if let Some(ref path) = args.path {
-                WindowManager::with_path(path.clone())
+                WindowManager::with_path(font_library, path.clone())
             } else {
-                WindowManager::new()
+                WindowManager::new(font_library)
             }
         },
         WindowManager::update,

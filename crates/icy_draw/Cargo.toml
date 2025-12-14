@@ -84,7 +84,6 @@ fontdue = "0.9"
 
 # File handling
 walkdir = { workspace = true }
-zip = { workspace = true }
 notify = { workspace = true }
 rfd = { workspace = true }
 open = { workspace = true }

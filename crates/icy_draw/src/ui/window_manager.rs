@@ -11,7 +11,7 @@ use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keybo
 
 use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
 use super::{MainWindow, Options, commands::create_draw_commands};
-use crate::load_window_icon;
+use crate::{SharedFontLibrary, load_window_icon};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id};
@@ -49,6 +49,8 @@ pub struct WindowManager {
     /// Cached window geometry (position, size) for session saving
     window_geometry: BTreeMap<window::Id, WindowGeometry>,
     options: Arc<RwLock<Options>>,
+    /// Shared font library for TDF/Figlet fonts
+    font_library: SharedFontLibrary,
     /// Pending windows to restore (for session restore)
     pending_restores: Vec<WindowRestoreInfo>,
     /// Session manager for hot exit
@@ -89,7 +91,8 @@ pub enum WindowManagerMessage {
 
 impl WindowManager {
     /// Create a new WindowManager, restoring session if available
-    pub fn new() -> (Self, Task<WindowManagerMessage>) {
+
+    pub fn new(font_library: SharedFontLibrary) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
         let options = Options::load();
         let commands = WindowCommands::new();
@@ -97,15 +100,15 @@ impl WindowManager {
         // Try to restore session
         if let Some(session) = session_manager.load_session() {
             log::info!("Restoring session with {} windows", session.windows.len());
-            return Self::restore_session(session, session_manager, options, commands);
+            return Self::restore_session(font_library, session, session_manager, options, commands);
         }
 
         // No session - open default window
-        Self::open_initial_window(session_manager, options, commands, None)
+        Self::open_initial_window(font_library, session_manager, options, commands, None)
     }
 
     /// Create WindowManager with a specific file (CLI argument - starts fresh session)
-    pub fn with_path(path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
+    pub fn with_path(font_library: SharedFontLibrary, path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
         // Clear any existing session when opening via CLI
         session_manager.clear_session();
@@ -113,11 +116,12 @@ impl WindowManager {
         let options = Options::load();
         let commands = WindowCommands::new();
 
-        Self::open_initial_window(session_manager, options, commands, Some(path))
+        Self::open_initial_window(font_library, session_manager, options, commands, Some(path))
     }
 
     /// Restore a session from saved state
     fn restore_session(
+        font_library: SharedFontLibrary,
         session: SessionState,
         session_manager: SessionManager,
         options: Options,
@@ -155,6 +159,7 @@ impl WindowManager {
             windows: BTreeMap::new(),
             window_geometry: BTreeMap::new(),
             options: Arc::new(RwLock::new(options)),
+            font_library,
             pending_restores,
             session_manager,
             restoring_session: true,
@@ -172,6 +177,7 @@ impl WindowManager {
 
     /// Open initial window (no session restore)
     fn open_initial_window(
+        font_library: SharedFontLibrary,
         session_manager: SessionManager,
         options: Options,
         commands: WindowCommands,
@@ -203,6 +209,7 @@ impl WindowManager {
                 windows: BTreeMap::new(),
                 window_geometry: BTreeMap::new(),
                 options: Arc::new(RwLock::new(options)),
+                font_library,
                 pending_restores: pending,
                 session_manager,
                 restoring_session: false,
@@ -341,6 +348,7 @@ impl WindowManager {
                         restore.load_path.clone(),
                         restore.mark_dirty,
                         self.options.clone(),
+                        self.font_library.clone(),
                     )
                 } else {
                     // Initialize with default geometry
@@ -353,7 +361,7 @@ impl WindowManager {
                     );
 
                     // No pending - create empty window
-                    MainWindow::new(find_next_window_id(&self.windows), None, self.options.clone())
+                    MainWindow::new(find_next_window_id(&self.windows), None, self.options.clone(), self.font_library.clone())
                 };
 
                 // Initialize autosave status

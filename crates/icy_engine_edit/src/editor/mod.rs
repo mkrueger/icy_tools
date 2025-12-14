@@ -19,6 +19,9 @@ mod font_operations;
 mod selection_operations;
 mod tag_operations;
 
+mod tdf_renderer;
+pub use tdf_renderer::TdfEditStateRenderer;
+
 // ============================================================================
 // Format Mode
 // ============================================================================

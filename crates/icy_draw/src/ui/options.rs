@@ -5,6 +5,19 @@ use std::{fs, path::PathBuf, sync::Arc};
 
 use super::{FKeySets, MostRecentlyUsedFiles};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagRenderMode {
+    Buffer,
+    Overlay,
+}
+
+impl Default for TagRenderMode {
+    fn default() -> Self {
+        Self::Buffer
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedOptions {
     #[serde(default)]
@@ -12,6 +25,9 @@ struct PersistedOptions {
 
     #[serde(default)]
     pub font_outline_style: usize,
+
+    #[serde(default)]
+    pub tag_render_mode: TagRenderMode,
 }
 
 impl Default for PersistedOptions {
@@ -19,6 +35,7 @@ impl Default for PersistedOptions {
         Self {
             monitor_settings: MonitorSettings::default(),
             font_outline_style: 0,
+            tag_render_mode: TagRenderMode::default(),
         }
     }
 }
@@ -38,6 +55,9 @@ pub struct Options {
 
     /// Shared outline style for drawing/TDFFont outlines (persisted)
     pub font_outline_style: Arc<RwLock<usize>>,
+
+    /// Tag rendering mode (persisted)
+    pub tag_render_mode: Arc<RwLock<TagRenderMode>>,
 }
 
 impl Options {
@@ -50,6 +70,7 @@ impl Options {
             fkeys: FKeySets::load(),
             monitor_settings: Arc::new(RwLock::new(persistent.monitor_settings)),
             font_outline_style: Arc::new(RwLock::new(persistent.font_outline_style)),
+            tag_render_mode: Arc::new(RwLock::new(persistent.tag_render_mode)),
         }
     }
 
@@ -57,6 +78,7 @@ impl Options {
         let settings = PersistedOptions {
             monitor_settings: self.monitor_settings.read().clone(),
             font_outline_style: *self.font_outline_style.read(),
+            tag_render_mode: *self.tag_render_mode.read(),
         };
         Self::store_options_file(&settings);
     }

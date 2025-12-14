@@ -115,18 +115,13 @@ mod tests {
 
     // Helper to collect drawn points
     struct MockTarget {
-        points: Vec<(Position, PointRole)>,
         width: i32,
         height: i32,
     }
 
     impl MockTarget {
         fn new(width: i32, height: i32) -> Self {
-            Self {
-                points: Vec::new(),
-                width,
-                height,
-            }
+            Self { width, height }
         }
     }
 

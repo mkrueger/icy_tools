@@ -34,16 +34,19 @@ mod fkey_toolbar;
 mod fkey_toolbar_gpu;
 mod font_selector_dialog;
 mod font_slot_manager_dialog;
+mod font_tool;
 mod glyph_renderer;
 mod layer_view;
 mod line_numbers;
 pub mod menu_bar;
 mod minimap_view;
+mod outline_selector;
 mod palette_grid;
 mod reference_image_dialog;
 mod right_panel;
 mod segmented_control_gpu;
 mod segmented_layout;
+mod tdf_font_selector;
 mod tool_panel;
 mod tool_panel_wrapper;
 mod top_toolbar;
@@ -58,6 +61,7 @@ pub use file_settings_dialog::*;
 pub use fkey_toolbar_gpu::*;
 pub use font_selector_dialog::*;
 pub use font_slot_manager_dialog::*;
+pub use font_tool::FontToolState;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
@@ -65,6 +69,7 @@ pub use minimap_view::*;
 pub use palette_grid::*;
 pub use reference_image_dialog::*;
 pub use right_panel::*;
+pub use tdf_font_selector::{TdfFontSelectorDialog, TdfFontSelectorMessage};
 // Use shared GPU-accelerated tool panel via wrapper
 pub use tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
 pub use top_toolbar::*;
@@ -77,11 +82,12 @@ use iced::{
     widget::{button, column, container, row, text},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
+use icy_engine::{MouseButton, Position, Screen, TextBuffer, TextPane};
 use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::{Mutex, RwLock};
 
+use crate::SharedFontLibrary;
 use crate::ui::Options;
 use icy_engine::BufferType;
 
@@ -105,6 +111,8 @@ fn convert_mouse_button(button: MouseButton) -> iced::mouse::Button {
 }
 
 /// Messages for the ANSI editor
+use outline_selector::{OutlineSelector, OutlineSelectorMessage, outline_selector_width};
+
 #[derive(Clone, Debug)]
 pub enum AnsiEditorMessage {
     /// Tool panel messages
@@ -119,6 +127,8 @@ pub enum AnsiEditorMessage {
     FKeyToolbar(FKeyToolbarMessage),
     /// Char selector popup messages (F-key character selection)
     CharSelector(CharSelectorMessage),
+    /// Outline selector popup messages (font tool outline style)
+    OutlineSelector(OutlineSelectorMessage),
     /// Color switcher messages
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
@@ -173,6 +183,10 @@ pub enum AnsiEditorMessage {
     ToggleLineNumbers,
     /// Toggle layer borders display
     ToggleLayerBorders,
+    /// Open TDF font selector
+    OpenTdfFontSelector,
+    /// TDF font selector messages
+    TdfFontSelector(TdfFontSelectorMessage),
 }
 
 /// Mouse events on the canvas (using text/buffer coordinates)
@@ -295,6 +309,16 @@ pub struct AnsiEditor {
     // === Character Selector State ===
     /// If Some, show the character selector popup for the given target
     pub char_selector_target: Option<CharSelectorTarget>,
+
+    // === Font Tool State ===
+    /// Font tool state (loaded fonts, selected font, etc.)
+    pub font_tool: FontToolState,
+    /// If true, show the outline selector popup for font tool
+    pub outline_selector_open: bool,
+    /// If true, show the TDF font selector dialog
+    pub tdf_font_selector_open: bool,
+    /// TDF font selector dialog state
+    pub tdf_font_selector: TdfFontSelectorDialog,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
@@ -572,15 +596,15 @@ impl AnsiEditor {
     }
 
     /// Create a new empty ANSI editor
-    pub fn new(options: Arc<RwLock<Options>>) -> Self {
+    pub fn new(options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
         let buffer = TextBuffer::create((80, 25));
-        Self::with_buffer(buffer, None, options)
+        Self::with_buffer(buffer, None, options, font_library)
     }
 
     /// Create an ANSI editor with a file
     ///
     /// Returns the editor with the loaded buffer, or an error if loading failed.
-    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>) -> anyhow::Result<Self> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> anyhow::Result<Self> {
         // Detect file format
         let format = FileFormat::from_path(&path).ok_or_else(|| anyhow::anyhow!("Unknown file format"))?;
 
@@ -595,11 +619,11 @@ impl AnsiEditor {
         let load_data = LoadData::default();
         let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
 
-        Ok(Self::with_buffer(buffer, Some(path), options))
+        Ok(Self::with_buffer(buffer, Some(path), options, font_library))
     }
 
     /// Create an ANSI editor with an existing buffer
-    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>) -> Self {
+    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
         let id = unsafe {
             NEXT_ID = NEXT_ID.wrapping_add(1);
             NEXT_ID
@@ -672,6 +696,11 @@ impl AnsiEditor {
 
             char_selector_target: None,
 
+            font_tool: FontToolState::new(font_library.clone()),
+            outline_selector_open: false,
+            tdf_font_selector_open: false,
+            tdf_font_selector: TdfFontSelectorDialog::new(font_library),
+
             paint_undo: None,
             paint_last_pos: None,
             paint_button: iced::mouse::Button::Left,
@@ -740,7 +769,12 @@ impl AnsiEditor {
     ///
     /// The autosave file is always saved in ICY format (to preserve layers, fonts, etc.),
     /// but we set the original path so future saves use the correct format.
-    pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf, options: Arc<RwLock<Options>>) -> anyhow::Result<Self> {
+    pub fn load_from_autosave(
+        autosave_path: &std::path::Path,
+        original_path: PathBuf,
+        options: Arc<RwLock<Options>>,
+        font_library: SharedFontLibrary,
+    ) -> anyhow::Result<Self> {
         // Autosaves are always saved in ICY format
         let format = FileFormat::IcyDraw;
 
@@ -751,7 +785,7 @@ impl AnsiEditor {
         let load_data = LoadData::default();
         let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
 
-        let mut editor = Self::with_buffer(buffer, Some(original_path), options);
+        let mut editor = Self::with_buffer(buffer, Some(original_path), options, font_library);
         editor.is_modified = true; // Autosave means we have unsaved changes
         Ok(editor)
     }
@@ -1049,6 +1083,39 @@ impl AnsiEditor {
                         self.set_current_fkey_set(prev);
                         Task::none()
                     }
+                    TopToolbarMessage::OpenFontDirectory => {
+                        // Open the font directory in the system file manager
+                        if let Some(font_dir) = Options::font_dir() {
+                            // Create directory if it doesn't exist
+                            if !font_dir.exists() {
+                                let _ = std::fs::create_dir_all(&font_dir);
+                            }
+                            if let Err(e) = open::that(&font_dir) {
+                                log::warn!("Failed to open font directory: {}", e);
+                            }
+                        }
+                        Task::none()
+                    }
+                    TopToolbarMessage::SelectFont(index) => {
+                        self.font_tool.select_font(index);
+                        self.font_tool.prev_char = '\0'; // Reset kerning
+                        Task::none()
+                    }
+                    TopToolbarMessage::SelectOutline(index) => {
+                        // Update outline style in options
+                        *self.options.read().font_outline_style.write() = index;
+                        Task::none()
+                    }
+                    TopToolbarMessage::OpenOutlineSelector => {
+                        // Open the outline selector popup
+                        self.outline_selector_open = true;
+                        Task::none()
+                    }
+                    TopToolbarMessage::OpenFontSelector => {
+                        // This will be handled by main_window to open the dialog
+                        // Return a task that signals this (handled via Message routing)
+                        Task::none()
+                    }
                     _ => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
                 }
             }
@@ -1110,6 +1177,19 @@ impl AnsiEditor {
                     }
                     CharSelectorMessage::Cancel => {
                         self.char_selector_target = None;
+                    }
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::OutlineSelector(msg) => {
+                match msg {
+                    OutlineSelectorMessage::SelectOutline(style) => {
+                        // Update outline style in options
+                        *self.options.read().font_outline_style.write() = style;
+                        self.outline_selector_open = false;
+                    }
+                    OutlineSelectorMessage::Cancel => {
+                        self.outline_selector_open = false;
                     }
                 }
                 Task::none()
@@ -1305,6 +1385,11 @@ impl AnsiEditor {
                 self.update_layer_bounds();
                 Task::none()
             }
+            AnsiEditorMessage::OpenTdfFontSelector => {
+                self.tdf_font_selector_open = true;
+                Task::none()
+            }
+            AnsiEditorMessage::TdfFontSelector(msg) => self.handle_tdf_font_selector_message(msg),
         }
     }
 
@@ -1397,6 +1482,41 @@ impl AnsiEditor {
         };
 
         self.canvas.set_layer_bounds(layer_bounds, true);
+    }
+
+    /// Handle TDF font selector messages
+    fn handle_tdf_font_selector_message(&mut self, msg: TdfFontSelectorMessage) -> Task<AnsiEditorMessage> {
+        match msg {
+            TdfFontSelectorMessage::Cancel => {
+                self.tdf_font_selector_open = false;
+            }
+            TdfFontSelectorMessage::Confirm(font_idx) => {
+                // Apply selected font and close dialog
+                if font_idx >= 0 {
+                    self.font_tool.select_font(font_idx);
+                }
+                self.tdf_font_selector_open = false;
+            }
+            TdfFontSelectorMessage::SelectFont(idx) => {
+                self.tdf_font_selector.select_font(idx);
+            }
+            TdfFontSelectorMessage::FilterChanged(filter) => {
+                self.tdf_font_selector.set_filter(filter);
+            }
+            TdfFontSelectorMessage::ToggleOutline => {
+                self.tdf_font_selector.toggle_outline();
+            }
+            TdfFontSelectorMessage::ToggleBlock => {
+                self.tdf_font_selector.toggle_block();
+            }
+            TdfFontSelectorMessage::ToggleColor => {
+                self.tdf_font_selector.toggle_color();
+            }
+            TdfFontSelectorMessage::ToggleFiglet => {
+                self.tdf_font_selector.toggle_figlet();
+            }
+        }
+        Task::none()
     }
 
     /// Update the selection display in the shader
@@ -1548,12 +1668,241 @@ impl AnsiEditor {
         self.handle_tool_event(event);
     }
 
+    /// Handle named key events for Click and Font tools (shared navigation/editing)
+    fn handle_click_font_named_key(&mut self, named: &iced::keyboard::key::Named, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
+        use iced::keyboard::key::Named;
+        match named {
+            Named::F1
+            | Named::F2
+            | Named::F3
+            | Named::F4
+            | Named::F5
+            | Named::F6
+            | Named::F7
+            | Named::F8
+            | Named::F9
+            | Named::F10
+            | Named::F11
+            | Named::F12 => {
+                let slot = match named {
+                    Named::F1 => 0,
+                    Named::F2 => 1,
+                    Named::F3 => 2,
+                    Named::F4 => 3,
+                    Named::F5 => 4,
+                    Named::F6 => 5,
+                    Named::F7 => 6,
+                    Named::F8 => 7,
+                    Named::F9 => 8,
+                    Named::F10 => 9,
+                    Named::F11 => 10,
+                    Named::F12 => 11,
+                    _ => 0,
+                };
+
+                // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
+                if modifiers.alt() && slot < 10 {
+                    let base = if modifiers.shift() { 10 } else { 0 };
+                    self.set_current_fkey_set(base + slot);
+                    return ToolEvent::Redraw;
+                }
+
+                self.type_fkey_slot(slot);
+                ToolEvent::Commit("Type fkey".to_string())
+            }
+            // Cursor movement
+            Named::ArrowUp => {
+                self.with_edit_state(|state| state.move_caret_up(1));
+                ToolEvent::Redraw
+            }
+            Named::ArrowDown => {
+                self.with_edit_state(|state| state.move_caret_down(1));
+                ToolEvent::Redraw
+            }
+            Named::ArrowLeft => {
+                self.with_edit_state(|state| state.move_caret_left(1));
+                ToolEvent::Redraw
+            }
+            Named::ArrowRight => {
+                self.with_edit_state(|state| state.move_caret_right(1));
+                ToolEvent::Redraw
+            }
+            Named::Home => {
+                self.with_edit_state(|state| state.set_caret_x(0));
+                ToolEvent::Redraw
+            }
+            Named::End => {
+                let width = self.with_edit_state(|state| state.get_buffer().width());
+                self.with_edit_state(|state| state.set_caret_x(width - 1));
+                ToolEvent::Redraw
+            }
+            Named::PageUp => {
+                self.with_edit_state(|state| state.move_caret_up(24));
+                ToolEvent::Redraw
+            }
+            Named::PageDown => {
+                self.with_edit_state(|state| state.move_caret_down(24));
+                ToolEvent::Redraw
+            }
+            // Text editing
+            Named::Backspace => {
+                let result = self.with_edit_state(|state| {
+                    if state.is_something_selected() {
+                        state.erase_selection()
+                    } else {
+                        state.backspace()
+                    }
+                });
+                if let Err(e) = result {
+                    log::warn!("Failed to backspace: {}", e);
+                }
+                self.update_selection_display();
+                ToolEvent::Commit("Backspace".to_string())
+            }
+            Named::Delete => {
+                let result = self.with_edit_state(|state| {
+                    if state.is_something_selected() {
+                        state.erase_selection()
+                    } else {
+                        state.delete_key()
+                    }
+                });
+                if let Err(e) = result {
+                    log::warn!("Failed to delete: {}", e);
+                }
+                self.update_selection_display();
+                ToolEvent::Commit("Delete".to_string())
+            }
+            Named::Enter => {
+                if self.current_tool == Tool::Font {
+                    // Font tool: just move to next line
+                    self.with_edit_state(|state| {
+                        let pos = state.get_caret().position();
+                        state.set_caret_position(Position::new(0, pos.y + 1));
+                    });
+                    self.font_tool.prev_char = '\0';
+                    ToolEvent::Redraw
+                } else {
+                    let result = self.with_edit_state(|state| state.new_line());
+                    if let Err(e) = result {
+                        log::warn!("Failed to new line: {}", e);
+                    }
+                    ToolEvent::Commit("New line".to_string())
+                }
+            }
+            Named::Tab => {
+                if modifiers.shift() {
+                    self.with_edit_state(|state| state.handle_reverse_tab());
+                } else {
+                    self.with_edit_state(|state| state.handle_tab());
+                }
+                ToolEvent::Redraw
+            }
+            Named::Insert => {
+                self.with_edit_state(|state| state.toggle_insert_mode());
+                ToolEvent::Redraw
+            }
+            Named::Space => {
+                if self.current_tool == Tool::Font {
+                    return self.handle_font_tool_char(' ');
+                }
+                // Space is a named key in iced, treat as character input
+                let result = self.with_edit_state(|state| state.type_key(' '));
+                if let Err(e) = result {
+                    log::warn!("Failed to type space: {}", e);
+                }
+                ToolEvent::Commit("Type character".to_string())
+            }
+            Named::Escape => {
+                // Clear selection
+                self.with_edit_state(|state| {
+                    let _ = state.clear_selection();
+                });
+                self.update_selection_display();
+                ToolEvent::Redraw
+            }
+            _ => ToolEvent::None,
+        }
+    }
+
+    /// Handle character input for Font tool (TDF/Figlet rendering)
+    fn handle_font_tool_char(&mut self, ch: char) -> ToolEvent {
+        use icy_engine_edit::TdfEditStateRenderer;
+
+        // Check if we have a selected font
+        let font_idx = self.font_tool.selected_font;
+        if font_idx < 0 || (font_idx as usize) >= self.font_tool.font_count() {
+            log::warn!("No font selected for Font tool");
+            return ToolEvent::None;
+        }
+
+        // Check if character is supported (access font through library)
+        let has_char = self.font_tool.with_font_at(font_idx as usize, |font| font.has_char(ch));
+        if !has_char.unwrap_or(false) {
+            log::debug!("Character '{}' not supported by current font", ch);
+            return ToolEvent::None;
+        }
+
+        // Get outline style from options
+        let outline_style = { *self.options.read().font_outline_style.read() };
+
+        // Render the glyph - access screen and font library
+        let result: Result<Position, icy_engine::EngineError> = {
+            let mut screen = self.screen.lock();
+            let edit_state = screen
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+
+            let caret_pos = edit_state.get_caret().position();
+
+            match TdfEditStateRenderer::new(edit_state, caret_pos.x, caret_pos.y) {
+                Ok(mut renderer) => {
+                    let render_options = retrofont::RenderOptions {
+                        outline_style,
+                        ..Default::default()
+                    };
+
+                    // Access font through library and render
+                    let lib = self.font_tool.font_library.read();
+                    if let Some(font) = lib.get_font(font_idx as usize) {
+                        match font.render_glyph(&mut renderer, ch, &render_options) {
+                            Ok(_) => Ok(renderer.position()),
+                            Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {}", e))),
+                        }
+                    } else {
+                        Err(icy_engine::EngineError::Generic("Font not found".to_string()))
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        };
+
+        match result {
+            Ok(new_pos) => {
+                // Update prev_char for kerning
+                self.font_tool.prev_char = ch;
+
+                // Move caret to new position
+                self.with_edit_state(|state| {
+                    state.set_caret_position(new_pos);
+                });
+
+                ToolEvent::Commit("Render font character".to_string())
+            }
+            Err(e) => {
+                log::warn!("Failed to render font character: {}", e);
+                ToolEvent::None
+            }
+        }
+    }
+
     /// Handle tool-specific key events based on current tool
     fn handle_tool_key(&mut self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
         use iced::keyboard::key::Named;
         match self.current_tool {
-            Tool::Click | Tool::Font => {
-                // Handle typing and cursor movement
+            Tool::Click => {
+                // Handle typing and cursor movement for Click tool (normal text input)
                 match key {
                     iced::keyboard::Key::Character(c) => {
                         if !modifiers.control() && !modifiers.alt() {
@@ -1570,145 +1919,23 @@ impl AnsiEditor {
                         }
                     }
                     iced::keyboard::Key::Named(named) => {
-                        match named {
-                            Named::F1
-                            | Named::F2
-                            | Named::F3
-                            | Named::F4
-                            | Named::F5
-                            | Named::F6
-                            | Named::F7
-                            | Named::F8
-                            | Named::F9
-                            | Named::F10
-                            | Named::F11
-                            | Named::F12 => {
-                                let slot = match named {
-                                    Named::F1 => 0,
-                                    Named::F2 => 1,
-                                    Named::F3 => 2,
-                                    Named::F4 => 3,
-                                    Named::F5 => 4,
-                                    Named::F6 => 5,
-                                    Named::F7 => 6,
-                                    Named::F8 => 7,
-                                    Named::F9 => 8,
-                                    Named::F10 => 9,
-                                    Named::F11 => 10,
-                                    Named::F12 => 11,
-                                    _ => 0,
-                                };
-
-                                // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
-                                if modifiers.alt() && slot < 10 {
-                                    let base = if modifiers.shift() { 10 } else { 0 };
-                                    self.set_current_fkey_set(base + slot);
-                                    return ToolEvent::Redraw;
-                                }
-
-                                self.type_fkey_slot(slot);
-                                return ToolEvent::Commit("Type fkey".to_string());
+                        return self.handle_click_font_named_key(named, modifiers);
+                    }
+                    _ => {}
+                }
+            }
+            Tool::Font => {
+                // Handle TDF/Figlet font rendering
+                match key {
+                    iced::keyboard::Key::Character(c) => {
+                        if !modifiers.control() && !modifiers.alt() {
+                            if let Some(ch) = c.chars().next() {
+                                return self.handle_font_tool_char(ch);
                             }
-                            // Cursor movement
-                            Named::ArrowUp => {
-                                self.with_edit_state(|state| state.move_caret_up(1));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::ArrowDown => {
-                                self.with_edit_state(|state| state.move_caret_down(1));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::ArrowLeft => {
-                                self.with_edit_state(|state| state.move_caret_left(1));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::ArrowRight => {
-                                self.with_edit_state(|state| state.move_caret_right(1));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::Home => {
-                                self.with_edit_state(|state| state.set_caret_x(0));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::End => {
-                                let width = self.with_edit_state(|state| state.get_buffer().width());
-                                self.with_edit_state(|state| state.set_caret_x(width - 1));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::PageUp => {
-                                self.with_edit_state(|state| state.move_caret_up(24));
-                                return ToolEvent::Redraw;
-                            }
-                            Named::PageDown => {
-                                self.with_edit_state(|state| state.move_caret_down(24));
-                                return ToolEvent::Redraw;
-                            }
-                            // Text editing
-                            Named::Backspace => {
-                                let result = self.with_edit_state(|state| {
-                                    if state.is_something_selected() {
-                                        state.erase_selection()
-                                    } else {
-                                        state.backspace()
-                                    }
-                                });
-                                if let Err(e) = result {
-                                    log::warn!("Failed to backspace: {}", e);
-                                }
-                                self.update_selection_display();
-                                return ToolEvent::Commit("Backspace".to_string());
-                            }
-                            Named::Delete => {
-                                let result = self.with_edit_state(|state| {
-                                    if state.is_something_selected() {
-                                        state.erase_selection()
-                                    } else {
-                                        state.delete_key()
-                                    }
-                                });
-                                if let Err(e) = result {
-                                    log::warn!("Failed to delete: {}", e);
-                                }
-                                self.update_selection_display();
-                                return ToolEvent::Commit("Delete".to_string());
-                            }
-                            Named::Enter => {
-                                let result = self.with_edit_state(|state| state.new_line());
-                                if let Err(e) = result {
-                                    log::warn!("Failed to new line: {}", e);
-                                }
-                                return ToolEvent::Commit("New line".to_string());
-                            }
-                            Named::Tab => {
-                                if modifiers.shift() {
-                                    self.with_edit_state(|state| state.handle_reverse_tab());
-                                } else {
-                                    self.with_edit_state(|state| state.handle_tab());
-                                }
-                                return ToolEvent::Redraw;
-                            }
-                            Named::Insert => {
-                                self.with_edit_state(|state| state.toggle_insert_mode());
-                                return ToolEvent::Redraw;
-                            }
-                            Named::Space => {
-                                // Space is a named key in iced, treat as character input
-                                let result = self.with_edit_state(|state| state.type_key(' '));
-                                if let Err(e) = result {
-                                    log::warn!("Failed to type space: {}", e);
-                                }
-                                return ToolEvent::Commit("Type character".to_string());
-                            }
-                            Named::Escape => {
-                                // Clear selection
-                                self.with_edit_state(|state| {
-                                    let _ = state.clear_selection();
-                                });
-                                self.update_selection_display();
-                                return ToolEvent::Redraw;
-                            }
-                            _ => {}
                         }
+                    }
+                    iced::keyboard::Key::Named(named) => {
+                        return self.handle_click_font_named_key(named, modifiers);
                     }
                     _ => {}
                 }
@@ -2479,6 +2706,13 @@ impl AnsiEditor {
         // Clone font for char selector overlay (will be used later if popup is open)
         let font_for_char_selector = current_font.clone();
 
+        // Build font panel info for Font tool
+        let font_panel_info = if self.current_tool == Tool::Font {
+            Some(self.build_font_panel_info())
+        } else {
+            None
+        };
+
         // Use GPU FKeyToolbar for Click tool, regular TopToolbar for other tools
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.current_tool == Tool::Click {
             self.fkey_toolbar
@@ -2495,6 +2729,7 @@ impl AnsiEditor {
                     caret_fg,
                     caret_bg,
                     &palette,
+                    font_panel_info.as_ref(),
                 )
                 .map(AnsiEditorMessage::TopToolbar)
         };
@@ -2602,6 +2837,16 @@ impl AnsiEditor {
 
             // Use modal() which closes on click outside (on_blur)
             icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
+        } else if self.outline_selector_open {
+            // Apply outline selector modal overlay if active
+            let current_style = *self.options.read().font_outline_style.read();
+
+            let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
+
+            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
+
+            // Use modal() which closes on click outside (on_blur)
+            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel))
         } else {
             main_layout
         }
@@ -2680,6 +2925,35 @@ impl AnsiEditor {
         // Clear tool hover preview when switching tools.
         if !matches!(tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
             self.canvas.set_brush_preview(None);
+        }
+        // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
+    }
+
+    /// Build FontPanelInfo from current font tool state
+    fn build_font_panel_info(&self) -> FontPanelInfo {
+        let font_name = self.font_tool.with_selected_font(|f| f.name().to_string()).unwrap_or_default();
+
+        let has_fonts = self.font_tool.has_fonts();
+        let selected_font_index = self.font_tool.selected_font;
+
+        // Build font names list
+        let font_names: Vec<String> = (0..self.font_tool.font_count())
+            .filter_map(|i| self.font_tool.font_name(i).map(|n| n.to_string()))
+            .collect();
+
+        // Build char availability for preview (chars ! to ~)
+        let char_availability: Vec<(char, bool)> = ('!'..='~').map(|ch| (ch, self.font_tool.has_char(ch))).collect();
+
+        // Get current outline style
+        let outline_style = { *self.options.read().font_outline_style.read() };
+
+        FontPanelInfo {
+            font_name,
+            selected_font_index,
+            has_fonts,
+            font_names,
+            char_availability,
+            outline_style,
         }
     }
 }

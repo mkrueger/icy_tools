@@ -7,7 +7,7 @@ use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
 use parking_lot::RwLock;
 
-use crate::fl;
+use crate::{SharedFontLibrary, fl};
 use iced::{
     Alignment, Element, Event, Length, Task, Theme,
     widget::{Space, column, container, mouse_area, row, rule, text},
@@ -20,7 +20,7 @@ use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm
 use icy_engine_gui::{command_handler, command_handlers};
 
 use super::animation_editor::{AnimationEditor, AnimationEditorMessage};
-use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage};
+use super::ansi_editor::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage, TopToolbarMessage};
 use super::bitfont_editor::{BitFontEditor, BitFontEditorMessage, BitFontTopToolbarMessage};
 use super::commands::create_draw_commands;
 use super::palette_editor::{PaletteEditorDialog, PaletteEditorMessage};
@@ -303,6 +303,9 @@ pub enum Message {
     OpenFontSlotManager,
     FontSlotManager(super::ansi_editor::FontSlotManagerMessage),
     ApplyFontSlotChange(super::ansi_editor::FontSlotManagerResult),
+    /// TDF/Figlet font selector for font tool
+    OpenTdfFontSelector,
+    TdfFontSelector(super::ansi_editor::TdfFontSelectorMessage),
     AddFonts,
     OpenFontManager,
     OpenFontDirectory,
@@ -486,6 +489,9 @@ pub struct MainWindow {
     /// Shared options
     options: Arc<RwLock<Options>>,
 
+    /// Shared font library for TDF/Figlet fonts
+    font_library: SharedFontLibrary,
+
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
 
@@ -524,7 +530,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<Options>>) -> Self {
+    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
         let (mode_state, initial_error) = if let Some(ref p) = path {
             // Determine mode based on file format
             let format = FileFormat::from_path(p);
@@ -565,18 +571,18 @@ impl MainWindow {
                 }
                 _ => {
                     // Try as ANSI/ASCII art file
-                    match AnsiEditor::with_file(p.clone(), options.clone()) {
+                    match AnsiEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
                             log::error!("Error loading file '{}': {}", p.display(), error.as_ref().unwrap().1);
-                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
                         }
                     }
                 }
             }
         } else {
-            (ModeState::Ansi(AnsiEditor::new(options.clone())), None)
+            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), None)
         };
 
         let last_save = mode_state.undo_stack_len();
@@ -590,6 +596,7 @@ impl MainWindow {
             id,
             mode_state,
             options,
+            font_library,
             menu_state: MenuBarState::new(),
             show_left_panel: true,
             show_right_panel: true,
@@ -615,7 +622,14 @@ impl MainWindow {
     /// When `load_path` differs from `original_path`, it's an autosave file and we use
     /// `load_from_autosave` to load it (since autosave files have .autosave extension
     /// and can't be identified by extension).
-    pub fn new_restored(id: usize, original_path: Option<PathBuf>, load_path: Option<PathBuf>, mark_dirty: bool, options: Arc<RwLock<Options>>) -> Self {
+    pub fn new_restored(
+        id: usize,
+        original_path: Option<PathBuf>,
+        load_path: Option<PathBuf>,
+        mark_dirty: bool,
+        options: Arc<RwLock<Options>>,
+        font_library: SharedFontLibrary,
+    ) -> Self {
         let (mode_state, initial_error) = match (&load_path, &original_path) {
             // Case 1: We have an autosave file to load (load_path differs from original_path)
             (Some(autosave), Some(orig)) if autosave != orig => {
@@ -648,11 +662,11 @@ impl MainWindow {
                     }
                     _ => {
                         // ANSI/other formats
-                        match AnsiEditor::load_from_autosave(autosave, orig.clone(), options.clone()) {
+                        match AnsiEditor::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::Ansi(editor), None),
                             Err(e) => {
                                 let error = Some(("Error Loading Autosave".to_string(), format!("{}", e)));
-                                (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                                (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
                             }
                         }
                     }
@@ -700,7 +714,7 @@ impl MainWindow {
                             (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
                         }
                     },
-                    _ => match AnsiEditor::with_file(p.clone(), options.clone()) {
+                    _ => match AnsiEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(mut editor) => {
                             if let Some(ref orig) = original_path {
                                 editor.set_file_path(orig.clone());
@@ -709,7 +723,7 @@ impl MainWindow {
                         }
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
-                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
                         }
                     },
                 }
@@ -741,18 +755,18 @@ impl MainWindow {
                             (ModeState::CharFont(super::charfont_editor::CharFontEditor::new(options.clone())), error)
                         }
                     },
-                    _ => match AnsiEditor::with_file(orig.clone(), options.clone()) {
+                    _ => match AnsiEditor::with_file(orig.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", orig.display(), e)));
-                            (ModeState::Ansi(AnsiEditor::new(options.clone())), error)
+                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
                         }
                     },
                 }
             }
 
             // Case 4: No paths - create empty
-            (None, None) => (ModeState::Ansi(AnsiEditor::new(options.clone())), None),
+            (None, None) => (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), None),
         };
 
         // Determine last_save based on dirty state
@@ -772,6 +786,7 @@ impl MainWindow {
             id,
             mode_state,
             options,
+            font_library,
             menu_state: MenuBarState::new(),
             show_left_panel: true,
             show_right_panel: true,
@@ -911,7 +926,7 @@ impl MainWindow {
                     _ => {
                         // Create ANSI editor with buffer from template
                         let buf = create_buffer_for_template(template, width, height);
-                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone()));
+                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone(), self.font_library.clone()));
                     }
                 }
                 self.mark_saved();
@@ -1109,7 +1124,7 @@ impl MainWindow {
                     }
                     _ => {
                         // Open in ANSI editor (default for all other formats)
-                        match AnsiEditor::with_file(path.clone(), self.options.clone()) {
+                        match AnsiEditor::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
                             Ok(editor) => {
                                 self.mode_state = ModeState::Ansi(editor);
                                 self.mark_saved();
@@ -1444,7 +1459,7 @@ impl MainWindow {
             }
             Message::SwitchMode(mode) => {
                 self.mode_state = match mode {
-                    EditMode::Ansi => ModeState::Ansi(AnsiEditor::new(self.options.clone())),
+                    EditMode::Ansi => ModeState::Ansi(AnsiEditor::new(self.options.clone(), self.font_library.clone())),
                     EditMode::BitFont => ModeState::BitFont(BitFontEditor::new()),
                     EditMode::CharFont => ModeState::CharFont(super::charfont_editor::CharFontEditor::new(self.options.clone())),
                     EditMode::Animation => ModeState::Animation(AnimationEditor::new()),
@@ -1487,6 +1502,10 @@ impl MainWindow {
                 // Intercept EditLayer to show the dialog
                 if let AnsiEditorMessage::EditLayer(layer_index) = msg {
                     return self.update(Message::ShowEditLayerDialog(layer_index));
+                }
+                // Intercept OpenFontSelector from TopToolbar to open TDF font dialog
+                if let AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontSelector) = msg {
+                    return self.update(Message::OpenTdfFontSelector);
                 }
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.update(msg).map(Message::AnsiEditor)
@@ -2256,6 +2275,24 @@ impl MainWindow {
             Message::AddFonts => Task::none(),
             Message::OpenFontManager => Task::none(),
             Message::OpenFontDirectory => Task::none(),
+            Message::OpenTdfFontSelector => {
+                // Open the TDF font selector dialog
+                if let ModeState::Ansi(editor) = &self.mode_state {
+                    let dialog = super::ansi_editor::TdfFontSelectorDialog::new(editor.font_tool.font_library());
+                    self.dialogs.push(dialog);
+                }
+                Task::none()
+            }
+            Message::TdfFontSelector(msg) => {
+                // Handle confirm message to apply selected font
+                if let super::ansi_editor::TdfFontSelectorMessage::Confirm(font_idx) = msg {
+                    if let ModeState::Ansi(editor) = &mut self.mode_state {
+                        editor.font_tool.select_font(font_idx);
+                    }
+                }
+                // Other messages (filter, select, generate preview, etc.) are handled by the dialog
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // View operations (TODO: implement for some)

@@ -34,6 +34,7 @@ icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #unarc-rs = { path ="../unarc-rs" }
 unarc-rs = "0.5.1"
 retrofont = { git = "https://github.com/mkrueger/retrofont" }
+#retrofont = { path ="../../retrofont/crates/retrofont" }
 
 #icy_view_gui = { path = "crates/icy_view_gui" }
 icy_view_gui = { path = "crates/icy_view_gui" }

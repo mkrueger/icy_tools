@@ -20,11 +20,14 @@
 //! }
 //! ```
 
-use std::path::Path;
+use std::{
+    io::{Read, Seek},
+    path::Path,
+};
 
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
-use unarc_rs::unified::ArchiveFormat;
+use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextScreen};
 
@@ -1040,6 +1043,16 @@ impl FileFormat {
     /// Check if this is a bitmap font format.
     pub fn is_bitfont(&self) -> bool {
         self.bitfont_format().is_some()
+    }
+
+    pub fn open_archive<T: Read + Seek>(&self, reader: T) -> Result<UnifiedArchive<T>> {
+        match self {
+            FileFormat::Archive(arc_fmt) => Ok(arc_fmt.open(reader)?),
+            _ => Err(EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "opening as archive".to_string(),
+            }),
+        }
     }
 }
 
