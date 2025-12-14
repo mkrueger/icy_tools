@@ -25,48 +25,11 @@ pub enum BrushMode {
 
     /// Set blinking attribute (true = on, false = off)
     Blink(bool),
-    /// Custom brush (e.g., from clipboard or stamp)
-    Custom(Arc<CustomBrush>),
 }
 
 impl Default for BrushMode {
     fn default() -> Self {
         Self::HalfBlock
-    }
-}
-
-/// Custom brush data (e.g., a stamp or clipboard content)
-#[derive(Clone, Debug, PartialEq)]
-pub struct CustomBrush {
-    /// Width of the brush in characters
-    pub width: i32,
-    /// Height of the brush in characters  
-    pub height: i32,
-    /// Character data (row-major order)
-    pub data: Vec<char>,
-}
-
-impl CustomBrush {
-    pub fn new(width: i32, height: i32) -> Self {
-        Self {
-            width,
-            height,
-            data: vec![' '; (width * height) as usize],
-        }
-    }
-
-    pub fn char_at(&self, x: i32, y: i32) -> Option<char> {
-        if x >= 0 && x < self.width && y >= 0 && y < self.height {
-            Some(self.data[(y * self.width + x) as usize])
-        } else {
-            None
-        }
-    }
-
-    pub fn set_char(&mut self, x: i32, y: i32, ch: char) {
-        if x >= 0 && x < self.width && y >= 0 && y < self.height {
-            self.data[(y * self.width + x) as usize] = ch;
-        }
     }
 }
 

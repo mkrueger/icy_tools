@@ -511,9 +511,21 @@ impl<T: Clone + PartialEq + Send + 'static> canvas::Program<SegmentedControlMess
                 };
 
                 self.cache.clear();
-                Some(iced::widget::Action::publish(SegmentedControlMessage::Selected(
-                    self.segments[idx].value.clone(),
-                )))
+
+                // If clicking on a Char segment that is already selected, send CharClicked
+                // to trigger the character picker popup
+                let is_char_segment = matches!(&self.segments[idx].content, SegmentContent::Char(_));
+                let is_already_selected = idx == self.selected_index;
+
+                if is_char_segment && is_already_selected {
+                    Some(iced::widget::Action::publish(SegmentedControlMessage::CharClicked(
+                        self.segments[idx].value.clone(),
+                    )))
+                } else {
+                    Some(iced::widget::Action::publish(SegmentedControlMessage::Selected(
+                        self.segments[idx].value.clone(),
+                    )))
+                }
             }
             _ => None,
         }

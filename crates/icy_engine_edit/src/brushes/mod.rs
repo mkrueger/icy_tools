@@ -26,7 +26,7 @@ pub mod ellipse;
 pub mod line;
 pub mod rectangle;
 
-pub use brush_mode::{BrushMode, CustomBrush, PointRole};
+pub use brush_mode::{BrushMode, PointRole};
 pub use color_mode::ColorMode;
 
 use icy_engine::{AttributedChar, Position, TextAttribute};
@@ -219,9 +219,6 @@ impl DrawContext {
             BrushMode::Blink(on) => {
                 self.set_blink(target, pos, *on);
             }
-            BrushMode::Custom(brush) => {
-                self.draw_custom_brush(target, pos, brush);
-            }
         }
 
         // Handle mirroring
@@ -317,25 +314,6 @@ impl DrawContext {
         }
     }
 
-    fn draw_custom_brush<T: DrawTarget>(&self, target: &mut T, pos: Position, brush: &CustomBrush) {
-        let offset_x = brush.width / 2;
-        let offset_y = brush.height / 2;
-
-        for by in 0..brush.height {
-            for bx in 0..brush.width {
-                if let Some(ch) = brush.char_at(bx, by) {
-                    if ch != ' ' {
-                        let target_pos = Position::new(pos.x + bx - offset_x, pos.y + by - offset_y);
-                        if target.is_valid(target_pos) {
-                            let attr = self.make_attribute();
-                            target.set_char(target_pos, AttributedChar::new(ch, attr));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn plot_mirrored_points<T: DrawTarget>(&self, target: &mut T, pos: Position, role: PointRole) {
         let center_x = target.width() / 2;
         let center_y = target.height() / 2;
@@ -386,7 +364,6 @@ impl DrawContext {
             BrushMode::ShadeDown => self.draw_shade(target, pos, false),
             BrushMode::Colorize => self.colorize(target, pos),
             BrushMode::Blink(on) => self.set_blink(target, pos, *on),
-            BrushMode::Custom(brush) => self.draw_custom_brush(target, pos, brush),
         }
     }
 

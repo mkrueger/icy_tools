@@ -9,14 +9,12 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
+use codepages::tables::CP437_TO_UNICODE;
+use iced::wgpu::util::DeviceExt;
 use iced::{
     Color, Element, Length, Point, Rectangle, Size, Theme,
     mouse::{self, Cursor},
-    widget::{
-        self, Space,
-        canvas::{self, Cache, Frame, Geometry},
-        container, row, shader, svg,
-    },
+    widget::{self, Space, container, row, shader, svg},
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
@@ -352,330 +350,815 @@ impl shader::Pipeline for FKeyToolbarRenderer {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Canvas Text Overlay
+// Glyph Atlas Overlay (GPU)
 // ═══════════════════════════════════════════════════════════════════════════
 
-struct TextOverlayProgram {
-    fkeys: FKeySets,
-    font: Option<BitFont>,
-    palette: Palette,
-    fg_color: u32,
-    bg_color: u32,
-    cache: Cache,
-    hovered_slot: Arc<AtomicU32>,
-    hover_type: Arc<AtomicU32>,
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct FKeyGlyphUniforms {
+    clip_size: [f32; 2],
+    atlas_size: [f32; 2],
+    glyph_size: [f32; 2],
+    _pad: [f32; 2],
 }
 
-impl canvas::Program<FKeyToolbarMessage> for TextOverlayProgram {
-    type State = ();
+unsafe impl bytemuck::Pod for FKeyGlyphUniforms {}
+unsafe impl bytemuck::Zeroable for FKeyGlyphUniforms {}
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
-        // Colors
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct QuadVertex {
+    unit_pos: [f32; 2],
+    unit_uv: [f32; 2],
+}
+
+unsafe impl bytemuck::Pod for QuadVertex {}
+unsafe impl bytemuck::Zeroable for QuadVertex {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct GlyphInstance {
+    pos: [f32; 2],
+    size: [f32; 2],
+    fg: [f32; 4],
+    bg: [f32; 4],
+    glyph: u32,
+    flags: u32,
+    _pad: [u32; 2],
+}
+
+unsafe impl bytemuck::Pod for GlyphInstance {}
+unsafe impl bytemuck::Zeroable for GlyphInstance {}
+
+fn font_key(font: &BitFont) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    font.name().hash(&mut hasher);
+    let size = font.size();
+    size.width.hash(&mut hasher);
+    size.height.hash(&mut hasher);
+    // This is intentionally a heuristic key; enough to avoid constant re-uploads.
+    font.is_default().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
+    let size = font.size();
+    let gw = size.width.max(1) as u32;
+    let gh = size.height.max(1) as u32;
+    let atlas_w = gw * 16;
+    let atlas_h = gh * 16;
+    println!("Building glyph atlas: {}x{} (glyph {}x{})", atlas_w, atlas_h, gw, gh);
+    let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+
+    for code in 0u32..256u32 {
+        // Map CP437 code to Unicode char for font lookup
+        let ch = CP437_TO_UNICODE.get(code as usize).copied().unwrap_or(' ');
+        let col = (code % 16) as u32;
+        let row = (code / 16) as u32;
+        let base_x = col * gw;
+        let base_y = row * gh;
+
+        // default transparent
+        if let Some(glyph) = font.glyph(ch) {
+            for y in 0..gh as usize {
+                let dst_y = base_y as usize + y;
+                if dst_y >= atlas_h as usize {
+                    continue;
+                }
+                let src_row = glyph.bitmap.pixels.get(y);
+                for x in 0..gw as usize {
+                    let dst_x = base_x as usize + x;
+                    if dst_x >= atlas_w as usize {
+                        continue;
+                    }
+                    let on = src_row.and_then(|r| r.get(x)).copied().unwrap_or(false);
+                    let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
+                    rgba[idx + 0] = 255;
+                    rgba[idx + 1] = 255;
+                    rgba[idx + 2] = 255;
+                    rgba[idx + 3] = if on { 255 } else { 0 };
+                }
+            }
+        }
+    }
+
+    (atlas_w, atlas_h, rgba)
+}
+
+fn cp437_index(ch: char) -> u32 {
+    if (ch as u32) <= 0xFF {
+        return ch as u32;
+    }
+
+    CP437_TO_UNICODE.iter().position(|&c| c == ch).map(|idx| idx as u32).unwrap_or(b'?' as u32)
+}
+
+#[derive(Clone)]
+pub struct FKeyGlyphProgram {
+    pub fkeys: FKeySets,
+    pub font: Option<BitFont>,
+    pub palette: Palette,
+    pub fg_color: u32,
+    pub bg_color: u32,
+    pub hovered_slot: Arc<AtomicU32>,
+    pub hover_type: Arc<AtomicU32>,
+}
+
+impl shader::Program<FKeyToolbarMessage> for FKeyGlyphProgram {
+    type State = ();
+    type Primitive = FKeyGlyphPrimitive;
+
+    fn draw(&self, _state: &Self::State, _cursor: Cursor, bounds: Rectangle) -> Self::Primitive {
+        FKeyGlyphPrimitive {
+            bounds,
+            fkeys: self.fkeys.clone(),
+            font: self.font.clone(),
+            palette: self.palette.clone(),
+            fg_color: self.fg_color,
+            bg_color: self.bg_color,
+            hovered_slot: self.hovered_slot.load(Ordering::Relaxed),
+            hover_type: self.hover_type.load(Ordering::Relaxed),
+        }
+    }
+
+    fn update(&self, _state: &mut Self::State, _event: &iced::Event, _bounds: Rectangle, _cursor: Cursor) -> Option<iced::widget::Action<FKeyToolbarMessage>> {
+        // Interaction is handled by the background shader program.
+        None
+    }
+
+    fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: Cursor) -> mouse::Interaction {
+        mouse::Interaction::default()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FKeyGlyphPrimitive {
+    pub bounds: Rectangle,
+    pub fkeys: FKeySets,
+    pub font: Option<BitFont>,
+    pub palette: Palette,
+    pub fg_color: u32,
+    pub bg_color: u32,
+    pub hovered_slot: u32,
+    pub hover_type: u32,
+}
+
+impl shader::Primitive for FKeyGlyphPrimitive {
+    type Pipeline = FKeyGlyphRenderer;
+
+    fn prepare(
+        &self,
+        pipeline: &mut Self::Pipeline,
+        device: &iced::wgpu::Device,
+        queue: &iced::wgpu::Queue,
+        bounds: &Rectangle,
+        viewport: &iced::advanced::graphics::Viewport,
+    ) {
+        let scale = viewport.scale_factor();
+
+        // Clip is provided via the render() scissor/viewport. We compute positions in that clip-local coordinate space.
+        let origin_x = (bounds.x * scale).round();
+        let origin_y = (bounds.y * scale).round();
+        let size_w = (bounds.width * scale).round().max(1.0);
+        let size_h = (bounds.height * scale).round().max(1.0);
+
+        // Upload/update atlas if necessary.
+        let (glyph_w, glyph_h) = if let Some(font) = &self.font {
+            let key = font_key(font);
+            if pipeline.atlas_key != Some(key) {
+                let (aw, ah, rgba) = build_glyph_atlas_rgba(font);
+                pipeline.update_atlas(device, queue, key, aw, ah, &rgba);
+            }
+            let s = font.size();
+            (s.width.max(1) as f32, s.height.max(1) as f32)
+        } else {
+            (8.0, 16.0)
+        };
+
+        // Update uniforms
+        let uniforms = FKeyGlyphUniforms {
+            clip_size: [size_w, size_h],
+            atlas_size: [pipeline.atlas_w as f32, pipeline.atlas_h as f32],
+            glyph_size: [glyph_w, glyph_h],
+            _pad: [0.0, 0.0],
+        };
+        queue.write_buffer(&pipeline.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+        // Build instances (positions are clip-local pixels)
+        let (fg_r, fg_g, fg_b) = self.palette.rgb(self.fg_color);
+        let (bg_r, bg_g, bg_b) = self.palette.rgb(self.bg_color);
+        let fg = Color::from_rgb8(fg_r, fg_g, fg_b);
+        let bg = Color::from_rgb8(bg_r, bg_g, bg_b);
+
+        let hovered = HoverState::from_atomics(self.hovered_slot, self.hover_type);
+        let set_idx = self.fkeys.current_set();
+
+        const FLAG_DRAW_BG: u32 = 1;
+        const FLAG_BG_ONLY: u32 = 2;
+
+        let control_height = bounds.height - SHADOW_PADDING * 2.0;
+        let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
+        let font_width = self.font.as_ref().map(|f| f.size().width as f32).unwrap_or(8.0);
+
+        // Integer magnification for crisp pixel rendering
+        // For chars: fit into CHAR_DISPLAY_HEIGHT (32px) with integer scale
+        let max_char_magnify = (CHAR_DISPLAY_HEIGHT / font_height).floor().max(1.0);
+        // For labels: ~60% of char size, also integer
+        let max_label_magnify = (max_char_magnify * 0.6).floor().max(1.0);
+
+        // Effective sizes in logical pixels (pre-scale)
+        let char_render_w = font_width * max_char_magnify;
+        let char_render_h = font_height * max_char_magnify;
+        let label_render_w = font_width * max_label_magnify;
+        let label_render_h = font_height * max_label_magnify;
+
+        // Spacing uses the scaled label width
+        let label_char_w = label_render_w;
+
+        let content_start_x = SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING;
+        let char_display_y = SHADOW_PADDING + ((control_height - char_render_h) / 2.0).floor();
+        let label_y = SHADOW_PADDING + ((control_height - label_render_h) / 2.0).floor();
+
+        // Small cache for digit y-offsets (0..9) for label scale.
+        let mut digit_offset: [f32; 10] = [0.0; 10];
+        let mut digit_offset_set: [bool; 10] = [false; 10];
+
+        let mut instances: Vec<GlyphInstance> = Vec::with_capacity(96);
+
+        // Helper: compute y-offset using font bitmap bounds (only for digits)
+        let mut glyph_y_offset = |digit: u32| -> f32 {
+            let d = digit as usize;
+            if d < 10 && digit_offset_set[d] {
+                return digit_offset[d];
+            }
+            let ch = char::from_digit(digit, 10).unwrap_or('0');
+            let Some(font) = &self.font else {
+                return 0.0;
+            };
+            let Some(glyph) = font.glyph(ch) else {
+                return 0.0;
+            };
+
+            let char_height = label_render_h;
+            let pixel_h = max_label_magnify;
+
+            let mut min_row: Option<usize> = None;
+            let mut max_row: Option<usize> = None;
+            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
+                if row.iter().any(|&p| p) {
+                    min_row = Some(min_row.map_or(row_idx, |m| m.min(row_idx)));
+                    max_row = Some(max_row.map_or(row_idx, |m| m.max(row_idx)));
+                }
+            }
+
+            let off = if let (Some(min_row), Some(max_row)) = (min_row, max_row) {
+                let used_height = ((max_row - min_row + 1) as f32) * pixel_h;
+                let desired_top = ((char_height - used_height) / 2.0).floor();
+                let current_top = (min_row as f32) * pixel_h;
+                (desired_top - current_top).floor()
+            } else {
+                0.0
+            };
+
+            if d < 10 {
+                digit_offset[d] = off;
+                digit_offset_set[d] = true;
+            }
+            off
+        };
+
+        // Draw each slot: 2-digit label (no bg) + char (with bg)
+        for slot in 0..12usize {
+            let slot_x = (content_start_x + slot as f32 * (SLOT_WIDTH + SLOT_SPACING)).floor();
+            let char_x = (slot_x + LABEL_WIDTH).floor();
+            let label_x = (slot_x - 2.0).floor();
+
+            let is_label_hovered = matches!(hovered, HoverState::Slot(s, false) if s == slot);
+            let is_char_hovered = matches!(hovered, HoverState::Slot(s, true) if s == slot);
+
+            // Label colors
+            let label_color = if is_label_hovered {
+                Color::from_rgba(0.85, 0.85, 0.88, 1.0)
+            } else {
+                Color::from_rgba(0.55, 0.55, 0.58, 1.0)
+            };
+            let shadow_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
+
+            // Two-digit label chars
+            let num = slot + 1;
+            let (d1, d2) = if num < 10 {
+                (0u32, num as u32)
+            } else if num == 10 {
+                (1u32, 0u32)
+            } else if num == 11 {
+                (1u32, 1u32)
+            } else {
+                (1u32, 2u32)
+            };
+
+            for (i, &d) in [d1, d2].iter().enumerate() {
+                let glyph = char::from_digit(d, 10).unwrap_or('0') as u32;
+                let y_off = glyph_y_offset(d);
+                let x = label_x + i as f32 * label_char_w;
+                let y = label_y + y_off;
+
+                let label_w = (label_render_w * scale).floor();
+                let label_h = (label_render_h * scale).floor();
+
+                // Shadow
+                instances.push(GlyphInstance {
+                    pos: [((x + 1.0) * scale).floor(), ((y + 1.0) * scale).floor()],
+                    size: [label_w, label_h],
+                    fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+                    bg: [0.0, 0.0, 0.0, 0.0],
+                    glyph,
+                    flags: 0,
+                    _pad: [0, 0],
+                });
+
+                // Foreground
+                instances.push(GlyphInstance {
+                    pos: [(x * scale).floor(), (y * scale).floor()],
+                    size: [label_w, label_h],
+                    fg: [label_color.r, label_color.g, label_color.b, label_color.a],
+                    bg: [0.0, 0.0, 0.0, 0.0],
+                    glyph,
+                    flags: 0,
+                    _pad: [0, 0],
+                });
+            }
+
+            // Char background (full cell)
+            instances.push(GlyphInstance {
+                pos: [(char_x * scale).floor(), (char_display_y * scale).floor()],
+                size: [(char_render_w * scale).floor(), (char_render_h * scale).floor()],
+                fg: [0.0, 0.0, 0.0, 0.0],
+                bg: [bg.r, bg.g, bg.b, 1.0],
+                glyph: 0,
+                flags: FLAG_BG_ONLY,
+                _pad: [0, 0],
+            });
+
+            // Char glyph (crisp, integer magnification)
+            // code_at returns CP437 code directly - use as atlas index
+            let code = self.fkeys.code_at(set_idx, slot);
+            let glyph = (code as u32) & 0xFF;
+            let char_fg = if is_char_hovered {
+                Color::from_rgb((fg.r * 1.3).min(1.0), (fg.g * 1.3).min(1.0), (fg.b * 1.3).min(1.0))
+            } else {
+                fg
+            };
+
+            instances.push(GlyphInstance {
+                pos: [(char_x * scale).floor(), (char_display_y * scale).floor()],
+                size: [(char_render_w * scale).floor(), (char_render_h * scale).floor()],
+                fg: [char_fg.r, char_fg.g, char_fg.b, 1.0],
+                bg: [0.0, 0.0, 0.0, 0.0],
+                glyph,
+                flags: 0,
+                _pad: [0, 0],
+            });
+        }
+
+        // Set number between arrows (no bg), with shadow
+        let nav_x = (content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) + NAV_GAP).floor();
+        let set_num = set_idx + 1;
+        let num_str = set_num.to_string();
+        let num_width = num_str.len() as f32 * label_char_w;
+        let next_x = nav_x + NAV_SIZE + NAV_LABEL_SPACE;
+        let space_between = next_x - (nav_x + NAV_SIZE);
+        let num_x = nav_x + NAV_SIZE + (space_between - num_width) / 2.0;
+
         let label_color = Color::from_rgba(0.55, 0.55, 0.58, 1.0);
-        let label_hover_color = Color::from_rgba(0.85, 0.85, 0.88, 1.0);
         let shadow_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
 
-        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
-            // Get palette colors for characters
-            let (fg_r, fg_g, fg_b) = self.palette.rgb(self.fg_color);
-            let (bg_r, bg_g, bg_b) = self.palette.rgb(self.bg_color);
-            let fg = Color::from_rgb8(fg_r, fg_g, fg_b);
-            let bg = Color::from_rgb8(bg_r, bg_g, bg_b);
+        for (i, ch) in num_str.chars().enumerate() {
+            let digit = ch.to_digit(10).unwrap_or(0);
+            let y_off = glyph_y_offset(digit);
+            let x = num_x + i as f32 * label_char_w;
+            let y = label_y + y_off;
+            let glyph = ch as u32;
 
-            let set_idx = self.fkeys.current_set();
+            let label_w = (label_render_w * scale).floor();
+            let label_h = (label_render_h * scale).floor();
 
-            // Get hover state from atomics
-            let hovered_slot = self.hovered_slot.load(Ordering::Relaxed);
-            let hover_type = self.hover_type.load(Ordering::Relaxed);
-            let hovered = HoverState::from_atomics(hovered_slot, hover_type);
+            // Shadow
+            instances.push(GlyphInstance {
+                pos: [((x + 1.0) * scale).floor(), ((y + 1.0) * scale).floor()],
+                size: [label_w, label_h],
+                fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+                bg: [0.0, 0.0, 0.0, 0.0],
+                glyph,
+                flags: 0,
+                _pad: [0, 0],
+            });
+            // Foreground
+            instances.push(GlyphInstance {
+                pos: [(x * scale).floor(), (y * scale).floor()],
+                size: [label_w, label_h],
+                fg: [label_color.r, label_color.g, label_color.b, label_color.a],
+                bg: [0.0, 0.0, 0.0, 0.0],
+                glyph,
+                flags: 0,
+                _pad: [0, 0],
+            });
+        }
 
-            // Control area (excluding shadow padding)
-            let control_height = bounds.height - SHADOW_PADDING * 2.0;
+        pipeline.upload_instances(queue, &instances);
 
-            // Calculate font scale
-            let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
-            let scale = CHAR_DISPLAY_HEIGHT / font_height;
-            let font_width = self.font.as_ref().map(|f| f.size().width as f32).unwrap_or(8.0);
-            let label_char_w = font_width * scale * 0.6;
+        // suppress unused warnings (origin not used directly - viewport uses clip rect)
+        let _ = (origin_x, origin_y);
+    }
 
-            // Content starts after shadow padding, border and left padding
-            let content_start_x = SHADOW_PADDING + BORDER_WIDTH + LEFT_PADDING;
-
-            // Center char display vertically within control bounds
-            let char_display_y = SHADOW_PADDING + ((control_height - CHAR_DISPLAY_HEIGHT) / 2.0).floor();
-
-            // Center labels vertically (they are smaller: scale * 0.6)
-            let label_height = font_height * scale * 0.6;
-            let label_y = SHADOW_PADDING + ((control_height - label_height) / 2.0).floor();
-
-            // Draw each F-key slot
-            for slot in 0..12usize {
-                let slot_x = (content_start_x + slot as f32 * (SLOT_WIDTH + SLOT_SPACING)).floor();
-                let char_x = (slot_x + LABEL_WIDTH).floor();
-                let label_x = (slot_x - 2.0).floor();
-
-                let is_label_hovered = matches!(hovered, HoverState::Slot(s, false) if s == slot);
-                let is_char_hovered = matches!(hovered, HoverState::Slot(s, true) if s == slot);
-
-                // Get character code
-                let code = self.fkeys.code_at(set_idx, slot);
-                let ch = char::from_u32(code as u32).unwrap_or(' ');
-
-                // Draw label with drop shadow (01, 02, etc.)
-                let current_label_color = if is_label_hovered { label_hover_color } else { label_color };
-                // Shadow first
-                self.draw_label(frame, label_x + 1.0, label_y + 1.0, slot, shadow_color, scale, label_char_w);
-                // Then label
-                self.draw_label(frame, label_x, label_y, slot, current_label_color, scale, label_char_w);
-
-                // Draw character - brighten FG on hover (no backdrop, just FG color change)
-                let char_fg = if is_char_hovered {
-                    // Brighten the foreground color on hover
-                    Color::from_rgb((fg.r * 1.3).min(1.0), (fg.g * 1.3).min(1.0), (fg.b * 1.3).min(1.0))
-                } else {
-                    fg
-                };
-                self.draw_glyph(frame, char_x, char_display_y, ch, char_fg, bg, scale);
-            }
-
-            // Navigation section - arrows are SVG in separate layer
-            let nav_x = (content_start_x + 12.0 * (SLOT_WIDTH + SLOT_SPACING) + NAV_GAP).floor();
-
-            // Set number
-            let set_num = set_idx + 1;
-            let num_str = format!("{}", set_num);
-            let num_width = num_str.len() as f32 * label_char_w;
-            let next_x = nav_x + NAV_SIZE + NAV_LABEL_SPACE;
-            let space_between = next_x - (nav_x + NAV_SIZE);
-            let num_x = nav_x + NAV_SIZE + (space_between - num_width) / 2.0;
-
-            // Shadow first
-            self.draw_set_number(frame, num_x + 1.0, label_y + 1.0, set_num, shadow_color, scale, label_char_w);
-            // Then number
-            self.draw_set_number(frame, num_x, label_y, set_num, label_color, scale, label_char_w);
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+        let mut pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+            label: Some("FKey Glyphs Render Pass"),
+            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: iced::wgpu::Operations {
+                    load: iced::wgpu::LoadOp::Load,
+                    store: iced::wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
-        vec![geometry]
-    }
+        if clip_bounds.width > 0 && clip_bounds.height > 0 {
+            pass.set_scissor_rect(clip_bounds.x, clip_bounds.y, clip_bounds.width, clip_bounds.height);
+            pass.set_viewport(
+                clip_bounds.x as f32,
+                clip_bounds.y as f32,
+                clip_bounds.width as f32,
+                clip_bounds.height as f32,
+                0.0,
+                1.0,
+            );
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<canvas::Action<FKeyToolbarMessage>> {
-        match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                let (new_slot, new_type) = if let Some(pos) = cursor.position_in(bounds) {
-                    compute_hover_state(pos, bounds)
-                } else {
-                    (NO_HOVER, 0)
-                };
-
-                let old_slot = self.hovered_slot.swap(new_slot, Ordering::Relaxed);
-                let old_type = self.hover_type.swap(new_type, Ordering::Relaxed);
-
-                if old_slot != new_slot || old_type != new_type {
-                    self.cache.clear();
-                    return Some(canvas::Action::request_redraw());
-                }
-                None
-            }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                let Some(cursor_pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
-
-                let (slot, hover_type) = compute_hover_state(cursor_pos, bounds);
-                let state = HoverState::from_atomics(slot, hover_type);
-
-                match state {
-                    HoverState::Slot(idx, true) => Some(canvas::Action::publish(FKeyToolbarMessage::TypeFKey(idx))),
-                    HoverState::Slot(idx, false) => Some(canvas::Action::publish(FKeyToolbarMessage::OpenCharSelector(idx))),
-                    HoverState::NavPrev => Some(canvas::Action::publish(FKeyToolbarMessage::PrevSet)),
-                    HoverState::NavNext => Some(canvas::Action::publish(FKeyToolbarMessage::NextSet)),
-                    HoverState::None => None,
-                }
-            }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
-                self.hovered_slot.store(NO_HOVER, Ordering::Relaxed);
-                self.hover_type.store(0, Ordering::Relaxed);
-                self.cache.clear();
-                Some(canvas::Action::request_redraw())
-            }
-            _ => None,
-        }
-    }
-
-    fn mouse_interaction(&self, _state: &Self::State, bounds: Rectangle, cursor: Cursor) -> mouse::Interaction {
-        if let Some(pos) = cursor.position_in(bounds) {
-            let (slot, hover_type) = compute_hover_state(pos, bounds);
-            let state = HoverState::from_atomics(slot, hover_type);
-            match state {
-                HoverState::None => mouse::Interaction::default(),
-                _ => mouse::Interaction::Pointer,
-            }
-        } else {
-            mouse::Interaction::default()
+            pass.set_pipeline(&pipeline.pipeline);
+            pass.set_bind_group(0, &pipeline.bind_group, &[]);
+            pass.set_vertex_buffer(0, pipeline.quad_vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, pipeline.instance_buffer.slice(..));
+            pass.draw(0..6, 0..pipeline.instance_count);
         }
     }
 }
 
-impl TextOverlayProgram {
-    /// Draw a single glyph from the font
-    fn draw_glyph(&self, frame: &mut Frame, x: f32, y: f32, ch: char, fg: Color, bg: Color, scale: f32) {
-        let x = x.floor();
-        let y = y.floor();
+pub struct FKeyGlyphRenderer {
+    pipeline: iced::wgpu::RenderPipeline,
+    bind_group: iced::wgpu::BindGroup,
+    uniform_buffer: iced::wgpu::Buffer,
+    quad_vertex_buffer: iced::wgpu::Buffer,
+    instance_buffer: iced::wgpu::Buffer,
+    instance_count: u32,
 
-        let Some(font) = &self.font else {
-            frame.fill_rectangle(Point::new(x, y), Size::new(8.0 * scale, 16.0 * scale), bg);
+    atlas_texture: iced::wgpu::Texture,
+    atlas_view: iced::wgpu::TextureView,
+    atlas_sampler: iced::wgpu::Sampler,
+    atlas_key: Option<u64>,
+    atlas_w: u32,
+    atlas_h: u32,
+}
+
+impl FKeyGlyphRenderer {
+    fn update_atlas(&mut self, device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
+        if self.atlas_w != w || self.atlas_h != h {
+            self.atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                label: Some("FKey Glyph Atlas"),
+                size: iced::wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: iced::wgpu::TextureDimension::D2,
+                format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.atlas_view = self.atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+            self.atlas_w = w;
+            self.atlas_h = h;
+
+            // Rebuild bind group to reference the new view
+            // NOTE: layout is identical, so we can reuse the pipeline's bind-group layout by recreating it locally.
+            // This is cheap and only happens on atlas resize.
+            let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+            self.bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                label: Some("FKey Glyphs Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    iced::wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    iced::wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: iced::wgpu::BindingResource::TextureView(&self.atlas_view),
+                    },
+                    iced::wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: iced::wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                    },
+                ],
+            });
+        }
+
+        queue.write_texture(
+            iced::wgpu::TexelCopyTextureInfo {
+                texture: &self.atlas_texture,
+                mip_level: 0,
+                origin: iced::wgpu::Origin3d::ZERO,
+                aspect: iced::wgpu::TextureAspect::All,
+            },
+            rgba,
+            iced::wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            iced::wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.atlas_key = Some(key);
+    }
+
+    fn upload_instances(&mut self, queue: &iced::wgpu::Queue, instances: &[GlyphInstance]) {
+        let count = instances
+            .len()
+            .min((self.instance_buffer.size() as usize) / std::mem::size_of::<GlyphInstance>());
+        self.instance_count = count as u32;
+        if count == 0 {
             return;
-        };
-
-        let font_width = font.size().width as f32;
-        let font_height = font.size().height as f32;
-        let char_width = (font_width * scale).floor();
-        let char_height = (font_height * scale).floor();
-        let pixel_w = scale.floor().max(1.0);
-        let pixel_h = scale.floor().max(1.0);
-
-        // Fill background
-        frame.fill_rectangle(Point::new(x, y), Size::new(char_width, char_height), bg);
-
-        // Draw glyph pixels
-        if let Some(glyph) = font.glyph(ch) {
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-                let row_y = y + (row_idx as f32 * pixel_h).floor();
-                let mut run_start: Option<usize> = None;
-
-                for (col_idx, &pixel) in row.iter().enumerate() {
-                    if pixel {
-                        if run_start.is_none() {
-                            run_start = Some(col_idx);
-                        }
-                    } else if let Some(start) = run_start {
-                        let run_len = col_idx - start;
-                        frame.fill_rectangle(
-                            Point::new(x + (start as f32 * pixel_w).floor(), row_y),
-                            Size::new(run_len as f32 * pixel_w, pixel_h),
-                            fg,
-                        );
-                        run_start = None;
-                    }
-                }
-                if let Some(start) = run_start {
-                    let run_len = row.len() - start;
-                    frame.fill_rectangle(
-                        Point::new(x + (start as f32 * pixel_w).floor(), row_y),
-                        Size::new(run_len as f32 * pixel_w, pixel_h),
-                        fg,
-                    );
-                }
-            }
         }
+        let bytes = bytemuck::cast_slice(&instances[..count]);
+        queue.write_buffer(&self.instance_buffer, 0, bytes);
     }
+}
 
-    /// Draw F-key label (01, 02, etc.)
-    fn draw_label(&self, frame: &mut Frame, x: f32, y: f32, slot: usize, color: Color, scale: f32, char_w: f32) {
-        let num = slot + 1;
-        let label_chars: Vec<char> = if num < 10 {
-            vec!['0', char::from_digit(num as u32, 10).unwrap_or('?')]
-        } else if num == 10 {
-            vec!['1', '0']
-        } else if num == 11 {
-            vec!['1', '1']
-        } else {
-            vec!['1', '2']
-        };
+impl shader::Pipeline for FKeyGlyphRenderer {
+    fn new(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+            label: Some("FKey Glyphs Shader"),
+            source: iced::wgpu::ShaderSource::Wgsl(include_str!("fkey_glyphs_shader.wgsl").into()),
+        });
 
-        let label_scale = scale * 0.6;
+        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+            label: Some("FKey Glyphs Uniforms"),
+            size: std::mem::size_of::<FKeyGlyphUniforms>() as u64,
+            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        for (i, ch) in label_chars.iter().enumerate() {
-            let glyph_y_offset = self.glyph_content_y_offset(*ch, label_scale);
-            self.draw_glyph_no_bg(frame, x + i as f32 * char_w, y + glyph_y_offset, *ch, color, label_scale);
-        }
-    }
+        // Create a tiny default atlas (will be replaced on first prepare)
+        let atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some("FKey Glyph Atlas (init)"),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            iced::wgpu::TexelCopyTextureInfo {
+                texture: &atlas_texture,
+                mip_level: 0,
+                origin: iced::wgpu::Origin3d::ZERO,
+                aspect: iced::wgpu::TextureAspect::All,
+            },
+            &[255, 255, 255, 0],
+            iced::wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let atlas_view = atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
-    /// Draw glyph without background (for labels)
-    fn draw_glyph_no_bg(&self, frame: &mut Frame, x: f32, y: f32, ch: char, fg: Color, scale: f32) {
-        let x = x.floor();
-        let y = y.floor();
+        let atlas_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+            label: Some("FKey Glyph Atlas Sampler"),
+            mag_filter: iced::wgpu::FilterMode::Nearest,
+            min_filter: iced::wgpu::FilterMode::Nearest,
+            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
 
-        let Some(font) = &self.font else {
-            return;
-        };
+        // Quad vertex buffer (two triangles)
+        let quad: [QuadVertex; 6] = [
+            QuadVertex {
+                unit_pos: [0.0, 0.0],
+                unit_uv: [0.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 0.0],
+                unit_uv: [1.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [0.0, 1.0],
+                unit_uv: [0.0, 1.0],
+            },
+            QuadVertex {
+                unit_pos: [0.0, 1.0],
+                unit_uv: [0.0, 1.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 0.0],
+                unit_uv: [1.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 1.0],
+                unit_uv: [1.0, 1.0],
+            },
+        ];
+        let quad_vertex_buffer = device.create_buffer_init(&iced::wgpu::util::BufferInitDescriptor {
+            label: Some("FKey Glyph Quad"),
+            contents: bytemuck::cast_slice(&quad),
+            usage: iced::wgpu::BufferUsages::VERTEX,
+        });
 
-        let pixel_w = scale.floor().max(1.0);
-        let pixel_h = scale.floor().max(1.0);
+        // Instance buffer
+        let instance_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+            label: Some("FKey Glyph Instances"),
+            size: (std::mem::size_of::<GlyphInstance>() * 128) as u64,
+            usage: iced::wgpu::BufferUsages::VERTEX | iced::wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        if let Some(glyph) = font.glyph(ch) {
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-                let row_y = y + (row_idx as f32 * pixel_h).floor();
-                let mut run_start: Option<usize> = None;
+        // Bind group layout: uniforms + texture + sampler
+        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+            label: Some("FKey Glyphs Bind Group Layout"),
+            entries: &[
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: iced::wgpu::BindingType::Buffer {
+                        ty: iced::wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                    ty: iced::wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: iced::wgpu::TextureViewDimension::D2,
+                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                iced::wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
 
-                for (col_idx, &pixel) in row.iter().enumerate() {
-                    if pixel {
-                        if run_start.is_none() {
-                            run_start = Some(col_idx);
-                        }
-                    } else if let Some(start) = run_start {
-                        let run_len = col_idx - start;
-                        frame.fill_rectangle(
-                            Point::new(x + (start as f32 * pixel_w).floor(), row_y),
-                            Size::new(run_len as f32 * pixel_w, pixel_h),
-                            fg,
-                        );
-                        run_start = None;
-                    }
-                }
-                if let Some(start) = run_start {
-                    let run_len = row.len() - start;
-                    frame.fill_rectangle(
-                        Point::new(x + (start as f32 * pixel_w).floor(), row_y),
-                        Size::new(run_len as f32 * pixel_w, pixel_h),
-                        fg,
-                    );
-                }
-            }
-        }
-    }
+        let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+            label: Some("FKey Glyphs Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[
+                iced::wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                iced::wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: iced::wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                iced::wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: iced::wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+            ],
+        });
 
-    /// Compute Y offset to center glyph content vertically
-    fn glyph_content_y_offset(&self, ch: char, scale: f32) -> f32 {
-        let Some(font) = &self.font else {
-            return 0.0;
-        };
-        let Some(glyph) = font.glyph(ch) else {
-            return 0.0;
-        };
+        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+            label: Some("FKey Glyphs Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
-        let font_height = font.size().height as f32;
-        let char_height = (font_height * scale).floor();
-        let pixel_h = scale.floor().max(1.0);
+        let vertex_buffers = [
+            iced::wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<QuadVertex>() as u64,
+                step_mode: iced::wgpu::VertexStepMode::Vertex,
+                attributes: &[
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x2,
+                        offset: 8,
+                        shader_location: 1,
+                    },
+                ],
+            },
+            iced::wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<GlyphInstance>() as u64,
+                step_mode: iced::wgpu::VertexStepMode::Instance,
+                attributes: &[
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 2,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x2,
+                        offset: 8,
+                        shader_location: 3,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x4,
+                        offset: 16,
+                        shader_location: 4,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Float32x4,
+                        offset: 32,
+                        shader_location: 5,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Uint32,
+                        offset: 48,
+                        shader_location: 6,
+                    },
+                    iced::wgpu::VertexAttribute {
+                        format: iced::wgpu::VertexFormat::Uint32,
+                        offset: 52,
+                        shader_location: 7,
+                    },
+                ],
+            },
+        ];
 
-        let mut min_row: Option<usize> = None;
-        let mut max_row: Option<usize> = None;
+        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+            label: Some("FKey Glyphs Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: iced::wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &vertex_buffers,
+                compilation_options: Default::default(),
+            },
+            fragment: Some(iced::wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(iced::wgpu::ColorTargetState {
+                    format,
+                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: iced::wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: iced::wgpu::PrimitiveState {
+                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: iced::wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
-        for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-            if row.iter().any(|&p| p) {
-                min_row = Some(min_row.map_or(row_idx, |m| m.min(row_idx)));
-                max_row = Some(max_row.map_or(row_idx, |m| m.max(row_idx)));
-            }
-        }
-
-        let (Some(min_row), Some(max_row)) = (min_row, max_row) else {
-            return 0.0;
-        };
-
-        let used_height = ((max_row - min_row + 1) as f32) * pixel_h;
-        let desired_top = ((char_height - used_height) / 2.0).floor();
-        let current_top = (min_row as f32) * pixel_h;
-        (desired_top - current_top).floor()
-    }
-
-    /// Draw set number
-    fn draw_set_number(&self, frame: &mut Frame, x: f32, y: f32, set_num: usize, color: Color, scale: f32, char_w: f32) {
-        let num_str = format!("{}", set_num);
-        let num_scale = scale * 0.6;
-
-        for (i, ch) in num_str.chars().enumerate() {
-            let glyph_y_offset = self.glyph_content_y_offset(ch, num_scale);
-            self.draw_glyph_no_bg(frame, x + i as f32 * char_w, y + glyph_y_offset, ch, color, num_scale);
+        Self {
+            pipeline,
+            bind_group,
+            uniform_buffer,
+            quad_vertex_buffer,
+            instance_buffer,
+            instance_count: 0,
+            atlas_texture,
+            atlas_view,
+            atlas_sampler,
+            atlas_key: None,
+            atlas_w: 1,
+            atlas_h: 1,
         }
     }
 }
@@ -772,14 +1255,13 @@ impl ShaderFKeyToolbar {
         .height(Length::Fixed(total_height))
         .into();
 
-        // Create text overlay
-        let text_overlay: Element<'_, FKeyToolbarMessage> = widget::canvas(TextOverlayProgram {
+        // Create glyph overlay (atlas)
+        let glyph_overlay: Element<'_, FKeyToolbarMessage> = widget::shader(FKeyGlyphProgram {
             fkeys,
             font,
             palette,
             fg_color,
             bg_color,
-            cache: Cache::new(),
             hovered_slot: self.hovered_slot.clone(),
             hover_type: self.hover_type.clone(),
         })
@@ -833,8 +1315,8 @@ impl ShaderFKeyToolbar {
         .center_y(Length::Fixed(total_height))
         .into();
 
-        // Stack: shader background, text overlay, arrow overlay
-        let toolbar_stack: Element<'_, FKeyToolbarMessage> = widget::stack![shader_bg, text_overlay, arrow_overlay]
+        // Stack: shader background, glyph overlay, arrow overlay
+        let toolbar_stack: Element<'_, FKeyToolbarMessage> = widget::stack![shader_bg, glyph_overlay, arrow_overlay]
             .width(Length::Fixed(total_width))
             .height(Length::Fixed(total_height))
             .into();

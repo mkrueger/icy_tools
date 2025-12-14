@@ -82,6 +82,15 @@ use parking_lot::{Mutex, RwLock};
 use crate::ui::Options;
 use icy_engine::BufferType;
 
+/// Target for the character selector popup
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CharSelectorTarget {
+    /// Editing an F-key slot (0-11)
+    FKeySlot(usize),
+    /// Editing the brush paint character
+    BrushChar,
+}
+
 /// Convert icy_engine MouseButton to iced mouse button
 fn convert_mouse_button(button: MouseButton) -> iced::mouse::Button {
     match button {
@@ -275,11 +284,9 @@ pub struct AnsiEditor {
     /// Whether layer borders are shown
     pub show_layer_borders: bool,
 
-    // === Brush UI State ===
-    /// If true, show the brush character table overlay.
-    pub show_brush_char_table: bool,
-    /// If Some(slot), show the character selector popup for F-key slot
-    pub char_selector_slot: Option<usize>,
+    // === Character Selector State ===
+    /// If Some, show the character selector popup for the given target
+    pub char_selector_target: Option<CharSelectorTarget>,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
@@ -568,8 +575,7 @@ impl AnsiEditor {
             show_line_numbers: false,
             show_layer_borders: false,
 
-            show_brush_char_table: false,
-            char_selector_slot: None,
+            char_selector_target: None,
 
             paint_undo: None,
             paint_last_pos: None,
@@ -918,12 +924,12 @@ impl AnsiEditor {
                 // Intercept brush char-table requests here (keeps the dialog local to the editor)
                 match msg {
                     TopToolbarMessage::OpenBrushCharTable => {
-                        self.show_brush_char_table = true;
+                        self.char_selector_target = Some(CharSelectorTarget::BrushChar);
                         Task::none()
                     }
                     TopToolbarMessage::SetBrushChar(_) => {
                         // Selecting a character implicitly closes the overlay.
-                        self.show_brush_char_table = false;
+                        self.char_selector_target = None;
                         self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar)
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
@@ -958,7 +964,7 @@ impl AnsiEditor {
                     }
                     FKeyToolbarMessage::OpenCharSelector(slot) => {
                         // Open the character selector popup for this F-key slot
-                        self.char_selector_slot = Some(slot);
+                        self.char_selector_target = Some(CharSelectorTarget::FKeySlot(slot));
                     }
                     FKeyToolbarMessage::NextSet => {
                         let next = self.top_toolbar.select_options.current_fkey_page.saturating_add(1);
@@ -981,24 +987,32 @@ impl AnsiEditor {
             AnsiEditorMessage::CharSelector(msg) => {
                 match msg {
                     CharSelectorMessage::SelectChar(code) => {
-                        if let Some(slot) = self.char_selector_slot {
-                            // Update the F-key slot with the selected character
-                            let set_idx = self.top_toolbar.select_options.current_fkey_page;
-                            let fkeys_to_save = {
-                                let mut opts = self.options.write();
-                                opts.fkeys.set_code_at(set_idx, slot, code);
-                                opts.fkeys.clone()
-                            };
-                            // Trigger async save
-                            std::thread::spawn(move || {
-                                let _ = fkeys_to_save.save();
-                            });
-                            self.fkey_toolbar.clear_cache();
+                        match self.char_selector_target {
+                            Some(CharSelectorTarget::FKeySlot(slot)) => {
+                                // Update the F-key slot with the selected character
+                                let set_idx = self.top_toolbar.select_options.current_fkey_page;
+                                let fkeys_to_save = {
+                                    let mut opts = self.options.write();
+                                    opts.fkeys.set_code_at(set_idx, slot, code);
+                                    opts.fkeys.clone()
+                                };
+                                // Trigger async save
+                                std::thread::spawn(move || {
+                                    let _ = fkeys_to_save.save();
+                                });
+                                self.fkey_toolbar.clear_cache();
+                            }
+                            Some(CharSelectorTarget::BrushChar) => {
+                                // Update the brush paint character
+                                let ch = char::from_u32(code as u32).unwrap_or(' ');
+                                self.top_toolbar.brush_options.paint_char = ch;
+                            }
+                            None => {}
                         }
-                        self.char_selector_slot = None;
+                        self.char_selector_target = None;
                     }
                     CharSelectorMessage::Cancel => {
-                        self.char_selector_slot = None;
+                        self.char_selector_target = None;
                     }
                 }
                 Task::none()
@@ -1400,10 +1414,10 @@ impl AnsiEditor {
 
     /// Handle key press events
     fn handle_key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
-        // Brush char table overlay has priority and is closed with Escape.
-        if self.show_brush_char_table {
+        // Character selector overlay has priority and is closed with Escape.
+        if self.char_selector_target.is_some() {
             if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
-                self.show_brush_char_table = false;
+                self.char_selector_target = None;
                 return;
             }
         }
@@ -2314,63 +2328,25 @@ impl AnsiEditor {
             (size.width as f32, size.height as f32)
         };
 
-        // Build optional brush character table overlay
-        let brush_char_table_overlay: Element<'_, AnsiEditorMessage> = if self.show_brush_char_table {
-            let mut grid = iced::widget::Column::new().spacing(2);
-
-            for row_idx in 0..16u8 {
-                let mut roww = iced::widget::Row::new().spacing(2);
-                for col_idx in 0..16u8 {
-                    let code = row_idx.wrapping_mul(16).wrapping_add(col_idx);
-                    let raw = code as char;
-                    let display = buffer_type.convert_to_unicode(raw);
-
-                    roww = roww.push(
-                        button(text(display.to_string()).size(14))
-                            .padding(2)
-                            .on_press(AnsiEditorMessage::TopToolbar(TopToolbarMessage::SetBrushChar(raw))),
-                    );
-                }
-                grid = grid.push(roww);
-            }
-
-            container(grid)
-                .padding(6)
-                .style(container::bordered_box)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into()
-        } else {
-            iced::widget::Space::new().width(Length::Fixed(0.0)).height(Length::Fixed(0.0)).into()
-        };
-
-        // Build the center area with optional overlays
-        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers || self.show_brush_char_table {
+        // Build the center area with optional line numbers overlay
+        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers {
             // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
-            let line_numbers_overlay = if self.show_line_numbers {
-                line_numbers::line_numbers_overlay(
-                    self.canvas.terminal.render_info.clone(),
-                    buffer_width,
-                    buffer_height as usize,
-                    font_width,
-                    font_height,
-                    caret_row,
-                    caret_col,
-                    scroll_x,
-                    scroll_y,
-                )
-            } else {
-                iced::widget::Space::new().width(Length::Fixed(0.0)).height(Length::Fixed(0.0)).into()
-            };
+            let line_numbers_overlay = line_numbers::line_numbers_overlay(
+                self.canvas.terminal.render_info.clone(),
+                buffer_width,
+                buffer_height as usize,
+                font_width,
+                font_height,
+                caret_row,
+                caret_col,
+                scroll_x,
+                scroll_y,
+            );
 
-            iced::widget::stack![
-                container(canvas).width(Length::Fill).height(Length::Fill),
-                line_numbers_overlay,
-                brush_char_table_overlay,
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            iced::widget::stack![container(canvas).width(Length::Fill).height(Length::Fill), line_numbers_overlay,]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             container(canvas).width(Length::Fill).height(Length::Fill).into()
         };
@@ -2405,10 +2381,14 @@ impl AnsiEditor {
         .into();
 
         // Apply character selector modal overlay if active
-        if let Some(slot) = self.char_selector_slot {
-            let current_code = fkeys.code_at(fkeys.current_set(), slot);
+        if let Some(target) = self.char_selector_target {
+            let current_code = match target {
+                CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
+                CharSelectorTarget::BrushChar => self.top_toolbar.brush_options.paint_char as u16,
+            };
 
-            let selector_canvas = CharSelector::new(slot, current_code)
+            // Use slot 0 as placeholder for CharSelector (it only needs the current_code for display)
+            let selector_canvas = CharSelector::new(0, current_code)
                 .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
                 .map(AnsiEditorMessage::CharSelector);
 

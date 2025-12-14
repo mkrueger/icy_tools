@@ -155,6 +155,8 @@ pub struct TopToolbar {
     pub filled: bool,
     /// GPU Segmented control for selection mode
     pub selection_mode_control: ShaderSegmentedControl,
+    /// GPU Segmented control for brush mode
+    pub brush_mode_control: ShaderSegmentedControl,
 }
 
 impl Default for TopToolbar {
@@ -175,6 +177,7 @@ impl TopToolbar {
             select_options: SelectOptions::default(),
             filled: false,
             selection_mode_control: ShaderSegmentedControl::new(),
+            brush_mode_control: ShaderSegmentedControl::new(),
         }
     }
 
@@ -224,8 +227,8 @@ impl TopToolbar {
     pub fn view(&self, current_tool: Tool, fkeys: &FKeySets, buffer_type: BufferType, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
-            Tool::Select => self.view_select_panel(font, theme),
-            Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(),
+            Tool::Select => self.view_select_panel(font.clone(), theme),
+            Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(font, theme),
             Tool::Line => self.view_line_panel(),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
             Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_panel("Ellipse"),
@@ -331,14 +334,29 @@ impl TopToolbar {
     }
 
     /// Brush tool panel
-    fn view_brush_panel(&self) -> Element<'_, TopToolbarMessage> {
+    fn view_brush_panel(&self, font: Option<BitFont>, theme: &Theme) -> Element<'_, TopToolbarMessage> {
         let primary = self.brush_options.primary;
-        let char_label = format!("{}", self.brush_options.paint_char);
+
+        // Build segments for the brush mode segmented control
+        // First segment shows the current paint char - clicking when selected opens char picker
+        let segments = vec![
+            Segment::char(self.brush_options.paint_char, BrushPrimaryMode::Char),
+            Segment::text("½Block", BrushPrimaryMode::HalfBlock),
+            Segment::text("Shade", BrushPrimaryMode::Shading),
+            Segment::text("Replace", BrushPrimaryMode::Replace),
+            Segment::text("Blink", BrushPrimaryMode::Blink),
+            Segment::text("Colorize", BrushPrimaryMode::Colorize),
+        ];
+
+        // Convert SegmentedControlMessage to TopToolbarMessage
+        let segmented_control = self.brush_mode_control.view(segments, primary, font, theme).map(|msg| match msg {
+            SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetBrushPrimary(m),
+            SegmentedControlMessage::CharClicked(_) => TopToolbarMessage::OpenBrushCharTable,
+        });
 
         // fg/bg toggles are only meaningful for Colorize
         let colorize_extra: Element<'_, TopToolbarMessage> = if primary == BrushPrimaryMode::Colorize {
             row![
-                Space::new().width(Length::Fixed(8.0)),
                 toggler(self.brush_options.colorize_fg)
                     .label("fg")
                     .on_toggle(TopToolbarMessage::ToggleColorizeFg)
@@ -354,37 +372,21 @@ impl TopToolbar {
             Space::new().width(Length::Fixed(0.0)).into()
         };
 
+        // Center the control with flexible space on both sides
         row![
-            // Character selector / mode
-            button(text(char_label).size(14)).padding(4).on_press(TopToolbarMessage::BrushCharButton),
-            toggler(primary == BrushPrimaryMode::HalfBlock)
-                .label("Half Block")
-                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::HalfBlock))
-                .text_size(11),
-            toggler(primary == BrushPrimaryMode::Shading)
-                .label("Shading")
-                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Shading))
-                .text_size(11),
-            toggler(primary == BrushPrimaryMode::Replace)
-                .label("Replace")
-                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Replace))
-                .text_size(11),
-            toggler(primary == BrushPrimaryMode::Blink)
-                .label("Blink")
-                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Blink))
-                .text_size(11),
-            toggler(primary == BrushPrimaryMode::Colorize)
-                .label("Colorize")
-                .on_toggle(|_| TopToolbarMessage::SetBrushPrimary(BrushPrimaryMode::Colorize))
-                .text_size(11),
+            Space::new().width(Length::Fill),
+            segmented_control,
+            Space::new().width(Length::Fixed(16.0)),
             colorize_extra,
             Space::new().width(Length::Fixed(16.0)),
             text("Size:").size(11),
             button(text("-").size(12)).on_press(TopToolbarMessage::DecrementBrushSize).padding(2),
             text(format!("{}", self.brush_options.brush_size)).size(12),
             button(text("+").size(12)).on_press(TopToolbarMessage::IncrementBrushSize).padding(2),
+            Space::new().width(Length::Fill),
         ]
         .spacing(8)
+        .align_y(iced::Alignment::Center)
         .into()
     }
 
