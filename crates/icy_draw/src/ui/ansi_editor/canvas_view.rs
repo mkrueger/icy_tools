@@ -217,6 +217,13 @@ impl CanvasView {
         markers.selection_rect = bounds;
     }
 
+    /// Set the brush/pencil preview rectangle for shader rendering (in pixels)
+    /// bounds: (x, y, width, height) in document pixels
+    pub fn set_brush_preview(&mut self, bounds: Option<(f32, f32, f32, f32)>) {
+        let mut markers = self.terminal.markers.write();
+        markers.brush_preview_rect = bounds;
+    }
+
     /// Set the selection border color for marching ants display
     pub fn set_selection_color(&mut self, color: [f32; 4]) {
         let mut markers = self.terminal.markers.write();

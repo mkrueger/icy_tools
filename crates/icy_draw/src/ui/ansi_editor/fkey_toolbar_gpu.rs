@@ -4,11 +4,11 @@
 //! Uses WGSL shader for background (drop shadow, borders, hover highlights)
 //! and glyph atlas shader for text rendering (labels, chars, arrows).
 
+use std::num::NonZeroU64;
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
 };
-use std::num::NonZeroU64;
 
 use codepages::tables::CP437_TO_UNICODE;
 use iced::wgpu::util::DeviceExt;
@@ -20,14 +20,11 @@ use iced::{
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
 
-use crate::ui::FKeySets;
 use super::fkey_layout::{
-    FKeyLayout, HoverState,
-    ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, LABEL_HEIGHT, LABEL_WIDTH,
-    LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X, NAV_SIZE,
-    NO_HOVER, SET_NUM_ICON_GAP, SHADOW_PADDING,
-    SLOT_CHAR_HEIGHT, SLOT_SPACING, SLOT_WIDTH,
+    ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, FKeyLayout, HoverState, LABEL_HEIGHT, LABEL_WIDTH, LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X,
+    NAV_SIZE, NO_HOVER, SET_NUM_ICON_GAP, SHADOW_PADDING, SLOT_CHAR_HEIGHT, SLOT_SPACING, SLOT_WIDTH,
 };
+use crate::ui::FKeySets;
 
 fn align_up(value: u64, alignment: u64) -> u64 {
     if alignment == 0 {
@@ -120,7 +117,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyToolbarProgram {
         if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
             if let Some(pos) = cursor.position_in(bounds) {
                 let (slot, hover_type) = compute_hover_state(pos, bounds, nav_label_space);
-                
+
                 // Click on slot
                 if slot != NO_HOVER {
                     let is_on_char = hover_type == 1;
@@ -132,7 +129,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyToolbarProgram {
                         return Some(iced::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
                     }
                 }
-                
+
                 // Click on nav buttons
                 if hover_type == 2 {
                     return Some(iced::widget::Action::publish(FKeyToolbarMessage::PrevSet));
@@ -1320,14 +1317,14 @@ impl shader::Pipeline for FKeyGlyphRenderer {
 fn compute_hover_state(pos: Point, _bounds: Rectangle, nav_label_space: f32) -> (u32, u32) {
     // Use default font for hit testing (the exact font doesn't matter much for hit areas)
     let mut layout = FKeyLayout::default_font();
-    
+
     // Override nav_label_space if provided
     if nav_label_space > 0.0 {
         layout.nav_label_space = nav_label_space;
         // Recalculate next_nav_x with the new label space
         layout.next_nav_x = layout.nav_x + NAV_SIZE + nav_label_space + NAV_NEXT_SHIFT_X;
     }
-    
+
     layout.hit_test_uniforms(pos)
 }
 
@@ -1373,7 +1370,8 @@ impl ShaderFKeyToolbar {
         theme: &Theme,
     ) -> Element<'_, FKeyToolbarMessage> {
         // Use centralized layout calculations
-        let (font_w, font_h) = font.as_ref()
+        let (font_w, font_h) = font
+            .as_ref()
             .map(|f| (f.size().width.max(1) as f32, f.size().height.max(1) as f32))
             .unwrap_or((8.0, 16.0));
         let layout = FKeyLayout::new(font_w, font_h);

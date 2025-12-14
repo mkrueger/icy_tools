@@ -131,11 +131,7 @@ pub fn cp437_index(ch: char) -> u32 {
     if (ch as u32) <= 0xFF {
         return ch as u32;
     }
-    CP437_TO_UNICODE
-        .iter()
-        .position(|&c| c == ch)
-        .map(|idx| idx as u32)
-        .unwrap_or(b'?' as u32)
+    CP437_TO_UNICODE.iter().position(|&c| c == ch).map(|idx| idx as u32).unwrap_or(b'?' as u32)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -220,12 +216,30 @@ impl GlyphRenderer {
 
         // Quad vertex buffer (two triangles)
         let quad: [QuadVertex; 6] = [
-            QuadVertex { unit_pos: [0.0, 0.0], unit_uv: [0.0, 0.0] },
-            QuadVertex { unit_pos: [1.0, 0.0], unit_uv: [1.0, 0.0] },
-            QuadVertex { unit_pos: [0.0, 1.0], unit_uv: [0.0, 1.0] },
-            QuadVertex { unit_pos: [0.0, 1.0], unit_uv: [0.0, 1.0] },
-            QuadVertex { unit_pos: [1.0, 0.0], unit_uv: [1.0, 0.0] },
-            QuadVertex { unit_pos: [1.0, 1.0], unit_uv: [1.0, 1.0] },
+            QuadVertex {
+                unit_pos: [0.0, 0.0],
+                unit_uv: [0.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 0.0],
+                unit_uv: [1.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [0.0, 1.0],
+                unit_uv: [0.0, 1.0],
+            },
+            QuadVertex {
+                unit_pos: [0.0, 1.0],
+                unit_uv: [0.0, 1.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 0.0],
+                unit_uv: [1.0, 0.0],
+            },
+            QuadVertex {
+                unit_pos: [1.0, 1.0],
+                unit_uv: [1.0, 1.0],
+            },
         ];
         let quad_vertex_buffer = device.create_buffer_init(&iced::wgpu::util::BufferInitDescriptor {
             label: Some("Glyph Quad"),

@@ -585,6 +585,10 @@ pub struct EditorMarkers {
 
     /// Font dimensions for selection mask rendering (font_width, font_height in pixels)
     pub font_dimensions: Option<(f32, f32)>,
+
+    /// Brush/Pencil preview rectangle in pixels (x, y, width, height) in document space
+    /// None = no brush preview
+    pub brush_preview_rect: Option<(f32, f32, f32, f32)>,
 }
 
 impl Default for EditorMarkers {
@@ -601,6 +605,7 @@ impl Default for EditorMarkers {
             selection_color: selection_colors::DEFAULT,
             selection_mask_data: None,
             font_dimensions: None,
+            brush_preview_rect: None,
         }
     }
 }

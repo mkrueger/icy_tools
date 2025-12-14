@@ -183,12 +183,7 @@ impl FKeyLayout {
         let nav_x = content_start_x + slots_width + NAV_GAP;
         let next_nav_x = nav_x + NAV_SIZE + nav_label_space + NAV_NEXT_SHIFT_X;
 
-        let content_width = slots_width
-            + NAV_GAP
-            + (2.0 * NAV_SIZE)
-            + nav_label_space
-            + NAV_NEXT_SHIFT_X
-            + RIGHT_PADDING;
+        let content_width = slots_width + NAV_GAP + (2.0 * NAV_SIZE) + nav_label_space + NAV_NEXT_SHIFT_X + RIGHT_PADDING;
         let total_width = content_width + SHADOW_PADDING * 2.0 + BORDER_WIDTH * 2.0 + LEFT_PADDING;
         let total_height = TOOLBAR_HEIGHT + SHADOW_PADDING * 2.0;
         let control_height = TOOLBAR_HEIGHT;
@@ -351,11 +346,7 @@ impl FKeyLayout {
         // Check F-key slots
         for slot in 0..NUM_SLOTS {
             let slot_rect = self.slot_rect(slot);
-            if pos.x >= slot_rect.x
-                && pos.x < slot_rect.x + slot_rect.width
-                && pos.y >= slot_rect.y
-                && pos.y < slot_rect.y + slot_rect.height
-            {
+            if pos.x >= slot_rect.x && pos.x < slot_rect.x + slot_rect.width && pos.y >= slot_rect.y && pos.y < slot_rect.y + slot_rect.height {
                 let char_x = self.slot_char_x(slot);
                 let is_on_char = pos.x >= char_x;
                 return HoverState::Slot(slot, is_on_char);
@@ -364,20 +355,12 @@ impl FKeyLayout {
 
         // Check nav buttons
         let prev_rect = self.nav_prev_rect();
-        if pos.x >= prev_rect.x
-            && pos.x < prev_rect.x + prev_rect.width
-            && pos.y >= prev_rect.y
-            && pos.y < prev_rect.y + prev_rect.height
-        {
+        if pos.x >= prev_rect.x && pos.x < prev_rect.x + prev_rect.width && pos.y >= prev_rect.y && pos.y < prev_rect.y + prev_rect.height {
             return HoverState::NavPrev;
         }
 
         let next_rect = self.nav_next_rect();
-        if pos.x >= next_rect.x
-            && pos.x < next_rect.x + next_rect.width
-            && pos.y >= next_rect.y
-            && pos.y < next_rect.y + next_rect.height
-        {
+        if pos.x >= next_rect.x && pos.x < next_rect.x + next_rect.width && pos.y >= next_rect.y && pos.y < next_rect.y + next_rect.height {
             return HoverState::NavNext;
         }
 
@@ -503,8 +486,7 @@ impl FKeyLayoutScaled {
 
     /// Nav X in physical pixels.
     pub fn nav_x_px(&self) -> f32 {
-        let slots_width = (NUM_SLOTS as f32) * self.slot_width_px()
-            + ((NUM_SLOTS - 1) as f32) * self.slot_spacing_px();
+        let slots_width = (NUM_SLOTS as f32) * self.slot_width_px() + ((NUM_SLOTS - 1) as f32) * self.slot_spacing_px();
         (self.content_start_x_px() + slots_width + self.px(NAV_GAP)).floor()
     }
 

@@ -361,7 +361,10 @@ impl AnsiEditor {
     /// Helper to access EditState without mutable borrow (uses shared lock internally)
     fn with_edit_state_readonly<R, F: FnOnce(&icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
         let mut screen = self.screen.lock();
-        let edit_state = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>().expect("screen should be EditState");
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<icy_engine_edit::EditState>()
+            .expect("screen should be EditState");
         f(edit_state)
     }
 
@@ -381,7 +384,34 @@ impl AnsiEditor {
         within < (font_h * 0.5)
     }
 
-    fn apply_paint_stamp(&mut self, doc_pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) {
+    /// Paint a half-block point with brush_size expansion in half-block coordinates.
+    /// This is similar to Moebius's half_block_line pattern where brush_size
+    /// expands around the half-block coordinate.
+    fn apply_half_block_with_brush_size(&mut self, half_block_pos: icy_engine::Position, button: iced::mouse::Button) {
+        let brush_size = self.top_toolbar.brush_options.brush_size.max(1) as i32;
+        let half = brush_size / 2;
+
+        for dy in 0..brush_size {
+            for dx in 0..brush_size {
+                let hb_x = half_block_pos.x + dx - half;
+                let hb_y = half_block_pos.y + dy - half;
+
+                // Skip negative coordinates (would be outside document)
+                if hb_y < 0 {
+                    continue;
+                }
+
+                // Convert half-block to cell coordinates
+                let cell_pos = icy_engine::Position::new(hb_x, hb_y / 2);
+                let is_top = (hb_y % 2) == 0;
+
+                self.apply_paint_stamp_with_half_block_info(cell_pos, is_top, button);
+            }
+        }
+    }
+
+    /// Internal: Paint stamp at cell position with explicit half-block top/bottom info
+    fn apply_paint_stamp_with_half_block_info(&mut self, doc_pos: icy_engine::Position, half_block_is_top: bool, button: iced::mouse::Button) {
         let tool = self.current_tool;
 
         let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
@@ -390,7 +420,7 @@ impl AnsiEditor {
         };
 
         let swap_colors = button == iced::mouse::Button::Right;
-        let half_block_is_top = self.half_block_is_top_from_pixel(pixel_position);
+        // half_block_is_top is passed in directly for HalfBlock mode with brush_size
 
         self.with_edit_state(|state| {
             let (offset, layer_w, layer_h) = if let Some(layer) = state.get_cur_layer() {
@@ -408,8 +438,11 @@ impl AnsiEditor {
                 (caret_attr.foreground(), caret_attr.background())
             };
 
-            let brush_size = if matches!(tool, Tool::Pencil) { 1 } else { brush_size };
-            let brush_size_i: i32 = brush_size as i32;
+            // Note: Pencil and Brush now both use brush_size from slider.
+            // For HalfBlock mode, brush_size expansion happens in half-block coordinates
+            // at the call site, so here we use size 1 to paint single points.
+            let effective_brush_size = if matches!(primary, BrushPrimaryMode::HalfBlock) { 1 } else { brush_size };
+            let brush_size_i: i32 = effective_brush_size as i32;
 
             let center = doc_pos - offset;
             let half = brush_size_i / 2;
@@ -510,6 +543,12 @@ impl AnsiEditor {
                 }
             }
         });
+    }
+
+    /// Paint stamp at cell position, determining half-block top/bottom from pixel position
+    fn apply_paint_stamp(&mut self, doc_pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) {
+        let half_block_is_top = self.half_block_is_top_from_pixel(pixel_position);
+        self.apply_paint_stamp_with_half_block_info(doc_pos, half_block_is_top, button);
     }
 
     #[allow(dead_code)]
@@ -1918,7 +1957,20 @@ impl AnsiEditor {
 
                 self.paint_last_pos = Some(pos);
                 self.paint_button = button;
-                self.apply_paint_stamp(pos, pixel_position, button);
+
+                // Check if we're in half-block mode
+                let is_half_block_mode = matches!(
+                    self.top_toolbar.brush_options.primary,
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
+                );
+
+                if is_half_block_mode {
+                    // Apply brush_size in half-block coordinates
+                    self.apply_half_block_with_brush_size(half_block_pos, button);
+                } else {
+                    // Normal mode: apply at cell position
+                    self.apply_paint_stamp(pos, pixel_position, button);
+                }
                 ToolEvent::Redraw
             }
             Tool::Pipette => {
@@ -2015,8 +2067,11 @@ impl AnsiEditor {
 
     /// Handle mouse move based on current tool
     fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> ToolEvent {
+        // Update brush/pencil hover preview (shader rectangle)
+        self.update_brush_preview(pos, pixel_position);
+
         if !self.is_dragging {
-            // Just hovering - update cursor based on position
+            // Just hovering
             return ToolEvent::None;
         }
 
@@ -2047,9 +2102,8 @@ impl AnsiEditor {
                         c_abs = c_abs + s;
                         self.half_block_click_pos = c_abs;
 
-                        // Convert half-block Y to cell Y for painting
-                        let cell_pos = icy_engine::Position::new(c_abs.x, c_abs.y / 2);
-                        self.apply_paint_stamp(cell_pos, pixel_position, self.paint_button);
+                        // Apply brush_size in half-block coordinates
+                        self.apply_half_block_with_brush_size(c_abs, self.paint_button);
                     }
                     self.drag_pos.cur_half_block = new_half_block_pos;
                 } else {
@@ -2075,6 +2129,58 @@ impl AnsiEditor {
             }
             _ => ToolEvent::None,
         }
+    }
+
+    fn update_brush_preview(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) {
+        let show_preview = matches!(self.current_tool, Tool::Pencil | Tool::Brush | Tool::Erase);
+        if !show_preview {
+            self.canvas.set_brush_preview(None);
+            return;
+        }
+
+        let brush_size = self.top_toolbar.brush_options.brush_size.max(1) as i32;
+        let half = brush_size / 2;
+
+        // Get font dimensions for pixel conversion
+        let (font_w, font_h) = {
+            let mut screen = self.screen.lock();
+            let size = screen.font_dimensions();
+            (size.width as f32, size.height as f32)
+        };
+
+        let is_half_block_mode = matches!(
+            self.top_toolbar.brush_options.primary,
+            crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
+        );
+
+        let rect = if is_half_block_mode {
+            // Compute doc-space half-block coordinate (Y doubled)
+            let layer_offset = self.with_edit_state_readonly(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
+
+            let hb_layer = self.compute_half_block_pos(pixel_position);
+            let hb_doc = icy_engine::Position::new(hb_layer.x + layer_offset.x, hb_layer.y + layer_offset.y * 2);
+
+            let left_hb = hb_doc.x - half;
+            let top_hb = hb_doc.y - half;
+
+            let x = left_hb as f32 * font_w;
+            let y = top_hb as f32 * (font_h * 0.5);
+            let w = brush_size as f32 * font_w;
+            let h = brush_size as f32 * (font_h * 0.5);
+            Some((x, y, w, h))
+        } else {
+            // Normal (cell) mode in doc coordinates
+            let left = pos.x - half;
+            let top = pos.y - half;
+
+            let x = left as f32 * font_w;
+            let y = top as f32 * font_h;
+            let w = brush_size as f32 * font_w;
+            let h = brush_size as f32 * font_h;
+            Some((x, y, w, h))
+        };
+
+        self.canvas.set_brush_preview(rect);
     }
 
     /// Get what kind of selection drag would happen at this position
@@ -2570,6 +2676,11 @@ impl AnsiEditor {
         let is_visble = matches!(tool, Tool::Click | Tool::Font);
         self.with_edit_state(|state| state.set_caret_visible(is_visble));
         self.current_tool = tool;
+
+        // Clear tool hover preview when switching tools.
+        if !matches!(tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
+            self.canvas.set_brush_preview(None);
+        }
     }
 }
 

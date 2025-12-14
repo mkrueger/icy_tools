@@ -93,13 +93,10 @@ impl SegmentedLayout {
     pub fn new(segments: &[SegmentContentType], font: Option<&BitFont>) -> Self {
         let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0);
         let font_height = font.map(|f| f.size().height as f32).unwrap_or(16.0);
-        
+
         let preview_magnify = (PREVIEW_GLYPH_HEIGHT / font_height).floor().max(1.0);
 
-        let segment_widths: Vec<f32> = segments
-            .iter()
-            .map(|seg| Self::calculate_segment_width(seg, font_width))
-            .collect();
+        let segment_widths: Vec<f32> = segments.iter().map(|seg| Self::calculate_segment_width(seg, font_width)).collect();
 
         let content_width = segment_widths.iter().sum::<f32>();
         let total_width = content_width + BORDER_WIDTH * 2.0 + SHADOW_PADDING * 2.0;
@@ -231,7 +228,7 @@ impl SegmentedLayout {
     pub fn hit_test(&self, pos: Point) -> Option<usize> {
         let content_x = self.content_start_x();
         let local_x = pos.x - content_x;
-        
+
         if local_x < 0.0 {
             return None;
         }
@@ -362,7 +359,7 @@ mod tests {
             SegmentContentType::Char,
         ];
         let layout = SegmentedLayout::default_font(&segments);
-        
+
         assert_eq!(layout.segment_widths.len(), 2);
         assert!(layout.total_width > 0.0);
         assert!(layout.total_height > 0.0);
@@ -370,20 +367,17 @@ mod tests {
 
     #[test]
     fn test_hit_test() {
-        let segments = vec![
-            SegmentContentType::Text(4),
-            SegmentContentType::Text(4),
-        ];
+        let segments = vec![SegmentContentType::Text(4), SegmentContentType::Text(4)];
         let layout = SegmentedLayout::default_font(&segments);
-        
+
         // Hit first segment
         let pos = Point::new(layout.segment_x(0) + 5.0, layout.content_start_y() + 5.0);
         assert_eq!(layout.hit_test(pos), Some(0));
-        
+
         // Hit second segment
         let pos = Point::new(layout.segment_x(1) + 5.0, layout.content_start_y() + 5.0);
         assert_eq!(layout.hit_test(pos), Some(1));
-        
+
         // Miss (before first segment)
         let pos = Point::new(0.0, layout.content_start_y() + 5.0);
         assert_eq!(layout.hit_test(pos), None);

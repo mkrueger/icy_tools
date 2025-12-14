@@ -97,6 +97,11 @@ struct Uniforms {
     _selection_padding1: f32,    // Padding
     _selection_padding2: f32,    // Padding (completes 16-byte alignment)
 
+    // Brush/Pencil preview uniforms (tool hover preview)
+    brush_preview_rect: vec4<f32>,   // (x, y, x+width, y+height) in document pixels
+    brush_preview_enabled: f32,      // 1.0 = enabled, 0.0 = disabled
+    _brush_preview_padding: vec3<f32>,
+
     // Font dimensions for selection mask sampling
     font_width: f32,             // Font width in pixels
     font_height: f32,            // Font height in pixels
@@ -518,9 +523,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // The viewport now covers the entire widget area, not just the terminal.
     // terminal_area defines where the actual terminal is within the viewport:
     // (start_x, start_y, end_x, end_y) in normalized UV coordinates (0-1)
-    let term_start = uniforms.terminal_area.xy;
-    let term_end = uniforms.terminal_area.zw;
-    let term_size = term_end - term_start;
+    var term_start = uniforms.terminal_area.xy;
+    var term_end = uniforms.terminal_area.zw;
+
+    // Be robust against bad/uninitialized uniform data (NaN/Inf or degenerate rect).
+    // If this goes wrong, inside_terminal will be false everywhere and nothing is drawn.
+    // WGSL doesn't provide `isNan/isInf` in all toolchains, so we implement a conservative check.
+    let nan = any(term_start != term_start) || any(term_end != term_end);
+    // Treat extremely large values as invalid (covers Inf and many uninitialized cases).
+    let huge = any(abs(term_start) > vec2<f32>(1.0e20)) || any(abs(term_end) > vec2<f32>(1.0e20));
+    if (nan || huge) {
+        term_start = vec2<f32>(0.0, 0.0);
+        term_end = vec2<f32>(1.0, 1.0);
+    }
+    term_start = clamp(term_start, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
+    term_end = clamp(term_end, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
+
+    var term_size = term_end - term_start;
+    let eps = 0.00001;
+    if (term_size.x <= eps || term_size.y <= eps) {
+        term_start = vec2<f32>(0.0, 0.0);
+        term_end = vec2<f32>(1.0, 1.0);
+        term_size = vec2<f32>(1.0, 1.0);
+    }
     
     // Transform viewport UV to terminal UV
     // viewport_uv is in full widget space, terminal_uv is in terminal space (0-1)
@@ -873,6 +898,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         } else if (adjacent) {
             // Adjacent to selection: dim
             color = color * 0.6;
+        }
+    }
+
+    // Brush/Pencil preview rectangle (always-visible via difference/invert blending)
+    // Draw this after all other overlays so it can't be overwritten, and mark it
+    // like a border so post-processing (scanlines/noise/bloom) stays crisp.
+    if (uniforms.brush_preview_enabled > 0.5) {
+        let left = uniforms.brush_preview_rect.x;
+        let top = uniforms.brush_preview_rect.y;
+        let right = uniforms.brush_preview_rect.z;
+        let bottom = uniforms.brush_preview_rect.w;
+
+        // 1px border in document pixel space
+        let line_thickness = 1.0;
+        let in_y = doc_pixel.y >= top && doc_pixel.y <= bottom;
+        let in_x = doc_pixel.x >= left && doc_pixel.x <= right;
+
+        let on_left = abs(doc_pixel.x - left) < line_thickness && in_y;
+        let on_right = abs(doc_pixel.x - right) < line_thickness && in_y;
+        let on_top = abs(doc_pixel.y - top) < line_thickness && in_x;
+        let on_bottom = abs(doc_pixel.y - bottom) < line_thickness && in_x;
+
+        if (on_left || on_right || on_top || on_bottom) {
+            on_selection_border = true;
+            color = vec3<f32>(1.0) - color;
         }
     }
 

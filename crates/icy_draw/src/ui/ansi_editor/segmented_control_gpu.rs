@@ -3,6 +3,12 @@
 //! Uses a WGSL shader for the background (shadows, glow, selection highlights)
 //! and a Canvas overlay for text rendering with the BitFont.
 
+use super::glyph_renderer::{FLAG_BG_ONLY, GlyphInstance, GlyphUniforms, QuadVertex, build_glyph_atlas_rgba, cp437_index, font_key};
+use super::segmented_layout::{
+    BORDER_WIDTH, CORNER_RADIUS, MAX_SEGMENTS, NO_HOVER, PREVIEW_GLYPH_HEIGHT, SEGMENT_HEIGHT, SEGMENT_PADDING_H, SHADOW_PADDING, SegmentContentType,
+    SegmentedLayout,
+};
+use iced::wgpu::util::DeviceExt;
 use iced::{
     Color, Element, Length, Point, Rectangle, Size, Theme,
     mouse::{self, Cursor},
@@ -12,24 +18,14 @@ use iced::{
         shader,
     },
 };
-use iced::wgpu::util::DeviceExt;
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
-use super::glyph_renderer::{
-    GlyphInstance, GlyphUniforms, QuadVertex, build_glyph_atlas_rgba, cp437_index, font_key,
-    FLAG_BG_ONLY,
-};
-use super::segmented_layout::{
-    SegmentedLayout, SegmentContentType,
-    BORDER_WIDTH, CORNER_RADIUS, MAX_SEGMENTS, NO_HOVER,
-    PREVIEW_GLYPH_HEIGHT, SEGMENT_HEIGHT, SEGMENT_PADDING_H, SHADOW_PADDING,
-};
+use std::num::NonZeroU64;
 use std::sync::Once;
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
 };
-use std::num::NonZeroU64;
 
 #[cfg(debug_assertions)]
 static SEGMENTED_CONTROL_DEBUG_PRINT_ONCE: Once = Once::new();
@@ -52,7 +48,7 @@ impl SegmentContent {
     pub fn char(c: char) -> Self {
         Self::Char(c)
     }
-    
+
     /// Convert to layout content type for width calculation.
     fn to_layout_type(&self) -> SegmentContentType {
         match self {
@@ -580,13 +576,7 @@ impl shader::Primitive for SegmentedCharGlyphPrimitive {
         queue.write_buffer(&pipeline.instance_buffer, instance_offset, bytes);
     }
 
-    fn render(
-        &self,
-        pipeline: &Self::Pipeline,
-        encoder: &mut iced::wgpu::CommandEncoder,
-        target: &iced::wgpu::TextureView,
-        clip_bounds: &Rectangle<u32>,
-    ) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let instance_count = self.instance_count.load(Ordering::Relaxed);
         if instance_count == 0 {
             return;
@@ -1191,11 +1181,7 @@ impl<T: Clone + PartialEq + Send + 'static> canvas::Program<SegmentedControlMess
 
                         if let Some(ref char_colors) = self.char_colors {
                             // Draw background fill with caret bg color
-                            frame.fill_rectangle(
-                                Point::new(glyph_x, glyph_y),
-                                Size::new(preview_glyph_w, preview_glyph_h),
-                                char_colors.bg,
-                            );
+                            frame.fill_rectangle(Point::new(glyph_x, glyph_y), Size::new(preview_glyph_w, preview_glyph_h), char_colors.bg);
 
                             // Draw preview glyph with caret fg color
                             self.draw_glyph(frame, glyph_x, glyph_y, *ch, char_colors.fg, preview_glyph_magnify);
@@ -1403,7 +1389,15 @@ impl<T: Clone + PartialEq + Send + 'static> canvas::Program<SegmentedControlMess
                         let text_y = (content_y + (content_h - char_h) / 2.0).floor();
 
                         // Shadow
-                        self.draw_text(frame, text_x + shadow_offset.0, text_y + shadow_offset.1, text, shadow_color, char_w, pixel_size);
+                        self.draw_text(
+                            frame,
+                            text_x + shadow_offset.0,
+                            text_y + shadow_offset.1,
+                            text,
+                            shadow_color,
+                            char_w,
+                            pixel_size,
+                        );
                         // Text
                         self.draw_text(frame, text_x, text_y, text, color, char_w, pixel_size);
                     }

@@ -247,9 +247,7 @@ impl TopToolbar {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
             Tool::Select => self.view_select_panel(font.clone(), theme),
-            Tool::Pencil | Tool::Brush | Tool::Erase => {
-                self.view_brush_panel(font, theme, caret_fg, caret_bg, palette)
-            }
+            Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(font, theme, caret_fg, caret_bg, palette),
             Tool::Line => self.view_line_panel(),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_panel("Rectangle"),
             Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_panel("Ellipse"),
@@ -358,14 +356,7 @@ impl TopToolbar {
     }
 
     /// Brush tool panel
-    fn view_brush_panel(
-        &self,
-        font: Option<BitFont>,
-        theme: &Theme,
-        caret_fg: u32,
-        caret_bg: u32,
-        palette: &Palette,
-    ) -> Element<'_, TopToolbarMessage> {
+    fn view_brush_panel(&self, font: Option<BitFont>, theme: &Theme, caret_fg: u32, caret_bg: u32, palette: &Palette) -> Element<'_, TopToolbarMessage> {
         let primary = self.brush_options.primary;
 
         // Build segments for the brush mode segmented control
@@ -438,10 +429,8 @@ impl TopToolbar {
         let size_text = text(format!("{}", self.brush_options.brush_size))
             .size(14)
             .font(iced::Font::MONOSPACE)
-            .style(|theme: &Theme| {
-                text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
-                }
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().secondary.base.color),
             });
 
         // Center the control with flexible space on both sides

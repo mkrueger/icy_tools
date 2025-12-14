@@ -142,6 +142,17 @@ struct CRTUniforms {
     /// Padding for 16-byte alignment
     _selection_padding: [f32; 2],
 
+    // Brush/Pencil preview uniforms (tool hover preview)
+    /// Preview rectangle in pixels (x, y, x+width, y+height) in document space
+    brush_preview_rect: [f32; 4],
+    /// Preview enabled (1.0 = enabled, 0.0 = disabled)
+    brush_preview_enabled: f32,
+    /// Padding for 16-byte alignment
+    ///
+    /// NOTE: WGSL `vec3<f32>` in a uniform buffer consumes 16 bytes (std140-like),
+    /// so our Rust-side padding must also be 16 bytes to keep the struct size in sync.
+    _brush_preview_padding: [f32; 4],
+
     // Font dimensions for selection mask sampling
     /// Font width in pixels
     font_width: f32,
@@ -154,6 +165,18 @@ struct CRTUniforms {
     /// Terminal area in normalized UV coordinates (start_x, start_y, end_x, end_y)
     /// This defines where the actual terminal content is rendered within the full widget area
     terminal_area: [f32; 4],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CRTUniforms;
+
+    #[test]
+    fn crt_uniforms_size_matches_shader_expectations() {
+        // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
+        assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 512);
+    }
 }
 
 /// The terminal shader program (high-level interface)
@@ -256,6 +279,10 @@ pub struct TerminalShader {
     pub selection_mask_data: Option<(Vec<u8>, u32, u32)>, // (data, width_in_cells, height_in_cells)
     /// Font dimensions for selection mask sampling (font_width, font_height in pixels)
     pub font_dimensions: Option<(f32, f32)>,
+
+    // Brush/Pencil preview rendering
+    /// Preview rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
+    pub brush_preview_rect: Option<[f32; 4]>,
 }
 
 /// Texture slice for GPU
@@ -1215,6 +1242,11 @@ impl shader::Primitive for TerminalShader {
             },
             selection_mask_enabled: if self.selection_mask_data.is_some() { 1.0 } else { 0.0 },
             _selection_padding: [0.0; 2],
+
+            // Brush/Pencil preview uniforms
+            brush_preview_rect: self.brush_preview_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
+            brush_preview_enabled: if self.brush_preview_rect.is_some() { 1.0 } else { 0.0 },
+            _brush_preview_padding: [0.0; 4],
 
             // Font dimensions for selection mask
             font_width: self.font_dimensions.map(|(w, _)| w).unwrap_or(8.0),
