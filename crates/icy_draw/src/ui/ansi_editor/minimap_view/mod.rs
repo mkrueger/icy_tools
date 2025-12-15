@@ -101,6 +101,14 @@ impl MinimapView {
         }
     }
 
+    pub fn available_size(&self) -> (f32, f32) {
+        let shared = self.shared_state.lock();
+        (
+            if shared.available_width > 0.0 { shared.available_width } else { 140.0 },
+            if shared.available_height > 0.0 { shared.available_height } else { 600.0 },
+        )
+    }
+
     /// Ensure the viewport rectangle is visible in the minimap
     /// Adjusts scroll_position so the viewport is always on screen
     /// Uses interior mutability so it can be called from view()
@@ -204,13 +212,7 @@ impl MinimapView {
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
         // Get available space from shared state (updated by shader in previous frame)
-        let (avail_width, avail_height) = {
-            let shared = self.shared_state.lock();
-            (
-                if shared.available_width > 0.0 { shared.available_width } else { 140.0 },
-                if shared.available_height > 0.0 { shared.available_height } else { 600.0 },
-            )
-        };
+        let (avail_width, avail_height) = self.available_size();
 
         // During interactive window resize, avoid synchronously rendering missing tiles.
         // That path can be expensive and causes visible stutter.
@@ -385,6 +387,25 @@ impl MinimapView {
                 // Use dimensions from shared cache - they match what Terminal rendered
                 let full_size = (content_width_u32, content_height as u32);
 
+                // The minimap uses a sliding window of slices. The shader's `scroll_offset`
+                // is *local* to the rendered window (0..=1 over the window's scrollable range),
+                // not the global minimap scroll position.
+                let window_h = total_height as f32;
+                let scaled_window_h = window_h * scale;
+                let window_visible_uv_h = (avail_height / scaled_window_h).min(1.0);
+                let window_max_scroll_uv = (1.0 - window_visible_uv_h).max(0.0);
+                let mut window_scroll_uv = if window_h > 0.0 {
+                    ((scroll_pixel_y - first_slice_start_y) / window_h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                window_scroll_uv = window_scroll_uv.clamp(0.0, window_max_scroll_uv);
+                let local_scroll_offset = if window_max_scroll_uv > 0.0 {
+                    window_scroll_uv / window_max_scroll_uv
+                } else {
+                    0.0
+                };
+
                 if !slices.is_empty() {
                     return self.create_shader_element(
                         slices,
@@ -393,7 +414,7 @@ impl MinimapView {
                         full_size,
                         viewport_info,
                         avail_height,
-                        scroll_normalized,
+                        local_scroll_offset,
                         first_slice_start_y,
                     );
                 }

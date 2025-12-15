@@ -297,10 +297,9 @@ pub struct AnsiEditor {
     /// Whether the document is modified
     pub is_modified: bool,
 
-    /// While Some, the minimap is being dragged. Stores the last target position in normalized
-    /// buffer coordinates (0..=1). This makes the minimap behave like a content scrollbar:
-    /// we keep applying the same target while the mouse is held, even if no further events arrive.
-    minimap_drag_target_norm: Option<(f32, f32)>,
+    /// While Some, the minimap is being dragged. Stores last pointer position relative to minimap
+    /// bounds (may be outside) to simulate egui-style continuous drag updates.
+    minimap_drag_pointer: Option<(f32, f32)>,
 
     // === Selection/Drag State ===
     /// Current drag positions for mouse operations
@@ -718,7 +717,7 @@ impl AnsiEditor {
             options,
             is_modified: false,
 
-            minimap_drag_target_norm: None,
+            minimap_drag_pointer: None,
             // Selection/drag state
             drag_pos: DragPos::default(),
             is_dragging: false,
@@ -1103,7 +1102,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.tool_panel.needs_animation() || self.minimap_drag_target_norm.is_some()
+        self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
     }
 
     /// Get the current marker state for menu display
@@ -1363,13 +1362,12 @@ impl AnsiEditor {
                             pointer_x,
                             pointer_y,
                         } => {
-                            let _ = (pointer_x, pointer_y); // keep fields for future; not needed for scrollbar-style drag
-                            self.minimap_drag_target_norm = Some((*norm_x, *norm_y));
+                            self.minimap_drag_pointer = Some((*pointer_x, *pointer_y));
                             // Convert normalized position to content coordinates and scroll
                             self.scroll_canvas_to_normalized(*norm_x, *norm_y);
                         }
                         MinimapMessage::DragEnd => {
-                            self.minimap_drag_target_norm = None;
+                            self.minimap_drag_pointer = None;
                         }
                         _ => {}
                     }
@@ -1717,20 +1715,29 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::CancelShapeDrag => {
                 let _ = self.cancel_shape_drag();
-                self.minimap_drag_target_norm = None;
+                self.minimap_drag_pointer = None;
                 Task::none()
             }
             AnsiEditorMessage::CancelMinimapDrag => {
-                self.minimap_drag_target_norm = None;
+                self.minimap_drag_pointer = None;
                 Task::none()
             }
             AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
-                let Some((norm_x, norm_y)) = self.minimap_drag_target_norm else {
+                let Some((pointer_x, pointer_y)) = self.minimap_drag_pointer else {
                     return Task::none();
                 };
 
-                // Scrollbar-Semantik: solange Maus gedrückt bleibt, Ziel weiter anwenden.
-                self.scroll_canvas_to_normalized(norm_x, norm_y);
+                // Recompute normalized position from the last known pointer position. This is
+                // essential when no further cursor events arrive (drag-out), but the minimap and
+                // viewport keep moving.
+                let render_cache = &self.canvas.terminal.render_cache;
+                if let Some((norm_x, norm_y)) =
+                    self.right_panel
+                        .minimap
+                        .handle_click(iced::Size::new(0.0, 0.0), iced::Point::new(pointer_x, pointer_y), Some(render_cache))
+                {
+                    self.scroll_canvas_to_normalized(norm_x, norm_y);
+                }
 
                 Task::none()
             }

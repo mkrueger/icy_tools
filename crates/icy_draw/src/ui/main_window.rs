@@ -2733,6 +2733,7 @@ impl MainWindow {
                             Task::none(),
                         );
                     }
+
                     // Forward keyboard events to AnsiEditor
                     Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         let msg = super::ansi_editor::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);

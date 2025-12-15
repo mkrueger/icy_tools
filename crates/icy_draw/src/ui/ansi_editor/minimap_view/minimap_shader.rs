@@ -75,7 +75,7 @@ pub(crate) fn viewport_info_from_effective_view(
 
 #[cfg(test)]
 mod tests {
-    use super::viewport_info_from_effective_view;
+    use super::{normalized_position_from_minimap, viewport_info_from_effective_view};
 
     fn assert_approx(a: f32, b: f32) {
         let eps = 1e-6;
@@ -123,6 +123,51 @@ mod tests {
         assert!(v.y >= 0.0 && v.y <= 1.0);
         assert!(v.width >= 0.0 && v.width <= 1.0);
         assert!(v.height >= 0.0 && v.height <= 1.0);
+    }
+
+    #[test]
+    fn click_mapping_clamps_out_of_bounds() {
+        // Full content is 1000px tall; rendered window is 200px starting at Y=400.
+        // bounds are 100x100; texture_w matches bounds_w => scale=1.
+        let bounds_w = 100.0;
+        let bounds_h = 100.0;
+        let texture_w = 100.0;
+        let window_h = 200.0;
+        let first_slice_start_y = 400.0;
+        let full_h = 1000.0;
+
+        // Local scroll: visible_uv_height=0.5, max_scroll_uv=0.5, scroll_uv_y=0.25 => local=0.5.
+        let local_scroll_offset = 0.5;
+
+        // Above bounds clamps to top of visible range: y = (400 + 0.25*200)/1000 = 0.45
+        let (_x, y_top) = normalized_position_from_minimap(
+            50.0,
+            -999.0,
+            bounds_w,
+            bounds_h,
+            texture_w,
+            window_h,
+            local_scroll_offset,
+            first_slice_start_y,
+            full_h,
+        )
+        .unwrap();
+        assert_approx(y_top, 0.45);
+
+        // Below bounds clamps to bottom of visible range: y = (400 + 0.75*200)/1000 = 0.55
+        let (_x, y_bottom) = normalized_position_from_minimap(
+            50.0,
+            999.0,
+            bounds_w,
+            bounds_h,
+            texture_w,
+            window_h,
+            local_scroll_offset,
+            first_slice_start_y,
+            full_h,
+        )
+        .unwrap();
+        assert_approx(y_bottom, 0.55);
     }
 }
 
@@ -175,29 +220,60 @@ impl MinimapProgram {
         let relative_x = absolute_pos.x - bounds.x;
         let relative_y = absolute_pos.y - bounds.y;
 
-        let scale = bounds.width / tex_w as f32;
-        let scaled_h = tex_h as f32 * scale;
-
-        // Calculate visible UV range (same logic as in prepare())
-        let visible_uv_height = (bounds.height / scaled_h).min(1.0);
-        let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
-        let scroll_uv_y = self.scroll_offset * max_scroll_uv;
-
-        // Position in screen space (0-1 of visible area) - can be outside 0-1 range
-        let screen_y = relative_y / bounds.height;
-
-        // Convert to texture UV space by mapping through visible range
-        // texture_uv is 0-1 over the rendered texture (which may be smaller than full buffer)
-        let texture_uv_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
-
-        // Convert from texture space (sliding window) to full buffer space.
-        // The rendered texture starts at `first_slice_start_y` in document Y.
-        let buffer_y_px = self.first_slice_start_y + texture_uv_y * tex_h as f32;
-        let norm_y = (buffer_y_px / self.full_content_height.max(1.0)).clamp(0.0, 1.0);
-        let norm_x = (relative_x / bounds.width).clamp(0.0, 1.0);
-
-        Some((norm_x, norm_y))
+        normalized_position_from_minimap(
+            relative_x,
+            relative_y,
+            bounds.width,
+            bounds.height,
+            tex_w as f32,
+            tex_h as f32,
+            self.scroll_offset,
+            self.first_slice_start_y,
+            self.full_content_height,
+        )
     }
+}
+
+fn normalized_position_from_minimap(
+    relative_x: f32,
+    relative_y: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+    texture_w: f32,
+    window_h: f32,
+    local_scroll_offset: f32,
+    first_slice_start_y: f32,
+    full_content_height: f32,
+) -> Option<(f32, f32)> {
+    if bounds_w <= 0.0 || bounds_h <= 0.0 || texture_w <= 0.0 || window_h <= 0.0 {
+        return None;
+    }
+
+    let scale = bounds_w / texture_w;
+    let scaled_h = window_h * scale;
+
+    // Calculate visible UV range (same logic as in prepare())
+    let visible_uv_height = (bounds_h / scaled_h).min(1.0);
+    let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
+    let scroll_uv_y = local_scroll_offset.clamp(0.0, 1.0) * max_scroll_uv;
+
+    // Pointer can be outside when drag-out autoscroll is active; clamp to edge.
+    let local_x = relative_x.clamp(0.0, bounds_w);
+    let local_y = relative_y.clamp(0.0, bounds_h);
+
+    // Position in screen space (0-1 of visible area)
+    let screen_y = local_y / bounds_h;
+
+    // Convert to texture UV space by mapping through visible range
+    // texture_uv is 0-1 over the rendered window texture
+    let texture_uv_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
+
+    // Convert from texture space (sliding window) to full buffer space.
+    let buffer_y_px = first_slice_start_y + texture_uv_y * window_h;
+    let norm_y = (buffer_y_px / full_content_height.max(1.0)).clamp(0.0, 1.0);
+    let norm_x = (local_x / bounds_w).clamp(0.0, 1.0);
+
+    Some((norm_x, norm_y))
 }
 
 impl shader::Program<MinimapMessage> for MinimapProgram {
