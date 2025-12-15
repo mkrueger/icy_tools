@@ -10,6 +10,7 @@ mod file_format;
 pub use file_format::*;
 
 pub mod ansi_v2;
+pub use ansi_v2::{AnsiCompatibilityLevel, AnsiSaveOptionsV2, save_ansi_v2};
 
 mod image_format;
 use icy_sauce::SauceRecord;
@@ -44,94 +45,6 @@ pub enum ControlCharHandling {
     Ignore,
     IcyTerm,
     FilterOut,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SaveOptions {
-    pub format_type: i32,
-
-    pub screen_preparation: ScreenPreperation,
-    pub modern_terminal_output: bool,
-
-    #[serde(skip)]
-    pub save_sauce: Option<SauceRecord>,
-
-    /// When set the output will be compressed.
-    pub compress: bool,
-
-    /// When set the output will contain cursor forawad sequences. (CSI Ps C)
-    pub use_cursor_forward: bool,
-    /// When set the output will contain repeat sequences. (CSI Ps b)
-    pub use_repeat_sequences: bool,
-
-    /// When set the output will contain the full line length.
-    /// This is useful for files that are meant to be displayed on a unix terminal where the bg color may not be 100% black.
-    pub preserve_line_length: bool,
-
-    /// When set the output will be cropped to this length.
-    pub output_line_length: Option<usize>,
-
-    /// When set the ansi engine will generate a gotoxy sequence at each line start
-    ///  making the file work on longer terminals.
-    pub longer_terminal_output: bool,
-
-    /// When set output ignores fg color changes in whitespaces
-    /// and bg color changes in blocks.
-    pub lossles_output: bool,
-
-    /// When set output will use extended color codes if they apply.
-    pub use_extended_colors: bool,
-
-    /// When set all whitespaces will be converted to spaces.
-    pub normalize_whitespaces: bool,
-
-    /// Changes control char output behavior
-    pub control_char_handling: ControlCharHandling,
-
-    #[serde(skip)]
-    pub skip_lines: Option<Vec<usize>>,
-
-    #[serde(skip)]
-    pub alt_rgb: bool,
-
-    #[serde(skip)]
-    pub always_use_rgb: bool,
-
-    /// When set, skip generating the thumbnail image (for formats that embed one).
-    /// This is useful for autosave where rendering is expensive.
-    #[serde(skip)]
-    pub skip_thumbnail: bool,
-}
-
-impl SaveOptions {
-    pub const fn new() -> Self {
-        SaveOptions {
-            format_type: 0,
-            longer_terminal_output: false,
-            screen_preparation: ScreenPreperation::None,
-            modern_terminal_output: false,
-            save_sauce: None,
-            compress: true,
-            output_line_length: None,
-            control_char_handling: ControlCharHandling::Ignore,
-            lossles_output: false,
-            use_extended_colors: true,
-            normalize_whitespaces: true,
-            use_cursor_forward: true,
-            use_repeat_sequences: false,
-            preserve_line_length: false,
-            skip_lines: None,
-            alt_rgb: false,
-            always_use_rgb: false,
-            skip_thumbnail: false,
-        }
-    }
-}
-
-impl Default for SaveOptions {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[derive(Default)]

@@ -1,8 +1,8 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{ATARI, ATARI_DEFAULT_PALETTE, EditableScreen, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
 
 #[allow(unused)]
-pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_atascii(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     if buf.buffer_type != crate::BufferType::Atascii {
         return Err(crate::EngineError::BufferTypeMismatch {
             expected: "Atascii".to_string(),

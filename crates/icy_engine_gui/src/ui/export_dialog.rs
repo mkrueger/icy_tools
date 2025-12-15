@@ -9,7 +9,7 @@ use iced::{
     widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::{
-    BufferType, SaveOptions, Screen,
+    AnsiSaveOptionsV2, BufferType, Screen,
     formats::{FileFormat, ImageFormat},
 };
 use parking_lot::Mutex;
@@ -176,7 +176,7 @@ impl ExportDialogState {
         let ext = self.export_format.primary_extension();
 
         // Create save options with UTF-8 setting
-        let mut options = SaveOptions::new();
+        let mut options = AnsiSaveOptionsV2::new();
         options.modern_terminal_output = self.utf8_output;
 
         // Convert buffer to bytes based on format

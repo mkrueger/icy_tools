@@ -1,5 +1,5 @@
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AttributedChar, Color, FileFormat, Layer, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, AttributedChar, Color, FileFormat, Layer, TextAttribute, TextBuffer, TextPane};
 
 fn make_png_with_ztxt_chunks(chunks: &[(&str, String)]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -65,7 +65,7 @@ fn make_png_with_ztxt_chunks(chunks: &[(&str, String)]) -> Vec<u8> {
                         }*/
                         if let Ok(mut buf) = Buffer::load_buffer(path, true) {
                             let draw = FileFormat::IcyDraw;
-                            let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+                            let bytes = draw.to_bytes(&buf, &AnsiSaveOptionsV2::default()).unwrap();
                             let buf2 = draw
                                 .from_bytes(&bytes, None)
                                 .unwrap();
@@ -84,7 +84,7 @@ fn make_png_with_ztxt_chunks(chunks: &[(&str, String)]) -> Vec<u8> {
         )
         .unwrap();
         let draw = FileFormat::IcyDraw;
-        let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
+        let bytes = draw.to_bytes(&buf, &AnsiSaveOptionsV2::default()).unwrap();
         let buf2 = draw
             .from_bytes(&bytes, None)
             .unwrap();
@@ -100,7 +100,7 @@ fn test_default_font_page() {
     buf.layers[1].default_font_page = 1;
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -112,7 +112,7 @@ fn test_empty_buffer() {
     buf.set_height(23);
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -138,7 +138,7 @@ fn test_rgb_serialization_bug() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -160,7 +160,7 @@ fn test_rgb_serialization_bug_2() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -181,7 +181,7 @@ fn test_nonstandard_palettes() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -203,7 +203,7 @@ fn test_fg_switch() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -221,7 +221,7 @@ fn test_escape_char() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -294,7 +294,7 @@ fn test_tag_roundtrip_short_and_long() {
     });
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     assert_eq!(buf2.tags.len(), 2);
@@ -328,7 +328,7 @@ fn test_layer_continuation_resume_is_y_based_not_line_count() {
     buf.layers[0].set_char((0, 300), AttributedChar { ch: 'B', attribute: attr });
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     assert_eq!(buf2.width(), 1000);
@@ -357,7 +357,7 @@ fn test_fuzz_lite_no_panic_on_corrupt_icy_draw() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let good = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let good = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
 
     let mut cases: Vec<Vec<u8>> = Vec::new();
 
@@ -402,7 +402,7 @@ fn test_0_255_chars() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let mut opt = SaveOptions::default();
+    let mut opt = AnsiSaveOptionsV2::default();
     opt.lossles_output = true;
     let bytes = draw.to_bytes(&mut buf, &opt).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
@@ -435,7 +435,7 @@ fn test_too_long_lines() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -452,7 +452,7 @@ fn test_space_persistance_buffer() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -466,7 +466,7 @@ fn test_invisible_layer_bug() {
     buf.layers[1].properties.is_visible = false;
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let mut buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -487,7 +487,7 @@ fn test_invisisible_persistance_bug() {
     assert_eq!(AttributedChar::invisible(), buf.layers[1].char_at((1, 0).into()).into());
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).unwrap();
     let mut buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);

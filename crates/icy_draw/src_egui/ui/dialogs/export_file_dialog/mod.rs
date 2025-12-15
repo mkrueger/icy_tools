@@ -7,7 +7,7 @@ use egui_file::FileDialog;
 use egui_modal::Modal;
 use gifski::{Repeat, progress::NoProgress};
 use i18n_embed_fl::fl;
-use icy_engine::{BufferType, Rectangle, SaveOptions, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, BufferType, Rectangle, TextPane};
 
 use crate::{AnsiEditor, Message, ModalDialog, SETTINGS, TerminalResult};
 
@@ -173,7 +173,7 @@ impl ModalDialog for ExportFileDialog {
                             .width(190.)
                             .show_ui(ui, |ui| {
                                 (0..desc.len()).for_each(|i| {
-                                    let td: (&str, fn(&mut Ui, &mut SaveOptions), &str) = desc[i];
+                                    let td: (&str, fn(&mut Ui, &mut AnsiSaveOptionsV2), &str) = desc[i];
                                     if ui.selectable_value(&mut self.format_type, i as i32, td.0).clicked() {
                                         let mut p = PathBuf::from(&self.file_name);
                                         p.set_extension(td.2);
@@ -286,7 +286,7 @@ fn image(data: Vec<u8>, size: icy_engine::Size) -> imgref::Img<Vec<rgb::RGBA<u8>
     imgref::Img::new(d, size.width as usize, size.height as usize)
 }
 
-type CreateSettingsFunction = fn(&mut Ui, &mut SaveOptions);
+type CreateSettingsFunction = fn(&mut Ui, &mut AnsiSaveOptionsV2);
 
 const TYPE_DESCRIPTIONS: [(&str, CreateSettingsFunction, &str); 13] = [
     ("Ansi (.ans)", ansi::create_settings_page, "ans"),

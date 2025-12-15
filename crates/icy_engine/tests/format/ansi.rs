@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path};
 
-use icy_engine::{AnsiState, Color, ControlCharHandling, FileFormat, SaveOptions, StringGenerator, TextBuffer, TextPane};
+use icy_engine::{AnsiState, Color, ControlCharHandling, FileFormat, StringGenerator, TextBuffer, TextPane};
 
 use super::ansi2::{CompareOptions, compare_buffers};
 
@@ -55,7 +55,7 @@ fn test_roundtrip() {
             if buf.palette.len() > 16 {
                 continue;
             }
-            let mut opt = SaveOptions::default();
+            let mut opt = crate::AnsiSaveOptionsV2::default();
             opt.control_char_handling = ControlCharHandling::IcyTerm;
             opt.compress = true;
             opt.save_sauce = None; // No sauce needed for test

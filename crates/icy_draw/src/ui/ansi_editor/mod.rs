@@ -1072,7 +1072,7 @@ impl AnsiEditor {
 
             // Get buffer and save with default options
             let buffer = edit_state.get_buffer();
-            let options = icy_engine::formats::SaveOptions::default();
+            let options = icy_engine::AnsiSaveOptionsV2::default();
             let bytes = format.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
 
             std::fs::write(path, bytes).map_err(|e| e.to_string())?;
@@ -1092,7 +1092,7 @@ impl AnsiEditor {
             let format = FileFormat::IcyDraw;
             let buffer = edit_state.get_buffer();
             // Skip thumbnail generation for faster autosave
-            let mut options = icy_engine::formats::SaveOptions::default();
+            let mut options = icy_engine::AnsiSaveOptionsV2::default();
             options.skip_thumbnail = true;
             format.to_bytes(buffer, &options).map_err(|e| e.to_string())
         } else {

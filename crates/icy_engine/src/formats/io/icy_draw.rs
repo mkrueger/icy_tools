@@ -7,7 +7,7 @@ use regex::Regex;
 
 use crate::{BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextBuffer, TextPane, TextScreen, attribute};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 
 mod constants {
     pub const ICED_VERSION: u16 = 1;
@@ -665,7 +665,7 @@ fn process_icy_draw_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut Text
     Ok(true)
 }
 
-pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     let mut png_bytes = Vec::new();
 
     let mut first_line = 0;

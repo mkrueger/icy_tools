@@ -6,7 +6,10 @@ use std::{
 
 use icy_engine::{
     Rectangle, RenderOptions, Screen, Size, TextPane,
-    formats::{FileFormat, LoadData, SaveOptions, ansi_v2::AnsiCompatibilityLevel, ansi_v2::AnsiSaveOptionsV2, ansi_v2::save_ansi_v2},
+    formats::{
+        FileFormat, LoadData,
+        ansi_v2::{AnsiCompatibilityLevel, AnsiSaveOptionsV2, save_ansi_v2},
+    },
 };
 
 const DEFAULT_ROOT: &str = "/home/mkrueger/work/sixteencolors-archive/all";
@@ -378,9 +381,7 @@ fn main() -> icy_engine::Result<()> {
     let mut limit: Option<usize> = None;
     let mut fail_fast = false;
     let mut only_level: Option<AnsiCompatibilityLevel> = None;
-    let mut quarantine_both_mismatches = false;
-    let mut quarantine_legacy_mismatches = false;
-    let mut skip_legacy = false;
+    let mut quarantine_mismatches = false;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -401,9 +402,7 @@ fn main() -> icy_engine::Result<()> {
                 }
             }
             "--fail-fast" => fail_fast = true,
-            "--quarantine-both-mismatches" => quarantine_both_mismatches = true,
-            "--quarantine-legacy-mismatches" => quarantine_legacy_mismatches = true,
-            "--skip-legacy" => skip_legacy = true,
+            "--quarantine-mismatches" => quarantine_mismatches = true,
             "--only-level" => {
                 if let Some(lvl) = args.next() {
                     let lvl = lvl.to_ascii_lowercase();
@@ -421,9 +420,7 @@ fn main() -> icy_engine::Result<()> {
             }
             _ => {
                 eprintln!("Unknown arg: {arg}");
-                eprintln!(
-                    "Usage: ansi_archive_roundtrip [--root PATH] [--file PATH] [--limit N] [--fail-fast] [--only-level LEVEL] [--quarantine-both-mismatches] [--quarantine-legacy-mismatches] [--skip-legacy]"
-                );
+                eprintln!("Usage: ansi_archive_roundtrip [--root PATH] [--file PATH] [--limit N] [--fail-fast] [--only-level LEVEL] [--quarantine-mismatches]");
                 return Ok(());
             }
         }
@@ -462,23 +459,15 @@ fn main() -> icy_engine::Result<()> {
     }
 
     let mut total = 0usize;
-    let mut legacy_mismatches = 0usize;
     let mut v2_mismatches = 0usize;
     let mut load_errors = 0usize;
     let mut save_errors = 0usize;
-
-    let mut both_mismatch_files: Vec<PathBuf> = Vec::new();
-    let mut icyterm_regressions_vs_legacy: Vec<PathBuf> = Vec::new();
-
-    let mut total_old_bytes: u64 = 0;
     let mut total_new_icy_bytes: u64 = 0;
 
     let mismatch_root = root.join(MISMATCH_DIR_NAME);
-    let mismatch_both_root = mismatch_root.join("both");
-    let mismatch_legacy_root = mismatch_root.join("legacy");
+    let mismatch_v2_root = mismatch_root.join("v2");
 
-    let mut moved_both = 0usize;
-    let mut moved_legacy = 0usize;
+    let mut moved_v2 = 0usize;
 
     'files: for (idx, path) in files.iter().enumerate() {
         total += 1;
@@ -517,97 +506,13 @@ fn main() -> icy_engine::Result<()> {
         // Preserve SAUCE if present
         let sauce_opt = icy_sauce::SauceRecord::from_bytes(&file_bytes).ok().flatten();
 
-        // Legacy "max optimized" bytes
-        let mut legacy_bytes: Vec<u8> = Vec::new();
-        let mut legacy_failed = false;
-        let control_char_handling = if skip_legacy {
-            SaveOptions::default().control_char_handling
-        } else {
-            let mut legacy_opt = SaveOptions::default();
-            legacy_opt.compress = true;
-            legacy_opt.use_cursor_forward = true;
-            legacy_opt.use_repeat_sequences = true;
-            legacy_opt.use_extended_colors = true;
-            legacy_opt.preserve_line_length = false;
-            legacy_opt.output_line_length = None;
-            legacy_opt.longer_terminal_output = false;
-            legacy_opt.modern_terminal_output = false;
-            legacy_opt.alt_rgb = true;
-            legacy_opt.save_sauce = sauce_opt.clone();
-
-            legacy_bytes = match FileFormat::Ansi.to_bytes(&original_buf, &legacy_opt) {
-                Ok(b) => b,
-                Err(err) => {
-                    eprintln!("SAVE-LEGACY-ERR: {}: {err}", path.display());
-                    save_errors += 1;
-                    if fail_fast {
-                        break;
-                    }
-                    continue;
-                }
-            };
-
-            if is_single_file {
-                let _ = fs::write("_debug_legacy_opt.ans", &legacy_bytes);
-            }
-
-            total_old_bytes += legacy_bytes.len() as u64;
-
-            let legacy_rt = match load_ansi_with_sauce(&legacy_bytes) {
-                Ok(s) => s,
-                Err(err) => {
-                    eprintln!("RELOAD-LEGACY-ERR: {}: {err}", path.display());
-                    load_errors += 1;
-                    if fail_fast {
-                        break;
-                    }
-                    continue;
-                }
-            };
-
-            let legacy_rt_buf = terminalize_for_compare(&legacy_rt.buffer);
-            let legacy_lines = legacy_rt_buf.line_count().min(legacy_rt_buf.height());
-            let cmp_lines = orig_lines.max(legacy_lines);
-
-            let (legacy_size, legacy_rgba) = render_buffer_rgba(&legacy_rt_buf, cmp_lines);
-            let (orig_cmp_size, orig_cmp_rgba) = render_buffer_rgba(&original_buf, cmp_lines);
-            legacy_failed = legacy_size != orig_cmp_size || legacy_rgba != orig_cmp_rgba;
-            if legacy_failed {
-                eprintln!("MISMATCH legacy: {}", path.display());
-                legacy_mismatches += 1;
-                if fail_fast {
-                    eprintln!(
-                        "orig ice_colors={} rt ice_colors={}",
-                        original.terminal_state().ice_colors,
-                        legacy_rt.terminal_state().ice_colors
-                    );
-                    let (tcount, tmaxy) = tag_stats(&original_buf);
-                    eprintln!("orig tags={tcount} max_y={:?}", tmaxy);
-                    eprintln!("legacy sauce dims={:?}", sauce_stats(&legacy_bytes));
-                    if let Some(msg) = first_rgba_diff(orig_cmp_size, &orig_cmp_rgba, legacy_size, &legacy_rgba, original_buf.font_dimensions()) {
-                        eprintln!("{msg}");
-                    }
-                    if let Some((x, y)) = first_rgba_diff_cell(orig_cmp_size, &orig_cmp_rgba, legacy_size, &legacy_rgba, original_buf.font_dimensions()) {
-                        let pa = icy_engine::Position::new(x, y);
-                        let ca = original_buf.char_at(pa);
-                        let cb = legacy_rt_buf.char_at(pa);
-                        eprintln!("rgba-diff cell ({x},{y}): orig={ca:?} rt={cb:?}");
-                    }
-                    if let Some(msg) = first_cell_diff(&original_buf, &legacy_rt_buf) {
-                        eprintln!("{msg}");
-                    }
-                    break 'files;
-                }
-            }
-
-            legacy_opt.control_char_handling
-        };
+        let control_char_handling = AnsiSaveOptionsV2::default().control_char_handling;
 
         // New v2 levels
         let mut v2_failed_icyterm = false;
         for &level in &levels {
             let mut v2_opt = AnsiSaveOptionsV2::default();
-            v2_opt.level = level;
+            v2_opt.level = Some(level);
             v2_opt.compress = true;
             v2_opt.preserve_line_length = false;
             v2_opt.output_line_length = None;
@@ -708,65 +613,13 @@ fn main() -> icy_engine::Result<()> {
 
             if level == AnsiCompatibilityLevel::IcyTerm {
                 // Size sanity check per-file (not failing, just reporting big deltas)
-                if !skip_legacy && !legacy_bytes.is_empty() {
-                    let legacy_len = legacy_bytes.len() as i64;
-                    let new_len = v2_bytes.len() as i64;
-                    let delta = new_len - legacy_len;
-                    let delta_pct = (delta as f64) * 100.0 / (legacy_len as f64);
-                    if delta_pct.abs() > 25.0 {
-                        eprintln!("SIZE-DELTA >25% (legacy={} new={} {:+.1}%): {}", legacy_len, new_len, delta_pct, path.display());
-
-                        let (cr, lf, crlf) = newline_stats(&v2_bytes);
-                        let esc = escape_stats(&v2_bytes);
-                        eprintln!(
-                            "  v2 stats: bytes={} CR={cr} LF={lf} CRLF={crlf} ESC={} CSI={}",
-                            v2_bytes.len(),
-                            esc.esc,
-                            esc.csi
-                        );
-
-                        if is_single_file {
-                            let _ = fs::write("_debug_legacy_icyterm.ans", &legacy_bytes);
-                            let _ = fs::write("_debug_v2_icyterm.ans", &v2_bytes);
-                            eprintln!("  wrote _debug_legacy_icyterm.ans and _debug_v2_icyterm.ans");
-                        }
-                    }
-                }
+                let _ = path;
             }
         }
 
-        // Track regressions against the legacy exporter for the main target level.
-        // If legacy roundtrips but v2(IcyTerm) doesn't, that's a real regression to fix.
-        if !skip_legacy && !legacy_failed && v2_failed_icyterm {
-            icyterm_regressions_vs_legacy.push(path.clone());
-        }
-
-        // If v2(IcyTerm) mismatches and legacy also mismatches, treat as "both exporters can't".
-        if !skip_legacy && legacy_failed && v2_failed_icyterm {
-            both_mismatch_files.push(path.clone());
-
-            if quarantine_both_mismatches {
-                if let Ok(rel) = path.strip_prefix(&root) {
-                    let dst = mismatch_both_root.join(rel);
-                    if let Some(parent) = dst.parent() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                    // Try rename first; fall back to copy+remove if needed.
-                    if fs::rename(path, &dst).is_err() {
-                        if fs::copy(path, &dst).is_ok() {
-                            let _ = fs::remove_file(path);
-                        }
-                    }
-                    moved_both += 1;
-                }
-            }
-            continue;
-        }
-
-        // Optional quarantine for legacy-only mismatches (broken/unsupported inputs).
-        if !skip_legacy && legacy_failed && quarantine_legacy_mismatches {
+        if v2_failed_icyterm && quarantine_mismatches {
             if let Ok(rel) = path.strip_prefix(&root) {
-                let dst = mismatch_legacy_root.join(rel);
+                let dst = mismatch_v2_root.join(rel);
                 if let Some(parent) = dst.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
@@ -775,7 +628,7 @@ fn main() -> icy_engine::Result<()> {
                         let _ = fs::remove_file(path);
                     }
                 }
-                moved_legacy += 1;
+                moved_v2 += 1;
             }
         }
     }
@@ -784,45 +637,19 @@ fn main() -> icy_engine::Result<()> {
 
     println!("\nDone.");
     println!("files     : {total}");
-    println!("legacy mismatches: {legacy_mismatches}");
     println!("v2 mismatches    : {v2_mismatches}");
     println!("load errs : {load_errors}");
     println!("save errs : {save_errors}");
     println!("time      : {:.1?}", elapsed);
 
-    if !both_mismatch_files.is_empty() {
-        println!("\nBoth legacy+v2(IcyTerm) mismatched: {}", both_mismatch_files.len());
-        for p in &both_mismatch_files {
-            println!("- {}", p.display());
-        }
-        if quarantine_both_mismatches {
-            println!("Moved to: {}", mismatch_both_root.display());
-        }
+    if quarantine_mismatches {
+        println!("\nQuarantine moved: v2={} (root: {})", moved_v2, mismatch_root.display());
+        println!("Moved to: {}", mismatch_v2_root.display());
     }
 
-    if quarantine_both_mismatches || quarantine_legacy_mismatches {
-        println!(
-            "\nQuarantine moved: both={} legacy={} (root: {})",
-            moved_both,
-            moved_legacy,
-            mismatch_root.display()
-        );
-    }
-
-    if !icyterm_regressions_vs_legacy.is_empty() {
-        println!("\nRegressions (v2 IcyTerm mismatched, legacy ok): {}", icyterm_regressions_vs_legacy.len());
-        for p in &icyterm_regressions_vs_legacy {
-            println!("- {}", p.display());
-        }
-    }
-
-    if total_old_bytes > 0 {
-        let delta = total_new_icy_bytes as i64 - total_old_bytes as i64;
-        let delta_pct = (delta as f64) * 100.0 / (total_old_bytes as f64);
+    if total_new_icy_bytes > 0 {
         println!("\nSize totals (IcyTerm):");
-        println!("legacy bytes: {total_old_bytes}");
         println!("v2 bytes    : {total_new_icy_bytes}");
-        println!("delta       : {delta} ({delta_pct:+.2}%)");
     }
 
     Ok(())

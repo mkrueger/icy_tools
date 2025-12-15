@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, Caret, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Screen, Selection, SelectionMask,
-    Size, TerminalState, TextPane, bgi::MouseField,
+    AnsiSaveOptionsV2, AttributedChar, BitFont, Caret, HyperLink, IceMode, Palette, Position, Rectangle, RenderOptions, Result, Screen, Selection,
+    SelectionMask, Size, TerminalState, TextPane, bgi::MouseField,
 };
 
 /// Render a region from (0,0) with specified height for scrollback buffer.
@@ -396,7 +396,7 @@ impl Screen for ScrollbackBuffer {
         &self.caret
     }
 
-    fn to_bytes(&mut self, _extension: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, _extension: &str, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
         // ScrollbackBuffer doesn't support saving
         Ok(Vec::new())
     }

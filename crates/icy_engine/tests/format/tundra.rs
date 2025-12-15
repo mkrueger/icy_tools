@@ -1,5 +1,5 @@
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AttributedChar, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer};
+use icy_engine::{AnsiSaveOptionsV2, AttributedChar, FileFormat, IceMode, TextAttribute, TextBuffer};
 
 #[test]
 pub fn test_ice() {
@@ -12,7 +12,7 @@ pub fn test_ice() {
 
 fn test_tundra(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::TundraDraw;
-    let mut opt = SaveOptions::default();
+    let mut opt = AnsiSaveOptionsV2::default();
     opt.compress = false;
     opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();

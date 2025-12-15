@@ -5,7 +5,7 @@ use std::{sync::Arc, u32};
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions,
+    AnsiSaveOptionsV2, AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, Result,
     SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
 };
 
@@ -153,7 +153,7 @@ impl Screen for TextScreen {
         &self.buffer.layers[self.current_layer].hyperlinks
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, extension: &str, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
         let extension = extension.to_ascii_lowercase();
         if let Some(format) = crate::formats::FileFormat::from_extension(&extension) {
             format.to_bytes(&self.buffer, options)

@@ -51,7 +51,7 @@ fn main() -> icy_engine::Result<()> {
     let screen = FileFormat::Ansi.load(&input, None)?;
 
     let mut opt = AnsiSaveOptionsV2::default();
-    opt.level = AnsiCompatibilityLevel::Utf8Terminal;
+    opt.level = Some(AnsiCompatibilityLevel::Utf8Terminal);
     opt.compress = true;
     opt.preserve_line_length = false;
     opt.output_line_length = None;

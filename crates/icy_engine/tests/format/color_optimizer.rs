@@ -1,4 +1,4 @@
-use crate::{AttributedChar, ColorOptimizer, TextAttribute, TextBuffer, TextPane};
+use crate::{AnsiSaveOptionsV2, AttributedChar, ColorOptimizer, TextAttribute, TextBuffer, TextPane};
 
 #[test]
 pub fn test_foreground_optimization() {
@@ -6,7 +6,7 @@ pub fn test_foreground_optimization() {
     let attr = TextAttribute::new(14, 0);
     buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attr));
 
-    let save_options = crate::SaveOptions::default();
+    let save_options = AnsiSaveOptionsV2::default();
     let opt = ColorOptimizer::new(&buffer, &save_options);
 
     let opt_buf = opt.optimize(&buffer);
@@ -22,7 +22,7 @@ pub fn test_background_optimization() {
         let attr = TextAttribute::new(14, x as u32);
         buffer.layers[0].set_char((x, 0), AttributedChar::new(219 as char, attr));
     }
-    let save_options = crate::SaveOptions::default();
+    let save_options = AnsiSaveOptionsV2::default();
     let opt = ColorOptimizer::new(&buffer, &save_options);
 
     let opt_buf = opt.optimize(&buffer);
@@ -39,7 +39,7 @@ pub fn test_ws_normalization() {
     }
     buffer.layers[0].set_char((3, 0), AttributedChar::new(255 as char, TextAttribute::default()));
 
-    let mut save_options = crate::SaveOptions::default();
+    let mut save_options = AnsiSaveOptionsV2::default();
     save_options.normalize_whitespaces = true;
     let opt = ColorOptimizer::new(&buffer, &save_options);
 

@@ -1,4 +1,4 @@
-use icy_engine::{ColorOptimizer, SaveOptions, StringGenerator, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, ColorOptimizer, StringGenerator, TextPane};
 use icy_engine_gui::animations::Animator;
 use std::{
     fs::File,
@@ -51,7 +51,7 @@ impl AnimationEncoder for AsciiCast {
         let mut timestamp = 0.0;
 
         for frame in 0..frame_count {
-            let mut opt: SaveOptions = SaveOptions::new();
+            let mut opt: AnsiSaveOptionsV2 = AnsiSaveOptionsV2::new();
             opt.control_char_handling = icy_engine::ControlCharHandling::FilterOut;
             opt.longer_terminal_output = true;
             opt.compress = true;

@@ -1,8 +1,8 @@
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions, ScreenPreperation};
+use super::super::{AnsiSaveOptionsV2, LoadData, ScreenPreperation};
 
-pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_pcboard(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     if buf.palette.len() != 16 {
         return Err(crate::EngineError::Only16ColorPalettesSupported);
     }

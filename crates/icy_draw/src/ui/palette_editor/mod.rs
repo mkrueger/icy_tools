@@ -13,7 +13,7 @@ use iced::{
 };
 
 use icy_engine::formats::PaletteFormat;
-use icy_engine::{Color, DOS_DEFAULT_PALETTE, FileFormat, Palette, SaveOptions, Screen, TextBuffer};
+use icy_engine::{AnsiSaveOptionsV2, Color, DOS_DEFAULT_PALETTE, FileFormat, Palette, Screen, TextBuffer};
 use icy_engine_gui::{
     ButtonType,
     ui::{
@@ -140,7 +140,7 @@ impl PaletteEditorDialog {
             Some("xb") | Some("xbin") => {
                 let mut buffer = TextBuffer::new((1, 1));
                 buffer.palette = self.palette.clone();
-                let mut options = SaveOptions::default();
+                let mut options = AnsiSaveOptionsV2::default();
                 options.compress = false;
                 let bytes = FileFormat::XBin.to_bytes(&buffer, &options).map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| e.to_string())

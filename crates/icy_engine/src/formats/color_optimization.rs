@@ -1,4 +1,4 @@
-use crate::{BitFont, SaveOptions, TextAttribute, TextBuffer, TextPane};
+use crate::{AnsiSaveOptionsV2, BitFont, TextAttribute, TextBuffer, TextPane};
 use libyaff::GlyphDefinition;
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub struct ColorOptimizer {
 }
 
 impl ColorOptimizer {
-    pub fn new(buf: &TextBuffer, opt: &SaveOptions) -> Self {
+    pub fn new(buf: &TextBuffer, opt: &AnsiSaveOptionsV2) -> Self {
         let shape_map = generate_shape_map(buf);
         Self {
             shape_map,

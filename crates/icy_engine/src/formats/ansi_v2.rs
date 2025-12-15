@@ -1,12 +1,11 @@
-//! Experimental ANSI exporter (v2)
+//! ANSI exporter (v2)
 //!
-//! This module is intentionally **parallel** to the legacy exporter in
-//! `formats/io/ansi.rs`. It provides a compatibility-level based API that
-//! can be iterated on without breaking existing `SaveOptions` callers.
+//! This module provides a compatibility-level based ANSI saver.
 
 use std::collections::HashMap;
 
 use codepages::tables::UNICODE_TO_CP437;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ANSI_FONTS, AttributedChar, BitFont, Color, DOS_DEFAULT_PALETTE, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, XTERM_256_PALETTE,
@@ -17,7 +16,7 @@ use super::{ControlCharHandling, ScreenPreperation};
 
 const COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnsiCompatibilityLevel {
     /// Strictest output targeting DOS `ANSI.SYS`.
     AnsiSys,
@@ -37,7 +36,7 @@ enum CursorSaveRestore {
 
 impl AnsiCompatibilityLevel {
     fn supports_utf8(self) -> bool {
-        false
+        matches!(self, Self::Utf8Terminal)
     }
 
     fn supports_256_colors(self) -> bool {
@@ -72,47 +71,118 @@ impl AnsiCompatibilityLevel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AnsiSaveOptionsV2 {
-    pub level: AnsiCompatibilityLevel,
+    pub format_type: i32,
 
     pub screen_preparation: ScreenPreperation,
+    pub modern_terminal_output: bool,
+
+    /// Optional override for the ANSI v2 exporter compatibility level.
+    /// When `None`, the exporter will choose a reasonable default based on other options.
+    pub level: Option<AnsiCompatibilityLevel>,
+
+    /// Optional SAUCE record to append.
+    #[serde(skip)]
+    pub save_sauce: Option<icy_sauce::SauceRecord>,
 
     /// When set, the output will be compressed (subject to `level` capabilities).
     pub compress: bool,
 
-    /// Preserve trailing whitespace (avoid trimming right edge).
+    /// When set, the output may contain cursor forward sequences (CSI Ps C).
+    pub use_cursor_forward: bool,
+    /// When set, the output may contain repeat sequences (CSI Ps b).
+    pub use_repeat_sequences: bool,
+
+    /// When set, the output will contain the full line length.
+    /// This is useful for files that are meant to be displayed on a unix terminal where the bg color may not be 100% black.
     pub preserve_line_length: bool,
 
-    /// Maximum physical output line length. Only applied for levels that support
-    /// cursor save/restore. Otherwise ignored.
+    /// When set, the output will be cropped to this length.
     pub output_line_length: Option<usize>,
 
-    /// Emit per-line `CUP` (works better when shown on "longer" terminals).
+    /// When set the ansi engine will generate a gotoxy sequence at each line start
+    /// making the file work on longer terminals.
     pub longer_terminal_output: bool,
 
+    /// When set output ignores fg color changes in whitespaces
+    /// and bg color changes in blocks.
+    pub lossles_output: bool,
+
+    /// When set the output will use extended color codes if they apply.
+    pub use_extended_colors: bool,
+
+    /// When set all whitespaces will be converted to spaces.
+    pub normalize_whitespaces: bool,
+
+    /// Changes control char output behavior
     pub control_char_handling: ControlCharHandling,
 
     /// Optional lines to skip when `longer_terminal_output` is enabled.
+    #[serde(skip)]
     pub skip_lines: Option<Vec<usize>>,
 
-    /// Optional SAUCE record to append.
-    pub save_sauce: Option<icy_sauce::SauceRecord>,
+    #[serde(skip)]
+    pub alt_rgb: bool,
+
+    #[serde(skip)]
+    pub always_use_rgb: bool,
+
+    /// When set, skip generating the thumbnail image (for formats that embed one).
+    /// This is useful for autosave where rendering is expensive.
+    #[serde(skip)]
+    pub skip_thumbnail: bool,
 }
 
 impl Default for AnsiSaveOptionsV2 {
     fn default() -> Self {
         Self {
-            level: AnsiCompatibilityLevel::IcyTerm,
+            format_type: 0,
             screen_preparation: ScreenPreperation::None,
+            modern_terminal_output: false,
+            level: None,
+            save_sauce: None,
             compress: true,
+            use_cursor_forward: true,
+            use_repeat_sequences: false,
             preserve_line_length: false,
             output_line_length: None,
             longer_terminal_output: false,
             control_char_handling: ControlCharHandling::Ignore,
             skip_lines: None,
-            save_sauce: None,
+            lossles_output: false,
+            use_extended_colors: true,
+            normalize_whitespaces: true,
+            alt_rgb: false,
+            always_use_rgb: false,
+            skip_thumbnail: false,
         }
+    }
+}
+
+impl AnsiSaveOptionsV2 {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn effective_level(&self) -> AnsiCompatibilityLevel {
+        if let Some(level) = self.level {
+            return level;
+        }
+
+        if self.always_use_rgb {
+            return AnsiCompatibilityLevel::IcyTerm;
+        }
+
+        if self.modern_terminal_output {
+            return AnsiCompatibilityLevel::Utf8Terminal;
+        }
+
+        if self.use_extended_colors {
+            return AnsiCompatibilityLevel::IcyTerm;
+        }
+
+        AnsiCompatibilityLevel::Vt100
     }
 }
 
@@ -148,7 +218,7 @@ pub fn save_ansi_v2(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec
     let state = generator.generate(buf, buf);
     generator.screen_end(buf, state);
 
-    if generator.options.level.supports_sixel() {
+    if generator.level.supports_sixel() {
         generator.add_sixels(buf);
     }
 
@@ -165,6 +235,7 @@ pub fn save_ansi_v2(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec
 struct CharCell {
     ch: char,
     sgr: Vec<u8>,
+    extra_esc: Vec<u8>,
     font_page: usize,
     cur_state: AnsiState,
 }
@@ -190,6 +261,7 @@ struct AnsiState {
 struct StringGeneratorV2 {
     output: Vec<u8>,
     options: AnsiSaveOptionsV2,
+    level: AnsiCompatibilityLevel,
     last_line_break: usize,
     max_output_line_length: usize,
     extended_color_hash: HashMap<(u8, u8, u8), u8>,
@@ -201,21 +273,22 @@ struct StringGeneratorV2 {
 
 impl StringGeneratorV2 {
     fn new(options: AnsiSaveOptionsV2) -> Self {
+        let level = options.effective_level();
         let mut output = Vec::new();
 
-        if options.level.supports_utf8() {
+        if level.supports_utf8() {
             // write UTF-8 BOM as unicode indicator.
             output.extend([0xEF, 0xBB, 0xBF]);
         }
 
         let mut extended_color_hash = HashMap::new();
-        if options.level.supports_256_colors() {
+        if level.supports_256_colors() {
             for (i, (_, col)) in XTERM_256_PALETTE.iter().enumerate() {
                 extended_color_hash.insert(col.rgb(), i as u8);
             }
         }
 
-        let max_output_line_length = match options.level.cursor_save_restore() {
+        let max_output_line_length = match level.cursor_save_restore() {
             CursorSaveRestore::None => usize::MAX,
             CursorSaveRestore::Dec => options.output_line_length.unwrap_or(usize::MAX),
         };
@@ -223,6 +296,7 @@ impl StringGeneratorV2 {
         Self {
             output,
             options,
+            level,
             last_line_break: 0,
             max_output_line_length,
             extended_color_hash,
@@ -253,22 +327,23 @@ impl StringGeneratorV2 {
     }
 
     fn cursor_save(&mut self) {
-        match self.options.level.cursor_save_restore() {
+        match self.level.cursor_save_restore() {
             CursorSaveRestore::None => {}
             CursorSaveRestore::Dec => self.push_bytes(b"\x1b7"),
         }
     }
 
     fn cursor_restore(&mut self) {
-        match self.options.level.cursor_save_restore() {
+        match self.level.cursor_save_restore() {
             CursorSaveRestore::None => {}
             CursorSaveRestore::Dec => self.push_bytes(b"\x1b8"),
         }
     }
 
-    fn color(&self, buf: &TextBuffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>) {
+    fn color(&self, buf: &TextBuffer, ch: AttributedChar, mut state: AnsiState) -> (AnsiState, Vec<u8>, Vec<u8>) {
         let attr = ch.attribute;
         let mut sgr: Vec<u8> = Vec::new();
+        let mut extra_esc: Vec<u8> = Vec::new();
 
         let is_blank_cell = ch.ch == '\0' || ch.ch == ' ';
 
@@ -429,27 +504,37 @@ impl StringGeneratorV2 {
         // Foreground
         // Only skip foreground changes for truly blank cells (space/NUL).
         if cur_fore_rgb != state.fg.rgb() && !(ch.ch == '\0' || ch.ch == ' ') {
-            if fg_is_ext && self.options.level.supports_256_colors() {
+            if fg_is_ext && self.level.supports_256_colors() {
                 sgr.extend([38, 5, attr.foreground_ext()]);
                 state.fg_idx = attr.foreground_ext() as u32;
             } else if let Some(base) = fore_base_idx {
                 sgr.push(COLOR_OFFSETS[base] + 30);
                 state.fg_idx = fore_idx.unwrap_or(base) as u32;
-            } else if self.options.level.supports_256_colors() {
+            } else if self.level.supports_256_colors() {
                 if let Some(ext_color) = self.extended_color_hash.get(&cur_fore_rgb) {
                     sgr.extend([38, 5, *ext_color]);
                     state.fg_idx = *ext_color as u32;
-                } else if self.options.level.supports_truecolor() {
-                    sgr.extend([38, 2, cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2]);
-                    state.fg_idx = u32::MAX;
+                } else if self.level.supports_truecolor() {
+                    if self.level == AnsiCompatibilityLevel::IcyTerm {
+                        extra_esc.extend_from_slice(format!("\x1b[1;{};{};{}t", cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2).as_bytes());
+                        state.fg_idx = u32::MAX;
+                    } else {
+                        sgr.extend([38, 2, cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2]);
+                        state.fg_idx = u32::MAX;
+                    }
                 } else {
                     // Best effort: fall back to 16-color mapping.
                     sgr.push(37);
                     state.fg_idx = 7;
                 }
-            } else if self.options.level.supports_truecolor() {
-                sgr.extend([38, 2, cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2]);
-                state.fg_idx = u32::MAX;
+            } else if self.level.supports_truecolor() {
+                if self.level == AnsiCompatibilityLevel::IcyTerm {
+                    extra_esc.extend_from_slice(format!("\x1b[1;{};{};{}t", cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2).as_bytes());
+                    state.fg_idx = u32::MAX;
+                } else {
+                    sgr.extend([38, 2, cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2]);
+                    state.fg_idx = u32::MAX;
+                }
             } else {
                 // Best effort: fall back to 16-color mapping.
                 sgr.push(37);
@@ -460,27 +545,42 @@ impl StringGeneratorV2 {
 
         // Background
         if cur_back_rgb != state.bg.rgb() {
-            if bg_is_ext && self.options.level.supports_256_colors() {
+            if bg_is_ext && self.level.supports_256_colors() {
                 sgr.extend([48, 5, attr.background_ext()]);
                 state.bg_idx = attr.background_ext() as u32;
             } else if let Some(bg_idx) = back_idx {
-                sgr.push(COLOR_OFFSETS[bg_idx] + 40);
+                let skip_base_bg_emit_due_to_ice =
+                    matches!(buf.ice_mode, crate::IceMode::Ice) && is_blink && bg_idx == 0 && state.bg_idx == 0 && !attr.is_background_rgb() && !bg_is_ext;
+
+                if !skip_base_bg_emit_due_to_ice {
+                    sgr.push(COLOR_OFFSETS[bg_idx] + 40);
+                }
                 state.bg_idx = bg_idx as u32;
-            } else if self.options.level.supports_256_colors() {
+            } else if self.level.supports_256_colors() {
                 if let Some(ext_color) = self.extended_color_hash.get(&cur_back_rgb) {
                     sgr.extend([48, 5, *ext_color]);
                     state.bg_idx = *ext_color as u32;
-                } else if self.options.level.supports_truecolor() {
-                    sgr.extend([48, 2, cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2]);
-                    state.bg_idx = u32::MAX;
+                } else if self.level.supports_truecolor() {
+                    if self.level == AnsiCompatibilityLevel::IcyTerm {
+                        extra_esc.extend_from_slice(format!("\x1b[0;{};{};{}t", cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2).as_bytes());
+                        state.bg_idx = u32::MAX;
+                    } else {
+                        sgr.extend([48, 2, cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2]);
+                        state.bg_idx = u32::MAX;
+                    }
                 } else {
                     // Best effort: fall back to black background.
                     sgr.push(40);
                     state.bg_idx = 0;
                 }
-            } else if self.options.level.supports_truecolor() {
-                sgr.extend([48, 2, cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2]);
-                state.bg_idx = u32::MAX;
+            } else if self.level.supports_truecolor() {
+                if self.level == AnsiCompatibilityLevel::IcyTerm {
+                    extra_esc.extend_from_slice(format!("\x1b[0;{};{};{}t", cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2).as_bytes());
+                    state.bg_idx = u32::MAX;
+                } else {
+                    sgr.extend([48, 2, cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2]);
+                    state.bg_idx = u32::MAX;
+                }
             } else {
                 // Best effort: fall back to black background.
                 sgr.push(40);
@@ -490,7 +590,7 @@ impl StringGeneratorV2 {
             state.bg = cur_back_color;
         }
 
-        (state, sgr)
+        (state, sgr, extra_esc)
     }
 
     fn generate_ansi_font_map(buf: &TextBuffer) -> HashMap<usize, usize> {
@@ -580,6 +680,7 @@ impl StringGeneratorV2 {
                             line.push(CharCell {
                                 ch,
                                 sgr: Vec::new(),
+                                extra_esc: Vec::new(),
                                 font_page: 0,
                                 cur_state: state.clone(),
                             });
@@ -595,11 +696,12 @@ impl StringGeneratorV2 {
 
                 let ch = layer.char_at((x, y).into());
                 if ch.is_visible() {
-                    let (new_state, sgr) = self.color(buf, ch, state);
+                    let (new_state, sgr, extra_esc) = self.color(buf, ch, state);
                     state = new_state;
                     line.push(CharCell {
                         ch: ch.ch,
                         sgr,
+                        extra_esc,
                         font_page: *font_map.get(&ch.font_page()).unwrap_or(&0),
                         cur_state: state.clone(),
                     });
@@ -607,6 +709,7 @@ impl StringGeneratorV2 {
                     line.push(CharCell {
                         ch: ' ',
                         sgr: Vec::new(),
+                        extra_esc: Vec::new(),
                         font_page: *font_map.get(&ch.font_page()).unwrap_or(&0),
                         cur_state: state.clone(),
                     });
@@ -626,7 +729,7 @@ impl StringGeneratorV2 {
         let mut result = Vec::new();
 
         // Embed fonts only for terminals that support it.
-        if self.options.level.supports_font_pages() {
+        if self.level.supports_font_pages() {
             let used_fonts = analyze_font_usage(buf);
             for font_slot in used_fonts {
                 if font_slot >= 100 {
@@ -658,7 +761,18 @@ impl StringGeneratorV2 {
             let mut len = line.len();
             while len > 0 {
                 let cell = &line[len - 1];
-                if cell.ch == ' ' && cell.sgr.is_empty() && cell.font_page == 0 && cell.cur_state.bg_idx == 0 && !cell.cur_state.is_blink {
+                let is_default_state = cell.cur_state.fg_idx == 7
+                    && cell.cur_state.bg_idx == 0
+                    && !cell.cur_state.is_bold
+                    && !cell.cur_state.is_blink
+                    && !cell.cur_state.is_faint
+                    && !cell.cur_state.is_italic
+                    && !cell.cur_state.is_underlined
+                    && !cell.cur_state.is_double_underlined
+                    && !cell.cur_state.is_crossed_out
+                    && !cell.cur_state.is_concealed;
+
+                if cell.ch == ' ' && cell.sgr.is_empty() && cell.extra_esc.is_empty() && cell.font_page == 0 && is_default_state {
                     len -= 1;
                 } else {
                     break;
@@ -697,7 +811,7 @@ impl StringGeneratorV2 {
             while x < len {
                 let cell = &line[x];
 
-                if self.options.level.supports_font_pages() && cur_font_page != cell.font_page {
+                if self.level.supports_font_pages() && cur_font_page != cell.font_page {
                     cur_font_page = cell.font_page;
                     result.extend_from_slice(b"\x1b[0;");
                     result.extend_from_slice(cur_font_page.to_string().as_bytes());
@@ -716,7 +830,12 @@ impl StringGeneratorV2 {
                     self.push_result(&mut result);
                 }
 
-                let cell_char = if self.options.level.supports_utf8() {
+                if !cell.extra_esc.is_empty() {
+                    result.extend_from_slice(&cell.extra_esc);
+                    self.push_result(&mut result);
+                }
+
+                let cell_char = if self.level.supports_utf8() {
                     if cell.ch == '\0' {
                         vec![b' ']
                     } else {
@@ -757,7 +876,12 @@ impl StringGeneratorV2 {
                     rle -= 1;
                     rle -= x;
 
-                    if self.options.level.supports_cuf() && line[x].ch == ' ' && line[x].cur_state.bg_idx == 0 && !line[x].cur_state.is_blink {
+                    if self.options.use_cursor_forward
+                        && self.level.supports_cuf()
+                        && line[x].ch == ' '
+                        && line[x].cur_state.bg_idx == 0
+                        && !line[x].cur_state.is_blink
+                    {
                         let fmt = format!("\x1B[{}C", rle + 1);
                         let output = fmt.as_bytes();
                         if output.len() <= rle {
@@ -769,7 +893,7 @@ impl StringGeneratorV2 {
                         }
                     }
 
-                    if self.options.level.supports_rep() {
+                    if self.options.use_repeat_sequences && self.level.supports_rep() {
                         let fmt = format!("\x1B[{rle}b");
                         let output = fmt.as_bytes();
                         if output.len() <= rle {
@@ -812,7 +936,7 @@ impl StringGeneratorV2 {
                     let emit_crlf = !can_rely_on_autowrap;
 
                     if emit_crlf {
-                        if self.options.level.supports_utf8() {
+                        if self.level.supports_utf8() {
                             result.extend_from_slice(b"\x1b[0m");
                         }
                         result.push(13);
@@ -837,8 +961,12 @@ impl StringGeneratorV2 {
         let mut end_tags = 0;
         for tag in buf.tags.iter() {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
-                let (new_state, sgr) = self.color(buf, AttributedChar::new('#', tag.attribute), state);
+                let (new_state, sgr, extra_esc) = self.color(buf, AttributedChar::new('#', tag.attribute), state);
                 state = new_state;
+
+                if !extra_esc.is_empty() {
+                    self.output.extend_from_slice(&extra_esc);
+                }
 
                 if !sgr.is_empty() {
                     self.output.extend_from_slice(b"\x1b[");

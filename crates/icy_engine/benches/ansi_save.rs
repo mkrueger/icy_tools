@@ -1,8 +1,8 @@
-//! Benchmarks for ANSI save performance (legacy vs v2)
+//! Benchmarks for ANSI save performance (v2)
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use icy_engine::formats::ansi_v2::{AnsiCompatibilityLevel, AnsiSaveOptionsV2, save_ansi_v2};
-use icy_engine::{FileFormat, LoadData, SaveOptions, TextPane};
+use icy_engine::{FileFormat, LoadData, TextPane};
 
 use std::fs;
 use std::hint::black_box;
@@ -11,21 +11,12 @@ use std::time::Duration;
 
 use walkdir::WalkDir;
 
-fn legacy_optimized_options() -> SaveOptions {
-    let mut opt = SaveOptions::default();
-    opt.compress = true;
-    opt.use_cursor_forward = true;
-    opt.use_repeat_sequences = true;
-    opt.use_extended_colors = true;
-    opt.preserve_line_length = false;
-    opt.output_line_length = None;
-    opt
-}
-
 fn v2_optimized_options() -> AnsiSaveOptionsV2 {
     let mut opt = AnsiSaveOptionsV2::default();
     opt.level = AnsiCompatibilityLevel::IcyTerm;
     opt.compress = true;
+    opt.use_cursor_forward = true;
+    opt.use_repeat_sequences = true;
     opt.preserve_line_length = false;
     opt.output_line_length = None;
     opt
@@ -171,7 +162,7 @@ fn load_samples(max_samples: usize) -> Vec<(String, icy_engine::TextBuffer)> {
     out
 }
 
-fn bench_ansi_save_legacy_vs_v2(c: &mut Criterion) {
+fn bench_ansi_save_v2(c: &mut Criterion) {
     // Try to get at least 200 inputs; we overshoot a bit and let max_samples cap it.
     let buffers = load_samples(250);
     if buffers.is_empty() {
@@ -182,14 +173,11 @@ fn bench_ansi_save_legacy_vs_v2(c: &mut Criterion) {
     let xb_count = buffers.iter().filter(|(n, _)| n.starts_with("xb:")).count();
     let ans_count = buffers.len().saturating_sub(xb_count);
 
-    // One-time size comparison for the selected inputs.
-    let legacy_opt = legacy_optimized_options();
+    // One-time size stats for the selected inputs.
     let v2_opt: AnsiSaveOptionsV2 = v2_optimized_options();
 
-    let mut legacy_total = 0usize;
     let mut v2_total = 0usize;
     for (_, buf) in &buffers {
-        legacy_total += FileFormat::Ansi.to_bytes(buf, &legacy_opt).unwrap().len();
         v2_total += save_ansi_v2(buf, &v2_opt).unwrap().len();
     }
     eprintln!("ansi_save samples: {} (xb={} ans={})", buffers.len(), xb_count, ans_count);
@@ -199,13 +187,7 @@ fn bench_ansi_save_legacy_vs_v2(c: &mut Criterion) {
             buffers.len()
         );
     }
-    eprintln!(
-        "ansi_save total bytes: legacy={} v2={} delta={:+} ({:+.2}%)",
-        legacy_total,
-        v2_total,
-        (v2_total as i64 - legacy_total as i64),
-        ((v2_total as f64 - legacy_total as f64) * 100.0) / (legacy_total as f64)
-    );
+    eprintln!("ansi_save total bytes (v2): {}", v2_total);
 
     let total_cells: u64 = buffers.iter().map(|(_, b)| (b.width() as u64) * (b.height() as u64)).sum();
 
@@ -214,14 +196,6 @@ fn bench_ansi_save_legacy_vs_v2(c: &mut Criterion) {
     group.sample_size(20);
     group.measurement_time(Duration::from_secs(15));
     group.throughput(Throughput::Elements(total_cells));
-
-    group.bench_function("legacy_optimized_all", |b| {
-        b.iter(|| {
-            for (_, buf) in &buffers {
-                black_box(FileFormat::Ansi.to_bytes(buf, &legacy_opt).unwrap());
-            }
-        })
-    });
 
     group.bench_function("v2_icyterm_all", |b| {
         b.iter(|| {
@@ -234,5 +208,5 @@ fn bench_ansi_save_legacy_vs_v2(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_ansi_save_legacy_vs_v2);
+criterion_group!(benches, bench_ansi_save_v2);
 criterion_main!(benches);

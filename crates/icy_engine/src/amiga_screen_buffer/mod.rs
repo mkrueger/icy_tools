@@ -6,9 +6,9 @@ pub mod skypix_impl;
 use libyaff::GlyphDefinition;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
-    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
-    TextPane,
+    AnsiSaveOptionsV2, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette,
+    Position, Rectangle, RenderOptions, Result, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt,
+    TerminalState, TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs, limits,
     rip_impl::RIP_SCREEN_SIZE,
@@ -472,7 +472,7 @@ impl Screen for AmigaScreenBuffer {
         &self.mouse_fields
     }
 
-    fn to_bytes(&mut self, _file_name: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, _file_name: &str, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
         // Return empty for now, could implement PNG export later
         Ok(Vec::new())
     }

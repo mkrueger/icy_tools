@@ -14,7 +14,7 @@ use eframe::{
 };
 use i18n_embed_fl::fl;
 use icy_engine::{
-    AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, SaveOptions, Sixel, TextAttribute, TextPane, UnicodeConverter, attribute,
+    AnsiSaveOptionsV2, AttributedChar, Buffer, BufferType, EngineResult, Line, Position, Rectangle, Sixel, TextAttribute, TextPane, UnicodeConverter, attribute,
     editor::{AtomicUndoGuard, ICY_CLIPBOARD_TYPE, UndoState},
 };
 
@@ -208,7 +208,7 @@ impl Document for AnsiEditor {
         } else {
             ICED_EXT.to_string()
         };
-        let mut options = SaveOptions::new();
+        let mut options = AnsiSaveOptionsV2::new();
         options.compress = false;
         options.lossles_output = true;
         let bytes = self.buffer_view.lock().get_buffer_mut().to_bytes(&ext, &options)?;
@@ -461,7 +461,7 @@ impl AnsiEditor {
         Event::CursorPositionChange(old, self.buffer_view.lock().get_caret().get_position())
     }
 
-    pub fn save_content(&self, file_name: &Path, options: &SaveOptions) -> EngineResult<bool> {
+    pub fn save_content(&self, file_name: &Path, options: &AnsiSaveOptionsV2) -> EngineResult<bool> {
         match File::create(file_name) {
             Ok(mut f) => {
                 let content = if let Some(ext) = file_name.extension() {

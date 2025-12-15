@@ -1,9 +1,9 @@
 use eframe::egui::{self, Ui};
 use egui::Checkbox;
 use i18n_embed_fl::fl;
-use icy_engine::{SaveOptions, ScreenPreperation};
+use icy_engine::{AnsiSaveOptionsV2, ScreenPreperation};
 
-pub fn create_settings_page(ui: &mut Ui, options: &mut SaveOptions) {
+pub fn create_settings_page(ui: &mut Ui, options: &mut AnsiSaveOptionsV2) {
     ui.vertical(|ui| {
         ui.horizontal(|ui| {
             ui.label(fl!(crate::LANGUAGE_LOADER, "export-video-preparation-label"));

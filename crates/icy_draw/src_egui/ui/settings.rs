@@ -1,7 +1,7 @@
 use directories::ProjectDirs;
 use eframe::egui::Modifiers;
 use egui::Vec2;
-use icy_engine::{Color, SaveOptions};
+use icy_engine::{AnsiSaveOptionsV2, Color};
 use icy_engine_gui::{BackgroundEffect, MarkerSettings, MonitorSettings, MonitorType};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,7 +28,7 @@ pub struct Settings {
 
     pub monitor_settings: MonitorSettings,
     pub marker_settings: MarkerSettings,
-    pub save_options: SaveOptions,
+    pub save_options: AnsiSaveOptionsV2,
 
     #[serde(default)]
     scale: Vec2,
@@ -458,7 +458,7 @@ pub static mut SETTINGS: Settings = Settings {
     character_set: 5,
     show_layer_borders: true,
     show_line_numbers: false,
-    save_options: SaveOptions::new(),
+    save_options: AnsiSaveOptionsV2::new(),
     is_dark_mode: None,
     monitor_settings: MonitorSettings {
         use_filter: false,

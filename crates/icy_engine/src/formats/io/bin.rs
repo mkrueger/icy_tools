@@ -2,7 +2,7 @@
 
 use crate::{AttributedChar, EditableScreen, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 
 /// Load a binary file into a TextScreen.
 pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
@@ -55,7 +55,7 @@ pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<T
 }
 
 /// Save a TextBuffer to binary format.
-pub(crate) fn save_bin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_bin(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 
     for y in 0..buf.height() {

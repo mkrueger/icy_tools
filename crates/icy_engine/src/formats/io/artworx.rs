@@ -1,4 +1,4 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{
     AttributedChar, BitFont, BufferType, Color, EGA_PALETTE, EditableScreen, FontMode, IceMode, LoadingError, Palette, Position, Result, SavingError,
     TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage, guess_font_name,
@@ -17,7 +17,7 @@ use crate::{
 const HEADER_LENGTH: usize = 1 + 3 * 64 + 4096;
 const VERSION: u8 = 1;
 
-pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_artworx(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     if buf.ice_mode != IceMode::Ice {
         return Err(crate::EngineError::OnlyIceModeSupported);
     }

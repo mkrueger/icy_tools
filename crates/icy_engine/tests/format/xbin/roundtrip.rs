@@ -2,7 +2,7 @@
 // Run with: cargo test --package icy_engine --test mod -- format::xbin::roundtrip --nocapture
 
 use super::super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{FileFormat, SaveOptions, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, FileFormat, TextPane};
 use std::path::Path;
 
 /// Test roundtrip for AK-TORCH.icy
@@ -49,7 +49,7 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
 
     // Step 2: Save as XBin (uncompressed)
     let xbin_format = FileFormat::XBin;
-    let mut save_options = SaveOptions::default();
+    let mut save_options = AnsiSaveOptionsV2::default();
     save_options.compress = false;
     save_options.lossles_output = true;
 

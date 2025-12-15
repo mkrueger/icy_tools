@@ -3,7 +3,7 @@
 //! Run with:
 //!   cargo run -p icy_engine --bin generate_icy_draw_testdata
 
-use icy_engine::{FileFormat, SaveOptions, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, FileFormat, TextPane};
 use std::fs;
 use std::path::Path;
 
@@ -55,7 +55,7 @@ fn generate_from_xbin(xbin_path: &Path, out_path: &Path) {
         buf.layers.push(new_layer);
     }
 
-    let bytes = FileFormat::IcyDraw.to_bytes(&mut buf, &SaveOptions::default()).expect("save icydraw");
+    let bytes = FileFormat::IcyDraw.to_bytes(&mut buf, &AnsiSaveOptionsV2::default()).expect("save icydraw");
 
     fs::write(out_path, &bytes).expect("write icydraw output");
     println!(

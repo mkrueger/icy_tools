@@ -1,8 +1,8 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{AttributedChar, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Palette, Result, TextBuffer, TextScreen};
 
 #[allow(unused)]
-pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_seq(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     if buf.buffer_type != crate::BufferType::Petscii {
         return Err(crate::EngineError::BufferTypeMismatch {
             expected: "Petscii".to_string(),

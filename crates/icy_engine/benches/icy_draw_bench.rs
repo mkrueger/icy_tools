@@ -6,7 +6,7 @@
 //! - Saving performance (skip_thumbnail)
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use icy_engine::{FileFormat, SaveOptions, TextPane};
+use icy_engine::{AnsiSaveOptionsV2, FileFormat, TextPane};
 use std::fs;
 use std::hint::black_box;
 use std::path::Path;
@@ -58,7 +58,7 @@ fn bench_icy_draw_saving(c: &mut Criterion) {
     group.bench_function("save (with thumbnail)", |b| {
         b.iter(|| {
             let mut buf_clone = buf.clone();
-            let opts = SaveOptions::default();
+            let opts = AnsiSaveOptionsV2::default();
             let result = FileFormat::IcyDraw.to_bytes(black_box(&mut buf_clone), black_box(&opts));
             black_box(result)
         })
@@ -77,7 +77,7 @@ fn bench_icy_draw_saving_skip_thumbnail(c: &mut Criterion) {
     group.bench_function("save (fast_save/skip_thumbnail)", |b| {
         b.iter(|| {
             let mut buf_clone = buf.clone();
-            let mut opts = SaveOptions::default();
+            let mut opts = AnsiSaveOptionsV2::default();
             opts.skip_thumbnail = true;
             let result = FileFormat::IcyDraw.to_bytes(black_box(&mut buf_clone), black_box(&opts));
             black_box(result)

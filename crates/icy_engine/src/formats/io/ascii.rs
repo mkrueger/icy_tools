@@ -1,7 +1,7 @@
 //! ASCII format (.asc, .txt) I/O implementation.
 use crate::{EditableScreen, Position, Result, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{AnsiSaveOptionsV2, LoadData};
 
 /// Load an ASCII file into a TextScreen.
 pub(crate) fn load_ascii(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
@@ -26,7 +26,7 @@ pub(crate) fn load_ascii(data: &[u8], load_data_opt: Option<LoadData>) -> Result
 }
 
 /// Save a TextBuffer to ASCII format.
-pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub(crate) fn save_ascii(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
     let mut result = Vec::new();
     let mut pos = Position::default();
     let height = buf.line_count();

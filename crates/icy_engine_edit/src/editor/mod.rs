@@ -135,9 +135,9 @@ impl std::fmt::Display for FormatMode {
 }
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
-    SauceMetaData, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, clipboard,
-    overlay_mask::OverlayMask,
+    AnsiSaveOptionsV2, AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle,
+    RenderOptions, Result, SauceMetaData, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen,
+    clipboard, overlay_mask::OverlayMask,
 };
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 use parking_lot::Mutex as ParkingMutex;
@@ -719,7 +719,7 @@ impl Screen for EditState {
         self.screen.hyperlinks()
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, extension: &str, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
         self.screen.to_bytes(extension, options)
     }
 
