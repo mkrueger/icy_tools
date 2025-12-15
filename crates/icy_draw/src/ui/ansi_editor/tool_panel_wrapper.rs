@@ -10,7 +10,7 @@ use icy_engine_edit::tools::{TOOL_SLOTS, Tool, click_tool_slot, get_slot_display
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage as SharedToolPanelMessage};
 
 /// Maximum number of tool buttons
-const MAX_BUTTONS: usize = 9;
+const MAX_BUTTONS: usize = 8;
 
 /// Messages from the tool panel
 #[derive(Clone, Debug)]
@@ -27,17 +27,14 @@ const TOOL_ICON_ORDER: &[Tool] = &[
     Tool::Select,           // 1
     Tool::Pencil,           // 2
     Tool::Line,             // 3
-    Tool::Brush,            // 4
-    Tool::Erase,            // 5
-    Tool::RectangleOutline, // 6
-    Tool::RectangleFilled,  // 7
-    Tool::EllipseOutline,   // 8
-    Tool::EllipseFilled,    // 9
-    Tool::Fill,             // 10
-    Tool::Pipette,          // 11
-    Tool::Shifter,          // 12
-    Tool::Font,             // 13
-    Tool::Tag,              // 14
+    Tool::RectangleOutline, // 4
+    Tool::RectangleFilled,  // 5
+    Tool::EllipseOutline,   // 6
+    Tool::EllipseFilled,    // 7
+    Tool::Fill,             // 8
+    Tool::Pipette,          // 9
+    Tool::Font,             // 10
+    Tool::Tag,              // 11
 ];
 
 /// Map tool to atlas index

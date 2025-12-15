@@ -121,6 +121,8 @@ pub enum TopToolbarMessage {
     SelectOutline(usize),
     /// Open font directory (when no fonts are installed)
     OpenFontDirectory,
+    /// Open the tag list dialog
+    OpenTagList,
 }
 
 /// Primary brush mode (exclusive).
@@ -179,6 +181,21 @@ pub struct FontPanelInfo {
     pub char_availability: Vec<(char, bool)>,
     /// Current outline style index
     pub outline_style: usize,
+}
+
+/// Pipette panel display information
+#[derive(Clone, Debug, Default)]
+pub struct PipettePanelInfo {
+    /// Currently hovered character (if any)
+    pub cur_char: Option<icy_engine::AttributedChar>,
+    /// Take foreground color
+    pub take_fg: bool,
+    /// Take background color
+    pub take_bg: bool,
+    /// Foreground color RGB
+    pub fg_color: Option<(u8, u8, u8)>,
+    /// Background color RGB
+    pub bg_color: Option<(u8, u8, u8)>,
 }
 
 /// Top toolbar state
@@ -280,6 +297,9 @@ impl TopToolbar {
             TopToolbarMessage::OpenFontDirectory => {
                 // handled at a higher level (AnsiEditor)
             }
+            TopToolbarMessage::OpenTagList => {
+                // handled at a higher level (AnsiEditor)
+            }
         }
         Task::none()
     }
@@ -296,17 +316,17 @@ impl TopToolbar {
         caret_bg: u32,
         palette: &Palette,
         font_panel_info: Option<&FontPanelInfo>,
+        pipette_info: Option<&PipettePanelInfo>,
     ) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
             Tool::Select => self.view_select_panel(font.clone(), theme),
-            Tool::Pencil | Tool::Brush | Tool::Erase => self.view_brush_panel(font, theme, caret_fg, caret_bg, palette),
+            Tool::Pencil => self.view_brush_panel(font, theme, caret_fg, caret_bg, palette),
             Tool::Line => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false),
-            Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
-            Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
+            Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false),
+            Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false),
             Tool::Fill => self.view_fill_panel(font, theme, caret_fg, caret_bg, palette),
-            Tool::Pipette => self.view_sample_panel(),
-            Tool::Shifter => self.view_shifter_panel(),
+            Tool::Pipette => self.view_pipette_panel(pipette_info),
             Tool::Font => self.view_font_panel(font_panel_info),
             Tool::Tag => self.view_tag_panel(),
         };
@@ -629,26 +649,66 @@ impl TopToolbar {
         .into()
     }
 
-    /// Sample/Pipette tool panel
-    fn view_sample_panel(&self) -> Element<'_, TopToolbarMessage> {
-        row![
-            text("Pipette").size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Click: Pick color | Shift+Click: Pick character").size(10),
-        ]
-        .spacing(8)
-        .into()
-    }
+    /// Pipette tool panel - shows current character and colors being picked
+    fn view_pipette_panel(&self, info: Option<&PipettePanelInfo>) -> Element<'_, TopToolbarMessage> {
+        let info = info.cloned().unwrap_or_default();
 
-    /// Shifter tool panel
-    fn view_shifter_panel(&self) -> Element<'_, TopToolbarMessage> {
-        row![
-            text("Shifter").size(12),
-            Space::new().width(Length::Fixed(16.0)),
-            text("Drag to shift characters").size(10),
-        ]
-        .spacing(8)
-        .into()
+        let mut content = row![].spacing(12).align_y(iced::Alignment::Center);
+
+        // Add flexible space to center content
+        content = content.push(Space::new().width(Length::Fill));
+
+        if let Some(ch) = info.cur_char {
+            // Character code
+            let code_text = text(format!("Code: {}", ch.ch as u32)).size(TEXT_SIZE_SMALL);
+            content = content.push(code_text);
+
+            // Foreground color (if taking FG)
+            if info.take_fg {
+                if let Some((r, g, b)) = info.fg_color {
+                    let fg_text = text(format!("FG: #{:02x}{:02x}{:02x}", r, g, b)).size(TEXT_SIZE_SMALL);
+                    let fg_swatch = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(16.0))).style(move |_theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
+                        border: iced::Border {
+                            color: iced::Color::WHITE,
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                    content = content.push(row![fg_text, fg_swatch].spacing(4).align_y(iced::Alignment::Center));
+                }
+            }
+
+            // Background color (if taking BG)
+            if info.take_bg {
+                if let Some((r, g, b)) = info.bg_color {
+                    let bg_text = text(format!("BG: #{:02x}{:02x}{:02x}", r, g, b)).size(TEXT_SIZE_SMALL);
+                    let bg_swatch = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(16.0))).style(move |_theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
+                        border: iced::Border {
+                            color: iced::Color::WHITE,
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                    content = content.push(row![bg_text, bg_swatch].spacing(4).align_y(iced::Alignment::Center));
+                }
+            }
+        } else {
+            // No character hovered - show instructions
+            content = content.push(text("Hover over canvas to pick colors").size(TEXT_SIZE_SMALL));
+        }
+
+        // Help text
+        content = content.push(Space::new().width(Length::Fixed(24.0)));
+        content = content.push(text("⇧: FG only   ⌃: BG only").size(TEXT_SIZE_SMALL));
+
+        // Add flexible space to center content
+        content = content.push(Space::new().width(Length::Fill));
+
+        content.into()
     }
 
     /// Font tool panel
@@ -760,7 +820,11 @@ impl TopToolbar {
         row![
             text("Tag Tool").size(TEXT_SIZE_NORMAL),
             Space::new().width(Length::Fixed(SPACE_16)),
-            text("Click an empty cell to add a tag • Use ‘Tags…’ to view/delete").size(TEXT_SIZE_SMALL),
+            text("Click an empty cell to add a tag").size(TEXT_SIZE_SMALL),
+            Space::new().width(Length::Fixed(SPACE_16)),
+            button(text("Tags…").size(TEXT_SIZE_SMALL))
+                .on_press(TopToolbarMessage::OpenTagList)
+                .style(button::secondary),
         ]
         .spacing(SPACE_8)
         .into()

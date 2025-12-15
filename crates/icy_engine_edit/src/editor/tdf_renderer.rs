@@ -26,6 +26,7 @@ pub struct TdfEditStateRenderer<'a> {
     cur_y: i32,
     start_x: i32,
     start_y: i32,
+    max_x: i32,
     buffer_type: crate::BufferType,
 }
 
@@ -42,6 +43,7 @@ impl<'a> TdfEditStateRenderer<'a> {
             cur_y: start_y,
             start_x,
             start_y,
+            max_x: start_x,
             buffer_type,
         })
     }
@@ -64,13 +66,14 @@ impl<'a> TdfEditStateRenderer<'a> {
     /// Advance to the next character position (for multi-char rendering)
     /// Resets Y to start and advances X to current position
     pub fn next_char(&mut self) {
-        self.start_x = self.cur_x;
+        self.start_x = self.max_x;
+        self.cur_x = self.max_x;
         self.cur_y = self.start_y;
     }
 
     /// Get the maximum X position reached during rendering
     pub fn max_x(&self) -> i32 {
-        self.cur_x
+        self.max_x
     }
 }
 
@@ -99,6 +102,10 @@ impl FontTarget for TdfEditStateRenderer<'_> {
         }
 
         self.cur_x += 1;
+        // Track the maximum X position reached
+        if self.cur_x > self.max_x {
+            self.max_x = self.cur_x;
+        }
         Ok(())
     }
 

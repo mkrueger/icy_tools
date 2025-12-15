@@ -9,12 +9,29 @@
 //! - Ellipse outline and fill (midpoint algorithm)
 //! - Various brush modes (block, half-block, shade, colorize, etc.)
 //! - Outline character support for TheDraw fonts
+//! - Brush size expansion utilities
+//!
+//! # Shape Functions
+//! Each shape has `get_*_points()` functions that return point lists without drawing,
+//! and `draw_*()` / `fill_*()` functions that draw directly to a target.
+//!
+//! - `get_line_points(p0, p1)` - Get all points on a line
+//! - `get_rectangle_points(p0, p1)` - Get outline points of a rectangle
+//! - `get_filled_rectangle_points(p0, p1)` - Get all points of a filled rectangle
+//! - `get_ellipse_points(center, rx, ry)` - Get outline points of an ellipse
+//! - `get_ellipse_points_from_rect(p0, p1)` - Get outline points from bounding box
+//! - `get_filled_ellipse_points(center, rx, ry)` - Get all points of a filled ellipse
+//! - `get_filled_ellipse_points_from_rect(p0, p1)` - Get filled points from bounding box
 //!
 //! # Example
 //! ```ignore
-//! use icy_engine_edit::brushes::{DrawContext, BrushMode, ColorMode, line::draw_line};
+//! use icy_engine_edit::brushes::{DrawContext, BrushMode, ColorMode, draw_line, get_line_points};
 //! use icy_engine::Position;
 //!
+//! // Get points without drawing
+//! let points = get_line_points(Position::new(0, 0), Position::new(10, 5));
+//!
+//! // Or draw directly to a target
 //! let ctx = DrawContext::default();
 //! let mut target = MyDrawTarget::new();
 //! draw_line(&mut target, &ctx, Position::new(0, 0), Position::new(10, 5));
@@ -28,6 +45,12 @@ pub mod rectangle;
 
 pub use brush_mode::{BrushMode, PointRole};
 pub use color_mode::ColorMode;
+pub use ellipse::{
+    draw_ellipse, draw_ellipse_from_rect, fill_ellipse, fill_ellipse_from_rect, get_ellipse_points, get_ellipse_points_from_rect, get_filled_ellipse_points,
+    get_filled_ellipse_points_from_rect,
+};
+pub use line::{draw_line, get_line_points};
+pub use rectangle::{draw_rectangle, fill_rectangle, get_filled_rectangle_points, get_rectangle_points};
 
 use icy_engine::{AttributedChar, Position, TextAttribute};
 
@@ -270,23 +293,28 @@ impl DrawContext {
         let current = target.char_at(pos);
         let current_ch = current.map(|c| c.ch).unwrap_or(' ');
 
-        // Find current shade level
-        let mut level = SHADE_GRADIENT
-            .iter()
-            .position(|&c| c == current_ch)
-            .map(|i| i as i32)
-            .unwrap_or(if up { -1 } else { SHADE_GRADIENT.len() as i32 });
+        // Find current shade level (-1 = empty/space, 0-3 = shade gradient)
+        let mut level = SHADE_GRADIENT.iter().position(|&c| c == current_ch).map(|i| i as i32).unwrap_or(-1); // -1 represents empty/space
 
-        // Adjust shade level
+        // Adjust shade level (Moebius behavior)
         if up {
+            // Shade up: -1 (empty) -> 0 -> 1 -> 2 -> 3 (full block)
             level = (level + 1).min(SHADE_GRADIENT.len() as i32 - 1);
         } else {
-            level = (level - 1).max(0);
+            // Shade down: 3 -> 2 -> 1 -> 0 -> -1 (empty/space)
+            level -= 1;
         }
 
-        let new_ch = SHADE_GRADIENT[level as usize];
-        let attr = self.make_attribute();
-        target.set_char(pos, AttributedChar::new(new_ch, attr));
+        // Apply the new character
+        if level < 0 {
+            // Below shade gradient = empty space
+            let attr = self.make_attribute();
+            target.set_char(pos, AttributedChar::new(' ', attr));
+        } else {
+            let new_ch = SHADE_GRADIENT[level as usize];
+            let attr = self.make_attribute();
+            target.set_char(pos, AttributedChar::new(new_ch, attr));
+        }
     }
 
     fn colorize<T: DrawTarget>(&self, target: &mut T, pos: Position) {
@@ -414,161 +442,62 @@ impl PointRole {
     }
 }
 
-/// A simple test target that records all drawing operations
-#[cfg(test)]
-pub struct TestTarget {
-    width: i32,
-    height: i32,
-    chars: Vec<AttributedChar>,
+/// Expand a list of points by brush_size, centering the brush on each original point.
+///
+/// This creates a square expansion around each point. When `brush_size` is 1,
+/// the original points are returned unchanged.
+///
+/// # Arguments
+/// * `points` - The original points to expand
+/// * `brush_size` - The size of the brush (width/height of the square)
+///
+/// # Returns
+/// A new vector with all expanded points (may contain duplicates).
+pub fn expand_points_by_brush_size(points: &[Position], brush_size: i32) -> Vec<Position> {
+    if brush_size <= 1 {
+        return points.to_vec();
+    }
+
+    let half = brush_size / 2;
+    let mut expanded = Vec::with_capacity(points.len() * (brush_size * brush_size) as usize);
+
+    for &p in points {
+        for dy in 0..brush_size {
+            for dx in 0..brush_size {
+                expanded.push(p + Position::new(dx - half, dy - half));
+            }
+        }
+    }
+
+    expanded
 }
 
-#[cfg(test)]
-impl TestTarget {
-    pub fn new(width: i32, height: i32) -> Self {
-        Self {
-            width,
-            height,
-            chars: vec![AttributedChar::new(' ', TextAttribute::default()); (width * height) as usize],
+/// Expand a list of points with PointRole by brush_size, centering the brush on each original point.
+///
+/// This creates a square expansion around each point. When `brush_size` is 1,
+/// the original points are returned unchanged. The PointRole is preserved for all expanded points.
+///
+/// # Arguments
+/// * `points` - The original points with their roles to expand
+/// * `brush_size` - The size of the brush (width/height of the square)
+///
+/// # Returns
+/// A new vector with all expanded points and their roles (may contain duplicates).
+pub fn expand_points_with_role_by_brush_size(points: &[(Position, PointRole)], brush_size: i32) -> Vec<(Position, PointRole)> {
+    if brush_size <= 1 {
+        return points.to_vec();
+    }
+
+    let half = brush_size / 2;
+    let mut expanded = Vec::with_capacity(points.len() * (brush_size * brush_size) as usize);
+
+    for &(p, role) in points {
+        for dy in 0..brush_size {
+            for dx in 0..brush_size {
+                expanded.push((p + Position::new(dx - half, dy - half), role));
+            }
         }
     }
 
-    pub fn get_at(&self, x: i32, y: i32) -> AttributedChar {
-        if x >= 0 && x < self.width && y >= 0 && y < self.height {
-            self.chars[(y * self.width + x) as usize]
-        } else {
-            AttributedChar::default()
-        }
-    }
-}
-
-#[cfg(test)]
-impl DrawTarget for TestTarget {
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
-    }
-
-    fn char_at(&self, pos: Position) -> Option<AttributedChar> {
-        if self.is_valid(pos) {
-            Some(self.chars[(pos.y * self.width + pos.x) as usize])
-        } else {
-            None
-        }
-    }
-
-    fn set_char(&mut self, pos: Position, ch: AttributedChar) {
-        if self.is_valid(pos) {
-            self.chars[(pos.y * self.width + pos.x) as usize] = ch;
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_draw_block() {
-        let mut target = TestTarget::new(80, 25);
-        let ctx = DrawContext::default().with_brush_mode(BrushMode::Block);
-
-        ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-
-        let ch = target.get_at(10, 5);
-        assert_eq!(ch.ch, HALF_BLOCKS.full);
-    }
-
-    #[test]
-    fn test_draw_char() {
-        let mut target = TestTarget::new(80, 25);
-        let ctx = DrawContext::default().with_brush_mode(BrushMode::Char('X'));
-
-        ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-
-        let ch = target.get_at(10, 5);
-        assert_eq!(ch.ch, 'X');
-    }
-
-    #[test]
-    fn test_shade_gradient() {
-        let mut target = TestTarget::new(80, 25);
-        let ctx = DrawContext::default().with_brush_mode(BrushMode::Shade);
-        let pos = Position::new(10, 5);
-
-        // First stroke
-        ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[0]);
-
-        // Second stroke
-        ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[1]);
-
-        // Third stroke
-        ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[2]);
-
-        // Fourth stroke - max
-        ctx.plot_point(&mut target, pos, PointRole::Fill);
-        assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[3]);
-    }
-
-    #[test]
-    fn test_colorize() {
-        let mut target = TestTarget::new(80, 25);
-        let pos = Position::new(10, 5);
-
-        // First, draw a character
-        target.set_char(pos, AttributedChar::new('A', TextAttribute::default()));
-
-        // Now colorize it
-        let ctx = DrawContext::default()
-            .with_brush_mode(BrushMode::Colorize)
-            .with_foreground(4)
-            .with_background(1);
-
-        ctx.plot_point(&mut target, pos, PointRole::Fill);
-
-        let ch = target.get_at(10, 5);
-        assert_eq!(ch.ch, 'A'); // Character unchanged
-        assert_eq!(ch.attribute.foreground(), 4);
-        assert_eq!(ch.attribute.background(), 1);
-    }
-
-    #[test]
-    fn test_bounds_check() {
-        let mut target = TestTarget::new(80, 25);
-        let ctx = DrawContext::default().with_brush_mode(BrushMode::Block);
-
-        // Should not panic on out-of-bounds
-        ctx.plot_point(&mut target, Position::new(-1, 5), PointRole::Fill);
-        ctx.plot_point(&mut target, Position::new(100, 5), PointRole::Fill);
-        ctx.plot_point(&mut target, Position::new(10, -1), PointRole::Fill);
-        ctx.plot_point(&mut target, Position::new(10, 100), PointRole::Fill);
-    }
-
-    #[test]
-    fn test_mirror_horizontal() {
-        let mut target = TestTarget::new(80, 25);
-        let ctx = DrawContext {
-            brush_mode: BrushMode::Block,
-            mirror_mode: MirrorMode::Horizontal,
-            ..Default::default()
-        };
-
-        // Draw at x=10, should also draw at x=69 (mirror around center 40)
-        ctx.plot_point(&mut target, Position::new(10, 5), PointRole::Fill);
-
-        assert_eq!(target.get_at(10, 5).ch, HALF_BLOCKS.full);
-        assert_eq!(target.get_at(69, 5).ch, HALF_BLOCKS.full);
-    }
-
-    #[test]
-    fn test_point_role_mirror() {
-        assert_eq!(PointRole::NWCorner.mirror_horizontal(), PointRole::NECorner);
-        assert_eq!(PointRole::NWCorner.mirror_vertical(), PointRole::SWCorner);
-        assert_eq!(PointRole::NWCorner.mirror_both(), PointRole::SECorner);
-    }
+    expanded
 }

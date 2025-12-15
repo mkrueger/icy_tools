@@ -107,4 +107,14 @@ impl FontToolState {
         }
         self.font_name(self.selected_font as usize).unwrap_or_default()
     }
+
+    /// Get the maximum height of glyphs in the selected font
+    pub fn max_height(&self) -> usize {
+        self.with_selected_font(|font| font.max_height()).unwrap_or(1)
+    }
+
+    /// Get the size of a glyph for a character in the selected font
+    pub fn glyph_size(&self, ch: char) -> Option<(usize, usize)> {
+        self.with_selected_font(|font| font.glyph_size(ch)).flatten()
+    }
 }

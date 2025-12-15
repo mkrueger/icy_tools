@@ -65,6 +65,7 @@ pub use font_selector_dialog::*;
 pub use font_slot_manager_dialog::*;
 pub use font_tool::FontToolState;
 use icy_engine_edit::EditState;
+use icy_engine_edit::OperationType;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
 pub use minimap_view::*;
@@ -249,6 +250,35 @@ pub enum SelectionDrag {
     BottomRight,
 }
 
+/// Pipette tool state - stores the currently hovered character and modifiers
+#[derive(Default, Clone, Debug)]
+pub struct PipetteState {
+    /// Currently hovered character (if any)
+    pub cur_char: Option<icy_engine::AttributedChar>,
+    /// Current hover position
+    pub cur_pos: Option<icy_engine::Position>,
+    /// Take foreground color (Shift=only FG, Ctrl=only BG, neither=both)
+    pub take_fg: bool,
+    /// Take background color
+    pub take_bg: bool,
+}
+
+impl PipetteState {
+    /// Update the modifier flags based on current keyboard state
+    pub fn update_modifiers(&mut self) {
+        let shift = is_shift_pressed();
+        let ctrl = is_ctrl_pressed() || is_command_pressed();
+
+        // Moebius-style:
+        // - No modifier: both FG and BG
+        // - Shift only: FG only
+        // - Ctrl only: BG only
+        // - Both: both (fallback)
+        self.take_fg = !ctrl || shift;
+        self.take_bg = !shift || ctrl;
+    }
+}
+
 /// Drag position tracking for mouse operations
 #[derive(Default, Clone, Copy, Debug)]
 pub struct DragPos {
@@ -359,6 +389,16 @@ pub struct AnsiEditor {
     // === Shape Tool State ===
     /// If true, shape tools clear/erase instead of drawing (Moebius-style shift behavior).
     shape_clear: bool,
+
+    // === Pipette Tool State ===
+    /// Pipette tool state (current character, modifiers)
+    pub pipette: PipetteState,
+
+    // === Layer Drag State (Ctrl+Click+Drag in Click tool) ===
+    /// If true, we are dragging a layer (Ctrl+Click+Drag)
+    layer_drag_active: bool,
+    /// Layer offset at start of drag
+    layer_drag_start_offset: icy_engine::Position,
 }
 
 static mut NEXT_ID: u64 = 0;
@@ -477,6 +517,8 @@ impl AnsiEditor {
         };
 
         let swap_colors = button == iced::mouse::Button::Right;
+        // Shift key also swaps colors (like in many graphics programs)
+        let shift_swap = is_shift_pressed();
         // half_block_is_top is passed in directly for HalfBlock mode with brush_size
 
         self.with_edit_state(|state| {
@@ -488,7 +530,9 @@ impl AnsiEditor {
             let use_selection = state.is_something_selected();
 
             let caret_attr = state.get_caret().attribute;
-            let swap_for_colors = swap_colors && !matches!(primary, BrushPrimaryMode::Shading);
+            // Don't swap colors for Shading (has its own up/down behavior) or Char mode (right-click = erase)
+            // Shift key swaps colors for all modes except those with special right-click behavior
+            let swap_for_colors = (swap_colors || shift_swap) && !matches!(primary, BrushPrimaryMode::Shading | BrushPrimaryMode::Char);
             let (fg, bg) = if swap_for_colors {
                 (caret_attr.background(), caret_attr.foreground())
             } else {
@@ -522,20 +566,18 @@ impl AnsiEditor {
                     }
 
                     match tool {
-                        Tool::Erase => {
-                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
-                        }
-                        Tool::Pencil
-                        | Tool::Brush
-                        | Tool::Line
-                        | Tool::RectangleOutline
-                        | Tool::RectangleFilled
-                        | Tool::EllipseOutline
-                        | Tool::EllipseFilled => {
+                        Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                             use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
 
                             let brush_mode = match primary {
-                                BrushPrimaryMode::Char => EngineBrushMode::Char(paint_char),
+                                BrushPrimaryMode::Char => {
+                                    // Right-click in Char mode = erase (set to space)
+                                    if swap_colors {
+                                        EngineBrushMode::Char(' ')
+                                    } else {
+                                        EngineBrushMode::Char(paint_char)
+                                    }
+                                }
                                 BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
                                 BrushPrimaryMode::Shading => {
                                     if swap_colors {
@@ -754,6 +796,11 @@ impl AnsiEditor {
             half_block_click_pos: icy_engine::Position::default(),
 
             shape_clear: false,
+
+            pipette: PipetteState::default(),
+
+            layer_drag_active: false,
+            layer_drag_start_offset: icy_engine::Position::default(),
         }
     }
 
@@ -780,79 +827,22 @@ impl AnsiEditor {
     }
 
     fn shape_points(tool: Tool, p0: icy_engine::Position, p1: icy_engine::Position) -> Vec<icy_engine::Position> {
-        use std::collections::HashSet;
+        use icy_engine_edit::brushes;
 
         match tool {
-            Tool::Line => icy_engine_edit::brushes::line::get_line_points(p0, p1),
-            Tool::RectangleOutline | Tool::RectangleFilled => {
-                let min_x = p0.x.min(p1.x);
-                let max_x = p0.x.max(p1.x);
-                let min_y = p0.y.min(p1.y);
-                let max_y = p0.y.max(p1.y);
-
-                let mut pts = Vec::new();
-                if matches!(tool, Tool::RectangleFilled) {
-                    for y in min_y..=max_y {
-                        for x in min_x..=max_x {
-                            pts.push(icy_engine::Position::new(x, y));
-                        }
-                    }
-                } else {
-                    // Outline/perimeter
-                    for x in min_x..=max_x {
-                        pts.push(icy_engine::Position::new(x, min_y));
-                        if max_y != min_y {
-                            pts.push(icy_engine::Position::new(x, max_y));
-                        }
-                    }
-                    for y in (min_y + 1)..=(max_y - 1) {
-                        pts.push(icy_engine::Position::new(min_x, y));
-                        if max_x != min_x {
-                            pts.push(icy_engine::Position::new(max_x, y));
-                        }
-                    }
+            Tool::Line => brushes::get_line_points(p0, p1),
+            Tool::RectangleOutline => brushes::get_rectangle_points(p0, p1).into_iter().map(|(p, _)| p).collect(),
+            Tool::RectangleFilled => brushes::get_filled_rectangle_points(p0, p1).into_iter().map(|(p, _)| p).collect(),
+            Tool::EllipseOutline => {
+                use std::collections::HashSet;
+                let points = brushes::get_ellipse_points_from_rect(p0, p1);
+                let mut set: HashSet<(i32, i32)> = HashSet::new();
+                for (p, _) in points {
+                    set.insert((p.x, p.y));
                 }
-                pts
+                set.into_iter().map(|(x, y)| icy_engine::Position::new(x, y)).collect()
             }
-            Tool::EllipseOutline | Tool::EllipseFilled => {
-                let min_x = p0.x.min(p1.x);
-                let max_x = p0.x.max(p1.x);
-                let min_y = p0.y.min(p1.y);
-                let max_y = p0.y.max(p1.y);
-
-                let center = icy_engine::Position::new((min_x + max_x) / 2, (min_y + max_y) / 2);
-                let radius_x = (max_x - min_x) / 2;
-                let radius_y = (max_y - min_y) / 2;
-
-                if matches!(tool, Tool::EllipseOutline) {
-                    let mut set: HashSet<(i32, i32)> = HashSet::new();
-                    let points = icy_engine_edit::brushes::ellipse::get_ellipse_points(center, radius_x, radius_y);
-                    for (p, _) in points {
-                        set.insert((p.x, p.y));
-                    }
-                    set.into_iter().map(|(x, y)| icy_engine::Position::new(x, y)).collect()
-                } else {
-                    // Match `fill_ellipse` scanline logic.
-                    if radius_x <= 0 || radius_y <= 0 {
-                        return vec![center];
-                    }
-
-                    let ry_f = radius_y as f64;
-                    let rx_f = radius_x as f64;
-                    let mut pts = Vec::new();
-
-                    for dy in -radius_y..=radius_y {
-                        let dy_f = dy as f64;
-                        let x_extent = (rx_f * (1.0 - (dy_f / ry_f).powi(2)).sqrt()).round() as i32;
-                        let y = center.y + dy;
-                        for dx in -x_extent..=x_extent {
-                            let x = center.x + dx;
-                            pts.push(icy_engine::Position::new(x, y));
-                        }
-                    }
-                    pts
-                }
-            }
+            Tool::EllipseFilled => brushes::get_filled_ellipse_points_from_rect(p0, p1).into_iter().map(|(p, _)| p).collect(),
             _ => Vec::new(),
         }
     }
@@ -897,6 +887,8 @@ impl AnsiEditor {
 
             let caret_attr = edit_state.get_caret().attribute;
             let swap_colors = self.paint_button == iced::mouse::Button::Right;
+            // Shift key also swaps colors
+            let shift_swap = is_shift_pressed();
 
             let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
                 let opts = &self.top_toolbar.brush_options;
@@ -1091,7 +1083,14 @@ impl AnsiEditor {
                 }
             } else {
                 let brush_mode = match primary {
-                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Char => EngineBrushMode::Char(paint_char),
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Char => {
+                        // Right-click in Char mode = erase (set to space)
+                        if swap_colors {
+                            EngineBrushMode::Char(' ')
+                        } else {
+                            EngineBrushMode::Char(paint_char)
+                        }
+                    }
                     crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
                     crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Shading => {
                         if swap_colors {
@@ -1116,7 +1115,13 @@ impl AnsiEditor {
                     EngineColorMode::Both
                 };
 
-                let swap_for_colors = swap_colors && !matches!(primary, crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Shading);
+                // Don't swap colors for Shading (has its own up/down behavior) or Char mode (right-click = erase)
+                // Shift key swaps colors for all modes except those with special right-click behavior
+                let swap_for_colors = (swap_colors || shift_swap)
+                    && !matches!(
+                        primary,
+                        crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Shading | crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Char
+                    );
                 let (fg, bg) = if swap_for_colors {
                     (caret_attr.background(), caret_attr.foreground())
                 } else {
@@ -1163,27 +1168,38 @@ impl AnsiEditor {
                     changed_cells: &mut changed_cells,
                 };
 
+                // For HalfBlock mode, brush_size expansion happens in half-block coordinates,
+                // so here we use size 1. For other modes, use the actual brush_size.
+                let effective_brush_size = if is_half_block_mode { 1 } else { brush_size as i32 };
+                let half = effective_brush_size / 2;
+
                 let mut in_bounds = 0usize;
                 let mut sel_kept = 0usize;
                 for (p, is_top) in &points {
-                    let layer_pos = *p - layer_offset;
-                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                        continue;
-                    }
-                    in_bounds += 1;
-                    if use_selection && !edit_state.is_selected(*p) {
-                        continue;
-                    }
-                    sel_kept += 1;
+                    // Expand each point by brush_size (like in apply_paint_stamp_with_half_block_info)
+                    for dy in 0..effective_brush_size {
+                        for dx in 0..effective_brush_size {
+                            let expanded_pos = *p + icy_engine_edit::Position::new(dx - half, dy - half);
+                            let layer_pos = expanded_pos - layer_offset;
+                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                                continue;
+                            }
+                            in_bounds += 1;
+                            if use_selection && !edit_state.is_selected(expanded_pos) {
+                                continue;
+                            }
+                            sel_kept += 1;
 
-                    let ctx = DrawContext::default()
-                        .with_brush_mode(brush_mode.clone())
-                        .with_color_mode(color_mode.clone())
-                        .with_foreground(fg)
-                        .with_background(bg)
-                        .with_template_attribute(template)
-                        .with_half_block_is_top(*is_top);
-                    ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
+                            let ctx = DrawContext::default()
+                                .with_brush_mode(brush_mode.clone())
+                                .with_color_mode(color_mode.clone())
+                                .with_foreground(fg)
+                                .with_background(bg)
+                                .with_template_attribute(template)
+                                .with_half_block_is_top(*is_top);
+                            ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
+                        }
+                    }
                 }
 
                 if debug_overlay {
@@ -1811,6 +1827,10 @@ impl AnsiEditor {
                         // Return a task that signals this (handled via Message routing)
                         Task::none()
                     }
+                    TopToolbarMessage::OpenTagList => {
+                        // Delegate to the existing OpenTagListDialog handler
+                        return self.update(AnsiEditorMessage::OpenTagListDialog);
+                    }
                     TopToolbarMessage::ToggleFilled(v) => {
                         // Keep the tool variant in sync with the filled toggle.
                         let new_tool = match self.current_tool {
@@ -2210,7 +2230,8 @@ impl AnsiEditor {
                 let buffer = edit_state.get_buffer();
                 if let Ok(cur_layer) = edit_state.get_current_layer() {
                     if let Some(layer) = buffer.layers.get(cur_layer) {
-                        let offset = layer.base_offset();
+                        // Use offset() which respects preview_offset during drag
+                        let offset = layer.offset();
                         let size = layer.size();
                         let width = size.width;
                         let height = size.height;
@@ -2498,6 +2519,9 @@ impl AnsiEditor {
             }
             // Text editing
             Named::Backspace => {
+                if self.current_tool == Tool::Font {
+                    return self.handle_font_tool_backspace();
+                }
                 let result = self.with_edit_state(|state| {
                     if state.is_something_selected() {
                         state.erase_selection()
@@ -2527,10 +2551,11 @@ impl AnsiEditor {
             }
             Named::Enter => {
                 if self.current_tool == Tool::Font {
-                    // Font tool: just move to next line
+                    // Font tool: move to next line using font height
+                    let font_height = self.font_tool.max_height();
                     self.with_edit_state(|state| {
                         let pos = state.get_caret().position();
-                        state.set_caret_position(Position::new(0, pos.y + 1));
+                        state.set_caret_position(Position::new(0, pos.y + font_height as i32));
                     });
                     self.font_tool.prev_char = '\0';
                     ToolEvent::Redraw
@@ -2599,6 +2624,7 @@ impl AnsiEditor {
         let outline_style = { *self.options.read().font_outline_style.read() };
 
         // Render the glyph - access screen and font library
+        // Returns (new_x, start_y) - Y stays at original row, X advances
         let result: Result<Position, icy_engine::EngineError> = {
             let mut screen = self.screen.lock();
             let edit_state = screen
@@ -2606,9 +2632,16 @@ impl AnsiEditor {
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
 
-            let caret_pos = edit_state.get_caret().position();
+            // Begin atomic undo with RenderCharacter operation type for backspace support
+            let _undo_guard = edit_state.begin_typed_atomic_undo("Render font character", OperationType::RenderCharacter);
 
-            match TdfEditStateRenderer::new(edit_state, caret_pos.x, caret_pos.y) {
+            // Save caret position for undo - this allows backspace to restore position
+            let _ = edit_state.undo_caret_position();
+
+            let caret_pos = edit_state.get_caret().position();
+            let start_y = caret_pos.y;
+
+            match TdfEditStateRenderer::new(edit_state, caret_pos.x, start_y) {
                 Ok(mut renderer) => {
                     let render_options = retrofont::RenderOptions {
                         outline_style,
@@ -2619,7 +2652,10 @@ impl AnsiEditor {
                     let lib = self.font_tool.font_library.read();
                     if let Some(font) = lib.get_font(font_idx as usize) {
                         match font.render_glyph(&mut renderer, ch, &render_options) {
-                            Ok(_) => Ok(renderer.position()),
+                            Ok(_) => {
+                                // Return new X position but keep original Y (don't move caret down)
+                                Ok(Position::new(renderer.max_x(), start_y))
+                            }
                             Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {}", e))),
                         }
                     } else {
@@ -2647,6 +2683,87 @@ impl AnsiEditor {
                 ToolEvent::None
             }
         }
+    }
+
+    /// Handle backspace for Font tool (undo last rendered character)
+    fn handle_font_tool_backspace(&mut self) -> ToolEvent {
+        // Try to find and reverse the last RenderCharacter operation in the undo stack
+        let mut use_backspace = true;
+
+        let reverse_result: Option<Result<(), icy_engine::EngineError>> = {
+            let mut screen = self.screen.lock();
+            let edit_state = screen
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+
+            // Find the last RenderCharacter operation that hasn't been reversed
+            let undo_stack = edit_state.get_undo_stack();
+            let Ok(stack) = undo_stack.lock() else {
+                return ToolEvent::None;
+            };
+
+            let mut reverse_count = 0;
+            let mut found_index = None;
+
+            for i in (0..stack.len()).rev() {
+                match stack[i].get_operation_type() {
+                    OperationType::RenderCharacter => {
+                        if reverse_count == 0 {
+                            found_index = Some(i);
+                            break;
+                        }
+                        reverse_count -= 1;
+                    }
+                    OperationType::ReversedRenderCharacter => {
+                        reverse_count += 1;
+                    }
+                    OperationType::Unknown => {
+                        // Stop at unknown operations
+                        break;
+                    }
+                }
+            }
+
+            if let Some(idx) = found_index {
+                if let Some(op) = stack[idx].try_clone() {
+                    drop(stack); // Release the lock before push_reverse_undo
+
+                    // Push a reverse undo operation
+                    match edit_state.push_reverse_undo("Undo font character", op, OperationType::ReversedRenderCharacter) {
+                        Ok(_) => {
+                            use_backspace = false;
+                            Some(Ok(()))
+                        }
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        // Reset prev_char since we're going backwards
+        self.font_tool.prev_char = '\0';
+
+        if use_backspace {
+            // Fall back to normal backspace if no RenderCharacter found
+            let result = self.with_edit_state(|state| {
+                if state.is_something_selected() {
+                    state.erase_selection()
+                } else {
+                    state.backspace()
+                }
+            });
+            if let Err(e) = result {
+                log::warn!("Failed to backspace: {}", e);
+            }
+        }
+
+        self.update_selection_display();
+        ToolEvent::Commit("Font backspace".to_string())
     }
 
     /// Handle tool-specific key events based on current tool
@@ -2790,6 +2907,20 @@ impl AnsiEditor {
                 }
             }
             Tool::Click | Tool::Font => {
+                // Ctrl+Click = Start layer drag
+                if button == iced::mouse::Button::Left && (is_ctrl_pressed() || is_command_pressed()) {
+                    // Start layer drag
+                    let layer_offset = self.with_edit_state(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
+                    self.layer_drag_active = true;
+                    self.layer_drag_start_offset = layer_offset;
+                    self.is_dragging = true;
+                    self.drag_pos.start = pos;
+                    self.drag_pos.cur = pos;
+                    self.drag_pos.start_abs = pos;
+                    self.drag_pos.cur_abs = pos;
+                    return ToolEvent::Redraw;
+                }
+
                 // Check if clicking inside existing selection for drag/resize
                 let selection_drag = self.get_selection_drag_at(pos);
 
@@ -2927,7 +3058,7 @@ impl AnsiEditor {
                 }
                 ToolEvent::Redraw
             }
-            Tool::Pencil | Tool::Brush | Tool::Erase => {
+            Tool::Pencil => {
                 // Start paint stroke (layer-local painting; selection stays doc-based)
                 self.selection_drag = SelectionDrag::None;
                 self.is_dragging = true;
@@ -2941,12 +3072,7 @@ impl AnsiEditor {
                 self.drag_pos.cur_half_block = half_block_pos;
 
                 if self.paint_undo.is_none() {
-                    let desc = match self.current_tool {
-                        Tool::Pencil => "Pencil",
-                        Tool::Brush => "Brush",
-                        Tool::Erase => "Erase",
-                        _ => "Paint",
-                    };
+                    let desc = "Pencil";
                     self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
                 }
 
@@ -2989,9 +3115,37 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Pipette => {
-                // Pick character/color at position
-                // TODO: Actually pick from buffer
-                ToolEvent::Status(format!("Picked at ({}, {})", pos.x, pos.y))
+                // Pipette: Pick character/color at position (Moebius-style)
+                // Update modifier state based on current keys
+                self.pipette.update_modifiers();
+
+                // Get character at position
+                let ch = self.with_edit_state(|state| {
+                    use icy_engine::TextPane;
+                    state.char_at(pos)
+                });
+
+                // Apply to caret attribute based on modifiers
+                let (take_fg, take_bg) = (self.pipette.take_fg, self.pipette.take_bg);
+                self.with_edit_state(|state| {
+                    if take_fg {
+                        state.set_caret_foreground(ch.attribute.foreground());
+                    }
+                    if take_bg {
+                        state.set_caret_background(ch.attribute.background());
+                    }
+                });
+
+                // Update palette grid to reflect new colors
+                let (fg, bg) = self.with_edit_state(|state| {
+                    let attr = state.get_caret().attribute;
+                    (attr.foreground(), attr.background())
+                });
+                self.palette_grid.set_foreground(fg);
+                self.palette_grid.set_background(bg);
+
+                // TODO: Go back to previous tool (like Moebius)
+                ToolEvent::Commit(format!("Picked color at ({}, {})", pos.x, pos.y))
             }
             Tool::Fill => {
                 use std::collections::HashSet;
@@ -3023,6 +3177,8 @@ impl AnsiEditor {
                 }
 
                 let swap_colors = button == iced::mouse::Button::Right;
+                // Shift key also swaps colors
+                let shift_swap = is_shift_pressed();
 
                 // Begin atomic undo for the entire fill.
                 let _undo = self.with_edit_state(|state| state.begin_atomic_undo("Bucket fill"));
@@ -3039,7 +3195,7 @@ impl AnsiEditor {
                             let use_selection = state.is_something_selected();
 
                             let caret_attr = state.get_caret().attribute;
-                            let (fg, bg) = if swap_colors {
+                            let (fg, bg) = if swap_colors || shift_swap {
                                 (caret_attr.background(), caret_attr.foreground())
                             } else {
                                 (caret_attr.foreground(), caret_attr.background())
@@ -3156,7 +3312,7 @@ impl AnsiEditor {
                             let base_char = { state.get_cur_layer().unwrap().char_at(start_cell_layer) };
 
                             let caret_attr = state.get_caret().attribute;
-                            let (fg, bg) = if swap_colors {
+                            let (fg, bg) = if swap_colors || shift_swap {
                                 (caret_attr.background(), caret_attr.foreground())
                             } else {
                                 (caret_attr.foreground(), caret_attr.background())
@@ -3232,6 +3388,29 @@ impl AnsiEditor {
 
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
+        // Handle layer drag completion
+        if self.layer_drag_active {
+            self.layer_drag_active = false;
+            self.is_dragging = false;
+
+            // Calculate final offset and apply
+            let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
+            let new_offset = self.layer_drag_start_offset + delta;
+
+            self.with_edit_state(|state| {
+                // Clear preview offset and apply actual move
+                if let Some(layer) = state.get_cur_layer_mut() {
+                    layer.set_preview_offset(None);
+                }
+                let _ = state.move_layer(new_offset);
+            });
+
+            // Update layer border display after move
+            self.update_layer_bounds();
+
+            return ToolEvent::Commit("Move layer".to_string());
+        }
+
         if self.is_dragging && self.selection_drag != SelectionDrag::None {
             self.is_dragging = false;
 
@@ -3283,19 +3462,14 @@ impl AnsiEditor {
             return ToolEvent::Redraw;
         }
 
-        if self.is_dragging && matches!(self.current_tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
+        if self.is_dragging && matches!(self.current_tool, Tool::Pencil) {
             self.is_dragging = false;
             self.paint_last_pos = None;
             // Dropping the guard groups everything into one undo entry.
             self.paint_undo = None;
             self.paint_button = iced::mouse::Button::Left;
 
-            let desc = match self.current_tool {
-                Tool::Pencil => "Pencil stroke",
-                Tool::Brush => "Brush stroke",
-                Tool::Erase => "Erase stroke",
-                _ => "Stroke",
-            };
+            let desc = "Pencil stroke";
             return ToolEvent::Commit(desc.to_string());
         }
 
@@ -3378,7 +3552,7 @@ impl AnsiEditor {
         }
 
         match self.current_tool {
-            Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+            Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // TODO: Commit the drawn shape
                 ToolEvent::Commit(format!("{} drawn", self.current_tool.name()))
             }
@@ -3390,6 +3564,22 @@ impl AnsiEditor {
     fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> ToolEvent {
         // Update brush/pencil hover preview (shader rectangle)
         self.update_brush_preview(pos, pixel_position);
+
+        // Pipette tool: always update hover state (even when not dragging)
+        if self.current_tool == Tool::Pipette {
+            self.pipette.cur_pos = Some(pos);
+            self.pipette.update_modifiers();
+
+            // Get character at position
+            let ch = self.with_edit_state(|state| {
+                use icy_engine::TextPane;
+                state.char_at(pos)
+            });
+            self.pipette.cur_char = Some(ch);
+
+            // No special overlay needed - the toolbar shows the picked colors
+            return ToolEvent::Redraw;
+        }
 
         if !self.is_dragging {
             // Just hovering
@@ -3407,10 +3597,28 @@ impl AnsiEditor {
 
         match self.current_tool {
             Tool::Click | Tool::Font | Tool::Select => {
+                // Check if we're doing a layer drag
+                if self.layer_drag_active {
+                    // Calculate new offset from drag delta
+                    let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
+                    let new_offset = self.layer_drag_start_offset + delta;
+
+                    // Update preview offset for visual feedback
+                    self.with_edit_state(|state| {
+                        if let Some(layer) = state.get_cur_layer_mut() {
+                            layer.set_preview_offset(Some(new_offset));
+                        }
+                        state.mark_dirty();
+                    });
+                    // Update layer border display
+                    self.update_layer_bounds();
+                    return ToolEvent::Redraw;
+                }
+
                 self.update_selection_from_drag();
                 ToolEvent::Redraw
             }
-            Tool::Pencil | Tool::Brush | Tool::Erase => {
+            Tool::Pencil => {
                 // Compute current half-block position
                 let new_half_block_pos = self.compute_half_block_pos(pixel_position);
 
@@ -3441,7 +3649,7 @@ impl AnsiEditor {
                         return ToolEvent::Redraw;
                     };
 
-                    let points = icy_engine_edit::brushes::line::get_line_points(last, pos);
+                    let points = icy_engine_edit::brushes::get_line_points(last, pos);
                     for p in points {
                         self.apply_paint_stamp(p, pixel_position, self.paint_button);
                     }
@@ -3463,7 +3671,7 @@ impl AnsiEditor {
     }
 
     fn update_brush_preview(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) {
-        let show_preview = matches!(self.current_tool, Tool::Pencil | Tool::Brush | Tool::Erase);
+        let show_preview = matches!(self.current_tool, Tool::Pencil);
         if !show_preview {
             self.canvas.set_brush_preview(None);
             return;
@@ -3818,6 +4026,13 @@ impl AnsiEditor {
             None
         };
 
+        // Build pipette panel info for Pipette tool
+        let pipette_info = if self.current_tool == Tool::Pipette {
+            Some(self.build_pipette_panel_info(&palette))
+        } else {
+            None
+        };
+
         // Use GPU FKeyToolbar for Click tool, regular TopToolbar for other tools
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.current_tool == Tool::Click {
             self.fkey_toolbar
@@ -3835,6 +4050,7 @@ impl AnsiEditor {
                     caret_bg,
                     &palette,
                     font_panel_info.as_ref(),
+                    pipette_info.as_ref(),
                 )
                 .map(AnsiEditorMessage::TopToolbar)
         };
@@ -4055,7 +4271,7 @@ impl AnsiEditor {
         self.update_mouse_tracking_mode();
 
         // Clear tool hover preview when switching tools.
-        if !matches!(tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
+        if !matches!(tool, Tool::Pencil) {
             self.canvas.set_brush_preview(None);
         }
         // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
@@ -4064,15 +4280,14 @@ impl AnsiEditor {
     fn tool_supports_half_block_mode(tool: Tool) -> bool {
         matches!(
             tool,
-            Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled | Tool::Fill
+            Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled | Tool::Fill
         )
     }
 
     fn update_mouse_tracking_mode(&mut self) {
         // HalfBlock tracking is tied to the tool *options* (brush primary mode), not the tool itself.
-        // Exception: Erase currently has incorrect tool-window options, so we force char tracking.
         let wants_half_block = self.top_toolbar.brush_options.primary == BrushPrimaryMode::HalfBlock;
-        let tool_allows = Self::tool_supports_half_block_mode(self.current_tool) && self.current_tool != Tool::Erase;
+        let tool_allows = Self::tool_supports_half_block_mode(self.current_tool);
 
         let tracking = if wants_half_block && tool_allows {
             icy_engine_gui::MouseTracking::HalfBlock
@@ -4108,6 +4323,33 @@ impl AnsiEditor {
             font_names,
             char_availability,
             outline_style,
+        }
+    }
+
+    /// Build pipette panel info from current state
+    fn build_pipette_panel_info(&self, palette: &icy_engine::Palette) -> PipettePanelInfo {
+        let cur_char = self.pipette.cur_char;
+        let take_fg = self.pipette.take_fg;
+        let take_bg = self.pipette.take_bg;
+
+        let (fg_color, bg_color) = if let Some(ch) = cur_char {
+            let fg_idx = ch.attribute.foreground();
+            let bg_idx = ch.attribute.background();
+
+            let fg_rgb = palette.color(fg_idx).rgb();
+            let bg_rgb = palette.color(bg_idx).rgb();
+
+            (Some(fg_rgb), Some(bg_rgb))
+        } else {
+            (None, None)
+        };
+
+        PipettePanelInfo {
+            cur_char,
+            take_fg,
+            take_bg,
+            fg_color,
+            bg_color,
         }
     }
 }

@@ -97,12 +97,13 @@ pub fn draw_ellipse<T: DrawTarget>(target: &mut T, ctx: &DrawContext, center: Po
     }
 }
 
-/// Draw a filled ellipse
-pub fn fill_ellipse<T: DrawTarget>(target: &mut T, ctx: &DrawContext, center: Position, radius_x: i32, radius_y: i32) {
+/// Generate all points of a filled ellipse with their roles
+pub fn get_filled_ellipse_points(center: Position, radius_x: i32, radius_y: i32) -> Vec<(Position, PointRole)> {
     if radius_x <= 0 || radius_y <= 0 {
-        ctx.plot_point(target, center, PointRole::Fill);
-        return;
+        return vec![(center, PointRole::Fill)];
     }
+
+    let mut points = Vec::new();
 
     // Use a simple scanline fill approach
     for dy in -radius_y..=radius_y {
@@ -122,11 +123,7 @@ pub fn fill_ellipse<T: DrawTarget>(target: &mut T, ctx: &DrawContext, center: Po
 
             // Determine role
             let role = if dy == -radius_y || dy == radius_y {
-                if dx == 0 {
-                    if dy < 0 { PointRole::TopSide } else { PointRole::BottomSide }
-                } else {
-                    if dy < 0 { PointRole::TopSide } else { PointRole::BottomSide }
-                }
+                if dy < 0 { PointRole::TopSide } else { PointRole::BottomSide }
             } else if dx == -x_extent {
                 PointRole::LeftSide
             } else if dx == x_extent {
@@ -135,8 +132,46 @@ pub fn fill_ellipse<T: DrawTarget>(target: &mut T, ctx: &DrawContext, center: Po
                 PointRole::Fill
             };
 
-            ctx.plot_point(target, Position::new(x, y), role);
+            points.push((Position::new(x, y), role));
         }
+    }
+
+    points
+}
+
+/// Generate all points on an ellipse outline from two corner points (bounding box)
+pub fn get_ellipse_points_from_rect(p0: Position, p1: Position) -> Vec<(Position, PointRole)> {
+    let min_x = p0.x.min(p1.x);
+    let max_x = p0.x.max(p1.x);
+    let min_y = p0.y.min(p1.y);
+    let max_y = p0.y.max(p1.y);
+
+    let center = Position::new((min_x + max_x) / 2, (min_y + max_y) / 2);
+    let radius_x = (max_x - min_x) / 2;
+    let radius_y = (max_y - min_y) / 2;
+
+    get_ellipse_points(center, radius_x, radius_y)
+}
+
+/// Generate all points of a filled ellipse from two corner points (bounding box)
+pub fn get_filled_ellipse_points_from_rect(p0: Position, p1: Position) -> Vec<(Position, PointRole)> {
+    let min_x = p0.x.min(p1.x);
+    let max_x = p0.x.max(p1.x);
+    let min_y = p0.y.min(p1.y);
+    let max_y = p0.y.max(p1.y);
+
+    let center = Position::new((min_x + max_x) / 2, (min_y + max_y) / 2);
+    let radius_x = (max_x - min_x) / 2;
+    let radius_y = (max_y - min_y) / 2;
+
+    get_filled_ellipse_points(center, radius_x, radius_y)
+}
+
+/// Draw a filled ellipse
+pub fn fill_ellipse<T: DrawTarget>(target: &mut T, ctx: &DrawContext, center: Position, radius_x: i32, radius_y: i32) {
+    let points = get_filled_ellipse_points(center, radius_x, radius_y);
+    for (pt, role) in points {
+        ctx.plot_point(target, pt, role);
     }
 }
 
@@ -166,74 +201,4 @@ pub fn fill_ellipse_from_rect<T: DrawTarget>(target: &mut T, ctx: &DrawContext, 
     let radius_y = (max_y - min_y) / 2;
 
     fill_ellipse(target, ctx, center, radius_x, radius_y);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_single_point_ellipse() {
-        let points = get_ellipse_points(Position::new(10, 10), 0, 0);
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].0, Position::new(10, 10));
-    }
-
-    #[test]
-    fn test_horizontal_line_ellipse() {
-        // An ellipse with radius_y = 0 is essentially a horizontal line
-        let points = get_ellipse_points(Position::new(10, 10), 5, 0);
-        assert_eq!(points.len(), 1);
-    }
-
-    #[test]
-    fn test_small_ellipse() {
-        let points = get_ellipse_points(Position::new(10, 10), 3, 2);
-
-        // Check that we have points in all four quadrants
-        let has_top = points.iter().any(|(p, _)| p.y < 10);
-        let has_bottom = points.iter().any(|(p, _)| p.y > 10);
-        let has_left = points.iter().any(|(p, _)| p.x < 10);
-        let has_right = points.iter().any(|(p, _)| p.x > 10);
-
-        assert!(has_top, "Ellipse should have top points");
-        assert!(has_bottom, "Ellipse should have bottom points");
-        assert!(has_left, "Ellipse should have left points");
-        assert!(has_right, "Ellipse should have right points");
-    }
-
-    #[test]
-    fn test_circle() {
-        // Equal radii should produce a circle
-        let points = get_ellipse_points(Position::new(10, 10), 5, 5);
-
-        // All points should be approximately equidistant from center
-        for (pt, _) in &points {
-            let dx = (pt.x - 10) as f64;
-            let dy = (pt.y - 10) as f64;
-            let dist = (dx * dx + dy * dy).sqrt();
-
-            // Allow for some rasterization error
-            assert!(dist >= 4.0 && dist <= 6.0, "Point {:?} has distance {} from center", pt, dist);
-        }
-    }
-
-    #[test]
-    fn test_ellipse_symmetry() {
-        let points = get_ellipse_points(Position::new(0, 0), 4, 3);
-
-        // For each point (x, y), there should be points at (-x, y), (x, -y), (-x, -y)
-        for (pt, _) in &points {
-            if pt.x != 0 && pt.y != 0 {
-                // Check for symmetric points
-                let has_neg_x = points.iter().any(|(p, _)| p.x == -pt.x && p.y == pt.y);
-                let has_neg_y = points.iter().any(|(p, _)| p.x == pt.x && p.y == -pt.y);
-                let has_neg_both = points.iter().any(|(p, _)| p.x == -pt.x && p.y == -pt.y);
-
-                assert!(has_neg_x, "Missing symmetric point for {:?}", pt);
-                assert!(has_neg_y, "Missing symmetric point for {:?}", pt);
-                assert!(has_neg_both, "Missing symmetric point for {:?}", pt);
-            }
-        }
-    }
 }

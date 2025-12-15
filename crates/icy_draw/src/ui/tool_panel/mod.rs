@@ -564,17 +564,17 @@ const STANDARD_ICONS: &[&[u8]] = &[
     include_bytes!("../../../data/icons/select.svg"),            // 1: Select
     include_bytes!("../../../data/icons/pencil.svg"),            // 2: Pencil
     include_bytes!("../../../data/icons/line.svg"),              // 3: Line
-    include_bytes!("../../../data/icons/paint_brush.svg"),       // 4: Brush
-    include_bytes!("../../../data/icons/eraser.svg"),            // 5: Erase
-    include_bytes!("../../../data/icons/rectangle_outline.svg"), // 6: RectangleOutline
-    include_bytes!("../../../data/icons/rectangle_filled.svg"),  // 7: RectangleFilled
-    include_bytes!("../../../data/icons/ellipse_outline.svg"),   // 8: EllipseOutline
-    include_bytes!("../../../data/icons/ellipse_filled.svg"),    // 9: EllipseFilled
-    include_bytes!("../../../data/icons/fill.svg"),              // 10: Fill
-    include_bytes!("../../../data/icons/dropper.svg"),           // 11: Pipette
-    include_bytes!("../../../data/icons/move.svg"),              // 12: Shifter
-    include_bytes!("../../../data/icons/font.svg"),              // 13: Font
-    include_bytes!("../../../data/icons/tag.svg"),               // 14: Tag
+    include_bytes!("../../../data/icons/rectangle_outline.svg"), // 4: RectangleOutline
+    include_bytes!("../../../data/icons/rectangle_filled.svg"),  // 5: RectangleFilled
+    include_bytes!("../../../data/icons/ellipse_outline.svg"),   // 6: EllipseOutline
+    include_bytes!("../../../data/icons/ellipse_filled.svg"),    // 7: EllipseFilled
+    include_bytes!("../../../data/icons/fill.svg"),              // 8: Fill
+    include_bytes!("../../../data/icons/dropper.svg"),           // 9: Pipette
+    include_bytes!("../../../data/icons/font.svg"),              // 10: Font
+    include_bytes!("../../../data/icons/tag.svg"),               // 11: Tag
+    include_bytes!("../../../data/icons/cursor.svg"),            // 12: Placeholder (duplicate)
+    include_bytes!("../../../data/icons/cursor.svg"),            // 13: Placeholder (duplicate)
+    include_bytes!("../../../data/icons/cursor.svg"),            // 14: Placeholder (duplicate)
     include_bytes!("../../../data/icons/cursor.svg"),            // 15: Placeholder (duplicate)
 ];
 

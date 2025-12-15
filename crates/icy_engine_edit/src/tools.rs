@@ -13,17 +13,13 @@ pub enum Tool {
     /// Rectangle selection mode
     Select,
 
-    // === Toggle Pair 2: Pencil / Line ===
+    // === Toggle Pair 2: Pencil ===
     /// Draw single characters (freehand)
     Pencil,
+
+    // === Single Tool: Line ===
     /// Draw straight lines
     Line,
-
-    // === Toggle Pair 3: Brush / Erase ===
-    /// Paint with brush (variable size)
-    Brush,
-    /// Erase characters
-    Erase,
 
     // === Toggle Pair 4: Rectangle Outline / Filled ===
     /// Draw rectangle outline
@@ -37,13 +33,9 @@ pub enum Tool {
     /// Draw filled ellipse
     EllipseFilled,
 
-    // === Toggle Pair 6: Pipette / Shifter ===
+    // === Single Tools (no toggle partner) ===
     /// Pick color/character from canvas
     Pipette,
-    /// Shift/move characters
-    Shifter,
-
-    // === Single Tools (no toggle partner) ===
     /// Flood fill area
     Fill,
     /// TDF/Figlet font rendering
@@ -87,17 +79,16 @@ impl ToolPair {
     }
 }
 
-/// The 9 tool slots in the toolbar (each can be a pair or single)
-pub const TOOL_SLOTS: [ToolPair; 9] = [
+/// The 8 tool slots in the toolbar (each can be a pair or single)
+pub const TOOL_SLOTS: [ToolPair; 8] = [
     ToolPair::new(Tool::Click, Tool::Select),
-    ToolPair::new(Tool::Pencil, Tool::Line),
-    ToolPair::new(Tool::Brush, Tool::Erase),
+    ToolPair::single(Tool::Pencil),
+    ToolPair::single(Tool::Line),
     ToolPair::new(Tool::RectangleOutline, Tool::RectangleFilled),
     ToolPair::new(Tool::EllipseOutline, Tool::EllipseFilled),
     ToolPair::single(Tool::Fill),
-    ToolPair::new(Tool::Pipette, Tool::Shifter),
+    ToolPair::single(Tool::Pipette),
     ToolPair::single(Tool::Font),
-    ToolPair::single(Tool::Tag),
 ];
 
 impl Tool {
@@ -108,15 +99,12 @@ impl Tool {
             Tool::Select => "select",
             Tool::Pencil => "pencil",
             Tool::Line => "line",
-            Tool::Brush => "paint_brush",
-            Tool::Erase => "eraser",
             Tool::RectangleOutline => "rectangle_outline",
             Tool::RectangleFilled => "rectangle_filled",
             Tool::EllipseOutline => "ellipse_outline",
             Tool::EllipseFilled => "ellipse_filled",
             Tool::Fill => "fill",
             Tool::Pipette => "dropper",
-            Tool::Shifter => "swap",
             Tool::Font => "font",
             Tool::Tag => "tag",
         }
@@ -129,15 +117,12 @@ impl Tool {
             Tool::Select => "Select",
             Tool::Pencil => "Pencil",
             Tool::Line => "Line",
-            Tool::Brush => "Brush",
-            Tool::Erase => "Erase",
             Tool::RectangleOutline => "Rectangle",
             Tool::RectangleFilled => "Filled Rectangle",
             Tool::EllipseOutline => "Ellipse",
             Tool::EllipseFilled => "Filled Ellipse",
             Tool::Fill => "Fill",
             Tool::Pipette => "Pipette",
-            Tool::Shifter => "Shifter",
             Tool::Font => "Font",
             Tool::Tag => "Tag",
         }
@@ -148,17 +133,14 @@ impl Tool {
         match self {
             Tool::Click => "Keyboard input and cursor navigation (click again for Select)",
             Tool::Select => "Rectangle selection (click again for Click)",
-            Tool::Pencil => "Draw single characters (click again for Line)",
-            Tool::Line => "Draw straight lines (click again for Pencil)",
-            Tool::Brush => "Paint with brush (click again for Erase)",
-            Tool::Erase => "Erase characters (click again for Brush)",
+            Tool::Pencil => "Draw single characters",
+            Tool::Line => "Draw straight lines",
             Tool::RectangleOutline => "Draw rectangle outline (click again for Filled)",
             Tool::RectangleFilled => "Draw filled rectangle (click again for Outline)",
             Tool::EllipseOutline => "Draw ellipse outline (click again for Filled)",
             Tool::EllipseFilled => "Draw filled ellipse (click again for Outline)",
             Tool::Fill => "Flood fill area",
-            Tool::Pipette => "Pick color/character (click again for Shifter)",
-            Tool::Shifter => "Shift/move characters (click again for Pipette)",
+            Tool::Pipette => "Pick color/character",
             Tool::Font => "TDF/Figlet font rendering",
             Tool::Tag => "Add annotation tags",
         }
@@ -171,13 +153,10 @@ impl Tool {
             Tool::Select => Some('s'),
             Tool::Pencil => Some('p'),
             Tool::Line => Some('l'),
-            Tool::Brush => Some('b'),
-            Tool::Erase => Some('e'),
             Tool::RectangleOutline | Tool::RectangleFilled => Some('r'),
             Tool::EllipseOutline | Tool::EllipseFilled => Some('o'),
             Tool::Fill => Some('f'),
             Tool::Pipette => Some('i'),
-            Tool::Shifter => Some('h'),
             Tool::Font => Some('t'),
             Tool::Tag => Some('g'),
         }
@@ -215,15 +194,7 @@ impl Tool {
     pub fn needs_drag(&self) -> bool {
         matches!(
             self,
-            Tool::Select
-                | Tool::Pencil
-                | Tool::Line
-                | Tool::Brush
-                | Tool::Erase
-                | Tool::RectangleOutline
-                | Tool::RectangleFilled
-                | Tool::EllipseOutline
-                | Tool::EllipseFilled
+            Tool::Select | Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
         )
     }
 }
@@ -300,7 +271,7 @@ mod tests {
         assert_eq!(Tool::Click.slot_index(), 0);
         assert_eq!(Tool::Select.slot_index(), 0);
         assert_eq!(Tool::Pencil.slot_index(), 1);
-        assert_eq!(Tool::Line.slot_index(), 1);
+        assert_eq!(Tool::Line.slot_index(), 2);
         assert_eq!(Tool::Fill.slot_index(), 5);
     }
 

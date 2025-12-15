@@ -105,16 +105,15 @@ impl BitFontToolPanel {
     /// Map tool to icon index in standard atlas
     fn tool_to_icon_index(&self, tool: BitFontTool) -> Option<usize> {
         // Standard atlas icon order:
-        // 0: Click, 1: Select, 2: Pencil, 3: Line, 4: Brush, 5: Erase,
-        // 6: RectangleOutline, 7: RectangleFilled, 8: EllipseOutline, 9: EllipseFilled,
-        // 10: Fill, 11: Pipette, 12: Shifter, 13: Font, 14: Tag
+        // 0: Click, 1: Select, 2: Pencil, 3: Line, 4: RectangleOutline, 5: RectangleFilled,
+        // 6: EllipseOutline, 7: EllipseFilled, 8: Fill, 9: Pipette, 10: Font, 11: Tag
         match tool {
             BitFontTool::Click => Some(0),
             BitFontTool::Select => Some(1),
             BitFontTool::Line => Some(3),
-            BitFontTool::RectangleOutline => Some(6),
-            BitFontTool::RectangleFilled => Some(7),
-            BitFontTool::Fill => Some(10),
+            BitFontTool::RectangleOutline => Some(4),
+            BitFontTool::RectangleFilled => Some(5),
+            BitFontTool::Fill => Some(8),
         }
     }
 
