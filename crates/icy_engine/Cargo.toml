@@ -71,6 +71,10 @@ harness = false
 name = "icy_draw_bench"
 harness = false
 
+[[bench]]
+name = "ansi_save"
+harness = false
+
 [[bin]]
 name = "generate_icy_draw_testdata"
 path = "src/bin/generate_icy_draw_testdata.rs"

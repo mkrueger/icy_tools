@@ -9,6 +9,8 @@ pub use character_font_format::*;
 mod file_format;
 pub use file_format::*;
 
+pub mod ansi_v2;
+
 mod image_format;
 use icy_sauce::SauceRecord;
 pub use image_format::*;

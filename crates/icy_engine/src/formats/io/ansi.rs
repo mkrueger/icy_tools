@@ -321,7 +321,9 @@ impl StringGenerator {
             state.is_double_underlined = true;
         }
 
-        if cur_fore_rgb != state.fg.rgb() && !ch.is_transparent() {
+        // Only skip foreground changes for truly blank cells. Using `is_transparent()` here
+        // misclassifies non-space glyphs where fg==bg (e.g. degree sign on black) and breaks roundtrips.
+        if cur_fore_rgb != state.fg.rgb() && !(ch.ch == '\0' || ch.ch == ' ') {
             if fg_is_ext {
                 // Extended palette color - write directly as 38;5;n
                 sgr.push(38);

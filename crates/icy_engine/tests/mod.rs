@@ -54,14 +54,18 @@ fn test_set_letter_spacing() {
 pub fn compare_output(screen: &dyn Screen, src_file: &Path) {
     let rect: Rectangle = screen.size().into();
     let (rendered_size, rendered_data) = screen.render_to_rgba(&rect.into());
-    compare_rendered_output(&rendered_size, &rendered_data, src_file);
+    let dims = screen.font_dimensions();
+
+    compare_rendered_output(&rendered_size, dims.width as usize, dims.height as usize, &rendered_data, src_file);
 }
 
 pub fn compare_buffer_output(buffer: &TextBuffer, src_file: &Path) {
     let rect: Rectangle = Rectangle::from(0, 0, buffer.width(), buffer.height());
     let opts = RenderOptions::from(rect);
     let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
-    compare_rendered_output(&rendered_size, &rendered_data, src_file);
+    let dims = buffer.font_dimensions();
+
+    compare_rendered_output(&rendered_size, dims.width as usize, dims.height as usize, &rendered_data, src_file);
 }
 
 /// Compare buffer output with custom settings for testing aspect_ratio and use_letter_spacing flags
@@ -74,10 +78,11 @@ pub fn compare_buffer_output_with_options(buffer: &mut TextBuffer, src_file: &Pa
     let rect: Rectangle = Rectangle::from(0, 0, buffer.width(), buffer.height());
     let opts = RenderOptions::from(rect);
     let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
-    compare_rendered_output(&rendered_size, &rendered_data, src_file);
+    let dims = buffer.font_dimensions();
+    compare_rendered_output(&rendered_size, dims.width as usize, dims.height as usize, &rendered_data, src_file);
 }
 
-fn compare_rendered_output(rendered_size: &icy_engine::Size, rendered_data: &[u8], src_file: &Path) {
+fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font_h: usize, rendered_data: &[u8], src_file: &Path) {
     let filename = src_file.file_name().unwrap().to_string_lossy().to_string();
     let png_file = src_file.with_extension("png");
     let output_path = src_file.with_extension("output.png");
@@ -172,8 +177,10 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, rendered_data: &[u8
 
         let (x, y, expected, got) = mismatch.unwrap();
         panic!(
-            "Test failed for: {}\nMismatch pixel at x: {}, y: {}.\nExpected: {:?}\nGot: {:?}\nOutput saved to: file://{}\nShould look like: file://{}\n",
+            "Test failed for: {}\nMismatch {}x{} pixel at x: {}, y: {}.\nExpected: {:?}\nGot: {:?}\nOutput saved to: file://{}\nShould look like: file://{}\n",
             filename,
+            x / font_w,
+            y / font_h,
             x,
             y,
             expected,

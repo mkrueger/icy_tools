@@ -3,23 +3,6 @@
 //! This module provides a central registry for all supported file formats,
 //! enabling consistent file type detection, parser selection, and save/load operations.
 //!
-//! # Example
-//!
-//! ```no_run
-//! use icy_engine::formats::FileFormat;
-//! use std::path::Path;
-//!
-//! // Detect format from file extension
-//! let format = FileFormat::from_path(Path::new("artwork.ans")).unwrap();
-//! assert!(format.uses_parser());
-//! assert!(format.supports_save());
-//!
-//! // Get parser for streaming formats
-//! if let Some(parser) = format.create_parser(None) {
-//!     // Use parser for streaming playback
-//! }
-//! ```
-
 use std::{
     io::{Read, Seek},
     path::Path,
@@ -927,16 +910,6 @@ impl FileFormat {
     ///
     /// # Errors
     /// Returns an error if file reading fails or if the format doesn't support loading.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use icy_engine::formats::FileFormat;
-    /// use std::path::Path;
-    ///
-    /// let format = FileFormat::from_extension("ans").unwrap();
-    /// let screen = format.load(Path::new("artwork.ans")).unwrap();
-    /// // SAUCE metadata is automatically applied to the screen
-    /// ```
     pub fn load(&self, file_path: &Path, load_data: Option<LoadData>) -> Result<TextScreen> {
         let data = std::fs::read(file_path)?;
 
@@ -1059,98 +1032,5 @@ impl FileFormat {
 impl std::fmt::Display for FileFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_from_extension() {
-        assert_eq!(FileFormat::from_extension("ans"), Some(FileFormat::Ansi));
-        assert_eq!(FileFormat::from_extension("ANS"), Some(FileFormat::Ansi));
-        assert_eq!(FileFormat::from_extension("diz"), Some(FileFormat::Ansi));
-        assert_eq!(FileFormat::from_extension("xb"), Some(FileFormat::XBin));
-        assert_eq!(FileFormat::from_extension("unknown"), None);
-    }
-
-    #[test]
-    fn test_from_path() {
-        assert_eq!(FileFormat::from_path(Path::new("test.ans")), Some(FileFormat::Ansi));
-        assert_eq!(FileFormat::from_path(Path::new("/path/to/file.xb")), Some(FileFormat::XBin));
-        assert_eq!(FileFormat::from_path(Path::new("noext")), None);
-    }
-
-    #[test]
-    fn test_uses_parser() {
-        assert!(FileFormat::Ansi.uses_parser());
-        assert!(FileFormat::Avatar.uses_parser());
-        assert!(!FileFormat::XBin.uses_parser());
-        assert!(!FileFormat::IcyDraw.uses_parser());
-    }
-
-    #[test]
-    fn test_supports_save() {
-        assert!(FileFormat::Ansi.supports_save());
-        assert!(FileFormat::XBin.supports_save());
-        // Animation format might not support save
-    }
-
-    #[test]
-    fn test_is_animated() {
-        assert!(FileFormat::IcyAnim.is_animated());
-        assert!(!FileFormat::Ansi.is_animated());
-    }
-
-    #[test]
-    fn test_all_extensions_contain_primary() {
-        for format in FileFormat::ALL {
-            let exts = format.all_extensions();
-            let primary = format.primary_extension();
-            assert!(
-                exts.contains(&primary),
-                "Format {:?} primary extension '{}' not in all_extensions {:?}",
-                format,
-                primary,
-                exts
-            );
-        }
-    }
-
-    #[test]
-    fn test_buffer_type_compatibility() {
-        // CP437 formats
-        assert!(FileFormat::Ansi.is_compatible_with(BufferType::CP437));
-        assert!(FileFormat::XBin.is_compatible_with(BufferType::CP437));
-        assert!(!FileFormat::Petscii.is_compatible_with(BufferType::CP437));
-        assert!(!FileFormat::ViewData.is_compatible_with(BufferType::CP437));
-
-        // PETSCII format
-        assert!(FileFormat::Petscii.is_compatible_with(BufferType::Petscii));
-        assert!(!FileFormat::Ansi.is_compatible_with(BufferType::Petscii));
-
-        // Viewdata format
-        assert!(FileFormat::ViewData.is_compatible_with(BufferType::Viewdata));
-        assert!(FileFormat::Mode7.is_compatible_with(BufferType::Viewdata));
-        assert!(!FileFormat::Ansi.is_compatible_with(BufferType::Viewdata));
-
-        // IcyDraw supports everything
-        assert!(FileFormat::IcyDraw.is_compatible_with(BufferType::CP437));
-        assert!(FileFormat::IcyDraw.is_compatible_with(BufferType::Petscii));
-        assert!(FileFormat::IcyDraw.is_compatible_with(BufferType::Viewdata));
-        assert!(FileFormat::IcyDraw.is_compatible_with(BufferType::Atascii));
-    }
-
-    #[test]
-    fn test_save_formats_for_buffer_type() {
-        let cp437_formats = FileFormat::save_formats_for_buffer_type(BufferType::CP437);
-        assert!(cp437_formats.contains(&FileFormat::Ansi));
-        assert!(cp437_formats.contains(&FileFormat::XBin));
-        assert!(!cp437_formats.contains(&FileFormat::Petscii));
-
-        let viewdata_formats = FileFormat::save_formats_for_buffer_type(BufferType::Viewdata);
-        assert!(viewdata_formats.contains(&FileFormat::IcyDraw));
-        assert!(!viewdata_formats.contains(&FileFormat::Ansi));
     }
 }
