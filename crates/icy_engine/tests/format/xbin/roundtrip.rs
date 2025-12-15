@@ -33,8 +33,6 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
     let test_dir: &Path = Path::new("tests/format/xbin/test_data");
     let icy_path = test_dir.join(filename);
 
-    println!("Testing roundtrip for: {}", icy_path.display());
-
     // Step 1: Load the .icy file
     let icy_format = FileFormat::IcyDraw;
     let original = icy_format
@@ -59,8 +57,6 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
         .to_bytes(&original.buffer, &save_options)
         .unwrap_or_else(|e| panic!("Failed to save {} as XBin: {:?}", filename, e));
 
-    println!("  Saved as XBin (uncompressed): {} bytes", xbin_bytes.len());
-
     // Step 3: Load the XBin back
     let reloaded = xbin_format
         .from_bytes(&xbin_bytes, None)
@@ -75,15 +71,12 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
 
     // Step 4: Compare original with reloaded
     compare_buffers(&original.buffer, &reloaded.buffer, CompareOptions::ALL);
-    println!("  ✓ Uncompressed roundtrip passed");
 
     // Step 5: Also test with compression
     save_options.compress = true;
     let xbin_compressed = xbin_format
         .to_bytes(&original.buffer, &save_options)
         .unwrap_or_else(|e| panic!("Failed to save {} as compressed XBin: {:?}", filename, e));
-
-    println!("  Saved as XBin (compressed): {} bytes", xbin_compressed.len());
 
     // Verify compression size hasn't regressed
     assert_eq!(
@@ -100,5 +93,4 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
         .unwrap_or_else(|e| panic!("Failed to reload compressed XBin for {}: {:?}", filename, e));
 
     compare_buffers(&original.buffer, &reloaded_compressed.buffer, CompareOptions::ALL);
-    println!("  ✓ Compressed roundtrip passed");
 }

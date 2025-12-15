@@ -136,7 +136,8 @@ impl Screen for ScrollbackBuffer {
     }
 
     fn resolution(&self) -> Size {
-        // Resolution is the size of the current visible screen (not including scrollback)
+        // Resolution is the size of the current visible screen in pixels (not including scrollback)
+        // cur_screen.size is already in pixels from render_region_to_rgba
         let mut h = self.cur_screen.size.height;
         if self.scan_lines {
             h *= 2;
@@ -145,7 +146,8 @@ impl Screen for ScrollbackBuffer {
     }
 
     fn virtual_size(&self) -> Size {
-        // Virtual size includes all scrollback chunks + current screen
+        // Virtual size includes all scrollback chunks + current screen in pixels
+        // chunk.size is already in pixels from render_region_to_rgba
         let width = if self.cur_screen.size.width > 0 {
             self.cur_screen.size.width
         } else if let Some(first_chunk) = self.chunks.first() {

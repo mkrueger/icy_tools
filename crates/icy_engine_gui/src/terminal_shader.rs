@@ -150,10 +150,14 @@ struct CRTUniforms {
     brush_preview_rect: [f32; 4],
     /// Preview enabled (1.0 = enabled, 0.0 = disabled)
     brush_preview_enabled: f32,
-    /// Padding for 16-byte alignment
+    /// Padding to match WGSL alignment.
     ///
-    /// NOTE: WGSL `vec3<f32>` in a uniform buffer consumes 16 bytes (std140-like),
-    /// so our Rust-side padding must also be 16 bytes to keep the struct size in sync.
+    /// WGSL has `_brush_preview_padding: vec3<f32>`, which is **16-byte aligned** in
+    /// uniform buffers. Because `brush_preview_enabled` is only 4 bytes, WGSL inserts
+    /// 12 bytes of implicit padding before the vec3. We must mirror that here or all
+    /// following fields (incl. `terminal_rect`) are read at the wrong offsets.
+    _brush_preview_padding0: [f32; 3],
+    /// The WGSL vec3 consumes 16 bytes in uniforms, so we store 4 floats.
     _brush_preview_padding: [f32; 4],
 
     // Font dimensions for selection mask sampling
@@ -169,9 +173,8 @@ struct CRTUniforms {
     tool_overlay_params: [f32; 4],
 
     // Terminal area within the full viewport (for rendering selection outside document bounds)
-    /// Terminal area in normalized UV coordinates (start_x, start_y, end_x, end_y)
-    /// This defines where the actual terminal content is rendered within the full widget area
-    terminal_area: [f32; 4],
+    /// Terminal rect in normalized UV coordinates (start_x, start_y, width, height)
+    terminal_rect: [f32; 4],
 }
 
 #[cfg(test)]
@@ -182,7 +185,7 @@ mod tests {
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
-        assert_eq!(std::mem::size_of::<CRTUniforms>(), 560);
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 576);
     }
 }
 
@@ -362,6 +365,8 @@ pub struct TerminalShaderRenderer {
 }
 
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static DEBUG_RENDER_INFO_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static DEBUG_RENDER_PASS_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static mut FILTER_MODE: iced::wgpu::FilterMode = iced::wgpu::FilterMode::Linear;
 
 impl shader::Pipeline for TerminalShaderRenderer {
@@ -623,7 +628,7 @@ impl shader::Primitive for TerminalShader {
         pipeline: &mut Self::Pipeline,
         device: &iced::wgpu::Device,
         queue: &iced::wgpu::Queue,
-        _bounds: &iced::Rectangle,
+        bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
         let scale_factor = _viewport.scale_factor() as f32;
@@ -1296,10 +1301,10 @@ impl shader::Primitive for TerminalShader {
         // `render()` only receives `clip_bounds` (scissor), so we persist the
         // real widget bounds here to prevent viewport-based scaling.
         if let Some(resources) = pipeline.instances.get_mut(&id) {
-            let vp_x = (_bounds.x * scale_factor).round();
-            let vp_y = (_bounds.y * scale_factor).round();
-            let vp_w = (_bounds.width * scale_factor).round().max(1.0);
-            let vp_h = (_bounds.height * scale_factor).round().max(1.0);
+            let vp_x = (bounds.x * scale_factor).round();
+            let vp_y = (bounds.y * scale_factor).round();
+            let vp_w = (bounds.width * scale_factor).round().max(1.0);
+            let vp_h = (bounds.height * scale_factor).round().max(1.0);
             resources.viewport_px = [vp_x, vp_y, vp_w, vp_h];
         }
 
@@ -1314,23 +1319,21 @@ impl shader::Primitive for TerminalShader {
         // inconsistent and can lead to perceived stretching.
         let term_w = self.visible_width.max(1.0);
         let term_h = self.visible_height.max(1.0);
-        let avail_w = _bounds.width.max(1.0);
-        let avail_h = _bounds.height.max(1.0);
+        let avail_w = bounds.width.max(1.0);
+        let avail_h = bounds.height.max(1.0);
         let use_int = self.monitor_settings.use_integer_scaling;
         let final_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
         let scaled_w = (term_w * final_scale).min(avail_w);
         let scaled_h = (term_h * final_scale).min(avail_h);
 
-        // Calculate terminal area within the full viewport (normalized 0-1 coordinates)
-        // This tells the shader where the actual terminal content is rendered
+        // terminal_rect is consumed by WGSL as (start_x, start_y, width, height) in normalized 0-1 coords.
         let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
         let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
-        let terminal_area = [
-            offset_x / avail_w,              // start_x (normalized)
-            offset_y / avail_h,              // start_y (normalized)
-            (offset_x + scaled_w) / avail_w, // end_x (normalized)
-            (offset_y + scaled_h) / avail_h, // end_y (normalized)
-        ];
+        let start_x = offset_x / avail_w;
+        let start_y = offset_y / avail_h;
+        let width_n = scaled_w / avail_w;
+        let height_n = scaled_h / avail_h;
+        let terminal_rect = [start_x, start_y, width_n, height_n];
 
         // Mouse events are handled in widget-local logical coordinates.
         // Keep RenderInfo in the same space (do NOT use clip/scissor rectangles).
@@ -1517,6 +1520,7 @@ impl shader::Primitive for TerminalShader {
             // Brush/Pencil preview uniforms
             brush_preview_rect: self.brush_preview_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
             brush_preview_enabled: if self.brush_preview_rect.is_some() { 1.0 } else { 0.0 },
+            _brush_preview_padding0: [0.0; 3],
             _brush_preview_padding: [0.0; 4],
 
             // Font dimensions for selection mask
@@ -1534,8 +1538,7 @@ impl shader::Primitive for TerminalShader {
                 [1.0, 1.0, 1.0, 0.0]
             },
 
-            // Terminal area within the full viewport
-            terminal_area,
+            terminal_rect,
         };
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);

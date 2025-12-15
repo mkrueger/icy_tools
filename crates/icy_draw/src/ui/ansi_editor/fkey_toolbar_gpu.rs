@@ -410,7 +410,6 @@ fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     let gh = size.height.max(1) as u32;
     let atlas_w = gw * 16;
     let atlas_h = gh * 16;
-    println!("Building glyph atlas: {}x{} (glyph {}x{})", atlas_w, atlas_h, gw, gh);
     let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
 
     for code in 0u32..256u32 {

@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use iced::{Color, mouse, widget};
 use icy_engine::Screen;
-
+use crate::ScalingMode;
 use crate::{EditorMarkers, RenderInfo, ScrollbarState, SharedRenderCacheHandle, Viewport, create_shared_render_cache};
 
 pub struct Terminal {
@@ -300,7 +300,7 @@ impl Terminal {
         let visible_height = vp.visible_height;
         drop(vp);
 
-        let zoom = crate::ScalingMode::Auto.compute_zoom(content_width, content_height, visible_width, visible_height, use_integer_scaling);
+        let zoom = ScalingMode::Auto.compute_zoom(content_width, content_height, visible_width, visible_height, use_integer_scaling);
 
         self.set_zoom(zoom);
         zoom

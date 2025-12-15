@@ -77,22 +77,51 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Get viewport info
             let vp = self.term.viewport.read();
-            // Single source of truth:
-            // - Widget bounds are in logical pixels
-            // - `vp.zoom` is already the effective zoom (manual or computed via auto-fit)
-            let effective_zoom = vp.zoom.max(0.001);
 
-            visible_height = (bounds.height / effective_zoom).min(vp.content_height);
-            visible_width = (bounds.width / effective_zoom).min(vp.content_width);
+            // The visible region must maintain the content's aspect ratio.
+            // We use resolution() for the visible aspect ratio (terminal size × font),
+            // not the full content_height which includes scrollback.
+            let resolution = screen.resolution();
+            let res_w = resolution.width as f32;
+            let res_h = resolution.height as f32;
 
-            let max_scroll_y = (vp.content_height - visible_height).max(0.0);
-            scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+            // CRITICAL: visible_width/height define what portion of the document is shown.
+            // The shader maps UV 0-1 over visible_width/height, so these MUST match
+            // the actual content dimensions to avoid stretching.
+            //
+            // For Auto scaling: show the entire terminal (resolution), centered in widget
+            // For Manual scaling: show a portion based on zoom level
+            if self.monitor_settings.scaling_mode.is_auto() {
+                // Auto mode: entire resolution is visible, shader will center it
+                visible_width = res_w;
+                visible_height = res_h;
+                // Keep the current scroll position (e.g. scrollback mode).
+                // Forcing (0,0) can show an empty region when content isn't at top-left.
+                let max_scroll_y = (vp.content_height - visible_height).max(0.0);
+                scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
 
-            let max_scroll_x = (vp.content_width - visible_width).max(0.0);
-            scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+                let max_scroll_x = (vp.content_width - visible_width).max(0.0);
+                scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+            } else {
+                // Manual zoom: calculate visible portion based on zoom
+                let zoom = self
+                    .monitor_settings
+                    .scaling_mode
+                    .compute_zoom(res_w, res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
+                    .max(0.001);
+
+                visible_width = (bounds.width / zoom).min(res_w);
+                visible_height = (bounds.height / zoom).min(res_h);
+
+                let max_scroll_y = (vp.content_height - visible_height).max(0.0);
+                scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+
+                let max_scroll_x = (vp.content_width - visible_width).max(0.0);
+                scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+            }
 
             full_content_height = vp.content_height;
-            texture_width = screen.resolution().width as u32;
+            texture_width = resolution.width as u32;
 
             // Clear viewport changed flag
             if vp.changed.load(std::sync::atomic::Ordering::Acquire) {

@@ -2671,7 +2671,6 @@ impl MainWindow {
 
     /// Handle events passed from the window manager
     pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
-        println!("MainWindow handling event: {:?}", event);
         // Try the command handler first for both keyboard and mouse events
         if let Some(msg) = self.commands.handle(event) {
             return (Some(msg), Task::none());

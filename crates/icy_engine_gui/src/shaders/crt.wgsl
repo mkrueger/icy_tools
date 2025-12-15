@@ -116,7 +116,7 @@ struct Uniforms {
     tool_overlay_params: vec4<f32>,
 
     // Terminal area within the full viewport (for rendering selection outside document bounds)
-    terminal_area: vec4<f32>,    // (start_x, start_y, end_x, end_y) in normalized UV coordinates
+    terminal_rect: vec4<f32>,    // (start_x, start_y, width, height) in normalized UV coordinates
 }
 
 struct MonitorColor {
@@ -587,31 +587,10 @@ fn render_outside_terminal(doc_pixel: vec2<f32>, viewport_uv: vec2<f32>) -> vec4
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // The viewport now covers the entire widget area, not just the terminal.
-    // terminal_area defines where the actual terminal is within the viewport:
-    // (start_x, start_y, end_x, end_y) in normalized UV coordinates (0-1)
-    var term_start = uniforms.terminal_area.xy;
-    var term_end = uniforms.terminal_area.zw;
-
-    // Be robust against bad/uninitialized uniform data (NaN/Inf or degenerate rect).
-    // If this goes wrong, inside_terminal will be false everywhere and nothing is drawn.
-    // WGSL doesn't provide `isNan/isInf` in all toolchains, so we implement a conservative check.
-    let nan = any(term_start != term_start) || any(term_end != term_end);
-    // Treat extremely large values as invalid (covers Inf and many uninitialized cases).
-    let huge = any(abs(term_start) > vec2<f32>(1.0e20)) || any(abs(term_end) > vec2<f32>(1.0e20));
-    if (nan || huge) {
-        term_start = vec2<f32>(0.0, 0.0);
-        term_end = vec2<f32>(1.0, 1.0);
-    }
-    term_start = clamp(term_start, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
-    term_end = clamp(term_end, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
-
-    var term_size = term_end - term_start;
-    let eps = 0.00001;
-    if (term_size.x <= eps || term_size.y <= eps) {
-        term_start = vec2<f32>(0.0, 0.0);
-        term_end = vec2<f32>(1.0, 1.0);
-        term_size = vec2<f32>(1.0, 1.0);
-    }
+    // terminal_rect defines where the actual terminal is within the viewport:
+    // (start_x, start_y, width, height) in normalized UV coordinates (0-1)
+    var term_start = uniforms.terminal_rect.xy;
+    var term_size = uniforms.terminal_rect.zw;
     
     // Transform viewport UV to terminal UV
     // viewport_uv is in full widget space, terminal_uv is in terminal space (0-1)
@@ -619,8 +598,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let terminal_uv = (viewport_uv - term_start) / term_size;
     
     // Check if we're inside the terminal area
-    let inside_terminal = viewport_uv.x >= term_start.x && viewport_uv.x <= term_end.x &&
-                          viewport_uv.y >= term_start.y && viewport_uv.y <= term_end.y;
+    let inside_terminal = viewport_uv.x >= term_start.x && viewport_uv.x <= term_start.x + term_size.x &&
+                          viewport_uv.y >= term_start.y && viewport_uv.y <= term_start.y + term_size.y;
     
     // Apply wobble & curvature to terminal UV (only meaningful inside terminal)
     let wobbled_uv = apply_sync_wobble(terminal_uv);

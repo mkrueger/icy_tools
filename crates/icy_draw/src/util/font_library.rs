@@ -163,7 +163,6 @@ impl FontLibrary {
 
     /// Generate and cache a preview for a font
     pub fn generate_preview(&mut self, index: usize) -> Option<&FontPreview> {
-        println!("Generating preview for font index {}", index);
         if self.preview_cache.contains_key(&index) {
             return self.preview_cache.get(&index);
         }
@@ -185,7 +184,6 @@ impl FontLibrary {
         } else {
             lowercase
         };
-        println!("Rendering preview text: {}", text_to_render);
 
         for ch in text_to_render.chars() {
             if font.render_glyph(&mut renderer, ch, &options).is_err() {
@@ -208,7 +206,6 @@ impl FontLibrary {
             width: size.width as u32,
             height: size.height as u32,
         };
-        println!("Generated preview for font index {}: {}x{}", index, preview.width, preview.height);
         self.preview_cache.insert(index, preview);
         self.preview_cache.get(&index)
     }
