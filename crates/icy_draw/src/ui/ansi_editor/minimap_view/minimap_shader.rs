@@ -161,14 +161,22 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
                     // Convert to absolute position for the helper
                     let absolute_pos = iced::Point::new(pos.x + bounds.x, pos.y + bounds.y);
                     if let Some((norm_x, norm_y)) = self.calculate_normalized_position(absolute_pos, bounds) {
-                        return Some(iced::widget::Action::publish(MinimapMessage::Click(norm_x, norm_y)));
+                        return Some(iced::widget::Action::publish(MinimapMessage::Click {
+                            norm_x,
+                            norm_y,
+                            pointer_x: pos.x,
+                            pointer_y: pos.y,
+                        }));
                     }
                 }
             }
 
             // Handle mouse button release - stop dragging
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                state.is_dragging = false;
+                if state.is_dragging {
+                    state.is_dragging = false;
+                    return Some(iced::widget::Action::publish(MinimapMessage::DragEnd));
+                }
             }
 
             // Handle cursor movement while dragging
@@ -176,8 +184,15 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
                 if state.is_dragging {
                     // Use cursor.position() for mouse capture effect - works even outside bounds
                     if let Some(pos) = cursor.position() {
+                        let rel_x = pos.x - bounds.x;
+                        let rel_y = pos.y - bounds.y;
                         if let Some((norm_x, norm_y)) = self.calculate_normalized_position(pos, bounds) {
-                            return Some(iced::widget::Action::publish(MinimapMessage::Drag(norm_x, norm_y)));
+                            return Some(iced::widget::Action::publish(MinimapMessage::Drag {
+                                norm_x,
+                                norm_y,
+                                pointer_x: rel_x,
+                                pointer_y: rel_y,
+                            }));
                         }
                     }
                 }

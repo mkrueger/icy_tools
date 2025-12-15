@@ -1556,7 +1556,9 @@ impl MainWindow {
                             .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
                             .map(Message::AnsiEditor);
 
-                        Task::batch([tool_task])
+                        let minimap_task = editor.update(AnsiEditorMessage::MinimapAutoscrollTick(delta)).map(Message::AnsiEditor);
+
+                        Task::batch([tool_task, minimap_task])
                     }
                     ModeState::BitFont(editor) => {
                         // ColorSwitcher tickt sich selbst (RedrawRequested) – kein globaler Tick.
@@ -2723,6 +2725,10 @@ impl MainWindow {
                     // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
                     Event::Window(iced::window::Event::Unfocused) | Event::Mouse(iced::mouse::Event::CursorLeft) => {
                         return (Some(Message::AnsiEditor(super::ansi_editor::AnsiEditorMessage::CancelShapeDrag)), Task::none());
+                    }
+                    // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
+                    Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                        return (Some(Message::AnsiEditor(super::ansi_editor::AnsiEditorMessage::CancelMinimapDrag)), Task::none());
                     }
                     // Forward keyboard events to AnsiEditor
                     Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {

@@ -140,6 +140,10 @@ pub enum AnsiEditorMessage {
 
     /// Cancel an in-progress shape drag (clears preview overlay).
     CancelShapeDrag,
+    /// Cancel an in-progress minimap drag/autoscroll.
+    CancelMinimapDrag,
+    /// Periodic tick while minimap drag is active (drives drag-out autoscroll).
+    MinimapAutoscrollTick(f32),
     /// Tool selection changed
     SelectTool(usize),
     /// Layer selection changed
@@ -292,6 +296,10 @@ pub struct AnsiEditor {
     pub options: Arc<RwLock<Options>>,
     /// Whether the document is modified
     pub is_modified: bool,
+
+    /// While Some, the minimap is being dragged. Stores last pointer position relative to minimap
+    /// bounds (may be outside) to simulate egui-style continuous drag updates.
+    minimap_drag_pointer: Option<(f32, f32)>,
 
     // === Selection/Drag State ===
     /// Current drag positions for mouse operations
@@ -708,6 +716,8 @@ impl AnsiEditor {
             right_panel: RightPanel::new(),
             options,
             is_modified: false,
+
+            minimap_drag_pointer: None,
             // Selection/drag state
             drag_pos: DragPos::default(),
             is_dragging: false,
@@ -1092,7 +1102,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.tool_panel.needs_animation()
+        self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
     }
 
     /// Get the current marker state for menu display
@@ -1338,9 +1348,24 @@ impl AnsiEditor {
                 // Handle minimap click-to-navigate before passing to right_panel
                 if let RightPanelMessage::Minimap(ref minimap_msg) = msg {
                     match minimap_msg {
-                        MinimapMessage::Click(norm_x, norm_y) | MinimapMessage::Drag(norm_x, norm_y) => {
+                        MinimapMessage::Click {
+                            norm_x,
+                            norm_y,
+                            pointer_x,
+                            pointer_y,
+                        }
+                        | MinimapMessage::Drag {
+                            norm_x,
+                            norm_y,
+                            pointer_x,
+                            pointer_y,
+                        } => {
+                            self.minimap_drag_pointer = Some((*pointer_x, *pointer_y));
                             // Convert normalized position to content coordinates and scroll
                             self.scroll_canvas_to_normalized(*norm_x, *norm_y);
+                        }
+                        MinimapMessage::DragEnd => {
+                            self.minimap_drag_pointer = None;
                         }
                         _ => {}
                     }
@@ -1688,6 +1713,30 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::CancelShapeDrag => {
                 let _ = self.cancel_shape_drag();
+                self.minimap_drag_pointer = None;
+                Task::none()
+            }
+            AnsiEditorMessage::CancelMinimapDrag => {
+                self.minimap_drag_pointer = None;
+                Task::none()
+            }
+            AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
+                let Some((pointer_x, pointer_y)) = self.minimap_drag_pointer else {
+                    return Task::none();
+                };
+
+                // Recompute normalized position from the last known pointer position. This is
+                // essential when no further cursor events arrive (drag-out), but the minimap and
+                // viewport keep moving.
+                let render_cache = &self.canvas.terminal.render_cache;
+                if let Some((norm_x, norm_y)) = self.right_panel.minimap.handle_click(
+                    iced::Size::new(0.0, 0.0),
+                    iced::Point::new(pointer_x, pointer_y),
+                    Some(render_cache),
+                ) {
+                    self.scroll_canvas_to_normalized(norm_x, norm_y);
+                }
+
                 Task::none()
             }
             AnsiEditorMessage::CanvasMouseEvent(event) => {

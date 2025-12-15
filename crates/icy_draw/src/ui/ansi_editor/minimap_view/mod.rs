@@ -44,9 +44,26 @@ pub struct TextureSliceData {
 #[derive(Clone, Debug)]
 pub enum MinimapMessage {
     /// Click on minimap to scroll to position (normalized 0.0-1.0 in texture space)
-    Click(f32, f32),
+    ///
+    /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds.
+    Click {
+        norm_x: f32,
+        norm_y: f32,
+        pointer_x: f32,
+        pointer_y: f32,
+    },
     /// Drag on minimap to scroll (normalized 0.0-1.0 in texture space)
-    Drag(f32, f32),
+    ///
+    /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds and may be
+    /// outside (negative / beyond width/height) to support drag-out autoscroll.
+    Drag {
+        norm_x: f32,
+        norm_y: f32,
+        pointer_x: f32,
+        pointer_y: f32,
+    },
+    /// Drag ended (mouse released).
+    DragEnd,
     /// Scroll the minimap vertically
     Scroll(f32),
     /// Ensure viewport is visible in minimap (auto-scroll to follow terminal)
@@ -164,14 +181,15 @@ impl MinimapView {
     /// Update the minimap view state
     pub fn update(&mut self, message: MinimapMessage) -> Task<MinimapMessage> {
         match message {
-            MinimapMessage::Click(_x, _y) => {
+            MinimapMessage::Click { .. } => {
                 // Parent handles the actual scrolling
                 Task::none()
             }
-            MinimapMessage::Drag(_x, _y) => {
+            MinimapMessage::Drag { .. } => {
                 // Parent handles the actual scrolling
                 Task::none()
             }
+            MinimapMessage::DragEnd => Task::none(),
             MinimapMessage::Scroll(delta) => {
                 let mut pos = self.scroll_position.borrow_mut();
                 *pos = (*pos + delta).clamp(0.0, 1.0);
@@ -487,13 +505,9 @@ impl MinimapView {
         let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
         let scroll_uv = *self.scroll_position.borrow() * max_scroll_uv;
 
-        // Check bounds
-        let local_x = position.x;
-        let local_y = position.y;
-
-        if local_x < 0.0 || local_x > avail_width || local_y < 0.0 || local_y > avail_height {
-            return None;
-        }
+        // Pointer can be outside when drag-out autoscroll is active; clamp to edge.
+        let local_x = position.x.clamp(0.0, avail_width);
+        let local_y = position.y.clamp(0.0, avail_height);
 
         // Convert screen position to texture UV
         // screen_uv_y is 0-1 in the visible area
