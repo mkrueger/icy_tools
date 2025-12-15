@@ -1,6 +1,6 @@
 //! Minimap shader implementation with sliding window texture support
 //!
-//! Uses 3 texture slices (matching Terminal's sliding window).
+//! Uses a sliding window of texture slices (matching Terminal).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,10 +10,9 @@ use iced::mouse;
 use iced::widget::shader;
 use parking_lot::Mutex;
 
-use super::{MinimapMessage, SharedMinimapState, TextureSliceData};
+use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
 
-/// Maximum number of texture slices (matches Terminal's sliding window)
-const MAX_TEXTURE_SLICES: usize = 3;
+use super::{MinimapMessage, SharedMinimapState, TextureSliceData};
 
 /// Uniform data for the minimap shader (multi-texture version)
 #[repr(C, align(16))]
@@ -31,7 +30,7 @@ struct MinimapUniforms {
     border_thickness: f32,
     /// Whether to show viewport overlay
     show_viewport: f32,
-    /// Number of texture slices (1-10)
+    /// Number of texture slices (1..=MAX_TEXTURE_SLICES)
     num_slices: f32,
     /// Total image height across all slices
     total_image_height: f32,
@@ -578,13 +577,26 @@ impl shader::Primitive for MinimapPrimitive {
         let viewport_y_tex = self.viewport_info.y / render_ratio.max(0.001);
         let viewport_h_tex = self.viewport_info.height / render_ratio.max(0.001);
 
-        // Pack slice heights into 3 vec4s
-        // Like Terminal shader: slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+        // Pack slice heights into 3 vec4s (matches WGSL packing)
+        // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+        // slice_heights[1] = [h3, h4, h5, h6]
+        // slice_heights[2] = [h7, h8, h9, 0]
         let mut packed_heights = [[0.0f32; 4]; 3];
         for (i, &h) in self.slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
-            packed_heights[0][i] = h as f32;
+            match i {
+                0 => packed_heights[0][0] = h as f32,
+                1 => packed_heights[0][1] = h as f32,
+                2 => packed_heights[0][2] = h as f32,
+                3 => packed_heights[1][0] = h as f32,
+                4 => packed_heights[1][1] = h as f32,
+                5 => packed_heights[1][2] = h as f32,
+                6 => packed_heights[1][3] = h as f32,
+                7 => packed_heights[2][0] = h as f32,
+                8 => packed_heights[2][1] = h as f32,
+                9 => packed_heights[2][2] = h as f32,
+                _ => {}
+            }
         }
-        // Store first_slice_start_y in the 4th element (w component) - same as Terminal
         packed_heights[0][3] = self.first_slice_start_y;
 
         let uniforms = MinimapUniforms {

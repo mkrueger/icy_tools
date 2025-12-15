@@ -83,7 +83,7 @@ use std::sync::Arc;
 
 use iced::{
     Alignment, Element, Length, Task, Theme,
-    widget::{button, column, container, row, text},
+    widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{MouseButton, Position, Screen, Tag, TagRole, TextBuffer, TextPane};
@@ -1424,7 +1424,6 @@ impl AnsiEditor {
                         self.set_current_fkey_set(prev);
                         Task::none()
                     }
-<<<<<<< HEAD
                     TopToolbarMessage::OpenFontDirectory => {
                         // Open the font directory in the system file manager
                         if let Some(font_dir) = Options::font_dir() {
@@ -1457,7 +1456,7 @@ impl AnsiEditor {
                         // This will be handled by main_window to open the dialog
                         // Return a task that signals this (handled via Message routing)
                         Task::none()
-=======
+                    }
                     TopToolbarMessage::ToggleFilled(v) => {
                         // Keep the tool variant in sync with the filled toggle.
                         let new_tool = match self.current_tool {
@@ -1476,7 +1475,6 @@ impl AnsiEditor {
                         }
 
                         self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar)
->>>>>>> fb747761 (Implemented overlay view.)
                     }
                     _ => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
                 }
@@ -2608,9 +2606,241 @@ impl AnsiEditor {
                 ToolEvent::Status(format!("Picked at ({}, {})", pos.x, pos.y))
             }
             Tool::Fill => {
-                // Flood fill at position
-                // TODO: Implement flood fill
-                ToolEvent::Commit("Flood fill".to_string())
+                use std::collections::HashSet;
+
+                // Store half-block click position for HalfBlock fill mode.
+                let half_block_pos = self.compute_half_block_pos(pixel_position);
+                self.half_block_click_pos = half_block_pos;
+
+                let (primary, paint_char, colorize_fg, colorize_bg, exact) = {
+                    let opts = &self.top_toolbar.brush_options;
+                    (opts.primary, opts.paint_char, opts.colorize_fg, opts.colorize_bg, self.top_toolbar.fill_exact_matching)
+                };
+
+                // Fill only supports HalfBlock / Char / Colorize (matches src_egui Fill UI).
+                let primary = match primary {
+                    BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => primary,
+                    _ => BrushPrimaryMode::Char,
+                };
+
+                // If Colorize mode is selected but no channels are enabled, do nothing.
+                if matches!(primary, BrushPrimaryMode::Colorize) && !colorize_fg && !colorize_bg {
+                    return ToolEvent::None;
+                }
+
+                let swap_colors = button == iced::mouse::Button::Right;
+
+                // Begin atomic undo for the entire fill.
+                let _undo = self.with_edit_state(|state| state.begin_atomic_undo("Bucket fill"));
+
+                match primary {
+                    BrushPrimaryMode::HalfBlock => {
+                        let start_hb = half_block_pos;
+                        self.with_edit_state(|state| {
+                            let (offset, width, height) = if let Some(layer) = state.get_cur_layer() {
+                                (layer.offset(), layer.width(), layer.height())
+                            } else {
+                                return;
+                            };
+                            let use_selection = state.is_something_selected();
+
+                            let caret_attr = state.get_caret().attribute;
+                            let (fg, bg) = if swap_colors {
+                                (caret_attr.background(), caret_attr.foreground())
+                            } else {
+                                (caret_attr.foreground(), caret_attr.background())
+                            };
+
+                            // Determine the target color at the start position.
+                            let start_cell = icy_engine::Position::new(start_hb.x, start_hb.y / 2);
+                            if start_cell.x < 0 || start_hb.y < 0 || start_cell.x >= width || start_cell.y >= height {
+                                return;
+                            }
+
+                            let start_char = { state.get_cur_layer().unwrap().char_at(start_cell) };
+                            let start_block = icy_engine::paint::HalfBlock::from_char(start_char, start_hb);
+                            if !start_block.is_blocky() {
+                                return;
+                            }
+                            let target_color = if start_block.is_top {
+                                start_block.upper_block_color
+                            } else {
+                                start_block.lower_block_color
+                            };
+                            if target_color == fg {
+                                return;
+                            }
+
+                            let mut visited: HashSet<icy_engine::Position> = HashSet::new();
+                            let mut stack: Vec<(icy_engine::Position, icy_engine::Position)> = vec![(start_hb, start_hb)];
+
+                            while let Some((from, to)) = stack.pop() {
+                                let text_pos = icy_engine::Position::new(to.x, to.y / 2);
+                                if to.x < 0
+                                    || to.y < 0
+                                    || to.x >= width
+                                    || text_pos.y >= height
+                                    || !visited.insert(to)
+                                {
+                                    continue;
+                                }
+
+                                if use_selection {
+                                    let doc_cell = text_pos + offset;
+                                    if !state.is_selected(doc_cell) {
+                                        continue;
+                                    }
+                                }
+
+                                let cur = { state.get_cur_layer().unwrap().char_at(text_pos) };
+                                let block = icy_engine::paint::HalfBlock::from_char(cur, to);
+
+                                if block.is_blocky()
+                                    && ((block.is_top && block.upper_block_color == target_color)
+                                        || (!block.is_top && block.lower_block_color == target_color))
+                                {
+                                    let ch = block.get_half_block_char(fg, true);
+                                    let _ = state.set_char_in_atomic(text_pos, ch);
+
+                                    stack.push((to, to + icy_engine::Position::new(-1, 0)));
+                                    stack.push((to, to + icy_engine::Position::new(1, 0)));
+                                    stack.push((to, to + icy_engine::Position::new(0, -1)));
+                                    stack.push((to, to + icy_engine::Position::new(0, 1)));
+                                } else if block.is_vertically_blocky() {
+                                    let ch = if from.y == to.y - 1 && block.left_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            221 as char,
+                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
+                                        ))
+                                    } else if from.y == to.y - 1 && block.right_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            222 as char,
+                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
+                                        ))
+                                    } else if from.y == to.y + 1 && block.right_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            222 as char,
+                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
+                                        ))
+                                    } else if from.y == to.y + 1 && block.left_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            221 as char,
+                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
+                                        ))
+                                    } else if from.x == to.x - 1 && block.left_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            221 as char,
+                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
+                                        ))
+                                    } else if from.x == to.x + 1 && block.right_block_color == target_color {
+                                        Some(icy_engine::AttributedChar::new(
+                                            222 as char,
+                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
+                                        ))
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(ch) = ch {
+                                        let _ = state.set_char_in_atomic(text_pos, ch);
+                                    }
+                                }
+                            }
+
+                            let _ = bg; // keep symmetry with other tools; currently unused for half-block fill
+                        });
+                    }
+                    BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => {
+                        let start_cell_layer = self.doc_to_layer_pos(pos);
+
+                        self.with_edit_state(|state| {
+                            let (offset, width, height) = if let Some(layer) = state.get_cur_layer() {
+                                (layer.offset(), layer.width(), layer.height())
+                            } else {
+                                return;
+                            };
+                            let use_selection = state.is_something_selected();
+
+                            if start_cell_layer.x < 0
+                                || start_cell_layer.y < 0
+                                || start_cell_layer.x >= width
+                                || start_cell_layer.y >= height
+                            {
+                                return;
+                            }
+
+                            let base_char = { state.get_cur_layer().unwrap().char_at(start_cell_layer) };
+
+                            let caret_attr = state.get_caret().attribute;
+                            let (fg, bg) = if swap_colors {
+                                (caret_attr.background(), caret_attr.foreground())
+                            } else {
+                                (caret_attr.foreground(), caret_attr.background())
+                            };
+                            let caret_font_page = caret_attr.font_page();
+
+                            let mut visited: HashSet<icy_engine::Position> = HashSet::new();
+                            let mut stack: Vec<icy_engine::Position> = vec![start_cell_layer];
+
+                            while let Some(p) = stack.pop() {
+                                if p.x < 0 || p.y < 0 || p.x >= width || p.y >= height || !visited.insert(p) {
+                                    continue;
+                                }
+
+                                if use_selection {
+                                    let doc_cell = p + offset;
+                                    if !state.is_selected(doc_cell) {
+                                        continue;
+                                    }
+                                }
+
+                                let cur = { state.get_cur_layer().unwrap().char_at(p) };
+
+                                // Determine if this cell matches (like src_egui FillOperation).
+                                match primary {
+                                    BrushPrimaryMode::Char => {
+                                        if (exact && cur != base_char) || (!exact && cur.ch != base_char.ch) {
+                                            continue;
+                                        }
+                                    }
+                                    BrushPrimaryMode::Colorize => {
+                                        if (exact && cur != base_char) || (!exact && cur.attribute != base_char.attribute) {
+                                            continue;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+
+                                let mut repl = cur;
+
+                                if matches!(primary, BrushPrimaryMode::Char) {
+                                    repl.ch = paint_char;
+                                }
+
+                                if colorize_fg {
+                                    repl.attribute.set_foreground(fg);
+                                    repl.attribute.set_is_bold(caret_attr.is_bold());
+                                }
+                                if colorize_bg {
+                                    repl.attribute.set_background(bg);
+                                }
+
+                                repl.set_font_page(caret_font_page);
+                                repl.attribute.attr &= !icy_engine::attribute::INVISIBLE;
+
+                                let _ = state.set_char_in_atomic(p, repl);
+
+                                stack.push(p + icy_engine::Position::new(-1, 0));
+                                stack.push(p + icy_engine::Position::new(1, 0));
+                                stack.push(p + icy_engine::Position::new(0, -1));
+                                stack.push(p + icy_engine::Position::new(0, 1));
+                            }
+                        });
+                    }
+                    _ => {}
+                }
+
+                ToolEvent::Commit("Bucket fill".to_string())
             }
             _ => ToolEvent::None,
         }
@@ -2860,7 +3090,7 @@ impl AnsiEditor {
 
         // Get font dimensions for pixel conversion
         let (font_w, font_h) = {
-            let mut screen = self.screen.lock();
+            let screen = self.screen.lock();
             let size = screen.font_dimensions();
             (size.width as f32, size.height as f32)
         };

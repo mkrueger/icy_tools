@@ -233,6 +233,7 @@ impl<'a> FontListWidget<'a> {
             align_y: iced::alignment::Vertical::Center,
             shaping: iced::advanced::text::Shaping::Advanced,
             wrapping: iced::advanced::text::Wrapping::None,
+            hint_factor: Some(0.0),
         };
         r.fill_text(
             count_text,
@@ -253,6 +254,7 @@ impl<'a> FontListWidget<'a> {
                 align_y: iced::alignment::Vertical::Center,
                 shaping: iced::advanced::text::Shaping::Advanced,
                 wrapping: iced::advanced::text::Wrapping::None,
+                hint_factor: Some(0.0),
             };
             r.fill_text(
                 empty_text,
@@ -333,6 +335,7 @@ impl<'a> FontListWidget<'a> {
             align_y: iced::alignment::Vertical::Top,
             shaping: iced::advanced::text::Shaping::Advanced,
             wrapping: iced::advanced::text::Wrapping::None,
+            hint_factor: Some(0.0),
         };
 
         r.fill_text(name_text, Point::new(left_x, top_y), theme.extended_palette().background.strong.text, name_clip);
@@ -365,6 +368,7 @@ impl<'a> FontListWidget<'a> {
                     align_y: iced::alignment::Vertical::Top,
                     shaping: iced::advanced::text::Shaping::Advanced,
                     wrapping: iced::advanced::text::Wrapping::None,
+                    hint_factor: Some(0.0),
                 };
                 rr.fill_text(t, Point::new(x, y), color, bounds);
 
@@ -430,6 +434,7 @@ impl<'a> FontListWidget<'a> {
                     align_y: iced::alignment::Vertical::Center,
                     shaping: iced::advanced::text::Shaping::Advanced,
                     wrapping: iced::advanced::text::Wrapping::None,
+                    hint_factor: Some(0.0),
                 };
 
                 r2.fill_text(
@@ -512,6 +517,7 @@ impl<'a> FontListWidget<'a> {
             align_y: iced::alignment::Vertical::Center,
             shaping: iced::advanced::text::Shaping::Advanced,
             wrapping: iced::advanced::text::Wrapping::None,
+            hint_factor: Some(0.0),
         };
 
         let clip_bounds = Rectangle {

@@ -1,6 +1,5 @@
 use icy_engine::{Position, Rectangle, Size};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::ScrollbarState;
@@ -52,20 +51,6 @@ pub struct Viewport {
 
     pub changed: AtomicBool,
 
-    /// Widget bounds height in logical pixels
-    /// Updated by the shader based on available widget bounds
-    pub bounds_height: Arc<AtomicU32>,
-    /// Widget bounds width in logical pixels
-    /// Updated by the shader based on available widget bounds
-    pub bounds_width: Arc<AtomicU32>,
-    /// Visible content height in content pixels (computed by shader)
-    /// This is how much of the content is visible at the current zoom level
-    /// Stored as f32 bits for atomic access
-    pub computed_visible_height: Arc<AtomicU32>,
-    /// Visible content width in content pixels (computed by shader)
-    /// Stored as f32 bits for atomic access
-    pub computed_visible_width: Arc<AtomicU32>,
-
     /// Scrollbar state (animations, hover, drag) - integrated for convenience
     /// Scrollbar and viewport are always used together
     pub scrollbar: ScrollbarState,
@@ -86,10 +71,6 @@ impl Default for Viewport {
             scroll_animation_speed: DEFAULT_SCROLL_ANIMATION_SPEED,
             last_update: None,
             changed: AtomicBool::new(false),
-            bounds_height: Arc::new(AtomicU32::new(0)),
-            bounds_width: Arc::new(AtomicU32::new(0)),
-            computed_visible_height: Arc::new(AtomicU32::new(0)),
-            computed_visible_width: Arc::new(AtomicU32::new(0)),
             scrollbar: ScrollbarState::new(),
         }
     }
@@ -144,17 +125,15 @@ impl Viewport {
     }
 
     /// How many content pixels are visible at current zoom
-    /// Uses shader-computed values if available, otherwise falls back to visible_size / zoom
+    /// Derived from widget visible size and zoom
     pub fn visible_content_width(&self) -> f32 {
-        let computed = f32::from_bits(self.computed_visible_width.load(Ordering::Relaxed));
-        if computed > 0.0 { computed } else { self.visible_width / self.zoom }
+        self.visible_width / self.zoom.max(0.001)
     }
 
     /// How many content pixels are visible at current zoom
-    /// Uses shader-computed values if available, otherwise falls back to visible_size / zoom
+    /// Derived from widget visible size and zoom
     pub fn visible_content_height(&self) -> f32 {
-        let computed = f32::from_bits(self.computed_visible_height.load(Ordering::Relaxed));
-        if computed > 0.0 { computed } else { self.visible_height / self.zoom }
+        self.visible_height / self.zoom.max(0.001)
     }
 
     /// Get maximum scroll values (in content pixels)
@@ -174,16 +153,6 @@ impl Viewport {
     /// Check if content is scrollable horizontally (has more content than visible area)
     pub fn is_scrollable_x(&self) -> bool {
         self.max_scroll_x() > 0.0
-    }
-
-    /// Get bounds height in logical pixels
-    pub fn bounds_height(&self) -> u32 {
-        self.bounds_height.load(Ordering::Relaxed)
-    }
-
-    /// Get bounds width in logical pixels  
-    pub fn bounds_width(&self) -> u32 {
-        self.bounds_width.load(Ordering::Relaxed)
     }
 
     /// Clamp scroll values to valid range
@@ -207,14 +176,29 @@ impl Viewport {
         self.target_scroll_y = self.target_scroll_y.clamp(0.0, max_scroll_y);
     }
 
-    /// Set zoom level and adjust scroll to keep center point stable
-    pub fn set_zoom(&mut self, new_zoom: f32, _center_x: f32, _center_y: f32) {
-        self.zoom = new_zoom.clamp(0.1, 10.0);
-        // scroll_x/y are in content coordinates, so they don't need adjustment
-        // Just clamp to new valid range
+    /// Set zoom level and adjust scroll to keep the given center point stable.
+    ///
+    /// `center_x/center_y` are in SCREEN coordinates (widget pixels).
+    pub fn set_zoom(&mut self, new_zoom: f32, center_x: f32, center_y: f32) {
+        let old_zoom = self.zoom.max(0.001);
+        let new_zoom = new_zoom.clamp(0.1, 10.0);
+
+        // Content position currently under the given screen point.
+        let content_x = center_x / old_zoom + self.scroll_x;
+        let content_y = center_y / old_zoom + self.scroll_y;
+
+        self.zoom = new_zoom;
+        let effective_new_zoom = self.zoom.max(0.001);
+
+        // Adjust scroll so that the same content point stays under the same screen point.
+        self.scroll_x = content_x - center_x / effective_new_zoom;
+        self.scroll_y = content_y - center_y / effective_new_zoom;
+
         self.clamp_scroll();
         self.target_scroll_x = self.scroll_x;
         self.target_scroll_y = self.scroll_y;
+        self.sync_scrollbar_position();
+        self.changed.store(true, Ordering::Relaxed);
     }
 
     /// Scroll X by delta (for mouse wheel, trackpad) - delta is in content pixels
@@ -355,16 +339,34 @@ impl Viewport {
 
     /// Update viewport size
     pub fn set_visible_size(&mut self, width: f32, height: f32) {
+        let old_scroll_x = self.scroll_x;
+        let old_scroll_y = self.scroll_y;
+        let old_target_x = self.target_scroll_x;
+        let old_target_y = self.target_scroll_y;
         self.visible_width = width;
         self.visible_height = height;
         self.clamp_scroll();
+
+        if self.scroll_x != old_scroll_x || self.scroll_y != old_scroll_y || self.target_scroll_x != old_target_x || self.target_scroll_y != old_target_y {
+            self.sync_scrollbar_position();
+            self.changed.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Update content size
     pub fn set_content_size(&mut self, width: f32, height: f32) {
+        let old_scroll_x = self.scroll_x;
+        let old_scroll_y = self.scroll_y;
+        let old_target_x = self.target_scroll_x;
+        let old_target_y = self.target_scroll_y;
         self.content_width = width;
         self.content_height = height;
         self.clamp_scroll();
+
+        if self.scroll_x != old_scroll_x || self.scroll_y != old_scroll_y || self.target_scroll_x != old_target_x || self.target_scroll_y != old_target_y {
+            self.sync_scrollbar_position();
+            self.changed.store(true, Ordering::Relaxed);
+        }
     }
 
     // =========================================================================

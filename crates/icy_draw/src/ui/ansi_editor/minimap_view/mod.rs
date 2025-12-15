@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
 use icy_engine::Screen;
-use icy_engine_gui::{SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
+use icy_engine_gui::{SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
+use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
 use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;
@@ -177,73 +178,145 @@ impl MinimapView {
     /// The Terminal must have rendered before calling this.
     pub fn view(
         &self,
-        _screen: &Arc<Mutex<Box<dyn Screen>>>,
+        screen: &Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
         // Get available space from shared state (updated by shader in previous frame)
-        let avail_height = {
+        let (avail_width, avail_height) = {
             let shared = self.shared_state.lock();
-            if shared.available_height > 0.0 { shared.available_height } else { 600.0 }
+            (
+                if shared.available_width > 0.0 { shared.available_width } else { 140.0 },
+                if shared.available_height > 0.0 { shared.available_height } else { 600.0 },
+            )
         };
 
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
-            let shared_cache = cache_handle.read();
+            // Read metadata without holding the lock for long; we may need to lock the Screen.
+            let (tile_count, content_width_u32, content_height_f32, blink_state, max_tile_idx) = {
+                let shared_cache = cache_handle.read();
+                (
+                    shared_cache.tile_count(),
+                    shared_cache.content_width,
+                    shared_cache.content_height,
+                    shared_cache.last_blink_state,
+                    shared_cache.max_tile_index(),
+                )
+            };
 
-            // Check if shared cache has tiles
-            if shared_cache.tile_count() > 0 && shared_cache.content_width > 0 {
-                let content_width = shared_cache.content_width as f32;
-                let content_height = shared_cache.content_height as f32;
+            // Check if shared cache has usable dimensions
+            if tile_count > 0 && content_width_u32 > 0 && content_height_f32 > 0.0 {
+                let content_width = content_width_u32 as f32;
+                let content_height = content_height_f32;
 
                 // Auto-scroll to keep viewport visible
                 self.ensure_viewport_visible(viewport_info.y, viewport_info.height, content_width, content_height);
 
-                // Use tiles from shared cache with the same blink state as Terminal
-                let blink_state = shared_cache.last_blink_state;
-
-                // Calculate which 3 tiles to select based on visible area (like CRT shader)
+                // Calculate which tiles to select based on visible area (like CRT shader)
                 let tile_height = TILE_HEIGHT as f32;
                 let scroll_normalized = *self.scroll_position.borrow(); // 0.0 - 1.0
 
-                // Convert normalized scroll position to pixel Y in document space
-                let scroll_pixel_y = scroll_normalized * content_height;
+                // Convert normalized scroll position to document-space pixel Y using the same UV math as the shader
+                let scale = (avail_width / content_width).max(0.0001);
+                let scaled_content_height = content_height * scale;
+                let visible_uv_height = (avail_height / scaled_content_height).min(1.0);
+                let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
+                let scroll_uv_y = scroll_normalized * max_scroll_uv;
+                let scroll_pixel_y = scroll_uv_y * content_height;
+
+                // Visible document height (in pixels)
+                let visible_doc_height = visible_uv_height * content_height;
 
                 // Calculate current tile based on pixel position
                 let current_tile_idx = (scroll_pixel_y / tile_height).floor() as i32;
-                let first_tile_idx = (current_tile_idx - 1).max(0);
-                let max_tile_idx = shared_cache.max_tile_index();
+
+                // Dynamic slice count: visible tiles + 1 above + 1 below
+                let visible_tiles = (visible_doc_height / tile_height).ceil().max(1.0) as i32;
+                let mut desired_count = (visible_tiles + 2).clamp(1, MAX_TEXTURE_SLICES as i32);
+                desired_count = desired_count.min(max_tile_idx + 1);
+                let max_first_tile_idx = (max_tile_idx - (desired_count - 1)).max(0);
+                let first_tile_idx = (current_tile_idx - 1).clamp(0, max_first_tile_idx);
 
                 let mut slices = Vec::new();
                 let mut heights = Vec::new();
                 let mut total_height = 0u32;
                 let first_slice_start_y = first_tile_idx as f32 * tile_height;
 
-                // Select exactly 3 tiles like CRT shader does
-                for i in 0..3 {
+                // Lock order matches Terminal rendering path: Screen -> Cache
+                let screen_guard = screen.lock();
+                let resolution = screen_guard.resolution();
+
+                // Select tiles
+                for i in 0..desired_count {
                     let tile_idx = first_tile_idx + i;
                     if tile_idx > max_tile_idx {
                         break;
                     }
+
                     let key = TileCacheKey::new(tile_idx, blink_state);
-                    if let Some(tile) = shared_cache.get(&key) {
-                        // Use Arc::clone for cheap reference counting instead of data clone
-                        slices.push(TextureSliceData {
-                            rgba_data: Arc::clone(&tile.texture.rgba_data),
-                            width: tile.texture.width,
-                            height: tile.texture.height,
-                        });
-                        heights.push(tile.height);
-                        total_height += tile.height;
-                    }
+                    let cached_tile: Option<SharedCachedTile> = cache_handle.read().get(&key).cloned();
+
+                    let tile = if let Some(tile) = cached_tile {
+                        tile
+                    } else {
+                        // Render missing tile into the shared cache so Terminal and Minimap can share it.
+                        let tile_start_y = tile_idx as f32 * tile_height;
+                        let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
+                        let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
+
+                        let tile_region: icy_engine::Rectangle =
+                            icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
+
+                        let render_options = icy_engine::RenderOptions {
+                            rect: icy_engine::Rectangle {
+                                start: icy_engine::Position::new(0, tile_start_y as i32),
+                                size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
+                            }
+                            .into(),
+                            blink_on: blink_state,
+                            selection: None,
+                            selection_fg: None,
+                            selection_bg: None,
+                            override_scan_lines: None,
+                        };
+
+                        let (render_size, rgba_data) = screen_guard.render_region_to_rgba(tile_region, &render_options);
+                        let width = render_size.width as u32;
+                        let height = render_size.height as u32;
+
+                        let slice = icy_engine_gui::TextureSliceData {
+                            rgba_data: Arc::new(rgba_data),
+                            width,
+                            height,
+                        };
+
+                        let cached_tile = SharedCachedTile {
+                            texture: slice,
+                            height,
+                            start_y: tile_start_y,
+                        };
+
+                        cache_handle.write().insert(key, cached_tile.clone());
+                        cached_tile
+                    };
+
+                    // Use Arc::clone for cheap reference counting instead of data clone
+                    slices.push(TextureSliceData {
+                        rgba_data: Arc::clone(&tile.texture.rgba_data),
+                        width: tile.texture.width,
+                        height: tile.texture.height,
+                    });
+                    heights.push(tile.height);
+                    total_height += tile.height;
                 }
 
+                drop(screen_guard);
+
                 // Use dimensions from shared cache - they match what Terminal rendered
-                let full_size = (shared_cache.content_width, shared_cache.content_height as u32);
+                let full_size = (content_width_u32, content_height as u32);
 
                 if !slices.is_empty() {
-                    drop(shared_cache);
-
                     return self.create_shader_element(
                         slices,
                         heights,

@@ -76,9 +76,7 @@ impl ContentView for TerminalContentView<'_> {
     }
 
     fn visible_height(&self) -> f32 {
-        let vp = self.terminal.viewport.read();
-        let bounds_height = vp.bounds_height() as f32;
-        if bounds_height > 0.0 { bounds_height } else { vp.visible_height }
+        self.terminal.viewport.read().visible_height
     }
 
     fn visible_width(&self) -> f32 {

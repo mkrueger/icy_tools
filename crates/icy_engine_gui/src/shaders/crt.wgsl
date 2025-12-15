@@ -37,11 +37,15 @@ struct Uniforms {
     background_color: vec4<f32>,
     
     // Slicing uniforms
-    num_slices: f32,             // Number of texture slices (1-3)
+    num_slices: f32,             // Number of texture slices (1-10)
     total_image_height: f32,     // Total height in pixels across all slices
     scroll_offset_y: f32,        // Current scroll offset in pixels
     visible_height: f32,         // Visible viewport height in pixels
-    slice_heights: vec4<f32>,    // Heights of each slice (x=slice0, y=slice1, z=slice2, w=first_slice_start_y)
+    // Packed slice heights (up to 10) + first_slice_start_y
+    // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+    // slice_heights[1] = [h3, h4, h5, h6]
+    // slice_heights[2] = [h7, h8, h9, 0]
+    slice_heights: array<vec4<f32>, 3>,
 
     // X-axis scrolling uniforms (for zoom/pan)
     scroll_offset_x: f32,        // Current horizontal scroll offset in pixels
@@ -119,28 +123,35 @@ struct MonitorColor {
     color: vec4<f32>,
 }
 
-// 3 texture slots for sliding window
+// Up to 10 texture slots for sliced rendering
 @group(0) @binding(0) var t_slice0: texture_2d<f32>;
 @group(0) @binding(1) var t_slice1: texture_2d<f32>;
 @group(0) @binding(2) var t_slice2: texture_2d<f32>;
+@group(0) @binding(3) var t_slice3: texture_2d<f32>;
+@group(0) @binding(4) var t_slice4: texture_2d<f32>;
+@group(0) @binding(5) var t_slice5: texture_2d<f32>;
+@group(0) @binding(6) var t_slice6: texture_2d<f32>;
+@group(0) @binding(7) var t_slice7: texture_2d<f32>;
+@group(0) @binding(8) var t_slice8: texture_2d<f32>;
+@group(0) @binding(9) var t_slice9: texture_2d<f32>;
 
-// Sampler at binding 3
-@group(0) @binding(3) var terminal_sampler: sampler;
+// Sampler at binding 10
+@group(0) @binding(10) var terminal_sampler: sampler;
 
-// Uniforms at binding 4
-@group(0) @binding(4) var<uniform> uniforms: Uniforms;
+// Uniforms at binding 11
+@group(0) @binding(11) var<uniform> uniforms: Uniforms;
 
-// Monitor color at binding 5
-@group(0) @binding(5) var<uniform> monitor_color: MonitorColor;
+// Monitor color at binding 12
+@group(0) @binding(12) var<uniform> monitor_color: MonitorColor;
 
-// Reference image texture at binding 6
-@group(0) @binding(6) var t_reference_image: texture_2d<f32>;
+// Reference image texture at binding 13
+@group(0) @binding(13) var t_reference_image: texture_2d<f32>;
 
-// Selection mask texture at binding 7
-@group(0) @binding(7) var t_selection_mask: texture_2d<f32>;
+// Selection mask texture at binding 14
+@group(0) @binding(14) var t_selection_mask: texture_2d<f32>;
 
-// Tool overlay mask texture at binding 8
-@group(0) @binding(8) var t_tool_overlay_mask: texture_2d<f32>;
+// Tool overlay mask texture at binding 15
+@group(0) @binding(15) var t_tool_overlay_mask: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -152,11 +163,35 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-// Get slice height from vec4 (x=slice0, y=slice1, z=slice2)
+// Get slice height from packed array
 fn get_slice_height(index: i32) -> f32 {
-    if index == 0 { return uniforms.slice_heights.x; }
-    else if index == 1 { return uniforms.slice_heights.y; }
-    else { return uniforms.slice_heights.z; }
+    if index == 0 { return uniforms.slice_heights[0][0]; }
+    else if index == 1 { return uniforms.slice_heights[0][1]; }
+    else if index == 2 { return uniforms.slice_heights[0][2]; }
+    else if index == 3 { return uniforms.slice_heights[1][0]; }
+    else if index == 4 { return uniforms.slice_heights[1][1]; }
+    else if index == 5 { return uniforms.slice_heights[1][2]; }
+    else if index == 6 { return uniforms.slice_heights[1][3]; }
+    else if index == 7 { return uniforms.slice_heights[2][0]; }
+    else if index == 8 { return uniforms.slice_heights[2][1]; }
+    else { return uniforms.slice_heights[2][2]; }
+}
+
+fn get_first_slice_start_y() -> f32 {
+    return uniforms.slice_heights[0][3];
+}
+
+fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
+    if index == 0 { return textureSample(t_slice0, terminal_sampler, uv); }
+    else if index == 1 { return textureSample(t_slice1, terminal_sampler, uv); }
+    else if index == 2 { return textureSample(t_slice2, terminal_sampler, uv); }
+    else if index == 3 { return textureSample(t_slice3, terminal_sampler, uv); }
+    else if index == 4 { return textureSample(t_slice4, terminal_sampler, uv); }
+    else if index == 5 { return textureSample(t_slice5, terminal_sampler, uv); }
+    else if index == 6 { return textureSample(t_slice6, terminal_sampler, uv); }
+    else if index == 7 { return textureSample(t_slice7, terminal_sampler, uv); }
+    else if index == 8 { return textureSample(t_slice8, terminal_sampler, uv); }
+    else { return textureSample(t_slice9, terminal_sampler, uv); }
 }
 
 // Sample from the appropriate texture slice based on pixel Y coordinate
@@ -209,7 +244,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     }
     
     // first_slice_start_y tells us where our sliding window starts in document space
-    let first_slice_start_y = uniforms.slice_heights.w;
+    let first_slice_start_y = get_first_slice_start_y();
     
     // Convert document Y to sliding window Y
     let window_y = doc_pixel_y - first_slice_start_y;
@@ -232,10 +267,8 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
             let local_y = (window_y - cumulative_height) / slice_height;
             let slice_uv = vec2<f32>(tex_uv_x, clamp(local_y, 0.0, 1.0));
             
-            // Sample from the appropriate texture (3 slices)
-            if i == 0 { return textureSample(t_slice0, terminal_sampler, slice_uv); }
-            else if i == 1 { return textureSample(t_slice1, terminal_sampler, slice_uv); }
-            else { return textureSample(t_slice2, terminal_sampler, slice_uv); }
+            // Sample from the appropriate texture (up to 10 slices)
+            return sample_slice(i, slice_uv);
         }
         cumulative_height = next_cumulative;
     }

@@ -7,7 +7,7 @@ use iced::{
     Element, Length, Task, Theme,
     widget::{Space, button, container, row, svg, text, toggler},
 };
-use icy_engine_gui::ui::{BUTTON_PADDING_NORMAL, SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
+use icy_engine_gui::ui::{SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
 
 use super::segmented_control_gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use super::tools::Tool;
@@ -98,6 +98,9 @@ pub enum TopToolbarMessage {
     DecrementBrushSize,
     /// Toggle filled shapes
     ToggleFilled(bool),
+
+    /// Toggle exact matching for the fill tool
+    ToggleFillExact(bool),
     /// Select F-key slot
     SelectFKeySlot(usize),
     /// Type the character assigned to the given F-key slot
@@ -186,6 +189,9 @@ pub struct TopToolbar {
     pub select_options: SelectOptions,
     /// Shape filled toggle
     pub filled: bool,
+
+    /// Fill tool: exact matching
+    pub fill_exact_matching: bool,
     /// GPU Segmented control for selection mode
     pub selection_mode_control: ShaderSegmentedControl,
     /// GPU Segmented control for brush mode
@@ -213,6 +219,7 @@ impl TopToolbar {
             },
             select_options: SelectOptions::default(),
             filled: false,
+            fill_exact_matching: false,
             selection_mode_control: ShaderSegmentedControl::new(),
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
@@ -244,6 +251,7 @@ impl TopToolbar {
                 self.brush_options.brush_size = self.brush_options.brush_size.saturating_sub(1).max(1);
             }
             TopToolbarMessage::ToggleFilled(v) => self.filled = v,
+            TopToolbarMessage::ToggleFillExact(v) => self.fill_exact_matching = v,
             TopToolbarMessage::SelectFKeySlot(slot) => self.select_options.selected_fkey = slot,
             TopToolbarMessage::TypeFKey(_) => {
                 // handled at a higher level (AnsiEditor)
@@ -296,7 +304,7 @@ impl TopToolbar {
             Tool::Line => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, false),
             Tool::RectangleOutline | Tool::RectangleFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
             Tool::EllipseOutline | Tool::EllipseFilled => self.view_shape_brush_panel(font, theme, caret_fg, caret_bg, palette, true),
-            Tool::Fill => self.view_fill_panel(),
+            Tool::Fill => self.view_fill_panel(font, theme, caret_fg, caret_bg, palette),
             Tool::Pipette => self.view_sample_panel(),
             Tool::Shifter => self.view_shifter_panel(),
             Tool::Font => self.view_font_panel(font_panel_info),
@@ -560,13 +568,71 @@ impl TopToolbar {
     }
 
     /// Fill tool panel
-    fn view_fill_panel(&self) -> Element<'_, TopToolbarMessage> {
+    fn view_fill_panel(
+        &self,
+        font: Option<BitFont>,
+        theme: &Theme,
+        caret_fg: u32,
+        caret_bg: u32,
+        palette: &Palette,
+    ) -> Element<'_, TopToolbarMessage> {
+        // Fill UI matches src_egui: HalfBlock / Colorize / Char + exact matching + FG/BG selectors.
+        // If current brush mode is unsupported for Fill, treat it as Char.
+        let primary = match self.brush_options.primary {
+            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.brush_options.primary,
+            _ => BrushPrimaryMode::Char,
+        };
+
+        let segments = vec![
+            Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
+            Segment::char(self.brush_options.paint_char, BrushPrimaryMode::Char),
+            Segment::text("Colorize", BrushPrimaryMode::Colorize),
+        ];
+
+        let segmented_control = self
+            .brush_mode_control
+            .view_with_char_colors(segments, primary, font.clone(), theme, caret_fg, caret_bg, palette)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Selected(m) => TopToolbarMessage::SetBrushPrimary(m),
+                SegmentedControlMessage::Toggled(m) => TopToolbarMessage::SetBrushPrimary(m),
+                SegmentedControlMessage::CharClicked(_) => TopToolbarMessage::OpenBrushCharTable,
+            });
+
+        // FG/BG toggles (which colors to affect)
+        let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
+        let mut selected_indices = Vec::new();
+        if self.brush_options.colorize_fg {
+            selected_indices.push(0);
+        }
+        if self.brush_options.colorize_bg {
+            selected_indices.push(1);
+        }
+        let color_filter = self
+            .color_filter_control
+            .view_multi_select(color_filter_segments, &selected_indices, font, theme)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!self.brush_options.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!self.brush_options.colorize_bg),
+                _ => TopToolbarMessage::ToggleColorizeFg(self.brush_options.colorize_fg),
+            });
+
+        let exact_toggle: Element<'_, TopToolbarMessage> = toggler(self.fill_exact_matching)
+            .label("Exact match")
+            .on_toggle(TopToolbarMessage::ToggleFillExact)
+            .text_size(11)
+            .into();
+
         row![
-            text("Fill Tool").size(12),
+            Space::new().width(Length::Fill),
+            segmented_control,
             Space::new().width(Length::Fixed(16.0)),
-            text("Click to flood fill area").size(10),
+            exact_toggle,
+            Space::new().width(Length::Fixed(16.0)),
+            color_filter,
+            Space::new().width(Length::Fill),
         ]
-        .spacing(8)
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
         .into()
     }
 
@@ -667,7 +733,6 @@ impl TopToolbar {
         let row1_chars: Vec<_> = char_availability.iter().filter(|(c, _)| *c >= '!' && *c <= 'O').collect();
         let row2_chars: Vec<_> = char_availability.iter().filter(|(c, _)| *c >= 'P' && *c <= '~').collect();
 
-        println!("Row 1 chars: {} - {}", row1_chars.len(), row2_chars.len());
         // Build row 1
         let mut r1 = row![].spacing(0);
         for (ch, available) in &row1_chars {

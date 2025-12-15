@@ -112,7 +112,7 @@ impl CanvasView {
 
     /// Set zoom level
     pub fn set_zoom(&mut self, zoom: f32) {
-        self.terminal.set_zoom(zoom);
+        self.apply_zoom(ZoomMessage::Set(zoom));
     }
 
     /// Zoom in by one step

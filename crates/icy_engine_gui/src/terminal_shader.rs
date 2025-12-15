@@ -54,8 +54,11 @@ struct CRTUniforms {
     total_image_height: f32,
     scroll_offset_y: f32,
     visible_height: f32,
-    // x=slice0 height, y=slice1 height, z=slice2 height, w=first_slice_start_y
-    slice_heights: [f32; 4],
+    // Packed slice heights (up to 10) + first_slice_start_y
+    // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+    // slice_heights[1] = [h3, h4, h5, h6]
+    // slice_heights[2] = [h7, h8, h9, 0]
+    slice_heights: [[f32; 4]; 3],
 
     // X-axis scrolling uniforms (for zoom/pan)
     scroll_offset_x: f32,
@@ -179,7 +182,7 @@ mod tests {
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
-        assert_eq!(std::mem::size_of::<CRTUniforms>(), 528);
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 560);
     }
 }
 
@@ -340,6 +343,12 @@ struct InstanceResources {
     tool_overlay_mask_texture: Option<TextureSlice>,
     /// Hash of tool overlay mask data for cache validation
     tool_overlay_mask_hash: u64,
+
+    /// Physical pixel viewport for this widget instance (x, y, width, height).
+    /// We must render into the widget bounds viewport and only use `clip_bounds`
+    /// for the scissor rect. Using `clip_bounds` as viewport would rescale the
+    /// whole terminal and can distort aspect ratio.
+    viewport_px: [f32; 4],
 }
 
 /// The terminal shader renderer (GPU pipeline) with multi-texture support
@@ -617,7 +626,8 @@ impl shader::Primitive for TerminalShader {
         _bounds: &iced::Rectangle,
         _viewport: &iced::advanced::graphics::Viewport,
     ) {
-        set_scale_factor(_viewport.scale_factor() as f32);
+        let scale_factor = _viewport.scale_factor() as f32;
+        set_scale_factor(scale_factor);
 
         // Check if we need to recreate the sampler due to filter mode change
         let desired_filter = if self.monitor_settings.use_bilinear_filtering {
@@ -847,6 +857,7 @@ impl shader::Primitive for TerminalShader {
                     selection_mask_hash: 0,
                     tool_overlay_mask_texture: None,
                     tool_overlay_mask_hash: 0,
+                    viewport_px: [0.0, 0.0, 1.0, 1.0],
                 },
             );
         }
@@ -1281,13 +1292,27 @@ impl shader::Primitive for TerminalShader {
             }
         }
 
+        // Update per-frame physical viewport for this instance.
+        // `render()` only receives `clip_bounds` (scissor), so we persist the
+        // real widget bounds here to prevent viewport-based scaling.
+        if let Some(resources) = pipeline.instances.get_mut(&id) {
+            let vp_x = (_bounds.x * scale_factor).round();
+            let vp_y = (_bounds.y * scale_factor).round();
+            let vp_w = (_bounds.width * scale_factor).round().max(1.0);
+            let vp_h = (_bounds.height * scale_factor).round().max(1.0);
+            resources.viewport_px = [vp_x, vp_y, vp_w, vp_h];
+        }
+
         // Update uniforms every frame
         let Some(resources) = pipeline.instances.get(&id) else {
             return;
         };
 
         // Calculate display size
-        let term_w = self.texture_width.max(1) as f32;
+        // IMPORTANT: The CRT shader maps `uv.x` over `visible_width` (document pixels).
+        // Using the full texture width here would make auto-scale and `terminal_area`
+        // inconsistent and can lead to perceived stretching.
+        let term_w = self.visible_width.max(1.0);
         let term_h = self.visible_height.max(1.0);
         let avail_w = _bounds.width.max(1.0);
         let avail_h = _bounds.height.max(1.0);
@@ -1327,14 +1352,27 @@ impl shader::Primitive for TerminalShader {
             info.bounds_height = avail_h;
         }
 
-        // Pack slice heights into array: [slice0, slice1, slice2, first_slice_start_y]
-        let mut slice_heights = [0.0f32; 4];
-        for (i, &height) in self.slice_heights.iter().enumerate() {
-            if i < 3 {
-                slice_heights[i] = height as f32;
+        // Pack slice heights into 3 vec4s (matches WGSL packing)
+        // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+        // slice_heights[1] = [h3, h4, h5, h6]
+        // slice_heights[2] = [h7, h8, h9, 0]
+        let mut slice_heights = [[0.0f32; 4]; 3];
+        for (i, &height) in self.slice_heights.iter().enumerate().take(MAX_TEXTURE_SLICES) {
+            match i {
+                0 => slice_heights[0][0] = height as f32,
+                1 => slice_heights[0][1] = height as f32,
+                2 => slice_heights[0][2] = height as f32,
+                3 => slice_heights[1][0] = height as f32,
+                4 => slice_heights[1][1] = height as f32,
+                5 => slice_heights[1][2] = height as f32,
+                6 => slice_heights[1][3] = height as f32,
+                7 => slice_heights[2][0] = height as f32,
+                8 => slice_heights[2][1] = height as f32,
+                9 => slice_heights[2][2] = height as f32,
+                _ => {}
             }
         }
-        slice_heights[3] = self.first_slice_start_y;
+        slice_heights[0][3] = self.first_slice_start_y;
 
         let monitor_color = match self.monitor_settings.monitor_type {
             crate::MonitorType::Color => [1.0, 1.0, 1.0, 1.0],
@@ -1517,31 +1555,17 @@ impl shader::Primitive for TerminalShader {
         // GPU dimension limits
         const MAX_VIEWPORT_DIM: f32 = 8192.0;
 
-        // Use visible dimensions for rendering, clamped to GPU limits
-        let term_w = (self.texture_width.max(1) as f32).min(MAX_VIEWPORT_DIM);
-        let term_h = self.visible_height.max(1.0).min(MAX_VIEWPORT_DIM);
-
-        let avail_w = clip_bounds.width.max(1) as f32;
-        let avail_h = clip_bounds.height.max(1) as f32;
-
-        let use_int = self.monitor_settings.use_integer_scaling;
-        let display_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
-
-        // Clamp scaled dimensions to available space to prevent negative offsets
-        let scaled_w = (term_w * display_scale).min(avail_w);
-        let scaled_h = (term_h * display_scale).min(avail_h);
-
-        let _offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
-        let _offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
-
-        // Viewport covers the full clip_bounds area (not just the terminal area)
-        // This allows rendering selection outside the document bounds
-        let (vp_x, vp_y, vp_w, vp_h) = (
-            clip_bounds.x as f32,
-            clip_bounds.y as f32,
-            avail_w.min(MAX_VIEWPORT_DIM),
-            avail_h.min(MAX_VIEWPORT_DIM),
-        );
+        // IMPORTANT:
+        // Use the widget bounds as viewport and `clip_bounds` only as scissor.
+        // If we used `clip_bounds` as viewport, we'd rescale the whole terminal
+        // whenever it is clipped, which can lead to perceived stretching.
+        let (mut vp_x, mut vp_y, mut vp_w, mut vp_h) = (0.0f32, 0.0f32, 1.0f32, 1.0f32);
+        if let Some(resources) = pipeline.instances.get(&self.instance_id) {
+            vp_x = resources.viewport_px[0];
+            vp_y = resources.viewport_px[1];
+            vp_w = resources.viewport_px[2];
+            vp_h = resources.viewport_px[3];
+        }
 
         // NOTE: RenderInfo is updated in `prepare()` in widget-local logical coordinates.
         // Do not overwrite it here with `clip_bounds`-derived values.

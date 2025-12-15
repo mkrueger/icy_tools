@@ -550,9 +550,7 @@ impl PreviewView {
         if let Some(ref viewer) = self.image_viewer {
             viewer.viewport.visible_height
         } else {
-            let vp = self.terminal.viewport.read();
-            let bounds_height = vp.bounds_height() as f32;
-            if bounds_height > 0.0 { bounds_height } else { vp.visible_height }
+            self.terminal.viewport.read().visible_height
         }
     }
 

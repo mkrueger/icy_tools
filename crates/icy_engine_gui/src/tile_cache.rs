@@ -33,9 +33,11 @@ pub const TILE_HEIGHT_LINES: u32 = 100;
 /// This must stay under GPU texture limits (typically 8192 or 16384)
 pub const MAX_TILE_HEIGHT_PIXELS: u32 = 8000;
 
-/// Maximum number of texture slices supported
-/// We use a sliding window of 3 slices: previous, current, next
-pub const MAX_TEXTURE_SLICES: usize = 3;
+/// Maximum number of texture slices supported by the shaders.
+///
+/// Note: The actual number of slices used is dynamic and depends on the
+/// current viewport height (plus padding slices).
+pub const MAX_TEXTURE_SLICES: usize = 10;
 
 /// Maximum total content height in pixels (MAX_TEXTURE_SLICES * MAX_TILE_HEIGHT_PIXELS)
 pub const MAX_CONTENT_HEIGHT: u32 = (MAX_TEXTURE_SLICES as u32) * MAX_TILE_HEIGHT_PIXELS;

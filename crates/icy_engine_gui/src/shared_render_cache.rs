@@ -9,8 +9,11 @@ use std::sync::Arc;
 
 use crate::TextureSliceData;
 
-/// Maximum height of a single tile in pixels
-pub const TILE_HEIGHT: u32 = 8000;
+/// Tile height in pixels.
+///
+/// Smaller tiles reduce worst-case CPU render + GPU upload work per miss.
+/// The actual number of slices used is dynamic and depends on the viewport.
+pub const TILE_HEIGHT: u32 = 2048;
 
 /// Cache key for a rendered tile
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

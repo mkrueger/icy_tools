@@ -1,5 +1,5 @@
 // Minimap shader with sliding window texture support
-// Uses 3 texture slices (matching Terminal's sliding window)
+// Uses up to 10 texture slices (matching Terminal)
 
 struct Uniforms {
     viewport_rect: vec4<f32>,    // x, y, width, height (normalized 0-1 in texture space)
@@ -8,21 +8,28 @@ struct Uniforms {
     render_dimensions: vec4<f32>, // texture_width, texture_height, available_width, available_height
     border_thickness: f32,       // Border thickness in pixels
     show_viewport: f32,          // 1.0 to show, 0.0 to hide
-    num_slices: f32,             // Number of texture slices (1-3)
+    num_slices: f32,             // Number of texture slices (1-10)
     total_image_height: f32,     // Total height in pixels across all slices
     slice_heights: array<vec4<f32>, 3>, // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
 }
 
-// 3 texture slots for sliding window
+// 10 texture slots for sliding window
 @group(0) @binding(0) var t_slice0: texture_2d<f32>;
 @group(0) @binding(1) var t_slice1: texture_2d<f32>;
 @group(0) @binding(2) var t_slice2: texture_2d<f32>;
+@group(0) @binding(3) var t_slice3: texture_2d<f32>;
+@group(0) @binding(4) var t_slice4: texture_2d<f32>;
+@group(0) @binding(5) var t_slice5: texture_2d<f32>;
+@group(0) @binding(6) var t_slice6: texture_2d<f32>;
+@group(0) @binding(7) var t_slice7: texture_2d<f32>;
+@group(0) @binding(8) var t_slice8: texture_2d<f32>;
+@group(0) @binding(9) var t_slice9: texture_2d<f32>;
 
-// Sampler at binding 3
-@group(0) @binding(3) var s_sampler: sampler;
+// Sampler at binding 10
+@group(0) @binding(10) var s_sampler: sampler;
 
-// Uniforms at binding 4
-@group(0) @binding(4) var<uniform> uniforms: Uniforms;
+// Uniforms at binding 11
+@group(0) @binding(11) var<uniform> uniforms: Uniforms;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -52,10 +59,20 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 // Get slice height from packed array
 // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
+// slice_heights[1] = [h3, h4, h5, h6]
+// slice_heights[2] = [h7, h8, h9, 0]
 fn get_slice_height(index: i32) -> f32 {
     if index == 0 { return uniforms.slice_heights[0][0]; }
-    else if index == 1 { return uniforms.slice_heights[0][1]; }
-    else { return uniforms.slice_heights[0][2]; }
+    if index == 1 { return uniforms.slice_heights[0][1]; }
+    if index == 2 { return uniforms.slice_heights[0][2]; }
+    if index == 3 { return uniforms.slice_heights[1][0]; }
+    if index == 4 { return uniforms.slice_heights[1][1]; }
+    if index == 5 { return uniforms.slice_heights[1][2]; }
+    if index == 6 { return uniforms.slice_heights[1][3]; }
+    if index == 7 { return uniforms.slice_heights[2][0]; }
+    if index == 8 { return uniforms.slice_heights[2][1]; }
+    if index == 9 { return uniforms.slice_heights[2][2]; }
+    return 0.0;
 }
 
 // Get first_slice_start_y (where the sliding window starts in document space)
@@ -63,8 +80,22 @@ fn get_first_slice_start_y() -> f32 {
     return uniforms.slice_heights[0][3];
 }
 
+fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
+    if index == 0 { return textureSample(t_slice0, s_sampler, uv); }
+    if index == 1 { return textureSample(t_slice1, s_sampler, uv); }
+    if index == 2 { return textureSample(t_slice2, s_sampler, uv); }
+    if index == 3 { return textureSample(t_slice3, s_sampler, uv); }
+    if index == 4 { return textureSample(t_slice4, s_sampler, uv); }
+    if index == 5 { return textureSample(t_slice5, s_sampler, uv); }
+    if index == 6 { return textureSample(t_slice6, s_sampler, uv); }
+    if index == 7 { return textureSample(t_slice7, s_sampler, uv); }
+    if index == 8 { return textureSample(t_slice8, s_sampler, uv); }
+    if index == 9 { return textureSample(t_slice9, s_sampler, uv); }
+    return textureSample(t_slice0, s_sampler, uv);
+}
+
 // Sample from the appropriate texture slice based on pixel Y coordinate
-// Uses sliding window approach: 3 slices covering current viewport area
+// Uses sliding window approach: N slices covering current viewport area
 fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     let total_height = uniforms.total_image_height;
     if total_height <= 0.0 {
@@ -110,10 +141,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
             let local_y = (window_y - cumulative_height) / slice_height;
             let slice_uv = vec2<f32>(uv.x, clamp(local_y, 0.0, 1.0));
             
-            // Sample from the appropriate texture (3 slices max)
-            if i == 0 { return textureSample(t_slice0, s_sampler, slice_uv); }
-            else if i == 1 { return textureSample(t_slice1, s_sampler, slice_uv); }
-            else { return textureSample(t_slice2, s_sampler, slice_uv); }
+            return sample_slice(i, slice_uv);
         }
         cumulative_height = next_cumulative;
     }

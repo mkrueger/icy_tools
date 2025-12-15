@@ -1,13 +1,14 @@
 //! CRT Shader Program with sliding window rendering
 //!
 //! This module implements the shader program for terminal rendering using
-//! a sliding window of 3 texture slices that cover the visible area plus
+//! a sliding window of texture slices that cover the visible area plus
 //! one tile above and below for smooth scrolling.
 
 use crate::{
     CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, is_alt_pressed, is_ctrl_pressed,
     is_shift_pressed,
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
+    tile_cache::MAX_TEXTURE_SLICES,
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse, window};
@@ -76,28 +77,13 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Get viewport info
             let vp = self.term.viewport.read();
-            let scale_factor = crate::get_scale_factor();
-            let physical_bounds_height = bounds.height * scale_factor;
-            let physical_bounds_width = bounds.width * scale_factor;
+            // Single source of truth:
+            // - Widget bounds are in logical pixels
+            // - `vp.zoom` is already the effective zoom (manual or computed via auto-fit)
+            let effective_zoom = vp.zoom.max(0.001);
 
-            let effective_zoom = self.monitor_settings.scaling_mode.compute_zoom(
-                vp.content_width,
-                vp.content_height,
-                physical_bounds_width,
-                physical_bounds_height,
-                self.monitor_settings.use_integer_scaling,
-            );
-
-            visible_height = (physical_bounds_height / effective_zoom).min(vp.content_height);
-            let visible_content_width = (physical_bounds_width / effective_zoom).min(vp.content_width);
-            visible_width = visible_content_width;
-
-            // Store computed visible dimensions
-            vp.bounds_height.store(bounds.height as u32, std::sync::atomic::Ordering::Relaxed);
-            vp.bounds_width.store(bounds.width as u32, std::sync::atomic::Ordering::Relaxed);
-            vp.computed_visible_height.store(visible_height.to_bits(), std::sync::atomic::Ordering::Relaxed);
-            vp.computed_visible_width
-                .store(visible_content_width.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            visible_height = (bounds.height / effective_zoom).min(vp.content_height);
+            visible_width = (bounds.width / effective_zoom).min(vp.content_width);
 
             let max_scroll_y = (vp.content_height - visible_height).max(0.0);
             scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
@@ -184,16 +170,23 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Current tile index based on scroll position
             let current_tile_idx = (scroll_offset_y / tile_height).floor() as i32;
-
-            // We need: previous tile, current tile, next tile
-            let first_tile_idx = (current_tile_idx - 1).max(0);
             let max_tile_idx = ((full_content_height / tile_height).ceil() as i32 - 1).max(0);
 
-            // Calculate tile indices to render (up to 3)
-            let mut tile_indices: Vec<i32> = Vec::new();
-            for i in first_tile_idx..=first_tile_idx + 2 {
-                if i <= max_tile_idx {
-                    tile_indices.push(i);
+            // Dynamic slice count: visible tiles + 1 above + 1 below
+            let visible_tiles = (visible_height / tile_height).ceil().max(1.0) as i32;
+            let mut desired_count = (visible_tiles + 2).clamp(1, MAX_TEXTURE_SLICES as i32);
+            desired_count = desired_count.min(max_tile_idx + 1);
+
+            // Start one tile above current, but clamp so we can still fit desired_count tiles
+            let max_first_tile_idx = (max_tile_idx - (desired_count - 1)).max(0);
+            let first_tile_idx = (current_tile_idx - 1).clamp(0, max_first_tile_idx);
+
+            // Calculate tile indices to render
+            let mut tile_indices: Vec<i32> = Vec::with_capacity(desired_count as usize);
+            for i in 0..desired_count {
+                let idx = first_tile_idx + i;
+                if idx <= max_tile_idx {
+                    tile_indices.push(idx);
                 }
             }
 
