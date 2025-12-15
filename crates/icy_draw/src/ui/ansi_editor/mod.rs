@@ -297,9 +297,10 @@ pub struct AnsiEditor {
     /// Whether the document is modified
     pub is_modified: bool,
 
-    /// While Some, the minimap is being dragged. Stores last pointer position relative to minimap
-    /// bounds (may be outside) to simulate egui-style continuous drag updates.
-    minimap_drag_pointer: Option<(f32, f32)>,
+    /// While Some, the minimap is being dragged. Stores the last target position in normalized
+    /// buffer coordinates (0..=1). This makes the minimap behave like a content scrollbar:
+    /// we keep applying the same target while the mouse is held, even if no further events arrive.
+    minimap_drag_target_norm: Option<(f32, f32)>,
 
     // === Selection/Drag State ===
     /// Current drag positions for mouse operations
@@ -717,7 +718,7 @@ impl AnsiEditor {
             options,
             is_modified: false,
 
-            minimap_drag_pointer: None,
+            minimap_drag_target_norm: None,
             // Selection/drag state
             drag_pos: DragPos::default(),
             is_dragging: false,
@@ -1102,7 +1103,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
+        self.tool_panel.needs_animation() || self.minimap_drag_target_norm.is_some()
     }
 
     /// Get the current marker state for menu display
@@ -1139,38 +1140,40 @@ impl AnsiEditor {
     /// Compute viewport info for the minimap overlay
     /// Returns normalized coordinates (0.0-1.0) representing the visible area in the terminal
     fn compute_viewport_info(&self) -> ViewportInfo {
-        // Get direct viewport data from the terminal
-        let vp = self.canvas.terminal.viewport.read();
-
-        let content_width = vp.content_width.max(1.0);
-        let content_height = vp.content_height.max(1.0);
-        let visible_width = vp.visible_content_width();
-        let visible_height = vp.visible_content_height();
-
-        // Normalized position: where we are scrolled to (0.0-1.0)
-        let x = vp.scroll_x / content_width;
-        let y = vp.scroll_y / content_height;
-
-        // Normalized size: how much of the content is visible (0.0-1.0)
-        let width = (visible_width / content_width).min(1.0);
-        let height = (visible_height / content_height).min(1.0);
-
-        ViewportInfo { x, y, width, height }
+        // IMPORTANT: The terminal shader may clamp/fit the visible region (resolution/letterbox).
+        // For a pixel-exact minimap overlay, use the effective values written by the shader.
+        let cache = self.canvas.terminal.render_cache.read();
+        crate::ui::ansi_editor::minimap_view::viewport_info_from_effective_view(
+            cache.content_width as f32,
+            cache.content_height,
+            cache.visible_width,
+            cache.visible_height,
+            cache.scroll_offset_x,
+            cache.scroll_offset_y,
+        )
     }
 
     /// Scroll the canvas to a normalized position (0.0-1.0)
     /// The viewport will be centered on this position
     fn scroll_canvas_to_normalized(&mut self, norm_x: f32, norm_y: f32) {
-        let vp = self.canvas.terminal.viewport.read();
-        let content_width = vp.content_width;
-        let content_height = vp.content_height;
-        let visible_width = vp.visible_content_width();
-        let visible_height = vp.visible_content_height();
-        drop(vp);
+        let cache = self.canvas.terminal.render_cache.read();
+        let content_width = (cache.content_width as f32).max(1.0);
+        let content_height = cache.content_height.max(1.0);
+        let visible_width = cache.visible_width.max(1.0);
+        let visible_height = cache.visible_height.max(1.0);
+        drop(cache);
+
+        // Keep current X when horizontal scrolling isn't possible.
+        let current_scroll_x = self.canvas.terminal.viewport.read().scroll_x;
+
+        let target_x = if content_width > visible_width {
+            norm_x * content_width - visible_width / 2.0
+        } else {
+            current_scroll_x
+        };
 
         // Convert normalized position to content coordinates
         // Center the viewport on the clicked position
-        let target_x = norm_x * content_width - visible_width / 2.0;
         let target_y = norm_y * content_height - visible_height / 2.0;
 
         // Scroll to the target position (clamping is done internally)
@@ -1360,12 +1363,13 @@ impl AnsiEditor {
                             pointer_x,
                             pointer_y,
                         } => {
-                            self.minimap_drag_pointer = Some((*pointer_x, *pointer_y));
+                            let _ = (pointer_x, pointer_y); // keep fields for future; not needed for scrollbar-style drag
+                            self.minimap_drag_target_norm = Some((*norm_x, *norm_y));
                             // Convert normalized position to content coordinates and scroll
                             self.scroll_canvas_to_normalized(*norm_x, *norm_y);
                         }
                         MinimapMessage::DragEnd => {
-                            self.minimap_drag_pointer = None;
+                            self.minimap_drag_target_norm = None;
                         }
                         _ => {}
                     }
@@ -1713,29 +1717,20 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::CancelShapeDrag => {
                 let _ = self.cancel_shape_drag();
-                self.minimap_drag_pointer = None;
+                self.minimap_drag_target_norm = None;
                 Task::none()
             }
             AnsiEditorMessage::CancelMinimapDrag => {
-                self.minimap_drag_pointer = None;
+                self.minimap_drag_target_norm = None;
                 Task::none()
             }
             AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
-                let Some((pointer_x, pointer_y)) = self.minimap_drag_pointer else {
+                let Some((norm_x, norm_y)) = self.minimap_drag_target_norm else {
                     return Task::none();
                 };
 
-                // Recompute normalized position from the last known pointer position. This is
-                // essential when no further cursor events arrive (drag-out), but the minimap and
-                // viewport keep moving.
-                let render_cache = &self.canvas.terminal.render_cache;
-                if let Some((norm_x, norm_y)) = self.right_panel.minimap.handle_click(
-                    iced::Size::new(0.0, 0.0),
-                    iced::Point::new(pointer_x, pointer_y),
-                    Some(render_cache),
-                ) {
-                    self.scroll_canvas_to_normalized(norm_x, norm_y);
-                }
+                // Scrollbar-Semantik: solange Maus gedrückt bleibt, Ziel weiter anwenden.
+                self.scroll_canvas_to_normalized(norm_x, norm_y);
 
                 Task::none()
             }

@@ -2728,7 +2728,10 @@ impl MainWindow {
                     }
                     // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
                     Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
-                        return (Some(Message::AnsiEditor(super::ansi_editor::AnsiEditorMessage::CancelMinimapDrag)), Task::none());
+                        return (
+                            Some(Message::AnsiEditor(super::ansi_editor::AnsiEditorMessage::CancelMinimapDrag)),
+                            Task::none(),
+                        );
                     }
                     // Forward keyboard events to AnsiEditor
                     Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {

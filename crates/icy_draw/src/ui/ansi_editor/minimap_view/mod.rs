@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;
 pub use minimap_shader::ViewportInfo;
+pub(crate) use minimap_shader::viewport_info_from_effective_view;
 
 static MINIMAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -46,22 +47,12 @@ pub enum MinimapMessage {
     /// Click on minimap to scroll to position (normalized 0.0-1.0 in texture space)
     ///
     /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds.
-    Click {
-        norm_x: f32,
-        norm_y: f32,
-        pointer_x: f32,
-        pointer_y: f32,
-    },
+    Click { norm_x: f32, norm_y: f32, pointer_x: f32, pointer_y: f32 },
     /// Drag on minimap to scroll (normalized 0.0-1.0 in texture space)
     ///
     /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds and may be
     /// outside (negative / beyond width/height) to support drag-out autoscroll.
-    Drag {
-        norm_x: f32,
-        norm_y: f32,
-        pointer_x: f32,
-        pointer_y: f32,
-    },
+    Drag { norm_x: f32, norm_y: f32, pointer_x: f32, pointer_y: f32 },
     /// Drag ended (mouse released).
     DragEnd,
     /// Scroll the minimap vertically
@@ -436,21 +427,21 @@ impl MinimapView {
         &self,
         slices: Vec<TextureSliceData>,
         slice_heights: Vec<u32>,
-        _total_rendered_height: u32,
+        total_rendered_height: u32,
         full_content_size: (u32, u32),
         viewport_info: &ViewportInfo,
         available_height: f32,
         scroll_offset: f32,
         first_slice_start_y: f32,
     ) -> Element<'_, MinimapMessage> {
-        // Use full_content_height as the rendered height for correct scaling
-        // Since we're using shared cache tiles, the viewport calculations should
-        // be based on the full content size, not just the rendered tiles
+        // The shader renders a sliding window of texture slices.
+        // `total_rendered_height` is the sum of the slice heights in pixels.
+        // `full_content_height` is the total document height (for normalization).
         let shader_program = MinimapProgram {
             slices,
             slice_heights,
             texture_width: full_content_size.0,
-            total_rendered_height: full_content_size.1, // Use full height for correct scaling
+            total_rendered_height,
             instance_id: self.instance_id,
             viewport_info: viewport_info.clone(),
             scroll_offset,

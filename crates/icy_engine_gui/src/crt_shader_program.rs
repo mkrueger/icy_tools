@@ -162,6 +162,13 @@ impl<'a> CRTShaderProgram<'a> {
                 cache.content_width = texture_width;
                 cache.last_blink_state = blink_on;
 
+                // Expose the *effective* visible region used by the shader so other widgets
+                // (e.g. minimap) can match the terminal view exactly.
+                cache.visible_width = visible_width;
+                cache.visible_height = visible_height;
+                cache.scroll_offset_x = scroll_offset_x;
+                cache.scroll_offset_y = scroll_offset_y;
+
                 // Selection is now rendered in the shader, so we don't need to invalidate
                 // the cache when selection changes. This significantly improves performance.
                 let mut info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();

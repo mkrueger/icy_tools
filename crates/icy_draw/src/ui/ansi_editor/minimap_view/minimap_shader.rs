@@ -51,6 +51,81 @@ pub struct ViewportInfo {
     pub height: f32,
 }
 
+pub(crate) fn viewport_info_from_effective_view(
+    content_width: f32,
+    content_height: f32,
+    visible_width: f32,
+    visible_height: f32,
+    scroll_offset_x: f32,
+    scroll_offset_y: f32,
+) -> ViewportInfo {
+    let cw = content_width.max(1.0);
+    let ch = content_height.max(1.0);
+
+    let width = (visible_width / cw).clamp(0.0, 1.0);
+    let height = (visible_height / ch).clamp(0.0, 1.0);
+
+    let max_x = (1.0 - width).max(0.0);
+    let max_y = (1.0 - height).max(0.0);
+    let x = (scroll_offset_x / cw).clamp(0.0, max_x);
+    let y = (scroll_offset_y / ch).clamp(0.0, max_y);
+
+    ViewportInfo { x, y, width, height }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::viewport_info_from_effective_view;
+
+    fn assert_approx(a: f32, b: f32) {
+        let eps = 1e-6;
+        assert!((a - b).abs() <= eps, "{a} != {b}");
+    }
+
+    #[test]
+    fn viewport_maps_to_normalized() {
+        let v = viewport_info_from_effective_view(200.0, 1000.0, 50.0, 200.0, 0.0, 300.0);
+        assert_approx(v.x, 0.0);
+        assert_approx(v.y, 0.3);
+        assert_approx(v.width, 0.25);
+        assert_approx(v.height, 0.2);
+    }
+
+    #[test]
+    fn clamps_when_visible_exceeds_content() {
+        let v = viewport_info_from_effective_view(100.0, 100.0, 500.0, 1000.0, 0.0, 0.0);
+        assert_approx(v.width, 1.0);
+        assert_approx(v.height, 1.0);
+    }
+
+    #[test]
+    fn clamps_scroll_offsets() {
+        let v = viewport_info_from_effective_view(100.0, 100.0, 10.0, 10.0, -50.0, 250.0);
+        assert_approx(v.x, 0.0);
+        // y is clamped to (1 - height) to keep the overlay fully inside.
+        assert_approx(v.y, 0.9);
+    }
+
+    #[test]
+    fn clamps_x_to_right_edge() {
+        // width = 0.25 -> max_x = 0.75
+        let v = viewport_info_from_effective_view(200.0, 100.0, 50.0, 10.0, 9999.0, 0.0);
+        assert_approx(v.width, 0.25);
+        assert_approx(v.x, 0.75);
+    }
+
+    #[test]
+    fn avoids_div_by_zero() {
+        let v = viewport_info_from_effective_view(0.0, 0.0, 10.0, 10.0, 5.0, 5.0);
+        // With max(1.0) the values stay finite and clamped.
+        assert!(v.x.is_finite() && v.y.is_finite() && v.width.is_finite() && v.height.is_finite());
+        assert!(v.x >= 0.0 && v.x <= 1.0);
+        assert!(v.y >= 0.0 && v.y <= 1.0);
+        assert!(v.width >= 0.0 && v.width <= 1.0);
+        assert!(v.height >= 0.0 && v.height <= 1.0);
+    }
+}
+
 /// The minimap shader program (high-level interface)
 /// This implements shader::Program and creates MinimapPrimitive for rendering
 #[derive(Debug, Clone)]
@@ -115,10 +190,10 @@ impl MinimapProgram {
         // texture_uv is 0-1 over the rendered texture (which may be smaller than full buffer)
         let texture_uv_y = (scroll_uv_y + screen_y * visible_uv_height).clamp(0.0, 1.0);
 
-        // Convert from texture space to full buffer space
-        // render_ratio is how much of the full buffer we actually rendered
-        let render_ratio = tex_h as f32 / self.full_content_height;
-        let norm_y = (texture_uv_y * render_ratio).clamp(0.0, 1.0);
+        // Convert from texture space (sliding window) to full buffer space.
+        // The rendered texture starts at `first_slice_start_y` in document Y.
+        let buffer_y_px = self.first_slice_start_y + texture_uv_y * tex_h as f32;
+        let norm_y = (buffer_y_px / self.full_content_height.max(1.0)).clamp(0.0, 1.0);
         let norm_x = (relative_x / bounds.width).clamp(0.0, 1.0);
 
         Some((norm_x, norm_y))
@@ -579,18 +654,16 @@ impl shader::Primitive for MinimapPrimitive {
         let visible_uv_min_y = scroll_uv_y;
         let visible_uv_max_y = scroll_uv_y + visible_uv_height;
 
-        // Convert viewport from full-buffer-space to texture-space
-        // viewport_info is in full buffer coordinates (0-1 over full_content_height)
-        // We need to convert to texture coordinates (0-1 over total_rendered_height)
-        //
-        // Example: full_content_height = 87232px, total_rendered_height = 80000px
-        // render_ratio = 80000/87232 = 0.917
-        // If viewport_info.y = 0.5 (50% of buffer = 43616px)
-        // In texture space: 43616px / 80000px = 0.545
-        // So: viewport_y_tex = viewport_info.y / render_ratio = 0.5 / 0.917 = 0.545
-        let render_ratio = tex_h as f32 / self.full_content_height.max(1.0);
-        let viewport_y_tex = self.viewport_info.y / render_ratio.max(0.001);
-        let viewport_h_tex = self.viewport_info.height / render_ratio.max(0.001);
+        // Convert viewport from full-buffer-space to texture-space (sliding window).
+        // viewport_info is normalized over the full document height.
+        // The rendered texture represents a window starting at `first_slice_start_y`.
+        let full_h = self.full_content_height.max(1.0);
+        let buffer_y_px = self.viewport_info.y * full_h;
+        let buffer_h_px = self.viewport_info.height * full_h;
+
+        let tex_h_f = tex_h as f32;
+        let viewport_y_tex = ((buffer_y_px - self.first_slice_start_y) / tex_h_f.max(1.0)).clamp(0.0, 1.0);
+        let viewport_h_tex = (buffer_h_px / tex_h_f.max(1.0)).clamp(0.0, 1.0);
 
         // Pack slice heights into 3 vec4s (matches WGSL packing)
         // slice_heights[0] = [h0, h1, h2, first_slice_start_y]

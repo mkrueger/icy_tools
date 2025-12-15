@@ -52,6 +52,15 @@ pub struct SharedRenderCache {
     pub content_height: f32,
     /// Content width in pixels
     pub content_width: u32,
+
+    /// Visible width in content pixels used by the terminal shader (after zoom/fit/limits)
+    pub visible_width: f32,
+    /// Visible height in content pixels used by the terminal shader (after zoom/fit/limits)
+    pub visible_height: f32,
+    /// Effective scroll offset X in content pixels used by the terminal shader
+    pub scroll_offset_x: f32,
+    /// Effective scroll offset Y in content pixels used by the terminal shader
+    pub scroll_offset_y: f32,
     /// Selection version (changes when selection changes)
     selection_version: u64,
     /// Last blink state used by Terminal (so Minimap can use the same)
@@ -65,6 +74,10 @@ impl SharedRenderCache {
             content_version: 0,
             content_height: 0.0,
             content_width: 0,
+            visible_width: 0.0,
+            visible_height: 0.0,
+            scroll_offset_x: 0.0,
+            scroll_offset_y: 0.0,
             selection_version: 0,
             last_blink_state: false,
         }
