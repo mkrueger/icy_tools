@@ -9,12 +9,12 @@ mod files;
 mod provider;
 mod sixteencolors;
 
-pub use archive::{ArchiveContainer, ArchiveFolder, ArchiveItem};
+pub use archive::ArchiveContainer;
 pub use files::*;
 pub use provider::*;
 pub use sixteencolors::*;
 
-use crate::ui::thumbnail_view::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
+use crate::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 use async_trait::async_trait;
 use icy_engine::{AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
 pub use icy_engine_gui::ui::FileIcon;
@@ -235,14 +235,6 @@ pub fn get_file_icon_for_path(path: &Path) -> FileIcon {
     }
 }
 
-/// Check if a file extension is displayable (can be shown/previewed)
-pub fn is_displayable_extension(ext: &str) -> bool {
-    let ext = ext.to_ascii_lowercase();
-
-    // Check FileFormat - if recognized, it's displayable
-    FileFormat::from_extension(&ext).is_some()
-}
-
 impl dyn Item {
     pub async fn is_binary(&self) -> bool {
         if let Ok(data) = self.read_data().await {
@@ -257,9 +249,6 @@ impl dyn Item {
         }
     }
 }
-
-/// Result type for async item data loading
-pub type ItemDataResult = Result<(String, Vec<u8>), (String, String)>;
 
 /// Result type for async subitems loading  
 pub type SubitemsResult = Result<Vec<Box<dyn Item>>, ItemError>;
@@ -302,7 +291,7 @@ pub fn sort_folder(directories: &mut Vec<Box<dyn Item>>) {
     directories.sort_by(|a, b| a.get_label().to_lowercase().cmp(&b.get_label().to_lowercase()));
 }
 
-use crate::SortOrder;
+use crate::sort_order::SortOrder;
 
 /// Sort items according to the specified sort order
 /// Folders are always listed first, then files are sorted within their group

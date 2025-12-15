@@ -1,7 +1,5 @@
 //! Brush modes for drawing operations
 
-use std::sync::Arc;
-
 /// The brush mode determines how pixels/characters are drawn
 #[derive(Clone, Debug, PartialEq)]
 pub enum BrushMode {

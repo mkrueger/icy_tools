@@ -10,13 +10,11 @@
 )]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-pub mod commands;
-pub mod items;
-pub mod ui;
-
-pub use commands::*;
-pub use items::*;
-pub use ui::*;
+mod commands;
+mod items;
+mod sort_order;
+mod thumbnail;
+mod ui;
 
 use std::path::PathBuf;
 
@@ -26,6 +24,8 @@ use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
 use rust_embed::RustEmbed;
 use semver::Version;
+
+use crate::ui::WindowManager;
 
 use i18n_embed::{
     DesktopLanguageRequester,

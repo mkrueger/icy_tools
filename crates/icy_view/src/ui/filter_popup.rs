@@ -11,8 +11,6 @@ pub enum FilterPopupMessage {
     FilterChanged(String),
     /// Clear the filter
     ClearFilter,
-    /// Close the popup
-    Close,
 }
 
 /// Filter popup widget - floating overlay for file filtering
@@ -44,11 +42,6 @@ impl FilterPopup {
         self.visible = false;
     }
 
-    /// Toggle visibility
-    pub fn toggle(&mut self) {
-        self.visible = !self.visible;
-    }
-
     /// Check if visible
     pub fn is_visible(&self) -> bool {
         self.visible
@@ -57,11 +50,6 @@ impl FilterPopup {
     /// Get the current filter
     pub fn get_filter(&self) -> &str {
         &self.filter
-    }
-
-    /// Set the filter
-    pub fn set_filter(&mut self, filter: String) {
-        self.filter = filter;
     }
 
     /// Clear the filter
@@ -87,11 +75,6 @@ impl FilterPopup {
             FilterPopupMessage::ClearFilter => {
                 self.filter.clear();
                 Some(String::new())
-            }
-            FilterPopupMessage::Close => {
-                self.visible = false;
-                self.filter.clear();
-                Some(String::new()) // Return empty filter to clear the filter in file browser
             }
         }
     }

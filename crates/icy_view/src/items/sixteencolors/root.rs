@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::{FileIcon, Item, ItemError};
-use crate::ui::thumbnail_view::{FOLDER_PLACEHOLDER, RgbaData};
+use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
 
 use super::{API_PATH, SixteenColorsYear, cache::fetch_json_async, get_cache};
 
@@ -34,7 +34,7 @@ impl Item for SixteenColorsRoot {
     }
 
     fn get_sync_thumbnail(&self) -> Option<RgbaData> {
-        Some(FOLDER_PLACEHOLDER.clone())
+        Some(scale_to_thumbnail_width(crate::items::create_folder_placeholder()))
     }
 
     async fn get_thumbnail_preview(&self, _cancel_token: &CancellationToken) -> Option<RgbaData> {

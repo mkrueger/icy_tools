@@ -2621,7 +2621,13 @@ impl AnsiEditor {
 
                 let (primary, paint_char, colorize_fg, colorize_bg, exact) = {
                     let opts = &self.top_toolbar.brush_options;
-                    (opts.primary, opts.paint_char, opts.colorize_fg, opts.colorize_bg, self.top_toolbar.fill_exact_matching)
+                    (
+                        opts.primary,
+                        opts.paint_char,
+                        opts.colorize_fg,
+                        opts.colorize_bg,
+                        self.top_toolbar.fill_exact_matching,
+                    )
                 };
 
                 // Fill only supports HalfBlock / Char / Colorize (matches src_egui Fill UI).
@@ -2683,12 +2689,7 @@ impl AnsiEditor {
 
                             while let Some((from, to)) = stack.pop() {
                                 let text_pos = icy_engine::Position::new(to.x, to.y / 2);
-                                if to.x < 0
-                                    || to.y < 0
-                                    || to.x >= width
-                                    || text_pos.y >= height
-                                    || !visited.insert(to)
-                                {
+                                if to.x < 0 || to.y < 0 || to.x >= width || text_pos.y >= height || !visited.insert(to) {
                                     continue;
                                 }
 
@@ -2703,8 +2704,7 @@ impl AnsiEditor {
                                 let block = icy_engine::paint::HalfBlock::from_char(cur, to);
 
                                 if block.is_blocky()
-                                    && ((block.is_top && block.upper_block_color == target_color)
-                                        || (!block.is_top && block.lower_block_color == target_color))
+                                    && ((block.is_top && block.upper_block_color == target_color) || (!block.is_top && block.lower_block_color == target_color))
                                 {
                                     let ch = block.get_half_block_char(fg, true);
                                     let _ = state.set_char_in_atomic(text_pos, ch);
@@ -2768,11 +2768,7 @@ impl AnsiEditor {
                             };
                             let use_selection = state.is_something_selected();
 
-                            if start_cell_layer.x < 0
-                                || start_cell_layer.y < 0
-                                || start_cell_layer.x >= width
-                                || start_cell_layer.y >= height
-                            {
+                            if start_cell_layer.x < 0 || start_cell_layer.y < 0 || start_cell_layer.x >= width || start_cell_layer.y >= height {
                                 return;
                             }
 

@@ -1,3 +1,4 @@
+use crate::sort_order::SortOrder;
 use icy_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
@@ -5,62 +6,6 @@ use std::{fs, path::PathBuf};
 use futures::executor::block_on;
 
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
-
-/// Sort order for file listing
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
-pub enum SortOrder {
-    /// Sort by name (A-Z)
-    #[default]
-    NameAsc,
-    /// Sort by name (Z-A)
-    NameDesc,
-    /// Sort by size (smallest first)
-    SizeAsc,
-    /// Sort by size (largest first)
-    SizeDesc,
-    /// Sort by date (oldest first)
-    DateAsc,
-    /// Sort by date (newest first)
-    DateDesc,
-}
-
-impl SortOrder {
-    /// Cycle to the next sort order
-    pub fn next(&self) -> SortOrder {
-        match self {
-            SortOrder::NameAsc => SortOrder::NameDesc,
-            SortOrder::NameDesc => SortOrder::SizeAsc,
-            SortOrder::SizeAsc => SortOrder::SizeDesc,
-            SortOrder::SizeDesc => SortOrder::DateAsc,
-            SortOrder::DateAsc => SortOrder::DateDesc,
-            SortOrder::DateDesc => SortOrder::NameAsc,
-        }
-    }
-
-    /// Get the icon for this sort order
-    pub fn icon(&self) -> &'static str {
-        match self {
-            SortOrder::NameAsc => "A↓",
-            SortOrder::NameDesc => "A↑",
-            SortOrder::SizeAsc => "S↓",
-            SortOrder::SizeDesc => "S↑",
-            SortOrder::DateAsc => "D↓",
-            SortOrder::DateDesc => "D↑",
-        }
-    }
-
-    /// Get the tooltip for this sort order
-    pub fn tooltip_key(&self) -> &'static str {
-        match self {
-            SortOrder::NameAsc => "tooltip-sort-name-asc",
-            SortOrder::NameDesc => "tooltip-sort-name-desc",
-            SortOrder::SizeAsc => "tooltip-sort-size-asc",
-            SortOrder::SizeDesc => "tooltip-sort-size-desc",
-            SortOrder::DateAsc => "tooltip-sort-date-asc",
-            SortOrder::DateDesc => "tooltip-sort-date-desc",
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
 pub enum ViewMode {
@@ -221,11 +166,6 @@ impl Options {
         }
     }
 
-    /// Returns the configuration directory path
-    pub fn get_config_dir() -> Option<PathBuf> {
-        directories::ProjectDirs::from("com", "GitHub", "icy_view").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
-    }
-
     /// Returns the log directory path
     pub fn get_log_dir() -> Option<PathBuf> {
         directories::ProjectDirs::from("com", "GitHub", "icy_view").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
@@ -240,11 +180,6 @@ impl Options {
                 log_dir.join("icy_view.log")
             }
         })
-    }
-
-    /// Reset monitor settings to defaults
-    pub fn reset_monitor_settings(&mut self) {
-        self.monitor_settings = MonitorSettings::default();
     }
 
     /// Returns the export path, falling back to default if not set
@@ -269,7 +204,7 @@ impl Options {
     /// Prepare a file for external command execution.
     /// For local files, returns the path directly.
     /// For virtual files (archives, web), copies to temp directory and returns temp path.
-    pub fn prepare_file_for_external(item: &dyn crate::Item) -> Option<PathBuf> {
+    pub fn prepare_file_for_external(item: &dyn crate::items::Item) -> Option<PathBuf> {
         // Check if it's a local file with a real path
         if let Some(full_path) = item.get_full_path() {
             let path = PathBuf::from(full_path);

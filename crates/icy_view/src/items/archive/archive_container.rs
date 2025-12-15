@@ -5,8 +5,10 @@ use tokio_util::sync::CancellationToken;
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use super::{ArchiveFolder, ArchiveItem, parse_archive, render_diz_to_thumbnail};
+use crate::LANGUAGE_LOADER;
 use crate::items::{FileIcon, Item, ItemError, sort_folder};
-use crate::ui::thumbnail_view::{DIZ_NOT_FOUND_PLACEHOLDER, RgbaData};
+use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
+use i18n_embed_fl::fl;
 
 /// An archive file (ZIP, RAR, ARJ, etc.)
 pub struct ArchiveContainer {
@@ -86,7 +88,8 @@ impl Item for ArchiveContainer {
         }
 
         // No FILE_ID.DIZ found
-        Some(DIZ_NOT_FOUND_PLACEHOLDER.clone())
+        let text = fl!(LANGUAGE_LOADER, "thumbnail-no-diz");
+        Some(scale_to_thumbnail_width(crate::items::create_text_preview(&text)))
     }
 
     async fn get_subitems(&self, cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {

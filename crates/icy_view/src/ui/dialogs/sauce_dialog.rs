@@ -7,7 +7,7 @@ use icy_engine_gui::{
     dialog_wrapper, section_header,
     ui::{
         DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, SauceFieldColor, StateResult, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small,
-        modal_container, modal_overlay, primary_button, sauce_input_style, secondary_button, separator,
+        modal_container, primary_button, sauce_input_style, secondary_button, separator,
     },
 };
 use icy_sauce::{ArchiveFormat, AudioFormat, BitmapFormat, Capabilities, CharacterFormat, SauceDataType, SauceRecord, VectorFormat};
@@ -43,15 +43,6 @@ impl SauceDialogState {
 
     pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(SauceDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
         self.view_content(on_message)
-    }
-
-    pub fn view_with_background<'a, Message: Clone + 'static>(
-        &'a self,
-        background: Element<'a, Message>,
-        on_message: impl Fn(SauceDialogMessage) -> Message + Copy + 'a,
-    ) -> Element<'a, Message> {
-        let modal = self.create_modal_content(on_message);
-        modal_overlay(background, modal)
     }
 
     fn create_field<'a, Message: Clone + 'static>(label: &str, value: &str) -> Element<'a, Message> {
@@ -91,43 +82,6 @@ impl SauceDialogState {
         } else {
             date_str.to_string()
         }
-    }
-
-    fn create_modal_content<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(SauceDialogMessage) -> Message + 'a) -> Element<'a, Message> {
-        let content = if self.show_raw {
-            self.create_raw_content()
-        } else {
-            self.create_formatted_content()
-        };
-
-        // Buttons
-        let raw_btn = secondary_button(
-            if self.show_raw {
-                fl!(crate::LANGUAGE_LOADER, "sauce-btn-formatted")
-            } else {
-                fl!(crate::LANGUAGE_LOADER, "sauce-btn-raw")
-            },
-            Some(on_message(SauceDialogMessage::ToggleRaw)),
-        );
-
-        let ok_btn = primary_button(fl!(crate::LANGUAGE_LOADER, "button-ok"), Some(on_message(SauceDialogMessage::Close)));
-
-        let buttons = button_row_with_left(vec![raw_btn.into()], vec![ok_btn.into()]);
-
-        let dialog_content = dialog_area(content);
-        let button_area = dialog_area(buttons);
-
-        let modal = modal_container(
-            column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
-            DIALOG_WIDTH_MEDIUM,
-        );
-
-        container(modal)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
     }
 
     fn create_comments_box<'a, Message: Clone + 'static>(comments_text: &str) -> Element<'a, Message> {
@@ -549,25 +503,6 @@ impl SauceDialogState {
 // ============================================================================
 // Builder functions for SAUCE dialog
 // ============================================================================
-
-/// Create a SAUCE info dialog.
-///
-/// # Example
-/// ```ignore
-/// dialog_stack.push(sauce_dialog(
-///     sauce_record,
-///     Message::SauceDialog,
-///     |msg| match msg { Message::SauceDialog(m) => Some(m), _ => None },
-/// ));
-/// ```
-pub fn sauce_dialog<M, F, E>(sauce: SauceRecord, on_message: F, extract_message: E) -> SauceDialogWrapper<M, F, E>
-where
-    M: Clone + Send + 'static,
-    F: Fn(SauceDialogMessage) -> M + Clone + 'static,
-    E: Fn(&M) -> Option<&SauceDialogMessage> + Clone + 'static,
-{
-    SauceDialogWrapper::new(SauceDialogState::new(sauce), on_message, extract_message)
-}
 
 /// Creates a sauce dialog wrapper using a tuple of (on_message, extract_message).
 ///

@@ -3,8 +3,10 @@ use icy_engine::formats::FileFormat;
 use icy_engine_gui::ui::FileIcon;
 use tokio_util::sync::CancellationToken;
 
+use crate::LANGUAGE_LOADER;
 use crate::items::{ArchiveContainer, Item, ItemError, load_image_to_rgba, sort_folder};
-use crate::ui::thumbnail_view::{DIZ_NOT_FOUND_PLACEHOLDER, RgbaData};
+use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
+use i18n_embed_fl::fl;
 
 use super::{API_PATH, SixteenColorsFile, cache::fetch_json_async, get_cache};
 
@@ -59,7 +61,8 @@ impl Item for SixteenColorsPack {
             }
             // If all URLs have failed before, return "no file_id.diz" placeholder
             if urls.iter().all(|url| cache_read.has_failed(url)) {
-                return Some(DIZ_NOT_FOUND_PLACEHOLDER.clone());
+                let text = fl!(LANGUAGE_LOADER, "thumbnail-no-diz");
+                return Some(scale_to_thumbnail_width(crate::items::create_text_preview(&text)));
             }
         }
 
@@ -108,7 +111,8 @@ impl Item for SixteenColorsPack {
         }
 
         // All URLs failed - show "no file_id.diz" placeholder
-        Some(DIZ_NOT_FOUND_PLACEHOLDER.clone())
+        let text = fl!(LANGUAGE_LOADER, "thumbnail-no-diz");
+        Some(scale_to_thumbnail_width(crate::items::create_text_preview(&text)))
     }
 
     async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {

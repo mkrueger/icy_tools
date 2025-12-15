@@ -102,18 +102,8 @@ impl NavPoint {
         }
     }
 
-    /// Select an item by name
-    pub fn select_item(&mut self, name: String) {
-        self.selected_item = Some(name);
-    }
-
     /// Check if this is a web provider
     pub fn is_web(&self) -> bool {
         self.provider_type == ProviderType::Web
-    }
-
-    /// Check if this is a file provider
-    pub fn is_file(&self) -> bool {
-        self.provider_type == ProviderType::File
     }
 }

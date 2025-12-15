@@ -43,10 +43,6 @@ pub enum ViewCommand {
     Stop,
     /// Set baud emulation rate
     SetBaudEmulation(BaudEmulation),
-    /// Set auto-scroll enabled
-    SetAutoScrollEnabled(bool),
-    /// Restart playback from beginning
-    Restart,
     /// Shutdown the thread
     Shutdown,
 }
@@ -62,8 +58,6 @@ pub enum ViewEvent {
     SauceInfo(Option<SauceRecord>, usize),
     /// Set scroll mode (determined by background thread)
     SetScrollMode(ScrollMode),
-    /// Error occurred
-    Error(String),
 }
 
 /// Result from background format loading
@@ -347,15 +341,6 @@ impl ViewThread {
                     let _ = self.event_tx.send(ViewEvent::SetScrollMode(ScrollMode::ClampToBottom));
                 }
             }
-            ViewCommand::SetAutoScrollEnabled(enabled) => {
-                self.auto_scroll_enabled = enabled;
-                if let Some(load) = &mut self.current_load {
-                    load.auto_scroll_enabled = enabled;
-                }
-            }
-            ViewCommand::Restart => {
-                self.restart().await;
-            }
             ViewCommand::Shutdown => {
                 return false;
             }
@@ -617,73 +602,6 @@ impl ViewThread {
         self.pending_format_load = None;
         self.sound_thread.clear();
         self.baud_emulator.reset();
-    }
-
-    async fn restart(&mut self) {
-        let Some(load) = &self.current_load else {
-            return;
-        };
-
-        if load.file_data.is_empty() {
-            return;
-        }
-
-        // Store values we need before creating a new load
-        let path = load.path.clone();
-        let file_data = load.file_data.clone();
-        let load_mode = load.load_mode.clone();
-        let screen_mode = load.screen_mode;
-        let terminal_emulation = load.terminal_emulation;
-
-        // Start a new load operation (cancels current one via Drop)
-        self.start_new_load(path.clone());
-
-        match load_mode {
-            LoadMode::Parser => {
-                // Re-initialize screen using stored mode and emulation
-                let parser = self.init_screen_for_mode(screen_mode, terminal_emulation);
-
-                if let Some(load) = &mut self.current_load {
-                    load.parser = Some(parser);
-                    load.screen_mode = screen_mode;
-                    load.terminal_emulation = terminal_emulation;
-                    load.file_data = file_data;
-                    load.load_mode = LoadMode::Parser;
-                    load.file_position = 0;
-                    load.is_playing = true;
-                }
-            }
-            LoadMode::Format(format) => {
-                // Reload from format
-                match format.from_bytes(&file_data, Some(LoadData::default())) {
-                    Ok(screen) => {
-                        let buffer = screen.buffer;
-                        // Validate buffer dimensions
-                        if buffer.width() == 0 || buffer.height() == 0 {
-                            let _ = self
-                                .event_tx
-                                .send(ViewEvent::Error(format!("Invalid buffer dimensions: {}x{}", buffer.width(), buffer.height())));
-                            return;
-                        }
-
-                        self.copy_buffer_to_screen(&buffer);
-
-                        if let Some(load) = &mut self.current_load {
-                            load.file_data = file_data;
-                            load.load_mode = LoadMode::Format(format);
-                        }
-
-                        let _ = self.event_tx.send(ViewEvent::LoadingCompleted);
-                        // Send scroll mode: AutoScroll if enabled, otherwise Off
-                        let scroll_mode = if self.auto_scroll_enabled { ScrollMode::AutoScroll } else { ScrollMode::Off };
-                        let _ = self.event_tx.send(ViewEvent::SetScrollMode(scroll_mode));
-                    }
-                    Err(e) => {
-                        let _ = self.event_tx.send(ViewEvent::Error(format!("Failed to reload file: {}", e)));
-                    }
-                }
-            }
-        }
     }
 
     async fn process_next_chunk(&mut self) {

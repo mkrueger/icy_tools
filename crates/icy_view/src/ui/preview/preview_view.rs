@@ -87,18 +87,8 @@ pub enum PreviewMessage {
     ScrollViewport(f32, f32),
     /// Scroll viewport with smooth animation (for PageUp/PageDown)
     ScrollViewportSmooth(f32, f32),
-    /// Scroll viewport to absolute position (direct, no animation)
-    ScrollViewportTo(f32, f32),
     /// Scroll viewport to absolute position with smooth animation (for Home/End)
     ScrollViewportToSmooth(f32, f32),
-    /// Scroll vertical only to absolute Y position immediately
-    ScrollViewportYToImmediate(f32),
-    /// Scroll horizontal only to absolute X position immediately
-    ScrollViewportXToImmediate(f32),
-    /// Scrollbar hover state changed
-    ScrollbarHovered(bool),
-    /// Horizontal scrollbar hover state changed
-    HScrollbarHovered(bool),
     /// Terminal view message
     TerminalMessage(icy_engine_gui::Message),
     /// Image loaded from background thread (with dimensions)
@@ -342,65 +332,11 @@ impl PreviewView {
         }
     }
 
-    /// Set monitor settings for CRT effects
-    pub fn set_monitor_settings(&mut self, settings: Arc<MonitorSettings>) {
-        self.monitor_settings = settings;
-    }
-
     /// Set the preview to error state
     pub fn set_error(&mut self, path: PathBuf, message: String) {
         self.current_file = Some(path);
         self.is_loading = false;
         self.preview_mode = PreviewMode::Error(message);
-    }
-
-    /// Zoom in by one step
-    pub fn zoom_in(&mut self) {
-        self.terminal.zoom_in();
-    }
-
-    /// Zoom in by integer step (for integer scaling mode)
-    pub fn zoom_in_int(&mut self) {
-        self.terminal.zoom_in_int();
-    }
-
-    /// Zoom out by one step
-    pub fn zoom_out(&mut self) {
-        self.terminal.zoom_out();
-    }
-
-    /// Zoom out by integer step (for integer scaling mode)
-    pub fn zoom_out_int(&mut self) {
-        self.terminal.zoom_out_int();
-    }
-
-    /// Reset zoom to 100% (1:1 pixel mapping)
-    pub fn zoom_reset(&mut self) {
-        self.terminal.zoom_reset();
-    }
-
-    /// Calculate and set auto-fit zoom
-    pub fn zoom_auto_fit(&mut self, use_integer_scaling: bool) -> f32 {
-        self.terminal.zoom_auto_fit(use_integer_scaling)
-    }
-
-    /// Get current zoom level
-    pub fn get_zoom(&self) -> f32 {
-        if let Some(ref viewer) = self.image_viewer {
-            viewer.zoom()
-        } else {
-            self.terminal.get_zoom()
-        }
-    }
-
-    /// Get image dimensions if viewing an image
-    pub fn get_image_size(&self) -> Option<(u32, u32)> {
-        if let Some(ref viewer) = self.image_viewer {
-            let (w, h) = viewer.zoomed_size();
-            Some((w as u32, h as u32))
-        } else {
-            None
-        }
     }
 
     /// Get the current buffer size (width x height) from the terminal screen
@@ -499,11 +435,6 @@ impl PreviewView {
     /// Stop auto-scroll mode
     pub fn stop_auto_scroll(&mut self) {
         self.scroll_mode = ScrollMode::Off;
-    }
-
-    /// Check if auto-scroll is active
-    pub fn is_auto_scroll_active(&self) -> bool {
-        self.scroll_mode == ScrollMode::AutoScroll
     }
 
     /// Set auto-scroll enabled (will auto-start on new file load)
@@ -631,9 +562,6 @@ impl PreviewView {
                     ImageViewerMessage::Move(None) => {
                         // Mouse left bounds - nothing to do
                     }
-                    ImageViewerMessage::Drag(_) => {
-                        // Legacy - now handled via Move
-                    }
                     ImageViewerMessage::Scroll(_, _) => {
                         // Stop inertia when user scrolls manually
                         self.scroll_mode = ScrollMode::Off;
@@ -672,11 +600,6 @@ impl PreviewView {
                         }
                         ViewEvent::SauceInfo(sauce_opt, content_size) => {
                             extra_tasks.push(Task::done(PreviewMessage::SauceInfoReceived(sauce_opt, content_size)));
-                        }
-                        ViewEvent::Error(msg) => {
-                            log::error!("Preview error: {}", msg);
-                            self.is_loading = false;
-                            self.preview_mode = PreviewMode::Error(msg);
                         }
                     }
                 }
@@ -752,15 +675,6 @@ impl PreviewView {
                 });
                 Task::none()
             }
-            PreviewMessage::ScrollViewportTo(x, y) => {
-                // User is scrolling manually, disable auto-scroll modes
-                self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_to(x, y);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
-            }
             PreviewMessage::ScrollViewportToSmooth(x, y) => {
                 // User is scrolling to absolute position with animation (Home/End)
                 self.scroll_mode = ScrollMode::Off;
@@ -768,39 +682,6 @@ impl PreviewView {
                     cv.scroll_to_smooth(x, y);
                     cv.sync_scrollbar();
                 });
-                Task::none()
-            }
-            PreviewMessage::ScrollViewportYToImmediate(y) => {
-                // User is scrolling vertically via scrollbar
-                self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_y_to(y);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
-            }
-            PreviewMessage::ScrollViewportXToImmediate(x) => {
-                // User is scrolling horizontally via scrollbar
-                self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_x_to(x);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
-            }
-            PreviewMessage::ScrollbarHovered(is_hovered) => {
-                self.terminal.scrollbar.set_hovered(is_hovered);
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.scrollbar.set_hovered(is_hovered);
-                }
-                Task::none()
-            }
-            PreviewMessage::HScrollbarHovered(is_hovered) => {
-                // Horizontal scrollbar uses separate hover state for animation
-                self.terminal.scrollbar.set_hovered_x(is_hovered);
-                if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.scrollbar.set_hovered_x(is_hovered);
-                }
                 Task::none()
             }
             PreviewMessage::TerminalMessage(msg) => {

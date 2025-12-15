@@ -23,16 +23,8 @@ impl ContentView for TerminalContentView<'_> {
         self.terminal.viewport.read().scroll_y
     }
 
-    fn max_scroll_y(&self) -> f32 {
-        self.terminal.viewport.read().max_scroll_y()
-    }
-
     fn scroll_x(&self) -> f32 {
         self.terminal.viewport.read().scroll_x
-    }
-
-    fn max_scroll_x(&self) -> f32 {
-        self.terminal.viewport.read().max_scroll_x()
     }
 
     fn scroll_y_to(&mut self, y: f32) {
@@ -69,17 +61,5 @@ impl ContentView for TerminalContentView<'_> {
 
     fn update_animations(&mut self, _dt: f32) {
         self.terminal.update_animations();
-    }
-
-    fn needs_animation(&self) -> bool {
-        self.terminal.needs_animation()
-    }
-
-    fn visible_height(&self) -> f32 {
-        self.terminal.viewport.read().visible_height
-    }
-
-    fn visible_width(&self) -> f32 {
-        self.terminal.viewport.read().visible_width
     }
 }

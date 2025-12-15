@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
 use icy_engine::Screen;
-use icy_engine_gui::{SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
+use icy_engine_gui::{SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;

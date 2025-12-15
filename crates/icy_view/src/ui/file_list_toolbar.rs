@@ -7,8 +7,9 @@ use iced::{
 };
 
 use super::icons;
-use super::options::{Options, SortOrder, ViewMode};
+use super::options::{Options, ViewMode};
 use crate::LANGUAGE_LOADER;
+use crate::sort_order::SortOrder;
 
 /// Duration before toolbar auto-hides on first show (generous)
 const INITIAL_HIDE_DELAY_SECS: f32 = 5.0;
@@ -16,8 +17,6 @@ const INITIAL_HIDE_DELAY_SECS: f32 = 5.0;
 const NORMAL_HIDE_DELAY_SECS: f32 = 1.5;
 /// Width of the hover zone to show toolbar (in pixels)
 pub const TOOLBAR_HOVER_ZONE_WIDTH: f32 = 40.0;
-/// Toolbar width for calculating slide animation
-pub const TOOLBAR_WIDTH: f32 = 80.0;
 
 /// Messages for the file list toolbar
 #[derive(Debug, Clone)]
@@ -36,8 +35,6 @@ pub enum FileListToolbarMessage {
     MouseEntered,
     /// Mouse left toolbar hover zone
     MouseLeft,
-    /// Hide timer tick - check if toolbar should hide
-    HideTick,
 }
 
 /// Toolbar for the file list area
@@ -116,11 +113,6 @@ impl FileListToolbar {
         self.is_hovered = false;
         self.last_shown = Some(Instant::now());
         self.first_show = true;
-    }
-
-    /// Get the current X offset for slide animation (0 = fully visible, -TOOLBAR_WIDTH = hidden)
-    pub fn get_slide_offset(&self) -> f32 {
-        if self.is_visible { 0.0 } else { -TOOLBAR_WIDTH }
     }
 
     /// View for list mode (solid background, fixed width 300px)

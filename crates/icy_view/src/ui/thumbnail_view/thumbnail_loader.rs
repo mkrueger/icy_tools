@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::Item;
+use crate::items::Item;
 use crate::ui::preview::prepare_parser_data;
 
 use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, ThumbnailResult, ThumbnailState, get_width_multiplier};
@@ -27,8 +27,6 @@ const TAG_MAX_LINES: usize = 8;
 pub struct ThumbnailRequest {
     /// The item to render thumbnail for
     pub item: Arc<dyn Item>,
-    /// Priority (lower = higher priority, visible items should be 0)
-    pub priority: u32,
 }
 
 /// Thumbnail loader that uses Tokio for async task management

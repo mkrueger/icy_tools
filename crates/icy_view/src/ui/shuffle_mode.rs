@@ -82,17 +82,6 @@ const FADE_OUT_END_RATIO: f32 = 0.35;
 /// Where comments start scrolling from (1.0 = screen bottom, 1.1 = 10% below)
 const COMMENT_START_OFFSET_RATIO: f32 = 1.0;
 
-/// Messages for shuffle mode
-#[derive(Debug, Clone)]
-pub enum ShuffleModeMessage {
-    /// Exit shuffle mode (Escape/Enter/Click)
-    Exit,
-    /// Advance to next file
-    NextFile,
-    /// Animation tick
-    Tick(f32),
-}
-
 /// State for a single comment line
 #[derive(Debug, Clone)]
 struct CommentLineState {
@@ -496,12 +485,12 @@ impl ShuffleMode {
     }
 
     /// Create the SAUCE info overlay (title/author/group at top)
-    pub fn info_overlay(&self) -> Element<'_, ShuffleModeMessage> {
+    pub fn info_overlay<'a, Message: 'a>(&'a self) -> Element<'a, Message> {
         if !self.is_active {
             return Space::new().into();
         }
 
-        let mut info_parts: Vec<Element<'_, ShuffleModeMessage>> = Vec::new();
+        let mut info_parts: Vec<Element<'a, Message>> = Vec::new();
 
         // Title
         if let Some(ref title) = self.current_title {
@@ -509,7 +498,7 @@ impl ShuffleMode {
         }
 
         // Author & Group on same line
-        let mut author_group: Vec<Element<'_, ShuffleModeMessage>> = Vec::new();
+        let mut author_group: Vec<Element<'a, Message>> = Vec::new();
         if let Some(ref author) = self.current_author {
             author_group.push(
                 text(format!("by {}", author))
@@ -556,7 +545,7 @@ impl ShuffleMode {
 
     /// Create the comments overlay (scrolls from bottom, fades out at 1/2 screen)
     /// Uses pixel-perfect scrolling by calculating exact position offsets
-    pub fn comments_overlay(&self, screen_height: f32) -> Element<'_, ShuffleModeMessage> {
+    pub fn comments_overlay<'a, Message: 'a>(&'a self, screen_height: f32) -> Element<'a, Message> {
         if !self.is_active || self.comment_states.is_empty() || self.comment_block_opacity < 0.01 {
             return Space::new().into();
         }
@@ -575,7 +564,7 @@ impl ShuffleMode {
         let fade_out_end = screen_height * FADE_OUT_END_RATIO;
 
         // Build comments with opacity based on their scroll position
-        let mut elements: Vec<Element<'_, ShuffleModeMessage>> = Vec::new();
+        let mut elements: Vec<Element<'a, Message>> = Vec::new();
 
         // Add initial spacer to push content below the screen (starts at bottom)
         // When scroll_offset = 0, spacer = screen_height * ratio (content at/below screen bottom)
@@ -646,7 +635,7 @@ impl ShuffleMode {
     }
 
     /// Create the full shuffle mode overlay view
-    pub fn overlay_view(&self, screen_height: f32) -> Element<'_, ShuffleModeMessage> {
+    pub fn overlay_view<'a, Message: 'a>(&'a self, screen_height: f32) -> Element<'a, Message> {
         if !self.is_active {
             return Space::new().into();
         }

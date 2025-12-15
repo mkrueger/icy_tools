@@ -1,4 +1,4 @@
-use crate::ui::thumbnail_view::RgbaData;
+use crate::thumbnail::RgbaData;
 
 /// Render FILE_ID.DIZ content to a thumbnail
 /// This is similar to render_ansi_thumbnail but simplified for DIZ files
@@ -75,7 +75,7 @@ pub fn render_diz_to_thumbnail(data: &[u8]) -> Option<RgbaData> {
     let orig_height = size.height as u32;
 
     // Scale to thumbnail size
-    use crate::ui::thumbnail_view::{THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
+    use crate::thumbnail::{THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 
     let scale = (THUMBNAIL_RENDER_WIDTH as f32 / orig_width as f32)
         .min(THUMBNAIL_MAX_HEIGHT as f32 / orig_height as f32)

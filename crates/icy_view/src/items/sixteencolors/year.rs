@@ -7,7 +7,7 @@ use retrofont::{Font, RenderOptions};
 use tokio_util::sync::CancellationToken;
 
 use crate::items::{Item, ItemError, create_text_buffer_preview, sort_folder};
-use crate::ui::thumbnail_view::RgbaData;
+use crate::thumbnail::RgbaData;
 
 use super::{API_PATH, SixteenColorsPack, cache::fetch_json_async, get_cache};
 

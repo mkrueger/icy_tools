@@ -10,14 +10,8 @@ pub trait ContentView {
     /// Get current vertical scroll position
     fn scroll_y(&self) -> f32;
 
-    /// Get maximum vertical scroll position
-    fn max_scroll_y(&self) -> f32;
-
     /// Get current horizontal scroll position
     fn scroll_x(&self) -> f32;
-
-    /// Get maximum horizontal scroll position
-    fn max_scroll_x(&self) -> f32;
 
     /// Scroll to absolute Y position (immediate, no animation)
     fn scroll_y_to(&mut self, y: f32);
@@ -45,32 +39,4 @@ pub trait ContentView {
 
     /// Update animations (viewport smooth scroll + scrollbar fade)
     fn update_animations(&mut self, dt: f32);
-
-    /// Check if animation updates are needed
-    fn needs_animation(&self) -> bool;
-
-    /// Check if scroll has reached the bottom
-    fn is_at_bottom(&self) -> bool {
-        let max_y = self.max_scroll_y();
-        let current_y = self.scroll_y();
-        max_y <= 0.0 || current_y >= max_y - 1.0
-    }
-
-    /// Scroll to top
-    fn scroll_home(&mut self) {
-        self.scroll_to_smooth(0.0, 0.0);
-    }
-
-    /// Scroll to bottom
-    fn scroll_end(&mut self) {
-        let max_x = self.max_scroll_x();
-        let max_y = self.max_scroll_y();
-        self.scroll_to_smooth(max_x, max_y);
-    }
-
-    /// Get visible height
-    fn visible_height(&self) -> f32;
-
-    /// Get visible width
-    fn visible_width(&self) -> f32;
 }

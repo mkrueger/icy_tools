@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Border, Color, Element, Event, Length, Theme,
@@ -116,23 +114,8 @@ impl StatusInfo {
         Self::default()
     }
 
-    pub fn with_file(path: &PathBuf) -> Self {
-        let file_name = path.file_name().map(|n| n.to_string_lossy().to_string());
-        let file_size = std::fs::metadata(path).ok().map(|m| m.len());
-        Self {
-            file_name,
-            file_size,
-            ..Default::default()
-        }
-    }
-
     pub fn with_item_count(mut self, count: usize) -> Self {
         self.item_count = count;
-        self
-    }
-
-    pub fn with_message(mut self, message: impl Into<String>) -> Self {
-        self.message = Some(message.into());
         self
     }
 
@@ -143,11 +126,6 @@ impl StatusInfo {
 
     pub fn with_viewing_file(mut self, viewing: bool) -> Self {
         self.is_viewing_file = viewing;
-        self
-    }
-
-    pub fn with_sauce_info(mut self, sauce: Option<SauceRecord>) -> Self {
-        self.sauce_info = sauce;
         self
     }
 
@@ -163,11 +141,6 @@ impl StatusInfo {
 
     pub fn with_auto_scroll_enabled(mut self, enabled: bool) -> Self {
         self.auto_scroll_enabled = enabled;
-        self
-    }
-
-    pub fn with_archive_info(mut self, archive_info: Option<(String, u64)>) -> Self {
-        self.archive_info = archive_info;
         self
     }
 

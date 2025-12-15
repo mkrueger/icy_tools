@@ -10,9 +10,9 @@ use icy_engine::formats::FileFormat;
 
 use super::file_list_view::{FileListView, FileListViewMessage};
 use super::sauce_loader::SharedSauceCache;
-use crate::Item;
+use crate::items::Item;
 use crate::items::{NavPoint, ProviderType, SixteenColorsProvider, get_items_at_path, is_directory, path_exists, sort_items};
-use crate::ui::options::SortOrder;
+use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
 
 /// Messages for the file browser
@@ -26,8 +26,6 @@ pub enum FileBrowserMessage {
     Refresh,
     /// Filter text changed
     FilterChanged(String),
-    /// Clear the filter
-    ClearFilter,
 }
 
 /// File browser widget with simple path-based navigation
@@ -151,12 +149,6 @@ impl FileBrowser {
                 self.update_visible_indices();
                 // Reset selection when filter changes
                 self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-                false
-            }
-            FileBrowserMessage::ClearFilter => {
-                self.filter.clear();
-                self.update_visible_indices();
-                self.list_view.selected_index = None;
                 false
             }
         }
@@ -334,24 +326,11 @@ impl FileBrowser {
         container(focusable_list).width(Length::Fill).height(Length::Fill).into()
     }
 
-    /// Notify list view of current viewport size
-    pub fn set_viewport_size(&mut self, width: f32, height: f32) {
-        self.list_view
-            .update(FileListViewMessage::SetViewportSize(width, height), self.visible_indices.len());
-    }
-
     /// Get the currently selected file
     pub fn selected_item(&self) -> Option<&Box<dyn Item>> {
         let visible_index = self.list_view.selected_index?;
         let file_index = *self.visible_indices.get(visible_index)?;
         self.files.get(file_index)
-    }
-
-    /// Get the currently selected file mutably (for reading data)
-    pub fn selected_item_mut(&mut self) -> Option<&mut Box<dyn Item>> {
-        let visible_index = self.list_view.selected_index?;
-        let file_index = *self.visible_indices.get(visible_index)?;
-        self.files.get_mut(file_index)
     }
 
     /// Get the current path

@@ -238,8 +238,4 @@ impl SixteenColorsProvider {
             }
         }
     }
-
-    pub fn display_name(&self) -> String {
-        "16colo.rs".to_string()
-    }
 }

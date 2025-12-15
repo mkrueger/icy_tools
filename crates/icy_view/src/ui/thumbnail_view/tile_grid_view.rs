@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use iced::mouse;
@@ -17,9 +17,8 @@ use icy_engine_gui::{ScrollbarOverlayCallback, Viewport};
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
 use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, create_labeled_placeholder, render_label_tag};
-use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileShaderState, TileTexture, new_tile_id};
-use crate::Item;
-use crate::items::{ItemError, ItemFile, ItemFolder};
+use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileTexture, new_tile_id};
+use crate::items::{Item, ItemError};
 use crate::ui::options::ScrollSpeed;
 
 /// Base tile width for layout calculations (full tile including borders)
@@ -39,13 +38,10 @@ const PRELOAD_BUFFER_PX: f32 = 500.0;
 struct TileShaderProgramWrapper {
     tiles: Vec<TileTexture>,
     scroll_y: f32,
-    content_height: f32,
     _viewport_height: f32,
     _selected_tile_id: Option<u64>,
     /// Shared hover state - updated by shader, read by click handler
     shared_hovered_tile: Arc<Mutex<Option<u64>>>,
-    /// Background color from theme (shared)
-    background_color: Arc<RwLock<[f32; 4]>>,
 }
 
 impl<Message> shader::Program<Message> for TileShaderProgramWrapper
@@ -72,10 +68,6 @@ where
             tiles,
             scroll_y: self.scroll_y,
             viewport_height: bounds.height,
-            content_height: self.content_height,
-            background_color: *self.background_color.read(),
-            selection_color: [0.3, 0.5, 0.8, 0.5],
-            hover_color: [0.5, 0.5, 0.5, 0.3],
         }
     }
 
@@ -134,16 +126,10 @@ pub struct LayoutTile {
 pub enum TileGridMessage {
     /// A tile was clicked
     TileClicked(usize),
-    /// A tile was double-clicked
-    TileDoubleClicked(usize),
-    /// Scroll position changed
-    Scrolled(f32),
     /// Animation tick (for blinking)
     AnimationTick,
     /// Thumbnail loading completed
-    ThumbnailReady(String, ThumbnailState),
-    /// Width changed (from responsive container)
-    WidthChanged(f32),
+    ThumbnailReady,
     /// Scrollbar scroll event (from scrollbar overlay)
     ScrollbarScroll(f32, f32),
     /// Scrollbar hover state changed
@@ -196,8 +182,6 @@ pub struct TileGridView {
     blink_on: bool,
     /// Time since last blink toggle
     blink_timer: f32,
-    /// Shader state (for hover detection)
-    pub shader_state: TileShaderState,
     /// Shared hover state - updated by shader, read by click handler
     pub shared_hovered_tile: Arc<Mutex<Option<u64>>>,
     /// Shared hover state for scrollbar overlay
@@ -222,8 +206,6 @@ pub struct TileGridView {
     subitems_cancel_token: CancellationToken,
     /// Receiver for async subitem loading results
     subitems_rx: Option<tokio::sync::oneshot::Receiver<Result<Vec<Box<dyn Item>>, ItemError>>>,
-    /// Background color for shader (shared, can be updated from theme)
-    background_color: Arc<RwLock<[f32; 4]>>,
     /// LRU order for loaded thumbnails (front = oldest, back = newest)
     /// Contains indices of thumbnails that are currently loaded (Ready state)
     loaded_lru: Vec<usize>,
@@ -252,7 +234,6 @@ impl TileGridView {
             cache: Cache::new(),
             blink_on: true,
             blink_timer: 0.0,
-            shader_state: TileShaderState::default(),
             shared_hovered_tile: Arc::new(Mutex::new(None)),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             last_cursor_position: None,
@@ -265,15 +246,14 @@ impl TileGridView {
             visible_indices: Vec::new(),
             subitems_cancel_token: CancellationToken::new(),
             subitems_rx: None,
-            background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default, will be set by set_background_color
             loaded_lru: Vec::new(),
             last_viewport_top: 0.0,
         }
     }
 
     /// Set background color from theme
-    pub fn set_background_color(&self, color: iced::Color) {
-        *self.background_color.write() = [color.r, color.g, color.b, color.a];
+    pub fn set_background_color(&self, _color: iced::Color) {
+        // No-op: background_color field was removed as unused
     }
 
     /// Scroll by a delta amount (no animation - for mouse wheel)
@@ -304,16 +284,6 @@ impl TileGridView {
         self.viewport.borrow_mut().scroll_y_to(y);
     }
 
-    /// Get current scroll position
-    pub fn scroll_y(&self) -> f32 {
-        self.viewport.borrow().scroll_y
-    }
-
-    /// Check if content is scrollable (has more content than visible area)
-    pub fn is_scrollable(&self) -> bool {
-        self.viewport.borrow().is_scrollable_y()
-    }
-
     /// Start auto-scroll mode
     pub fn start_auto_scroll(&mut self) {
         // Always enable auto-scroll - it will naturally start scrolling
@@ -324,11 +294,6 @@ impl TileGridView {
     /// Stop auto-scroll mode
     pub fn stop_auto_scroll(&mut self) {
         self.auto_scroll_active = false;
-    }
-
-    /// Check if auto-scroll is currently active
-    pub fn is_auto_scroll_active(&self) -> bool {
-        self.auto_scroll_active
     }
 
     /// Set scroll speed for auto-scroll
@@ -365,15 +330,9 @@ impl TileGridView {
         self.apply_filter("");
     }
 
-    /// Get the current filter
-    pub fn get_filter(&self) -> &str {
-        &self.filter
-    }
-
     /// Update the visible indices based on current filter
     fn update_visible_indices(&mut self) {
         if self.filter.is_empty() {
-            // No filter - all items visible
             self.visible_indices = (0..self.thumbnails.len()).collect();
         } else {
             let filter_lower = self.filter.to_lowercase();
@@ -390,71 +349,6 @@ impl TileGridView {
     /// Get the number of visible (filtered) items
     pub fn visible_count(&self) -> usize {
         self.visible_indices.len()
-    }
-
-    /// Set the items to display using item info tuples (path, label, is_container)
-    pub fn set_items(&mut self, item_infos: Vec<(String, String, bool)>) {
-        // Notify loader to cancel old tasks
-        self.loader.cancel_loading();
-
-        // Clear existing
-        self.thumbnails.clear();
-        self.tile_ids.clear();
-        self.items.clear();
-        self.is_container.clear();
-        self.layout.borrow_mut().clear();
-        self.selected_index = None;
-        self.loader.clear_pending();
-        self.filter.clear();
-        self.loaded_lru.clear();
-        self.last_viewport_top = 0.0;
-        // Reset scroll position to prevent invalid viewport coordinates
-        {
-            let mut vp = self.viewport.borrow_mut();
-            vp.scroll_x_to(0.0);
-            vp.scroll_y_to(0.0);
-        }
-        // Reset last_layout_width to force recalculation on first view()
-        *self.last_layout_width.borrow_mut() = 0.0;
-
-        // Create thumbnails for each item - also create Item objects for unified handling
-        for (path, label, container) in item_infos {
-            // Create appropriate Item type for unified get_sync_thumbnail() handling
-            let item: Arc<dyn Item> = if container {
-                Arc::new(ItemFolder::new(path.clone()))
-            } else {
-                Arc::new(ItemFile::new(path.clone()))
-            };
-
-            // Use full_path for thumbnail matching (consistent with loader)
-            // This ensures the path used for matching results is the same as in the loader
-            let thumb_path = item.get_full_path().unwrap_or_else(|| item.get_file_path());
-
-            // For items with sync thumbnails (folders), load immediately to ensure correct layout
-            let mut thumb = Thumbnail::new(thumb_path, label.clone());
-            if let Some(rgba) = item.get_sync_thumbnail() {
-                // Render label separately for GPU (don't embed in image)
-                thumb.label_rgba = render_label_tag(&label, 1);
-                thumb.state = ThumbnailState::Ready { rgba };
-            }
-
-            self.thumbnails.push(thumb);
-            self.tile_ids.push(new_tile_id());
-            self.items.push(item);
-            self.is_container.push(container);
-        }
-
-        // Initialize visible indices (all visible by default)
-        self.update_visible_indices();
-
-        // Don't compute initial layout here - let view() do it with the correct width
-        // The layout will be calculated when view_with_width() or view() is called
-
-        // DON'T queue all loads - lazy loading will handle it when view() is called
-        // This prevents memory issues with large directories
-
-        // Invalidate cache
-        self.cache.clear();
     }
 
     /// Set items to display using Box<dyn Item> (supports virtual files)
@@ -708,15 +602,15 @@ impl TileGridView {
                 max_queue
             );
         }
-        for (actual_idx, priority) in indices_to_load.into_iter().take(max_queue) {
+        for (actual_idx, _priority) in indices_to_load.into_iter().take(max_queue) {
             if let Some(item) = self.items.get(actual_idx) {
                 log::debug!(
                     "[TileGridView] Queueing load for idx={}, path={:?}, priority={}",
                     actual_idx,
                     item.get_file_path(),
-                    priority
+                    _priority
                 );
-                self.loader.load(ThumbnailRequest { item: item.clone(), priority });
+                self.loader.load(ThumbnailRequest { item: item.clone() });
                 if let Some(thumb) = self.thumbnails.get_mut(actual_idx) {
                     thumb.state = ThumbnailState::Loading {
                         placeholder: thumb.state.placeholder().cloned(),
@@ -730,27 +624,6 @@ impl TileGridView {
     /// DEPRECATED: Use queue_visible_range_loads instead
     fn queue_visible_loads(&mut self, viewport_top: f32, viewport_height: f32) {
         self.queue_visible_range_loads(viewport_top, viewport_height);
-    }
-
-    /// Load thumbnail for an item at given index using a cloned item
-    pub fn load_thumbnail_from_item(&mut self, index: usize, item: Arc<dyn Item>) {
-        if let Some(thumb) = self.thumbnails.get(index) {
-            if matches!(thumb.state, ThumbnailState::Pending { .. } | ThumbnailState::Loading { .. }) {
-                let priority = if let Some(tile) = self.layout.borrow().get(index) {
-                    (tile.y - self.viewport.borrow().scroll_y).abs() as u32
-                } else {
-                    1000
-                };
-
-                self.loader.load(ThumbnailRequest { item, priority });
-
-                if let Some(thumb) = self.thumbnails.get_mut(index) {
-                    thumb.state = ThumbnailState::Loading {
-                        placeholder: thumb.state.placeholder().cloned(),
-                    };
-                }
-            }
-        }
     }
 
     /// Recalculate layout based on available width
@@ -912,13 +785,13 @@ impl TileGridView {
                 }
                 other => other.clone(),
             };
-            thumb.state = new_state.clone();
+            thumb.state = new_state;
             thumb.sauce_info = result.sauce_info.clone();
             thumb.width_multiplier = result.width_multiplier;
             thumb.label_rgba = result.label_rgba.clone();
             // Track this thumbnail in LRU (it's now loaded)
             self.mark_as_loaded(idx);
-            messages.push(TileGridMessage::ThumbnailReady(result.path.clone(), new_state));
+            messages.push(TileGridMessage::ThumbnailReady);
         }
 
         if !messages.is_empty() {
@@ -1306,21 +1179,6 @@ impl TileGridView {
         self.scroll_to_smooth(max_scroll);
     }
 
-    /// Get the number of thumbnails
-    pub fn len(&self) -> usize {
-        self.thumbnails.len()
-    }
-
-    /// Check if empty
-    pub fn is_empty(&self) -> bool {
-        self.thumbnails.is_empty()
-    }
-
-    /// Get selected thumbnail path
-    pub fn selected_path(&self) -> Option<&String> {
-        self.selected_index.and_then(|i| self.thumbnails.get(i).map(|t| &t.path))
-    }
-
     /// Get selected item's info (path, label, is_container)
     pub fn get_selected_info(&self) -> Option<(String, String, bool)> {
         self.selected_index.and_then(|i| {
@@ -1388,39 +1246,9 @@ impl TileGridView {
         Some((thumb.path.clone(), thumb.label.clone(), is_container))
     }
 
-    /// View the tile grid with a given width for responsive layout
-    pub fn view_with_width(&mut self, width: f32, height: f32) -> Element<'_, TileGridMessage> {
-        // Recalculate layout if width changed
-        self.recalculate_layout(width);
-
-        // Sync viewport with content dimensions
-        {
-            let mut vp = self.viewport.borrow_mut();
-            vp.set_visible_size(width, height);
-        }
-
-        // Update bounds
-        {
-            let mut bounds = self.last_bounds.borrow_mut();
-            bounds.width = width;
-            bounds.height = height;
-        }
-
-        // Lazy loading: always queue thumbnails for the visible range
-        // The queue_visible_range_loads method is efficient and won't re-queue already loading items
-        let viewport_top = self.viewport.borrow().scroll_y;
-        self.queue_visible_range_loads(viewport_top, height);
-
-        self.view_shader_with_size(width, height)
-    }
-
     /// View the tile grid using responsive container to detect width
     pub fn view(&self) -> Element<'_, TileGridMessage> {
         use iced::widget::responsive;
-
-        // Read the background color for the container style
-        let bg = *self.background_color.read();
-        let bg_color = iced::Color::from_rgba(bg[0], bg[1], bg[2], bg[3]);
 
         // Check if folder is empty (no items at all), show "Folder is empty" message
         if self.thumbnails.is_empty() {
@@ -1436,10 +1264,6 @@ impl TileGridView {
             .height(Length::Fill)
             .center_x(Length::Fill)
             .padding(20)
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(bg_color)),
-                ..Default::default()
-            })
             .into();
         }
 
@@ -1457,10 +1281,6 @@ impl TileGridView {
             .height(Length::Fill)
             .center_x(Length::Fill)
             .padding(20)
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(bg_color)),
-                ..Default::default()
-            })
             .into();
         }
 
@@ -1569,25 +1389,15 @@ impl TileGridView {
         let program = TileShaderProgramWrapper {
             tiles,
             scroll_y,
-            content_height,
             _viewport_height: height,
             _selected_tile_id: self.selected_index.and_then(|i| self.tile_ids.get(i).copied()),
             shared_hovered_tile: self.shared_hovered_tile.clone(),
-            background_color: self.background_color.clone(),
         };
 
-        // Read the background color for the container style
-        let bg = *self.background_color.read();
-        let bg_color = iced::Color::from_rgba(bg[0], bg[1], bg[2], bg[3]);
-
-        // Build the shader widget with background color
+        // Build the shader widget
         let shader_widget = container(shader(program).width(Length::Fill).height(Length::Fill))
             .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(bg_color)),
-                ..Default::default()
-            });
+            .height(Length::Fill);
 
         // Create overlay scrollbar if content is taller than viewport
         let max_scroll = (content_height - height).max(0.0);
@@ -1631,34 +1441,12 @@ impl TileGridView {
                 self.selected_index = Some(index);
                 false
             }
-            TileGridMessage::TileDoubleClicked(index) => {
-                self.selected_index = Some(index);
-                // Signal that item should be opened
-                true
-            }
-            TileGridMessage::Scrolled(delta) => {
-                self.scroll_by(delta);
-                // Mark scrollbar interaction for visibility
-                self.viewport.borrow_mut().scrollbar.mark_interaction(true);
-                // Queue loading for newly visible items
-                let (scroll, vh) = {
-                    let vp = self.viewport.borrow();
-                    (vp.scroll_y, vp.visible_height)
-                };
-                self.queue_visible_loads(scroll, vh);
-                false
-            }
             TileGridMessage::AnimationTick => {
                 // Handled in tick()
                 false
             }
-            TileGridMessage::ThumbnailReady(_, _) => {
+            TileGridMessage::ThumbnailReady => {
                 // Already handled in poll_results
-                false
-            }
-            TileGridMessage::WidthChanged(width) => {
-                self.recalculate_layout(width);
-                self.viewport.borrow_mut().clamp_scroll();
                 false
             }
             TileGridMessage::ScrollbarScroll(_x, y) => {

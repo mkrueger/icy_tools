@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::{Item, ItemError, load_image_to_rgba};
-use crate::ui::thumbnail_view::RgbaData;
+use crate::thumbnail::RgbaData;
 
 use super::{MAIN_PATH, get_cache};
 

@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::Item;
+use crate::items::Item;
 
 /// Cached SAUCE information using Arc<str> for zero-cost cloning
 #[derive(Clone, Debug, Default)]
@@ -26,11 +26,6 @@ pub struct SauceInfo {
 }
 
 impl SauceInfo {
-    /// Check if this SAUCE info has any content
-    pub fn is_empty(&self) -> bool {
-        self.title.is_empty() && self.author.is_empty() && self.group.is_empty()
-    }
-
     /// Create from string slices
     pub fn new(title: &str, author: &str, group: &str) -> Self {
         Self {
@@ -43,12 +38,7 @@ impl SauceInfo {
 
 /// Result of loading SAUCE info for a file
 #[derive(Clone, Debug)]
-pub struct SauceResult {
-    /// Path to identify the file
-    pub path: String,
-    /// The extracted SAUCE info (None if no SAUCE or loading failed)
-    pub sauce: Option<SauceInfo>,
-}
+pub struct SauceResult;
 
 /// Request to load SAUCE info
 pub struct SauceRequest {
@@ -102,11 +92,6 @@ impl SauceCache {
     pub fn clear(&mut self) {
         self.cache.clear();
         self.pending.clear();
-    }
-
-    /// Get statistics about the cache
-    pub fn stats(&self) -> usize {
-        self.cache.len()
     }
 }
 
@@ -208,7 +193,7 @@ impl SauceLoader {
             cache.write().store(path.clone(), sauce_info.clone());
 
             // Send result
-            let _ = result_tx.send(SauceResult { path, sauce: sauce_info });
+            let _ = result_tx.send(SauceResult);
         });
     }
 
@@ -221,15 +206,5 @@ impl SauceLoader {
     /// Reset the loader with a new cancellation token
     pub fn reset(&mut self) {
         self.cancel_token = CancellationToken::new();
-    }
-
-    /// Clear the cache
-    pub fn clear_cache(&self) {
-        self.cache.write().clear();
-    }
-
-    /// Get the shared cache
-    pub fn cache(&self) -> &SharedSauceCache {
-        &self.cache
     }
 }

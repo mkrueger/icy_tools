@@ -105,13 +105,6 @@ impl NavigationHistory {
         self.forward_stack.clear();
     }
 
-    /// Update the current point's selected item without creating a new history entry
-    pub fn update_selection(&mut self, selected_item: Option<String>) {
-        if let Some(ref mut current) = self.current {
-            current.selected_item = selected_item;
-        }
-    }
-
     /// Go back in history
     pub fn go_back(&mut self) -> Option<HistoryPoint> {
         if let Some(prev) = self.back_stack.pop() {
@@ -144,11 +137,6 @@ impl NavigationHistory {
 
     pub fn can_go_forward(&self) -> bool {
         !self.forward_stack.is_empty()
-    }
-
-    /// Get the current history point
-    pub fn current_point(&self) -> Option<&HistoryPoint> {
-        self.current.as_ref()
     }
 }
 

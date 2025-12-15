@@ -16,9 +16,9 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DEFAULT_TITLE, Item, VERSION,
+    DEFAULT_TITLE, VERSION,
     commands::{cmd, create_icy_view_commands},
-    items::{ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
+    items::{Item, ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
 };
 use icy_engine::formats::FileFormat;
 
@@ -32,9 +32,10 @@ use super::{
     dialogs::settings_dialog::{SettingsDialogMessage, settings_dialog_from_msg},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
     is_image_file, is_sixel_file,
-    options::{SortOrder, ViewMode},
+    options::ViewMode,
     theme,
 };
+use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
 
 // Include the welcome logo at compile time
@@ -148,8 +149,6 @@ pub enum Message {
     ShowAbout,
     /// About dialog messages
     AboutDialog(AboutDialogMessage),
-    /// Open a hyperlink
-    OpenLink(String),
     /// Shuffle item load error - try next item
     ShuffleLoadError(usize),
     /// 16colors subitems loaded (Result<items, error>)
@@ -496,7 +495,7 @@ impl MainWindow {
                         if now_16colors {
                             // Switch to 16colors root - load asynchronously
                             let root = SixteenColorsRoot::new();
-                            let root_box: Box<dyn crate::Item> = Box::new(root);
+                            let root_box: Box<dyn crate::items::Item> = Box::new(root);
                             let cancel_token = CancellationToken::new();
                             self.navigation_bar.set_path_input("/".to_string());
                             return load_subitems(root_box, cancel_token, Message::SixteenColorsSubitemsLoaded);
@@ -693,72 +692,6 @@ impl MainWindow {
                                         log::error!("Failed to read file {:?}: {}", path_buf, e);
                                     }
                                 }
-                            }
-                        }
-                    }
-                    TileGridMessage::TileDoubleClicked(index) => {
-                        // Open the item (navigate into folder or switch to list view for file)
-                        if let Some((item_path, _label, is_container)) = self.tile_grid.get_item_info(*index) {
-                            if is_container {
-                                // Handle web mode vs file mode differently
-                                if self.file_browser.is_web_mode() {
-                                    // For 16colors, construct web path
-                                    let current_path = self.file_browser.nav_point().path.clone();
-                                    let new_path = if current_path.is_empty() {
-                                        item_path.clone()
-                                    } else {
-                                        format!("{}/{}", current_path, item_path)
-                                    };
-                                    self.file_browser.navigate_to_web_path(&new_path);
-                                    // Update navigation bar with display path (includes leading /)
-                                    self.navigation_bar.set_path_input(self.file_browser.get_display_path());
-                                } else {
-                                    // Build full path from current browser path + item name
-                                    let current_path = self.file_browser.get_display_path();
-                                    let item_path_str = item_path.replace('\\', "/");
-                                    let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
-                                    self.file_browser.navigate_to(PathBuf::from(&full_path));
-                                    // Update navigation bar with normalized forward slashes
-                                    self.navigation_bar.set_path_input(full_path);
-                                }
-                                // Refresh tile grid with new items
-                                let items = self.file_browser.get_items();
-                                self.tile_grid.set_items_from_items(items);
-                                // Update can_go_up state for toolbar
-                                self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
-                                // Record navigation
-                                let point = self.current_history_point();
-                                self.history.navigate_to(point);
-                            } else {
-                                // For files, switch to list view and select the item
-                                self.set_view_mode(ViewMode::List);
-                                // Build full path for the file
-                                let current_path = self.file_browser.get_display_path();
-                                let item_path_str = item_path.replace('\\', "/");
-                                let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
-                                // Select the item in the file browser
-                                self.file_browser.select_by_path(&PathBuf::from(&item_path));
-                                // Load preview
-                                self.current_file = Some(full_path.clone());
-                                self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                // Read data asynchronously - prefer using Item for virtual files
-                                if let Some(item) = self.tile_grid.get_item_at(*index) {
-                                    return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
-                                }
-                                // Fall back to fs::read for local files
-                                let path_clone = full_path.clone();
-                                return Task::perform(
-                                    async move {
-                                        tokio::fs::read(&path_clone)
-                                            .await
-                                            .map(|data| (path_clone.clone(), data))
-                                            .map_err(|e| (path_clone, e.to_string()))
-                                    },
-                                    |result| match result {
-                                        Ok((path, data)) => Message::DataLoaded(path, data),
-                                        Err((path, err)) => Message::DataLoadError(path, err),
-                                    },
-                                );
                             }
                         }
                     }
@@ -1101,94 +1034,8 @@ impl MainWindow {
                     }
                 }
 
-                // Handle double-click or Enter to navigate/open
+                // Handle Enter to navigate/open
                 match &msg {
-                    TileGridMessage::TileDoubleClicked(index) if should_open => {
-                        if let Some((item_path, _label, is_container)) = self.folder_preview.get_item_info(*index) {
-                            // Get the item BEFORE navigating (items will change after navigation)
-                            let item_for_data = self.folder_preview.get_item_at(*index);
-
-                            // Check if we're in web mode
-                            let is_web_mode = self.file_browser.is_web_mode();
-
-                            // First navigate to the folder being previewed
-                            if let Some(preview_folder) = self.folder_preview_path.take() {
-                                if is_web_mode {
-                                    // For web mode, use path string without PathBuf operations
-                                    let preview_path_str = &preview_folder;
-                                    let item_path_str = item_path.replace('\\', "/");
-
-                                    self.file_browser.navigate_to_web_path(preview_path_str);
-                                    self.navigation_bar.set_path_input(self.file_browser.get_display_path());
-
-                                    // Construct path for item
-                                    let full_path_str = format!("{}/{}", preview_path_str, item_path_str);
-
-                                    if is_container {
-                                        // Navigate into the subfolder
-                                        self.file_browser.navigate_to_web_path(&full_path_str);
-                                        self.navigation_bar.set_path_input(self.file_browser.get_display_path());
-                                        self.file_browser.list_view.selected_index = Some(0);
-                                        // Record navigation
-                                        let point = self.current_history_point();
-                                        self.history.navigate_to(point);
-                                    } else {
-                                        // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
-                                        let item_path_str = item_path.replace('\\', "/");
-                                        let full_path = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
-                                        self.current_file = Some(full_path.clone());
-                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                        // Read data asynchronously from the item we captured before navigation
-                                        if let Some(item) = item_for_data {
-                                            return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
-                                        }
-                                    }
-                                } else {
-                                    // File mode - use PathBuf operations
-                                    self.file_browser.navigate_to(PathBuf::from(&preview_folder));
-                                    self.navigation_bar.set_path_input(preview_folder.clone());
-
-                                    // Now construct full path for the item inside the previewed folder
-                                    let item_path_str = item_path.replace('\\', "/");
-                                    let full_path_str = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
-
-                                    if is_container {
-                                        // Navigate into the subfolder and select first item
-                                        self.file_browser.navigate_to(PathBuf::from(&full_path_str));
-                                        self.navigation_bar.set_path_input(full_path_str);
-                                        self.file_browser.list_view.selected_index = Some(0);
-                                        // Record navigation
-                                        let point = self.current_history_point();
-                                        self.history.navigate_to(point);
-                                    } else {
-                                        // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
-                                        self.current_file = Some(full_path_str.clone());
-                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
-                                        // Read data asynchronously from the item we captured before navigation
-                                        if let Some(item) = item_for_data {
-                                            return crate::items::load_item_data(item.clone_box(), full_path_str, Message::DataLoaded, Message::DataLoadError);
-                                        }
-                                        // Fallback to async filesystem read
-                                        let path_clone = full_path_str.clone();
-                                        return Task::perform(
-                                            async move {
-                                                tokio::fs::read(&path_clone)
-                                                    .await
-                                                    .map(|data| (path_clone.clone(), data))
-                                                    .map_err(|e| (path_clone, e.to_string()))
-                                            },
-                                            |result| match result {
-                                                Ok((path, data)) => Message::DataLoaded(path, data),
-                                                Err((path, err)) => Message::DataLoadError(path, err),
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
                     TileGridMessage::OpenSelected if should_open => {
                         if let Some((item_path, _label, is_container)) = self.folder_preview.get_selected_info() {
                             // Get the item BEFORE navigating (items will change after navigation)
@@ -1369,10 +1216,6 @@ impl MainWindow {
                     FileListToolbarMessage::MouseLeft => {
                         self.file_list_toolbar.on_mouse_leave();
                     }
-                    FileListToolbarMessage::HideTick => {
-                        // Check if toolbar should auto-hide
-                        self.file_list_toolbar.check_auto_hide();
-                    }
                     FileListToolbarMessage::StartShuffleMode => {
                         // Collect indices of all displayable files from current container
                         let indices = self.collect_shuffle_indices();
@@ -1519,12 +1362,6 @@ impl MainWindow {
                 // Route to dialog stack for other messages
                 if let Some(task) = self.dialogs.update(&message) {
                     return task;
-                }
-                Task::none()
-            }
-            Message::OpenLink(url) => {
-                if let Err(e) = open::that(&url) {
-                    log::error!("Failed to open URL {}: {}", url, e);
                 }
                 Task::none()
             }
@@ -2496,7 +2333,7 @@ impl MainWindow {
 
         // If switching to 16colors mode, we need to load root items async
         if need_16colors_load {
-            let root: Box<dyn crate::Item> = Box::new(SixteenColorsRoot::new());
+            let root: Box<dyn crate::items::Item> = Box::new(SixteenColorsRoot::new());
             let cancel_token = CancellationToken::new();
             return load_subitems(root, cancel_token, Message::SixteenColorsSubitemsLoaded);
         }
@@ -2521,13 +2358,7 @@ impl MainWindow {
         let screen_height = self.preview.get_visible_height();
 
         // Build shuffle mode overlay (title/author/group at top, comments at bottom)
-        let shuffle_overlay = self.shuffle_mode.overlay_view(screen_height).map(|msg| {
-            match msg {
-                super::ShuffleModeMessage::Exit => Message::Escape,
-                super::ShuffleModeMessage::NextFile => Message::AnimationTick, // Trigger advance check
-                super::ShuffleModeMessage::Tick(_) => Message::AnimationTick,
-            }
-        });
+        let shuffle_overlay = self.shuffle_mode.overlay_view(screen_height);
 
         // Stack preview with overlay
         let content = stack![clickable_preview, shuffle_overlay];

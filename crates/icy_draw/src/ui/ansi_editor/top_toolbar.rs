@@ -568,14 +568,7 @@ impl TopToolbar {
     }
 
     /// Fill tool panel
-    fn view_fill_panel(
-        &self,
-        font: Option<BitFont>,
-        theme: &Theme,
-        caret_fg: u32,
-        caret_bg: u32,
-        palette: &Palette,
-    ) -> Element<'_, TopToolbarMessage> {
+    fn view_fill_panel(&self, font: Option<BitFont>, theme: &Theme, caret_fg: u32, caret_bg: u32, palette: &Palette) -> Element<'_, TopToolbarMessage> {
         // Fill UI matches src_egui: HalfBlock / Colorize / Char + exact matching + FG/BG selectors.
         // If current brush mode is unsupported for Fill, treat it as Char.
         let primary = match self.brush_options.primary {

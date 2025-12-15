@@ -22,16 +22,8 @@ impl ContentView for ImageContentView<'_> {
         self.viewer.viewport.scroll_y
     }
 
-    fn max_scroll_y(&self) -> f32 {
-        self.viewer.viewport.max_scroll_y()
-    }
-
     fn scroll_x(&self) -> f32 {
         self.viewer.viewport.scroll_x
-    }
-
-    fn max_scroll_x(&self) -> f32 {
-        self.viewer.viewport.max_scroll_x()
     }
 
     fn scroll_y_to(&mut self, y: f32) {
@@ -61,17 +53,5 @@ impl ContentView for ImageContentView<'_> {
 
     fn update_animations(&mut self, dt: f32) {
         self.viewer.update_scrollbars(dt);
-    }
-
-    fn needs_animation(&self) -> bool {
-        self.viewer.needs_animation()
-    }
-
-    fn visible_height(&self) -> f32 {
-        self.viewer.viewport.visible_height
-    }
-
-    fn visible_width(&self) -> f32 {
-        self.viewer.viewport.visible_width
     }
 }

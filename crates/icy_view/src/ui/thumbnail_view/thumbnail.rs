@@ -1,49 +1,15 @@
-use std::sync::Arc;
-
 use i18n_embed_fl::fl;
 use icy_sauce::SauceRecord;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 
-use super::thumbnail_loader::create_labeled_placeholder;
-use crate::{LANGUAGE_LOADER, create_text_preview};
+use crate::LANGUAGE_LOADER;
+use crate::items::create_text_preview;
+use crate::thumbnail::scale_to_thumbnail_width;
+pub use crate::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 
 // ============================================================================
 // Thumbnail Rendering Constants
 // ============================================================================
-
-/// Thumbnails are rendered directly at display size (no scaling needed)
-/// This matches TILE_IMAGE_WIDTH (320px)
-pub const THUMBNAIL_RENDER_WIDTH: u32 = 320;
-
-/// Maximum thumbnail height - limited to 80000px (10 slices × 8000px per slice)
-/// Very tall images beyond this are cropped to show the top portion
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 80000;
-
-/// Scale factor from render size to display size
-/// Now 1.0 since we render at final size
-pub const THUMBNAIL_SCALE: f32 = 1.0;
-
-/// Scale a small placeholder image to THUMBNAIL_RENDER_WIDTH, maintaining aspect ratio
-fn scale_placeholder(rgba: RgbaData) -> RgbaData {
-    if rgba.width == 0 || rgba.height == 0 {
-        return rgba;
-    }
-
-    let target_width = THUMBNAIL_RENDER_WIDTH;
-    let scale = target_width as f32 / rgba.width as f32;
-    let target_height = ((rgba.height as f32 * scale) as u32).max(1);
-
-    if target_width == rgba.width && target_height == rgba.height {
-        return rgba;
-    }
-
-    // Use image crate to scale
-    let img = image::RgbaImage::from_raw(rgba.width, rgba.height, rgba.data.to_vec()).unwrap_or_else(|| image::RgbaImage::new(1, 1));
-    let scaled = image::imageops::resize(&img, target_width, target_height, image::imageops::FilterType::Triangle);
-
-    RgbaData::new(scaled.into_raw(), target_width, target_height)
-}
 
 // ============================================================================
 // Static Placeholder Images (shared across all tiles)
@@ -54,13 +20,13 @@ fn scale_placeholder(rgba: RgbaData) -> RgbaData {
 pub static LOADING_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
     let text = fl!(LANGUAGE_LOADER, "thumbnail-loading");
     let base = create_text_preview(&text);
-    scale_placeholder(base)
+    scale_to_thumbnail_width(base)
 });
 
 /// Static placeholder for error tiles (scaled to 320px, with X symbol)
 pub static ERROR_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
     let base = create_error_placeholder_base();
-    scale_placeholder(base)
+    scale_to_thumbnail_width(base)
 });
 
 fn create_error_placeholder_base() -> RgbaData {
@@ -106,70 +72,12 @@ fn create_error_placeholder_base() -> RgbaData {
     RgbaData::new(data, w, h)
 }
 
-/// Static placeholder for folder tiles (scaled to 320px, with folder icon)
-pub static FOLDER_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
-    let base = create_folder_placeholder_base();
-    scale_placeholder(base)
-});
-
-fn create_folder_placeholder_base() -> RgbaData {
-    let width = 128u32;
-    let height = 96u32;
-    let mut data = vec![0u8; (width * height * 4) as usize];
-
-    let folder_color: [u8; 4] = [180, 140, 60, 255];
-    let tab_color: [u8; 4] = [160, 120, 40, 255];
-    let outline_color: [u8; 4] = [100, 80, 30, 255];
-
-    let body_top = 24;
-    let body_left = 8;
-    let body_right = width - 8;
-    let body_bottom = height - 8;
-
-    for y in body_top..body_bottom {
-        for x in body_left..body_right {
-            let idx = ((y * width + x) * 4) as usize;
-            if x == body_left || x == body_right - 1 || y == body_top || y == body_bottom - 1 {
-                data[idx..idx + 4].copy_from_slice(&outline_color);
-            } else {
-                data[idx..idx + 4].copy_from_slice(&folder_color);
-            }
-        }
-    }
-
-    let tab_top = 12;
-    let tab_left = 8;
-    let tab_right = 48;
-    let tab_bottom = body_top + 4;
-
-    for y in tab_top..tab_bottom {
-        for x in tab_left..tab_right {
-            let idx = ((y * width + x) * 4) as usize;
-            if x == tab_left || x == tab_right - 1 || y == tab_top {
-                data[idx..idx + 4].copy_from_slice(&outline_color);
-            } else {
-                data[idx..idx + 4].copy_from_slice(&tab_color);
-            }
-        }
-    }
-
-    RgbaData::new(data, width, height)
-}
-
-/// Static placeholder for FILE_ID.DIZ not found - pre-scaled to 320px
-/// Note: Label is added later by the thumbnail loader using the actual item name
-pub static DIZ_NOT_FOUND_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
-    let text = fl!(LANGUAGE_LOADER, "thumbnail-no-diz");
-    let base = create_text_preview(&text);
-    scale_placeholder(base)
-});
-
 /// Static placeholder for unsupported file formats - pre-scaled to 320px
 /// Note: Label is added later by the thumbnail loader using the actual item name
 pub static UNSUPPORTED_PLACEHOLDER: Lazy<RgbaData> = Lazy::new(|| {
     let text = fl!(LANGUAGE_LOADER, "thumbnail-unsupported");
     let base = create_text_preview(&text);
-    scale_placeholder(base)
+    scale_to_thumbnail_width(base)
 });
 
 /// Calculate the width multiplier based on character columns
@@ -184,64 +92,7 @@ pub fn get_width_multiplier(char_columns: i32) -> u32 {
     }
 }
 
-/// RGBA image data for shader rendering
-#[derive(Debug, Clone)]
-pub struct RgbaData {
-    /// Raw RGBA pixel data (Arc for cheap cloning)
-    pub data: Arc<Vec<u8>>,
-    /// Width in pixels
-    pub width: u32,
-    /// Height in pixels
-    pub height: u32,
-}
-
-impl RgbaData {
-    pub fn new(data: Vec<u8>, width: u32, height: u32) -> Self {
-        let expected_size = (4 * width * height) as usize;
-        let actual_size = data.len();
-
-        // If data size doesn't match, create a properly sized buffer
-        let valid_data = if actual_size != expected_size {
-            log::warn!(
-                "RgbaData size mismatch: expected {} bytes ({}x{}x4), got {} bytes. Padding/truncating.",
-                expected_size,
-                width,
-                height,
-                actual_size
-            );
-            let mut fixed = vec![0u8; expected_size];
-            let copy_size = actual_size.min(expected_size);
-            fixed[..copy_size].copy_from_slice(&data[..copy_size]);
-            fixed
-        } else {
-            data
-        };
-
-        Self {
-            data: Arc::new(valid_data),
-            width,
-            height,
-        }
-    }
-}
-
-impl PartialEq for RgbaData {
-    fn eq(&self, other: &Self) -> bool {
-        // Compare by Arc pointer for efficiency (same Arc = same data)
-        Arc::ptr_eq(&self.data, &other.data) && self.width == other.width && self.height == other.height
-    }
-}
-
-impl Eq for RgbaData {}
-
-impl std::hash::Hash for RgbaData {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Hash by Arc pointer for efficiency
-        Arc::as_ptr(&self.data).hash(state);
-        self.width.hash(state);
-        self.height.hash(state);
-    }
-}
+// RgbaData and thumbnail constants live in crate::thumbnail (re-exported above)
 
 /// State of a thumbnail
 #[derive(Debug, Clone)]
@@ -278,18 +129,6 @@ pub enum ThumbnailState {
 }
 
 impl ThumbnailState {
-    /// Get the current RGBA data to display
-    /// Falls back to static placeholders for pending/loading without cached placeholder
-    pub fn current_rgba(&self) -> Option<&RgbaData> {
-        match self {
-            ThumbnailState::Ready { rgba } => Some(rgba),
-            ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame),
-            ThumbnailState::Pending { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
-            ThumbnailState::Loading { placeholder } => placeholder.as_ref().or(Some(&*LOADING_PLACEHOLDER)),
-            ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().or(Some(&*ERROR_PLACEHOLDER)),
-        }
-    }
-
     /// Get the dimensions of the thumbnail
     /// Falls back to LOADING_PLACEHOLDER dimensions for pending/loading without placeholder
     pub fn dimensions(&self) -> Option<(u32, u32)> {
@@ -319,11 +158,6 @@ impl ThumbnailState {
     /// Check if this thumbnail is animated
     pub fn is_animated(&self) -> bool {
         matches!(self, ThumbnailState::Animated { .. })
-    }
-
-    /// Check if this thumbnail is ready (loaded successfully)
-    pub fn is_ready(&self) -> bool {
-        matches!(self, ThumbnailState::Ready { .. } | ThumbnailState::Animated { .. })
     }
 
     /// Get the placeholder if available
@@ -371,56 +205,9 @@ impl Thumbnail {
         }
     }
 
-    /// Create a new pending thumbnail with placeholder (for visible items)
-    pub fn new_with_placeholder(path: String, label: String) -> Self {
-        let placeholder = LOADING_PLACEHOLDER.clone();
-        Self {
-            path,
-            label,
-            state: ThumbnailState::Pending {
-                placeholder: Some(placeholder),
-            },
-            sauce_info: None,
-            width_multiplier: 1,
-            label_rgba: None,
-        }
-    }
-
-    /// Ensure the placeholder exists (lazy initialization)
-    /// Call this before displaying a pending/loading thumbnail
-    pub fn ensure_placeholder(&mut self) {
-        match &mut self.state {
-            ThumbnailState::Pending { placeholder } if placeholder.is_none() => {
-                *placeholder = Some(LOADING_PLACEHOLDER.clone());
-            }
-            ThumbnailState::Loading { placeholder } if placeholder.is_none() => {
-                *placeholder = Some(LOADING_PLACEHOLDER.clone());
-            }
-            _ => {}
-        }
-    }
-
     /// Get the width multiplier for this thumbnail (1, 2, or 3)
     pub fn get_width_multiplier(&self) -> u32 {
         self.width_multiplier.max(1).min(3)
-    }
-
-    /// Set state to Loading, keeping or creating the placeholder with label
-    pub fn set_loading(&mut self) {
-        let placeholder = match &self.state {
-            ThumbnailState::Pending { placeholder } => placeholder.clone(),
-            _ => Some(create_labeled_placeholder(&LOADING_PLACEHOLDER, &self.label)),
-        };
-        self.state = ThumbnailState::Loading { placeholder };
-    }
-
-    /// Set state to Error with message and placeholder
-    pub fn set_error(&mut self, message: String) {
-        let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &self.label);
-        self.state = ThumbnailState::Error {
-            message,
-            placeholder: Some(placeholder),
-        };
     }
 
     /// Get the display height for layout purposes
@@ -452,11 +239,6 @@ impl Thumbnail {
 
         image_height + separator + label_height
     }
-
-    /// Get the display width for layout purposes (in units of base width)
-    pub fn display_width(&self, base_width: f32, base_scale: f32) -> f32 {
-        base_width * base_scale * self.get_width_multiplier() as f32
-    }
 }
 
 /// Result from the thumbnail loader thread
@@ -472,6 +254,3 @@ pub struct ThumbnailResult {
     /// Label RGBA data (rendered separately for GPU)
     pub label_rgba: Option<RgbaData>,
 }
-
-/// Shared thumbnail cache
-pub type ThumbnailCache = Arc<Mutex<Vec<Thumbnail>>>;

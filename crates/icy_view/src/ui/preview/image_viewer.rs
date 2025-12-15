@@ -24,12 +24,6 @@ const PAGE_SCROLL_FACTOR: f32 = 0.9;
 pub enum ImageViewerMessage {
     /// Scroll by delta (direct, no animation - for mouse wheel)
     Scroll(f32, f32),
-    /// Scroll by delta with smooth animation (for PageUp/PageDown)
-    ScrollSmooth(f32, f32),
-    /// Scroll to absolute position (direct, no animation)
-    ScrollTo(f32, f32),
-    /// Scroll to absolute position with smooth animation (for Home/End)
-    ScrollToSmooth(f32, f32),
     /// Scroll vertical to absolute position in pixels (scrollbar)
     ScrollYTo(f32),
     /// Scroll horizontal to absolute position in pixels (scrollbar)
@@ -60,8 +54,6 @@ pub enum ImageViewerMessage {
     Press((f32, f32)),
     /// Mouse released (for drag end)
     Release,
-    /// Mouse dragged to position
-    Drag((f32, f32)),
     /// Mouse moved (for cursor updates)
     Move(Option<(f32, f32)>),
 }
@@ -122,17 +114,6 @@ impl ImageViewer {
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             cursor_icon: Arc::new(RwLock::new(None)),
         }
-    }
-
-    /// Update the image
-    pub fn set_image(&mut self, handle: iced_image::Handle, width: u32, height: u32) {
-        self.handle = handle;
-        self.image_size = (width, height);
-        self.zoom = 1.0;
-        // Reset viewport for new image
-        self.viewport.scroll_x_to(0.0);
-        self.viewport.scroll_y_to(0.0);
-        self.update_content_size();
     }
 
     /// Get current zoom level
@@ -319,12 +300,6 @@ impl ImageViewer {
         self.scrollbar.update_animation();
     }
 
-    /// Set viewport size
-    pub fn set_viewport_size(&mut self, width: f32, height: f32) {
-        self.viewport.set_visible_size(width, height);
-        self.update_content_size();
-    }
-
     /// Check if the image viewer needs animation updates
     pub fn needs_animation(&self) -> bool {
         let vp = self.viewport.is_animating();
@@ -372,9 +347,6 @@ impl ImageViewer {
     pub fn update(&mut self, message: ImageViewerMessage) {
         match message {
             ImageViewerMessage::Scroll(dx, dy) => self.scroll(dx, dy),
-            ImageViewerMessage::ScrollSmooth(dx, dy) => self.scroll_smooth(dx, dy),
-            ImageViewerMessage::ScrollTo(x, y) => self.scroll_to(x, y),
-            ImageViewerMessage::ScrollToSmooth(x, y) => self.scroll_to_smooth(x, y),
             ImageViewerMessage::ScrollYTo(y) => self.scroll_y_to(y),
             ImageViewerMessage::ScrollXTo(x) => self.scroll_x_to(x),
             ImageViewerMessage::Zoom(zoom_msg) => {
@@ -426,7 +398,7 @@ impl ImageViewer {
             ImageViewerMessage::ArrowLeft => self.scroll_arrow_left(),
             ImageViewerMessage::ArrowRight => self.scroll_arrow_right(),
             // Drag messages are handled by PreviewView, not here
-            ImageViewerMessage::Press(_) | ImageViewerMessage::Release | ImageViewerMessage::Drag(_) | ImageViewerMessage::Move(_) => {}
+            ImageViewerMessage::Press(_) | ImageViewerMessage::Release | ImageViewerMessage::Move(_) => {}
         }
     }
 

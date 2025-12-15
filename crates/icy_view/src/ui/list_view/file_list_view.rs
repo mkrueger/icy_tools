@@ -16,7 +16,7 @@ use iced::{
 use icy_engine_gui::{ScrollbarOverlayCallback, ScrollbarState, Viewport, ui::FileIcon};
 use parking_lot::Mutex;
 
-use crate::Item;
+use crate::items::Item;
 
 use super::file_list_shader::{
     FileListShaderPrimitive, FileListThemeColors, ListItemRenderData, invalidate_gpu_cache, render_list_item, render_list_item_with_sauce,
@@ -33,13 +33,13 @@ const DOUBLE_CLICK_MS: u128 = 400;
 #[derive(Debug, Clone)]
 pub enum FileListViewMessage {
     /// Mouse scroll
-    Scroll(f32, f32),
+    Scroll(f32),
     /// Mouse click at Y position
     Click(f32),
     /// Scrollbar hover state changed
     ScrollbarHovered(bool),
     /// Scroll to absolute position (from scrollbar drag)
-    ScrollTo(f32, f32),
+    ScrollTo(f32),
     /// Animation tick
     Tick,
     /// Keyboard: select previous item
@@ -58,8 +58,6 @@ pub enum FileListViewMessage {
     OpenSelected,
     /// Set viewport size (from responsive layout)
     SetViewportSize(f32, f32),
-    /// Selection changed (for filter-triggered updates)
-    SelectionChanged,
 }
 
 /// Cache entry for pre-rendered list items
@@ -189,7 +187,7 @@ impl FileListView {
     /// Update with a message, returns true if an item should be opened
     pub fn update(&mut self, message: FileListViewMessage, item_count: usize) -> bool {
         match message {
-            FileListViewMessage::Scroll(_, delta_y) => {
+            FileListViewMessage::Scroll(delta_y) => {
                 // delta_y is already in pixels (Lines are converted to pixels in canvas)
                 // Negative delta = scroll up (content moves down), positive = scroll down
                 self.viewport.scroll_y_by(-delta_y);
@@ -225,7 +223,7 @@ impl FileListView {
                 self.scrollbar.set_hovered(hovered);
                 false
             }
-            FileListViewMessage::ScrollTo(_, y) => {
+            FileListViewMessage::ScrollTo(y) => {
                 self.viewport.scroll_y_to(y);
                 self.update_scrollbar_position();
                 self.invalidate_visual();
@@ -316,11 +314,6 @@ impl FileListView {
                 false
             }
             FileListViewMessage::OpenSelected => self.selected_index.is_some(),
-            FileListViewMessage::SelectionChanged => {
-                // Just signal that selection changed (for filter-triggered updates)
-                // The actual selection is already set, this just triggers the preview update
-                false
-            }
             FileListViewMessage::SetViewportSize(width, height) => {
                 self.viewport.set_visible_size(width, height);
                 let current = *self.current_width.borrow();
@@ -555,7 +548,7 @@ impl FileListView {
                 scrollbar_height_ratio,
                 max_scroll_y,
                 self.scrollbar_hover_state.clone(),
-                move |x, y| on_message_scroll(FileListViewMessage::ScrollTo(x, y)),
+                move |_x, y| on_message_scroll(FileListViewMessage::ScrollTo(y)),
                 move |is_hovered| on_message_hover(FileListViewMessage::ScrollbarHovered(is_hovered)),
             )
             .view();
@@ -745,11 +738,11 @@ where
             iced::Event::Mouse(mouse_event) => match mouse_event {
                 mouse::Event::WheelScrolled { delta } => {
                     if is_over {
-                        let (dx, dy) = match delta {
+                        let (_dx, dy) = match delta {
                             mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
                             mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
                         };
-                        let msg = (self.on_message)(FileListViewMessage::Scroll(dx, dy));
+                        let msg = (self.on_message)(FileListViewMessage::Scroll(dy));
                         return Some(iced::widget::Action::publish(msg));
                     }
                 }

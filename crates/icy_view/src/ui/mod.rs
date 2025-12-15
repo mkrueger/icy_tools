@@ -13,12 +13,9 @@ pub mod thumbnail_view;
 mod window_manager;
 
 // Re-export from icy_engine_gui
-pub use icy_engine_gui::{DEFAULT_DOUBLE_CLICK_MS, DoubleClickDetector};
-pub use icy_engine_gui::{Focus, default_style, focus, list_focus_style, no_border_style};
 
 pub use file_list_toolbar::*;
 pub use filter_popup::*;
-pub use icons::*;
 pub use list_view::*;
 pub use main_window::*;
 pub use navigation_bar::*;

@@ -1,6 +1,6 @@
 //! About dialog for icy_view - uses the shared dialog from icy_engine_gui
 
-pub use icy_engine_gui::ui::{AboutDialogMessage, AboutDialogState, AboutDialogWrapper};
+pub use icy_engine_gui::ui::{AboutDialogMessage, AboutDialogWrapper};
 
 use crate::VERSION;
 

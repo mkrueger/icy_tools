@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use serde_json::Value;
 
 use crate::items::ItemError;
-use crate::ui::thumbnail_view::RgbaData;
+use crate::thumbnail::RgbaData;
 
 /// Get the cache directory for icy_view
 fn get_cache_dir() -> Option<PathBuf> {
@@ -226,45 +226,6 @@ impl SixteenColorsCache {
     /// Mark a URL as failed (for non-JSON requests like thumbnails)
     pub fn mark_failed(&mut self, url: String) {
         self.failed_urls.insert(url);
-    }
-
-    /// Clear all cached data (memory only, preserves disk cache)
-    pub fn clear(&mut self) {
-        self.api_responses.clear();
-        self.thumbnails.clear();
-        self.file_data.clear();
-        self.failed_urls.clear();
-        self.connection_error_logged = false;
-    }
-
-    /// Clear disk cache as well
-    pub fn clear_disk_cache(&mut self) {
-        if let Some(ref dir) = self.cache_dir {
-            if let Err(e) = std::fs::remove_dir_all(dir) {
-                log::warn!("Failed to clear disk cache {:?}: {}", dir, e);
-            } else {
-                // Recreate the directory
-                let _ = std::fs::create_dir_all(dir);
-            }
-        }
-    }
-
-    /// Get cache statistics (for debugging)
-    pub fn stats(&self) -> (usize, usize, usize) {
-        (self.api_responses.len(), self.thumbnails.len(), self.file_data.len())
-    }
-
-    /// Get disk cache size in bytes
-    pub fn disk_cache_size(&self) -> u64 {
-        self.cache_dir
-            .as_ref()
-            .map(|dir| {
-                std::fs::read_dir(dir)
-                    .ok()
-                    .map(|entries| entries.filter_map(|e| e.ok()).filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum())
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0)
     }
 }
 
