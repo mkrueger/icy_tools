@@ -66,3 +66,11 @@ harness = false
 [[bench]]
 name = "xbin_encoding"
 harness = false
+
+[[bench]]
+name = "icy_draw_bench"
+harness = false
+
+[[bin]]
+name = "generate_icy_draw_testdata"
+path = "src/bin/generate_icy_draw_testdata.rs"

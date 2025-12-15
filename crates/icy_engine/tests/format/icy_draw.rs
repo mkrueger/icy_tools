@@ -1,5 +1,23 @@
 use super::ansi2::{CompareOptions, compare_buffers};
 use icy_engine::{AttributedChar, Color, FileFormat, Layer, SaveOptions, TextAttribute, TextBuffer, TextPane};
+
+fn make_png_with_ztxt_chunks(chunks: &[(&str, String)]) -> Vec<u8> {
+    let mut out = Vec::new();
+
+    let mut encoder = png::Encoder::new(&mut out, 1, 1);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+
+    for (keyword, text) in chunks {
+        encoder.add_ztxt_chunk((*keyword).to_string(), text.clone()).expect("add_ztxt_chunk");
+    }
+
+    let mut writer = encoder.write_header().expect("write_header");
+    writer.write_image_data(&[0, 0, 0, 0]).expect("write_image_data");
+    writer.finish().expect("finish");
+
+    out
+}
 /*
     fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         entry
@@ -206,6 +224,163 @@ fn test_escape_char() {
     let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
+}
+
+#[test]
+fn test_rejects_newer_iced_versions() {
+    use base64::{Engine, engine::general_purpose};
+
+    // ICED header (v2) with v1-sized payload (21 bytes) so only the version triggers the error.
+    let mut header = Vec::new();
+    header.extend(u16::to_le_bytes(2)); // version
+    header.extend(u32::to_le_bytes(0)); // type
+    header.extend(u16::to_le_bytes(0)); // buffer_type
+    header.push(0); // ice_mode
+    header.push(0); // palette_mode
+    header.push(0); // font_mode
+    header.extend(u32::to_le_bytes(80)); // width
+    header.extend(u32::to_le_bytes(25)); // height
+    header.push(8); // font_width
+    header.push(16); // font_height
+
+    assert_eq!(header.len(), 21);
+
+    let iced_text = general_purpose::STANDARD.encode(&header);
+    let png = make_png_with_ztxt_chunks(&[("ICED", iced_text), ("END", String::new())]);
+
+    let draw = FileFormat::IcyDraw;
+    assert!(draw.from_bytes(&png, None).is_err());
+}
+
+#[test]
+fn test_tag_roundtrip_short_and_long() {
+    use icy_engine::{Position, Tag, TagPlacement, TagRole, attribute, extended_attribute};
+
+    let mut buf = TextBuffer::default();
+
+    // Short tag (fg/bg <= 255, ext_attr == 0)
+    let mut short_attr = TextAttribute::new(12, 34);
+    short_attr.attr = attribute::UNDERLINE;
+    short_attr.set_font_page(7);
+
+    buf.tags.push(Tag {
+        is_enabled: true,
+        preview: "PREVIEW".to_string(),
+        replacement_value: "REPL".to_string(),
+        position: Position::new(1, 2),
+        length: 0,
+        alignment: std::fmt::Alignment::Left,
+        tag_placement: TagPlacement::InText,
+        tag_role: TagRole::Displaycode,
+        attribute: short_attr,
+    });
+
+    // Long tag (forces long encoding via ext_attr != 0)
+    let mut long_attr = TextAttribute::new(0x11223344, 0x55667788);
+    long_attr.attr = attribute::BOLD;
+    long_attr.ext_attr = extended_attribute::FG_RGBA;
+    long_attr.set_font_page(3);
+
+    buf.tags.push(Tag {
+        is_enabled: false,
+        preview: "X".repeat(10),
+        replacement_value: "https://example.invalid".to_string(),
+        position: Position::new(5, 6),
+        length: 10,
+        alignment: std::fmt::Alignment::Center,
+        tag_placement: TagPlacement::WithGotoXY,
+        tag_role: TagRole::Hyperlink,
+        attribute: long_attr,
+    });
+
+    let draw = FileFormat::IcyDraw;
+    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
+
+    assert_eq!(buf2.tags.len(), 2);
+
+    // Compare fields explicitly (Tag doesn't implement PartialEq)
+    for (a, b) in buf.tags.iter().zip(buf2.tags.iter()) {
+        assert_eq!(a.is_enabled, b.is_enabled);
+        assert_eq!(a.preview, b.preview);
+        assert_eq!(a.replacement_value, b.replacement_value);
+        assert_eq!(a.position, b.position);
+        assert_eq!(a.length, b.length);
+        assert_eq!(a.alignment, b.alignment);
+        assert_eq!(a.tag_placement, b.tag_placement);
+        assert_eq!(a.tag_role, b.tag_role);
+        assert_eq!(a.attribute.attr, b.attribute.attr);
+        assert_eq!(a.attribute.ext_attr, b.attribute.ext_attr);
+        assert_eq!(a.attribute.foreground(), b.attribute.foreground());
+        assert_eq!(a.attribute.background(), b.attribute.background());
+        assert_eq!(a.attribute.font_page(), b.attribute.font_page());
+    }
+}
+
+#[test]
+fn test_layer_continuation_resume_is_y_based_not_line_count() {
+    let mut buf = TextBuffer::default();
+    buf.set_size((1000, 400));
+    buf.layers[0].set_size((1000, 400));
+
+    let attr = TextAttribute::new(7, 0);
+    buf.layers[0].set_char((0, 0), AttributedChar { ch: 'A', attribute: attr });
+    buf.layers[0].set_char((0, 300), AttributedChar { ch: 'B', attribute: attr });
+
+    let draw = FileFormat::IcyDraw;
+    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let buf2 = draw.from_bytes(&bytes, None).unwrap().buffer;
+
+    assert_eq!(buf2.width(), 1000);
+    assert_eq!(buf2.height(), 400);
+
+    let mut found_y: Option<i32> = None;
+    for y in 0..buf2.height() {
+        if buf2.layers[0].char_at((0, y).into()).ch == 'B' {
+            found_y = Some(y);
+            break;
+        }
+    }
+
+    assert_eq!(found_y, Some(300));
+}
+
+#[test]
+fn test_fuzz_lite_no_panic_on_corrupt_icy_draw() {
+    let mut buf = TextBuffer::default();
+    buf.layers[0].set_char(
+        (0, 0),
+        AttributedChar {
+            ch: 'Z',
+            attribute: TextAttribute::new(7, 0),
+        },
+    );
+
+    let draw = FileFormat::IcyDraw;
+    let good = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+
+    let mut cases: Vec<Vec<u8>> = Vec::new();
+
+    // Truncations
+    for &cut in &[0usize, 1, 10, good.len() / 2, good.len().saturating_sub(1)] {
+        cases.push(good[..cut.min(good.len())].to_vec());
+    }
+
+    // Bit flips
+    for &idx in &[0usize, 1, good.len() / 2, good.len().saturating_sub(1)] {
+        if good.is_empty() {
+            continue;
+        }
+        let mut m = good.clone();
+        let i = idx.min(m.len() - 1);
+        m[i] ^= 0xFF;
+        cases.push(m);
+    }
+
+    for data in cases {
+        let res = std::panic::catch_unwind(|| draw.from_bytes(&data, None));
+        assert!(res.is_ok(), "load panicked for input of len {}", data.len());
+    }
 }
 
 #[test]

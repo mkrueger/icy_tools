@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::fmt::Alignment;
 
 use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
-use crate::{BitFont, Color, Layer, LoadingError, Palette, Position, Result, Sixel, Size, TextBuffer, TextPane, TextScreen, attribute};
+use crate::{BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextBuffer, TextPane, TextScreen, attribute};
 
 use super::super::{LoadData, SaveOptions};
 
@@ -27,34 +28,688 @@ lazy_static::lazy_static! {
     static ref LAYER_CONTINUE_REGEX: Regex = Regex::new(r"LAYER_(\d+)~(\d+)").unwrap();
 }
 
-pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
-    let mut result = Vec::new();
+const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+const ICYD_CHUNK_TYPE: [u8; 4] = *b"icYD";
+const ICYD_RECORD_VERSION: u8 = 1;
 
-    let font_dims = buf.font_dimensions();
-    let mut width = buf.width() * font_dims.width;
+fn build_icyd_record(keyword: &str, data: &[u8]) -> Result<Vec<u8>> {
+    let keyword_bytes = keyword.as_bytes();
+    let keyword_len: u16 = keyword_bytes.len().try_into().map_err(|_| crate::EngineError::UnsupportedFormat {
+        description: format!("icYD keyword too long: {}", keyword_bytes.len()),
+    })?;
+    let data_len: u32 = data.len().try_into().map_err(|_| crate::EngineError::UnsupportedFormat {
+        description: format!("icYD payload too large: {}", data.len()),
+    })?;
 
-    let mut first_line = 0;
-    while first_line < buf.height() {
-        if !buf.is_line_empty(first_line) {
-            break;
-        }
-        first_line += 1;
+    let mut out = Vec::with_capacity(1 + 2 + keyword_bytes.len() + 4 + data.len());
+    out.push(ICYD_RECORD_VERSION);
+    out.extend(u16::to_le_bytes(keyword_len));
+    out.extend(keyword_bytes);
+    out.extend(u32::to_le_bytes(data_len));
+    out.extend(data);
+    Ok(out)
+}
+
+fn begin_icyd_record(keyword: &str) -> Result<(Vec<u8>, usize)> {
+    let keyword_bytes = keyword.as_bytes();
+    let keyword_len: u16 = keyword_bytes.len().try_into().map_err(|_| crate::EngineError::UnsupportedFormat {
+        description: format!("icYD keyword too long: {}", keyword_bytes.len()),
+    })?;
+
+    // Layout: [record_version: u8][keyword_len: u16 LE][keyword bytes][data_len: u32 LE][data bytes...]
+    let mut out = Vec::with_capacity(1 + 2 + keyword_bytes.len() + 4);
+    out.push(ICYD_RECORD_VERSION);
+    out.extend(u16::to_le_bytes(keyword_len));
+    out.extend(keyword_bytes);
+    let data_len_offset = out.len();
+    out.extend([0u8; 4]);
+    Ok((out, data_len_offset))
+}
+
+fn write_icyd_record<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &str, data: &[u8]) -> std::result::Result<(), IcedError> {
+    let record = build_icyd_record(keyword, data).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+    writer
+        .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+        .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+    Ok(())
+}
+
+fn extract_png_chunks_by_type(png: &[u8], wanted: [u8; 4]) -> Result<Vec<Vec<u8>>> {
+    if png.len() < PNG_SIGNATURE.len() || png[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return Err(LoadingError::InvalidPng("invalid PNG signature".to_string()).into());
     }
 
-    let last_line = (first_line + MAX_LINES).min(buf.line_count().max(buf.height()));
-    let mut height = (last_line - first_line) * font_dims.height;
+    let mut res = Vec::new();
+    let mut off = PNG_SIGNATURE.len();
+    while off + 8 <= png.len() {
+        let len = u32::from_be_bytes(png[off..off + 4].try_into().unwrap()) as usize;
+        let chunk_type: [u8; 4] = png[off + 4..off + 8].try_into().unwrap();
+        let data_start = off + 8;
+        let data_end = data_start + len;
+        let crc_end = data_end + 4;
+        if crc_end > png.len() {
+            return Err(LoadingError::InvalidPng("truncated PNG chunk".to_string()).into());
+        }
 
-    let image_empty = if width == 0 || height == 0 {
-        width = 1;
-        height = 1;
-        true
+        if chunk_type == wanted {
+            res.push(png[data_start..data_end].to_vec());
+        }
+        if &chunk_type == b"IEND" {
+            break;
+        }
+        off = crc_end;
+    }
+    Ok(res)
+}
+
+fn parse_icyd_record(payload: &[u8]) -> Result<(String, &[u8])> {
+    if payload.len() < 1 + 2 + 4 {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: "icYD record too small".to_string(),
+        });
+    }
+    if payload[0] != ICYD_RECORD_VERSION {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: format!("unsupported icYD record version {}", payload[0]),
+        });
+    }
+    let keyword_len = u16::from_le_bytes(payload[1..3].try_into().unwrap()) as usize;
+    let keyword_start = 3;
+    let keyword_end = keyword_start + keyword_len;
+    if payload.len() < keyword_end + 4 {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: "icYD record truncated (keyword)".to_string(),
+        });
+    }
+    let keyword = std::str::from_utf8(&payload[keyword_start..keyword_end]).map_err(|e| crate::EngineError::UnsupportedFormat {
+        description: format!("icYD keyword not UTF-8: {e}"),
+    })?;
+    let data_len = u32::from_le_bytes(payload[keyword_end..keyword_end + 4].try_into().unwrap()) as usize;
+    let data_start = keyword_end + 4;
+    let data_end = data_start + data_len;
+    if payload.len() < data_end {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: "icYD record truncated (data)".to_string(),
+        });
+    }
+    Ok((keyword.to_string(), &payload[data_start..data_end]))
+}
+
+fn process_icy_draw_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut TextBuffer, layer_resume_y: &mut HashMap<usize, i32>) -> Result<bool> {
+    match keyword {
+        "END" => return Ok(false),
+        "ICED" => {
+            if bytes.len() < 2 {
+                return Err(crate::EngineError::UnsupportedFormat {
+                    description: "ICED header too small".to_string(),
+                });
+            }
+
+            let version = u16::from_le_bytes([bytes[0], bytes[1]]);
+            match version {
+                0 => {
+                    if bytes.len() != constants::ICED_HEADER_SIZEV0 {
+                        return Err(crate::EngineError::UnsupportedFormat {
+                            description: format!("unsupported ICED v0 header size {}", bytes.len()),
+                        });
+                    }
+                }
+                1 => {
+                    if bytes.len() != constants::ICED_HEADER_SIZE {
+                        return Err(crate::EngineError::UnsupportedFormat {
+                            description: format!("unsupported ICED v1 header size {}", bytes.len()),
+                        });
+                    }
+                }
+                _ => {
+                    return Err(crate::EngineError::UnsupportedFormat {
+                        description: format!("unsupported ICED version {} (max supported: {})", version, constants::ICED_VERSION),
+                    });
+                }
+            }
+
+            let mut o: usize = 2; // skip version
+            o += 4; // skip type
+            if bytes.len() < o + 2 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
+            }
+            let buffer_type = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+            o += 2;
+            result.buffer_type = crate::BufferType::from_byte(buffer_type as u8);
+            if bytes.len() < o + 3 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 3 });
+            }
+            let ice_mode = bytes[o];
+            o += 1;
+            result.ice_mode = crate::IceMode::from_byte(ice_mode);
+
+            let palette_mode = bytes[o];
+            o += 1;
+            result.palette_mode = crate::PaletteMode::from_byte(palette_mode);
+
+            let font_mode = bytes[o];
+            o += 1;
+            result.font_mode = crate::FontMode::from_byte(font_mode);
+
+            if bytes.len() < o + 8 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
+            }
+            let width_u32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            let height_u32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+
+            let width: i32 = i32::try_from(width_u32).map_err(|_| crate::EngineError::UnsupportedFormat {
+                description: format!("ICED width out of range: {width_u32}"),
+            })?;
+            let height: i32 = i32::try_from(height_u32).map_err(|_| crate::EngineError::UnsupportedFormat {
+                description: format!("ICED height out of range: {height_u32}"),
+            })?;
+            result.set_size((width, height));
+
+            if bytes.len() >= constants::ICED_HEADER_SIZE {
+                if bytes.len() < o + 2 {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
+                }
+                let font_width = bytes[o] as i32;
+                o += 1;
+                let font_height = bytes[o] as i32;
+                result.set_font_dimensions((font_width, font_height).into());
+            }
+        }
+
+        "PALETTE" => {
+            result.palette = crate::FileFormat::Palette(crate::PaletteFormat::Ice).load_palette(bytes)?;
+        }
+
+        "SAUCE" => {
+            if let Some(sauce) = SauceRecord::from_bytes(bytes)? {
+                super::super::apply_sauce_to_buffer(result, &sauce);
+            }
+        }
+
+        "TAG" => {
+            if bytes.len() < 2 {
+                return Err(crate::EngineError::OutOfBounds { offset: 2 });
+            }
+            let mut cur = &bytes[..];
+            let tag_len = u16::from_le_bytes(cur[..2].try_into().unwrap());
+            cur = &cur[2..];
+            for _ in 0..tag_len {
+                let (preview, used) = read_utf8_encoded_string(cur)?;
+                cur = &cur[used..];
+                let (replacement_value, used) = read_utf8_encoded_string(cur)?;
+                cur = &cur[used..];
+
+                if cur.len() < 4 + 4 + 2 + 1 + 1 + 1 + 2 {
+                    return Err(crate::EngineError::OutOfBounds { offset: bytes.len() + 1 });
+                }
+                let x = i32::from_le_bytes(cur[..4].try_into().unwrap());
+                cur = &cur[4..];
+                let y = i32::from_le_bytes(cur[..4].try_into().unwrap());
+                cur = &cur[4..];
+                let length = u16::from_le_bytes(cur[..2].try_into().unwrap()) as usize;
+                cur = &cur[2..];
+                let is_enabled = cur[0] == 1;
+                cur = &cur[1..];
+
+                let alignment = match cur[0] {
+                    0 => Alignment::Left,
+                    1 => Alignment::Center,
+                    2 => Alignment::Right,
+                    _ => {
+                        return Err(crate::EngineError::UnsupportedFormat {
+                            description: "unsupported alignment".to_string(),
+                        });
+                    }
+                };
+                cur = &cur[1..];
+
+                let tag_placement = match cur[0] {
+                    0 => crate::TagPlacement::InText,
+                    1 => crate::TagPlacement::WithGotoXY,
+                    _ => {
+                        return Err(crate::EngineError::UnsupportedFormat {
+                            description: "unsupported tag placement".to_string(),
+                        });
+                    }
+                };
+                cur = &cur[1..];
+
+                let tag_role = match cur[0] {
+                    0 => crate::TagRole::Displaycode,
+                    1 => crate::TagRole::Hyperlink,
+                    _ => {
+                        return Err(crate::EngineError::UnsupportedFormat {
+                            description: "unsupported tag role".to_string(),
+                        });
+                    }
+                };
+                cur = &cur[1..];
+
+                if cur.len() < 2 {
+                    return Err(crate::EngineError::OutOfBounds { offset: 2 });
+                }
+                let mut attr = u16::from_le_bytes(cur[..2].try_into().unwrap());
+                cur = &cur[2..];
+
+                let is_short = if attr & attribute::SHORT_DATA != 0 {
+                    attr &= !attribute::SHORT_DATA;
+                    true
+                } else {
+                    false
+                };
+
+                let (fg, bg, font_page, ext_attr) = if is_short {
+                    if cur.len() < 3 {
+                        return Err(crate::EngineError::OutOfBounds { offset: 3 });
+                    }
+                    let fg = cur[0] as u32;
+                    let bg = cur[1] as u32;
+                    let font_page = cur[2];
+                    cur = &cur[3..];
+                    (fg, bg, font_page, 0)
+                } else {
+                    if cur.len() < 10 {
+                        return Err(crate::EngineError::OutOfBounds { offset: 10 });
+                    }
+                    let fg = u32::from_le_bytes(cur[..4].try_into().unwrap());
+                    let bg = u32::from_le_bytes(cur[4..8].try_into().unwrap());
+                    let font_page = cur[8];
+                    let ext_attr = cur[9];
+                    cur = &cur[10..];
+                    (fg, bg, font_page, ext_attr)
+                };
+
+                if cur.len() < 16 {
+                    return Err(crate::EngineError::OutOfBounds { offset: 16 });
+                }
+                cur = &cur[16..]; // unused data for future use
+
+                result.tags.push(crate::Tag {
+                    preview,
+                    replacement_value,
+                    position: Position::new(x, y),
+                    length,
+                    is_enabled,
+                    alignment,
+                    tag_placement,
+                    tag_role,
+                    attribute: crate::TextAttribute {
+                        foreground_color: fg,
+                        background_color: bg,
+                        font_page,
+                        ext_attr,
+                        attr,
+                    },
+                });
+            }
+        }
+
+        text => {
+            if let Some(font_slot) = text.strip_prefix("FONT_") {
+                match font_slot.parse() {
+                    Ok(font_slot) => {
+                        let mut o: usize = 0;
+                        let (font_name, size) = read_utf8_encoded_string(&bytes[o..])?;
+                        o += size;
+                        let font = BitFont::from_bytes(font_name, &bytes[o..])?;
+                        result.set_font(font_slot, font);
+                    }
+                    Err(e) => return Err(IcedError::ErrorParsingFontSlot(e.to_string()).into()),
+                }
+                return Ok(true);
+            }
+
+            if !text.starts_with("LAYER_") {
+                log::warn!("unsupported chunk {text}");
+                return Ok(true);
+            }
+
+            // Continuation chunk
+            if let Some(m) = LAYER_CONTINUE_REGEX.captures(text) {
+                let (_, [layer_num, _chunk]) = m.extract();
+                let layer_num = layer_num.parse::<usize>()?;
+
+                if layer_num >= result.layers.len() {
+                    return Err(crate::EngineError::UnsupportedFormat {
+                        description: format!("layer continuation refers to missing layer index {layer_num}"),
+                    });
+                }
+
+                let layer = &mut result.layers[layer_num];
+                match layer.role {
+                    crate::Role::Normal => {
+                        let mut o = 0;
+                        let start_y = *layer_resume_y.get(&layer_num).unwrap_or(&layer.line_count());
+                        let mut y = start_y;
+                        while y < layer.height() {
+                            if o >= bytes.len() {
+                                break;
+                            }
+                            for x in 0..layer.width() {
+                                if bytes.len() < o + 2 {
+                                    return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
+                                }
+                                let mut attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+                                o += 2;
+                                if attr_raw == attribute::INVISIBLE_SHORT {
+                                    break;
+                                }
+
+                                let is_short = (attr_raw & attribute::SHORT_DATA) != 0;
+                                if is_short {
+                                    attr_raw &= !attribute::SHORT_DATA;
+                                }
+                                let attr = attr_raw;
+                                if attr == attribute::INVISIBLE {
+                                    continue;
+                                }
+
+                                let need = if is_short { 4 } else { 14 };
+                                if bytes.len() < o + need {
+                                    return Err(crate::EngineError::OutOfBounds { offset: o + need });
+                                }
+
+                                let (ch_u32, fg, bg, ext_attr, font_page) = if is_short {
+                                    let ch = bytes[o] as u32;
+                                    let fg = bytes[o + 1] as u32;
+                                    let bg = bytes[o + 2] as u32;
+                                    let font_page = bytes[o + 3];
+                                    o += 4;
+                                    (ch, fg, bg, 0, font_page)
+                                } else {
+                                    let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                                    let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
+                                    let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
+                                    let font_page = bytes[o + 12];
+                                    let ext_attr = bytes[o + 13];
+                                    o += 14;
+                                    (ch, fg, bg, ext_attr, font_page)
+                                };
+
+                                let ch = char::from_u32(ch_u32).ok_or_else(|| crate::EngineError::UnsupportedFormat {
+                                    description: format!("invalid unicode scalar value: {ch_u32}"),
+                                })?;
+
+                                layer.set_char(
+                                    (x, y),
+                                    crate::AttributedChar {
+                                        ch,
+                                        attribute: crate::TextAttribute {
+                                            foreground_color: fg,
+                                            background_color: bg,
+                                            font_page,
+                                            ext_attr,
+                                            attr,
+                                        },
+                                    },
+                                );
+                            }
+                            y += 1;
+                        }
+
+                        layer_resume_y.insert(layer_num, y);
+                        if y >= layer.height() {
+                            layer_resume_y.remove(&layer_num);
+                        }
+                        return Ok(true);
+                    }
+                    crate::Role::Image => {
+                        layer.sixels[0].picture_data.extend(bytes);
+                        return Ok(true);
+                    }
+                    crate::Role::PastePreview | crate::Role::PasteImage => {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            let layer_num = text
+                .strip_prefix("LAYER_")
+                .ok_or_else(|| crate::EngineError::UnsupportedFormat {
+                    description: format!("invalid layer keyword {text}"),
+                })?
+                .parse::<usize>()
+                .map_err(|_| crate::EngineError::UnsupportedFormat {
+                    description: format!("invalid layer index in keyword {text}"),
+                })?;
+
+            if layer_num != result.layers.len() {
+                return Err(crate::EngineError::UnsupportedFormat {
+                    description: format!("unexpected layer index {layer_num}, expected {}", result.layers.len()),
+                });
+            }
+
+            let mut o: usize = 0;
+            let (title, used) = read_utf8_encoded_string(&bytes[o..])?;
+            let mut layer = Layer::new(title, (0, 0));
+            o += used;
+
+            if bytes.len() < o + 1 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 1 });
+            }
+            let role = bytes[o];
+            o += 1;
+            layer.role = if role == 1 { crate::Role::Image } else { crate::Role::Normal };
+
+            if bytes.len() < o + 4 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
+            }
+            o += 4; // unused
+
+            if bytes.len() < o + 1 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 1 });
+            }
+            let mode = bytes[o];
+            o += 1;
+            layer.properties.mode = match mode {
+                0 => crate::Mode::Normal,
+                1 => crate::Mode::Chars,
+                2 => crate::Mode::Attributes,
+                _ => return Err(LoadingError::IcyDrawUnsupportedLayerMode(mode).into()),
+            };
+
+            if bytes.len() < o + 4 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
+            }
+            let red = bytes[o];
+            let green = bytes[o + 1];
+            let blue = bytes[o + 2];
+            let alpha = bytes[o + 3];
+            o += 4;
+            if alpha != 0 {
+                layer.properties.color = Some(Color::new(red, green, blue));
+            }
+
+            if bytes.len() < o + 4 + 1 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 5 });
+            }
+            let flags = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            layer.transparency = bytes[o];
+            o += 1;
+
+            if bytes.len() < o + 4 + 4 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
+            }
+            let x_offset = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            let y_offset = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            layer.set_offset((x_offset, y_offset));
+
+            if bytes.len() < o + 4 + 4 + 2 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 10 });
+            }
+            let width = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            let height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            o += 4;
+            layer.set_size((width, height));
+            let default_font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+            o += 2;
+            layer.default_font_page = default_font_page as usize;
+
+            if bytes.len() < o + 8 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
+            }
+            let length = u64::from_le_bytes(bytes[o..(o + 8)].try_into().unwrap()) as usize;
+            o += 8;
+
+            if role == 1 {
+                if bytes.len() < o + 16 {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + 16 });
+                }
+                let sixel_width = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                o += 4;
+                let sixel_height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                o += 4;
+                let vert_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                o += 4;
+                let horiz_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                o += 4;
+                layer
+                    .sixels
+                    .push(Sixel::from_data((sixel_width, sixel_height), vert_scale, horiz_scale, bytes[o..].to_vec()));
+                result.layers.push(layer);
+            } else {
+                if bytes.len() < o + length {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + length });
+                }
+                let mut y = 0;
+                while y < height {
+                    if o >= bytes.len() {
+                        break;
+                    }
+                    for x in 0..width {
+                        if bytes.len() < o + 2 {
+                            return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
+                        }
+                        let mut attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+                        o += 2;
+                        if attr_raw == attribute::INVISIBLE_SHORT {
+                            break;
+                        }
+
+                        let is_short = (attr_raw & attribute::SHORT_DATA) != 0;
+                        if is_short {
+                            attr_raw &= !attribute::SHORT_DATA;
+                        }
+                        let attr = attr_raw;
+                        if attr == attribute::INVISIBLE {
+                            continue;
+                        }
+
+                        let need = if is_short { 4 } else { 14 };
+                        if bytes.len() < o + need {
+                            return Err(crate::EngineError::OutOfBounds { offset: o + need });
+                        }
+
+                        let (ch_u32, fg, bg, ext_attr, font_page) = if is_short {
+                            let ch = bytes[o] as u32;
+                            let fg = bytes[o + 1] as u32;
+                            let bg = bytes[o + 2] as u32;
+                            let font_page = bytes[o + 3];
+                            o += 4;
+                            (ch, fg, bg, 0u8, font_page)
+                        } else {
+                            let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                            let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
+                            let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
+                            let font_page = bytes[o + 12];
+                            let ext_attr = bytes[o + 13];
+                            o += 14;
+                            (ch, fg, bg, ext_attr, font_page)
+                        };
+
+                        let ch = char::from_u32(ch_u32).ok_or_else(|| crate::EngineError::UnsupportedFormat {
+                            description: format!("invalid unicode scalar value: {ch_u32}"),
+                        })?;
+
+                        layer.set_char(
+                            (x, y),
+                            crate::AttributedChar {
+                                ch,
+                                attribute: crate::TextAttribute {
+                                    foreground_color: fg,
+                                    background_color: bg,
+                                    font_page,
+                                    ext_attr,
+                                    attr,
+                                },
+                            },
+                        );
+                    }
+                    y += 1;
+                }
+                result.layers.push(layer);
+
+                // Remember where to resume if this layer continues in `LAYER_{layer_num}~k`.
+                if y < height {
+                    layer_resume_y.insert(layer_num, y);
+                }
+            }
+
+            // set attributes at the end because of the way the parser works
+            if let Some(layer) = result.layers.last_mut() {
+                layer.properties.is_visible = (flags & constants::layer::IS_VISIBLE) == constants::layer::IS_VISIBLE;
+                layer.properties.is_locked = (flags & constants::layer::EDIT_LOCK) == constants::layer::EDIT_LOCK;
+                layer.properties.is_position_locked = (flags & constants::layer::POS_LOCK) == constants::layer::POS_LOCK;
+                layer.properties.has_alpha_channel = (flags & constants::layer::HAS_ALPHA) == constants::layer::HAS_ALPHA;
+                layer.properties.is_alpha_channel_locked = (flags & constants::layer::ALPHA_LOCKED) == constants::layer::ALPHA_LOCKED;
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    let mut png_bytes = Vec::new();
+
+    let mut first_line = 0;
+    let mut last_line = 0;
+
+    let font_dims = buf.font_dimensions();
+    // Absolute fast path for IcyDraw autosave: no thumbnail rendering.
+    let fast_save = options.skip_thumbnail;
+
+    let (width, height, image_empty) = if fast_save {
+        (1, 1, true)
     } else {
-        false
+        let mut width = buf.width() * font_dims.width;
+
+        while first_line < buf.height() {
+            if !buf.is_line_empty(first_line) {
+                break;
+            }
+            first_line += 1;
+        }
+
+        last_line = (first_line + MAX_LINES).min(buf.line_count().max(buf.height()));
+        let mut height = (last_line - first_line) * font_dims.height;
+
+        let image_empty = width == 0 || height == 0;
+        if image_empty {
+            width = 1;
+            height = 1;
+        }
+
+        (width, height, image_empty)
     };
 
-    let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut result, width as u32, height as u32); // Width is 2 pixels and height is 1.
+    let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut png_bytes, width as u32, height as u32); // Width is 2 pixels and height is 1.
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+
+    // The PNG preview is not the bottleneck for the fast-save path (it's 1x1), but this keeps
+    // encoding overhead minimal and predictable.
+    if fast_save {
+        encoder.set_compression(png::Compression::Fastest);
+    }
+
+    let mut writer = encoder.write_header()?;
 
     {
         let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
@@ -71,27 +726,18 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         result.push(buf.font_dimensions().width as u8);
         result.push(buf.font_dimensions().height as u8);
 
-        let sauce_data = general_purpose::STANDARD.encode(&result);
-        if let Err(err) = encoder.add_ztxt_chunk("ICED".to_string(), sauce_data) {
-            return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-        }
+        write_icyd_record(&mut writer, "ICED", &result)?;
     }
 
     if let Some(sauce) = &options.save_sauce {
         let mut sauce_vec: Vec<u8> = Vec::new();
         sauce.write(&mut sauce_vec)?;
-        let sauce_data = general_purpose::STANDARD.encode(&sauce_vec);
-        if let Err(err) = encoder.add_ztxt_chunk("SAUCE".to_string(), sauce_data) {
-            return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-        }
+        write_icyd_record(&mut writer, "SAUCE", &sauce_vec)?;
     }
 
     if !buf.palette.is_default() {
         let pal_data = buf.palette.export_palette(&crate::FileFormat::Palette(crate::PaletteFormat::Ice)).unwrap();
-        let palette_data = general_purpose::STANDARD.encode(pal_data);
-        if let Err(err) = encoder.add_ztxt_chunk("PALETTE".to_string(), palette_data) {
-            return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-        }
+        write_icyd_record(&mut writer, "PALETTE", &pal_data)?;
     }
 
     for (k, v) in buf.font_iter() {
@@ -99,38 +745,37 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         write_utf8_encoded_string(&mut font_data, &v.name());
         font_data.extend(v.to_psf2_bytes().unwrap());
 
-        if let Err(err) = encoder.add_ztxt_chunk(format!("FONT_{k}"), general_purpose::STANDARD.encode(&font_data)) {
-            return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-        }
+        write_icyd_record(&mut writer, &format!("FONT_{k}"), &font_data)?;
     }
 
     for (i, layer) in buf.layers.iter().enumerate() {
-        let mut result: Vec<u8> = Vec::new();
-        write_utf8_encoded_string(&mut result, &layer.properties.title);
+        let keyword = format!("LAYER_{i}");
+        let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+        write_utf8_encoded_string(&mut record, &layer.properties.title);
 
         match layer.role {
-            crate::Role::Image => result.push(1),
-            _ => result.push(0),
+            crate::Role::Image => record.push(1),
+            _ => record.push(0),
         }
 
         // Some extra bytes not yet used
-        result.extend([0, 0, 0, 0]);
+        record.extend([0, 0, 0, 0]);
 
         let mode = match layer.properties.mode {
             crate::Mode::Normal => 0,
             crate::Mode::Chars => 1,
             crate::Mode::Attributes => 2,
         };
-        result.push(mode);
+        record.push(mode);
 
         if let Some(color) = &layer.properties.color {
             let (r, g, b) = color.clone().rgb();
-            result.push(r);
-            result.push(g);
-            result.push(b);
-            result.push(0xFF);
+            record.push(r);
+            record.push(g);
+            record.push(b);
+            record.push(0xFF);
         } else {
-            result.extend([0, 0, 0, 0]);
+            record.extend([0, 0, 0, 0]);
         }
 
         let mut flags = 0;
@@ -149,15 +794,15 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         if layer.properties.is_alpha_channel_locked {
             flags |= constants::layer::ALPHA_LOCKED;
         }
-        result.extend(u32::to_le_bytes(flags));
-        result.push(layer.transparency);
+        record.extend(u32::to_le_bytes(flags));
+        record.push(layer.transparency);
 
-        result.extend(i32::to_le_bytes(layer.offset().x));
-        result.extend(i32::to_le_bytes(layer.offset().y));
+        record.extend(i32::to_le_bytes(layer.offset().x));
+        record.extend(i32::to_le_bytes(layer.offset().y));
 
-        result.extend(i32::to_le_bytes(layer.width()));
-        result.extend(i32::to_le_bytes(layer.height()));
-        result.extend(u16::to_le_bytes(layer.default_font_page as u16));
+        record.extend(i32::to_le_bytes(layer.width()));
+        record.extend(i32::to_le_bytes(layer.height()));
+        record.extend(u16::to_le_bytes(layer.default_font_page as u16));
 
         if matches!(layer.role, crate::Role::Image) {
             let sixel = &layer.sixels[0];
@@ -165,38 +810,49 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             let len = sixel_header_size + sixel.picture_data.len() as u64;
 
             let mut bytes_written = MAX.min(len);
-            result.extend(u64::to_le_bytes(bytes_written));
+            record.extend(u64::to_le_bytes(bytes_written));
 
-            result.extend(i32::to_le_bytes(sixel.width()));
-            result.extend(i32::to_le_bytes(sixel.height()));
-            result.extend(i32::to_le_bytes(sixel.vertical_scale));
-            result.extend(i32::to_le_bytes(sixel.horizontal_scale));
+            record.extend(i32::to_le_bytes(sixel.width()));
+            record.extend(i32::to_le_bytes(sixel.height()));
+            record.extend(i32::to_le_bytes(sixel.vertical_scale));
+            record.extend(i32::to_le_bytes(sixel.horizontal_scale));
             bytes_written -= sixel_header_size;
-            result.extend(&sixel.picture_data[0..bytes_written as usize]);
-            let layer_data = general_purpose::STANDARD.encode(&result);
-            if let Err(err) = encoder.add_ztxt_chunk(format!("LAYER_{i}"), layer_data) {
-                return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-            }
+            record.extend(&sixel.picture_data[0..bytes_written as usize]);
+
+            let data_len: u32 = (record.len() - (data_len_offset + 4))
+                .try_into()
+                .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
+            record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
+            writer
+                .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+                .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
 
             let mut chunk = 1;
             let len = sixel.picture_data.len() as u64;
             while len > bytes_written {
                 let next_bytes = MAX.min(len - bytes_written);
-                let layer_data = general_purpose::STANDARD.encode(&sixel.picture_data[bytes_written as usize..(bytes_written as usize + next_bytes as usize)]);
+                let layer_data = &sixel.picture_data[bytes_written as usize..(bytes_written as usize + next_bytes as usize)];
                 bytes_written += next_bytes;
-                if let Err(err) = encoder.add_ztxt_chunk(format!("LAYER_{i}~{chunk}"), layer_data) {
-                    return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-                }
+                let keyword = format!("LAYER_{i}~{chunk}");
+                let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+                record.extend_from_slice(layer_data);
+                let data_len: u32 = (record.len() - (data_len_offset + 4))
+                    .try_into()
+                    .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
+                record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
+                writer
+                    .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+                    .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
                 chunk += 1;
             }
         } else {
-            let offset = result.len();
-            result.extend(u64::to_le_bytes(0));
+            let layer_len_offset = record.len();
+            record.extend(u64::to_le_bytes(0));
 
             let mut y = 0;
 
             while y < layer.height() {
-                if result.len() as u64 + layer.width() as u64 * 16 > MAX {
+                if (record.len() - (data_len_offset + 4)) as u64 + layer.width() as u64 * 16 > MAX {
                     break;
                 }
                 let real_length = get_invisible_line_length(layer, y);
@@ -216,40 +872,47 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         false
                     };
 
-                    result.extend(u16::to_le_bytes(attr));
+                    record.extend(u16::to_le_bytes(attr));
                     if !ch.is_visible() {
                         continue;
                     }
 
                     if is_short {
-                        result.push(ch.ch as u8);
-                        result.push(ch.attribute.foreground_color as u8);
-                        result.push(ch.attribute.background_color as u8);
-                        result.push(ch.attribute.font_page);
+                        record.push(ch.ch as u8);
+                        record.push(ch.attribute.foreground_color as u8);
+                        record.push(ch.attribute.background_color as u8);
+                        record.push(ch.attribute.font_page);
                     } else {
-                        result.extend(u32::to_le_bytes(ch.ch as u32));
-                        result.extend(u32::to_le_bytes(ch.attribute.foreground_color));
-                        result.extend(u32::to_le_bytes(ch.attribute.background_color));
-                        result.push(ch.attribute.font_page);
-                        result.push(ch.attribute.ext_attr);
+                        record.extend(u32::to_le_bytes(ch.ch as u32));
+                        record.extend(u32::to_le_bytes(ch.attribute.foreground_color));
+                        record.extend(u32::to_le_bytes(ch.attribute.background_color));
+                        record.push(ch.attribute.font_page);
+                        record.push(ch.attribute.ext_attr);
                     }
                 }
                 if layer.width() > real_length {
-                    result.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
+                    record.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                 }
                 y += 1;
             }
-            let len = result.len();
-            result[offset..(offset + 8)].copy_from_slice(&u64::to_le_bytes((len - offset - 8) as u64));
-            let layer_data = general_purpose::STANDARD.encode(&result);
-            if let Err(err) = encoder.add_ztxt_chunk(format!("LAYER_{i}"), layer_data) {
-                return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-            }
+
+            let len = record.len();
+            record[layer_len_offset..(layer_len_offset + 8)].copy_from_slice(&u64::to_le_bytes((len - layer_len_offset - 8) as u64));
+
+            let data_len: u32 = (record.len() - (data_len_offset + 4))
+                .try_into()
+                .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
+            record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
+            writer
+                .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+                .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+
             let mut chunk = 1;
             while y < layer.height() {
-                result.clear();
+                let keyword = format!("LAYER_{i}~{chunk}");
+                let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
                 while y < layer.height() {
-                    if result.len() as u64 + layer.width() as u64 * 16 > MAX {
+                    if (record.len() - (data_len_offset + 4)) as u64 + layer.width() as u64 * 16 > MAX {
                         break;
                     }
                     let real_length = get_invisible_line_length(layer, y);
@@ -270,32 +933,36 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                             false
                         };
 
-                        result.extend(u16::to_le_bytes(attr));
+                        record.extend(u16::to_le_bytes(attr));
                         if !ch.is_visible() {
                             continue;
                         }
                         if is_short {
-                            result.push(ch.ch as u8);
-                            result.push(ch.attribute.foreground_color as u8);
-                            result.push(ch.attribute.background_color as u8);
-                            result.push(ch.attribute.font_page);
+                            record.push(ch.ch as u8);
+                            record.push(ch.attribute.foreground_color as u8);
+                            record.push(ch.attribute.background_color as u8);
+                            record.push(ch.attribute.font_page);
                         } else {
-                            result.extend(u32::to_le_bytes(ch.ch as u32));
-                            result.extend(u32::to_le_bytes(ch.attribute.foreground_color));
-                            result.extend(u32::to_le_bytes(ch.attribute.background_color));
-                            result.push(ch.attribute.font_page);
-                            result.push(ch.attribute.ext_attr);
+                            record.extend(u32::to_le_bytes(ch.ch as u32));
+                            record.extend(u32::to_le_bytes(ch.attribute.foreground_color));
+                            record.extend(u32::to_le_bytes(ch.attribute.background_color));
+                            record.push(ch.attribute.font_page);
+                            record.push(ch.attribute.ext_attr);
                         }
                     }
                     if layer.width() > real_length {
-                        result.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
+                        record.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                     }
                     y += 1;
                 }
-                let layer_data = general_purpose::STANDARD.encode(&result);
-                if let Err(err) = encoder.add_ztxt_chunk(format!("LAYER_{i}~{chunk}"), layer_data) {
-                    return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-                }
+
+                let data_len: u32 = (record.len() - (data_len_offset + 4))
+                    .try_into()
+                    .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
+                record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
+                writer
+                    .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+                    .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
                 chunk += 1;
             }
         }
@@ -330,7 +997,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             }
             let mut attr = tag.attribute.attr;
 
-            let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 {
+            let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 && tag.attribute.ext_attr == 0 {
                 attr |= attribute::SHORT_DATA;
                 true
             } else {
@@ -344,7 +1011,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             } else {
                 data.extend(u32::to_le_bytes(tag.attribute.foreground_color));
                 data.extend(u32::to_le_bytes(tag.attribute.background_color));
-                data.extend(u16::to_le_bytes(tag.attribute.font_page as u16));
+                data.push(tag.attribute.font_page);
+                data.push(tag.attribute.ext_attr);
             }
             // unused data for future use
             data.extend(&[0, 0, 0, 0]);
@@ -353,17 +1021,10 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             data.extend(&[0, 0, 0, 0]);
         }
 
-        let tag_data = general_purpose::STANDARD.encode(&data);
-        if let Err(err) = encoder.add_ztxt_chunk("TAG".to_string(), tag_data) {
-            return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-        }
+        write_icyd_record(&mut writer, "TAG", &data)?;
     }
 
-    if let Err(err) = encoder.add_ztxt_chunk("END".to_string(), String::new()) {
-        return Err(IcedError::ErrorEncodingZText(format!("{err}")).into());
-    }
-
-    let mut writer = encoder.write_header()?;
+    write_icyd_record(&mut writer, "END", &[])?;
 
     if image_empty {
         writer.write_image_data(&[0, 0, 0, 0])?;
@@ -380,18 +1041,61 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     }
     writer.finish()?;
 
-    Ok(result)
+    Ok(png_bytes)
 }
 
 pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+    if let Some(screen) = load_icy_draw_binary_chunks(data)? {
+        return Ok(screen);
+    }
+    load_icy_draw_legacy_base64_text_chunks(data)
+}
+
+fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
     result.layers.clear();
 
+    // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
+    let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
+
+    let records = extract_png_chunks_by_type(data, ICYD_CHUNK_TYPE)?;
+    if records.is_empty() {
+        return Ok(None);
+    }
+
+    let mut is_running = true;
+    for payload in records {
+        let (keyword, bytes) = parse_icyd_record(&payload)?;
+        let keep_running = process_icy_draw_decoded_chunk(&keyword, bytes, &mut result, &mut layer_resume_y)?;
+        if !keep_running {
+            is_running = false;
+            break;
+        }
+    }
+
+    if is_running {
+        Ok(Some(TextScreen::from_buffer(result)))
+    } else {
+        Ok(Some(TextScreen::from_buffer(result)))
+    }
+}
+
+// Legacy loader for older IcyDraw files that stored Base64 payloads in tEXt/zTXt chunks.
+fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
+    let mut result = TextBuffer::new((80, 25));
+    result.terminal_state.is_terminal_buffer = false;
+    result.layers.clear();
+
+    // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
+    let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
+
     let mut decoder = png::StreamingDecoder::new();
     let mut len = 0;
-    let mut last_info = 0;
+    let mut last_uncompressed_info = 0usize;
+    let mut last_compressed_info = 0usize;
     let mut is_running = true;
+
     while is_running {
         match decoder.update(&data[len..], None) {
             Ok((b, _)) => {
@@ -399,451 +1103,57 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
                 if data.len() <= len {
                     break;
                 }
-                if let Some(info) = decoder.info() {
-                    for i in last_info..info.compressed_latin1_text.len() {
-                        let chunk = &info.compressed_latin1_text[i];
-                        let Ok(text) = chunk.get_text() else {
-                            log::error!("error decoding iced chunk: {}", chunk.keyword);
+
+                let Some(info) = decoder.info() else {
+                    continue;
+                };
+
+                for i in last_uncompressed_info..info.uncompressed_latin1_text.len() {
+                    let chunk = &info.uncompressed_latin1_text[i];
+                    let text = chunk.text.as_str();
+
+                    let decoded = match general_purpose::STANDARD.decode(text) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            log::warn!("error decoding iced chunk: {e}");
                             continue;
-                        };
-
-                        let bytes = match general_purpose::STANDARD.decode(text) {
-                            Ok(data) => data,
-                            Err(e) => {
-                                log::warn!("error decoding iced chunk: {e}");
-                                continue;
-                            }
-                        };
-                        match chunk.keyword.as_str() {
-                            "END" => {
-                                is_running = false;
-                                break;
-                            }
-                            "ICED" => {
-                                let mut o: usize = 0;
-                                if bytes.len() != constants::ICED_HEADER_SIZE && bytes.len() != constants::ICED_HEADER_SIZEV0 {
-                                    return Err(crate::EngineError::UnsupportedFormat {
-                                        description: format!("unsupported header size {}", bytes.len()),
-                                    });
-                                }
-                                o += 2; // skip version
-                                // TODO: read type ATM only 1 type is generated.
-                                o += 4; // skip type
-                                let buffer_type = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                o += 2;
-                                result.buffer_type = crate::BufferType::from_byte(buffer_type as u8);
-                                let ice_mode = bytes[o];
-                                o += 1;
-                                result.ice_mode = crate::IceMode::from_byte(ice_mode);
-
-                                let palette_mode = bytes[o];
-                                o += 1;
-                                result.palette_mode = crate::PaletteMode::from_byte(palette_mode);
-
-                                let font_mode = bytes[o];
-                                o += 1;
-                                result.font_mode = crate::FontMode::from_byte(font_mode);
-
-                                let width: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                let height: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                result.set_size((width, height));
-
-                                if bytes.len() >= constants::ICED_HEADER_SIZE {
-                                    let font_width = bytes[o] as i32;
-                                    o += 1;
-                                    let font_height = bytes[o] as i32;
-                                    // o += 1;
-                                    result.set_font_dimensions((font_width, font_height).into());
-                                }
-                            }
-
-                            "PALETTE" => {
-                                result.palette = crate::FileFormat::Palette(crate::PaletteFormat::Ice).load_palette(&bytes)?;
-                            }
-
-                            "SAUCE" => {
-                                if let Some(sauce) = SauceRecord::from_bytes(&bytes)? {
-                                    super::super::apply_sauce_to_buffer(&mut result, &sauce);
-                                }
-                            }
-
-                            "TAG" => {
-                                let mut bytes = &bytes[..];
-                                let tag_len = u16::from_le_bytes(bytes[..2].try_into().unwrap());
-                                bytes = &bytes[2..];
-                                for _ in 0..tag_len {
-                                    let (preview, len) = read_utf8_encoded_string(&bytes);
-                                    bytes = &bytes[len..];
-                                    let (replacement_value, len) = read_utf8_encoded_string(&bytes);
-                                    bytes = &bytes[len..];
-                                    let x = i32::from_le_bytes(bytes[..4].try_into().unwrap());
-                                    bytes = &bytes[4..];
-                                    let y = i32::from_le_bytes(bytes[..4].try_into().unwrap());
-                                    bytes = &bytes[4..];
-                                    let length = u16::from_le_bytes(bytes[..2].try_into().unwrap());
-                                    bytes = &bytes[2..];
-                                    let is_enabled = bytes[0] == 1;
-                                    bytes = &bytes[1..];
-                                    let alignment = match bytes[0] {
-                                        0 => Alignment::Left,
-                                        1 => Alignment::Center,
-                                        2 => Alignment::Right,
-                                        _ => {
-                                            return Err(crate::EngineError::UnsupportedFormat {
-                                                description: "unsupported alignment".to_string(),
-                                            });
-                                        }
-                                    };
-                                    bytes = &bytes[1..];
-                                    let tag_placement = match bytes[0] {
-                                        0 => crate::TagPlacement::InText,
-                                        1 => crate::TagPlacement::WithGotoXY,
-                                        _ => {
-                                            return Err(crate::EngineError::UnsupportedFormat {
-                                                description: "unsupported tag placement".to_string(),
-                                            });
-                                        }
-                                    };
-                                    bytes = &bytes[1..];
-
-                                    let tag_role = match bytes[0] {
-                                        0 => crate::TagRole::Displaycode,
-                                        1 => crate::TagRole::Hyperlink,
-                                        _ => {
-                                            return Err(crate::EngineError::UnsupportedFormat {
-                                                description: "unsupported tag role".to_string(),
-                                            });
-                                        }
-                                    };
-
-                                    bytes = &bytes[1..];
-
-                                    let mut attr = u16::from_le_bytes(bytes[..2].try_into().unwrap());
-                                    bytes = &bytes[2..];
-                                    let is_short = if (attr & attribute::SHORT_DATA) == 0 {
-                                        false
-                                    } else {
-                                        attr &= !attribute::SHORT_DATA;
-                                        true
-                                    };
-                                    let (fg, bg, font_page) = if is_short {
-                                        let r = (bytes[0] as u32, bytes[1] as u32, bytes[2] as u16);
-                                        bytes = &bytes[3..];
-                                        r
-                                    } else {
-                                        let r = (
-                                            u32::from_le_bytes(bytes[..4].try_into().unwrap()),
-                                            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-                                            u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
-                                        );
-                                        bytes = &bytes[10..];
-                                        r
-                                    };
-                                    bytes = &bytes[4..]; // skip unused data
-                                    bytes = &bytes[4..]; // skip unused data
-                                    bytes = &bytes[4..]; // skip unused data
-                                    bytes = &bytes[4..]; // skip unused data
-
-                                    result.tags.push(crate::Tag {
-                                        preview,
-                                        replacement_value,
-                                        position: Position::new(x, y),
-                                        length: length as usize,
-                                        is_enabled,
-                                        alignment,
-                                        tag_placement,
-                                        tag_role,
-                                        attribute: crate::TextAttribute {
-                                            foreground_color: fg,
-                                            background_color: bg,
-                                            font_page: font_page as u8,
-                                            ext_attr: 0,
-                                            attr,
-                                        },
-                                    });
-                                }
-                            }
-
-                            text => {
-                                if let Some(font_slot) = text.strip_prefix("FONT_") {
-                                    match font_slot.parse() {
-                                        Ok(font_slot) => {
-                                            let mut o: usize = 0;
-                                            let (font_name, size) = read_utf8_encoded_string(&bytes[o..]);
-                                            o += size;
-                                            let font = BitFont::from_bytes(font_name, &bytes[o..])?;
-                                            result.set_font(font_slot, font);
-                                            continue;
-                                        }
-                                        Err(err) => {
-                                            return Err(IcedError::ErrorParsingFontSlot(format!("{err}")).into());
-                                        }
-                                    }
-                                }
-                                if !text.starts_with("LAYER_") {
-                                    log::warn!("unsupported chunk {text}");
-                                    continue;
-                                }
-
-                                if let Some(m) = LAYER_CONTINUE_REGEX.captures(text) {
-                                    let (_, [layer_num, _chunk]) = m.extract();
-                                    let layer_num = layer_num.parse::<usize>()?;
-
-                                    let layer = &mut result.layers[layer_num];
-                                    match layer.role {
-                                        crate::Role::Normal => {
-                                            let mut o = 0;
-                                            for y in layer.line_count()..layer.height() {
-                                                if o >= bytes.len() {
-                                                    // will be continued in a later chunk.
-                                                    break;
-                                                }
-                                                for x in 0..layer.width() {
-                                                    let mut attr = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                                    o += 2;
-                                                    if attr == crate::attribute::INVISIBLE_SHORT {
-                                                        // end of line
-                                                        break;
-                                                    }
-                                                    let is_short = if (attr & attribute::SHORT_DATA) == 0 {
-                                                        false
-                                                    } else {
-                                                        attr &= !attribute::SHORT_DATA;
-                                                        true
-                                                    };
-                                                    if attr == crate::attribute::INVISIBLE {
-                                                        // default char
-                                                        continue;
-                                                    }
-
-                                                    let (ch, fg, bg, ext_attr, font_page) = if is_short {
-                                                        let ch = bytes[o] as u32;
-                                                        o += 1;
-                                                        let fg = bytes[o] as u32;
-                                                        o += 1;
-                                                        let bg = bytes[o] as u32;
-                                                        o += 1;
-                                                        let font_page = bytes[o];
-                                                        o += 1;
-                                                        (ch, fg, bg, 0, font_page)
-                                                    } else {
-                                                        let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                        o += 4;
-                                                        let fg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                        o += 4;
-                                                        let bg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                        o += 4;
-                                                        let font_page = bytes[o];
-                                                        o += 1;
-                                                        let ext_attr = bytes[o];
-                                                        o += 1;
-                                                        (ch, fg, bg, ext_attr, font_page)
-                                                    };
-
-                                                    layer.set_char(
-                                                        (x, y),
-                                                        crate::AttributedChar {
-                                                            ch: unsafe { char::from_u32_unchecked(ch) },
-                                                            attribute: crate::TextAttribute {
-                                                                foreground_color: fg,
-                                                                background_color: bg,
-                                                                font_page,
-                                                                ext_attr,
-                                                                attr,
-                                                            },
-                                                        },
-                                                    );
-                                                }
-                                            }
-                                            continue;
-                                        }
-                                        crate::Role::PastePreview => todo!(),
-                                        crate::Role::PasteImage => todo!(),
-                                        crate::Role::Image => {
-                                            layer.sixels[0].picture_data.extend(&bytes);
-                                            continue;
-                                        }
-                                    }
-                                }
-                                let mut o: usize = 0;
-
-                                let (title, size) = read_utf8_encoded_string(&bytes[o..]);
-                                let mut layer = Layer::new(title, (0, 0));
-
-                                o += size;
-                                let role = bytes[o];
-                                o += 1;
-                                if role == 1 {
-                                    layer.role = crate::Role::Image;
-                                } else {
-                                    layer.role = crate::Role::Normal;
-                                }
-
-                                o += 4; // skip unused
-
-                                let mode = bytes[o];
-
-                                layer.properties.mode = match mode {
-                                    0 => crate::Mode::Normal,
-                                    1 => crate::Mode::Chars,
-                                    2 => crate::Mode::Attributes,
-                                    _ => {
-                                        return Err(LoadingError::IcyDrawUnsupportedLayerMode(mode).into());
-                                    }
-                                };
-                                o += 1;
-
-                                // read layer color
-                                let red = bytes[o];
-                                o += 1;
-                                let green = bytes[o];
-                                o += 1;
-                                let blue = bytes[o];
-                                o += 1;
-                                let alpha = bytes[o];
-                                o += 1;
-                                if alpha != 0 {
-                                    layer.properties.color = Some(Color::new(red, green, blue));
-                                }
-
-                                let flags = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                o += 4;
-
-                                layer.transparency = bytes[o];
-                                o += 1;
-
-                                let x_offset: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                let y_offset: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                layer.set_offset((x_offset, y_offset));
-
-                                let width: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                let height: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                o += 4;
-                                layer.set_size((width, height));
-                                let default_font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                o += 2;
-                                layer.default_font_page = default_font_page as usize;
-
-                                let length = u64::from_le_bytes(bytes[o..(o + 8)].try_into().unwrap()) as usize;
-                                o += 8;
-
-                                if role == 1 {
-                                    let width: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                    o += 4;
-                                    let height: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                    o += 4;
-
-                                    let vert_scale: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                    o += 4;
-                                    let horiz_scale: i32 = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap()) as i32;
-                                    o += 4;
-                                    layer
-                                        .sixels
-                                        .push(Sixel::from_data((width, height), vert_scale, horiz_scale, bytes[o..].to_vec()));
-                                    result.layers.push(layer);
-                                } else {
-                                    if bytes.len() < o + length {
-                                        return Err(crate::EngineError::OutOfBounds { offset: o + length });
-                                    }
-                                    for y in 0..height {
-                                        if o >= bytes.len() {
-                                            // will be continued in a later chunk.
-                                            break;
-                                        }
-                                        for x in 0..width {
-                                            if o + 2 > bytes.len() {
-                                                return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
-                                            }
-                                            let mut attr = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                            o += 2;
-                                            if attr == crate::attribute::INVISIBLE_SHORT {
-                                                // end of line
-                                                break;
-                                            }
-
-                                            let is_short = if (attr & attribute::SHORT_DATA) == 0 {
-                                                false
-                                            } else {
-                                                attr &= !attribute::SHORT_DATA;
-                                                true
-                                            };
-
-                                            if attr == crate::attribute::INVISIBLE {
-                                                // default char
-                                                continue;
-                                            }
-
-                                            let (ch, fg, bg, ext_attr, font_page) = if is_short {
-                                                if o + 4 > bytes.len() {
-                                                    return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
-                                                }
-
-                                                let ch = bytes[o] as u32;
-                                                o += 1;
-                                                let fg = bytes[o] as u32;
-                                                o += 1;
-                                                let bg = bytes[o] as u32;
-                                                o += 1;
-                                                let font_page = bytes[o];
-                                                o += 1;
-                                                (ch, fg, bg, 0u8, font_page)
-                                            } else {
-                                                if o + 14 > bytes.len() {
-                                                    return Err(crate::EngineError::OutOfBounds { offset: o + 14 });
-                                                }
-
-                                                let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                o += 4;
-                                                let fg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                o += 4;
-                                                let bg = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                                o += 4;
-
-                                                let font_page = bytes[o];
-                                                o += 1;
-                                                let ext_attr = bytes[o];
-                                                o += 1;
-                                                (ch, fg, bg, ext_attr, font_page)
-                                            };
-
-                                            layer.set_char(
-                                                (x, y),
-                                                crate::AttributedChar {
-                                                    ch: unsafe { char::from_u32_unchecked(ch) },
-                                                    attribute: crate::TextAttribute {
-                                                        foreground_color: fg,
-                                                        background_color: bg,
-                                                        font_page,
-                                                        ext_attr,
-                                                        attr,
-                                                    },
-                                                },
-                                            );
-                                        }
-                                    }
-                                    result.layers.push(layer);
-                                }
-
-                                // set attributes at the end because of the way the parser works
-                                if let Some(layer) = result.layers.last_mut() {
-                                    layer.properties.is_visible = (flags & constants::layer::IS_VISIBLE) == constants::layer::IS_VISIBLE;
-                                    layer.properties.is_locked = (flags & constants::layer::EDIT_LOCK) == constants::layer::EDIT_LOCK;
-                                    layer.properties.is_position_locked = (flags & constants::layer::POS_LOCK) == constants::layer::POS_LOCK;
-
-                                    layer.properties.has_alpha_channel = (flags & constants::layer::HAS_ALPHA) == constants::layer::HAS_ALPHA;
-
-                                    layer.properties.is_alpha_channel_locked = (flags & constants::layer::ALPHA_LOCKED) == constants::layer::ALPHA_LOCKED;
-                                }
-                            }
                         }
+                    };
+
+                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y)?;
+                    if !keep_running {
+                        is_running = false;
+                        break;
                     }
-                    last_info = info.compressed_latin1_text.len();
                 }
+                last_uncompressed_info = info.uncompressed_latin1_text.len();
+
+                if !is_running {
+                    break;
+                }
+
+                for i in last_compressed_info..info.compressed_latin1_text.len() {
+                    let chunk = &info.compressed_latin1_text[i];
+                    let Ok(text) = chunk.get_text() else {
+                        log::error!("error decoding iced chunk: {}", chunk.keyword);
+                        continue;
+                    };
+
+                    let decoded = match general_purpose::STANDARD.decode(text) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            log::warn!("error decoding iced chunk: {e}");
+                            continue;
+                        }
+                    };
+
+                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y)?;
+                    if !keep_running {
+                        is_running = false;
+                        break;
+                    }
+                }
+                last_compressed_info = info.compressed_latin1_text.len();
             }
             Err(err) => {
                 return Err(LoadingError::InvalidPng(format!("{err}")).into());
@@ -862,9 +1172,24 @@ fn get_invisible_line_length(layer: &Layer, y: i32) -> i32 {
     length
 }
 
-fn read_utf8_encoded_string(data: &[u8]) -> (String, usize) {
+fn read_utf8_encoded_string(data: &[u8]) -> Result<(String, usize)> {
+    if data.len() < 4 {
+        return Err(crate::EngineError::OutOfBounds { offset: 4 });
+    }
+
     let size = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
-    (unsafe { String::from_utf8_unchecked(data[4..(4 + size)].to_vec()) }, size + 4)
+    let end = 4usize.saturating_add(size);
+    if data.len() < end {
+        return Err(crate::EngineError::OutOfBounds { offset: end });
+    }
+
+    let s = std::str::from_utf8(&data[4..end])
+        .map_err(|e| crate::EngineError::UnsupportedFormat {
+            description: format!("invalid UTF-8 string: {e}"),
+        })?
+        .to_string();
+
+    Ok((s, size + 4))
 }
 
 fn write_utf8_encoded_string(data: &mut Vec<u8>, s: &str) {
