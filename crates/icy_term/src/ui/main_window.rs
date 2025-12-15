@@ -380,16 +380,12 @@ impl MainWindow {
             }
             Message::ShowAboutDialog => {
                 self.switch_to_terminal_screen();
-                icy_engine_gui::set_default_auto_scaling_xy(true);
                 self.dialogs.push(
                     crate::ui::dialogs::about_dialog::about_dialog(Message::AboutDialog, |msg| match msg {
                         Message::AboutDialog(m) => Some(m),
                         _ => None,
                     })
-                    .on_cancel(|| {
-                        icy_engine_gui::set_default_auto_scaling_xy(false);
-                        Message::None
-                    }),
+                    .on_cancel(|| Message::None),
                 );
                 Task::none()
             }

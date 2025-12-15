@@ -172,8 +172,6 @@ fn main() {
     let script_for_closure = args.run;
     let mcp_rx = Arc::new(mcp_rx);
 
-    icy_engine_gui::set_default_auto_scaling_xy(true);
-
     iced::daemon(
         move || {
             let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };

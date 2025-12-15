@@ -117,27 +117,25 @@ fn main() {
 
     log::info!("Starting iCY VIEW {}", *VERSION);
 
-    icy_engine_gui::set_default_auto_scaling_xy(false);
-
     iced::daemon(
         move || {
             if let Some(ref path) = args.path {
-                    window_manager::WindowManager::with_path(path.clone(), args.auto, args.bps)
+                window_manager::WindowManager::with_path(path.clone(), args.auto, args.bps)
             } else {
-                    window_manager::WindowManager::new(args.auto, args.bps)
+                window_manager::WindowManager::new(args.auto, args.bps)
             }
         },
-            window_manager::WindowManager::update,
-            window_manager::WindowManager::view,
+        window_manager::WindowManager::update,
+        window_manager::WindowManager::view,
     )
     .settings(Settings {
         vsync: true,
         antialiasing: true,
         ..Default::default()
     })
-        .theme(window_manager::WindowManager::theme)
-        .subscription(window_manager::WindowManager::subscription)
-        .title(window_manager::WindowManager::title)
+    .theme(window_manager::WindowManager::theme)
+    .subscription(window_manager::WindowManager::subscription)
+    .title(window_manager::WindowManager::title)
     .run()
     .expect("Failed to run application");
 

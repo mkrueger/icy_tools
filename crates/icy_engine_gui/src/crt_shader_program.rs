@@ -73,7 +73,8 @@ impl<'a> CRTShaderProgram<'a> {
             // Optional: Fit the terminal *window* height (TerminalState) to the widget bounds.
             // This adjusts `screen.resolution()` (used as the visible region in Auto scaling),
             // without resizing the underlying buffer/scrollback.
-            if self.term.fit_terminal_height_to_bounds && self.monitor_settings.scaling_mode.is_auto() {
+            if self.term.fit_terminal_height_to_bounds && !self.monitor_settings.scaling_mode.is_auto() {
+                println!("fit!");
                 if let Some(editable) = screen.as_editable() {
                     let scale_factor = get_scale_factor().max(0.001);
                     let avail_h_px = bounds.height.max(1.0) * scale_factor;

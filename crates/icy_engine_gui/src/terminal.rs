@@ -2,10 +2,10 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use iced::{Color, mouse, widget};
-use icy_engine::Screen;
 use crate::ScalingMode;
 use crate::{EditorMarkers, RenderInfo, ScrollbarState, SharedRenderCacheHandle, Viewport, create_shared_render_cache};
+use iced::{Color, mouse, widget};
+use icy_engine::Screen;
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,

@@ -10,13 +10,12 @@
 )]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use clap::Parser;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
 use lazy_static::lazy_static;
-use parking_lot::RwLock;
 use semver::Version;
 
 mod ui;

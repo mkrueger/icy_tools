@@ -1335,16 +1335,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::ShowAbout => {
-                icy_engine_gui::set_default_auto_scaling_xy(true);
                 self.dialogs.push(
                     about_dialog(Message::AboutDialog, |msg| match msg {
                         Message::AboutDialog(m) => Some(m),
                         _ => None,
                     })
-                    .on_cancel(|| {
-                        icy_engine_gui::set_default_auto_scaling_xy(false);
-                        Message::None
-                    }),
+                    .on_cancel(|| Message::None),
                 );
                 Task::none()
             }

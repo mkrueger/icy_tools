@@ -1,7 +1,7 @@
+use crate::ScrollbarState;
 use icy_engine::{Position, Rectangle, Size};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
-use crate::ScrollbarState;
 
 /// Default scroll animation speed (units per second for interpolation)
 pub const DEFAULT_SCROLL_ANIMATION_SPEED: f32 = 15.0;

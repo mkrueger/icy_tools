@@ -90,18 +90,6 @@ pub mod music;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-// ============================================================================
-// Default auto-scaling behavior - set once at application startup
-// ============================================================================
-// 0 = Auto (fit both dimensions) - good for terminals with various screen modes
-// 1 = AutoScaleX (fit width only) - good for viewers with long scrollable content
-static DEFAULT_AUTO_SCALE_XY: AtomicBool = AtomicBool::new(false);
-
-/// Set the default auto-scaling mode for this application.
-pub fn set_default_auto_scaling_xy(scale_xy: bool) {
-    DEFAULT_AUTO_SCALE_XY.store(scale_xy, Ordering::Relaxed);
-}
-
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum MonitorType {
@@ -205,18 +193,18 @@ impl ScalingMode {
 
     /// Get the effective zoom factor for given content and viewport sizes
     /// Returns the zoom factor to use for rendering
+    ///
+    /// IMPORTANT: Auto mode always uses the **smaller** of scale_x and scale_y
+    /// (uniform scaling) so the content is never stretched/distorted.
+    /// If the content is smaller than the viewport after scaling, it will be centered.
     pub fn compute_zoom(&self, content_width: f32, content_height: f32, viewport_width: f32, viewport_height: f32, use_integer_scaling: bool) -> f32 {
         match self {
             ScalingMode::Auto => {
-                // Calculate the scale that fits content in viewport
-                let scale_x = viewport_width / content_width;
-
-                let scale_y = viewport_height / content_height;
-                let fit_scale = if DEFAULT_AUTO_SCALE_XY.load(Ordering::Relaxed) {
-                    scale_x.min(scale_y).max(0.1) // Use smaller to fit both dimensions
-                } else {
-                    scale_x
-                };
+                // Calculate uniform scale that fits content in viewport without distortion
+                let scale_x = viewport_width / content_width.max(1.0);
+                let scale_y = viewport_height / content_height.max(1.0);
+                // Always use the smaller scale to prevent any axis from being stretched
+                let fit_scale = scale_x.min(scale_y).max(0.1);
 
                 if use_integer_scaling {
                     // Use largest integer that still fits

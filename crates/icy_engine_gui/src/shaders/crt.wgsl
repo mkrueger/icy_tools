@@ -591,6 +591,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // (start_x, start_y, width, height) in normalized UV coordinates (0-1)
     var term_start = uniforms.terminal_rect.xy;
     var term_size = uniforms.terminal_rect.zw;
+
+    // Guard against invalid/uninitialized uniform data.
+    // If padding/layout mismatches happen, term_size can become 0/NaN/Inf which
+    // would explode the UV math and look like stretching.
+    let term_rect_ok =
+        term_size.x > 0.000001 && term_size.y > 0.000001 &&
+        term_size.x <= 1.0 && term_size.y <= 1.0 &&
+        term_start.x >= 0.0 && term_start.y >= 0.0 &&
+        term_start.x <= 1.0 && term_start.y <= 1.0 &&
+        term_start.x + term_size.x <= 1.01 &&
+        term_start.y + term_size.y <= 1.01;
+    if (!term_rect_ok) {
+        term_start = vec2<f32>(0.0, 0.0);
+        term_size = vec2<f32>(1.0, 1.0);
+    }
     
     // Transform viewport UV to terminal UV
     // viewport_uv is in full widget space, terminal_uv is in terminal space (0-1)
