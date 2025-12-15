@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, Terminal, TextureSliceData, UnicodeGlyphCache, Viewport};
+use crate::{Blink, CRTShaderProgram, Message, MonitorSettings, MouseTracking, Terminal, TextureSliceData, UnicodeGlyphCache, Viewport};
 use iced::Element;
 use iced::widget::shader;
 use icy_engine::GraphicsType;
@@ -136,6 +136,12 @@ pub struct CRTShaderState {
     // Hover tracking
     pub hovered_cell: Option<Position>,
 
+    /// Current mouse tracking mode (mirrors `Terminal.mouse_tracking`).
+    pub mouse_tracking: MouseTracking,
+
+    /// Last emitted mouse move position (for central Move dedup).
+    pub last_move_position: Option<Position>,
+
     /// Cached mouse state from last draw (updated during internal_draw to avoid extra lock in internal_update)
     pub cached_mouse_state: parking_lot::Mutex<Option<MouseState>>,
 
@@ -167,6 +173,8 @@ impl CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
+            mouse_tracking: MouseTracking::Chars,
+            last_move_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -227,13 +235,19 @@ impl CRTShaderState {
         let cx = (term_x / render_info.font_width).floor() as i32;
         let visible_cy = (term_y / effective_font_height).floor() as i32;
 
+        // scroll_x is in content coordinates - convert to columns
+        let scroll_offset_cols = (viewport.scroll_x / render_info.font_width).floor() as i32;
+
         // scroll_y is in content coordinates - convert to lines
         let scroll_offset_lines = (viewport.scroll_y / render_info.font_height).floor() as i32;
 
         // Add scroll offset to get absolute document row
         let cy = visible_cy + scroll_offset_lines;
 
-        Some(Position::new(cx, cy))
+        // Add scroll offset to get absolute document column
+        let abs_cx = cx + scroll_offset_cols;
+
+        Some(Position::new(abs_cx, cy))
     }
 
     /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
@@ -271,13 +285,19 @@ impl CRTShaderState {
         let cx = (term_x / font_width).floor() as i32;
         let visible_cy = (term_y / font_height).floor() as i32;
 
+        // scroll_x is in content coordinates - convert to columns
+        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+
         // scroll_y is in content coordinates - convert to lines
         let scroll_offset_lines = (viewport.scroll_y / font_height).floor() as i32;
 
         // Add scroll offset to get absolute document row
         let cy = visible_cy + scroll_offset_lines;
 
-        Position::new(cx, cy)
+        // Add scroll offset to get absolute document column
+        let abs_cx = cx + scroll_offset_cols;
+
+        Position::new(abs_cx, cy)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -290,13 +310,17 @@ impl CRTShaderState {
     pub fn map_mouse_to_half_block_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
         let (cell_x, half_block_y) = render_info.screen_to_half_block_cell(mx, my)?;
 
+        // scroll_x is in content coordinates - convert to columns
+        let font_width = render_info.font_width.max(1.0);
+        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+
         // scroll_y is in content coordinates - convert to half-block lines (2x)
         let scroll_offset_half_lines = (viewport.scroll_y / render_info.font_height * 2.0).floor() as i32;
 
         // Add scroll offset to get absolute document half-block row
         let abs_half_block_y = half_block_y + scroll_offset_half_lines;
 
-        Some(Position::new(cell_x, abs_half_block_y))
+        Some(Position::new(cell_x + scroll_offset_cols, abs_half_block_y))
     }
 
     /// Map mouse coordinates to half-block cell position without bounds checking.
@@ -305,6 +329,10 @@ impl CRTShaderState {
     pub fn map_mouse_to_half_block_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
         let (cell_x, half_block_y) = render_info.screen_to_half_block_cell_unclamped(mx, my);
 
+        // scroll_x is in content coordinates - convert to columns
+        let font_width = render_info.font_width.max(1.0);
+        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+
         // scroll_y is in content coordinates - convert to half-block lines (2x)
         let font_height = render_info.font_height.max(1.0);
         let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
@@ -312,7 +340,7 @@ impl CRTShaderState {
         // Add scroll offset to get absolute document half-block row
         let abs_half_block_y = half_block_y + scroll_offset_half_lines;
 
-        Position::new(cell_x, abs_half_block_y)
+        Position::new(cell_x + scroll_offset_cols, abs_half_block_y)
     }
 }
 
@@ -334,6 +362,8 @@ impl Default for CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
+            mouse_tracking: MouseTracking::Chars,
+            last_move_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),

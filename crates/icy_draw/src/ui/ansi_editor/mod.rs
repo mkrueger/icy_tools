@@ -390,12 +390,16 @@ impl AnsiEditor {
         // Get visible half-block coordinates (without scroll offset)
         let (cell_x, half_block_y) = render_info.screen_to_half_block_cell_unclamped(screen_x, screen_y);
 
+        // scroll_x is in content coordinates - convert to columns
+        let font_width = render_info.font_width.max(1.0);
+        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+
         // scroll_y is in content coordinates - convert to half-block lines (2x)
         let font_height = render_info.font_height.max(1.0);
         let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
 
         // Get absolute half-block coordinates (with scroll offset)
-        let abs_half_block = icy_engine::Position::new(cell_x, half_block_y + scroll_offset_half_lines);
+        let abs_half_block = icy_engine::Position::new(cell_x + scroll_offset_cols, half_block_y + scroll_offset_half_lines);
 
         // Convert to layer-local coordinates
         // In half-block space, layer Y offset is also doubled
@@ -691,7 +695,9 @@ impl AnsiEditor {
 
         // Create canvas with cloned Arc to screen + shared monitor settings
         let shared_monitor_settings = { options.read().monitor_settings.clone() };
-        let canvas = CanvasView::new(screen.clone(), shared_monitor_settings);
+        let mut canvas = CanvasView::new(screen.clone(), shared_monitor_settings);
+        // Enable caret blinking by default (Click tool is the default)
+        canvas.set_has_focus(true);
 
         let initial_fkey_set = {
             let mut opts = options.write();
@@ -752,7 +758,7 @@ impl AnsiEditor {
     }
 
     fn clear_tool_overlay(&mut self) {
-        self.canvas.set_tool_overlay_mask(None, 1.0);
+        self.canvas.set_tool_overlay_mask(None, None);
     }
 
     fn cancel_shape_drag(&mut self) -> bool {
@@ -865,63 +871,385 @@ impl AnsiEditor {
             crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock
         );
 
-        let (mask_w, mask_h, cell_height_scale, p0, p1, (r, g, b)) = {
-            let mut screen = self.screen.lock();
-            let palette = screen.palette().clone();
+        // Use the same coordinate system as the terminal shader:
+        // - x uses `render_info.font_width`
+        // - y uses `render_info.font_height`, doubled when scan_lines is enabled.
+        let (shader_font_w, shader_font_h, shader_scan_lines) = {
+            let render_info = self.canvas.terminal.render_info.read();
+            (render_info.font_width.max(1.0), render_info.font_height.max(1.0), render_info.scan_lines)
+        };
+        let shader_font_h_effective = shader_font_h * if shader_scan_lines { 2.0 } else { 1.0 };
 
+        let debug_overlay = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TOOL_OVERLAY").is_ok_and(|v| v != "0");
+
+        let alpha: u8 = 153; // ~0.6 like Moebius overlay
+
+        let (overlay_rect_px, overlay_rgba) = (|| {
+            use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, DrawTarget, PointRole};
+
+            let mut screen = self.screen.lock();
             let edit_state = screen
                 .as_any_mut()
                 .downcast_mut::<icy_engine_edit::EditState>()
                 .expect("screen should be EditState");
 
-            let buffer = edit_state.get_buffer();
-            let w = buffer.width().max(1) as u32;
-            let h_cells = buffer.height().max(1) as u32;
+            let base_buffer = edit_state.get_buffer();
 
             let caret_attr = edit_state.get_caret().attribute;
-            let (fg, bg) = (caret_attr.foreground(), caret_attr.background());
-            let col_idx: u32 = if self.shape_clear {
-                0
-            } else if self.paint_button == iced::mouse::Button::Right {
-                bg
-            } else {
-                fg
-            };
-            let rgb = palette.rgb(col_idx);
+            let swap_colors = self.paint_button == iced::mouse::Button::Right;
 
-            if is_half_block_mode {
+            let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
+                let opts = &self.top_toolbar.brush_options;
+                (opts.primary, opts.paint_char, opts.brush_size.max(1), opts.colorize_fg, opts.colorize_bg)
+            };
+
+            let (doc_p0, doc_p1, points): (icy_engine_edit::Position, icy_engine_edit::Position, Vec<(icy_engine_edit::Position, bool)>) = if is_half_block_mode
+            {
                 // Convert layer-local half-block drag positions to document half-block coordinates.
                 let offset = edit_state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                let hb_off = icy_engine::Position::new(offset.x, offset.y * 2);
-                let start = self.drag_pos.start_half_block + hb_off;
-                let cur = self.drag_pos.cur_half_block + hb_off;
-                (w, h_cells * 2, 0.5, start, cur, rgb)
+                let hb_off = icy_engine_edit::Position::new(offset.x, offset.y * 2);
+                let start_hb = self.drag_pos.start_half_block + hb_off;
+                let cur_hb = self.drag_pos.cur_half_block + hb_off;
+
+                let pts_hb = Self::shape_points(self.current_tool, start_hb, cur_hb);
+                let pts = pts_hb
+                    .into_iter()
+                    .filter(|p| p.y >= 0)
+                    .map(|p| {
+                        let cell = icy_engine_edit::Position::new(p.x, p.y / 2);
+                        let is_top = (p.y % 2) == 0;
+                        (cell, is_top)
+                    })
+                    .collect::<Vec<_>>();
+                (start_hb, cur_hb, pts)
             } else {
-                (w, h_cells, 1.0, self.drag_pos.start, self.drag_pos.cur, rgb)
-            }
-        };
+                let p0 = self.drag_pos.start;
+                let p1 = self.drag_pos.cur;
+                let pts = Self::shape_points(self.current_tool, p0, p1)
+                    .into_iter()
+                    .filter(|p| p.x >= 0 && p.y >= 0)
+                    .map(|p| (p, true))
+                    .collect::<Vec<_>>();
+                (p0, p1, pts)
+            };
 
-        let alpha: u8 = 153; // ~0.6 like Moebius overlay
-        let mut rgba = vec![0u8; (mask_w * mask_h * 4) as usize];
-        let points = Self::shape_points(self.current_tool, p0, p1);
+            let _ = (doc_p0, doc_p1); // keep for debugging symmetry
 
-        for p in points {
-            if p.x < 0 || p.y < 0 {
-                continue;
+            if points.is_empty() {
+                return (None, Vec::new());
             }
-            let x = p.x as u32;
-            let y = p.y as u32;
-            if x >= mask_w || y >= mask_h {
-                continue;
+
+            // IMPORTANT: Temp-layer must match the current target layer size and position.
+            // Most operations are defined in layer-local coordinates.
+            let (layer_offset, layer_w, layer_h, layer_vis, layer_locked, layer_title) = if let Some(layer) = edit_state.get_cur_layer() {
+                (
+                    layer.offset(),
+                    layer.width().max(1),
+                    layer.height().max(1),
+                    layer.properties.is_visible,
+                    layer.properties.is_locked,
+                    layer.title().to_string(),
+                )
+            } else {
+                (
+                    icy_engine_edit::Position::default(),
+                    base_buffer.width().max(1),
+                    base_buffer.height().max(1),
+                    true,
+                    false,
+                    "<none>".to_string(),
+                )
+            };
+
+            if debug_overlay {
+                eprintln!(
+                    "[tool_overlay] begin tool={:?} half_block={} clear={} button={:?} scan_lines={} font_w={} font_h={} eff_h={}",
+                    self.current_tool,
+                    is_half_block_mode,
+                    self.shape_clear,
+                    self.paint_button,
+                    shader_scan_lines,
+                    shader_font_w,
+                    shader_font_h,
+                    shader_font_h_effective
+                );
+                eprintln!(
+                    "[tool_overlay] target_layer title='{}' off=({}, {}) size=({}, {}) visible={} locked={}",
+                    layer_title, layer_offset.x, layer_offset.y, layer_w, layer_h, layer_vis, layer_locked
+                );
             }
-            let idx = ((y * mask_w + x) * 4) as usize;
-            rgba[idx] = r;
-            rgba[idx + 1] = g;
-            rgba[idx + 2] = b;
-            rgba[idx + 3] = alpha;
+
+            // Prepare a temporary buffer sized like the target layer.
+            let mut tmp = icy_engine_edit::TextBuffer::create((layer_w, layer_h));
+            tmp.palette = base_buffer.palette.clone();
+            tmp.palette_mode = base_buffer.palette_mode;
+            tmp.ice_mode = base_buffer.ice_mode;
+            tmp.font_mode = base_buffer.font_mode;
+            tmp.set_font_table(base_buffer.font_table());
+            tmp.set_font_dimensions(icy_engine_edit::Size::new(shader_font_w as i32, shader_font_h as i32));
+            tmp.set_use_letter_spacing(base_buffer.use_letter_spacing());
+            tmp.set_use_aspect_ratio(base_buffer.use_aspect_ratio());
+
+            // TextBuffer::create uses default layer properties where `is_visible` is false.
+            // We must explicitly enable it, otherwise `Layer::set_char` becomes a no-op
+            // and the overlay diff ends up empty (invisible).
+            if let Some(layer0) = tmp.layers.get_mut(0) {
+                layer0.properties.is_visible = true;
+                layer0.properties.is_locked = false;
+            }
+
+            if debug_overlay {
+                let l0 = &tmp.layers[0];
+                eprintln!(
+                    "[tool_overlay] tmp_layer size=({}, {}) visible={} locked={} off=({}, {})",
+                    l0.width(),
+                    l0.height(),
+                    l0.properties.is_visible,
+                    l0.properties.is_locked,
+                    l0.properties.offset.x,
+                    l0.properties.offset.y
+                );
+            }
+
+            // Fill from the current target layer.
+            if let Some(layer) = edit_state.get_cur_layer() {
+                for y in 0..layer_h {
+                    for x in 0..layer_w {
+                        let ch = layer.char_at(icy_engine_edit::Position::new(x, y));
+                        tmp.layers[0].set_char((x, y), ch);
+                    }
+                }
+            } else {
+                // Fallback: no layer available, fill from composited screen.
+                for y in 0..layer_h {
+                    for x in 0..layer_w {
+                        let doc_pos = icy_engine_edit::Position::new(layer_offset.x + x, layer_offset.y + y);
+                        let ch = edit_state.char_at(doc_pos);
+                        tmp.layers[0].set_char((x, y), ch);
+                    }
+                }
+            }
+
+            let options = icy_engine_edit::RenderOptions::from(icy_engine_edit::Rectangle::from(0, 0, layer_w, layer_h));
+
+            if debug_overlay {
+                let expected_px_w = (layer_w as f32 * shader_font_w).round() as i32;
+                let expected_px_h = (layer_h as f32 * shader_font_h_effective).round() as i32;
+                eprintln!(
+                    "[tool_overlay] render_rect chars=({}, {}) expected_px=({}, {})",
+                    layer_w, layer_h, expected_px_w, expected_px_h
+                );
+            }
+            let (size_before, rgba_before) = tmp.render_to_rgba(&options, shader_scan_lines);
+
+            if debug_overlay {
+                let all_black = rgba_before.iter().all(|b| *b == 0);
+                eprintln!(
+                    "[tool_overlay] before_render size=({}, {}) bytes={} all black={}",
+                    size_before.width,
+                    size_before.height,
+                    rgba_before.len(),
+                    all_black
+                );
+            }
+
+            // Apply the shape operation onto tmp.
+            let use_selection = edit_state.is_something_selected();
+
+            if debug_overlay {
+                eprintln!("[tool_overlay] points_total={} use_selection={}", points.len(), use_selection);
+            }
+
+            if self.shape_clear {
+                let mut in_bounds = 0usize;
+                let mut sel_kept = 0usize;
+                let mut changed_cells = 0usize;
+                for (p, _) in &points {
+                    // p is in document coordinates; map to layer-local.
+                    let layer_pos = *p - layer_offset;
+                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                        continue;
+                    }
+                    in_bounds += 1;
+                    if use_selection && !edit_state.is_selected(*p) {
+                        continue;
+                    }
+                    sel_kept += 1;
+                    let before = tmp.layers[0].char_at(layer_pos);
+                    let after = icy_engine_edit::AttributedChar::invisible();
+                    if before != after {
+                        changed_cells += 1;
+                    }
+                    tmp.layers[0].set_char(layer_pos, after);
+                }
+
+                if debug_overlay {
+                    eprintln!(
+                        "[tool_overlay] clear_op in_bounds={} after_selection={} changed_cells={} ",
+                        in_bounds, sel_kept, changed_cells
+                    );
+                }
+            } else {
+                let brush_mode = match primary {
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Char => EngineBrushMode::Char(paint_char),
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Shading => {
+                        if swap_colors {
+                            EngineBrushMode::ShadeDown
+                        } else {
+                            EngineBrushMode::Shade
+                        }
+                    }
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
+                    crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
+                };
+
+                let color_mode = if matches!(primary, crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Colorize) {
+                    match (colorize_fg, colorize_bg) {
+                        (true, true) => EngineColorMode::Both,
+                        (true, false) => EngineColorMode::Foreground,
+                        (false, true) => EngineColorMode::Background,
+                        (false, false) => EngineColorMode::None,
+                    }
+                } else {
+                    EngineColorMode::Both
+                };
+
+                let swap_for_colors = swap_colors && !matches!(primary, crate::ui::ansi_editor::top_toolbar::BrushPrimaryMode::Shading);
+                let (fg, bg) = if swap_for_colors {
+                    (caret_attr.background(), caret_attr.foreground())
+                } else {
+                    (caret_attr.foreground(), caret_attr.background())
+                };
+
+                let mut template = caret_attr;
+                template.set_foreground(fg);
+                template.set_background(bg);
+
+                struct BufferTarget<'a> {
+                    buffer: &'a mut icy_engine_edit::TextBuffer,
+                    width: i32,
+                    height: i32,
+                    changed_cells: &'a mut usize,
+                }
+                impl<'a> DrawTarget for BufferTarget<'a> {
+                    fn width(&self) -> i32 {
+                        self.width
+                    }
+                    fn height(&self) -> i32 {
+                        self.height
+                    }
+                    fn char_at(&self, pos: icy_engine_edit::Position) -> Option<icy_engine_edit::AttributedChar> {
+                        if pos.x < 0 || pos.y < 0 || pos.x >= self.width || pos.y >= self.height {
+                            return None;
+                        }
+                        Some(self.buffer.char_at(pos))
+                    }
+                    fn set_char(&mut self, pos: icy_engine_edit::Position, ch: icy_engine_edit::AttributedChar) {
+                        let before = self.buffer.char_at(pos);
+                        if before != ch {
+                            *self.changed_cells += 1;
+                        }
+                        self.buffer.layers[0].set_char(pos, ch);
+                    }
+                }
+
+                let mut changed_cells = 0usize;
+                let mut target = BufferTarget {
+                    buffer: &mut tmp,
+                    width: layer_w,
+                    height: layer_h,
+                    changed_cells: &mut changed_cells,
+                };
+
+                let mut in_bounds = 0usize;
+                let mut sel_kept = 0usize;
+                for (p, is_top) in &points {
+                    let layer_pos = *p - layer_offset;
+                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
+                        continue;
+                    }
+                    in_bounds += 1;
+                    if use_selection && !edit_state.is_selected(*p) {
+                        continue;
+                    }
+                    sel_kept += 1;
+
+                    let ctx = DrawContext::default()
+                        .with_brush_mode(brush_mode.clone())
+                        .with_color_mode(color_mode.clone())
+                        .with_foreground(fg)
+                        .with_background(bg)
+                        .with_template_attribute(template)
+                        .with_half_block_is_top(*is_top);
+                    ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
+                }
+
+                if debug_overlay {
+                    eprintln!(
+                        "[tool_overlay] draw_op in_bounds={} after_selection={} changed_cells={} ",
+                        in_bounds, sel_kept, changed_cells
+                    );
+                }
+            }
+
+            let (size_after, rgba_after) = tmp.render_to_rgba(&options, shader_scan_lines);
+            if size_before != size_after || rgba_before.len() != rgba_after.len() {
+                if debug_overlay {
+                    eprintln!(
+                        "[tool_overlay] ERROR size_mismatch before=({}, {}) after=({}, {}) bytes_before={} bytes_after={}",
+                        size_before.width,
+                        size_before.height,
+                        size_after.width,
+                        size_after.height,
+                        rgba_before.len(),
+                        rgba_after.len()
+                    );
+                }
+                return (None, Vec::new());
+            }
+
+            let mut overlay = Vec::with_capacity(rgba_after.len());
+            let mut changed_pixels = 0usize;
+            for i in (0..rgba_after.len()).step_by(4) {
+                let pixel_changed = rgba_after[i..i + 4] != rgba_before[i..i + 4];
+                if pixel_changed {
+                    changed_pixels += 1;
+                    overlay.push(rgba_after[i]);
+                    overlay.push(rgba_after[i + 1]);
+                    overlay.push(rgba_after[i + 2]);
+                    overlay.push(alpha);
+                } else {
+                    overlay.extend_from_slice(&[0u8, 0u8, 0u8, 0u8]);
+                }
+            }
+
+            let rect_x = layer_offset.x as f32 * shader_font_w;
+            let rect_y = layer_offset.y as f32 * shader_font_h_effective;
+            let rect_w = size_after.width as f32;
+            let rect_h = size_after.height as f32;
+
+            if debug_overlay {
+                eprintln!(
+                    "[tool_overlay] after_render size=({}, {}) changed_pixels={} rect=({}, {}, {}, {})",
+                    size_after.width, size_after.height, changed_pixels, rect_x, rect_y, rect_w, rect_h
+                );
+            }
+
+            (Some((rect_x, rect_y, rect_w, rect_h)), overlay)
+        })();
+
+        if let (Some((x, y, w, h)), rgba) = (overlay_rect_px, overlay_rgba) {
+            if w > 0.0 && h > 0.0 {
+                let mask_w = w as u32;
+                let mask_h = h as u32;
+                self.canvas.set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), Some((x, y, w, h)));
+                return;
+            }
         }
 
-        self.canvas.set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), cell_height_scale);
+        self.clear_tool_overlay();
     }
 
     fn set_current_fkey_set(&mut self, set_idx: usize) {
@@ -1102,7 +1430,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
+        self.current_tool == Tool::Click || self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
     }
 
     /// Get the current marker state for menu display
@@ -1426,7 +1754,9 @@ impl AnsiEditor {
                     TopToolbarMessage::SetBrushChar(_) => {
                         // Selecting a character implicitly closes the overlay.
                         self.char_selector_target = None;
-                        self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar)
+                        let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
+                        self.update_mouse_tracking_mode();
+                        task
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
                         self.type_fkey_slot(slot);
@@ -1506,9 +1836,15 @@ impl AnsiEditor {
                             self.tool_panel.set_tool(self.current_tool);
                         }
 
-                        self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar)
+                        let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar);
+                        self.update_mouse_tracking_mode();
+                        task
                     }
-                    _ => self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar),
+                    _ => {
+                        let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
+                        self.update_mouse_tracking_mode();
+                        task
+                    }
                 }
             }
             AnsiEditorMessage::FKeyToolbar(msg) => {
@@ -3420,6 +3756,7 @@ impl AnsiEditor {
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
+            state.set_caret_visible(state.selection().is_none());
             let caret = state.get_caret();
             let buffer = state.get_buffer();
             let format_mode = state.get_format_mode();
@@ -3504,13 +3841,16 @@ impl AnsiEditor {
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
 
-        let tags_button: Element<'_, AnsiEditorMessage> = icy_engine_gui::ui::secondary_button("Tags…", Some(AnsiEditorMessage::OpenTagListDialog)).into();
+        let _tags_button: Element<'_, AnsiEditorMessage> = icy_engine_gui::ui::secondary_button("Tags…", Some(AnsiEditorMessage::OpenTagListDialog)).into();
 
         let top_toolbar = row![color_switcher, top_toolbar_content].spacing(4).align_y(Alignment::Start);
 
         // === CENTER: Canvas ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
-        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
+        let canvas = self
+            .canvas
+            .view_with_context_menu(self.current_tool == Tool::Click)
+            .map(AnsiEditorMessage::Canvas);
 
         // === RIGHT PANEL ===
         // Right panel created AFTER canvas because minimap uses Terminal's render cache
@@ -3698,19 +4038,49 @@ impl AnsiEditor {
         // Cancels any in-progress shape preview/drag when switching tools.
         let _ = self.cancel_shape_drag();
 
-        let is_visble = matches!(tool, Tool::Click | Tool::Font);
-        self.with_edit_state(|state| state.set_caret_visible(is_visble));
+        let mut is_visble = matches!(tool, Tool::Click | Tool::Font);
+        is_visble &= self.with_edit_state(|state: &mut EditState| {
+            state.set_caret_visible(is_visble && state.selection().is_none());
+            state.selection().is_none()
+        });
+
+        // Enable terminal focus for caret blinking in Click/Font tools
+        self.canvas.set_has_focus(is_visble);
 
         // Sync toolbar filled toggle with the selected tool.
         self.top_toolbar.filled = matches!(tool, Tool::RectangleFilled | Tool::EllipseFilled);
 
         self.current_tool = tool;
 
+        self.update_mouse_tracking_mode();
+
         // Clear tool hover preview when switching tools.
         if !matches!(tool, Tool::Pencil | Tool::Brush | Tool::Erase) {
             self.canvas.set_brush_preview(None);
         }
         // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
+    }
+
+    fn tool_supports_half_block_mode(tool: Tool) -> bool {
+        matches!(
+            tool,
+            Tool::Pencil | Tool::Brush | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled | Tool::Fill
+        )
+    }
+
+    fn update_mouse_tracking_mode(&mut self) {
+        // HalfBlock tracking is tied to the tool *options* (brush primary mode), not the tool itself.
+        // Exception: Erase currently has incorrect tool-window options, so we force char tracking.
+        let wants_half_block = self.top_toolbar.brush_options.primary == BrushPrimaryMode::HalfBlock;
+        let tool_allows = Self::tool_supports_half_block_mode(self.current_tool) && self.current_tool != Tool::Erase;
+
+        let tracking = if wants_half_block && tool_allows {
+            icy_engine_gui::MouseTracking::HalfBlock
+        } else {
+            icy_engine_gui::MouseTracking::Chars
+        };
+
+        self.canvas.terminal.set_mouse_tracking(tracking);
     }
 
     /// Build FontPanelInfo from current font tool state

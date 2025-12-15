@@ -111,8 +111,8 @@ struct Uniforms {
     font_height: f32,            // Font height in pixels
     selection_mask_size: vec2<f32>, // Selection mask size in cells (width, height)
 
-    // Tool overlay mask (Moebius-style alpha preview)
-    // (mask_width_in_cells, mask_height_in_cells, cell_height_scale, enabled)
+    // Tool overlay (Moebius-style alpha preview)
+    // (x_px, y_px, width_px, height_px) in document pixel space
     tool_overlay_params: vec4<f32>,
 
     // Terminal area within the full viewport (for rendering selection outside document bounds)
@@ -328,29 +328,25 @@ fn mask_cell_selected(cell_x: f32, cell_y: f32) -> bool {
 }
 
 fn sample_tool_overlay(doc_pixel: vec2<f32>) -> vec4<f32> {
-    if (uniforms.tool_overlay_params.w < 0.5) {
+    let ox = uniforms.tool_overlay_params.x;
+    let oy = uniforms.tool_overlay_params.y;
+    let ow = uniforms.tool_overlay_params.z;
+    let oh = uniforms.tool_overlay_params.w;
+
+    if (ow <= 0.0 || oh <= 0.0) {
         return vec4<f32>(0.0);
     }
 
-    let mask_w = uniforms.tool_overlay_params.x;
-    let mask_h = uniforms.tool_overlay_params.y;
-    if (mask_w <= 0.0 || mask_h <= 0.0) {
+    let local_x = floor(doc_pixel.x - ox);
+    let local_y = floor(doc_pixel.y - oy);
+
+    if (local_x < 0.0 || local_y < 0.0 || local_x >= ow || local_y >= oh) {
         return vec4<f32>(0.0);
     }
 
-    let fw = max(uniforms.font_width, 1.0);
-    let fh = max(uniforms.font_height, 1.0);
-    let cell_h_scale = max(uniforms.tool_overlay_params.z, 0.0001);
-
-    let cx = floor(doc_pixel.x / fw);
-    let cy = floor(doc_pixel.y / (fh * cell_h_scale));
-
-    if (cx < 0.0 || cx >= mask_w || cy < 0.0 || cy >= mask_h) {
-        return vec4<f32>(0.0);
-    }
-
-    let uv = vec2<f32>((cx + 0.5) / mask_w, (cy + 0.5) / mask_h);
-    return textureSample(t_tool_overlay_mask, terminal_sampler, uv);
+    let px = i32(local_x);
+    let py = i32(local_y);
+    return textureLoad(t_tool_overlay_mask, vec2<i32>(px, py), 0);
 }
 
 fn apply_curvature(uv_in: vec2<f32>) -> vec2<f32> {

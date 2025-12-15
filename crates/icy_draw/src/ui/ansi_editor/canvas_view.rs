@@ -66,6 +66,11 @@ impl CanvasView {
         Self { terminal, monitor_settings }
     }
 
+    /// Set whether the terminal has focus (controls caret visibility/blinking)
+    pub fn set_has_focus(&mut self, has_focus: bool) {
+        self.terminal.has_focus = has_focus;
+    }
+
     /// Scroll viewport by delta
     pub fn scroll_by(&mut self, dx: f32, dy: f32) {
         self.terminal.scroll_x_by(dx);
@@ -228,13 +233,13 @@ impl CanvasView {
         markers.font_dimensions = font_dimensions;
     }
 
-    /// Set the tool overlay mask for Moebius-style translucent tool previews.
-    /// mask_data: (RGBA texture data, width in cells, height in cells)
-    /// cell_height_scale: 1.0 for normal cell grid, 0.5 for half-block (2x Y resolution)
-    pub fn set_tool_overlay_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, cell_height_scale: f32) {
+    /// Set the tool overlay for Moebius-style translucent tool previews.
+    /// mask_data: (RGBA texture data, width in pixels, height in pixels)
+    /// rect_px: (x, y, width, height) in document pixels
+    pub fn set_tool_overlay_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, rect_px: Option<(f32, f32, f32, f32)>) {
         let mut markers = self.terminal.markers.write();
         markers.tool_overlay_mask_data = mask_data;
-        markers.tool_overlay_cell_height_scale = cell_height_scale;
+        markers.tool_overlay_rect = rect_px;
     }
 
     /// Set or update the reference image
@@ -393,6 +398,11 @@ impl CanvasView {
 
     /// Render the canvas view with scrollbars
     pub fn view(&self) -> Element<'_, CanvasMessage> {
+        self.view_with_context_menu(true)
+    }
+
+    /// Render the canvas view with scrollbars, optionally wrapped with the Cut/Copy/Paste context menu.
+    pub fn view_with_context_menu(&self, show_context_menu: bool) -> Element<'_, CanvasMessage> {
         // Use TerminalView to render with CRT shader effect
         let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone())).map(CanvasMessage::TerminalMessage);
 
@@ -429,8 +439,11 @@ impl CanvasView {
                     ..Default::default()
                 });
 
-            // Wrap with context menu
-            ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
+            if show_context_menu {
+                ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
+            } else {
+                canvas_view.into()
+            }
         } else {
             let canvas_view = container(terminal_view)
                 .width(Length::Fill)
@@ -440,8 +453,11 @@ impl CanvasView {
                     ..Default::default()
                 });
 
-            // Wrap with context menu
-            ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
+            if show_context_menu {
+                ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
+            } else {
+                canvas_view.into()
+            }
         }
     }
 

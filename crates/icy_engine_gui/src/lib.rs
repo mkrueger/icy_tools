@@ -579,14 +579,17 @@ pub struct EditorMarkers {
     /// None = no selection mask (use selection_rect only)
     pub selection_mask_data: Option<(Vec<u8>, u32, u32)>,
 
-    /// Tool overlay mask texture data (RGBA, width in cells, height in cells)
+    /// Tool overlay texture data (RGBA, width in pixels, height in pixels)
     /// Used for Moebius-style translucent tool previews (line/rect/ellipse) drawn as alpha overlays.
-    /// Each pixel represents one (half-)cell depending on `tool_overlay_cell_height_scale`.
     /// None = no tool overlay preview.
     pub tool_overlay_mask_data: Option<(Vec<u8>, u32, u32)>,
 
-    /// Cell height scale for the tool overlay mask:
-    /// 1.0 = full cell height (normal mode), 0.5 = half-cell height (half-block high-res mode).
+    /// Tool overlay rectangle in document pixel space (x, y, width, height).
+    /// Must match the dimensions of `tool_overlay_mask_data`.
+    pub tool_overlay_rect: Option<(f32, f32, f32, f32)>,
+
+    /// (Deprecated) Cell height scale for legacy cell-mask tool overlay sampling.
+    /// Kept for compatibility; no longer used by the shader.
     pub tool_overlay_cell_height_scale: f32,
 
     /// Font dimensions for selection mask rendering (font_width, font_height in pixels)
@@ -611,6 +614,7 @@ impl Default for EditorMarkers {
             selection_color: selection_colors::DEFAULT,
             selection_mask_data: None,
             tool_overlay_mask_data: None,
+            tool_overlay_rect: None,
             tool_overlay_cell_height_scale: 1.0,
             font_dimensions: None,
             brush_preview_rect: None,

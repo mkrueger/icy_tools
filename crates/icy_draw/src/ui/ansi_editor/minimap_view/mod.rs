@@ -3,7 +3,6 @@ mod minimap_shader;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
 
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
@@ -73,13 +72,6 @@ pub struct MinimapView {
     shared_state: Arc<Mutex<SharedMinimapState>>,
     /// Current scroll position (0.0 = top, 1.0 = fully scrolled down)
     scroll_position: RefCell<f32>,
-
-    /// Last minimap bounds we saw (from shader feedback).
-    last_available_size: RefCell<(f32, f32)>,
-    /// Timestamp of the last bounds change (used to detect active resize).
-    last_resize_at: RefCell<Option<Instant>>,
-    /// Timestamp of the last time we synchronously rendered a missing tile.
-    last_missing_tile_render_at: RefCell<Option<Instant>>,
 }
 
 impl Default for MinimapView {
@@ -94,10 +86,6 @@ impl MinimapView {
             instance_id: generate_minimap_id(),
             shared_state: Arc::new(Mutex::new(SharedMinimapState::default())),
             scroll_position: RefCell::new(0.0),
-
-            last_available_size: RefCell::new((0.0, 0.0)),
-            last_resize_at: RefCell::new(None),
-            last_missing_tile_render_at: RefCell::new(None),
         }
     }
 
@@ -214,43 +202,16 @@ impl MinimapView {
         // Get available space from shared state (updated by shader in previous frame)
         let (avail_width, avail_height) = self.available_size();
 
-        // During interactive window resize, avoid synchronously rendering missing tiles.
-        // That path can be expensive and causes visible stutter.
-        let now = Instant::now();
-        let is_resizing = {
-            let mut last = self.last_available_size.borrow_mut();
-            let mut last_resize_at = self.last_resize_at.borrow_mut();
-
-            if last.0 <= 0.0 || last.1 <= 0.0 {
-                *last = (avail_width, avail_height);
-            } else {
-                let dw = (avail_width - last.0).abs();
-                let dh = (avail_height - last.1).abs();
-                if dw > 1.0 || dh > 1.0 {
-                    *last = (avail_width, avail_height);
-                    *last_resize_at = Some(now);
-                }
-            }
-
-            last_resize_at.as_ref().is_some_and(|t| now.duration_since(*t) < Duration::from_millis(150))
-        };
-
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
             // Read metadata without holding the lock for long; we may need to lock the Screen.
-            let (tile_count, content_width_u32, content_height_f32, blink_state, max_tile_idx) = {
+            let (content_width_u32, content_height_f32, blink_state) = {
                 let shared_cache = cache_handle.read();
-                (
-                    shared_cache.tile_count(),
-                    shared_cache.content_width,
-                    shared_cache.content_height,
-                    shared_cache.last_blink_state,
-                    shared_cache.max_tile_index(),
-                )
+                (shared_cache.content_width, shared_cache.content_height, shared_cache.last_blink_state)
             };
 
             // Check if shared cache has usable dimensions
-            if tile_count > 0 && content_width_u32 > 0 && content_height_f32 > 0.0 {
+            if content_width_u32 > 0 && content_height_f32 > 0.0 {
                 let content_width = content_width_u32 as f32;
                 let content_height = content_height_f32;
 
@@ -260,6 +221,10 @@ impl MinimapView {
                 // Calculate which tiles to select based on visible area (like CRT shader)
                 let tile_height = TILE_HEIGHT as f32;
                 let scroll_normalized = *self.scroll_position.borrow(); // 0.0 - 1.0
+
+                // Compute theoretical max tile index from content height. This avoids relying on
+                // cache-internal tile counts/limits when we can synchronously render missing tiles.
+                let max_tile_idx = ((content_height / tile_height).ceil().max(1.0) as i32) - 1;
 
                 // Convert normalized scroll position to document-space pixel Y using the same UV math as the shader
                 let scale = (avail_width / content_width).max(0.0001);
@@ -287,7 +252,9 @@ impl MinimapView {
                 let mut total_height = 0u32;
                 let first_slice_start_y = first_tile_idx as f32 * tile_height;
 
-                let mut rendered_missing_tile = false;
+                // Minimap must always be able to paint. If a required tile is missing from the
+                // shared cache, we synchronously render it here (may cause a brief stall during
+                // fast scrolling/resizing, but avoids black/empty areas).
 
                 // Lock order matches Terminal rendering path: Screen -> Cache
                 let screen_guard = screen.lock();
@@ -301,37 +268,62 @@ impl MinimapView {
                     }
 
                     let key = TileCacheKey::new(tile_idx, blink_state);
-                    let cached_tile: Option<SharedCachedTile> = cache_handle.read().get(&key).cloned();
 
-                    let tile = if let Some(tile) = cached_tile {
-                        tile
-                    } else {
-                        // Rendering missing tiles here is expensive (CPU) and can cause stutter,
-                        // especially during interactive window resize. Prefer using what's
-                        // already in the shared cache.
-                        if is_resizing {
-                            break;
-                        }
+                    // First try exact match; then try the other blink-state variant.
+                    let (mut tile, found_exact) = {
+                        let cache = cache_handle.read();
+                        if let Some(t) = cache.get(&key).cloned() {
+                            (t, true)
+                        } else if let Some(t) = cache.get(&TileCacheKey::new(tile_idx, !blink_state)).cloned() {
+                            (t, false)
+                        } else {
+                            // Force-render the needed blink_state variant.
+                            drop(cache);
 
-                        // Throttle: render at most one missing tile per view call, and not more
-                        // often than every ~30ms.
-                        if rendered_missing_tile {
-                            break;
-                        }
-                        {
-                            let mut last = self.last_missing_tile_render_at.borrow_mut();
-                            let allowed = match *last {
-                                None => true,
-                                Some(t) => now.duration_since(t) >= Duration::from_millis(30),
+                            let tile_start_y = tile_idx as f32 * tile_height;
+                            let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
+                            let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
+
+                            let tile_region: icy_engine::Rectangle =
+                                icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
+
+                            let render_options = icy_engine::RenderOptions {
+                                rect: icy_engine::Rectangle {
+                                    start: icy_engine::Position::new(0, tile_start_y as i32),
+                                    size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
+                                }
+                                .into(),
+                                blink_on: blink_state,
+                                selection: None,
+                                selection_fg: None,
+                                selection_bg: None,
+                                override_scan_lines: None,
                             };
-                            if !allowed {
-                                break;
-                            }
-                            *last = Some(now);
-                        }
-                        rendered_missing_tile = true;
 
-                        // Render missing tile into the shared cache so Terminal and Minimap can share it.
+                            let (render_size, rgba_data) = screen_guard.render_region_to_rgba(tile_region, &render_options);
+                            let width = render_size.width as u32;
+                            let height = render_size.height as u32;
+
+                            let slice = icy_engine_gui::TextureSliceData {
+                                rgba_data: Arc::new(rgba_data),
+                                width,
+                                height,
+                            };
+
+                            let cached_tile = SharedCachedTile {
+                                texture: slice,
+                                height,
+                                start_y: tile_start_y,
+                            };
+
+                            cache_handle.write().insert(key, cached_tile.clone());
+                            (cached_tile, true)
+                        }
+                    };
+
+                    // If we only found the opposite blink-state variant, ensure the current
+                    // blink-state variant is also present to avoid misses on blink flips.
+                    if !found_exact {
                         let tile_start_y = tile_idx as f32 * tile_height;
                         let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
                         let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
@@ -369,8 +361,8 @@ impl MinimapView {
                         };
 
                         cache_handle.write().insert(key, cached_tile.clone());
-                        cached_tile
-                    };
+                        tile = cached_tile;
+                    }
 
                     // Use Arc::clone for cheap reference counting instead of data clone
                     slices.push(TextureSliceData {

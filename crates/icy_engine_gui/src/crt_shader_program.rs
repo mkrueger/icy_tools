@@ -390,6 +390,7 @@ impl<'a> CRTShaderProgram<'a> {
         let selection_mask_data = markers.selection_mask_data.clone();
         let font_dimensions = markers.font_dimensions;
         let tool_overlay_mask_data = markers.tool_overlay_mask_data.clone();
+        let tool_overlay_rect = markers.tool_overlay_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let tool_overlay_cell_height_scale = markers.tool_overlay_cell_height_scale;
         let brush_preview_rect = markers.brush_preview_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         drop(markers);
@@ -445,6 +446,7 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Tool overlay (Moebius-style alpha preview)
             tool_overlay_mask_data,
+            tool_overlay_rect,
             tool_overlay_cell_height_scale,
 
             // Brush/Pencil preview rendering
@@ -559,6 +561,14 @@ impl<'a> CRTShaderProgram<'a> {
         if let iced::Event::Mouse(mouse_event) = event {
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
+            let mouse_tracking = self.term.mouse_tracking();
+
+            if state.mouse_tracking != mouse_tracking {
+                state.mouse_tracking = mouse_tracking;
+                state.last_move_position = None;
+                state.last_drag_position = None;
+                state.hovered_cell = None;
+            }
 
             // Mouse events should be relative to the terminal widget.
             // `TerminalMouseEvent.pixel_position` is documented as widget-relative.
@@ -577,7 +587,10 @@ impl<'a> CRTShaderProgram<'a> {
                     // Use unclamped for drag release to get position even outside viewport
                     let (pixel_pos, cell_pos) = if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = match state.mouse_tracking {
+                            crate::MouseTracking::Chars => state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport),
+                            crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell_unclamped(&render_info, position.x, position.y, &viewport),
+                        };
                         (pixel_pos, Some(cell_pos))
                     } else {
                         ((0.0, 0.0), None)
@@ -593,8 +606,16 @@ impl<'a> CRTShaderProgram<'a> {
                 if let mouse::Event::CursorMoved { .. } = mouse_event {
                     if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
-                        // Use unclamped version during drag to allow selection beyond viewport
-                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
+                        // Use unclamped version during drag to allow operations beyond viewport
+                        let cell_pos = match state.mouse_tracking {
+                            crate::MouseTracking::Chars => state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport),
+                            crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell_unclamped(&render_info, position.x, position.y, &viewport),
+                        };
+
+                        if state.last_drag_position == Some(cell_pos) {
+                            return None;
+                        }
+                        state.last_drag_position = Some(cell_pos);
 
                         let modifiers = Self::get_modifiers();
                         let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), MouseButton::Left, modifiers);
@@ -611,7 +632,15 @@ impl<'a> CRTShaderProgram<'a> {
                 mouse::Event::CursorMoved { .. } => {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = match state.mouse_tracking {
+                            crate::MouseTracking::Chars => state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport),
+                            crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell(&render_info, position.x, position.y, &viewport),
+                        };
+
+                        if state.last_move_position == cell_pos {
+                            return None;
+                        }
+                        state.last_move_position = cell_pos;
 
                         if state.hovered_cell != cell_pos {
                             state.hovered_cell = cell_pos;
@@ -632,7 +661,10 @@ impl<'a> CRTShaderProgram<'a> {
                 mouse::Event::ButtonPressed(button) => {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = match state.mouse_tracking {
+                            crate::MouseTracking::Chars => state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport),
+                            crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell(&render_info, position.x, position.y, &viewport),
+                        };
 
                         let mouse_button = match button {
                             mouse::Button::Left => MouseButton::Left,
@@ -658,7 +690,10 @@ impl<'a> CRTShaderProgram<'a> {
                     if !matches!(button, mouse::Button::Left) {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
-                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                            let cell_pos = match state.mouse_tracking {
+                                crate::MouseTracking::Chars => state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport),
+                                crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell(&render_info, position.x, position.y, &viewport),
+                            };
 
                             let mouse_button = match button {
                                 mouse::Button::Middle => MouseButton::Middle,
@@ -674,11 +709,15 @@ impl<'a> CRTShaderProgram<'a> {
                     } else if !state.dragging {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
-                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                            let cell_pos = match state.mouse_tracking {
+                                crate::MouseTracking::Chars => state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport),
+                                crate::MouseTracking::HalfBlock => state.map_mouse_to_half_block_cell(&render_info, position.x, position.y, &viewport),
+                            };
 
                             state.dragging = false;
                             state.drag_anchor = None;
                             state.last_drag_position = None;
+                            state.last_move_position = None;
 
                             let modifiers = Self::get_modifiers();
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);

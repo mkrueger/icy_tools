@@ -293,6 +293,8 @@ pub struct TerminalShader {
     // Tool overlay mask rendering (Moebius-like alpha preview)
     /// Tool overlay mask texture data (RGBA bytes), None = no overlay
     pub tool_overlay_mask_data: Option<(Vec<u8>, u32, u32)>, // (data, width_in_cells, height_in_cells)
+    /// Tool overlay rectangle in document pixel space (x, y, x+width, y+height), None = disabled
+    pub tool_overlay_rect: Option<[f32; 4]>,
     /// Cell height scale for tool overlay sampling (1.0 normal, 0.5 half-block)
     pub tool_overlay_cell_height_scale: f32,
 
@@ -601,7 +603,7 @@ impl TerminalShader {
     }
 
     /// Compute a hash for tool overlay mask data
-    fn compute_tool_overlay_mask_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
+    fn compute_tool_overlay_mask_hash(data: &Option<(Vec<u8>, u32, u32)>, rect: &Option<[f32; 4]>) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
@@ -615,6 +617,14 @@ impl TerminalShader {
             None => {
                 0u64.hash(&mut hasher);
             }
+        }
+
+        // Include placement in the hash as well
+        if let Some([x0, y0, x1, y1]) = rect {
+            x0.to_bits().hash(&mut hasher);
+            y0.to_bits().hash(&mut hasher);
+            x1.to_bits().hash(&mut hasher);
+            y1.to_bits().hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -1154,7 +1164,7 @@ impl shader::Primitive for TerminalShader {
         }
 
         // Check if tool overlay mask changed and needs update
-        let tool_mask_hash = Self::compute_tool_overlay_mask_hash(&self.tool_overlay_mask_data);
+        let tool_mask_hash = Self::compute_tool_overlay_mask_hash(&self.tool_overlay_mask_data, &self.tool_overlay_rect);
         let needs_tool_mask_update = match pipeline.instances.get(&id) {
             Some(resources) => resources.tool_overlay_mask_hash != tool_mask_hash,
             None => false,
@@ -1162,10 +1172,32 @@ impl shader::Primitive for TerminalShader {
 
         if needs_tool_mask_update {
             if let Some(resources) = pipeline.instances.get_mut(&id) {
+                let debug_overlay = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TOOL_OVERLAY").is_ok_and(|v| v != "0");
+
                 // Create or update tool overlay mask texture
                 if let Some((data, width, height)) = &self.tool_overlay_mask_data {
                     let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
                     let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
+
+                    if debug_overlay {
+                        let rect = self.tool_overlay_rect;
+                        let params = if let Some([x0, y0, x1, y1]) = rect {
+                            let rw = (x1 - x0).max(0.0);
+                            let rh = (y1 - y0).max(0.0);
+                            [x0, y0, rw, rh]
+                        } else {
+                            [0.0, 0.0, 0.0, 0.0]
+                        };
+                        eprintln!(
+                            "[tool_overlay_gpu] upload instance={} tex=({}, {}) bytes={} rect={:?} params={:?}",
+                            id,
+                            w,
+                            h,
+                            data.len(),
+                            rect,
+                            params
+                        );
+                    }
 
                     let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
                         label: Some(&format!("Tool Overlay Mask Instance {}", id)),
@@ -1214,6 +1246,10 @@ impl shader::Primitive for TerminalShader {
                     });
                 } else {
                     resources.tool_overlay_mask_texture = None;
+
+                    if debug_overlay {
+                        eprintln!("[tool_overlay_gpu] cleared instance={} (no mask data)", id);
+                    }
                 }
 
                 // Helper to create bind group
@@ -1390,6 +1426,9 @@ impl shader::Primitive for TerminalShader {
             }
         };
 
+        let (mask_font_w, mask_font_h) = self.font_dimensions.unwrap_or((self.font_width.max(1.0), self.font_height.max(1.0)));
+        let effective_mask_font_h = if self.scan_lines { mask_font_h * 2.0 } else { mask_font_h };
+
         let uniform_data = CRTUniforms {
             time: now_ms() as f32 / 1000.0,
             brightness: self.monitor_settings.brightness / 100.0,
@@ -1524,18 +1563,24 @@ impl shader::Primitive for TerminalShader {
             _brush_preview_padding: [0.0; 4],
 
             // Font dimensions for selection mask
-            font_width: self.font_dimensions.map(|(w, _)| w).unwrap_or(8.0),
-            font_height: self.font_dimensions.map(|(_, h)| h).unwrap_or(16.0),
+            font_width: mask_font_w,
+            font_height: effective_mask_font_h,
             selection_mask_size: if let Some((_, w, h)) = &self.selection_mask_data {
                 [*w as f32, *h as f32]
             } else {
                 [1.0, 1.0]
             },
 
-            tool_overlay_params: if let Some((_, w, h)) = &self.tool_overlay_mask_data {
-                [*w as f32, *h as f32, self.tool_overlay_cell_height_scale, 1.0]
+            tool_overlay_params: if self.tool_overlay_mask_data.is_some() {
+                if let Some([x0, y0, x1, y1]) = self.tool_overlay_rect {
+                    let w = (x1 - x0).max(0.0);
+                    let h = (y1 - y0).max(0.0);
+                    [x0, y0, w, h]
+                } else {
+                    [0.0, 0.0, 0.0, 0.0]
+                }
             } else {
-                [1.0, 1.0, 1.0, 0.0]
+                [0.0, 0.0, 0.0, 0.0]
             },
 
             terminal_rect,

@@ -101,21 +101,12 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     if total_height <= 0.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
-    
-    // uv.y is in texture space (0-1 over rendered content)
-    // Convert to document pixel Y
-    let doc_pixel_y = uv.y * total_height;
-    
-    // first_slice_start_y tells us where our sliding window starts in document space
-    let first_slice_start_y = get_first_slice_start_y();
-    
-    // Convert document Y to sliding window Y
-    let window_y = doc_pixel_y - first_slice_start_y;
-    
-    // If outside our rendered window (before first tile), show transparent/black
-    if window_y < 0.0 {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
-    }
+
+    // uv.y is in texture space (0-1 over the rendered *window*)
+    // Convert directly to window pixel Y.
+    // Note: `first_slice_start_y` is a document-space offset and must NOT be applied here.
+    // Applying it would make `window_y` negative for any scrolled window, resulting in black.
+    let window_y = uv.y * total_height;
     
     // Calculate total window height (sum of all tile heights)
     let num_slices = i32(uniforms.num_slices);

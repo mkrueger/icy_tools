@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::usize;
 
 use iced::{
     Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
@@ -758,6 +759,29 @@ struct LayerListWidget<'a> {
     preview_atlas: Arc<Mutex<PreviewAtlasState>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LayerListWidgetState {
+    left_button_down: bool,
+    pressed_list_idx: Option<usize>,
+    pressed_pos: Option<Point>,
+    pressed_was_selected: bool,
+    /// Tracks the last completed click (release) for double-click detection.
+    /// (layer_index, timestamp)
+    last_click: Option<(usize, std::time::Instant)>,
+}
+
+impl Default for LayerListWidgetState {
+    fn default() -> Self {
+        Self {
+            left_button_down: false,
+            pressed_list_idx: None,
+            pressed_pos: None,
+            pressed_was_selected: false,
+            last_click: None,
+        }
+    }
+}
+
 impl<'a> LayerListWidget<'a> {
     fn visibility_icon_handle(&self, is_visible: bool) -> Option<image::Handle> {
         if let Some(handle) = self.visibility_icon_cache.borrow().get(&is_visible) {
@@ -967,6 +991,14 @@ impl<'a> LayerListWidget<'a> {
 }
 
 impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<LayerListWidgetState>()
+    }
+
+    fn state(&self) -> widget::tree::State {
+        widget::tree::State::new(LayerListWidgetState::default())
+    }
+
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fill)
     }
@@ -1024,7 +1056,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
 
     fn update(
         &mut self,
-        _tree: &mut widget::Tree,
+        tree: &mut widget::Tree,
         event: &iced::Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -1034,6 +1066,8 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+
+        let state = tree.state.downcast_mut::<LayerListWidgetState>();
 
         match event {
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -1053,27 +1087,99 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if state.left_button_down {
+                    return;
+                }
+                state.left_button_down = true;
+                state.pressed_list_idx = None;
+                state.pressed_pos = None;
+                state.pressed_was_selected = false;
+
                 if let Some(pos) = cursor.position_in(bounds) {
                     let scroll_offset = self.viewport.borrow().scroll_y;
                     let clicked_y = pos.y + scroll_offset;
                     let list_idx = (clicked_y / LAYER_ROW_HEIGHT) as usize;
                     if list_idx < self.rows.len() {
+                        state.pressed_list_idx = Some(list_idx);
+                        state.pressed_pos = Some(pos);
+
                         let row_bounds = self.row_bounds(bounds, list_idx);
                         let row = &self.rows[list_idx];
                         let toggle_bounds = self.visibility_toggle_bounds(row_bounds);
 
                         if cursor.is_over(toggle_bounds) {
                             shell.publish(LayerMessage::ToggleVisibility(row.layer_index));
+                            state.pressed_list_idx = None;
+                            state.pressed_pos = None;
                             return;
                         }
 
-                        // Click always selects. Clicking the already selected layer opens settings.
-                        let was_selected = row.layer_index == self.current_layer;
+                        // Click selects; editing is handled on Release via double-click.
+                        // IMPORTANT: Only allow EditLayer double-clicks when the row was already selected
+                        // before the click started (prevents "too easy" accidental opens).
+                        state.pressed_was_selected = row.layer_index == self.current_layer;
                         shell.publish(LayerMessage::Select(row.layer_index));
-                        if was_selected {
-                            shell.publish(LayerMessage::EditLayer(row.layer_index));
-                        }
                     }
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                state.left_button_down = false;
+
+                let Some(pressed_idx) = state.pressed_list_idx.take() else {
+                    return;
+                };
+
+                let pressed_pos = state.pressed_pos.take();
+                let pressed_was_selected = state.pressed_was_selected;
+
+                let Some(pos) = cursor.position_in(bounds) else {
+                    return;
+                };
+
+                // Cancel click if it was actually a drag.
+                if let Some(pressed_pos) = pressed_pos {
+                    let dx = pos.x - pressed_pos.x;
+                    let dy = pos.y - pressed_pos.y;
+                    if (dx * dx + dy * dy) > 16.0 {
+                        return;
+                    }
+                }
+
+                let scroll_offset = self.viewport.borrow().scroll_y;
+                let released_y = pos.y + scroll_offset;
+                let released_idx = (released_y / LAYER_ROW_HEIGHT) as usize;
+                if released_idx != pressed_idx {
+                    return;
+                }
+
+                if released_idx >= self.rows.len() {
+                    return;
+                }
+
+                let row = &self.rows[released_idx];
+                let now = std::time::Instant::now();
+
+                // Only open the layer properties dialog on a true double-click.
+                // The row must have been selected BEFORE this click cycle started.
+                // This prevents: click to select → immediate second click opens dialog.
+                // User must: click to select → release → click again → release → dialog opens.
+                if pressed_was_selected {
+                    // Check if this is a double-click (same layer, within 400ms of last click)
+                    let is_double = state.last_click.map_or(false, |(last_idx, last_time)| {
+                        last_idx == row.layer_index && now.duration_since(last_time).as_millis() < 400
+                    });
+
+                    if is_double {
+                        // Reset after double-click to prevent triple-click triggering again
+                        state.last_click = None;
+                        shell.publish(LayerMessage::EditLayer(row.layer_index));
+                    } else {
+                        // Record this click for potential double-click
+                        state.last_click = Some((row.layer_index, now));
+                    }
+                } else {
+                    // Selection changed, reset double-click tracking
+                    state.last_click = None;
                 }
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
