@@ -31,11 +31,11 @@ use super::{
     dialogs::sauce_dialog::{SauceDialogMessage, sauce_dialog_from_msg},
     dialogs::settings_dialog::{SettingsDialogMessage, settings_dialog_from_msg},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
-    focus::{focus, list_focus_style},
     is_image_file, is_sixel_file,
     options::{SortOrder, ViewMode},
     theme,
 };
+use icy_engine_gui::{focus, list_focus_style};
 
 // Include the welcome logo at compile time
 const WELCOME_LOGO: &[u8] = include_bytes!("../../data/welcome.xb");

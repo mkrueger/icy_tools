@@ -10,7 +10,11 @@ description = "A file viewer for ANSI & ASCII art and other text-based art forms
 [dependencies]
 icy_engine = { workspace = true }
 icy_engine_gui = { workspace = true }
-icy_view_gui = { path = "../icy_view_gui" }
+icy_sauce = { workspace = true }
+icy_parser_core = { workspace = true }
+icy_net = { workspace = true }
+icy_sixel = { workspace = true }
+unarc-rs = { workspace = true }
 
 iced = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
 image = { workspace = true }
@@ -29,6 +33,27 @@ github_release_check = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 clap-i18n-richformatter = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "fs"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+bytemuck = { version = "1.0", features = ["derive"] }
+retrofont = { workspace = true }
+rfd = { workspace = true }
+clipboard-rs = { workspace = true }
+string-interner = { workspace = true }
+
+# SVG and font rendering for shader-based list
+resvg = { workspace = true }
+ab_glyph = { workspace = true }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+open = { workspace = true }
+fastrand = { workspace = true }
+
+reqwest = { version = "0.12.12", features = ["json"] }
+serde_json = { workspace = true }
+futures = "0.3"
 
 [build-dependencies]
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
@@ -52,6 +77,3 @@ assets = [
     ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_view.png", "644"],
     ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_view.png", "644"],
 ]
-
-[patch.crates-io]
-iced.git = "https://github.com/iced-rs/iced.git"

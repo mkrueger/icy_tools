@@ -94,7 +94,8 @@ impl Options {
             if options_file.exists() {
                 match fs::read_to_string(options_file) {
                     Ok(txt) => {
-                        if let Ok(result) = toml::from_str(&txt) {
+                        if let Ok(mut result) = toml::from_str::<PersistedOptions>(&txt) {
+                            result.monitor_settings = normalize_monitor_settings(result.monitor_settings);
                             return result;
                         }
                     }
@@ -145,4 +146,23 @@ impl Options {
     pub fn plugin_dir() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join("data/plugins"))
     }
+}
+
+fn normalize_monitor_settings(mut settings: MonitorSettings) -> MonitorSettings {
+    // Migration: older versions used 0.0..=2.0 (neutral=1.0) for brightness/contrast/saturation.
+    // Current shader expects 0.0..=200.0 (neutral=100.0) and divides by 100.
+    let looks_like_legacy_scale = settings.brightness <= 4.0 && settings.contrast <= 4.0 && settings.saturation <= 4.0;
+    if looks_like_legacy_scale {
+        settings.brightness *= 100.0;
+        settings.contrast *= 100.0;
+        settings.saturation *= 100.0;
+    }
+
+    // Keep values in a sane range even if the config is corrupted.
+    settings.brightness = settings.brightness.clamp(0.0, 200.0);
+    settings.contrast = settings.contrast.clamp(0.0, 200.0);
+    settings.saturation = settings.saturation.clamp(0.0, 200.0);
+    settings.gamma = settings.gamma.clamp(0.0, 4.0);
+
+    settings
 }

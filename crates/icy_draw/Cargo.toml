@@ -38,7 +38,6 @@ icy_engine = { workspace = true }
 icy_engine_edit = { workspace = true }
 icy_engine_gui = { workspace = true }
 icy_engine_scripting = { workspace = true }
-icy_view_gui = { workspace = true }
 
 # Lua scripting for plugins
 mlua = { workspace = true }

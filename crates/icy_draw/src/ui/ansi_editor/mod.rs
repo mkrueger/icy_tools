@@ -913,8 +913,7 @@ impl AnsiEditor {
             rgba[idx + 3] = alpha;
         }
 
-        self.canvas
-            .set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), cell_height_scale);
+        self.canvas.set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), cell_height_scale);
     }
 
     fn set_current_fkey_set(&mut self, set_idx: usize) {
@@ -1461,10 +1460,18 @@ impl AnsiEditor {
                         // Keep the tool variant in sync with the filled toggle.
                         let new_tool = match self.current_tool {
                             Tool::RectangleOutline | Tool::RectangleFilled => {
-                                if v { Tool::RectangleFilled } else { Tool::RectangleOutline }
+                                if v {
+                                    Tool::RectangleFilled
+                                } else {
+                                    Tool::RectangleOutline
+                                }
                             }
                             Tool::EllipseOutline | Tool::EllipseFilled => {
-                                if v { Tool::EllipseFilled } else { Tool::EllipseOutline }
+                                if v {
+                                    Tool::EllipseFilled
+                                } else {
+                                    Tool::EllipseOutline
+                                }
                             }
                             other => other,
                         };

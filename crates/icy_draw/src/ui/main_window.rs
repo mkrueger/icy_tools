@@ -523,7 +523,7 @@ pub struct MainWindow {
     pub title: String,
 
     /// Double-click detector for font slot buttons in status bar
-    slot_double_click: RefCell<icy_view_gui::DoubleClickDetector<usize>>,
+    slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
 
     /// Loaded plugins from the plugin directory
     plugins: Vec<Plugin>,
@@ -607,7 +607,7 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
-            slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
+            slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             plugins: Plugin::read_plugin_directory(),
         };
         window.update_title();
@@ -797,7 +797,7 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
-            slot_double_click: RefCell::new(icy_view_gui::DoubleClickDetector::new()),
+            slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             plugins: Plugin::read_plugin_directory(),
         };
         window.update_title();

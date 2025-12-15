@@ -22,10 +22,9 @@ use iced::{
 
 use icy_engine::{BitFont, FontMode, IceMode, PaletteMode, TextBuffer};
 use icy_engine_gui::{
-    ButtonType, ScrollbarOverlay, Viewport,
+    ButtonType, ScrollbarOverlay, Viewport, focus,
     ui::{DIALOG_SPACING, Dialog, DialogAction, TEXT_SIZE_NORMAL, dialog_area, modal_container, primary_button, secondary_button, separator},
 };
-use icy_view_gui::ui::focus;
 
 use crate::{fl, ui::Message};
 

@@ -10,29 +10,48 @@
 )]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+pub mod commands;
+pub mod items;
+pub mod ui;
+
+pub use commands::*;
+pub use items::*;
+pub use ui::*;
+
 use std::path::PathBuf;
 
 use clap::Parser;
 use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
-use lazy_static::lazy_static;
+use rust_embed::RustEmbed;
 use semver::Version;
 
-mod ui;
-use ui::WindowManager;
+use i18n_embed::{
+    DesktopLanguageRequester,
+    fluent::{FluentLanguageLoader, fluent_language_loader},
+};
 
-lazy_static! {
-    static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
-}
+use once_cell::sync::Lazy;
 
-lazy_static! {
-    static ref LATEST_VERSION: Version = {
+#[derive(RustEmbed)]
+#[folder = "i18n"]
+struct Localizations;
+
+lazy_static::lazy_static! {
+    pub static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    pub static ref DEFAULT_TITLE: String = format!("iCY VIEW {}", *VERSION);
+    pub static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
+
+    /// Latest version available on GitHub (checked at startup)
+    pub static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
         if let Ok(ver) = github.get_all_versions("mkrueger/icy_tools") {
             for v in ver {
                 if v.starts_with("IcyView") {
-                    return Version::parse(&v[7..]).unwrap();
+                    if let Ok(parsed) = Version::parse(&v[7..]) {
+                        return parsed;
+                    }
                 }
             }
         }
@@ -40,33 +59,29 @@ lazy_static! {
     };
 }
 
-#[derive(rust_embed::RustEmbed)]
-#[folder = "i18n"]
-struct Localizations;
-
-use once_cell::sync::Lazy;
-
-static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
-    let loader = i18n_embed::fluent::fluent_language_loader!();
-    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
+pub static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
+    let loader = fluent_language_loader!();
+    let requested_languages = DesktopLanguageRequester::requested_languages();
     let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
     loader
 });
 
+pub type TerminalResult<T> = anyhow::Result<T>;
+
 #[derive(Parser, Debug)]
-#[command(version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]
+#[command(version, about = i18n_embed_fl::fl!(LANGUAGE_LOADER, "app-about"), long_about = None)]
 #[clap_i18n]
 pub struct Args {
     /// Path to file or directory to open
-    #[arg(value_name = "PATH", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-path-help"))]
+    #[arg(value_name = "PATH", help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-path-help"))]
     path: Option<PathBuf>,
 
     /// Enable auto-scrolling
-    #[clap(long, default_value_t = false, help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-auto-help"))]
+    #[clap(long, default_value_t = false, help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-auto-help"))]
     auto: bool,
 
     /// Baud rate emulation (e.g., 9600, 19200, 38400)
-    #[clap(long, value_name = "RATE", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-bps-help"))]
+    #[clap(long, value_name = "RATE", help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-bps-help"))]
     bps: Option<u32>,
 }
 
@@ -125,13 +140,5 @@ fn main() {
     log::info!("Shutting down.");
 
     // Cleanup temp files from this session
-    icy_view_gui::ui::Options::cleanup_session_temp();
-}
-
-fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
-    let img = image::load_from_memory(png_bytes)?;
-    let rgba = img.to_rgba8();
-    let w = img.width();
-    let h = img.height();
-    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+    ui::Options::cleanup_session_temp();
 }

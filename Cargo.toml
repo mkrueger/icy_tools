@@ -10,7 +10,6 @@ members = [
 	"crates/icy_term",
 	"crates/icy_engine_scripting",
 	"crates/icy_view",
-	"crates/icy_view_gui",
 	"crates/icy_mail",
 	"crates/icy_parser_core",
 ]
@@ -36,8 +35,6 @@ unarc-rs = "0.5.1"
 retrofont = { git = "https://github.com/mkrueger/retrofont" }
 #retrofont = { path ="../../retrofont/crates/retrofont" }
 
-#icy_view_gui = { path = "crates/icy_view_gui" }
-icy_view_gui = { path = "crates/icy_view_gui" }
 icy_engine_gui = { path = "crates/icy_engine_gui" } 
 icy_engine_edit = { path = "crates/icy_engine_edit" }
 

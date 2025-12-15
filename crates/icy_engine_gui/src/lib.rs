@@ -1,6 +1,14 @@
 // Self-reference for proc macros to work within this crate
 extern crate self as icy_engine_gui;
 
+pub mod double_click;
+pub use double_click::*;
+
+pub mod focus;
+pub use focus::{
+    Catalog as FocusCatalog, Focus, OnEvent, Style as FocusStyle, StyleFn as FocusStyleFn, default_style, focus, list_focus_style, no_border_style,
+};
+
 pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;

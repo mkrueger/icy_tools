@@ -20,7 +20,7 @@ use iced::{
 use iced_aw::ContextMenu;
 use icy_engine::{Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
-use icy_view_gui::DoubleClickDetector;
+use icy_engine_gui::DoubleClickDetector;
 use parking_lot::Mutex;
 
 use crate::fl;

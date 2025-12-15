@@ -4,12 +4,18 @@ use parking_lot::Mutex;
 
 use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
+use crate::ui::{MainWindow, Message, Options};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::{any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
-use icy_view_gui::{MainWindow, Message, Options};
 
-use crate::load_window_icon;
+fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+    let img = image::load_from_memory(png_bytes)?;
+    let rgba = img.to_rgba8();
+    let w = img.width();
+    let h = img.height();
+    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+}
 
 // Generate the WindowCommands struct with handle() method
 // Note: Zoom/Fullscreen commands are handled at MainWindow level, not here

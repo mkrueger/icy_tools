@@ -12,8 +12,8 @@ use super::file_list_view::{FileListView, FileListViewMessage};
 use super::sauce_loader::SharedSauceCache;
 use crate::Item;
 use crate::items::{NavPoint, ProviderType, SixteenColorsProvider, get_items_at_path, is_directory, path_exists, sort_items};
-use crate::ui::focus::{focus, list_focus_style};
 use crate::ui::options::SortOrder;
+use icy_engine_gui::{focus, list_focus_style};
 
 /// Messages for the file browser
 #[derive(Debug, Clone)]

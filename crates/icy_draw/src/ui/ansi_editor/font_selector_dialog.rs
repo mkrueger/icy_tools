@@ -20,8 +20,7 @@ use iced::{
 use icy_engine::{AttributedChar, BitFont, FontMode, RenderOptions, TextAttribute, TextBuffer, get_sauce_font_names};
 use icy_engine_edit::FormatMode;
 use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
-use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport};
-use icy_view_gui::ui::focus;
+use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
 
 use crate::fl;
 use crate::ui::Message;

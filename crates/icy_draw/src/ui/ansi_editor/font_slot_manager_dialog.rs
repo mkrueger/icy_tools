@@ -19,8 +19,7 @@ use iced::{
 };
 use icy_engine::BitFont;
 use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
-use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport};
-use icy_view_gui::ui::focus;
+use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
 
 use crate::ui::Message;
 
