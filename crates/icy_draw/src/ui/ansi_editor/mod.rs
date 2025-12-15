@@ -250,6 +250,21 @@ pub enum SelectionDrag {
     BottomRight,
 }
 
+impl SelectionDrag {
+    /// Convert to mouse cursor interaction for resize handles
+    pub fn to_cursor_interaction(self) -> Option<iced::mouse::Interaction> {
+        use iced::mouse::Interaction;
+        match self {
+            SelectionDrag::None | SelectionDrag::Create => None,
+            SelectionDrag::Move => Some(Interaction::Grab),
+            SelectionDrag::Left | SelectionDrag::Right => Some(Interaction::ResizingHorizontally),
+            SelectionDrag::Top | SelectionDrag::Bottom => Some(Interaction::ResizingVertically),
+            SelectionDrag::TopLeft | SelectionDrag::BottomRight => Some(Interaction::ResizingDiagonallyDown),
+            SelectionDrag::TopRight | SelectionDrag::BottomLeft => Some(Interaction::ResizingDiagonallyUp),
+        }
+    }
+}
+
 /// Pipette tool state - stores the currently hovered character and modifiers
 #[derive(Default, Clone, Debug)]
 pub struct PipetteState {
@@ -374,6 +389,12 @@ pub struct AnsiEditor {
     // === Tag Tool State ===
     pub tag_dialog: Option<TagDialog>,
     pub tag_list_dialog: Option<TagListDialog>,
+    /// If true, we are dragging a tag
+    tag_drag_active: bool,
+    /// Index of the tag being dragged
+    tag_drag_index: usize,
+    /// Tag position at start of drag
+    tag_drag_start_pos: icy_engine::Position,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
@@ -788,6 +809,9 @@ impl AnsiEditor {
 
             tag_dialog: None,
             tag_list_dialog: None,
+            tag_drag_active: false,
+            tag_drag_index: 0,
+            tag_drag_start_pos: icy_engine::Position::default(),
 
             paint_undo: None,
             paint_last_pos: None,
@@ -2257,6 +2281,121 @@ impl AnsiEditor {
         self.canvas.set_layer_bounds(layer_bounds, true);
     }
 
+    /// Update tag rectangle overlays when Tag tool is active
+    fn update_tag_overlays(&mut self) {
+        // First, get all the data we need
+        let (font_width, font_height, tag_data): (f32, f32, Vec<(icy_engine::Position, usize)>) = {
+            let mut screen = self.screen.lock();
+
+            // Get font dimensions for pixel conversion
+            let font = screen.font(0);
+            let (fw, fh) = if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0) // Default fallback
+            };
+
+            // Access EditState to get tags and update overlay mask
+            let tags = if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                // First collect tag info
+                let tag_info: Vec<_> = edit_state.get_buffer().tags.iter().map(|tag| (tag.position, tag.len())).collect();
+
+                // Then update overlays
+                let overlays = edit_state.get_tool_overlay_mask_mut();
+                overlays.clear();
+
+                for (pos, len) in &tag_info {
+                    let rect = icy_engine::Rectangle::new(*pos, (*len as i32, 1).into());
+                    overlays.add_rectangle(rect);
+                }
+
+                edit_state.mark_dirty();
+                tag_info
+            } else {
+                vec![]
+            };
+
+            (fw, fh, tags)
+        };
+
+        // Now render overlay to canvas (no longer holding screen lock)
+        self.render_tag_overlay_to_canvas(font_width, font_height, &tag_data);
+    }
+
+    /// Render tag overlay rectangles to the canvas
+    fn render_tag_overlay_to_canvas(&mut self, font_width: f32, font_height: f32, tag_data: &[(icy_engine::Position, usize)]) {
+        let overlay_rects: Vec<(f32, f32, f32, f32)> = tag_data
+            .iter()
+            .map(|(pos, len)| {
+                let x = pos.x as f32 * font_width;
+                let y = pos.y as f32 * font_height;
+                let w = *len as f32 * font_width;
+                let h = font_height;
+                (x, y, w, h)
+            })
+            .collect();
+
+        // Create overlay mask with all tag rectangles
+        if overlay_rects.is_empty() {
+            self.canvas.set_tool_overlay_mask(None, None);
+            return;
+        }
+
+        // Find bounding box of all tags
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
+        for (x, y, w, h) in &overlay_rects {
+            min_x = min_x.min(*x);
+            min_y = min_y.min(*y);
+            max_x = max_x.max(x + w);
+            max_y = max_y.max(y + h);
+        }
+
+        let total_w = (max_x - min_x).ceil() as u32;
+        let total_h = (max_y - min_y).ceil() as u32;
+
+        if total_w == 0 || total_h == 0 {
+            self.canvas.set_tool_overlay_mask(None, None);
+            return;
+        }
+
+        // Create RGBA buffer for overlay - translucent blue rectangles
+        let mut rgba = vec![0u8; (total_w * total_h * 4) as usize];
+
+        for (x, y, w, h) in &overlay_rects {
+            let local_x = (x - min_x) as u32;
+            let local_y = (y - min_y) as u32;
+            let rect_w = *w as u32;
+            let rect_h = *h as u32;
+
+            // Draw border (translucent blue)
+            for py in local_y..(local_y + rect_h).min(total_h) {
+                for px in local_x..(local_x + rect_w).min(total_w) {
+                    // Border pixels only
+                    let is_border =
+                        px == local_x || px == (local_x + rect_w - 1).min(total_w - 1) || py == local_y || py == (local_y + rect_h - 1).min(total_h - 1);
+
+                    if is_border {
+                        let idx = ((py * total_w + px) * 4) as usize;
+                        if idx + 3 < rgba.len() {
+                            rgba[idx] = 100; // R
+                            rgba[idx + 1] = 150; // G
+                            rgba[idx + 2] = 255; // B
+                            rgba[idx + 3] = 200; // A
+                        }
+                    }
+                }
+            }
+        }
+
+        self.canvas
+            .set_tool_overlay_mask(Some((rgba, total_w, total_h)), Some((min_x, min_y, total_w as f32, total_h as f32)));
+    }
+
     /// Handle TDF font selector messages
     fn handle_tdf_font_selector_message(&mut self, msg: TdfFontSelectorMessage) -> Task<AnsiEditorMessage> {
         match msg {
@@ -2898,7 +3037,32 @@ impl AnsiEditor {
     ) -> ToolEvent {
         match self.current_tool {
             Tool::Tag => {
-                if button == iced::mouse::Button::Left && !self.has_tag_at(pos) {
+                if button == iced::mouse::Button::Left {
+                    // Check if clicking on an existing tag to start drag
+                    let tag_at_pos = self.with_edit_state(|state| {
+                        state
+                            .get_buffer()
+                            .tags
+                            .iter()
+                            .enumerate()
+                            .find(|(_, t)| t.contains(pos))
+                            .map(|(i, t)| (i, t.position))
+                    });
+
+                    if let Some((index, tag_pos)) = tag_at_pos {
+                        // Start tag drag
+                        self.tag_drag_active = true;
+                        self.tag_drag_index = index;
+                        self.tag_drag_start_pos = tag_pos;
+                        self.is_dragging = true;
+                        self.drag_pos.start = pos;
+                        self.drag_pos.cur = pos;
+                        self.drag_pos.start_abs = pos;
+                        self.drag_pos.cur_abs = pos;
+                        return ToolEvent::Redraw;
+                    }
+
+                    // No tag at position - open new tag dialog
                     self.tag_list_dialog = None;
                     self.tag_dialog = Some(TagDialog::new(pos));
                     ToolEvent::Redraw
@@ -3388,6 +3552,14 @@ impl AnsiEditor {
 
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
+        // Handle tag drag completion
+        if self.tag_drag_active {
+            self.tag_drag_active = false;
+            self.is_dragging = false;
+            // Tag position already updated during drag via move_tag
+            return ToolEvent::Commit("Move tag".to_string());
+        }
+
         // Handle layer drag completion
         if self.layer_drag_active {
             self.layer_drag_active = false;
@@ -3453,9 +3625,11 @@ impl AnsiEditor {
                         }
                     }
                 }
-
-                self.update_selection_display();
             }
+            // Move/Resize: selection is already updated during drag, just keep it active
+
+            // Always update selection display after any selection drag ends
+            self.update_selection_display();
 
             self.selection_drag = SelectionDrag::None;
             self.start_selection = None;
@@ -3581,8 +3755,25 @@ impl AnsiEditor {
             return ToolEvent::Redraw;
         }
 
+        // Tag tool: always show tag overlays (even when not dragging)
+        if self.current_tool == Tool::Tag {
+            self.update_tag_overlays();
+            if !self.is_dragging {
+                return ToolEvent::Redraw;
+            }
+        }
+
         if !self.is_dragging {
-            // Just hovering
+            // Just hovering - update cursor for selection resize handles
+            if matches!(self.current_tool, Tool::Click | Tool::Select) {
+                let selection_drag = self.get_selection_drag_at(pos);
+                let cursor = selection_drag.to_cursor_interaction();
+                *self.canvas.terminal.cursor_icon.write() = cursor;
+            } else {
+                // Reset cursor for other tools
+                *self.canvas.terminal.cursor_icon.write() = None;
+            }
+
             if !matches!(
                 self.current_tool,
                 Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
@@ -3665,6 +3856,23 @@ impl AnsiEditor {
 
                 self.update_shape_tool_overlay_preview();
                 ToolEvent::Redraw
+            }
+            Tool::Tag => {
+                // Handle tag drag
+                if self.tag_drag_active {
+                    let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
+                    let new_pos = self.tag_drag_start_pos + delta;
+                    let tag_idx = self.tag_drag_index;
+
+                    self.with_edit_state(|state| {
+                        let _ = state.move_tag(tag_idx, new_pos);
+                        state.mark_dirty();
+                    });
+                    // Update tag overlays
+                    self.update_tag_overlays();
+                    return ToolEvent::Redraw;
+                }
+                ToolEvent::None
             }
             _ => ToolEvent::None,
         }
@@ -3821,20 +4029,16 @@ impl AnsiEditor {
                 self.resize_selection_bottom();
             }
             SelectionDrag::TopLeft => {
-                self.resize_selection_left();
-                self.resize_selection_top();
+                self.resize_selection_corner(true, true);
             }
             SelectionDrag::TopRight => {
-                self.resize_selection_right();
-                self.resize_selection_top();
+                self.resize_selection_corner(false, true);
             }
             SelectionDrag::BottomLeft => {
-                self.resize_selection_left();
-                self.resize_selection_bottom();
+                self.resize_selection_corner(true, false);
             }
             SelectionDrag::BottomRight => {
-                self.resize_selection_right();
-                self.resize_selection_bottom();
+                self.resize_selection_corner(false, false);
             }
         }
 
@@ -3922,6 +4126,57 @@ impl AnsiEditor {
             }
 
             let new_rect = Rectangle::from(start_rect.left(), new_top, start_rect.width(), new_height);
+            self.with_edit_state(|state| {
+                let _ = state.set_selection(Selection::from(new_rect));
+            });
+        }
+    }
+
+    /// Resize selection from a corner (changes both X and Y dimensions at once)
+    fn resize_selection_corner(&mut self, resize_left: bool, resize_top: bool) {
+        use icy_engine::{Rectangle, Selection};
+        if let Some(start_rect) = self.start_selection {
+            // Calculate new X dimension
+            let (new_left, new_width) = if resize_left {
+                let delta = self.drag_pos.start_abs.x - self.drag_pos.cur_abs.x;
+                let mut left = start_rect.left() - delta;
+                let mut width = start_rect.width() + delta;
+                if width < 0 {
+                    width = left - start_rect.right();
+                    left = start_rect.right();
+                }
+                (left, width)
+            } else {
+                let mut width = start_rect.width() - self.drag_pos.start_abs.x + self.drag_pos.cur_abs.x;
+                let mut left = start_rect.left();
+                if width < 0 {
+                    left = start_rect.left() + width;
+                    width = start_rect.left() - left;
+                }
+                (left, width)
+            };
+
+            // Calculate new Y dimension
+            let (new_top, new_height) = if resize_top {
+                let delta = self.drag_pos.start_abs.y - self.drag_pos.cur_abs.y;
+                let mut top = start_rect.top() - delta;
+                let mut height = start_rect.height() + delta;
+                if height < 0 {
+                    height = top - start_rect.bottom();
+                    top = start_rect.bottom();
+                }
+                (top, height)
+            } else {
+                let mut height = start_rect.height() - self.drag_pos.start_abs.y + self.drag_pos.cur_abs.y;
+                let mut top = start_rect.top();
+                if height < 0 {
+                    top = start_rect.top() + height;
+                    height = start_rect.top() - top;
+                }
+                (top, height)
+            };
+
+            let new_rect = Rectangle::from(new_left, new_top, new_width, new_height);
             self.with_edit_state(|state| {
                 let _ = state.set_selection(Selection::from(new_rect));
             });
@@ -4273,6 +4528,14 @@ impl AnsiEditor {
         // Clear tool hover preview when switching tools.
         if !matches!(tool, Tool::Pencil) {
             self.canvas.set_brush_preview(None);
+        }
+
+        // Update tag overlays when switching to/from Tag tool
+        if tool == Tool::Tag {
+            self.update_tag_overlays();
+        } else {
+            // Clear tag overlays when leaving Tag tool
+            self.canvas.set_tool_overlay_mask(None, None);
         }
         // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
     }

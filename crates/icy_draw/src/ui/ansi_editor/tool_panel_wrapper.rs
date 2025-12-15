@@ -10,7 +10,7 @@ use icy_engine_edit::tools::{TOOL_SLOTS, Tool, click_tool_slot, get_slot_display
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage as SharedToolPanelMessage};
 
 /// Maximum number of tool buttons
-const MAX_BUTTONS: usize = 8;
+const MAX_BUTTONS: usize = 10;
 
 /// Messages from the tool panel
 #[derive(Clone, Debug)]

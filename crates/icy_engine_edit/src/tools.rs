@@ -79,9 +79,10 @@ impl ToolPair {
     }
 }
 
-/// The 8 tool slots in the toolbar (each can be a pair or single)
-pub const TOOL_SLOTS: [ToolPair; 8] = [
-    ToolPair::new(Tool::Click, Tool::Select),
+/// The 10 tool slots in the toolbar (each can be a pair or single)
+pub const TOOL_SLOTS: [ToolPair; 10] = [
+    ToolPair::single(Tool::Click),
+    ToolPair::single(Tool::Select),
     ToolPair::single(Tool::Pencil),
     ToolPair::single(Tool::Line),
     ToolPair::new(Tool::RectangleOutline, Tool::RectangleFilled),
@@ -89,6 +90,7 @@ pub const TOOL_SLOTS: [ToolPair; 8] = [
     ToolPair::single(Tool::Fill),
     ToolPair::single(Tool::Pipette),
     ToolPair::single(Tool::Font),
+    ToolPair::single(Tool::Tag),
 ];
 
 impl Tool {
@@ -131,8 +133,8 @@ impl Tool {
     /// Get the tooltip text
     pub fn tooltip(&self) -> &'static str {
         match self {
-            Tool::Click => "Keyboard input and cursor navigation (click again for Select)",
-            Tool::Select => "Rectangle selection (click again for Click)",
+            Tool::Click => "Keyboard input and cursor navigation",
+            Tool::Select => "Rectangle selection",
             Tool::Pencil => "Draw single characters",
             Tool::Line => "Draw straight lines",
             Tool::RectangleOutline => "Draw rectangle outline (click again for Filled)",

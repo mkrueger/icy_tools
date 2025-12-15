@@ -5,7 +5,7 @@
 
 use iced::{
     Element, Length, Task, Theme,
-    widget::{Space, button, container, row, svg, text, toggler},
+    widget::{Space, button, column, container, row, svg, text, toggler},
 };
 use icy_engine_gui::ui::{SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
 
@@ -653,47 +653,78 @@ impl TopToolbar {
     fn view_pipette_panel(&self, info: Option<&PipettePanelInfo>) -> Element<'_, TopToolbarMessage> {
         let info = info.cloned().unwrap_or_default();
 
-        let mut content = row![].spacing(12).align_y(iced::Alignment::Center);
+        let mut content = row![].spacing(16).align_y(iced::Alignment::Center);
 
         // Add flexible space to center content
         content = content.push(Space::new().width(Length::Fill));
 
         if let Some(ch) = info.cur_char {
-            // Character code
-            let code_text = text(format!("Code: {}", ch.ch as u32)).size(TEXT_SIZE_SMALL);
+            // Character display - show the actual character
+            let char_display = if ch.ch as u32 >= 32 { format!("'{}'", ch.ch) } else { String::new() };
+            let code_text = text(format!("Code {} {}", ch.ch as u32, char_display)).size(TEXT_SIZE_SMALL);
             content = content.push(code_text);
 
-            // Foreground color (if taking FG)
+            // Foreground color with text inside colored box
             if info.take_fg {
                 if let Some((r, g, b)) = info.fg_color {
-                    let fg_text = text(format!("FG: #{:02x}{:02x}{:02x}", r, g, b)).size(TEXT_SIZE_SMALL);
-                    let fg_swatch = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(16.0))).style(move |_theme| container::Style {
+                    let fg_idx = ch.attribute.foreground();
+                    // Calculate contrasting text color
+                    let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
+                        iced::Color::BLACK
+                    } else {
+                        iced::Color::WHITE
+                    };
+                    let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+
+                    let fg_label = text(format!("Vordergrund {}", fg_idx)).size(TEXT_SIZE_SMALL);
+                    let fg_box = container(
+                        text(hex_text)
+                            .size(TEXT_SIZE_SMALL)
+                            .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                    )
+                    .padding([4, 8])
+                    .style(move |_theme| container::Style {
                         background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
                         border: iced::Border {
                             color: iced::Color::WHITE,
                             width: 1.0,
-                            radius: 2.0.into(),
+                            radius: 4.0.into(),
                         },
                         ..Default::default()
                     });
-                    content = content.push(row![fg_text, fg_swatch].spacing(4).align_y(iced::Alignment::Center));
+                    content = content.push(column![fg_label, fg_box].spacing(2).align_x(iced::Alignment::Center));
                 }
             }
 
-            // Background color (if taking BG)
+            // Background color with text inside colored box
             if info.take_bg {
                 if let Some((r, g, b)) = info.bg_color {
-                    let bg_text = text(format!("BG: #{:02x}{:02x}{:02x}", r, g, b)).size(TEXT_SIZE_SMALL);
-                    let bg_swatch = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(16.0))).style(move |_theme| container::Style {
+                    let bg_idx = ch.attribute.background();
+                    // Calculate contrasting text color
+                    let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
+                        iced::Color::BLACK
+                    } else {
+                        iced::Color::WHITE
+                    };
+                    let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+
+                    let bg_label = text(format!("Hintergrund {}", bg_idx)).size(TEXT_SIZE_SMALL);
+                    let bg_box = container(
+                        text(hex_text)
+                            .size(TEXT_SIZE_SMALL)
+                            .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                    )
+                    .padding([4, 8])
+                    .style(move |_theme| container::Style {
                         background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
                         border: iced::Border {
                             color: iced::Color::WHITE,
                             width: 1.0,
-                            radius: 2.0.into(),
+                            radius: 4.0.into(),
                         },
                         ..Default::default()
                     });
-                    content = content.push(row![bg_text, bg_swatch].spacing(4).align_y(iced::Alignment::Center));
+                    content = content.push(column![bg_label, bg_box].spacing(2).align_x(iced::Alignment::Center));
                 }
             }
         } else {

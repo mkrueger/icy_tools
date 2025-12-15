@@ -23,13 +23,13 @@ use super::constants::{TOP_CONTROL_HEIGHT, TOP_CONTROL_SHADOW_PADDING};
 pub const SLOT_CHAR_HEIGHT: f32 = 32.0;
 
 /// Target rendered height for label characters (set number digits) in logical pixels.
-pub const LABEL_HEIGHT: f32 = 19.0;
+pub const LABEL_HEIGHT: f32 = 16.0 * 1.4;
+
+/// Label width (2 digits: "01", "02", etc.).
+pub const LABEL_WIDTH: f32 = 8.0 * 1.4;
 
 /// Width per F-key slot (label + char area).
 pub const SLOT_WIDTH: f32 = 40.0;
-
-/// Label width (2 digits: "01", "02", etc.).
-pub const LABEL_WIDTH: f32 = 20.0;
 
 /// Spacing between slots.
 pub const SLOT_SPACING: f32 = 5.0;
@@ -53,7 +53,7 @@ pub const NAV_NEXT_SHIFT_X: f32 = -8.0;
 pub const NAV_LABEL_SPACE: f32 = 16.0;
 
 /// Gap before nav section.
-pub const NAV_GAP: f32 = 2.0;
+pub const NAV_GAP: f32 = -4.0;
 
 /// Corner radius for rounded rectangles.
 pub const CORNER_RADIUS: f32 = 6.0;
