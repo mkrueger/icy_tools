@@ -21,8 +21,6 @@ use parking_lot::{Mutex, RwLock};
 /// Messages for the canvas view
 #[derive(Clone, Debug)]
 pub enum CanvasMessage {
-    /// Viewport tick for animations
-    ViewportTick,
     /// Scroll viewport by delta (direct, no animation - for mouse wheel)
     ScrollViewport(f32, f32),
     /// Scroll viewport with smooth animation (for PageUp/PageDown)
@@ -62,7 +60,8 @@ impl CanvasView {
     /// The screen should be an EditState wrapped as Box<dyn Screen>
     pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>, monitor_settings: Arc<RwLock<MonitorSettings>>) -> Self {
         // Create terminal widget
-        let terminal = Terminal::new(screen);
+        let mut terminal = Terminal::new(screen);
+        terminal.set_fit_terminal_height_to_bounds(true);
 
         Self { terminal, monitor_settings }
     }
@@ -93,16 +92,6 @@ impl CanvasView {
         self.terminal.scroll_x_to_smooth(x);
         self.terminal.scroll_y_to_smooth(y);
         self.terminal.sync_scrollbar_with_viewport();
-    }
-
-    /// Update animations (called from ViewportTick)
-    pub fn update_animations(&mut self) {
-        self.terminal.update_animations();
-    }
-
-    /// Check if animations are needed
-    pub fn needs_animation(&self) -> bool {
-        self.terminal.needs_animation()
     }
 
     /// Get current zoom level
@@ -280,10 +269,6 @@ impl CanvasView {
     /// Update the canvas view state
     pub fn update(&mut self, message: CanvasMessage) -> Task<CanvasMessage> {
         match message {
-            CanvasMessage::ViewportTick => {
-                self.update_animations();
-                Task::none()
-            }
             CanvasMessage::ScrollViewport(dx, dy) => {
                 self.scroll_by(dx, dy);
                 Task::none()

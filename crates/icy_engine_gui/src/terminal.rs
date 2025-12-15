@@ -30,6 +30,13 @@ pub struct Terminal {
     pub render_cache: SharedRenderCacheHandle,
     /// Editor markers (raster grid, guide crosshair, reference image)
     pub markers: Arc<RwLock<EditorMarkers>>,
+
+    /// If enabled, the terminal's *window* height (TerminalState height) is adjusted to the
+    /// available widget height. This changes `screen.resolution()` but does NOT resize the buffer.
+    ///
+    /// Intended for viewer/editor apps (e.g. `icy_view`, `icy_draw`). `icy_term` should typically
+    /// keep program-controlled sizing.
+    pub fit_terminal_height_to_bounds: bool,
 }
 
 impl Terminal {
@@ -59,7 +66,14 @@ impl Terminal {
             background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default dark background
             render_cache: create_shared_render_cache(),
             markers: Arc::new(RwLock::new(EditorMarkers::default())),
+
+            fit_terminal_height_to_bounds: false,
         }
+    }
+
+    /// Enable/disable automatic adjustment of the terminal window height to the widget bounds.
+    pub fn set_fit_terminal_height_to_bounds(&mut self, enabled: bool) {
+        self.fit_terminal_height_to_bounds = enabled;
     }
 
     /// Update viewport when screen size changes
@@ -167,24 +181,6 @@ impl Terminal {
     pub fn scroll_y_to_smooth(&mut self, y: f32) {
         let mut vp = self.viewport.write();
         vp.scroll_y_to_smooth(y);
-    }
-
-    /// Update animations for both viewport and scrollbar
-    /// Should be called from ViewportTick
-    pub fn update_animations(&mut self) {
-        // Update viewport animation
-        self.viewport.write().update_animation();
-
-        // Sync scrollbar position after viewport animation
-        self.sync_scrollbar_with_viewport();
-
-        // Update scrollbar fade animation (updates both vertical and horizontal)
-        self.scrollbar.update_animation();
-    }
-
-    /// Check if any animations are active
-    pub fn needs_animation(&self) -> bool {
-        self.viewport.read().is_animating() || self.scrollbar.needs_animation()
     }
 
     pub fn is_in_scrollback_mode(&self) -> bool {

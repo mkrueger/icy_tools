@@ -3,7 +3,11 @@
 //! Each MainWindow represents one editing window with its own state and mode.
 //! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use parking_lot::RwLock;
 
@@ -186,6 +190,8 @@ impl ModeState {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub enum Message {
+    /// No-op message used by UI widgets that need an `on_press` but should not trigger any updates.
+    Noop,
     // ═══════════════════════════════════════════════════════════════════════════
     // File operations
     // ═══════════════════════════════════════════════════════════════════════════
@@ -408,7 +414,6 @@ pub enum Message {
 
     // Internal
     Tick,
-    ViewportTick,
     AnimationTick,
 }
 
@@ -525,8 +530,14 @@ pub struct MainWindow {
     /// Double-click detector for font slot buttons in status bar
     slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
 
+    /// Bumps on every UI update (used to cache expensive view-derived data)
+    ui_revision: Cell<u64>,
+
+    /// Cached status bar info for the current `ui_revision`
+    status_info_cache: RefCell<Option<(u64, StatusBarInfo)>>,
+
     /// Loaded plugins from the plugin directory
-    plugins: Vec<Plugin>,
+    plugins: Arc<Vec<Plugin>>,
 }
 
 impl MainWindow {
@@ -608,7 +619,9 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
-            plugins: Plugin::read_plugin_directory(),
+            ui_revision: Cell::new(0),
+            status_info_cache: RefCell::new(None),
+            plugins: Arc::new(Plugin::read_plugin_directory()),
         };
         window.update_title();
         window
@@ -798,7 +811,9 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
-            plugins: Plugin::read_plugin_directory(),
+            ui_revision: Cell::new(0),
+            status_info_cache: RefCell::new(None),
+            plugins: Arc::new(Plugin::read_plugin_directory()),
         };
         window.update_title();
         window
@@ -868,12 +883,18 @@ impl MainWindow {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        // Invalidate cached view-derived data on any real update.
+        if !matches!(message, Message::Noop) {
+            self.ui_revision.set(self.ui_revision.get().wrapping_add(1));
+        }
+
         // Route messages to dialogs first
         if let Some(task) = self.dialogs.update(&message) {
             return task;
         }
 
         match message {
+            Message::Noop => Task::none(),
             Message::NewFile => {
                 // Check for unsaved changes first
                 if self.is_modified() {
@@ -1524,13 +1545,6 @@ impl MainWindow {
                 self.update_title();
                 Task::none()
             }
-            Message::ViewportTick => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor)
-                } else {
-                    Task::none()
-                }
-            }
             Message::AnimationTick => {
                 // Update dialog animations first
                 self.dialogs.update_animation();
@@ -1538,33 +1552,19 @@ impl MainWindow {
                 match &mut self.mode_state {
                     ModeState::Ansi(editor) => {
                         let delta = 0.016;
-
-                        let color_task = editor
-                            .update(AnsiEditorMessage::ColorSwitcher(crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta)))
-                            .map(Message::AnsiEditor);
-
                         let tool_task = editor
                             .update(AnsiEditorMessage::ToolPanel(crate::ui::ansi_editor::ToolPanelMessage::Tick(delta)))
                             .map(Message::AnsiEditor);
 
-                        // Update canvas animations (scrollbar fade, smooth scrolling)
-                        let viewport_task = editor.update(AnsiEditorMessage::ViewportTick).map(Message::AnsiEditor);
-
-                        Task::batch([color_task, tool_task, viewport_task])
+                        Task::batch([tool_task])
                     }
                     ModeState::BitFont(editor) => {
-                        let delta = 0.016;
-                        editor
-                            .update(BitFontEditorMessage::TopToolbar(BitFontTopToolbarMessage::ColorSwitcher(
-                                crate::ui::ansi_editor::ColorSwitcherMessage::Tick(delta),
-                            )))
-                            .map(Message::BitFontEditor)
+                        // ColorSwitcher tickt sich selbst (RedrawRequested) – kein globaler Tick.
+                        Task::none()
                     }
                     ModeState::CharFont(editor) => {
-                        let delta = 0.016;
-                        editor
-                            .update(super::charfont_editor::CharFontEditorMessage::Tick(delta))
-                            .map(Message::CharFontEditor)
+                        // ColorSwitcher tickt sich selbst (RedrawRequested) – kein globaler Tick.
+                        Task::none()
                     }
                     ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
                 }
@@ -2469,7 +2469,7 @@ impl MainWindow {
 
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
-        let recent_files = &self.options.read().recent_files;
+        let options = self.options.clone();
 
         // Get undo/redo descriptions for menu
         let undo_info = self.get_undo_info();
@@ -2488,8 +2488,7 @@ impl MainWindow {
 
         let menu_bar = self
             .menu_state
-            .view(&self.mode_state.mode(), recent_files, &undo_info, &marker_state, &self.plugins, mirror_mode);
-
+            .view(&self.mode_state.mode(), options, &undo_info, &marker_state, self.plugins.clone(), mirror_mode);
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),
             ModeState::BitFont(editor) => editor.view().map(Message::BitFontEditor),
@@ -2555,7 +2554,7 @@ impl MainWindow {
         }
 
         // Default status bar for other modes
-        let info = self.get_status_info();
+        let info = self.status_info_cached();
 
         // Build right section - with slot buttons for XBinExtended or clickable font name
         let right_section: Element<'_, Message> = if let Some(slots) = &info.slot_fonts {
@@ -2650,6 +2649,19 @@ impl MainWindow {
                 }
             }
         }
+    }
+
+    fn status_info_cached(&self) -> StatusBarInfo {
+        let rev = self.ui_revision.get();
+        if let Some((cached_rev, cached)) = self.status_info_cache.borrow().as_ref() {
+            if *cached_rev == rev {
+                return cached.clone();
+            }
+        }
+
+        let info = self.get_status_info();
+        *self.status_info_cache.borrow_mut() = Some((rev, info.clone()));
+        info
     }
 
     /// Get undo/redo descriptions for menu display

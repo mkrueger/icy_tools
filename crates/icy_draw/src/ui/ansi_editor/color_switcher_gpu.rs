@@ -11,6 +11,7 @@ use iced::{
     widget::shader::{self, Shader},
 };
 use icy_engine::{Palette, TextAttribute};
+use std::time::Instant;
 
 use super::constants::{
     COLOR_SWAP_ANIMATION_DURATION, COLOR_SWITCHER_RECT_SIZE, COLOR_SWITCHER_SHADOW_MARGIN, COLOR_SWITCHER_SIZE, COLOR_SWITCHER_SWAP_ICON_SIZE,
@@ -122,7 +123,7 @@ impl ColorSwitcher {
     }
 
     /// Check if animation is running
-    pub fn needs_animation(&self) -> bool {
+    pub fn is_animating(&self) -> bool {
         self.animating
     }
 
@@ -169,6 +170,7 @@ impl ColorSwitcher {
             default_fg_color: [def_fg_r as f32 / 255.0, def_fg_g as f32 / 255.0, def_fg_b as f32 / 255.0, 1.0],
             swap_progress: self.swap_progress,
             time: self.time,
+            animating: self.animating,
             hover_swap: self.hover_swap,
             hover_default: self.hover_default,
         })
@@ -186,12 +188,18 @@ struct ColorSwitcherProgram {
     default_fg_color: [f32; 4],
     swap_progress: f32,
     time: f32,
+    animating: bool,
     hover_swap: bool,
     hover_default: bool,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct ColorSwitcherProgramState {
+    last_redraw: Option<Instant>,
+}
+
 impl shader::Program<ColorSwitcherMessage> for ColorSwitcherProgram {
-    type State = ();
+    type State = ColorSwitcherProgramState;
     type Primitive = ColorSwitcherPrimitive;
 
     fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
@@ -208,13 +216,23 @@ impl shader::Program<ColorSwitcherMessage> for ColorSwitcherProgram {
 
     fn update(
         &self,
-        _state: &mut Self::State,
+        state: &mut Self::State,
         event: &iced::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<iced::widget::Action<ColorSwitcherMessage>> {
         let size = SWITCHER_SIZE;
         let rect_size = size * 0.618;
+
+        if let iced::Event::Window(iced::window::Event::RedrawRequested(now)) = event {
+            if self.animating {
+                let delta = state.last_redraw.map_or(0.0, |prev| now.saturating_duration_since(prev).as_secs_f32());
+                state.last_redraw = Some(*now);
+                return Some(iced::widget::Action::publish(ColorSwitcherMessage::Tick(delta)));
+            } else {
+                state.last_redraw = None;
+            }
+        }
 
         if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
             if let Some(pos) = cursor.position_in(bounds) {

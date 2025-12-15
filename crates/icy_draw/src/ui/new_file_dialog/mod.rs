@@ -10,13 +10,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use iced::{
-    Alignment, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
+    Alignment, Element, Length, Point, Rectangle, Renderer, Size, Theme,
     keyboard::{Key, key::Named},
     mouse,
     widget::{
         Space,
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, image, row, text, text_input,
+        column, container, row, text, text_input,
     },
 };
 

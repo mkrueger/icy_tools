@@ -3,6 +3,7 @@ mod minimap_shader;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
@@ -64,6 +65,13 @@ pub struct MinimapView {
     shared_state: Arc<Mutex<SharedMinimapState>>,
     /// Current scroll position (0.0 = top, 1.0 = fully scrolled down)
     scroll_position: RefCell<f32>,
+
+    /// Last minimap bounds we saw (from shader feedback).
+    last_available_size: RefCell<(f32, f32)>,
+    /// Timestamp of the last bounds change (used to detect active resize).
+    last_resize_at: RefCell<Option<Instant>>,
+    /// Timestamp of the last time we synchronously rendered a missing tile.
+    last_missing_tile_render_at: RefCell<Option<Instant>>,
 }
 
 impl Default for MinimapView {
@@ -78,6 +86,10 @@ impl MinimapView {
             instance_id: generate_minimap_id(),
             shared_state: Arc::new(Mutex::new(SharedMinimapState::default())),
             scroll_position: RefCell::new(0.0),
+
+            last_available_size: RefCell::new((0.0, 0.0)),
+            last_resize_at: RefCell::new(None),
+            last_missing_tile_render_at: RefCell::new(None),
         }
     }
 
@@ -191,6 +203,27 @@ impl MinimapView {
             )
         };
 
+        // During interactive window resize, avoid synchronously rendering missing tiles.
+        // That path can be expensive and causes visible stutter.
+        let now = Instant::now();
+        let is_resizing = {
+            let mut last = self.last_available_size.borrow_mut();
+            let mut last_resize_at = self.last_resize_at.borrow_mut();
+
+            if last.0 <= 0.0 || last.1 <= 0.0 {
+                *last = (avail_width, avail_height);
+            } else {
+                let dw = (avail_width - last.0).abs();
+                let dh = (avail_height - last.1).abs();
+                if dw > 1.0 || dh > 1.0 {
+                    *last = (avail_width, avail_height);
+                    *last_resize_at = Some(now);
+                }
+            }
+
+            last_resize_at.as_ref().is_some_and(|t| now.duration_since(*t) < Duration::from_millis(150))
+        };
+
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
             // Read metadata without holding the lock for long; we may need to lock the Screen.
@@ -243,6 +276,8 @@ impl MinimapView {
                 let mut total_height = 0u32;
                 let first_slice_start_y = first_tile_idx as f32 * tile_height;
 
+                let mut rendered_missing_tile = false;
+
                 // Lock order matches Terminal rendering path: Screen -> Cache
                 let screen_guard = screen.lock();
                 let resolution = screen_guard.resolution();
@@ -260,6 +295,31 @@ impl MinimapView {
                     let tile = if let Some(tile) = cached_tile {
                         tile
                     } else {
+                        // Rendering missing tiles here is expensive (CPU) and can cause stutter,
+                        // especially during interactive window resize. Prefer using what's
+                        // already in the shared cache.
+                        if is_resizing {
+                            break;
+                        }
+
+                        // Throttle: render at most one missing tile per view call, and not more
+                        // often than every ~30ms.
+                        if rendered_missing_tile {
+                            break;
+                        }
+                        {
+                            let mut last = self.last_missing_tile_render_at.borrow_mut();
+                            let allowed = match *last {
+                                None => true,
+                                Some(t) => now.duration_since(t) >= Duration::from_millis(30),
+                            };
+                            if !allowed {
+                                break;
+                            }
+                            *last = Some(now);
+                        }
+                        rendered_missing_tile = true;
+
                         // Render missing tile into the shared cache so Terminal and Minimap can share it.
                         let tile_start_y = tile_idx as f32 * tile_height;
                         let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);

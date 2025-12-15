@@ -4,13 +4,11 @@ pub mod icons;
 pub mod list_view;
 mod main_window;
 mod navigation_bar;
-mod options;
 pub mod preview;
 mod shuffle_mode;
 mod status_bar;
 pub mod theme;
 pub mod thumbnail_view;
-mod window_manager;
 
 // Re-export from icy_engine_gui
 
@@ -19,10 +17,9 @@ pub use filter_popup::*;
 pub use list_view::*;
 pub use main_window::*;
 pub use navigation_bar::*;
-pub use options::*;
+
 pub use preview::*;
 pub use shuffle_mode::*;
 pub use status_bar::{StatusBar, StatusBarMessage, StatusInfo};
 pub use thumbnail_view::*;
-pub use window_manager::*;
 pub mod dialogs;

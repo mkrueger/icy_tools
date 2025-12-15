@@ -1,4 +1,4 @@
-use crate::ui::options::EXTERNAL_COMMAND_COUNT;
+use crate::EXTERNAL_COMMAND_COUNT;
 use i18n_embed_fl::fl;
 use iced::{
     Alignment, Element, Length, Theme,
@@ -13,7 +13,7 @@ use icy_engine_gui::{
 use super::SettingsDialogMessage;
 
 pub fn commands_settings_content_generic<M: Clone + 'static>(
-    commands: [crate::ui::options::ExternalCommand; EXTERNAL_COMMAND_COUNT],
+    commands: [crate::ExternalCommand; EXTERNAL_COMMAND_COUNT],
     on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
 ) -> Element<'static, M> {
     let mut command_rows = column![].spacing(DIALOG_SPACING);

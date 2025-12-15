@@ -19,7 +19,7 @@ pub struct DragScrollState {
     /// Time of last drag event for velocity calculation
     last_drag_time: Option<Instant>,
     /// Current scroll velocity for inertia (content pixels per second)
-    scroll_velocity: (f32, f32),
+    scroll_velocity: (f32, f32),            
     /// Whether inertia scrolling is active
     pub inertia_active: bool,
 }

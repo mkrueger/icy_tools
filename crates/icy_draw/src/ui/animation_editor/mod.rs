@@ -485,6 +485,7 @@ impl AnimationEditor {
             // Create screen arc and terminal
             let screen_arc: Arc<Mutex<Box<dyn icy_engine::Screen>>> = Arc::new(Mutex::new(boxed));
             let mut terminal = Terminal::new(screen_arc.clone());
+            terminal.set_fit_terminal_height_to_bounds(true);
             terminal.update_viewport_size();
 
             // Mark viewport as changed to force re-render

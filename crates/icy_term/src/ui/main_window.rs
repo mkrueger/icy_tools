@@ -2065,6 +2065,6 @@ impl icy_engine_gui::Window for MainWindow {
     }
 
     fn needs_animation(&self) -> bool {
-        self.terminal_window.terminal.needs_animation()
+        false
     }
 }

@@ -272,13 +272,7 @@ impl WindowManager {
 
             WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
-            WindowManagerMessage::AnimationTick => {
-                // Update viewport and scrollbar animations for all windows
-                for window in self.windows.values_mut() {
-                    window.terminal_window.terminal.update_animations();
-                }
-                Task::none()
-            }
+            WindowManagerMessage::AnimationTick => Task::none(),
         }
     }
 

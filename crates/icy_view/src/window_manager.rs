@@ -4,7 +4,8 @@ use parking_lot::Mutex;
 
 use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
-use crate::ui::{MainWindow, Message, Options};
+use crate::Options;
+use crate::ui::{MainWindow, Message};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::{any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
@@ -73,7 +74,7 @@ const DEFAULT_SIZE: Size = Size::new(1337.0, 839.0);
 
 impl WindowManager {
     pub fn new(auto_scroll: bool, bps: Option<u32>) -> (Self, Task<WindowManagerMessage>) {
-        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+        let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
         let settings = window::Settings {
             size: DEFAULT_SIZE,
             icon: window_icon,
@@ -121,7 +122,7 @@ impl WindowManager {
                         let position = last_position.map_or(window::Position::Default, |last_position| {
                             window::Position::Specific(last_position + Vector::new(20.0, 20.0))
                         });
-                        let window_icon = load_window_icon(include_bytes!("../../build/linux/256x256.png")).ok();
+                        let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
                         let settings = window::Settings {
                             position,
                             icon: window_icon,

@@ -16,6 +16,12 @@ mod sort_order;
 mod thumbnail;
 mod ui;
 
+mod options;
+mod window_manager;
+
+pub use options::*;
+pub use window_manager::*;
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -24,8 +30,6 @@ use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use iced::Settings;
 use rust_embed::RustEmbed;
 use semver::Version;
-
-use crate::ui::WindowManager;
 
 use i18n_embed::{
     DesktopLanguageRequester,
@@ -118,27 +122,27 @@ fn main() {
     iced::daemon(
         move || {
             if let Some(ref path) = args.path {
-                WindowManager::with_path(path.clone(), args.auto, args.bps)
+                    window_manager::WindowManager::with_path(path.clone(), args.auto, args.bps)
             } else {
-                WindowManager::new(args.auto, args.bps)
+                    window_manager::WindowManager::new(args.auto, args.bps)
             }
         },
-        WindowManager::update,
-        WindowManager::view,
+            window_manager::WindowManager::update,
+            window_manager::WindowManager::view,
     )
     .settings(Settings {
         vsync: true,
         antialiasing: true,
         ..Default::default()
     })
-    .theme(WindowManager::theme)
-    .subscription(WindowManager::subscription)
-    .title(WindowManager::title)
+        .theme(window_manager::WindowManager::theme)
+        .subscription(window_manager::WindowManager::subscription)
+        .title(window_manager::WindowManager::title)
     .run()
     .expect("Failed to run application");
 
     log::info!("Shutting down.");
 
     // Cleanup temp files from this session
-    ui::Options::cleanup_session_temp();
+    Options::cleanup_session_temp();
 }

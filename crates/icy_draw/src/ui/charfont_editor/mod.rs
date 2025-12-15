@@ -267,7 +267,7 @@ impl CharFontEditor {
 
     /// Check if this editor needs animation updates
     pub fn needs_animation(&self) -> bool {
-        self.color_switcher.needs_animation() || self.tool_panel.needs_animation()
+        self.tool_panel.needs_animation()
     }
 
     /// Get undo description

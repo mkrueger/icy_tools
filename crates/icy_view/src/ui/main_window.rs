@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DEFAULT_TITLE, VERSION,
+    DEFAULT_TITLE, Options, ScrollSpeed, VERSION, ViewMode,
     commands::{cmd, create_icy_view_commands},
     items::{Item, ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
 };
@@ -24,16 +24,14 @@ use icy_engine::formats::FileFormat;
 
 use super::{
     FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
-    NavigationBar, NavigationBarMessage, NavigationHistory, Options, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar,
-    StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
+    NavigationBar, NavigationBarMessage, NavigationHistory, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar, StatusBarMessage,
+    StatusInfo, TileGridMessage, TileGridView,
     dialogs::about_dialog::{AboutDialogMessage, about_dialog},
     dialogs::help_dialog::help_dialog,
     dialogs::sauce_dialog::{SauceDialogMessage, sauce_dialog_from_msg},
     dialogs::settings_dialog::{SettingsDialogMessage, settings_dialog_from_msg},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
-    is_image_file, is_sixel_file,
-    options::ViewMode,
-    theme,
+    is_image_file, is_sixel_file, theme,
 };
 use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
@@ -882,7 +880,6 @@ impl MainWindow {
                     }
                     StatusBarMessage::CycleScrollSpeed => {
                         // Cycle scroll speed: Slow -> Medium -> Fast -> Slow
-                        use super::options::ScrollSpeed;
                         let current = self.preview.get_scroll_speed();
                         let next = match current {
                             ScrollSpeed::Slow => ScrollSpeed::Medium,
@@ -906,7 +903,6 @@ impl MainWindow {
                     }
                     StatusBarMessage::CycleScrollSpeedBackward => {
                         // Cycle scroll speed backward: Slow -> Fast -> Medium -> Slow
-                        use super::options::ScrollSpeed;
                         let current = self.preview.get_scroll_speed();
                         let next = match current {
                             ScrollSpeed::Slow => ScrollSpeed::Fast,

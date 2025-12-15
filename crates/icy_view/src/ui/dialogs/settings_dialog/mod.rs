@@ -10,7 +10,7 @@ use icy_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, up
 use icy_engine_gui::ui::*;
 use icy_engine_gui::{Dialog, DialogAction, dialog_wrapper};
 
-use crate::ui::Options;
+use crate::Options;
 
 mod command_settings;
 mod paths_settings;

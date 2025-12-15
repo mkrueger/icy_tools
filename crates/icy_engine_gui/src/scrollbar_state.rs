@@ -222,20 +222,58 @@ impl ScrollbarState {
 
     /// Check if the scrollbar needs animation updates
     pub fn needs_animation(&self) -> bool {
-        self.is_animating() || self.is_hovered || self.is_hovered_x || self.is_dragging || self.is_dragging_x || {
-            let now = Instant::now();
-            let v_needs = if let Some(last) = self.last_interaction {
-                now.duration_since(last) < (self.fade_out_delay + Duration::from_millis(500))
-            } else {
-                false
-            };
-            let h_needs = if let Some(last) = self.last_interaction_x {
-                now.duration_since(last) < (self.fade_out_delay + Duration::from_millis(500))
-            } else {
-                false
-            };
-            v_needs || h_needs
+        // Overlay widgets schedule their own `request_redraw_at(...)` precisely via
+        // `next_wakeup_instant`, so we only report true while an animation is
+        // actively running or while dragging.
+        self.is_animating() || self.is_dragging || self.is_dragging_x
+    }
+
+    /// Returns the next instant at which the scrollbar needs a redraw to advance
+    /// its own animation (fade-in/out delays or easing).
+    ///
+    /// Intended for overlay widgets to schedule `request_redraw_at(...)` precisely,
+    /// instead of relying on a global animation tick.
+    pub fn next_wakeup_instant(&self, now: Instant) -> Option<Instant> {
+        let frame = now + Duration::from_millis(16);
+        let mut next: Option<Instant> = None;
+
+        // If the user is dragging, we want frequent redraws for responsiveness.
+        if self.is_dragging || self.is_dragging_x {
+            next = Some(frame);
         }
+
+        // Vertical
+        if self.anim_start.is_some() {
+            // During fade-out delay we don't need 60fps; schedule exactly when the delay expires.
+            if self.target_visibility < self.visibility {
+                if let Some(last) = self.last_interaction {
+                    let expected_start = last + self.fade_out_delay;
+                    let t = if now < expected_start { expected_start } else { frame };
+                    next = Some(next.map_or(t, |cur| cur.min(t)));
+                } else {
+                    next = Some(next.map_or(frame, |cur| cur.min(frame)));
+                }
+            } else {
+                next = Some(next.map_or(frame, |cur| cur.min(frame)));
+            }
+        }
+
+        // Horizontal
+        if self.anim_start_x.is_some() {
+            if self.target_visibility_x < self.visibility_x {
+                if let Some(last) = self.last_interaction_x {
+                    let expected_start = last + self.fade_out_delay;
+                    let t = if now < expected_start { expected_start } else { frame };
+                    next = Some(next.map_or(t, |cur| cur.min(t)));
+                } else {
+                    next = Some(next.map_or(frame, |cur| cur.min(frame)));
+                }
+            } else {
+                next = Some(next.map_or(frame, |cur| cur.min(frame)));
+            }
+        }
+
+        next
     }
 
     /// Set scroll position from external source (e.g., viewport)

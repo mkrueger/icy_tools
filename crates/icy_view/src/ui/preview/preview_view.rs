@@ -21,8 +21,8 @@ use super::image_content_view::ImageContentView;
 use super::image_viewer::{ImageViewer, ImageViewerMessage};
 use super::terminal_content_view::TerminalContentView;
 use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
+use crate::ScrollSpeed;
 use crate::commands::{cmd, create_icy_view_commands};
-use crate::ui::options::ScrollSpeed;
 use crate::ui::theme;
 use icy_engine::formats::{FileFormat, ImageFormat};
 
@@ -145,7 +145,8 @@ impl PreviewView {
         let screen = Arc::new(Mutex::new(screen));
 
         // Create terminal widget in Viewer mode (for file viewing with scrolling)
-        let terminal = Terminal::new(screen.clone());
+        let mut terminal = Terminal::new(screen.clone());
+        terminal.set_fit_terminal_height_to_bounds(true);
 
         // Create view thread
         let (command_tx, event_rx) = create_view_thread(screen);
@@ -411,7 +412,6 @@ impl PreviewView {
     /// Check if animation is needed
     pub fn needs_animation(&self) -> bool {
         self.is_loading
-            || self.terminal.needs_animation()
             || self.scroll_mode != ScrollMode::Off
             || self.image_viewer.as_ref().map_or(false, |v| v.needs_animation())
             || self.drag_scroll.needs_animation()

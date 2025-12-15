@@ -114,17 +114,28 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
             // Handle animation: on each redraw, update scrollbar AND scroll animations
             // This makes the scrollbar self-driving - no manual animation calls needed
             iced::Event::Window(window::Event::RedrawRequested(now)) => {
-                let needs_more = self.viewport.with_viewport_mut(|vp| {
+                let next_redraw_at = self.viewport.with_viewport_mut(|vp| {
                     // Update scrollbar visibility animation
                     vp.scrollbar.update_animation();
                     // Update smooth scroll animation (PageUp/PageDown, Home/End, etc.)
                     vp.update_animation();
-                    // Continue animation if either needs more frames
-                    vp.scrollbar.needs_animation() || vp.is_animating()
+
+                    let mut next: Option<std::time::Instant> = None;
+
+                    // Viewport smooth scrolling wants regular frames while active.
+                    if vp.is_animating() {
+                        next = Some(*now + Duration::from_millis(ANIMATION_FRAME_MS));
+                    }
+
+                    // Scrollbar schedules either the next animation frame or the fade-out start.
+                    if let Some(sb_next) = vp.scrollbar.next_wakeup_instant(*now) {
+                        next = Some(next.map_or(sb_next, |cur| cur.min(sb_next)));
+                    }
+
+                    next
                 });
 
-                if needs_more {
-                    let next_frame = *now + Duration::from_millis(ANIMATION_FRAME_MS);
+                if let Some(next_frame) = next_redraw_at {
                     return Some(iced::widget::canvas::Action::request_redraw_at(next_frame));
                 }
             }

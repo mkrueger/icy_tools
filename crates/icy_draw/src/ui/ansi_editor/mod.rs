@@ -162,8 +162,6 @@ pub enum AnsiEditorMessage {
     MergeLayerDown(usize),
     /// Clear layer contents
     ClearLayer(usize),
-    /// Viewport tick for animations
-    ViewportTick,
     /// Scroll viewport
     ScrollViewport(f32, f32),
     /// Key pressed
@@ -1094,7 +1092,7 @@ impl AnsiEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.color_switcher.needs_animation() || self.tool_panel.needs_animation() || self.canvas.needs_animation()
+        self.tool_panel.needs_animation()
     }
 
     /// Get the current marker state for menu display
@@ -1678,10 +1676,6 @@ impl AnsiEditor {
                 if result.is_ok() {
                     self.is_modified = true;
                 }
-                Task::none()
-            }
-            AnsiEditorMessage::ViewportTick => {
-                self.canvas.update_animations();
                 Task::none()
             }
             AnsiEditorMessage::ScrollViewport(dx, dy) => {
@@ -3461,7 +3455,7 @@ impl AnsiEditor {
 
         let tags_button: Element<'_, AnsiEditorMessage> = icy_engine_gui::ui::secondary_button("Tags…", Some(AnsiEditorMessage::OpenTagListDialog)).into();
 
-        let top_toolbar = row![color_switcher, top_toolbar_content, tags_button,].spacing(4).align_y(Alignment::Start);
+        let top_toolbar = row![color_switcher, top_toolbar_content].spacing(4).align_y(Alignment::Start);
 
         // === CENTER: Canvas ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache

@@ -11,7 +11,11 @@ use iced::{
 use iced_aw::menu::Menu;
 use iced_aw::{quad, widget::InnerBounds};
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use super::MostRecentlyUsedFiles;
+use super::Options;
 use super::main_window::{EditMode, Message};
 use crate::{
     fl,
@@ -41,6 +45,47 @@ impl UndoInfo {
 #[derive(Default)]
 pub struct MenuBarState;
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct MenuBarCacheKey {
+    // Use a primitive mode tag to avoid requiring `EditMode: Hash`.
+    mode_tag: u8,
+    undo_description: Option<String>,
+    redo_description: Option<String>,
+
+    // Flattened `MarkerMenuState` to avoid requiring it to implement Hash/Eq.
+    guide: Option<(u32, u32)>,
+    guide_visible: bool,
+    raster: Option<(u32, u32)>,
+    raster_visible: bool,
+    line_numbers_visible: bool,
+    layer_borders_visible: bool,
+
+    mirror_mode: bool,
+    recent_files_hash: u64,
+    plugins_hash: u64,
+}
+
+fn hash_recent_files(recent_files: &MostRecentlyUsedFiles) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    recent_files.files().len().hash(&mut hasher);
+    for path in recent_files.files() {
+        path.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn hash_plugins(plugins: &[Plugin]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    plugins.len().hash(&mut hasher);
+    for plugin in plugins {
+        plugin.title.hash(&mut hasher);
+        plugin.path.hash(&mut hasher);
+        plugin.description.hash(&mut hasher);
+        plugin.author.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 impl MenuBarState {
     pub fn new() -> Self {
         Self
@@ -50,22 +95,72 @@ impl MenuBarState {
     pub fn view(
         &self,
         mode: &EditMode,
-        recent_files: &MostRecentlyUsedFiles,
+        options: std::sync::Arc<parking_lot::RwLock<Options>>,
         undo_info: &UndoInfo,
         marker_state: &MarkerMenuState,
-        plugins: &[Plugin],
+        plugins: std::sync::Arc<Vec<Plugin>>,
         mirror_mode: bool,
     ) -> Element<'_, Message> {
-        match mode {
-            EditMode::Ansi => ansi_editor::menu_bar::view_ansi(recent_files, undo_info, marker_state, plugins, mirror_mode),
-            EditMode::BitFont => {
-                bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
+        let recent_files_hash = {
+            let options_guard = options.read();
+            hash_recent_files(&options_guard.recent_files)
+        };
+
+        let plugins_hash = hash_plugins(plugins.as_ref());
+
+        let mode_tag = match mode {
+            EditMode::Ansi => 0,
+            EditMode::BitFont => 1,
+            EditMode::CharFont => 2,
+            EditMode::Animation => 3,
+        };
+
+        let key = MenuBarCacheKey {
+            mode_tag,
+            undo_description: undo_info.undo_description.clone(),
+            redo_description: undo_info.redo_description.clone(),
+            guide: marker_state.guide,
+            guide_visible: marker_state.guide_visible,
+            raster: marker_state.raster,
+            raster_visible: marker_state.raster_visible,
+            line_numbers_visible: marker_state.line_numbers_visible,
+            layer_borders_visible: marker_state.layer_borders_visible,
+            mirror_mode,
+            recent_files_hash,
+            plugins_hash,
+        };
+
+        // Cache the whole menu subtree. During resize, this avoids rebuilding all menu widgets and
+        // regenerating strings/translations.
+        iced::widget::lazy(key, move |key: &MenuBarCacheKey| {
+            let undo_info = UndoInfo {
+                undo_description: key.undo_description.clone(),
+                redo_description: key.redo_description.clone(),
+            };
+
+            let marker_state = MarkerMenuState {
+                guide: key.guide,
+                guide_visible: key.guide_visible,
+                raster: key.raster,
+                raster_visible: key.raster_visible,
+                line_numbers_visible: key.line_numbers_visible,
+                layer_borders_visible: key.layer_borders_visible,
+            };
+
+            let options_guard = options.read();
+            let recent_files = &options_guard.recent_files;
+
+            match key.mode_tag {
+                0 => ansi_editor::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode),
+                1 => bitfont_editor::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
+                2 => charfont_editor::menu_bar::view_charfont(recent_files, &undo_info),
+                3 => {
+                    animation_editor::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
+                }
+                _ => ansi_editor::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode),
             }
-            EditMode::CharFont => charfont_editor::menu_bar::view_charfont(recent_files, undo_info),
-            EditMode::Animation => {
-                animation_editor::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref())
-            }
-        }
+        })
+        .into()
     }
 }
 
@@ -78,7 +173,7 @@ pub fn menu_button(label: String) -> Element<'static, Message> {
     button(text(label).size(14))
         .padding([4, 8])
         .style(menu_button_style)
-        .on_press(Message::Tick) // Dummy message - menu handles the interaction
+        .on_press(Message::Noop) // Dummy message - menu handles the interaction
         .into()
 }
 
@@ -248,7 +343,7 @@ pub fn menu_item_submenu(label: String) -> Element<'static, Message> {
     .width(Length::Fill)
     .padding([4, 8])
     .style(menu_item_style)
-    .on_press(Message::Tick) // Dummy - submenu handles interaction
+    .on_press(Message::Noop) // Dummy - submenu handles interaction
     .into()
 }
 

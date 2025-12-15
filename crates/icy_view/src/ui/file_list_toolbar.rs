@@ -7,9 +7,10 @@ use iced::{
 };
 
 use super::icons;
-use super::options::{Options, ViewMode};
 use crate::LANGUAGE_LOADER;
 use crate::sort_order::SortOrder;
+use crate::{Options, ViewMode};
+
 
 /// Duration before toolbar auto-hides on first show (generous)
 const INITIAL_HIDE_DELAY_SECS: f32 = 5.0;

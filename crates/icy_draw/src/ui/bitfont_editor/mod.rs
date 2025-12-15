@@ -326,6 +326,7 @@ impl BitFontEditor {
         } else {
             let screen_arc: Arc<Mutex<Box<dyn icy_engine::Screen>>> = Arc::new(Mutex::new(boxed));
             let mut terminal = Terminal::new(screen_arc.clone());
+            terminal.set_fit_terminal_height_to_bounds(true);
             terminal.update_viewport_size();
             self.preview_screen = Some(screen_arc);
             self.preview_terminal = Some(terminal);
@@ -446,7 +447,7 @@ impl BitFontEditor {
 
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.top_toolbar.color_switcher.needs_animation()
+        false
     }
 
     /// Handle update messages

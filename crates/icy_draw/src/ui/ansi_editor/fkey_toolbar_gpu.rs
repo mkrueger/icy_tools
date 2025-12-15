@@ -357,7 +357,7 @@ impl shader::Pipeline for FKeyToolbarRenderer {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-struct FKeyGlyphUniforms {
+pub(crate) struct FKeyGlyphUniforms {
     clip_size: [f32; 2],
     atlas_size: [f32; 2],
     glyph_size: [f32; 2],
@@ -369,7 +369,7 @@ unsafe impl bytemuck::Zeroable for FKeyGlyphUniforms {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-struct QuadVertex {
+pub(crate) struct QuadVertex {
     unit_pos: [f32; 2],
     unit_uv: [f32; 2],
 }
@@ -379,7 +379,7 @@ unsafe impl bytemuck::Zeroable for QuadVertex {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-struct GlyphInstance {
+pub(crate) struct GlyphInstance {
     pos: [f32; 2],
     size: [f32; 2],
     fg: [f32; 4],
@@ -392,7 +392,7 @@ struct GlyphInstance {
 unsafe impl bytemuck::Pod for GlyphInstance {}
 unsafe impl bytemuck::Zeroable for GlyphInstance {}
 
-fn font_key(font: &BitFont) -> u64 {
+pub(crate) fn font_key(font: &BitFont) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     font.name().hash(&mut hasher);
@@ -404,7 +404,7 @@ fn font_key(font: &BitFont) -> u64 {
     hasher.finish()
 }
 
-fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
+pub(crate) fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     let size = font.size();
     let gw = size.width.max(1) as u32;
     let gh = size.height.max(1) as u32;
@@ -451,7 +451,7 @@ fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     (atlas_w, atlas_h, rgba)
 }
 
-fn cp437_index(ch: char) -> u32 {
+pub(crate) fn cp437_index(ch: char) -> u32 {
     if (ch as u32) <= 0xFF {
         return ch as u32;
     }
@@ -460,7 +460,7 @@ fn cp437_index(ch: char) -> u32 {
 }
 
 #[derive(Clone)]
-pub struct FKeyGlyphProgram {
+pub(crate) struct FKeyGlyphProgram {
     pub fkeys: FKeySets,
     pub font: Option<BitFont>,
     pub palette: Palette,
@@ -501,7 +501,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyGlyphProgram {
 }
 
 #[derive(Clone, Debug)]
-pub struct FKeyGlyphPrimitive {
+pub(crate) struct FKeyGlyphPrimitive {
     pub bounds: Rectangle,
     pub fkeys: FKeySets,
     pub font: Option<BitFont>,
@@ -928,7 +928,7 @@ impl shader::Primitive for FKeyGlyphPrimitive {
     }
 }
 
-pub struct FKeyGlyphRenderer {
+pub(crate) struct FKeyGlyphRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group: iced::wgpu::BindGroup,
     uniform_buffer: iced::wgpu::Buffer,
@@ -952,7 +952,7 @@ pub struct FKeyGlyphRenderer {
 }
 
 impl FKeyGlyphRenderer {
-    fn update_atlas(&mut self, device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
+    pub(crate) fn update_atlas(&mut self, device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
         if self.atlas_w != w || self.atlas_h != h {
             self.atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
                 label: Some("FKey Glyph Atlas"),

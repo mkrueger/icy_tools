@@ -18,8 +18,8 @@ use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
 use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, create_labeled_placeholder, render_label_tag};
 use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileTexture, new_tile_id};
+use crate::ScrollSpeed;
 use crate::items::{Item, ItemError};
-use crate::ui::options::ScrollSpeed;
 
 /// Base tile width for layout calculations (full tile including borders)
 const TILE_BASE_WIDTH: f32 = TILE_WIDTH;

@@ -683,6 +683,7 @@ fn render_screen_to_thumbnail(
             font_px_size: None,
             glyph_cache: glyph_cache.clone(),
         };
+
         let (size_on, rgba_on) = render_unicode_to_rgba(screen, &opts_on);
 
         // Check cancellation after first render
@@ -708,7 +709,6 @@ fn render_screen_to_thumbnail(
     } else {
         // Use native screen renderer for non-Unicode screens
         let rect = icy_engine::Selection::from(icy_engine::Rectangle::from(0, 0, width, height));
-
         let opts_on = RenderOptions {
             rect: rect.clone(),
             blink_on: true,

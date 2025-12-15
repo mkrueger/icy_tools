@@ -5,8 +5,8 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, is_alt_pressed, is_ctrl_pressed,
-    is_shift_pressed,
+    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, get_scale_factor, is_alt_pressed,
+    is_ctrl_pressed, is_shift_pressed,
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
     tile_cache::MAX_TEXTURE_SLICES,
 };
@@ -47,7 +47,8 @@ impl<'a> CRTShaderProgram<'a> {
         let visible_width: f32;
         let full_content_height: f32;
         let texture_width: u32;
-        let blink_on: bool;
+        let mut blink_on: bool;
+        let mut char_blink_supported: bool;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -62,18 +63,36 @@ impl<'a> CRTShaderProgram<'a> {
         let mut caret_mode: u8 = 0;
 
         {
-            let screen = self.term.screen.lock();
+            let mut screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
 
             let font_dims = screen.font_dimensions();
             font_w = font_dims.width as usize;
             font_h = font_dims.height as usize;
 
+            // Optional: Fit the terminal *window* height (TerminalState) to the widget bounds.
+            // This adjusts `screen.resolution()` (used as the visible region in Auto scaling),
+            // without resizing the underlying buffer/scrollback.
+            if self.term.fit_terminal_height_to_bounds && self.monitor_settings.scaling_mode.is_auto() {
+                if let Some(editable) = screen.as_editable() {
+                    let scale_factor = get_scale_factor().max(0.001);
+                    let avail_h_px = bounds.height.max(1.0) * scale_factor;
+                    let scan_mult = if scan_lines { 2.0 } else { 1.0 };
+                    let cell_h_px = (font_h as f32 * scan_mult).max(1.0);
+                    let desired_rows = (avail_h_px / cell_h_px).floor().max(1.0) as i32;
+
+                    if desired_rows != editable.terminal_state().height() {
+                        editable.terminal_state_mut().set_height(desired_rows);
+                    }
+                }
+            }
+
             state.update_cached_screen_info(&**screen);
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
 
             let current_buffer_version = screen.version();
-            blink_on = state.character_blink.is_on();
+            char_blink_supported = screen.ice_mode().has_blink();
+            blink_on = if char_blink_supported { state.character_blink.is_on() } else { false };
 
             // Get viewport info
             let vp = self.term.viewport.read();
@@ -284,9 +303,13 @@ impl<'a> CRTShaderProgram<'a> {
                 }
             };
 
-            // Get tiles for both blink states
+            // Build blink-off tiles always. Only build blink-on tiles when character blinking is meaningful.
             get_or_render_tiles(false, &mut slices_blink_off, &mut slice_heights);
-            get_or_render_tiles(true, &mut slices_blink_on, &mut slice_heights);
+            if char_blink_supported {
+                get_or_render_tiles(true, &mut slices_blink_on, &mut slice_heights);
+            } else {
+                slices_blink_on = slices_blink_off.clone();
+            }
         }
 
         // Ensure we have at least one slice for both states
@@ -431,14 +454,29 @@ impl<'a> CRTShaderProgram<'a> {
     ) -> Option<iced::widget::Action<Message>> {
         let now = crate::Blink::now_ms();
 
+        // Gate blink work to cases where it is actually visible/relevant.
+        // This avoids a perpetual redraw loop when nothing is blinking.
+        let mut char_blink_supported = true;
+        let mut caret_blink_requested = false;
+
         if let Some(screen) = self.term.screen.try_lock() {
             let buffer_type = screen.buffer_type();
             state.caret_blink.set_rate(buffer_type.caret_blink_rate() as u128);
             state.character_blink.set_rate(buffer_type.blink_rate() as u128);
+
+            // In IceMode::Ice, the blink attribute is repurposed for high background colors.
+            char_blink_supported = screen.ice_mode().has_blink();
+
+            let caret = screen.caret();
+            caret_blink_requested = caret.visible && caret.blinking && self.term.has_focus;
         }
 
-        state.caret_blink.update(now);
-        state.character_blink.update(now);
+        if caret_blink_requested {
+            state.caret_blink.update(now);
+        }
+        if char_blink_supported {
+            state.character_blink.update(now);
+        }
 
         let is_over = cursor.is_over(bounds);
 
@@ -449,8 +487,8 @@ impl<'a> CRTShaderProgram<'a> {
             // 2. Character blink
             // 3. Selection marching ants (always animate if selection is active)
             // 4. Layer bounds marching ants (when layer overlaps with selection)
-            let needs_caret_blink = state.caret_blink.is_due(now);
-            let needs_char_blink = state.character_blink.is_due(now);
+            let needs_caret_blink = caret_blink_requested && state.caret_blink.is_due(now);
+            let needs_char_blink = char_blink_supported && state.character_blink.is_due(now);
 
             // Check if there's an active selection or layer bounds that need marching ants animation
             let (has_selection, has_layer_bounds) = {
@@ -469,10 +507,24 @@ impl<'a> CRTShaderProgram<'a> {
                 // If blink is due, request immediate redraw
                 Some(Duration::from_millis(16))
             } else {
-                // Calculate time until next blink
-                let caret_remaining = state.caret_blink.time_until_next(now);
-                let char_remaining = state.character_blink.time_until_next(now);
-                Some(Duration::from_millis(caret_remaining.min(char_remaining) as u64))
+                // Calculate time until next relevant blink
+                let caret_remaining = if caret_blink_requested {
+                    state.caret_blink.time_until_next(now)
+                } else {
+                    u128::MAX
+                };
+                let char_remaining = if char_blink_supported {
+                    state.character_blink.time_until_next(now)
+                } else {
+                    u128::MAX
+                };
+
+                let remaining = caret_remaining.min(char_remaining);
+                if remaining == u128::MAX {
+                    None
+                } else {
+                    Some(Duration::from_millis(remaining as u64))
+                }
             };
 
             // For marching ants, we need ~30fps animation

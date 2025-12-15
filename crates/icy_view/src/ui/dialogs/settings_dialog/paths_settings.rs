@@ -10,7 +10,7 @@ use icy_engine_gui::{
 };
 
 use super::SettingsDialogMessage;
-use crate::ui::Options;
+use crate::Options;
 
 pub fn paths_settings_content_generic<M: Clone + 'static>(
     export_path: String,

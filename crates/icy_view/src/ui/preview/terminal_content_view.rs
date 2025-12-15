@@ -60,6 +60,7 @@ impl ContentView for TerminalContentView<'_> {
     }
 
     fn update_animations(&mut self, _dt: f32) {
-        self.terminal.update_animations();
+        // Terminal-Animationen (Caret-Blink, Smooth-Scroll, Scrollbars) sind widget-intern
+        // über `RedrawRequested` + `request_redraw_at` getrieben.
     }
 }

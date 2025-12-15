@@ -3,6 +3,8 @@
 //! Manages multiple independent windows, each with its own MainWindow state.
 //! Implements VS Code-like "Hot Exit" for session persistence and crash recovery.
 
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::RwLock;
@@ -27,6 +29,14 @@ const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
 
 /// How often to save session (in seconds)
 const SESSION_SAVE_INTERVAL_SECS: u64 = 10;
+
+/// Debounce delay for session saves triggered by resize/move, etc.
+const SESSION_SAVE_DEBOUNCE_MS: u64 = 300;
+
+enum SaveRequest {
+    Save(SessionState),
+    Flush(SessionState, mpsc::Sender<()>),
+}
 
 /// Cached window geometry for session saving
 #[derive(Clone, Debug)]
@@ -55,6 +65,10 @@ pub struct WindowManager {
     pending_restores: Vec<WindowRestoreInfo>,
     /// Session manager for hot exit
     session_manager: SessionManager,
+    /// Background worker channel for session file writes
+    session_save_tx: mpsc::Sender<SaveRequest>,
+    /// Debounce deadline for the next session save
+    session_save_deadline: Option<Instant>,
     /// Whether we're restoring a session (to avoid saving during restore)
     restoring_session: bool,
     /// Tick counter for periodic session save
@@ -87,6 +101,48 @@ pub enum WindowManagerMessage {
     SaveSessionAndClose,
     /// Autosave tick (periodic check)
     AutosaveTick,
+    /// Debounced session-save tick
+    SessionSaveTick,
+}
+
+fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
+    let (tx, rx) = mpsc::channel::<SaveRequest>();
+
+    std::thread::Builder::new()
+        .name("icy_draw-session-save".to_string())
+        .spawn(move || {
+            let manager = SessionManager::new();
+
+            loop {
+                let request = match rx.recv() {
+                    Ok(req) => req,
+                    Err(_) => return,
+                };
+
+                // Coalesce bursts: always keep only the last pending state.
+                let mut last_request = request;
+                while let Ok(next) = rx.try_recv() {
+                    last_request = next;
+                }
+
+                match last_request {
+                    SaveRequest::Save(state) => {
+                        if let Err(e) = manager.save_session(&state) {
+                            log::error!("Failed to save session: {}", e);
+                        }
+                    }
+                    SaveRequest::Flush(state, ack) => {
+                        if let Err(e) = manager.save_session(&state) {
+                            log::error!("Failed to save session: {}", e);
+                        }
+                        let _ = ack.send(());
+                    }
+                }
+            }
+        })
+        .expect("failed to spawn session save worker");
+
+    tx
 }
 
 impl WindowManager {
@@ -94,6 +150,7 @@ impl WindowManager {
 
     pub fn new(font_library: SharedFontLibrary) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
+        let session_save_tx = start_session_save_worker();
         let options = Options::load();
         let commands = WindowCommands::new();
 
@@ -104,19 +161,20 @@ impl WindowManager {
         }
 
         // No session - open default window
-        Self::open_initial_window(font_library, session_manager, options, commands, None)
+        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, None)
     }
 
     /// Create WindowManager with a specific file (CLI argument - starts fresh session)
     pub fn with_path(font_library: SharedFontLibrary, path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
+        let session_save_tx = start_session_save_worker();
         // Clear any existing session when opening via CLI
         session_manager.clear_session();
 
         let options = Options::load();
         let commands = WindowCommands::new();
 
-        Self::open_initial_window(font_library, session_manager, options, commands, Some(path))
+        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, Some(path))
     }
 
     /// Restore a session from saved state
@@ -155,6 +213,8 @@ impl WindowManager {
 
         let (_, open) = window::open(settings);
 
+        let session_save_tx = start_session_save_worker();
+
         let mut manager = Self {
             windows: BTreeMap::new(),
             window_geometry: BTreeMap::new(),
@@ -162,6 +222,8 @@ impl WindowManager {
             font_library,
             pending_restores,
             session_manager,
+            session_save_tx,
+            session_save_deadline: None,
             restoring_session: true,
             session_save_counter: 0,
             commands,
@@ -179,6 +241,7 @@ impl WindowManager {
     fn open_initial_window(
         font_library: SharedFontLibrary,
         session_manager: SessionManager,
+        session_save_tx: mpsc::Sender<SaveRequest>,
         options: Options,
         commands: WindowCommands,
         path: Option<PathBuf>,
@@ -212,12 +275,72 @@ impl WindowManager {
                 font_library,
                 pending_restores: pending,
                 session_manager,
+                session_save_tx,
+                session_save_deadline: None,
                 restoring_session: false,
                 session_save_counter: 0,
                 commands,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
+    }
+
+    fn request_session_save_debounced(&mut self) {
+        if self.restoring_session {
+            return;
+        }
+        self.session_save_deadline = Some(Instant::now() + Duration::from_millis(SESSION_SAVE_DEBOUNCE_MS));
+    }
+
+    fn enqueue_session_save_now(&self) {
+        let state = self.build_session_state();
+        let _ = self.session_save_tx.send(SaveRequest::Save(state));
+    }
+
+    fn flush_session_save_and_wait(&self, timeout: Duration) {
+        let state = self.build_session_state();
+        let (ack_tx, ack_rx) = mpsc::channel::<()>();
+        if self.session_save_tx.send(SaveRequest::Flush(state, ack_tx)).is_ok() {
+            let _ = ack_rx.recv_timeout(timeout);
+        }
+    }
+
+    fn build_session_state(&self) -> SessionState {
+        let mut window_states = Vec::new();
+
+        for (window_id, window) in self.windows.iter() {
+            let has_unsaved = window.is_modified();
+            let file_path = window.file_path().cloned();
+
+            // Do NOT write autosaves here. Autosave is handled by `AutosaveTick`.
+            // We only store the path so restore can pick it up.
+            let autosave_path = if has_unsaved {
+                if let Some(ref path) = file_path {
+                    Some(self.session_manager.get_autosave_path(path))
+                } else {
+                    Some(self.session_manager.get_untitled_autosave_path(window.id))
+                }
+            } else {
+                None
+            };
+
+            let geom = self.window_geometry.get(window_id).cloned().unwrap_or_default();
+
+            window_states.push(WindowState {
+                position: geom.position,
+                size: geom.size,
+                file_path,
+                edit_mode: edit_mode_to_string(&window.mode()),
+                has_unsaved_changes: has_unsaved,
+                autosave_path,
+            });
+        }
+
+        SessionState {
+            version: 1,
+            windows: window_states,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+        }
     }
 
     pub fn title(&self, window_id: window::Id) -> String {
@@ -394,7 +517,7 @@ impl WindowManager {
                     log::info!("Session restore complete");
                 } else {
                     // Save session when a new window opens (not during restore)
-                    self.save_session_sync();
+                    self.request_session_save_debounced();
                 }
 
                 Task::none()
@@ -410,7 +533,7 @@ impl WindowManager {
 
                 // Save session when window position changes
                 if !self.restoring_session {
-                    self.save_session_sync();
+                    self.request_session_save_debounced();
                 }
                 Task::none()
             }
@@ -425,7 +548,7 @@ impl WindowManager {
 
                 // Save session when window size changes
                 if !self.restoring_session {
-                    self.save_session_sync();
+                    self.request_session_save_debounced();
                 }
                 Task::none()
             }
@@ -437,8 +560,10 @@ impl WindowManager {
             }
 
             WindowManagerMessage::WindowClosed(id) => {
-                // Always save session when a window closes (in case app crashes later)
-                self.save_session_sync();
+                // Always enqueue session save when a window closes (async)
+                if !self.restoring_session {
+                    self.request_session_save_debounced();
+                }
 
                 // Remove autosave status
                 self.session_manager.remove_autosave_status(id);
@@ -491,7 +616,7 @@ impl WindowManager {
 
                     // After file open, save session
                     if is_file_open {
-                        self.save_session_sync();
+                        self.request_session_save_debounced();
                     }
 
                     return task;
@@ -547,7 +672,7 @@ impl WindowManager {
                 // Save session periodically (every SESSION_SAVE_INTERVAL_SECS seconds)
                 if self.session_save_counter >= SESSION_SAVE_INTERVAL_SECS && !self.restoring_session {
                     self.session_save_counter = 0;
-                    self.save_session_sync();
+                    self.enqueue_session_save_now();
                 }
 
                 // Check each window for autosave
@@ -578,72 +703,30 @@ impl WindowManager {
             }
 
             WindowManagerMessage::SaveSessionAndClose => {
-                // Save session synchronously and exit
-                self.save_session_sync();
+                // Flush session save (async worker) and exit
+                self.flush_session_save_and_wait(Duration::from_millis(750));
                 iced::exit()
+            }
+
+            WindowManagerMessage::SessionSaveTick => {
+                if let Some(deadline) = self.session_save_deadline {
+                    if Instant::now() >= deadline {
+                        self.session_save_deadline = None;
+                        self.enqueue_session_save_now();
+                    }
+                }
+                Task::none()
             }
         }
     }
 
     /// Save session and close the last window
     fn save_session_and_close(&mut self, window_id: window::Id) -> Task<WindowManagerMessage> {
-        // Save session state
-        self.save_session_sync();
+        // Flush session state (worker thread) before closing the last window
+        self.flush_session_save_and_wait(Duration::from_millis(750));
 
         // Close the window
         window::close(window_id)
-    }
-
-    /// Save session state synchronously
-    fn save_session_sync(&mut self) {
-        let mut window_states = Vec::new();
-
-        for (window_id, window) in self.windows.iter() {
-            let has_unsaved = window.is_modified();
-            let file_path = window.file_path().cloned();
-
-            // Determine autosave path
-            let autosave_path = if has_unsaved {
-                if let Some(ref path) = file_path {
-                    Some(self.session_manager.get_autosave_path(path))
-                } else {
-                    Some(self.session_manager.get_untitled_autosave_path(window.id))
-                }
-            } else {
-                None
-            };
-
-            // Save autosave if needed
-            if has_unsaved {
-                if let Some(ref autosave_path) = autosave_path {
-                    if let Ok(bytes) = window.get_autosave_bytes() {
-                        let _ = self.session_manager.save_autosave(autosave_path, &bytes);
-                    }
-                }
-            }
-
-            // Get cached geometry for this window
-            let geom = self.window_geometry.get(window_id).cloned().unwrap_or_default();
-
-            window_states.push(WindowState {
-                position: geom.position,
-                size: geom.size,
-                file_path,
-                edit_mode: edit_mode_to_string(&window.mode()),
-                has_unsaved_changes: has_unsaved,
-                autosave_path,
-            });
-        }
-
-        let session = SessionState {
-            version: 1,
-            windows: window_states,
-            app_version: env!("CARGO_PKG_VERSION").to_string(),
-        };
-
-        if let Err(e) = self.session_manager.save_session(&session) {
-            log::error!("Failed to save session: {}", e);
-        }
     }
 
     pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
@@ -707,6 +790,11 @@ impl WindowManager {
             // Autosave tick - check every second
             iced::time::every(std::time::Duration::from_secs(1)).map(|_| WindowManagerMessage::AutosaveTick),
         ];
+
+        // Debounced session-save tick (only when something scheduled)
+        if self.session_save_deadline.is_some() {
+            subs.push(iced::time::every(Duration::from_millis(50)).map(|_| WindowManagerMessage::SessionSaveTick));
+        }
 
         // Add animation tick subscription when any window needs animation
         if any_window_needs_animation(&self.windows) {
