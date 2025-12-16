@@ -66,6 +66,7 @@ pub use font_slot_manager_dialog::*;
 pub use font_tool::FontToolState;
 use icy_engine_edit::EditState;
 use icy_engine_edit::OperationType;
+use icy_engine_edit::UndoState;
 use icy_engine_edit::tools::{self, Tool, ToolEvent};
 pub use layer_view::*;
 pub use minimap_view::*;
@@ -205,6 +206,22 @@ pub enum AnsiEditorMessage {
     OpenTagListDialog,
     /// Tag list dialog messages
     TagListDialog(TagListDialogMessage),
+
+    // === Tag Context Menu Messages ===
+    /// Edit a tag (opens dialog in edit mode)
+    TagEdit(usize),
+    /// Delete a tag
+    TagDelete(usize),
+    /// Clone a tag
+    TagClone(usize),
+    /// Close tag context menu
+    TagContextMenuClose,
+    /// Delete all selected tags
+    TagDeleteSelected,
+    /// Start "Add Tag" mode - cursor shows TAG preview until user clicks
+    TagStartAddMode,
+    /// Cancel "Add Tag" mode
+    TagCancelAddMode,
 }
 
 /// Mouse events on the canvas (using text/buffer coordinates)
@@ -391,10 +408,20 @@ pub struct AnsiEditor {
     pub tag_list_dialog: Option<TagListDialog>,
     /// If true, we are dragging a tag
     tag_drag_active: bool,
-    /// Index of the tag being dragged
-    tag_drag_index: usize,
-    /// Tag position at start of drag
-    tag_drag_start_pos: icy_engine::Position,
+    /// Indices of tags being dragged (supports multi-selection)
+    tag_drag_indices: Vec<usize>,
+    /// Tag positions at start of drag (parallel to tag_drag_indices)
+    tag_drag_start_positions: Vec<icy_engine::Position>,
+    /// Selected tag indices for multi-selection
+    pub tag_selection: Vec<usize>,
+    /// Context menu state: Some((tag_index, screen_position)) when open
+    pub tag_context_menu: Option<(usize, icy_engine::Position)>,
+    /// If Some(index), we are adding a new tag and dragging it - stores the index of the new tag
+    pub tag_add_new_index: Option<usize>,
+    /// If true, we are doing a selection rectangle drag to select multiple tags
+    tag_selection_drag_active: bool,
+    /// Atomic undo guard for tag drag operations
+    tag_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
     paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
@@ -810,8 +837,13 @@ impl AnsiEditor {
             tag_dialog: None,
             tag_list_dialog: None,
             tag_drag_active: false,
-            tag_drag_index: 0,
-            tag_drag_start_pos: icy_engine::Position::default(),
+            tag_drag_indices: Vec::new(),
+            tag_drag_start_positions: Vec::new(),
+            tag_selection: Vec::new(),
+            tag_context_menu: None,
+            tag_add_new_index: None,
+            tag_selection_drag_active: false,
+            tag_drag_undo: None,
 
             paint_undo: None,
             paint_last_pos: None,
@@ -1611,6 +1643,9 @@ impl AnsiEditor {
                         let placement = dialog.placement;
                         let pos_x = dialog.pos_x.trim().to_string();
                         let pos_y = dialog.pos_y.trim().to_string();
+                        let edit_index = dialog.edit_index;
+                        let tag_length = dialog.length.unwrap_or(0);
+                        let from_selection = dialog.from_selection;
                         self.tag_dialog = None;
 
                         if preview.is_empty() {
@@ -1630,35 +1665,183 @@ impl AnsiEditor {
                             preview,
                             replacement_value,
                             position,
-                            length: 0,
+                            length: tag_length,
                             alignment: std::fmt::Alignment::Left,
                             tag_placement: placement.to_engine(),
                             tag_role: TagRole::Displaycode,
                             attribute,
                         };
 
-                        if let Err(err) = self.with_edit_state(|state| {
-                            let size = state.get_buffer().size();
-                            let max_x = (size.width - 1).max(0);
-                            let max_y = (size.height - 1).max(0);
+                        if let Some(index) = edit_index {
+                            // Edit existing tag
+                            if let Err(err) = self.with_edit_state(|state| {
+                                let size = state.get_buffer().size();
+                                let max_x = (size.width - 1).max(0);
+                                let max_y = (size.height - 1).max(0);
 
-                            let mut new_tag = new_tag;
-                            new_tag.position.x = new_tag.position.x.clamp(0, max_x);
-                            new_tag.position.y = new_tag.position.y.clamp(0, max_y);
+                                let mut new_tag = new_tag;
+                                new_tag.position.x = new_tag.position.x.clamp(0, max_x);
+                                new_tag.position.y = new_tag.position.y.clamp(0, max_y);
 
-                            if !state.get_buffer().show_tags {
-                                state.show_tags(true)?;
+                                state.update_tag(new_tag, index)
+                            }) {
+                                log::warn!("Failed to update tag: {}", err);
+                                return Task::none();
                             }
-                            state.add_new_tag(new_tag)
-                        }) {
-                            log::warn!("Failed to add tag: {}", err);
-                            return Task::none();
-                        }
+                            self.handle_tool_event(ToolEvent::Commit("Edit tag".to_string()));
+                        } else {
+                            // Add new tag
+                            if let Err(err) = self.with_edit_state(|state| {
+                                let size = state.get_buffer().size();
+                                let max_x = (size.width - 1).max(0);
+                                let max_y = (size.height - 1).max(0);
 
-                        self.handle_tool_event(ToolEvent::Commit("Add tag".to_string()));
+                                let mut new_tag = new_tag;
+                                new_tag.position.x = new_tag.position.x.clamp(0, max_x);
+                                new_tag.position.y = new_tag.position.y.clamp(0, max_y);
+
+                                if !state.get_buffer().show_tags {
+                                    state.show_tags(true)?;
+                                }
+                                state.add_new_tag(new_tag)?;
+
+                                // Clear selection if tag was created from selection
+                                if from_selection {
+                                    let _ = state.clear_selection();
+                                }
+                                Ok::<(), icy_engine::EngineError>(())
+                            }) {
+                                log::warn!("Failed to add tag: {}", err);
+                                return Task::none();
+                            }
+                            self.handle_tool_event(ToolEvent::Commit("Add tag".to_string()));
+                        }
+                        // Update tag overlays
+                        self.update_tag_overlays();
                         Task::none()
                     }
                 }
+            }
+            AnsiEditorMessage::TagEdit(index) => {
+                self.tag_context_menu = None;
+                let tag = self.with_edit_state(|state| state.get_buffer().tags.get(index).cloned());
+                if let Some(tag) = tag {
+                    self.tag_list_dialog = None;
+                    self.tag_dialog = Some(TagDialog::edit(&tag, index));
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::TagDelete(index) => {
+                self.tag_context_menu = None;
+                if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
+                    log::warn!("Failed to remove tag: {}", err);
+                    return Task::none();
+                }
+                self.tag_selection.retain(|&i| i != index);
+                // Adjust indices for tags after the deleted one
+                for i in &mut self.tag_selection {
+                    if *i > index {
+                        *i -= 1;
+                    }
+                }
+                self.handle_tool_event(ToolEvent::Commit("Remove tag".to_string()));
+                self.update_tag_overlays();
+                Task::none()
+            }
+            AnsiEditorMessage::TagClone(index) => {
+                self.tag_context_menu = None;
+                if let Err(err) = self.with_edit_state(|state| state.clone_tag(index)) {
+                    log::warn!("Failed to clone tag: {}", err);
+                    return Task::none();
+                }
+                self.handle_tool_event(ToolEvent::Commit("Clone tag".to_string()));
+                self.update_tag_overlays();
+                Task::none()
+            }
+            AnsiEditorMessage::TagContextMenuClose => {
+                self.tag_context_menu = None;
+                Task::none()
+            }
+            AnsiEditorMessage::TagDeleteSelected => {
+                self.tag_context_menu = None;
+                // Delete tags in reverse order to keep indices valid
+                let mut indices: Vec<usize> = self.tag_selection.clone();
+                indices.sort_by(|a, b| b.cmp(a)); // Sort descending
+                for index in indices {
+                    if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
+                        log::warn!("Failed to remove tag {}: {}", index, err);
+                    }
+                }
+                let count = self.tag_selection.len();
+                self.tag_selection.clear();
+                self.handle_tool_event(ToolEvent::Commit(format!("Remove {} tags", count)));
+                self.update_tag_overlays();
+                Task::none()
+            }
+            AnsiEditorMessage::TagStartAddMode => {
+                // Create a new tag immediately and start dragging it
+                self.tag_context_menu = None;
+                
+                // Generate unique tag name
+                let next_tag_name = self.generate_next_tag_name();
+                let attribute = self.with_edit_state(|state| state.get_caret().attribute);
+                
+                // Create new tag at origin (will be moved by drag)
+                let new_tag = icy_engine::Tag {
+                    position: icy_engine::Position::default(),
+                    length: next_tag_name.len(),
+                    preview: next_tag_name,
+                    is_enabled: true,
+                    alignment: std::fmt::Alignment::Left,
+                    replacement_value: String::new(),
+                    tag_placement: icy_engine::TagPlacement::InText,
+                    tag_role: icy_engine::TagRole::Displaycode,
+                    attribute,
+                };
+                
+                // Start atomic undo for the add operation
+                self.tag_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Add tag")));
+                
+                // Add the tag
+                if let Err(err) = self.with_edit_state(|state| {
+                    if !state.get_buffer().show_tags {
+                        let _ = state.show_tags(true);
+                    }
+                    state.add_new_tag(new_tag)
+                }) {
+                    log::warn!("Failed to add tag: {}", err);
+                    self.tag_drag_undo = None;
+                    return Task::none();
+                }
+                
+                // Get the index of the new tag and start dragging it
+                let new_index = self.with_edit_state(|state| state.get_buffer().tags.len() - 1);
+                self.tag_add_new_index = Some(new_index);
+                self.tag_selection.clear();
+                self.tag_selection.push(new_index);
+                self.tag_drag_active = true;
+                self.tag_drag_indices = vec![new_index];
+                self.tag_drag_start_positions = vec![icy_engine::Position::default()];
+                self.is_dragging = true;
+                
+                self.update_tag_overlays();
+                Task::none()
+            }
+            AnsiEditorMessage::TagCancelAddMode => {
+                // Cancel adding tag - undo the add operation
+                if self.tag_add_new_index.is_some() {
+                    self.tag_add_new_index = None;
+                    self.tag_drag_active = false;
+                    self.tag_drag_indices.clear();
+                    self.tag_drag_start_positions.clear();
+                    self.is_dragging = false;
+                    // Drop the undo guard and then undo to remove the tag
+                    self.tag_drag_undo = None;
+                    // Undo the add operation
+                    let _ = self.with_edit_state(|state| state.undo());
+                    self.update_tag_overlays();
+                }
+                Task::none()
             }
             AnsiEditorMessage::ToolPanel(msg) => {
                 // Handle tool panel messages
@@ -1854,6 +2037,29 @@ impl AnsiEditor {
                     TopToolbarMessage::OpenTagList => {
                         // Delegate to the existing OpenTagListDialog handler
                         return self.update(AnsiEditorMessage::OpenTagListDialog);
+                    }
+                    TopToolbarMessage::StartAddTag => {
+                        // Toggle add tag mode or start it
+                        if self.tag_add_new_index.is_some() {
+                            // Already in add mode - toggle off (cancel)
+                            return self.update(AnsiEditorMessage::TagCancelAddMode);
+                        } else {
+                            return self.update(AnsiEditorMessage::TagStartAddMode);
+                        }
+                    }
+                    TopToolbarMessage::EditSelectedTag => {
+                        // Edit the first selected tag
+                        if let Some(&idx) = self.tag_selection.first() {
+                            return self.update(AnsiEditorMessage::TagEdit(idx));
+                        }
+                        Task::none()
+                    }
+                    TopToolbarMessage::DeleteSelectedTags => {
+                        // Delete all selected tags
+                        if !self.tag_selection.is_empty() {
+                            return self.update(AnsiEditorMessage::TagDeleteSelected);
+                        }
+                        Task::none()
                     }
                     TopToolbarMessage::ToggleFilled(v) => {
                         // Keep the tool variant in sync with the filled toggle.
@@ -2281,10 +2487,16 @@ impl AnsiEditor {
         self.canvas.set_layer_bounds(layer_bounds, true);
     }
 
+    /// Generate a unique tag name based on existing tags (TAG1, TAG2, etc.)
+    fn generate_next_tag_name(&mut self) -> String {
+        let tag_count = self.with_edit_state(|state| state.get_buffer().tags.len());
+        format!("TAG{}", tag_count + 1)
+    }
+
     /// Update tag rectangle overlays when Tag tool is active
     fn update_tag_overlays(&mut self) {
-        // First, get all the data we need
-        let (font_width, font_height, tag_data): (f32, f32, Vec<(icy_engine::Position, usize)>) = {
+        // First, get all the data we need (position, length, is_selected)
+        let (font_width, font_height, tag_data): (f32, f32, Vec<(icy_engine::Position, usize, bool)>) = {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
@@ -2297,15 +2509,21 @@ impl AnsiEditor {
             };
 
             // Access EditState to get tags and update overlay mask
-            let tags = if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                // First collect tag info
-                let tag_info: Vec<_> = edit_state.get_buffer().tags.iter().map(|tag| (tag.position, tag.len())).collect();
+            let mut tags = if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                // First collect tag info with selection state
+                let tag_info: Vec<_> = edit_state
+                    .get_buffer()
+                    .tags
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, tag)| (tag.position, tag.len(), self.tag_selection.contains(&idx)))
+                    .collect();
 
                 // Then update overlays
                 let overlays = edit_state.get_tool_overlay_mask_mut();
                 overlays.clear();
 
-                for (pos, len) in &tag_info {
+                for (pos, len, _) in &tag_info {
                     let rect = icy_engine::Rectangle::new(*pos, (*len as i32, 1).into());
                     overlays.add_rectangle(rect);
                 }
@@ -2324,15 +2542,15 @@ impl AnsiEditor {
     }
 
     /// Render tag overlay rectangles to the canvas
-    fn render_tag_overlay_to_canvas(&mut self, font_width: f32, font_height: f32, tag_data: &[(icy_engine::Position, usize)]) {
-        let overlay_rects: Vec<(f32, f32, f32, f32)> = tag_data
+    fn render_tag_overlay_to_canvas(&mut self, font_width: f32, font_height: f32, tag_data: &[(icy_engine::Position, usize, bool)]) {
+        let overlay_rects: Vec<(f32, f32, f32, f32, bool)> = tag_data
             .iter()
-            .map(|(pos, len)| {
+            .map(|(pos, len, is_selected)| {
                 let x = pos.x as f32 * font_width;
                 let y = pos.y as f32 * font_height;
                 let w = *len as f32 * font_width;
                 let h = font_height;
-                (x, y, w, h)
+                (x, y, w, h, *is_selected)
             })
             .collect();
 
@@ -2348,7 +2566,7 @@ impl AnsiEditor {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
 
-        for (x, y, w, h) in &overlay_rects {
+        for (x, y, w, h, _) in &overlay_rects {
             min_x = min_x.min(*x);
             min_y = min_y.min(*y);
             max_x = max_x.max(x + w);
@@ -2363,16 +2581,23 @@ impl AnsiEditor {
             return;
         }
 
-        // Create RGBA buffer for overlay - translucent blue rectangles
+        // Create RGBA buffer for overlay
         let mut rgba = vec![0u8; (total_w * total_h * 4) as usize];
 
-        for (x, y, w, h) in &overlay_rects {
+        for (x, y, w, h, is_selected) in &overlay_rects {
             let local_x = (x - min_x) as u32;
             let local_y = (y - min_y) as u32;
             let rect_w = *w as u32;
             let rect_h = *h as u32;
 
-            // Draw border (translucent blue)
+            // Different colors for selected vs non-selected tags
+            let (r, g, b, a) = if *is_selected {
+                (255, 200, 50, 255) // Yellow/orange for selected
+            } else {
+                (100, 150, 255, 200) // Translucent blue for normal
+            };
+
+            // Draw border
             for py in local_y..(local_y + rect_h).min(total_h) {
                 for px in local_x..(local_x + rect_w).min(total_w) {
                     // Border pixels only
@@ -2382,10 +2607,10 @@ impl AnsiEditor {
                     if is_border {
                         let idx = ((py * total_w + px) * 4) as usize;
                         if idx + 3 < rgba.len() {
-                            rgba[idx] = 100; // R
-                            rgba[idx + 1] = 150; // G
-                            rgba[idx + 2] = 255; // B
-                            rgba[idx + 3] = 200; // A
+                            rgba[idx] = r;
+                            rgba[idx + 1] = g;
+                            rgba[idx + 2] = b;
+                            rgba[idx + 3] = a;
                         }
                     }
                 }
@@ -2394,6 +2619,69 @@ impl AnsiEditor {
 
         self.canvas
             .set_tool_overlay_mask(Some((rgba, total_w, total_h)), Some((min_x, min_y, total_w as f32, total_h as f32)));
+    }
+
+    /// Update the selection rectangle overlay during tag selection drag
+    fn update_tag_selection_drag_overlay(&mut self) {
+        // Get font dimensions
+        let (font_width, font_height) = {
+            let screen = self.screen.lock();
+            let font = screen.font(0);
+            if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0)
+            }
+        };
+
+        // Calculate selection rectangle in pixel coordinates
+        let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x) as f32 * font_width;
+        let max_x = (self.drag_pos.start.x.max(self.drag_pos.cur.x) + 1) as f32 * font_width;
+        let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y) as f32 * font_height;
+        let max_y = (self.drag_pos.start.y.max(self.drag_pos.cur.y) + 1) as f32 * font_height;
+
+        let w = (max_x - min_x).ceil() as u32;
+        let h = (max_y - min_y).ceil() as u32;
+
+        if w == 0 || h == 0 {
+            return;
+        }
+
+        // Create RGBA buffer for selection rectangle overlay (dashed border, translucent fill)
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+
+        // Draw translucent fill and dashed border
+        for py in 0..h {
+            for px in 0..w {
+                let idx = ((py * w + px) * 4) as usize;
+                if idx + 3 >= rgba.len() {
+                    continue;
+                }
+
+                let is_border = px == 0 || px == w - 1 || py == 0 || py == h - 1;
+                
+                if is_border {
+                    // Dashed border pattern (every 4 pixels)
+                    let is_dash = ((px + py) / 4) % 2 == 0;
+                    if is_dash {
+                        rgba[idx] = 255;     // R - white
+                        rgba[idx + 1] = 255; // G
+                        rgba[idx + 2] = 255; // B
+                        rgba[idx + 3] = 200; // A
+                    }
+                } else {
+                    // Translucent fill
+                    rgba[idx] = 100;     // R
+                    rgba[idx + 1] = 150; // G
+                    rgba[idx + 2] = 255; // B - blue tint
+                    rgba[idx + 3] = 30;  // A - very translucent
+                }
+            }
+        }
+
+        self.canvas
+            .set_tool_overlay_mask(Some((rgba, w, h)), Some((min_x, min_y, w as f32, h as f32)));
     }
 
     /// Handle TDF font selector messages
@@ -2548,30 +2836,6 @@ impl AnsiEditor {
             if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
                 self.char_selector_target = None;
                 return;
-            }
-        }
-
-        // Click and Font tools handle character input directly, skip tool shortcuts
-        let skip_tool_shortcuts = matches!(self.current_tool, Tool::Click | Tool::Font);
-
-        // Check for tool shortcuts (single character keys) - but not when in text input mode
-        if !skip_tool_shortcuts && !modifiers.control() && !modifiers.alt() {
-            if let iced::keyboard::Key::Character(c) = &key {
-                if let Some(ch) = c.chars().next() {
-                    // Find tool with this shortcut
-                    for (slot_idx, pair) in tools::TOOL_SLOTS.iter().enumerate() {
-                        if pair.primary.shortcut() == Some(ch) {
-                            self.change_tool(tools::click_tool_slot(slot_idx, self.current_tool));
-                            self.tool_panel.set_tool(self.current_tool);
-                            return;
-                        }
-                        if pair.secondary.shortcut() == Some(ch) {
-                            self.change_tool(tools::click_tool_slot(slot_idx, self.current_tool));
-                            self.tool_panel.set_tool(self.current_tool);
-                            return;
-                        }
-                    }
-                }
             }
         }
 
@@ -2730,6 +2994,20 @@ impl AnsiEditor {
                 ToolEvent::Commit("Type character".to_string())
             }
             Named::Escape => {
+                // Cancel tag add mode if active
+                if self.tag_add_new_index.is_some() {
+                    self.tag_add_new_index = None;
+                    self.tag_drag_active = false;
+                    self.tag_drag_indices.clear();
+                    self.tag_drag_start_positions.clear();
+                    self.is_dragging = false;
+                    // Drop the undo guard and then undo to remove the tag
+                    self.tag_drag_undo = None;
+                    let _ = self.with_edit_state(|state| state.undo());
+                    self.update_tag_overlays();
+                    return ToolEvent::Redraw;
+                }
+                
                 // Clear selection
                 self.with_edit_state(|state| {
                     let _ = state.clear_selection();
@@ -3033,12 +3311,20 @@ impl AnsiEditor {
         pos: icy_engine::Position,
         pixel_position: (f32, f32),
         button: iced::mouse::Button,
-        _modifiers: icy_engine::KeyModifiers,
+        modifiers: icy_engine::KeyModifiers,
     ) -> ToolEvent {
         match self.current_tool {
             Tool::Tag => {
+                // Close context menu on any click
+                self.tag_context_menu = None;
+
                 if button == iced::mouse::Button::Left {
-                    // Check if clicking on an existing tag to start drag
+                    // If in add mode (dragging new tag), do nothing on click - already dragging
+                    if self.tag_add_new_index.is_some() {
+                        return ToolEvent::None;
+                    }
+                    
+                    // Check if clicking on an existing tag
                     let tag_at_pos = self.with_edit_state(|state| {
                         state
                             .get_buffer()
@@ -3050,22 +3336,90 @@ impl AnsiEditor {
                     });
 
                     if let Some((index, tag_pos)) = tag_at_pos {
-                        // Start tag drag
+                        // Handle Ctrl+Click for multi-selection toggle (meta = Cmd on macOS)
+                        if modifiers.ctrl || modifiers.meta {
+                            if self.tag_selection.contains(&index) {
+                                self.tag_selection.retain(|&i| i != index);
+                            } else {
+                                self.tag_selection.push(index);
+                            }
+                            self.update_tag_overlays();
+                            return ToolEvent::Redraw;
+                        }
+
+                        // Check if this tag is part of multi-selection
+                        if self.tag_selection.contains(&index) {
+                            // Drag all selected tags - clone selection to avoid borrow conflict
+                            let selection = self.tag_selection.clone();
+                            let selected_positions: Vec<(usize, icy_engine::Position)> = self.with_edit_state(|state| {
+                                selection
+                                    .iter()
+                                    .filter_map(|&i| state.get_buffer().tags.get(i).map(|t| (i, t.position)))
+                                    .collect()
+                            });
+                            self.tag_drag_indices = selected_positions.iter().map(|(i, _)| *i).collect();
+                            self.tag_drag_start_positions = selected_positions.iter().map(|(_, p)| *p).collect();
+                        } else {
+                            // Clear selection and drag single tag
+                            self.tag_selection.clear();
+                            self.tag_selection.push(index);
+                            self.tag_drag_indices = vec![index];
+                            self.tag_drag_start_positions = vec![tag_pos];
+                        }
+
                         self.tag_drag_active = true;
-                        self.tag_drag_index = index;
-                        self.tag_drag_start_pos = tag_pos;
                         self.is_dragging = true;
                         self.drag_pos.start = pos;
                         self.drag_pos.cur = pos;
                         self.drag_pos.start_abs = pos;
                         self.drag_pos.cur_abs = pos;
+                        // Start atomic undo for drag operation
+                        let desc = if self.tag_selection.len() > 1 {
+                            format!("Move {} tags", self.tag_selection.len())
+                        } else {
+                            "Move tag".to_string()
+                        };
+                        self.tag_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
+                        self.update_tag_overlays();
                         return ToolEvent::Redraw;
                     }
 
-                    // No tag at position - open new tag dialog
+                    // No tag at position - start a selection drag to select multiple tags
+                    self.tag_selection.clear();
                     self.tag_list_dialog = None;
-                    self.tag_dialog = Some(TagDialog::new(pos));
+                    self.update_tag_overlays();
+
+                    // Start selection rectangle drag
+                    self.tag_selection_drag_active = true;
+                    self.is_dragging = true;
+                    self.drag_pos.start = pos;
+                    self.drag_pos.cur = pos;
+                    self.drag_pos.start_abs = pos;
+                    self.drag_pos.cur_abs = pos;
+                    
                     ToolEvent::Redraw
+                } else if button == iced::mouse::Button::Right {
+                    // Right-click: open context menu if clicking on a tag
+                    let tag_at_pos = self.with_edit_state(|state| {
+                        state
+                            .get_buffer()
+                            .tags
+                            .iter()
+                            .enumerate()
+                            .find(|(_, t)| t.contains(pos))
+                            .map(|(i, _)| i)
+                    });
+
+                    if let Some(index) = tag_at_pos {
+                        // If the tag is not in selection, select only this tag
+                        if !self.tag_selection.contains(&index) {
+                            self.tag_selection.clear();
+                            self.tag_selection.push(index);
+                        }
+                        self.tag_context_menu = Some((index, pos));
+                        return ToolEvent::Redraw;
+                    }
+                    ToolEvent::None
                 } else {
                     ToolEvent::None
                 }
@@ -3552,12 +3906,69 @@ impl AnsiEditor {
 
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
-        // Handle tag drag completion
+        // Handle new tag placement completion
+        if let Some(new_tag_index) = self.tag_add_new_index.take() {
+            self.tag_drag_active = false;
+            self.is_dragging = false;
+            self.tag_drag_indices.clear();
+            self.tag_drag_start_positions.clear();
+            // Finalize the atomic undo
+            self.tag_drag_undo = None;
+            
+            // Open edit dialog for the newly placed tag
+            let tag = self.with_edit_state(|state| state.get_buffer().tags.get(new_tag_index).cloned());
+            if let Some(tag) = tag {
+                self.tag_dialog = Some(TagDialog::edit(&tag, new_tag_index));
+            }
+            self.update_tag_overlays();
+            return ToolEvent::Redraw;
+        }
+        
+        // Handle regular tag drag completion
         if self.tag_drag_active {
             self.tag_drag_active = false;
             self.is_dragging = false;
-            // Tag position already updated during drag via move_tag
-            return ToolEvent::Commit("Move tag".to_string());
+            self.tag_drag_indices.clear();
+            self.tag_drag_start_positions.clear();
+            // End atomic undo (drop the guard to finalize)
+            self.tag_drag_undo = None;
+            return ToolEvent::None;
+        }
+
+        // Handle tag selection drag completion - select all tags in the rectangle
+        if self.tag_selection_drag_active {
+            self.tag_selection_drag_active = false;
+            self.is_dragging = false;
+            
+            // Calculate selection rectangle
+            let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x);
+            let max_x = self.drag_pos.start.x.max(self.drag_pos.cur.x);
+            let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y);
+            let max_y = self.drag_pos.start.y.max(self.drag_pos.cur.y);
+            
+            // Find all tags that intersect with the selection rectangle
+            self.tag_selection.clear();
+            let selected_indices: Vec<usize> = self.with_edit_state(|state| {
+                state.get_buffer().tags.iter().enumerate()
+                    .filter(|(_, tag)| {
+                        let tag_min_x = tag.position.x;
+                        let tag_max_x = tag.position.x + tag.len() as i32 - 1;
+                        let tag_y = tag.position.y;
+                        
+                        // Check if tag intersects with selection rectangle
+                        tag_y >= min_y && tag_y <= max_y &&
+                        tag_max_x >= min_x && tag_min_x <= max_x
+                    })
+                    .map(|(i, _)| i)
+                    .collect()
+            });
+            self.tag_selection = selected_indices;
+            
+            // Clear selection overlay
+            self.clear_tool_overlay();
+            self.update_tag_overlays();
+            
+            return ToolEvent::Redraw;
         }
 
         // Handle layer drag completion
@@ -3757,10 +4168,43 @@ impl AnsiEditor {
 
         // Tag tool: always show tag overlays (even when not dragging)
         if self.current_tool == Tool::Tag {
-            self.update_tag_overlays();
-            if !self.is_dragging {
+            // In add mode - update the new tag's position as we drag
+            if self.tag_add_new_index.is_some() && self.tag_drag_active {
+                // Move the new tag to current mouse position
+                self.drag_pos.cur = pos;
+                self.drag_pos.cur_abs = pos;
+                
+                let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
+                let moves: Vec<(usize, icy_engine::Position)> = self
+                    .tag_drag_indices
+                    .iter()
+                    .zip(self.tag_drag_start_positions.iter())
+                    .map(|(&tag_idx, &start_pos)| (tag_idx, start_pos + delta))
+                    .collect();
+
+                self.with_edit_state(|state| {
+                    for (tag_idx, new_pos) in moves {
+                        let _ = state.move_tag(tag_idx, new_pos);
+                    }
+                    state.mark_dirty();
+                });
+                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grabbing);
+                self.update_tag_overlays();
                 return ToolEvent::Redraw;
             }
+            
+            self.update_tag_overlays();
+            if !self.is_dragging {
+                // Check if hovering over a tag - show move cursor
+                let hovering_tag = self.with_edit_state(|state| state.get_buffer().tags.iter().any(|t| t.contains(pos)));
+                if hovering_tag {
+                    *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
+                } else {
+                    *self.canvas.terminal.cursor_icon.write() = None;
+                }
+                return ToolEvent::Redraw;
+            }
+            // Continue to drag handling below if dragging
         }
 
         if !self.is_dragging {
@@ -3769,8 +4213,8 @@ impl AnsiEditor {
                 let selection_drag = self.get_selection_drag_at(pos);
                 let cursor = selection_drag.to_cursor_interaction();
                 *self.canvas.terminal.cursor_icon.write() = cursor;
-            } else {
-                // Reset cursor for other tools
+            } else if self.current_tool != Tool::Tag {
+                // Reset cursor for other tools (Tag tool handles its own cursor above)
                 *self.canvas.terminal.cursor_icon.write() = None;
             }
 
@@ -3858,20 +4302,37 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Tag => {
-                // Handle tag drag
-                if self.tag_drag_active {
+                // Handle tag drag (multi-selection)
+                if self.tag_drag_active && !self.tag_drag_indices.is_empty() {
                     let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-                    let new_pos = self.tag_drag_start_pos + delta;
-                    let tag_idx = self.tag_drag_index;
 
+                    // Collect moves to apply (to avoid borrow conflict)
+                    let moves: Vec<(usize, icy_engine::Position)> = self
+                        .tag_drag_indices
+                        .iter()
+                        .zip(self.tag_drag_start_positions.iter())
+                        .map(|(&tag_idx, &start_pos)| (tag_idx, start_pos + delta))
+                        .collect();
+
+                    // Apply all moves
                     self.with_edit_state(|state| {
-                        let _ = state.move_tag(tag_idx, new_pos);
+                        for (tag_idx, new_pos) in moves {
+                            let _ = state.move_tag(tag_idx, new_pos);
+                        }
                         state.mark_dirty();
                     });
                     // Update tag overlays
                     self.update_tag_overlays();
                     return ToolEvent::Redraw;
                 }
+                
+                // Handle selection rectangle drag
+                if self.tag_selection_drag_active {
+                    // Draw selection rectangle overlay
+                    self.update_tag_selection_drag_overlay();
+                    return ToolEvent::Redraw;
+                }
+                
                 ToolEvent::None
             }
             _ => ToolEvent::None,
@@ -4294,6 +4755,25 @@ impl AnsiEditor {
                 .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg, &Theme::Dark)
                 .map(AnsiEditorMessage::FKeyToolbar)
         } else {
+            // Get selected tag info for Tag tool toolbar
+            let selected_tag_info = if self.current_tool == Tool::Tag && self.tag_selection.len() == 1 {
+                let idx = self.tag_selection[0];
+                let mut screen_guard = self.screen.lock();
+                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                    state.get_buffer().tags.get(idx).map(|tag| {
+                        top_toolbar::SelectedTagInfo {
+                            index: idx,
+                            position: tag.position,
+                            replacement: tag.replacement_value.clone(),
+                        }
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             self.top_toolbar
                 .view(
                     self.current_tool,
@@ -4306,6 +4786,9 @@ impl AnsiEditor {
                     &palette,
                     font_panel_info.as_ref(),
                     pipette_info.as_ref(),
+                    self.tag_add_new_index.is_some(),
+                    selected_tag_info,
+                    self.tag_selection.len(),
                 )
                 .map(AnsiEditorMessage::TopToolbar)
         };
@@ -4350,8 +4833,10 @@ impl AnsiEditor {
             (size.width as f32, size.height as f32)
         };
 
-        // Build the center area with optional line numbers overlay
-        let center_area: Element<'_, AnsiEditorMessage> = if self.show_line_numbers {
+        // Build the center area with optional line numbers overlay and tag context menu
+        let mut center_layers: Vec<Element<'_, AnsiEditorMessage>> = vec![container(canvas).width(Length::Fill).height(Length::Fill).into()];
+
+        if self.show_line_numbers {
             // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
             let line_numbers_overlay = line_numbers::line_numbers_overlay(
                 self.canvas.terminal.render_info.clone(),
@@ -4364,14 +4849,19 @@ impl AnsiEditor {
                 scroll_x,
                 scroll_y,
             );
+            center_layers.push(line_numbers_overlay);
+        }
 
-            iced::widget::stack![container(canvas).width(Length::Fill).height(Length::Fill), line_numbers_overlay,]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            container(canvas).width(Length::Fill).height(Length::Fill).into()
-        };
+        // Add tag context menu overlay if active
+        if let Some((tag_index, _menu_pos)) = self.tag_context_menu {
+            let context_menu = self.build_tag_context_menu(tag_index);
+            center_layers.push(context_menu);
+        }
+
+        let center_area: Element<'_, AnsiEditorMessage> = iced::widget::stack(center_layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
 
         // Main layout:
         // Left column: toolbar on top, then left sidebar + canvas
@@ -4439,13 +4929,110 @@ impl AnsiEditor {
         }
     }
 
+    /// Build the tag context menu overlay
+    fn build_tag_context_menu(&self, tag_index: usize) -> Element<'_, AnsiEditorMessage> {
+        use iced::widget::{button, text, mouse_area};
+        use icy_engine_gui::ui::TEXT_SIZE_NORMAL;
+
+        let edit_btn = button(text("Edit").size(TEXT_SIZE_NORMAL))
+            .padding([4, 12])
+            .style(iced::widget::button::text)
+            .on_press(AnsiEditorMessage::TagEdit(tag_index));
+
+        let clone_btn = button(text("Clone").size(TEXT_SIZE_NORMAL))
+            .padding([4, 12])
+            .style(iced::widget::button::text)
+            .on_press(AnsiEditorMessage::TagClone(tag_index));
+
+        let delete_btn = button(text("Delete").size(TEXT_SIZE_NORMAL))
+            .padding([4, 12])
+            .style(iced::widget::button::text)
+            .on_press(AnsiEditorMessage::TagDelete(tag_index));
+
+        let mut menu_items: Vec<Element<'_, AnsiEditorMessage>> = vec![
+            edit_btn.into(),
+            clone_btn.into(),
+            delete_btn.into(),
+        ];
+
+        // Add "Delete Selected" option if multiple tags are selected
+        if self.tag_selection.len() > 1 {
+            let delete_selected_btn = button(text(format!("Delete {} Selected", self.tag_selection.len())).size(TEXT_SIZE_NORMAL))
+                .padding([4, 12])
+                .style(iced::widget::button::text)
+                .on_press(AnsiEditorMessage::TagDeleteSelected);
+            menu_items.push(delete_selected_btn.into());
+        }
+
+        let menu_content = container(column(menu_items).spacing(2).width(Length::Fixed(150.0)))
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style {
+                    background: Some(iced::Background::Color(palette.background.weak.color)),
+                    border: iced::Border {
+                        color: palette.background.strong.color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                }
+            })
+            .padding(4);
+
+        // Get menu position from the tag's screen position
+        let (menu_x, menu_y) = if let Some((_, pos)) = self.tag_context_menu {
+            // Convert buffer position to screen pixels
+            let render_info = self.canvas.terminal.render_info.read();
+            let viewport = self.canvas.terminal.viewport.read();
+            let scale = render_info.display_scale;
+
+            // Get font dimensions
+            let (font_w, font_h) = {
+                let screen = self.screen.lock();
+                let size = screen.font_dimensions();
+                (size.width as f32, size.height as f32)
+            };
+
+            let x = ((pos.x as f32 - viewport.scroll_x) * font_w * scale) as f32;
+            let y = ((pos.y as f32 - viewport.scroll_y + 1.0) * font_h * scale) as f32;
+            (x, y)
+        } else {
+            (100.0, 100.0)
+        };
+
+        // Wrap in a mouse_area to handle clicks outside (close menu)
+        let menu_positioned = container(menu_content)
+            .padding(iced::Padding {
+                top: menu_y,
+                left: menu_x,
+                right: 0.0,
+                bottom: 0.0,
+            });
+
+        // Full-screen clickable area that closes the menu when clicked outside
+        let backdrop = mouse_area(
+            container(menu_positioned)
+                .width(Length::Fill)
+                .height(Length::Fill)
+        )
+        .on_press(AnsiEditorMessage::TagContextMenuClose);
+
+        backdrop.into()
+    }
+
     /// Sync UI components with the current edit state
-    /// Call this after operations that may change the palette
+    /// Call this after operations that may change the palette or tags
     pub fn sync_ui(&mut self) {
-        let (palette, format_mode) = self.with_edit_state(|state| (state.get_buffer().palette.clone(), state.get_format_mode()));
+        let (palette, format_mode, tag_count) = self.with_edit_state(|state| {
+            (state.get_buffer().palette.clone(), state.get_format_mode(), state.get_buffer().tags.len())
+        });
         let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.palette_grid.sync_palette(&palette, palette_limit);
         self.color_switcher.sync_palette(&palette);
+        // Clear invalid tag selections (tags may have been removed by undo)
+        self.tag_selection.retain(|&idx| idx < tag_count);
+        // Update tag overlays (tag positions may have changed due to undo/redo)
+        self.update_tag_overlays();
     }
 
     /// Refresh selection + selection-mask overlay data sent to the shader.

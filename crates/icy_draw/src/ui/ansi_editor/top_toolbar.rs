@@ -123,6 +123,23 @@ pub enum TopToolbarMessage {
     OpenFontDirectory,
     /// Open the tag list dialog
     OpenTagList,
+    /// Start "Add Tag" mode
+    StartAddTag,
+    /// Edit the selected tag
+    EditSelectedTag,
+    /// Delete the selected tag(s)
+    DeleteSelectedTags,
+}
+
+/// Information about a selected tag for the toolbar
+#[derive(Clone, Debug)]
+pub struct SelectedTagInfo {
+    /// Index of the selected tag
+    pub index: usize,
+    /// Position (x, y) of the tag
+    pub position: icy_engine::Position,
+    /// Replacement value of the tag
+    pub replacement: String,
 }
 
 /// Primary brush mode (exclusive).
@@ -300,6 +317,15 @@ impl TopToolbar {
             TopToolbarMessage::OpenTagList => {
                 // handled at a higher level (AnsiEditor)
             }
+            TopToolbarMessage::StartAddTag => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::EditSelectedTag => {
+                // handled at a higher level (AnsiEditor)
+            }
+            TopToolbarMessage::DeleteSelectedTags => {
+                // handled at a higher level (AnsiEditor)
+            }
         }
         Task::none()
     }
@@ -317,6 +343,9 @@ impl TopToolbar {
         palette: &Palette,
         font_panel_info: Option<&FontPanelInfo>,
         pipette_info: Option<&PipettePanelInfo>,
+        tag_add_mode: bool,
+        selected_tag: Option<SelectedTagInfo>,
+        tag_selection_count: usize,
     ) -> Element<'_, TopToolbarMessage> {
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
@@ -328,7 +357,7 @@ impl TopToolbar {
             Tool::Fill => self.view_fill_panel(font, theme, caret_fg, caret_bg, palette),
             Tool::Pipette => self.view_pipette_panel(pipette_info),
             Tool::Font => self.view_font_panel(font_panel_info),
-            Tool::Tag => self.view_tag_panel(),
+            Tool::Tag => self.view_tag_panel(tag_add_mode, selected_tag, tag_selection_count),
         };
 
         container(content)
@@ -849,15 +878,73 @@ impl TopToolbar {
     }
 
     /// Tag tool panel
-    fn view_tag_panel(&self) -> Element<'_, TopToolbarMessage> {
+    fn view_tag_panel(&self, tag_add_mode: bool, selected_tag: Option<SelectedTagInfo>, tag_selection_count: usize) -> Element<'_, TopToolbarMessage> {
+        let add_button = if tag_add_mode {
+            // Active state - show as primary/pressed button
+            button(text("Add").size(TEXT_SIZE_SMALL))
+                .on_press(TopToolbarMessage::StartAddTag)
+                .style(button::primary)
+        } else {
+            // Normal state
+            button(text("Add").size(TEXT_SIZE_SMALL))
+                .on_press(TopToolbarMessage::StartAddTag)
+                .style(button::secondary)
+        };
+
+        let tags_button = button(text("Tags…").size(TEXT_SIZE_SMALL))
+            .on_press(TopToolbarMessage::OpenTagList)
+            .style(button::secondary);
+
+        // Left side: [Add] [Tags…]
+        let left_side = row![add_button, tags_button].spacing(SPACE_8);
+
+        // Check if tags are selected
+        let has_selected_tags = tag_selection_count > 0;
+
+        // Middle: selected tag info (if any)
+        let middle: Element<'_, TopToolbarMessage> = if tag_selection_count > 1 {
+            // Multiple tags selected - show count
+            text(format!("({} tags)", tag_selection_count)).size(TEXT_SIZE_SMALL).into()
+        } else if let Some(tag_info) = selected_tag {
+            // Single tag selected - show edit button and details
+            let edit_button = button(text("Edit").size(TEXT_SIZE_SMALL))
+                .on_press(TopToolbarMessage::EditSelectedTag)
+                .style(button::secondary);
+            
+            let pos_text = text(format!("({}, {})", tag_info.position.x, tag_info.position.y))
+                .size(TEXT_SIZE_SMALL);
+            
+            let replacement_text = if tag_info.replacement.is_empty() {
+                text("(no replacement)").size(TEXT_SIZE_SMALL)
+            } else {
+                text(tag_info.replacement).size(TEXT_SIZE_SMALL)
+            };
+
+            row![edit_button, pos_text, replacement_text]
+                .spacing(SPACE_8)
+                .into()
+        } else if tag_add_mode {
+            text("Click to place tag, ESC to cancel").size(TEXT_SIZE_SMALL).into()
+        } else {
+            text("").into()
+        };
+
+        // Right side: [Delete] (only if tag(s) selected)
+        let right_side: Element<'_, TopToolbarMessage> = if has_selected_tags {
+            button(text("Delete").size(TEXT_SIZE_SMALL))
+                .on_press(TopToolbarMessage::DeleteSelectedTags)
+                .style(button::danger)
+                .into()
+        } else {
+            Space::new().width(Length::Shrink).into()
+        };
+
         row![
-            text("Tag Tool").size(TEXT_SIZE_NORMAL),
+            left_side,
             Space::new().width(Length::Fixed(SPACE_16)),
-            text("Click an empty cell to add a tag").size(TEXT_SIZE_SMALL),
-            Space::new().width(Length::Fixed(SPACE_16)),
-            button(text("Tags…").size(TEXT_SIZE_SMALL))
-                .on_press(TopToolbarMessage::OpenTagList)
-                .style(button::secondary),
+            middle,
+            Space::new().width(Length::Fill),
+            right_side,
         ]
         .spacing(SPACE_8)
         .into()
