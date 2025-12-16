@@ -36,6 +36,7 @@ utf8parse = "0.2"
 unarc-rs = { workspace = true }
 
 zip = { workspace = true }
+bzip2 = { workspace = true }
 libyaff = { workspace = true }
 
 # Image export support

@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::Alignment;
+use std::io::{Cursor, Read, Write};
 
 use base64::{Engine, engine::general_purpose};
+use bzip2::read::BzDecoder;
+use bzip2::write::BzEncoder;
+use bzip2::Compression as BzCompression;
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
@@ -13,6 +17,19 @@ mod constants {
     pub const ICED_VERSION: u16 = 1;
     pub const ICED_HEADER_SIZEV0: usize = 19;
     pub const ICED_HEADER_SIZE: usize = 21;
+    
+    /// Compression methods for ICED format (stored in first byte of Type field)
+    pub mod compression {
+        pub const NONE: u8 = 0;
+        pub const BZ2: u8 = 1;
+    }
+    
+    /// Sixel image format (stored in second byte of Type field)
+    pub mod sixel_format {
+        pub const RAW_RGBA: u8 = 0;
+        pub const PNG: u8 = 1;
+    }
+    
     pub mod layer {
         pub const IS_VISIBLE: u32 = 0b0000_0001;
         pub const POS_LOCK: u32 = 0b0000_0010;
@@ -22,8 +39,6 @@ mod constants {
     }
 }
 
-/// maximum ztext chunk size from libpng source
-const MAX: u64 = 3_000_000;
 lazy_static::lazy_static! {
     static ref LAYER_CONTINUE_REGEX: Regex = Regex::new(r"LAYER_(\d+)~(\d+)").unwrap();
 }
@@ -50,28 +65,69 @@ fn build_icyd_record(keyword: &str, data: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn begin_icyd_record(keyword: &str) -> Result<(Vec<u8>, usize)> {
-    let keyword_bytes = keyword.as_bytes();
-    let keyword_len: u16 = keyword_bytes.len().try_into().map_err(|_| crate::EngineError::UnsupportedFormat {
-        description: format!("icYD keyword too long: {}", keyword_bytes.len()),
-    })?;
-
-    // Layout: [record_version: u8][keyword_len: u16 LE][keyword bytes][data_len: u32 LE][data bytes...]
-    let mut out = Vec::with_capacity(1 + 2 + keyword_bytes.len() + 4);
-    out.push(ICYD_RECORD_VERSION);
-    out.extend(u16::to_le_bytes(keyword_len));
-    out.extend(keyword_bytes);
-    let data_len_offset = out.len();
-    out.extend([0u8; 4]);
-    Ok((out, data_len_offset))
-}
-
 fn write_icyd_record<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &str, data: &[u8]) -> std::result::Result<(), IcedError> {
     let record = build_icyd_record(keyword, data).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
     writer
         .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
         .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
     Ok(())
+}
+
+/// Compresses data with bz2 and writes it as an icYD chunk
+fn write_compressed_chunk<W: std::io::Write>(
+    writer: &mut png::Writer<W>,
+    keyword: &str,
+    data: &[u8],
+) -> std::result::Result<(), IcedError> {
+    // Compress data with bz2
+    let mut encoder = BzEncoder::new(Vec::new(), BzCompression::best());
+    encoder.write_all(data).map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 compression failed: {e}")))?;
+    let compressed = encoder.finish().map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 finish failed: {e}")))?;
+    
+    let record = build_icyd_record(keyword, &compressed).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+    writer
+        .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
+        .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+    Ok(())
+}
+
+/// Encode sixel picture data as PNG
+fn encode_sixel_as_png(sixel: &Sixel) -> std::result::Result<Vec<u8>, IcedError> {
+    let width = sixel.width() as u32;
+    let height = sixel.height() as u32;
+    
+    let mut png_data = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_data, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Fast);
+        
+        let mut writer = encoder.write_header().map_err(|e| IcedError::ErrorEncodingZText(format!("PNG header failed: {e}")))?;
+        writer.write_image_data(&sixel.picture_data).map_err(|e| IcedError::ErrorEncodingZText(format!("PNG write failed: {e}")))?;
+    }
+    
+    Ok(png_data)
+}
+
+/// Decode PNG data back to RGBA picture data
+fn decode_png_to_rgba(png_data: &[u8]) -> Result<(i32, i32, Vec<u8>)> {
+    let cursor = Cursor::new(png_data);
+    let decoder = png::Decoder::new(cursor);
+    let mut reader = decoder.read_info().map_err(|e| crate::EngineError::UnsupportedFormat {
+        description: format!("PNG decode failed: {e}"),
+    })?;
+    
+    let buf_size = reader.output_buffer_size().ok_or_else(|| crate::EngineError::UnsupportedFormat {
+        description: "PNG output buffer size unknown".to_string(),
+    })?;
+    let mut buf = vec![0; buf_size];
+    let info = reader.next_frame(&mut buf).map_err(|e| crate::EngineError::UnsupportedFormat {
+        description: format!("PNG frame read failed: {e}"),
+    })?;
+    
+    buf.truncate(info.buffer_size());
+    Ok((info.width as i32, info.height as i32, buf))
 }
 
 fn extract_png_chunks_by_type(png: &[u8], wanted: [u8; 4]) -> Result<Vec<Vec<u8>>> {
@@ -135,7 +191,14 @@ fn parse_icyd_record(payload: &[u8]) -> Result<(String, &[u8])> {
     Ok((keyword.to_string(), &payload[data_start..data_end]))
 }
 
-fn process_icy_draw_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut TextBuffer, layer_resume_y: &mut HashMap<usize, i32>) -> Result<bool> {
+fn process_icy_draw_decoded_chunk(
+    keyword: &str,
+    bytes: &[u8],
+    result: &mut TextBuffer,
+    layer_resume_y: &mut HashMap<usize, i32>,
+    compression: &mut u8,
+    sixel_format: &mut u8,
+) -> Result<bool> {
     match keyword {
         "END" => return Ok(false),
         "ICED" => {
@@ -169,7 +232,11 @@ fn process_icy_draw_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut Text
             }
 
             let mut o: usize = 2; // skip version
-            o += 4; // skip type
+            
+            // Read Type field: [compression: u8][sixel_format: u8][reserved: u16]
+            *compression = bytes[o];
+            *sixel_format = bytes[o + 1];
+            o += 4; // skip full type field
             if bytes.len() < o + 2 {
                 return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
             }
@@ -569,9 +636,21 @@ fn process_icy_draw_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut Text
                 o += 4;
                 let horiz_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                 o += 4;
+                
+                // Check sixel format: PNG or raw RGBA
+                let picture_data = if *sixel_format == constants::sixel_format::PNG {
+                    // Decode PNG to RGBA
+                    let png_data = &bytes[o..o + length];
+                    let (_, _, rgba_data) = decode_png_to_rgba(png_data)?;
+                    rgba_data
+                } else {
+                    // Raw RGBA data
+                    bytes[o..].to_vec()
+                };
+                
                 layer
                     .sixels
-                    .push(Sixel::from_data((sixel_width, sixel_height), vert_scale, horiz_scale, bytes[o..].to_vec()));
+                    .push(Sixel::from_data((sixel_width, sixel_height), vert_scale, horiz_scale, picture_data));
                 result.layers.push(layer);
             } else {
                 if bytes.len() < o + length {
@@ -713,7 +792,10 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
 
     {
         let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
-        result.extend(u32::to_le_bytes(0)); // Type
+        // Type field: [compression: u8][sixel_format: u8][reserved: u16]
+        result.push(constants::compression::BZ2);  // compression method
+        result.push(constants::sixel_format::PNG); // sixel format
+        result.extend([0, 0]); // reserved
         // Modes
         result.extend(u16::to_le_bytes(buf.buffer_type.to_byte() as u16));
         result.push(buf.ice_mode.to_byte());
@@ -732,12 +814,12 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     if let Some(sauce) = &options.save_sauce {
         let mut sauce_vec: Vec<u8> = Vec::new();
         sauce.write(&mut sauce_vec)?;
-        write_icyd_record(&mut writer, "SAUCE", &sauce_vec)?;
+        write_compressed_chunk(&mut writer, "SAUCE", &sauce_vec)?;
     }
 
     if !buf.palette.is_default() {
         let pal_data = buf.palette.export_palette(&crate::FileFormat::Palette(crate::PaletteFormat::Ice)).unwrap();
-        write_icyd_record(&mut writer, "PALETTE", &pal_data)?;
+        write_compressed_chunk(&mut writer, "PALETTE", &pal_data)?;
     }
 
     for (k, v) in buf.font_iter() {
@@ -745,37 +827,37 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
         write_utf8_encoded_string(&mut font_data, &v.name());
         font_data.extend(v.to_psf2_bytes().unwrap());
 
-        write_icyd_record(&mut writer, &format!("FONT_{k}"), &font_data)?;
+        write_compressed_chunk(&mut writer, &format!("FONT_{k}"), &font_data)?;
     }
 
     for (i, layer) in buf.layers.iter().enumerate() {
-        let keyword = format!("LAYER_{i}");
-        let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-        write_utf8_encoded_string(&mut record, &layer.properties.title);
+        // Build layer data into a buffer first
+        let mut layer_data = Vec::new();
+        write_utf8_encoded_string(&mut layer_data, &layer.properties.title);
 
         match layer.role {
-            crate::Role::Image => record.push(1),
-            _ => record.push(0),
+            crate::Role::Image => layer_data.push(1),
+            _ => layer_data.push(0),
         }
 
         // Some extra bytes not yet used
-        record.extend([0, 0, 0, 0]);
+        layer_data.extend([0, 0, 0, 0]);
 
         let mode = match layer.properties.mode {
             crate::Mode::Normal => 0,
             crate::Mode::Chars => 1,
             crate::Mode::Attributes => 2,
         };
-        record.push(mode);
+        layer_data.push(mode);
 
         if let Some(color) = &layer.properties.color {
             let (r, g, b) = color.clone().rgb();
-            record.push(r);
-            record.push(g);
-            record.push(b);
-            record.push(0xFF);
+            layer_data.push(r);
+            layer_data.push(g);
+            layer_data.push(b);
+            layer_data.push(0xFF);
         } else {
-            record.extend([0, 0, 0, 0]);
+            layer_data.extend([0, 0, 0, 0]);
         }
 
         let mut flags = 0;
@@ -794,67 +876,33 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
         if layer.properties.is_alpha_channel_locked {
             flags |= constants::layer::ALPHA_LOCKED;
         }
-        record.extend(u32::to_le_bytes(flags));
-        record.push(layer.transparency);
+        layer_data.extend(u32::to_le_bytes(flags));
+        layer_data.push(layer.transparency);
 
-        record.extend(i32::to_le_bytes(layer.offset().x));
-        record.extend(i32::to_le_bytes(layer.offset().y));
+        layer_data.extend(i32::to_le_bytes(layer.offset().x));
+        layer_data.extend(i32::to_le_bytes(layer.offset().y));
 
-        record.extend(i32::to_le_bytes(layer.width()));
-        record.extend(i32::to_le_bytes(layer.height()));
-        record.extend(u16::to_le_bytes(layer.default_font_page as u16));
+        layer_data.extend(i32::to_le_bytes(layer.width()));
+        layer_data.extend(i32::to_le_bytes(layer.height()));
+        layer_data.extend(u16::to_le_bytes(layer.default_font_page as u16));
 
         if matches!(layer.role, crate::Role::Image) {
             let sixel = &layer.sixels[0];
-            let sixel_header_size = 16;
-            let len = sixel_header_size + sixel.picture_data.len() as u64;
-
-            let mut bytes_written = MAX.min(len);
-            record.extend(u64::to_le_bytes(bytes_written));
-
-            record.extend(i32::to_le_bytes(sixel.width()));
-            record.extend(i32::to_le_bytes(sixel.height()));
-            record.extend(i32::to_le_bytes(sixel.vertical_scale));
-            record.extend(i32::to_le_bytes(sixel.horizontal_scale));
-            bytes_written -= sixel_header_size;
-            record.extend(&sixel.picture_data[0..bytes_written as usize]);
-
-            let data_len: u32 = (record.len() - (data_len_offset + 4))
-                .try_into()
-                .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
-            record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
-            writer
-                .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
-                .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-
-            let mut chunk = 1;
-            let len = sixel.picture_data.len() as u64;
-            while len > bytes_written {
-                let next_bytes = MAX.min(len - bytes_written);
-                let layer_data = &sixel.picture_data[bytes_written as usize..(bytes_written as usize + next_bytes as usize)];
-                bytes_written += next_bytes;
-                let keyword = format!("LAYER_{i}~{chunk}");
-                let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-                record.extend_from_slice(layer_data);
-                let data_len: u32 = (record.len() - (data_len_offset + 4))
-                    .try_into()
-                    .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
-                record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
-                writer
-                    .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
-                    .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-                chunk += 1;
-            }
+            
+            // Encode sixel as PNG for better compression
+            let png_data = encode_sixel_as_png(sixel)?;
+            
+            layer_data.extend(u64::to_le_bytes(png_data.len() as u64));
+            layer_data.extend(i32::to_le_bytes(sixel.width()));
+            layer_data.extend(i32::to_le_bytes(sixel.height()));
+            layer_data.extend(i32::to_le_bytes(sixel.vertical_scale));
+            layer_data.extend(i32::to_le_bytes(sixel.horizontal_scale));
+            layer_data.extend(&png_data);
         } else {
-            let layer_len_offset = record.len();
-            record.extend(u64::to_le_bytes(0));
-
-            let mut y = 0;
-
-            while y < layer.height() {
-                if (record.len() - (data_len_offset + 4)) as u64 + layer.width() as u64 * 16 > MAX {
-                    break;
-                }
+            // Build char data
+            let mut char_data = Vec::new();
+            
+            for y in 0..layer.height() {
                 let real_length = get_invisible_line_length(layer, y);
                 for x in 0..real_length {
                     let ch = layer.char_at((x, y).into());
@@ -872,100 +920,36 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
                         false
                     };
 
-                    record.extend(u16::to_le_bytes(attr));
+                    char_data.extend(u16::to_le_bytes(attr));
                     if !ch.is_visible() {
                         continue;
                     }
 
                     if is_short {
-                        record.push(ch.ch as u8);
-                        record.push(ch.attribute.foreground_color as u8);
-                        record.push(ch.attribute.background_color as u8);
-                        record.push(ch.attribute.font_page);
+                        char_data.push(ch.ch as u8);
+                        char_data.push(ch.attribute.foreground_color as u8);
+                        char_data.push(ch.attribute.background_color as u8);
+                        char_data.push(ch.attribute.font_page);
                     } else {
-                        record.extend(u32::to_le_bytes(ch.ch as u32));
-                        record.extend(u32::to_le_bytes(ch.attribute.foreground_color));
-                        record.extend(u32::to_le_bytes(ch.attribute.background_color));
-                        record.push(ch.attribute.font_page);
-                        record.push(ch.attribute.ext_attr);
+                        char_data.extend(u32::to_le_bytes(ch.ch as u32));
+                        char_data.extend(u32::to_le_bytes(ch.attribute.foreground_color));
+                        char_data.extend(u32::to_le_bytes(ch.attribute.background_color));
+                        char_data.push(ch.attribute.font_page);
+                        char_data.push(ch.attribute.ext_attr);
                     }
                 }
                 if layer.width() > real_length {
-                    record.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
+                    char_data.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                 }
-                y += 1;
             }
-
-            let len = record.len();
-            record[layer_len_offset..(layer_len_offset + 8)].copy_from_slice(&u64::to_le_bytes((len - layer_len_offset - 8) as u64));
-
-            let data_len: u32 = (record.len() - (data_len_offset + 4))
-                .try_into()
-                .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
-            record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
-            writer
-                .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
-                .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-
-            let mut chunk = 1;
-            while y < layer.height() {
-                let keyword = format!("LAYER_{i}~{chunk}");
-                let (mut record, data_len_offset) = begin_icyd_record(&keyword).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-                while y < layer.height() {
-                    if (record.len() - (data_len_offset + 4)) as u64 + layer.width() as u64 * 16 > MAX {
-                        break;
-                    }
-                    let real_length = get_invisible_line_length(layer, y);
-
-                    for x in 0..real_length {
-                        let ch = layer.char_at((x, y).into());
-                        let mut attr = ch.attribute.attr;
-
-                        let is_short = if ch.is_visible()
-                            && ch.ch as u32 <= 255
-                            && ch.attribute.foreground_color <= 255
-                            && ch.attribute.background_color <= 255
-                            && ch.attribute.ext_attr == 0
-                        {
-                            attr |= attribute::SHORT_DATA;
-                            true
-                        } else {
-                            false
-                        };
-
-                        record.extend(u16::to_le_bytes(attr));
-                        if !ch.is_visible() {
-                            continue;
-                        }
-                        if is_short {
-                            record.push(ch.ch as u8);
-                            record.push(ch.attribute.foreground_color as u8);
-                            record.push(ch.attribute.background_color as u8);
-                            record.push(ch.attribute.font_page);
-                        } else {
-                            record.extend(u32::to_le_bytes(ch.ch as u32));
-                            record.extend(u32::to_le_bytes(ch.attribute.foreground_color));
-                            record.extend(u32::to_le_bytes(ch.attribute.background_color));
-                            record.push(ch.attribute.font_page);
-                            record.push(ch.attribute.ext_attr);
-                        }
-                    }
-                    if layer.width() > real_length {
-                        record.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
-                    }
-                    y += 1;
-                }
-
-                let data_len: u32 = (record.len() - (data_len_offset + 4))
-                    .try_into()
-                    .map_err(|_| IcedError::ErrorEncodingZText(format!("icYD payload too large: {}", record.len() - (data_len_offset + 4))))?;
-                record[data_len_offset..data_len_offset + 4].copy_from_slice(&u32::to_le_bytes(data_len));
-                writer
-                    .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
-                    .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
-                chunk += 1;
-            }
+            
+            layer_data.extend(u64::to_le_bytes(char_data.len() as u64));
+            layer_data.extend(char_data);
         }
+        
+        // Write the layer data with bz2 compression
+        let keyword = format!("LAYER_{i}");
+        write_compressed_chunk(&mut writer, &keyword, &layer_data)?;
     }
 
     if !buf.tags.is_empty() {
@@ -1021,7 +1005,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
             data.extend(&[0, 0, 0, 0]);
         }
 
-        write_icyd_record(&mut writer, "TAG", &data)?;
+        write_compressed_chunk(&mut writer, "TAG", &data)?;
     }
 
     write_icyd_record(&mut writer, "END", &[])?;
@@ -1058,6 +1042,10 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
 
     // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
     let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
+    
+    // Compression and sixel format from ICED header
+    let mut compression = constants::compression::NONE;
+    let mut sixel_format = constants::sixel_format::RAW_RGBA;
 
     let records = extract_png_chunks_by_type(data, ICYD_CHUNK_TYPE)?;
     if records.is_empty() {
@@ -1067,7 +1055,24 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     let mut is_running = true;
     for payload in records {
         let (keyword, bytes) = parse_icyd_record(&payload)?;
-        let keep_running = process_icy_draw_decoded_chunk(&keyword, bytes, &mut result, &mut layer_resume_y)?;
+        
+        // Decompress data if needed (except for ICED header and END which are never compressed)
+        let decompressed_data: Vec<u8>;
+        let actual_bytes: &[u8] = if keyword != "ICED" && keyword != "END" && compression == constants::compression::BZ2 {
+            let mut decoder = BzDecoder::new(bytes);
+            let mut buf = Vec::new();
+            decoder.read_to_end(&mut buf).map_err(|e| crate::EngineError::UnsupportedFormat {
+                description: format!("bz2 decompression failed for '{}': {e}", keyword),
+            })?;
+            decompressed_data = buf;
+            &decompressed_data
+        } else {
+            decompressed_data = Vec::new();
+            let _ = &decompressed_data; // suppress unused warning
+            bytes
+        };
+        
+        let keep_running = process_icy_draw_decoded_chunk(&keyword, actual_bytes, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
         if !keep_running {
             is_running = false;
             break;
@@ -1089,6 +1094,10 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
 
     // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
     let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
+    
+    // Legacy files have no compression
+    let mut compression = constants::compression::NONE;
+    let mut sixel_format = constants::sixel_format::RAW_RGBA;
 
     let mut decoder = png::StreamingDecoder::new();
     let mut len = 0;
@@ -1120,7 +1129,7 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
                         }
                     };
 
-                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y)?;
+                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
                     if !keep_running {
                         is_running = false;
                         break;
@@ -1147,7 +1156,7 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
                         }
                     };
 
-                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y)?;
+                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
                     if !keep_running {
                         is_running = false;
                         break;
