@@ -37,6 +37,13 @@ pub const SHADOW_PADDING: f32 = TOP_CONTROL_SHADOW_PADDING;
 /// Preview glyph height for Char segments (rendered with caret colors).
 pub const PREVIEW_GLYPH_HEIGHT: f32 = 32.0;
 
+/// Additional fixed scale factor applied to the segmented control's glyph size.
+///
+/// This is intentionally independent from the global UI/DPI scaling and the
+/// control height constants, so the segmented control font can be tuned
+/// without affecting the rest of the UI.
+pub const SEGMENT_FONT_SCALE: f32 = 1.0;
+
 /// Maximum number of segments supported.
 pub const MAX_SEGMENTS: usize = 8;
 
@@ -91,8 +98,8 @@ impl SegmentedLayout {
     /// * `segments` - Content types for each segment.
     /// * `font` - Optional BitFont for dimension calculations.
     pub fn new(segments: &[SegmentContentType], font: Option<&BitFont>) -> Self {
-        let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0);
-        let font_height = font.map(|f| f.size().height as f32).unwrap_or(16.0);
+        let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0) * SEGMENT_FONT_SCALE;
+        let font_height = font.map(|f| f.size().height as f32).unwrap_or(16.0) * SEGMENT_FONT_SCALE;
 
         let preview_magnify = (PREVIEW_GLYPH_HEIGHT / font_height).floor().max(1.0);
 

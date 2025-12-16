@@ -4,13 +4,14 @@
 //! This allows hotkey handling and menu generation from a single source.
 
 use iced::{
-    Border, Color, Element, Length, Theme, alignment,
+    Border, Element, Length, Theme, alignment,
     border::Radius,
     widget::{button, row, text},
 };
 use iced_aw::menu::{self, Menu};
+use iced_aw::menu_bar;
+use iced_aw::menu_items;
 use iced_aw::style::{Status, menu_bar::primary};
-use iced_aw::{menu_bar, menu_items};
 
 use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
@@ -310,82 +311,54 @@ fn menu_item_view(item: &MenuItem) -> Element<'static, Message> {
     }
 }
 
+fn menu_items_from_slice(items: &[MenuItem]) -> Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> {
+    items.iter().map(|item| iced_aw::menu::Item::new(menu_item_view(item))).collect()
+}
+
 /// Build the BitFont editor menu bar from the menu data structure
 pub fn view_bitfont(recent_files: &MostRecentlyUsedFiles, undo_desc: Option<&str>, redo_desc: Option<&str>) -> Element<'static, Message> {
     let menu = BitFontMenu::new(undo_desc, redo_desc);
-    let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
+    let menu_template = |items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>>| Menu::new(items).width(300.0).offset(5.0);
+
+    // File menu: insert "Open Recent" submenu before the first separator.
+    let mut file_items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut inserted_recent = false;
+    for item in &menu.file {
+        if !inserted_recent {
+            if let MenuItem::Separator = item {
+                file_items.push(iced_aw::menu::Item::with_menu(
+                    menu_item_submenu(fl!("menu-open_recent")),
+                    build_recent_files_menu(recent_files),
+                ));
+                inserted_recent = true;
+            }
+        }
+
+        file_items.push(iced_aw::menu::Item::new(menu_item_view(item)));
+    }
+    if !inserted_recent {
+        file_items.push(iced_aw::menu::Item::with_menu(
+            menu_item_submenu(fl!("menu-open_recent")),
+            build_recent_files_menu(recent_files),
+        ));
+    }
+
+    let edit_items = menu_items_from_slice(&menu.edit);
+    let selection_items = menu_items_from_slice(&menu.selection);
+    let view_items = menu_items_from_slice(&menu.view);
+    let help_items = menu_items_from_slice(&menu.help);
 
     let mb = menu_bar!(
         // File menu - with special handling for recent files submenu
-        (
-            menu_button(fl!("menu-file")),
-            menu_template(menu_items!(
-                (menu_item_view(&menu.file[0])), // New
-                (menu_item_view(&menu.file[1])), // Open
-                (menu_item_view(&menu.file[2])), // Import Font
-                (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
-                (menu_item_view(&menu.file[3])), // Separator
-                (menu_item_view(&menu.file[4])), // Save
-                (menu_item_view(&menu.file[5])), // Save As
-                (menu_item_view(&menu.file[6])), // Separator
-                (menu_item_view(&menu.file[7])), // Settings
-                (menu_item_view(&menu.file[8])), // Separator
-                (menu_item_view(&menu.file[9]))  // Close
-            ))
-        ),
+        (menu_button(fl!("menu-file")), menu_template(file_items)),
         // Edit menu
-        (
-            menu_button(fl!("menu-edit")),
-            menu_template(menu_items!(
-                (menu_item_view(&menu.edit[0])),  // Undo
-                (menu_item_view(&menu.edit[1])),  // Redo
-                (menu_item_view(&menu.edit[2])),  // Separator
-                (menu_item_view(&menu.edit[3])),  // Cut
-                (menu_item_view(&menu.edit[4])),  // Copy
-                (menu_item_view(&menu.edit[5])),  // Paste
-                (menu_item_view(&menu.edit[6])),  // Separator
-                (menu_item_view(&menu.edit[7])),  // Swap Chars
-                (menu_item_view(&menu.edit[8])),  // Duplicate Line
-                (menu_item_view(&menu.edit[9])),  // Separator
-                (menu_item_view(&menu.edit[10]))  // Font Size
-            ))
-        ),
+        (menu_button(fl!("menu-edit")), menu_template(edit_items)),
         // Selection menu
-        (
-            menu_button(fl!("menu-selection")),
-            menu_template(menu_items!(
-                (menu_item_view(&menu.selection[0])), // Select All
-                (menu_item_view(&menu.selection[1])), // Select Nothing
-                (menu_item_view(&menu.selection[2])), // Separator
-                (menu_item_view(&menu.selection[3])), // Clear
-                (menu_item_view(&menu.selection[4])), // Fill
-                (menu_item_view(&menu.selection[5])), // Inverse
-                (menu_item_view(&menu.selection[6])), // Separator
-                (menu_item_view(&menu.selection[7])), // Flip X
-                (menu_item_view(&menu.selection[8]))  // Flip Y
-            ))
-        ),
+        (menu_button(fl!("menu-selection")), menu_template(selection_items)),
         // View menu
-        (
-            menu_button(fl!("menu-view")),
-            menu_template(menu_items!(
-                (menu_item_view(&menu.view[0])), // Toggle Letter Spacing
-                (menu_item_view(&menu.view[1])), // Show Preview
-                (menu_item_view(&menu.view[2])), // Separator
-                (menu_item_view(&menu.view[3]))  // Fullscreen
-            ))
-        ),
+        (menu_button(fl!("menu-view")), menu_template(view_items)),
         // Help menu
-        (
-            menu_button(fl!("menu-help")),
-            menu_template(menu_items!(
-                (menu_item_view(&menu.help[0])), // Discuss
-                (menu_item_view(&menu.help[1])), // Report Bug
-                (menu_item_view(&menu.help[2])), // Open Log File
-                (menu_item_view(&menu.help[3])), // Separator
-                (menu_item_view(&menu.help[4]))  // About
-            ))
-        )
+        (menu_button(fl!("menu-help")), menu_template(help_items))
     )
     .spacing(4.0)
     .padding([4, 8])

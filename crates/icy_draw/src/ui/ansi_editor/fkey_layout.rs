@@ -23,10 +23,10 @@ use super::constants::{TOP_CONTROL_HEIGHT, TOP_CONTROL_SHADOW_PADDING};
 pub const SLOT_CHAR_HEIGHT: f32 = 32.0;
 
 /// Target rendered height for label characters (set number digits) in logical pixels.
-pub const LABEL_HEIGHT: f32 = 16.0 * 1.4;
+pub const LABEL_HEIGHT: f32 = 16.0 * 1.2;
 
 /// Label width (2 digits: "01", "02", etc.).
-pub const LABEL_WIDTH: f32 = 8.0 * 1.4;
+pub const LABEL_WIDTH: f32 = 8.0 * 1.2;
 
 /// Width per F-key slot (label + char area).
 pub const SLOT_WIDTH: f32 = 40.0;
@@ -71,7 +71,7 @@ pub const TOOLBAR_HEIGHT: f32 = TOP_CONTROL_HEIGHT;
 pub const LEFT_PADDING: f32 = 9.0;
 
 /// Right padding after the nav section.
-pub const RIGHT_PADDING: f32 = -4.0;
+pub const RIGHT_PADDING: f32 = 4.0;
 
 /// Number of F-key slots.
 pub const NUM_SLOTS: usize = 12;

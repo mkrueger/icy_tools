@@ -56,12 +56,14 @@ struct VertexIn {
 
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    @location(1) fg: vec4<f32>,
-    @location(2) bg: vec4<f32>,
-    @interpolate(flat) @location(3) flags: u32,
-    @location(4) unit_uv: vec2<f32>,
-    @location(5) p: vec2<f32>, // clip-local pixel coordinate
+    @location(0) fg: vec4<f32>,
+    @location(1) bg: vec4<f32>,
+    @interpolate(flat) @location(2) flags: u32,
+    @interpolate(flat) @location(3) glyph: u32,
+    @interpolate(flat) @location(4) inst_pos: vec2<f32>,
+    @interpolate(flat) @location(5) inst_size: vec2<f32>,
+    @location(6) unit_uv: vec2<f32>,
+    @location(7) p: vec2<f32>, // clip-local pixel coordinate
 };
 
 // Flags (must match Rust side)
@@ -75,9 +77,9 @@ const FLAG_SEGMENTED_BG: u32 = 16u;
 const SHADOW_PADDING: f32 = 6.0;
 const BORDER_WIDTH: f32 = 1.0;
 
-const SHADOW_OFFSET: vec2<f32> = vec2<f32>(2.0, 2.0);
-const SHADOW_BLUR: f32 = 3.0;
-const SHADOW_ALPHA: f32 = 0.4;
+const SHADOW_OFFSET: vec2<f32> = vec2<f32>(1.5, 2.0);
+const SHADOW_BLUR: f32 = 2.5;
+const SHADOW_ALPHA: f32 = 0.25;
 
 const SELECTED_BG: vec3<f32> = vec3<f32>(0.25, 0.45, 0.7);
 const HOVER_BG: vec3<f32> = vec3<f32>(0.28, 0.28, 0.35);
@@ -156,18 +158,33 @@ fn vs_main(v: VertexIn) -> VertexOut {
     let ndc_x = (p.x / u.clip_size.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (p.y / u.clip_size.y) * 2.0;
 
-    let origin = glyph_uv_origin(v.glyph);
-    let uv = (origin + v.unit_uv * u.glyph_size) / u.atlas_size;
-
     var out: VertexOut;
     out.pos = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    out.uv = uv;
     out.fg = v.fg;
     out.bg = v.bg;
     out.flags = v.flags;
+    out.glyph = v.glyph;
+    out.inst_pos = v.inst_pos;
+    out.inst_size = v.inst_size;
     out.unit_uv = v.unit_uv;
     out.p = p;
     return out;
+}
+
+fn atlas_alpha(p: vec2<f32>, inst_pos: vec2<f32>, inst_size: vec2<f32>, glyph: u32) -> f32 {
+    // Pixel-perfect nearest sampling:
+    // Floor both the fragment position and inst_pos to get exact pixel indices.
+    let pixel = floor(p);
+    let origin = glyph_uv_origin(glyph);
+    let local = pixel - floor(inst_pos); // pixel index within the quad
+
+    // Convert local pixel coordinate to a texel coordinate inside the glyph cell.
+    // Using floor() makes the replication stable for integer scales.
+    var texel = floor(local * (u.glyph_size / max(inst_size, vec2<f32>(1.0))));
+    texel = clamp(texel, vec2<f32>(0.0), u.glyph_size - vec2<f32>(1.0));
+
+    let uv = (origin + texel + vec2<f32>(0.5, 0.5)) / u.atlas_size;
+    return textureSample(atlas_tex, atlas_samp, uv).a;
 }
 
 fn segmented_background(pixel: vec2<f32>) -> vec4<f32> {
@@ -187,15 +204,24 @@ fn segmented_background(pixel: vec2<f32>) -> vec4<f32> {
     let ctrl_sdf = rounded_rect_sdf(pixel - ctrl_center, ctrl_half, radius);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Outside control: draw drop shadow
+    // Outside control: draw subtle drop shadow (right/bottom only)
     // ─────────────────────────────────────────────────────────────────────────
     if ctrl_sdf > 0.5 {
+        // Shadow shape is offset to bottom-right
         let shadow_pos = pixel - ctrl_center - SHADOW_OFFSET;
         let shadow_sdf = rounded_rect_sdf(shadow_pos, ctrl_half, radius);
-        let blur_factor = 1.0 / SHADOW_BLUR;
-        let shadow_alpha = SHADOW_ALPHA * exp(-max(shadow_sdf, 0.0) * blur_factor);
-        if shadow_alpha > 0.01 {
-            return vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
+        
+        // Only draw shadow if we're close to the shadow shape edge
+        // AND the pixel is in the shadow direction (right or below the control)
+        let rel_to_ctrl = pixel - ctrl_center;
+        let in_shadow_region = rel_to_ctrl.x > -ctrl_half.x * 0.5 || rel_to_ctrl.y > -ctrl_half.y * 0.5;
+        
+        if in_shadow_region && shadow_sdf < SHADOW_BLUR && shadow_sdf > -1.0 {
+            let shadow_t = 1.0 - smoothstep(-1.0, SHADOW_BLUR, shadow_sdf);
+            let shadow_alpha = SHADOW_ALPHA * shadow_t;
+            if shadow_alpha > 0.005 {
+                return vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
+            }
         }
         return vec4<f32>(0.0);
     }
@@ -383,8 +409,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    // Atlas alpha mask
-    let a = textureSample(atlas_tex, atlas_samp, in.uv).a;
+    // Atlas alpha mask (pixel-perfect using clip-local position with flooring)
+    let a = atlas_alpha(in.p, in.inst_pos, in.inst_size, in.glyph);
 
     let draw_bg = (in.flags & FLAG_DRAW_BG) != 0u;
 
