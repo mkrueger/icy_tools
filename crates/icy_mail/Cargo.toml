@@ -93,7 +93,3 @@ assets = [
     ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_mail.png", "644"],
     ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_mail.png", "644"],
 ]
-
-
-[patch.crates-io]
-iced.git = "https://github.com/iced-rs/iced.git"
