@@ -342,6 +342,8 @@ pub struct AnsiEditor {
     pub drag_pos: DragPos,
     /// Whether mouse is currently dragging
     pub is_dragging: bool,
+    /// Tool that currently has mouse capture during a drag (move/up are routed here)
+    mouse_capture_tool: Option<Tool>,
     /// Current selection drag mode
     pub selection_drag: SelectionDrag,
     /// Selection state at start of drag (for resize operations)
@@ -421,6 +423,18 @@ pub struct AnsiEditor {
     layer_drag_active: bool,
     /// Layer offset at start of drag
     layer_drag_start_offset: icy_engine::Position,
+    /// Atomic undo guard for layer drag operations
+    layer_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
+
+    // === Paste Mode State ===
+    /// If true, we are dragging the floating paste layer
+    paste_drag_active: bool,
+    /// Floating layer offset at start of drag
+    paste_drag_start_offset: icy_engine::Position,
+    /// Atomic undo guard for paste drag operations
+    paste_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
+    /// Tool that was active before paste mode started (to restore after anchor/cancel)
+    paste_previous_tool: Option<Tool>,
 }
 
 impl AnsiEditor {
@@ -783,6 +797,7 @@ impl AnsiEditor {
             // Selection/drag state
             drag_pos: DragPos::default(),
             is_dragging: false,
+            mouse_capture_tool: None,
             selection_drag: SelectionDrag::None,
             start_selection: None,
             // Marker/guide state - disabled by default
@@ -823,11 +838,228 @@ impl AnsiEditor {
 
             layer_drag_active: false,
             layer_drag_start_offset: icy_engine::Position::default(),
+            layer_drag_undo: None,
+
+            paste_drag_active: false,
+            paste_drag_start_offset: icy_engine::Position::default(),
+            paste_drag_undo: None,
+            paste_previous_tool: None,
         }
     }
 
     fn clear_tool_overlay(&mut self) {
         self.canvas.set_tool_overlay_mask(None, None);
+    }
+
+    fn redraw_with_tag_overlays(&mut self) -> ToolEvent {
+        self.update_tag_overlays();
+        ToolEvent::Redraw
+    }
+
+    fn redraw_with_selection_display(&mut self) -> ToolEvent {
+        self.update_selection_display();
+        ToolEvent::Redraw
+    }
+
+    fn redraw_with_layer_bounds(&mut self) -> ToolEvent {
+        self.update_layer_bounds();
+        ToolEvent::Redraw
+    }
+
+    fn task_none_with_markers_update(&mut self) -> Task<AnsiEditorMessage> {
+        self.update_markers();
+        Task::none()
+    }
+
+    fn task_none_with_layer_bounds_update(&mut self) -> Task<AnsiEditorMessage> {
+        self.update_layer_bounds();
+        Task::none()
+    }
+
+    fn task_none_with_tag_overlays_update(&mut self) -> Task<AnsiEditorMessage> {
+        self.update_tag_overlays();
+        Task::none()
+    }
+
+    fn close_tag_context_menu(&mut self) {
+        self.tag_context_menu = None;
+    }
+
+    fn commit_and_update_tag_overlays(&mut self, description: impl Into<String>) -> Task<AnsiEditorMessage> {
+        self.handle_tool_event(ToolEvent::Commit(description.into()));
+        self.task_none_with_tag_overlays_update()
+    }
+
+    fn end_drag_capture(&mut self) {
+        self.is_dragging = false;
+        self.mouse_capture_tool = None;
+        self.selection_drag = SelectionDrag::None;
+        self.start_selection = None;
+    }
+
+    fn cancel_layer_drag(&mut self) {
+        if !self.layer_drag_active {
+            return;
+        }
+
+        self.layer_drag_active = false;
+        self.layer_drag_undo = None;
+
+        self.clear_current_layer_preview_offset();
+        self.update_layer_bounds();
+
+        self.end_drag_capture();
+    }
+
+    fn clear_current_layer_preview_offset(&mut self) {
+        self.with_edit_state(|state| {
+            if let Some(layer) = state.get_cur_layer_mut() {
+                layer.set_preview_offset(None);
+            }
+            state.mark_dirty();
+        });
+    }
+
+    fn finish_layer_drag(&mut self) -> ToolEvent {
+        if !self.layer_drag_active {
+            return ToolEvent::None;
+        }
+
+        self.layer_drag_active = false;
+        self.end_drag_capture();
+
+        // Calculate final offset and apply
+        let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
+        let new_offset = self.layer_drag_start_offset + delta;
+
+        self.with_edit_state(|state| {
+            if let Some(layer) = state.get_cur_layer_mut() {
+                layer.set_preview_offset(None);
+            }
+            let _ = state.move_layer(new_offset);
+        });
+
+        // Finalize atomic undo
+        self.layer_drag_undo = None;
+
+        // Update layer border display after move
+        self.update_layer_bounds();
+
+        ToolEvent::Commit("Move layer".to_string())
+    }
+
+    fn cancel_tag_selection_drag(&mut self) {
+        if !self.tag_selection_drag_active {
+            return;
+        }
+        self.tag_selection_drag_active = false;
+        self.clear_tool_overlay();
+        self.end_drag_capture();
+    }
+
+    fn finish_tag_selection_drag(&mut self) -> ToolEvent {
+        if !self.tag_selection_drag_active {
+            return ToolEvent::None;
+        }
+
+        self.tag_selection_drag_active = false;
+        self.end_drag_capture();
+
+        // Calculate selection rectangle
+        let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x);
+        let max_x = self.drag_pos.start.x.max(self.drag_pos.cur.x);
+        let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y);
+        let max_y = self.drag_pos.start.y.max(self.drag_pos.cur.y);
+
+        // Find all tags that intersect with the selection rectangle
+        let selected_indices: Vec<usize> = self.with_edit_state(|state| {
+            state
+                .get_buffer()
+                .tags
+                .iter()
+                .enumerate()
+                .filter(|(_, tag)| {
+                    let tag_min_x = tag.position.x;
+                    let tag_max_x = tag.position.x + tag.len() as i32 - 1;
+                    let tag_y = tag.position.y;
+
+                    // Check if tag intersects with selection rectangle
+                    tag_y >= min_y && tag_y <= max_y && tag_max_x >= min_x && tag_min_x <= max_x
+                })
+                .map(|(i, _)| i)
+                .collect()
+        });
+
+        self.tag_selection = selected_indices;
+
+        // Clear selection overlay
+        self.clear_tool_overlay();
+        self.update_tag_overlays();
+
+        ToolEvent::Redraw
+    }
+
+    fn finish_selection_drag(&mut self) -> ToolEvent {
+        if self.selection_drag == SelectionDrag::None {
+            return ToolEvent::None;
+        }
+
+        // Finalize selection
+        if self.selection_drag == SelectionDrag::Create {
+            // If start == cur, treat as click
+            if self.drag_pos.start == self.drag_pos.cur {
+                if self.current_tool == Tool::Select {
+                    // Keep selection mask intact.
+                    self.with_edit_state(|state| {
+                        let _ = state.deselect();
+                    });
+                } else {
+                    self.with_edit_state(|state| {
+                        let _ = state.clear_selection();
+                    });
+                }
+            } else if self.current_tool == Tool::Select {
+                // Get current add_type before committing
+                let add_type = self.with_edit_state(|state| state.selection().map(|s| s.add_type));
+
+                #[cfg(debug_assertions)]
+                eprintln!("[DEBUG] Mouse up - Tool::Select, add_type: {:?}", add_type);
+
+                // Only commit to mask for Add/Subtract modes.
+                // Default mode keeps the selection active (not in mask) so move/resize doesn't leave stale mask artifacts.
+                match add_type {
+                    Some(icy_engine::AddType::Add) | Some(icy_engine::AddType::Subtract) => {
+                        #[cfg(debug_assertions)]
+                        eprintln!("[DEBUG] Mouse up - Committing selection to mask and deselecting");
+                        self.with_edit_state(|state| {
+                            let _ = state.add_selection_to_mask();
+                            let _ = state.deselect();
+                        });
+                    }
+                    _ => {
+                        #[cfg(debug_assertions)]
+                        eprintln!("[DEBUG] Mouse up - Default mode: keeping selection active");
+                        // Default mode: keep selection active, don't commit to mask
+                    }
+                }
+            }
+        }
+        // Move/Resize: selection is already updated during drag, just keep it active
+
+        // Always update selection display after any selection drag ends
+        self.update_selection_display();
+
+        self.end_drag_capture();
+        ToolEvent::Redraw
+    }
+
+    fn end_tag_drag(&mut self) {
+        self.tag_drag_active = false;
+        self.tag_drag_indices.clear();
+        self.tag_drag_start_positions.clear();
+        // Drop the guard to finalize/commit the atomic undo.
+        self.tag_drag_undo = None;
+        self.end_drag_capture();
     }
 
     fn cancel_shape_drag(&mut self) -> bool {
@@ -837,9 +1069,7 @@ impl AnsiEditor {
                 Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
             )
         {
-            self.is_dragging = false;
-            self.selection_drag = SelectionDrag::None;
-            self.start_selection = None;
+            self.end_drag_capture();
             self.paint_button = iced::mouse::Button::Left;
             self.shape_clear = false;
             self.clear_tool_overlay();
@@ -878,10 +1108,7 @@ impl AnsiEditor {
             return;
         }
 
-        let is_half_block_mode = matches!(
-            self.top_toolbar.brush_options.primary,
-            crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock
-        );
+        let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
 
         // Use the same coordinate system as the terminal shader:
         // - x uses `render_info.font_width`
@@ -1105,7 +1332,7 @@ impl AnsiEditor {
                 }
             } else {
                 let brush_mode = match primary {
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Char => {
+                    BrushPrimaryMode::Char => {
                         // Right-click in Char mode = erase (set to space)
                         if swap_colors {
                             EngineBrushMode::Char(' ')
@@ -1113,20 +1340,20 @@ impl AnsiEditor {
                             EngineBrushMode::Char(paint_char)
                         }
                     }
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Shading => {
+                    BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
+                    BrushPrimaryMode::Shading => {
                         if swap_colors {
                             EngineBrushMode::ShadeDown
                         } else {
                             EngineBrushMode::Shade
                         }
                     }
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
+                    BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
+                    BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
+                    BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
                 };
 
-                let color_mode = if matches!(primary, crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Colorize) {
+                let color_mode = if matches!(primary, BrushPrimaryMode::Colorize) {
                     match (colorize_fg, colorize_bg) {
                         (true, true) => EngineColorMode::Both,
                         (true, false) => EngineColorMode::Foreground,
@@ -1139,12 +1366,7 @@ impl AnsiEditor {
 
                 // Don't swap colors for Shading (has its own up/down behavior) or Char mode (right-click = erase)
                 // Shift key swaps colors for all modes except those with special right-click behavior
-                let swap_for_colors = (swap_colors || shift_swap)
-                    && !matches!(
-                        primary,
-                        crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Shading
-                            | crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::Char
-                    );
+                let swap_for_colors = (swap_colors || shift_swap) && !matches!(primary, BrushPrimaryMode::Shading | BrushPrimaryMode::Char);
                 let (fg, bg) = if swap_for_colors {
                     (caret_attr.background(), caret_attr.foreground())
                 } else {
@@ -1347,6 +1569,7 @@ impl AnsiEditor {
             log::warn!("Failed to type fkey (set {}, slot {}): {}", set_idx, slot, e);
         }
     }
+
     /// Set the file path (for session restore)
     pub fn set_file_path(&mut self, path: PathBuf) {
         self.file_path = Some(path);
@@ -1417,27 +1640,42 @@ impl AnsiEditor {
     // ========================================================================
 
     /// Check if cut operation is available (selection exists)
+    #[allow(dead_code)]
     pub fn can_cut(&self) -> bool {
         self.with_edit_state_readonly(|state| state.selection().is_some())
     }
 
     /// Cut selection to clipboard
     pub fn cut(&mut self) -> Result<(), String> {
-        self.copy()?;
+        self.copy_without_deselect()?;
         let mut screen = self.screen.lock();
         if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
             edit_state.erase_selection().map_err(|e| e.to_string())?;
+            let _ = edit_state.clear_selection();
         }
         Ok(())
     }
 
     /// Check if copy operation is available (selection exists)
+    #[allow(dead_code)]
     pub fn can_copy(&self) -> bool {
         self.with_edit_state_readonly(|state| state.selection().is_some())
     }
 
     /// Copy selection to clipboard in multiple formats (ICY, RTF, Text)
     pub fn copy(&mut self) -> Result<(), String> {
+        self.copy_without_deselect()?;
+        // Clear selection after copy
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            let _ = edit_state.clear_selection();
+        }
+        Ok(())
+    }
+
+    /// Copy selection to clipboard without clearing the selection
+    /// Used internally by cut() which handles its own selection clearing
+    fn copy_without_deselect(&mut self) -> Result<(), String> {
         let mut screen = self.screen.lock();
         let edit_state = screen
             .as_any_mut()
@@ -1445,6 +1683,9 @@ impl AnsiEditor {
             .ok_or_else(|| "Could not access edit state".to_string())?;
 
         let mut contents = Vec::new();
+
+        // Debug: log selection state
+        log::debug!("copy_without_deselect: selection={:?}", edit_state.selection());
 
         // Plain text (required - if no text, nothing to copy)
         let text = match edit_state.copy_text() {
@@ -1454,7 +1695,10 @@ impl AnsiEditor {
 
         // ICY binary format (for paste between ICY applications)
         if let Some(data) = edit_state.clipboard_data() {
+            log::debug!("copy_without_deselect: ICY data size={}", data.len());
             contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+        } else {
+            log::warn!("copy_without_deselect: No ICY clipboard data generated");
         }
 
         // RTF (rich text with colors)
@@ -1472,6 +1716,7 @@ impl AnsiEditor {
     }
 
     /// Check if paste operation is available (clipboard has compatible content)
+    #[allow(dead_code)]
     pub fn can_paste(&self) -> bool {
         crate::CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
             || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Image)
@@ -1481,10 +1726,13 @@ impl AnsiEditor {
     /// Paste from clipboard (ICY format, image, or text)
     /// Creates a floating layer that can be positioned before anchoring
     pub fn paste(&mut self) -> Result<(), String> {
-        // Don't paste if already have a floating layer
-        if self.with_edit_state_readonly(|state| state.has_floating_layer()) {
+        // Don't paste if already in paste mode
+        if self.is_paste_mode() {
             return Ok(());
         }
+
+        // Save current tool to restore after paste mode ends
+        self.paste_previous_tool = Some(self.current_tool);
 
         let mut screen = self.screen.lock();
         let edit_state = screen
@@ -1494,54 +1742,202 @@ impl AnsiEditor {
 
         // Priority: ICY binary > Image > Text
         if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+            log::debug!("paste: Using ICY binary data, size={}", data.len());
             edit_state.paste_clipboard_data(&data).map_err(|e| e.to_string())?;
         } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
+            log::debug!("paste: Using image data");
             let mut sixel = Sixel::new(Position::default());
             sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
-            let (w, h) = {
-                let (w, h) = img.get_size();
-                (w as i32, h as i32)
-            };
-            sixel.set_width(w);
-            sixel.set_height(h);
+            let (w, h) = img.get_size();
+            sixel.set_width(w as i32);
+            sixel.set_height(h as i32);
             edit_state.paste_sixel(sixel).map_err(|e| e.to_string())?;
         } else if let Ok(text) = crate::CLIPBOARD_CONTEXT.get_text() {
+            log::debug!("paste: Using text data: {:?}", text);
             edit_state.paste_text(&text).map_err(|e| e.to_string())?;
         } else {
+            // Paste failed, restore tool state
+            self.paste_previous_tool = None;
             return Err("No compatible clipboard content".to_string());
         }
+
+        // Drop the screen lock before calling methods that need it
+        drop(screen);
+
+        // Update layer bounds to show the floating layer
+        self.update_layer_bounds();
 
         Ok(())
     }
 
-    /// Check if there's a floating layer (paste preview)
-    pub fn has_floating_layer(&self) -> bool {
-        self.with_edit_state_readonly(|state| state.has_floating_layer())
+    /// Check if we are in paste mode (floating layer active for positioning)
+    /// This is the primary check for paste mode UI and input handling
+    pub fn is_paste_mode(&self) -> bool {
+        self.paste_previous_tool.is_some()
     }
 
     /// Anchor the floating layer (finalize paste)
+    #[allow(dead_code)]
     pub fn anchor_layer(&mut self) -> Result<(), String> {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            edit_state.anchor_layer().map_err(|e| e.to_string())
+        // If user anchors while a paste drag is active, first commit the drag position.
+        let pending_paste_move = if self.paste_drag_active {
+            let delta = self.drag_pos.cur - self.drag_pos.start;
+            Some(Position::new(
+                self.paste_drag_start_offset.x + delta.x,
+                self.paste_drag_start_offset.y + delta.y,
+            ))
         } else {
-            Err("Could not access edit state".to_string())
-        }
+            None
+        };
+
+        let result = {
+            let mut screen = self.screen.lock();
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                if let Some(new_offset) = pending_paste_move {
+                    edit_state.set_layer_preview_offset(None);
+                    let _ = edit_state.move_layer(new_offset);
+                }
+                edit_state.anchor_layer().map_err(|e| e.to_string())
+            } else {
+                Err("Could not access edit state".to_string())
+            }
+        };
+
+        // Restore previous tool after paste mode ends
+        self.restore_previous_tool();
+
+        result
     }
 
     /// Discard the floating layer (cancel paste)
+    #[allow(dead_code)]
     pub fn discard_floating_layer(&mut self) -> Result<(), String> {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            // Remove the floating layer by undoing the paste
-            if edit_state.has_floating_layer() {
+        // Only discard if in paste mode
+        if !self.is_paste_mode() {
+            return Ok(());
+        }
+
+        // Cancel any active paste drag + atomic undo guard.
+        self.paste_drag_active = false;
+        self.paste_drag_undo = None;
+        self.end_drag_capture();
+
+        let result = {
+            let mut screen = self.screen.lock();
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                // Remove the floating layer by undoing the paste
                 edit_state.undo().map_err(|e| e.to_string())?;
+                Ok(())
+            } else {
+                Err("Could not access edit state".to_string())
             }
-            Ok(())
-        } else {
-            Err("Could not access edit state".to_string())
+        };
+
+        // Restore previous tool after paste mode ends
+        self.restore_previous_tool();
+
+        result
+    }
+
+    /// Restore the tool that was active before paste mode started
+    fn restore_previous_tool(&mut self) {
+        // Leaving paste mode: ensure no drag/capture state leaks out.
+        self.paste_drag_active = false;
+        self.paste_drag_undo = None;
+        self.end_drag_capture();
+
+        if let Some(tool) = self.paste_previous_tool.take() {
+            // Temporarily clear floating layer check to allow tool change
+            self.current_tool = tool;
+            self.tool_panel.set_tool(tool);
+            self.update_mouse_tracking_mode();
         }
     }
+
+    /// Stamp the floating layer down without anchoring (copies the layer content to the layer below)
+    pub fn stamp_floating_layer(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Err(e) = edit_state.stamp_layer_down() {
+                log::warn!("Failed to stamp layer: {}", e);
+            }
+        }
+    }
+
+    /// Rotate the floating layer 90° clockwise
+    pub fn rotate_floating_layer(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Err(e) = edit_state.rotate_layer() {
+                log::warn!("Failed to rotate layer: {}", e);
+            }
+        }
+    }
+
+    /// Flip the floating layer horizontally
+    pub fn flip_floating_layer_x(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Err(e) = edit_state.flip_x() {
+                log::warn!("Failed to flip layer X: {}", e);
+            }
+        }
+    }
+
+    /// Flip the floating layer vertically
+    pub fn flip_floating_layer_y(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Err(e) = edit_state.flip_y() {
+                log::warn!("Failed to flip layer Y: {}", e);
+            }
+        }
+    }
+
+    /// Toggle transparent mode for the floating layer
+    pub fn toggle_floating_layer_transparent(&mut self) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            if let Err(e) = edit_state.make_layer_transparent() {
+                log::warn!("Failed to make layer transparent: {}", e);
+            }
+        }
+    }
+
+    /// Create sidebar controls for paste mode (replaces tool panel)
+    fn view_paste_sidebar_controls(&self) -> Element<'_, AnsiEditorMessage> {
+        use iced::widget::{Space, button, column, container, text};
+        use icy_engine_gui::ui::TEXT_SIZE_SMALL;
+
+        // Helper to create a paste action button
+        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> Element<'a, AnsiEditorMessage> {
+            button(text(label).size(TEXT_SIZE_SMALL).center())
+                .width(Length::Fill)
+                .padding([6, 8])
+                .on_press(AnsiEditorMessage::TopToolbar(msg))
+                .into()
+        }
+
+        let content = column![
+            text("Paste Mode").size(14),
+            Space::new().height(Length::Fixed(8.0)),
+            paste_btn("✓ Anchor (Enter)", TopToolbarMessage::PasteAnchor),
+            paste_btn("✕ Cancel (Esc)", TopToolbarMessage::PasteCancel),
+            Space::new().height(Length::Fixed(12.0)),
+            text("Transform").size(12),
+            paste_btn("Stamp (S)", TopToolbarMessage::PasteStamp),
+            paste_btn("Rotate (R)", TopToolbarMessage::PasteRotate),
+            paste_btn("Flip X", TopToolbarMessage::PasteFlipX),
+            paste_btn("Flip Y", TopToolbarMessage::PasteFlipY),
+            paste_btn("Transparent (T)", TopToolbarMessage::PasteToggleTransparent),
+            Space::new().height(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::Fill);
+
+        container(content).width(Length::Fill).padding(8).into()
+    }
+
     /// Save the document to the given path
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let mut screen = self.screen.lock();
@@ -1585,8 +1981,8 @@ impl AnsiEditor {
     }
 
     /// Get the current marker state for menu display
-    pub fn get_marker_menu_state(&self) -> crate::ui::editor::ansi::widget::toolbar::menu_bar::MarkerMenuState {
-        crate::ui::editor::ansi::widget::toolbar::menu_bar::MarkerMenuState {
+    pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
+        widget::toolbar::menu_bar::MarkerMenuState {
             guide: self.guide.map(|(x, y)| (x as u32, y as u32)),
             guide_visible: self.show_guide,
             raster: self.raster.map(|(x, y)| (x as u32, y as u32)),
@@ -1621,7 +2017,7 @@ impl AnsiEditor {
         // IMPORTANT: The terminal shader may clamp/fit the visible region (resolution/letterbox).
         // For a pixel-exact minimap overlay, use the effective values written by the shader.
         let cache = self.canvas.terminal.render_cache.read();
-        crate::ui::editor::ansi::widget::minimap::viewport_info_from_effective_view(
+        widget::minimap::viewport_info_from_effective_view(
             cache.content_width as f32,
             cache.content_height,
             cache.visible_width,
@@ -1751,6 +2147,8 @@ impl AnsiEditor {
                             attribute,
                         };
 
+                        let commit_message = if edit_index.is_some() { "Edit tag" } else { "Add tag" };
+
                         if let Some(index) = edit_index {
                             // Edit existing tag
                             if let Err(err) = self.with_edit_state(|state| {
@@ -1767,7 +2165,6 @@ impl AnsiEditor {
                                 log::warn!("Failed to update tag: {}", err);
                                 return Task::none();
                             }
-                            self.handle_tool_event(ToolEvent::Commit("Edit tag".to_string()));
                         } else {
                             // Add new tag
                             if let Err(err) = self.with_edit_state(|state| {
@@ -1793,16 +2190,13 @@ impl AnsiEditor {
                                 log::warn!("Failed to add tag: {}", err);
                                 return Task::none();
                             }
-                            self.handle_tool_event(ToolEvent::Commit("Add tag".to_string()));
                         }
-                        // Update tag overlays
-                        self.update_tag_overlays();
-                        Task::none()
+                        self.commit_and_update_tag_overlays(commit_message.to_string())
                     }
                 }
             }
             AnsiEditorMessage::TagEdit(index) => {
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
                 let tag = self.with_edit_state(|state| state.get_buffer().tags.get(index).cloned());
                 if let Some(tag) = tag {
                     self.tag_list_dialog = None;
@@ -1811,7 +2205,7 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::TagDelete(index) => {
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
                 if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
                     log::warn!("Failed to remove tag: {}", err);
                     return Task::none();
@@ -1823,26 +2217,22 @@ impl AnsiEditor {
                         *i -= 1;
                     }
                 }
-                self.handle_tool_event(ToolEvent::Commit("Remove tag".to_string()));
-                self.update_tag_overlays();
-                Task::none()
+                self.commit_and_update_tag_overlays("Remove tag")
             }
             AnsiEditorMessage::TagClone(index) => {
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
                 if let Err(err) = self.with_edit_state(|state| state.clone_tag(index)) {
                     log::warn!("Failed to clone tag: {}", err);
                     return Task::none();
                 }
-                self.handle_tool_event(ToolEvent::Commit("Clone tag".to_string()));
-                self.update_tag_overlays();
-                Task::none()
+                self.commit_and_update_tag_overlays("Clone tag")
             }
             AnsiEditorMessage::TagContextMenuClose => {
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
                 Task::none()
             }
             AnsiEditorMessage::TagDeleteSelected => {
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
                 // Delete tags in reverse order to keep indices valid
                 let mut indices: Vec<usize> = self.tag_selection.clone();
                 indices.sort_by(|a, b| b.cmp(a)); // Sort descending
@@ -1853,13 +2243,11 @@ impl AnsiEditor {
                 }
                 let count = self.tag_selection.len();
                 self.tag_selection.clear();
-                self.handle_tool_event(ToolEvent::Commit(format!("Remove {} tags", count)));
-                self.update_tag_overlays();
-                Task::none()
+                self.commit_and_update_tag_overlays(format!("Remove {} tags", count))
             }
             AnsiEditorMessage::TagStartAddMode => {
                 // Create a new tag immediately and start dragging it
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
 
                 // Generate unique tag name
                 let next_tag_name = self.generate_next_tag_name();
@@ -1903,26 +2291,24 @@ impl AnsiEditor {
                 self.tag_drag_start_positions = vec![icy_engine::Position::default()];
                 self.is_dragging = true;
 
-                self.update_tag_overlays();
-                Task::none()
+                self.task_none_with_tag_overlays_update()
             }
             AnsiEditorMessage::TagCancelAddMode => {
                 // Cancel adding tag - undo the add operation
                 if self.tag_add_new_index.is_some() {
                     self.tag_add_new_index = None;
-                    self.tag_drag_active = false;
-                    self.tag_drag_indices.clear();
-                    self.tag_drag_start_positions.clear();
-                    self.is_dragging = false;
-                    // Drop the undo guard and then undo to remove the tag
-                    self.tag_drag_undo = None;
+                    self.end_tag_drag();
                     // Undo the add operation
                     let _ = self.with_edit_state(|state| state.undo());
-                    self.update_tag_overlays();
+                    return self.task_none_with_tag_overlays_update();
                 }
                 Task::none()
             }
             AnsiEditorMessage::ToolPanel(msg) => {
+                // Block tool panel changes during paste mode
+                if self.is_paste_mode() {
+                    return Task::none();
+                }
                 // Handle tool panel messages
                 match &msg {
                     ToolPanelMessage::ClickSlot(_) => {
@@ -1937,6 +2323,29 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::Canvas(msg) => {
+                // Handle clipboard operations from context menu
+                match &msg {
+                    CanvasMessage::Cut => {
+                        if let Err(e) = self.cut() {
+                            log::error!("Cut failed: {}", e);
+                        }
+                        return Task::none();
+                    }
+                    CanvasMessage::Copy => {
+                        if let Err(e) = self.copy() {
+                            log::error!("Copy failed: {}", e);
+                        }
+                        return Task::none();
+                    }
+                    CanvasMessage::Paste => {
+                        if let Err(e) = self.paste() {
+                            log::error!("Paste failed: {}", e);
+                        }
+                        return Task::none();
+                    }
+                    _ => {}
+                }
+
                 // Intercept terminal mouse events and forward to tool handling
                 match &msg {
                     CanvasMessage::TerminalMessage(terminal_msg) => match terminal_msg {
@@ -2169,6 +2578,41 @@ impl AnsiEditor {
                         self.update_mouse_tracking_mode();
                         task
                     }
+
+                    // === Paste Mode Actions ===
+                    TopToolbarMessage::PasteStamp => {
+                        self.stamp_floating_layer();
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteRotate => {
+                        self.rotate_floating_layer();
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteFlipX => {
+                        self.flip_floating_layer_x();
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteFlipY => {
+                        self.flip_floating_layer_y();
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteToggleTransparent => {
+                        self.toggle_floating_layer_transparent();
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteAnchor => {
+                        if let Err(e) = self.anchor_layer() {
+                            log::error!("Failed to anchor layer: {}", e);
+                        }
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteCancel => {
+                        if let Err(e) = self.discard_floating_layer() {
+                            log::error!("Failed to discard floating layer: {}", e);
+                        }
+                        Task::none()
+                    }
+
                     _ => {
                         let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
                         self.update_mouse_tracking_mode();
@@ -2300,8 +2744,7 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::SelectLayer(idx) => {
                 self.with_edit_state(|state| state.set_current_layer(idx));
-                self.update_layer_bounds();
-                Task::none()
+                self.task_none_with_layer_bounds_update()
             }
             AnsiEditorMessage::ToggleLayerVisibility(idx) => {
                 let result = self.with_edit_state(move |state| state.toggle_layer_visibility(idx));
@@ -2424,13 +2867,11 @@ impl AnsiEditor {
                     self.guide = Some((x as f32, y as f32));
                     self.show_guide = true;
                 }
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::ClearGuide => {
                 self.guide = None;
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::SetRaster(x, y) => {
                 if x <= 0 && y <= 0 {
@@ -2439,23 +2880,19 @@ impl AnsiEditor {
                     self.raster = Some((x as f32, y as f32));
                     self.show_raster = true;
                 }
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::ClearRaster => {
                 self.raster = None;
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::ToggleGuide => {
                 self.show_guide = !self.show_guide;
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::ToggleRaster => {
                 self.show_raster = !self.show_raster;
-                self.update_markers();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorMessage::ToggleLineNumbers => {
                 self.show_line_numbers = !self.show_line_numbers;
@@ -2463,8 +2900,7 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::ToggleLayerBorders => {
                 self.show_layer_borders = !self.show_layer_borders;
-                self.update_layer_bounds();
-                Task::none()
+                self.task_none_with_layer_bounds_update()
             }
             AnsiEditorMessage::OpenTdfFontSelector => {
                 self.tdf_font_selector_open = true;
@@ -2537,8 +2973,16 @@ impl AnsiEditor {
             // Access the EditState to get buffer and current layer
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                 let buffer = edit_state.get_buffer();
-                if let Ok(cur_layer) = edit_state.get_current_layer() {
-                    if let Some(layer) = buffer.layers.get(cur_layer) {
+
+                // In paste mode, find the floating layer instead of current layer
+                let target_layer = if edit_state.has_floating_layer() {
+                    buffer.layers.iter().enumerate().find(|(_, l)| l.role.is_paste()).map(|(i, _)| i)
+                } else {
+                    edit_state.get_current_layer().ok()
+                };
+
+                if let Some(layer_idx) = target_layer {
+                    if let Some(layer) = buffer.layers.get(layer_idx) {
                         // Use offset() which respects preview_offset during drag
                         let offset = layer.offset();
                         let size = layer.size();
@@ -2917,9 +3361,101 @@ impl AnsiEditor {
             }
         }
 
+        // Paste mode has priority for special keys
+        if self.is_paste_mode() {
+            log::debug!("handle_key_press: key={:?}, paste_mode=true", key);
+            if self.handle_paste_mode_key(&key, &modifiers) {
+                return;
+            }
+        }
+
         // Handle tool-specific key events
         let event = self.handle_tool_key(&key, &modifiers);
         self.handle_tool_event(event);
+    }
+
+    /// Handle keyboard input in paste mode
+    /// Returns true if the key was handled
+    fn handle_paste_mode_key(&mut self, key: &iced::keyboard::Key, _modifiers: &iced::keyboard::Modifiers) -> bool {
+        use iced::keyboard::Key;
+        use iced::keyboard::key::Named;
+
+        log::debug!("handle_paste_mode_key: received key {:?}", key);
+
+        match key {
+            // Escape - cancel paste
+            Key::Named(Named::Escape) => {
+                log::debug!("handle_paste_mode_key: Escape pressed, discarding floating layer");
+                let _ = self.discard_floating_layer();
+                true
+            }
+            // Enter - anchor layer
+            Key::Named(Named::Enter) => {
+                log::debug!("handle_paste_mode_key: Enter pressed, anchoring layer");
+                let _ = self.anchor_layer();
+                true
+            }
+            // Arrow keys - move floating layer
+            Key::Named(Named::ArrowUp) => {
+                self.move_floating_layer(0, -1);
+                true
+            }
+            Key::Named(Named::ArrowDown) => {
+                self.move_floating_layer(0, 1);
+                true
+            }
+            Key::Named(Named::ArrowLeft) => {
+                self.move_floating_layer(-1, 0);
+                true
+            }
+            Key::Named(Named::ArrowRight) => {
+                self.move_floating_layer(1, 0);
+                true
+            }
+            // S - stamp
+            Key::Character(c) if c.eq_ignore_ascii_case("s") => {
+                self.stamp_floating_layer();
+                true
+            }
+            // R - rotate
+            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                self.rotate_floating_layer();
+                true
+            }
+            // X - flip horizontal
+            Key::Character(c) if c.eq_ignore_ascii_case("x") => {
+                self.flip_floating_layer_x();
+                true
+            }
+            // Y - flip vertical
+            Key::Character(c) if c.eq_ignore_ascii_case("y") => {
+                self.flip_floating_layer_y();
+                true
+            }
+            // T - toggle transparent
+            Key::Character(c) if c.eq_ignore_ascii_case("t") => {
+                self.toggle_floating_layer_transparent();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Move the floating layer by the given delta
+    fn move_floating_layer(&mut self, dx: i32, dy: i32) {
+        {
+            let mut screen = self.screen.lock();
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                // Get current offset of the current layer and add delta
+                let current_offset = edit_state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                let new_pos = Position::new(current_offset.x + dx, current_offset.y + dy);
+                if let Err(e) = edit_state.move_layer(new_pos) {
+                    log::warn!("Failed to move layer: {}", e);
+                }
+            }
+        }
+        // Update layer bounds to show new position
+        self.update_layer_bounds();
     }
 
     /// Handle named key events for Click and Font tools (shared navigation/editing)
@@ -3075,23 +3611,18 @@ impl AnsiEditor {
                 // Cancel tag add mode if active
                 if self.tag_add_new_index.is_some() {
                     self.tag_add_new_index = None;
-                    self.tag_drag_active = false;
-                    self.tag_drag_indices.clear();
-                    self.tag_drag_start_positions.clear();
-                    self.is_dragging = false;
+                    self.tag_selection_drag_active = false;
                     // Drop the undo guard and then undo to remove the tag
-                    self.tag_drag_undo = None;
+                    self.end_tag_drag();
                     let _ = self.with_edit_state(|state| state.undo());
-                    self.update_tag_overlays();
-                    return ToolEvent::Redraw;
+                    return self.redraw_with_tag_overlays();
                 }
 
                 // Clear selection
                 self.with_edit_state(|state| {
                     let _ = state.clear_selection();
                 });
-                self.update_selection_display();
-                ToolEvent::Redraw
+                self.redraw_with_selection_display()
             }
             _ => ToolEvent::None,
         }
@@ -3265,9 +3796,19 @@ impl AnsiEditor {
     fn handle_tool_key(&mut self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
         use iced::keyboard::key::Named;
 
-        // Moebius-style: Escape cancels an in-progress shape drag and clears the preview overlay.
+        // Escape cancels active drags (shape/layer/tag-selection) and clears previews.
         if let iced::keyboard::Key::Named(Named::Escape) = key {
             if self.cancel_shape_drag() {
+                return ToolEvent::Redraw;
+            }
+
+            if self.layer_drag_active {
+                self.cancel_layer_drag();
+                return ToolEvent::Redraw;
+            }
+
+            if self.tag_selection_drag_active {
+                self.cancel_tag_selection_drag();
                 return ToolEvent::Redraw;
             }
         }
@@ -3333,8 +3874,7 @@ impl AnsiEditor {
                             self.with_edit_state(|state| {
                                 let _ = state.clear_selection();
                             });
-                            self.update_selection_display();
-                            return ToolEvent::Redraw;
+                            return self.redraw_with_selection_display();
                         }
                         _ => {}
                     }
@@ -3357,20 +3897,51 @@ impl AnsiEditor {
                 button,
                 modifiers,
             } => {
+                let start_tool = self.current_tool;
                 let tool_event = self.handle_tool_mouse_down(position, pixel_position, button, modifiers);
                 self.handle_tool_event(tool_event);
+
+                // Capture tool for the duration of a drag so move/up keep going to the same tool.
+                // Paste mode already takes exclusive routing inside the handlers.
+                if !self.is_paste_mode() && self.is_dragging {
+                    self.mouse_capture_tool = Some(start_tool);
+                }
             }
             CanvasMouseEvent::Release {
                 position,
                 pixel_position,
                 button,
             } => {
+                let prev_tool = self.current_tool;
+                if !self.is_paste_mode() {
+                    if let Some(captured) = self.mouse_capture_tool {
+                        self.current_tool = captured;
+                    }
+                }
+
                 let tool_event = self.handle_tool_mouse_up(position, pixel_position, button);
                 self.handle_tool_event(tool_event);
+
+                self.current_tool = prev_tool;
+                if !self.is_dragging {
+                    self.mouse_capture_tool = None;
+                }
             }
             CanvasMouseEvent::Move { position, pixel_position } => {
+                let prev_tool = self.current_tool;
+                if !self.is_paste_mode() {
+                    if let Some(captured) = self.mouse_capture_tool {
+                        self.current_tool = captured;
+                    }
+                }
+
                 let tool_event = self.handle_tool_mouse_move(position, pixel_position);
                 self.handle_tool_event(tool_event);
+
+                self.current_tool = prev_tool;
+                if !self.is_dragging {
+                    self.mouse_capture_tool = None;
+                }
             }
             CanvasMouseEvent::Scroll { delta } => match delta {
                 iced::mouse::ScrollDelta::Lines { x, y } => {
@@ -3391,10 +3962,28 @@ impl AnsiEditor {
         button: iced::mouse::Button,
         modifiers: icy_engine::KeyModifiers,
     ) -> ToolEvent {
+        // === Paste Mode: exclusive handling ===
+        // When in paste mode, ALL mouse actions are for moving the floating layer
+        if self.is_paste_mode() {
+            log::debug!("handle_tool_mouse_down: pos={:?}, button={:?}, paste_mode=true", pos, button);
+            if button == iced::mouse::Button::Left {
+                // Start dragging the current layer (which is the paste layer)
+                let start_offset = self.with_edit_state(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
+                self.paste_drag_active = true;
+                self.paste_drag_start_offset = start_offset;
+                self.paste_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Move pasted layer".to_string())));
+                self.drag_pos.start = pos;
+                self.drag_pos.cur = pos;
+                self.is_dragging = true;
+                log::debug!("Paste drag started at {:?}, layer offset {:?}", pos, start_offset);
+            }
+            return ToolEvent::None;
+        }
+
         match self.current_tool {
             Tool::Tag => {
                 // Close context menu on any click
-                self.tag_context_menu = None;
+                self.close_tag_context_menu();
 
                 if button == iced::mouse::Button::Left {
                     // If in add mode (dragging new tag), do nothing on click - already dragging
@@ -3421,8 +4010,7 @@ impl AnsiEditor {
                             } else {
                                 self.tag_selection.push(index);
                             }
-                            self.update_tag_overlays();
-                            return ToolEvent::Redraw;
+                            return self.redraw_with_tag_overlays();
                         }
 
                         // Check if this tag is part of multi-selection
@@ -3458,8 +4046,7 @@ impl AnsiEditor {
                             "Move tag".to_string()
                         };
                         self.tag_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
-                        self.update_tag_overlays();
-                        return ToolEvent::Redraw;
+                        return self.redraw_with_tag_overlays();
                     }
 
                     // No tag at position - start a selection drag to select multiple tags
@@ -3501,6 +4088,7 @@ impl AnsiEditor {
                     let layer_offset = self.with_edit_state(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
                     self.layer_drag_active = true;
                     self.layer_drag_start_offset = layer_offset;
+                    self.layer_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Move layer".to_string())));
                     self.is_dragging = true;
                     self.drag_pos.start = pos;
                     self.drag_pos.cur = pos;
@@ -3543,7 +4131,7 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Select => {
-                use crate::ui::editor::ansi::widget::toolbar::top::{SelectionMode, SelectionModifier};
+                use widget::toolbar::top::{SelectionMode, SelectionModifier};
                 let selection_mode = self.top_toolbar.select_options.selection_mode;
 
                 // Determine modifier from *global* keyboard state (event modifiers can be stale).
@@ -3668,10 +4256,7 @@ impl AnsiEditor {
                 self.paint_button = button;
 
                 // Check if we're in half-block mode
-                let is_half_block_mode = matches!(
-                    self.top_toolbar.brush_options.primary,
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock
-                );
+                let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
 
                 if is_half_block_mode {
                     // Apply brush_size in half-block coordinates
@@ -3975,152 +4560,70 @@ impl AnsiEditor {
 
     /// Handle mouse up based on current tool
     fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
+        // === Paste Mode: finalize drag ===
+        if self.paste_drag_active {
+            self.paste_drag_active = false;
+            self.end_drag_capture();
+
+            // Calculate final offset and commit the move
+            let delta = self.drag_pos.cur - self.drag_pos.start;
+            let new_offset = Position::new(self.paste_drag_start_offset.x + delta.x, self.paste_drag_start_offset.y + delta.y);
+
+            log::debug!("Paste drag ended, moving to {:?}", new_offset);
+
+            {
+                let mut screen = self.screen.lock();
+                if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                    // Clear preview offset and commit the actual move
+                    edit_state.set_layer_preview_offset(None);
+                    let _ = edit_state.move_layer(new_offset);
+                }
+            }
+
+            // Finalize atomic undo
+            self.paste_drag_undo = None;
+
+            // Update layer bounds
+            self.update_layer_bounds();
+
+            *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
+            return ToolEvent::Commit("Move pasted layer".to_string());
+        }
+
         // Handle new tag placement completion
         if let Some(new_tag_index) = self.tag_add_new_index.take() {
-            self.tag_drag_active = false;
-            self.is_dragging = false;
-            self.tag_drag_indices.clear();
-            self.tag_drag_start_positions.clear();
-            // Finalize the atomic undo
-            self.tag_drag_undo = None;
+            self.end_tag_drag();
 
             // Open edit dialog for the newly placed tag
             let tag = self.with_edit_state(|state| state.get_buffer().tags.get(new_tag_index).cloned());
             if let Some(tag) = tag {
                 self.tag_dialog = Some(TagDialog::edit(&tag, new_tag_index));
             }
-            self.update_tag_overlays();
-            return ToolEvent::Redraw;
+            return self.redraw_with_tag_overlays();
         }
 
         // Handle regular tag drag completion
         if self.tag_drag_active {
-            self.tag_drag_active = false;
-            self.is_dragging = false;
-            self.tag_drag_indices.clear();
-            self.tag_drag_start_positions.clear();
-            // End atomic undo (drop the guard to finalize)
-            self.tag_drag_undo = None;
+            self.end_tag_drag();
             return ToolEvent::None;
         }
 
         // Handle tag selection drag completion - select all tags in the rectangle
         if self.tag_selection_drag_active {
-            self.tag_selection_drag_active = false;
-            self.is_dragging = false;
-
-            // Calculate selection rectangle
-            let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x);
-            let max_x = self.drag_pos.start.x.max(self.drag_pos.cur.x);
-            let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y);
-            let max_y = self.drag_pos.start.y.max(self.drag_pos.cur.y);
-
-            // Find all tags that intersect with the selection rectangle
-            self.tag_selection.clear();
-            let selected_indices: Vec<usize> = self.with_edit_state(|state| {
-                state
-                    .get_buffer()
-                    .tags
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, tag)| {
-                        let tag_min_x = tag.position.x;
-                        let tag_max_x = tag.position.x + tag.len() as i32 - 1;
-                        let tag_y = tag.position.y;
-
-                        // Check if tag intersects with selection rectangle
-                        tag_y >= min_y && tag_y <= max_y && tag_max_x >= min_x && tag_min_x <= max_x
-                    })
-                    .map(|(i, _)| i)
-                    .collect()
-            });
-            self.tag_selection = selected_indices;
-
-            // Clear selection overlay
-            self.clear_tool_overlay();
-            self.update_tag_overlays();
-
-            return ToolEvent::Redraw;
+            return self.finish_tag_selection_drag();
         }
 
         // Handle layer drag completion
         if self.layer_drag_active {
-            self.layer_drag_active = false;
-            self.is_dragging = false;
-
-            // Calculate final offset and apply
-            let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-            let new_offset = self.layer_drag_start_offset + delta;
-
-            self.with_edit_state(|state| {
-                // Clear preview offset and apply actual move
-                if let Some(layer) = state.get_cur_layer_mut() {
-                    layer.set_preview_offset(None);
-                }
-                let _ = state.move_layer(new_offset);
-            });
-
-            // Update layer border display after move
-            self.update_layer_bounds();
-
-            return ToolEvent::Commit("Move layer".to_string());
+            return self.finish_layer_drag();
         }
 
         if self.is_dragging && self.selection_drag != SelectionDrag::None {
-            self.is_dragging = false;
-
-            // Finalize selection
-            if self.selection_drag == SelectionDrag::Create {
-                // If start == cur, treat as click
-                if self.drag_pos.start == self.drag_pos.cur {
-                    if self.current_tool == Tool::Select {
-                        // Keep selection mask intact.
-                        self.with_edit_state(|state| {
-                            let _ = state.deselect();
-                        });
-                    } else {
-                        self.with_edit_state(|state| {
-                            let _ = state.clear_selection();
-                        });
-                    }
-                } else if self.current_tool == Tool::Select {
-                    // Get current add_type before committing
-                    let add_type = self.with_edit_state(|state| state.selection().map(|s| s.add_type));
-
-                    #[cfg(debug_assertions)]
-                    eprintln!("[DEBUG] Mouse up - Tool::Select, add_type: {:?}", add_type);
-
-                    // Only commit to mask for Add/Subtract modes.
-                    // Default mode keeps the selection active (not in mask) so move/resize doesn't leave stale mask artifacts.
-                    match add_type {
-                        Some(icy_engine::AddType::Add) | Some(icy_engine::AddType::Subtract) => {
-                            #[cfg(debug_assertions)]
-                            eprintln!("[DEBUG] Mouse up - Committing selection to mask and deselecting");
-                            self.with_edit_state(|state| {
-                                let _ = state.add_selection_to_mask();
-                                let _ = state.deselect();
-                            });
-                        }
-                        _ => {
-                            #[cfg(debug_assertions)]
-                            eprintln!("[DEBUG] Mouse up - Default mode: keeping selection active");
-                            // Default mode: keep selection active, don't commit to mask
-                        }
-                    }
-                }
-            }
-            // Move/Resize: selection is already updated during drag, just keep it active
-
-            // Always update selection display after any selection drag ends
-            self.update_selection_display();
-
-            self.selection_drag = SelectionDrag::None;
-            self.start_selection = None;
-            return ToolEvent::Redraw;
+            return self.finish_selection_drag();
         }
 
         if self.is_dragging && matches!(self.current_tool, Tool::Pencil) {
-            self.is_dragging = false;
+            self.end_drag_capture();
             self.paint_last_pos = None;
             // Dropping the guard groups everything into one undo entry.
             self.paint_undo = None;
@@ -4136,15 +4639,12 @@ impl AnsiEditor {
                 Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
             )
         {
-            self.is_dragging = false;
+            self.end_drag_capture();
 
             let desc = format!("{} drawn", self.current_tool.name());
             self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(&desc)));
 
-            let is_half_block_mode = matches!(
-                self.top_toolbar.brush_options.primary,
-                crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock
-            );
+            let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
 
             if is_half_block_mode {
                 // Convert layer-local half-block drag to document half-block coordinates.
@@ -4219,6 +4719,29 @@ impl AnsiEditor {
 
     /// Handle mouse move based on current tool
     fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> ToolEvent {
+        // === Paste Mode: exclusive handling ===
+        if self.is_paste_mode() {
+            if self.paste_drag_active {
+                self.drag_pos.cur = pos;
+                let delta = self.drag_pos.cur - self.drag_pos.start;
+                let new_offset = Position::new(self.paste_drag_start_offset.x + delta.x, self.paste_drag_start_offset.y + delta.y);
+
+                // Update preview offset on the current layer for visual feedback
+                self.with_edit_state(|state| {
+                    state.set_layer_preview_offset(Some(new_offset));
+                });
+
+                // Update layer bounds to show new preview position
+                self.update_layer_bounds();
+
+                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grabbing);
+            } else {
+                // Not dragging - show grab cursor to indicate layer can be moved
+                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
+            }
+            return ToolEvent::Redraw;
+        }
+
         // Update brush/pencil hover preview (shader rectangle)
         self.update_brush_preview(pos, pixel_position);
 
@@ -4261,8 +4784,7 @@ impl AnsiEditor {
                     state.mark_dirty();
                 });
                 *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grabbing);
-                self.update_tag_overlays();
-                return ToolEvent::Redraw;
+                return self.redraw_with_tag_overlays();
             }
 
             self.update_tag_overlays();
@@ -4318,8 +4840,7 @@ impl AnsiEditor {
                         state.mark_dirty();
                     });
                     // Update layer border display
-                    self.update_layer_bounds();
-                    return ToolEvent::Redraw;
+                    return self.redraw_with_layer_bounds();
                 }
 
                 self.update_selection_from_drag();
@@ -4330,10 +4851,7 @@ impl AnsiEditor {
                 let new_half_block_pos = self.compute_half_block_pos(pixel_position);
 
                 // Check if we're in half-block mode
-                let is_half_block_mode = matches!(
-                    self.top_toolbar.brush_options.primary,
-                    crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock
-                );
+                let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
 
                 if is_half_block_mode {
                     // Interpolate in half-block coordinates for smooth 2x Y resolution
@@ -4394,8 +4912,7 @@ impl AnsiEditor {
                         state.mark_dirty();
                     });
                     // Update tag overlays
-                    self.update_tag_overlays();
-                    return ToolEvent::Redraw;
+                    return self.redraw_with_tag_overlays();
                 }
 
                 // Handle selection rectangle drag
@@ -4428,10 +4945,7 @@ impl AnsiEditor {
             (size.width as f32, size.height as f32)
         };
 
-        let is_half_block_mode = matches!(
-            self.top_toolbar.brush_options.primary,
-            crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock
-        );
+        let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
 
         let rect = if is_half_block_mode {
             // Compute doc-space half-block coordinate (Y doubled)
@@ -4777,9 +5291,15 @@ impl AnsiEditor {
         // Tool panel - calculate columns based on sidebar width
         // Use theme's main area background color
         let bg_weakest = main_area_background(&Theme::Dark);
-        let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
 
-        let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = column![palette_view, tool_panel,].spacing(4);
+        // In paste mode, show paste controls instead of tool panel
+        let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if self.is_paste_mode() {
+            let paste_controls = self.view_paste_sidebar_controls();
+            column![palette_view, paste_controls].spacing(4)
+        } else {
+            let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
+            column![palette_view, tool_panel].spacing(4)
+        };
 
         // === TOP TOOLBAR (with color switcher on the left) ===
 
@@ -4858,7 +5378,7 @@ impl AnsiEditor {
                     self.tag_add_new_index.is_some(),
                     selected_tag_info,
                     self.tag_selection.len(),
-                    self.has_floating_layer(),
+                    self.is_paste_mode(),
                 )
                 .map(AnsiEditorMessage::TopToolbar)
         };
@@ -4972,7 +5492,6 @@ impl AnsiEditor {
                 CharSelectorTarget::BrushChar => self.top_toolbar.brush_options.paint_char as u16,
             };
 
-            // Use slot 0 as placeholder for CharSelector (it only needs the current_code for display)
             let selector_canvas = CharSelector::new(current_code)
                 .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
                 .map(AnsiEditorMessage::CharSelector);
@@ -5145,6 +5664,23 @@ impl AnsiEditor {
     }
 
     fn change_tool(&mut self, tool: Tool) {
+        // Block tool changes during paste mode - must anchor or cancel first
+        if self.is_paste_mode() {
+            return;
+        }
+
+        // If capture is still set but we're not dragging anymore (e.g. drag got cancelled
+        // via keyboard without any subsequent mouse move), clear it so tool switching
+        // cannot get stuck.
+        if !self.is_dragging && self.mouse_capture_tool.is_some() {
+            self.mouse_capture_tool = None;
+        }
+
+        // Block tool changes while a drag is in progress.
+        if self.is_dragging {
+            return;
+        }
+
         if self.current_tool == tool {
             return;
         }
@@ -5210,8 +5746,6 @@ impl AnsiEditor {
 
         let has_fonts = self.font_tool.has_fonts();
 
-        // Build font names list
-
         // Build char availability for preview (chars ! to ~)
         let char_availability: Vec<(char, bool)> = ('!'..='~').map(|ch| (ch, self.font_tool.has_char(ch))).collect();
 
@@ -5220,9 +5754,7 @@ impl AnsiEditor {
 
         FontPanelInfo {
             font_name,
-
             has_fonts,
-
             char_availability,
             outline_style,
         }

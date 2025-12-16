@@ -462,7 +462,8 @@ fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
 /// Export animation frames to MP4 (H.264) with progress tracking
 fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
     use minimp4::Mp4Muxer;
-    use openh264::encoder::{Encoder, EncoderConfig};
+    use openh264::OpenH264API;
+    use openh264::encoder::{Encoder, EncoderConfig, FrameRate, UsageType};
     use openh264::formats::YUVBuffer;
     use std::fs::File;
     use std::io::BufWriter;
@@ -499,9 +500,13 @@ fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     let fps = (1000.0 / avg_delay_ms as f64).round() as u32;
     let fps = fps.clamp(1, 60);
 
-    // Create H.264 encoder
-    let config = EncoderConfig::new(width as u32, height as u32);
-    let mut h264_encoder = Encoder::with_config(config).map_err(|e| format!("Failed to create H.264 encoder: {:?}", e))?;
+    // Create H.264 encoder (openh264 0.9 API)
+    // Width/height are taken from the YUV source passed to `encode()`.
+    let api = OpenH264API::from_source();
+    let config = EncoderConfig::new()
+        .usage_type(UsageType::ScreenContentRealTime)
+        .max_frame_rate(FrameRate::from_hz(fps as f32));
+    let mut h264_encoder = Encoder::with_api_config(api, config).map_err(|e| format!("Failed to create H.264 encoder: {:?}", e))?;
 
     // Create MP4 file
     let file = File::create(path).map_err(|e| format!("Failed to create MP4 file: {}", e))?;
@@ -527,17 +532,9 @@ fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
         };
         let (_, rgba_data) = screen.render_to_rgba(&options);
 
-        // Convert RGBA to YUV (I420 format required by openh264)
-        let yuv_buffer = rgba_to_yuv420(&rgba_data, width, height);
-
-        // Encode frame to H.264
-        let yuv = YUVBuffer::with_strides(
-            yuv_buffer.y_plane.clone(),
-            yuv_buffer.u_plane.clone(),
-            yuv_buffer.v_plane.clone(),
-            width,
-            height,
-        );
+        // Convert RGBA to YUV (I420) and encode frame
+        let yuv_i420 = rgba_to_yuv420(&rgba_data, width, height);
+        let yuv = YUVBuffer::from_vec(yuv_i420, width, height);
 
         let bitstream = h264_encoder.encode(&yuv).map_err(|e| format!("H.264 encoding failed: {:?}", e))?;
 
@@ -557,15 +554,8 @@ fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     Ok(())
 }
 
-/// YUV420 buffer for H.264 encoding
-struct Yuv420Buffer {
-    y_plane: Vec<u8>,
-    u_plane: Vec<u8>,
-    v_plane: Vec<u8>,
-}
-
 /// Convert RGBA image data to YUV420 (I420) format
-fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Buffer {
+fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
     let y_size = width * height;
     let uv_size = (width / 2) * (height / 2);
 
@@ -630,7 +620,11 @@ fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Buffer {
         }
     }
 
-    Yuv420Buffer { y_plane, u_plane, v_plane }
+    let mut out = Vec::with_capacity(y_size + uv_size * 2);
+    out.extend_from_slice(&y_plane);
+    out.extend_from_slice(&u_plane);
+    out.extend_from_slice(&v_plane);
+    out
 }
 
 /// Export animation frames to Asciicast v2 format with progress tracking
