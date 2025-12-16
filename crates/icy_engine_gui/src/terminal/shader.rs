@@ -303,6 +303,74 @@ pub struct TerminalShader {
     pub brush_preview_rect: Option<[f32; 4]>,
 }
 
+/// Creates a GPU texture and optionally uploads RGBA data to it.
+///
+/// This helper consolidates the repeated texture creation pattern used for:
+/// - Terminal content slices
+/// - Reference images
+/// - Selection masks
+/// - Tool overlay masks
+fn create_texture_with_data(
+    device: &iced::wgpu::Device,
+    queue: &iced::wgpu::Queue,
+    label: &str,
+    width: u32,
+    height: u32,
+    data: Option<&[u8]>,
+    format: iced::wgpu::TextureFormat,
+) -> TextureSlice {
+    let w = width.max(1).min(MAX_TEXTURE_DIMENSION);
+    let h = height.max(1).min(MAX_TEXTURE_DIMENSION);
+
+    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        label: Some(label),
+        size: iced::wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: iced::wgpu::TextureDimension::D2,
+        format,
+        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+
+    // Upload data if provided
+    if let Some(rgba_data) = data {
+        if !rgba_data.is_empty() {
+            queue.write_texture(
+                iced::wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: iced::wgpu::Origin3d::ZERO,
+                    aspect: iced::wgpu::TextureAspect::All,
+                },
+                rgba_data,
+                iced::wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(h),
+                },
+                iced::wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+
+    TextureSlice {
+        texture,
+        texture_view,
+        height: h,
+    }
+}
+
 /// Texture slice for GPU
 #[allow(dead_code)]
 struct TextureSlice {
@@ -377,7 +445,7 @@ impl shader::Pipeline for TerminalShaderRenderer {
 
         let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
             label: Some(&format!("Terminal CRT Shader {}", renderer_id)),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("shaders/crt.wgsl").into()),
+            source: iced::wgpu::ShaderSource::Wgsl(include_str!("crt_shader.wgsl").into()),
         });
 
         // Create bind group layout with slices + sampler + uniforms + monitor_color + reference_image + selection_mask + tool_overlay_mask
@@ -699,53 +767,17 @@ impl shader::Primitive for TerminalShader {
             let create_gpu_slices = |slices: &[TextureSliceData], label_prefix: &str| -> Vec<TextureSlice> {
                 let mut gpu_slices = Vec::with_capacity(slices.len());
                 for (i, slice_data) in slices.iter().enumerate() {
-                    let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
-                    let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
-
-                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                        label: Some(&format!("Terminal {} Slice {} Instance {}", label_prefix, i, id)),
-                        size: iced::wgpu::Extent3d {
-                            width: w.max(1),
-                            height: h.max(1),
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    });
-
-                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                    if !slice_data.rgba_data.is_empty() {
-                        queue.write_texture(
-                            iced::wgpu::TexelCopyTextureInfo {
-                                texture: &texture,
-                                mip_level: 0,
-                                origin: iced::wgpu::Origin3d::ZERO,
-                                aspect: iced::wgpu::TextureAspect::All,
-                            },
-                            &slice_data.rgba_data,
-                            iced::wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(4 * w),
-                                rows_per_image: Some(h),
-                            },
-                            iced::wgpu::Extent3d {
-                                width: w.max(1),
-                                height: h.max(1),
-                                depth_or_array_layers: 1,
-                            },
-                        );
-                    }
-
-                    gpu_slices.push(TextureSlice {
-                        texture,
-                        texture_view,
-                        height: h,
-                    });
+                    let label = format!("Terminal {} Slice {} Instance {}", label_prefix, i, id);
+                    let slice = create_texture_with_data(
+                        device,
+                        queue,
+                        &label,
+                        slice_data.width,
+                        slice_data.height,
+                        Some(&slice_data.rgba_data),
+                        iced::wgpu::TextureFormat::Rgba8Unorm,
+                    );
+                    gpu_slices.push(slice);
                 }
                 gpu_slices
             };
@@ -886,54 +918,9 @@ impl shader::Primitive for TerminalShader {
             if let Some(resources) = pipeline.instances.get_mut(&id) {
                 // Create or update reference image texture
                 if let Some((data, width, height)) = &self.reference_image_data {
-                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
-                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
-
-                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                        label: Some(&format!("Reference Image Instance {}", id)),
-                        size: iced::wgpu::Extent3d {
-                            width: w,
-                            height: h,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    });
-
-                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                    // Write image data to texture
-                    if !data.is_empty() {
-                        queue.write_texture(
-                            iced::wgpu::TexelCopyTextureInfo {
-                                texture: &texture,
-                                mip_level: 0,
-                                origin: iced::wgpu::Origin3d::ZERO,
-                                aspect: iced::wgpu::TextureAspect::All,
-                            },
-                            data,
-                            iced::wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(4 * w),
-                                rows_per_image: Some(h),
-                            },
-                            iced::wgpu::Extent3d {
-                                width: w,
-                                height: h,
-                                depth_or_array_layers: 1,
-                            },
-                        );
-                    }
-
-                    resources.reference_image_texture = Some(TextureSlice {
-                        texture,
-                        texture_view,
-                        height: h,
-                    });
+                    let label = format!("Reference Image Instance {}", id);
+                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), iced::wgpu::TextureFormat::Rgba8Unorm);
+                    resources.reference_image_texture = Some(slice);
                 } else {
                     resources.reference_image_texture = None;
                 }
@@ -1029,54 +1016,9 @@ impl shader::Primitive for TerminalShader {
             if let Some(resources) = pipeline.instances.get_mut(&id) {
                 // Create or update selection mask texture
                 if let Some((data, width, height)) = &self.selection_mask_data {
-                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
-                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
-
-                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                        label: Some(&format!("Selection Mask Instance {}", id)),
-                        size: iced::wgpu::Extent3d {
-                            width: w,
-                            height: h,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    });
-
-                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                    // Write mask data to texture
-                    if !data.is_empty() {
-                        queue.write_texture(
-                            iced::wgpu::TexelCopyTextureInfo {
-                                texture: &texture,
-                                mip_level: 0,
-                                origin: iced::wgpu::Origin3d::ZERO,
-                                aspect: iced::wgpu::TextureAspect::All,
-                            },
-                            data,
-                            iced::wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(4 * w),
-                                rows_per_image: Some(h),
-                            },
-                            iced::wgpu::Extent3d {
-                                width: w,
-                                height: h,
-                                depth_or_array_layers: 1,
-                            },
-                        );
-                    }
-
-                    resources.selection_mask_texture = Some(TextureSlice {
-                        texture,
-                        texture_view,
-                        height: h,
-                    });
+                    let label = format!("Selection Mask Instance {}", id);
+                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), iced::wgpu::TextureFormat::Rgba8UnormSrgb);
+                    resources.selection_mask_texture = Some(slice);
                 } else {
                     resources.selection_mask_texture = None;
                 }
@@ -1174,10 +1116,9 @@ impl shader::Primitive for TerminalShader {
 
                 // Create or update tool overlay mask texture
                 if let Some((data, width, height)) = &self.tool_overlay_mask_data {
-                    let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
-                    let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
-
                     if debug_overlay {
+                        let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
+                        let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
                         let rect = self.tool_overlay_rect;
                         let params = if let Some([x0, y0, x1, y1]) = rect {
                             let rw = (x1 - x0).max(0.0);
@@ -1197,51 +1138,9 @@ impl shader::Primitive for TerminalShader {
                         );
                     }
 
-                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                        label: Some(&format!("Tool Overlay Mask Instance {}", id)),
-                        size: iced::wgpu::Extent3d {
-                            width: w,
-                            height: h,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    });
-
-                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                    // Write mask data to texture
-                    if !data.is_empty() {
-                        queue.write_texture(
-                            iced::wgpu::TexelCopyTextureInfo {
-                                texture: &texture,
-                                mip_level: 0,
-                                origin: iced::wgpu::Origin3d::ZERO,
-                                aspect: iced::wgpu::TextureAspect::All,
-                            },
-                            data,
-                            iced::wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(4 * w),
-                                rows_per_image: Some(h),
-                            },
-                            iced::wgpu::Extent3d {
-                                width: w,
-                                height: h,
-                                depth_or_array_layers: 1,
-                            },
-                        );
-                    }
-
-                    resources.tool_overlay_mask_texture = Some(TextureSlice {
-                        texture,
-                        texture_view,
-                        height: h,
-                    });
+                    let label = format!("Tool Overlay Mask Instance {}", id);
+                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), iced::wgpu::TextureFormat::Rgba8UnormSrgb);
+                    resources.tool_overlay_mask_texture = Some(slice);
                 } else {
                     resources.tool_overlay_mask_texture = None;
 

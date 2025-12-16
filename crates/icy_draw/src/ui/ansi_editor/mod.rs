@@ -88,7 +88,7 @@ use iced::{
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{MouseButton, Position, Screen, Tag, TagRole, TextBuffer, TextPane};
-use icy_engine_gui::crt_shader_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
+use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::{Mutex, RwLock};
 

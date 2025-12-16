@@ -8,7 +8,8 @@ use iced::{
     widget::{container, stack},
 };
 
-use crate::{HorizontalScrollbarOverlay, ScrollbarOverlay, Terminal, scrollbar_overlay::ViewportAccess};
+use super::{HorizontalScrollbarOverlay, ScrollbarOverlay, overlay::ViewportAccess};
+use crate::Terminal;
 
 /// Information needed to render scrollbars
 /// Computed from Terminal state, shared between icy_term and icy_view

@@ -19,7 +19,7 @@ use iced::{
     window,
 };
 
-use crate::scrollbar_overlay::ViewportAccess;
+use super::overlay::ViewportAccess;
 
 const MIN_HEIGHT: f32 = 3.0;
 const MAX_HEIGHT: f32 = 9.0;

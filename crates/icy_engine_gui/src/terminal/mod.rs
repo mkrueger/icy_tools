@@ -1,9 +1,34 @@
+//! Terminal rendering module
+//!
+//! This module provides the Terminal widget and all supporting rendering infrastructure.
+
+pub mod shader;
+pub use shader::*;
+
+pub mod view;
+pub use view::*;
+
+pub mod crt_program;
+pub use crt_program::*;
+
+pub mod crt_state;
+pub use crt_state::*;
+
+pub mod tile_cache;
+pub use tile_cache::*;
+
+pub mod shared_render_cache;
+pub use shared_render_cache::*;
+
+pub mod render_info;
+pub use render_info::*;
+
 use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::ScalingMode;
-use crate::{EditorMarkers, MouseTracking, RenderInfo, ScrollbarState, SharedRenderCacheHandle, Viewport, create_shared_render_cache};
+use crate::{EditorMarkers, ScrollbarState, Viewport};
 use iced::{Color, mouse, widget};
 use icy_engine::Screen;
 

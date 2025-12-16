@@ -21,32 +21,14 @@ pub use commands::{
 // Re-export proc macros
 pub use icy_engine_gui_macros::dialog_wrapper;
 
-pub mod render_info;
-pub use render_info::*;
+pub mod scrollbar;
+pub use scrollbar::*;
 
 pub mod clipboard;
 pub use clipboard::*;
 
 pub mod viewport;
 pub use viewport::*;
-
-pub mod scrollbar_state;
-pub use scrollbar_state::*;
-
-pub mod scrollbar_overlay;
-pub use scrollbar_overlay::{ScrollbarOverlay, ScrollbarOverlayCallback, ScrollbarOverlayState, ViewportAccess};
-
-pub mod horizontal_scrollbar_overlay;
-pub use horizontal_scrollbar_overlay::{HorizontalScrollbarOverlay, HorizontalScrollbarOverlayCallback, HorizontalScrollbarOverlayState};
-
-pub mod scrollbar_info;
-pub use scrollbar_info::*;
-
-pub mod terminal_shader;
-pub use terminal_shader::*;
-
-pub mod terminal_view;
-pub use terminal_view::*;
 
 // Re-export mouse event types from icy_engine
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
@@ -66,17 +48,8 @@ pub use render_unicode::*;
 pub mod unicode_glyph_cache;
 pub use unicode_glyph_cache::*;
 
-pub mod crt_shader_state;
-pub use crt_shader_state::*;
-
-pub mod crt_shader_program;
-pub use crt_shader_program::*;
-
-pub mod tile_cache;
-pub use tile_cache::*;
-
-pub mod shared_render_cache;
-pub use shared_render_cache::*;
+pub mod calculations;
+pub use calculations::*;
 
 pub mod ui;
 pub use ui::*;

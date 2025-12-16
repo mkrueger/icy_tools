@@ -6,7 +6,7 @@ use iced::{
 use icy_engine::Screen;
 use icy_engine_gui::HorizontalScrollbarOverlay;
 use icy_engine_gui::ui::settings_icon;
-use icy_engine_gui::{MonitorSettings, ScrollbarOverlay, Terminal, terminal_view::TerminalView};
+use icy_engine_gui::{MonitorSettings, ScrollbarOverlay, Terminal, terminal::view::TerminalView};
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
