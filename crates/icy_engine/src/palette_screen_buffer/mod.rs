@@ -498,7 +498,7 @@ impl EditableScreen for PaletteScreenBuffer {
         None
     }
 
-    fn line_count(&self) -> usize {
+    fn physical_line_count(&self) -> usize {
         0
     }
 

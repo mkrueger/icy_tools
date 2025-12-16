@@ -542,7 +542,7 @@ impl EditableScreen for AmigaScreenBuffer {
         None
     }
 
-    fn line_count(&self) -> usize {
+    fn physical_line_count(&self) -> usize {
         // won't work for rgba screens.
         0
     }

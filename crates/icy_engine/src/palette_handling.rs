@@ -1,5 +1,5 @@
 #![allow(clippy::many_single_char_names)]
-use std::{fmt::Display, fs::File, path::Path};
+use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 

@@ -367,8 +367,6 @@ pub struct TerminalShaderRenderer {
 }
 
 static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static DEBUG_RENDER_INFO_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-static DEBUG_RENDER_PASS_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static mut FILTER_MODE: iced::wgpu::FilterMode = iced::wgpu::FilterMode::Linear;
 
 impl shader::Pipeline for TerminalShaderRenderer {
@@ -1370,6 +1368,14 @@ impl shader::Primitive for TerminalShader {
         let width_n = scaled_w / avail_w;
         let height_n = scaled_h / avail_h;
         let terminal_rect = [start_x, start_y, width_n, height_n];
+
+        // Debug output for centering issue
+        if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TERMINAL_RECT").is_ok() {
+            eprintln!(
+                "[terminal_rect] term=({:.1},{:.1}) avail=({:.1},{:.1}) scale={:.2} scaled=({:.1},{:.1}) offset=({:.1},{:.1}) rect=[{:.3},{:.3},{:.3},{:.3}]",
+                term_w, term_h, avail_w, avail_h, final_scale, scaled_w, scaled_h, offset_x, offset_y, start_x, start_y, width_n, height_n
+            );
+        }
 
         // Mouse events are handled in widget-local logical coordinates.
         // Keep RenderInfo in the same space (do NOT use clip/scissor rectangles).

@@ -12,9 +12,49 @@ use crate::{
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse, window};
-use icy_engine::{CaretShape, KeyModifiers, MouseButton};
+use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Clamps the terminal height to fit within the viewport bounds.
+///
+/// This function sets the terminal window height (via `TerminalState`) to
+/// the minimum of the viewport capacity and the document height:
+/// - If the document is smaller than the viewport → keep document height (enables centering)
+/// - If the document is larger than the viewport → shrink to viewport height (use full screen)
+///
+/// This does NOT resize the underlying buffer/scrollback, only the visible terminal window.
+///
+/// # Arguments
+/// * `editable` - The editable screen to modify
+/// * `bounds_height` - The widget bounds height in logical pixels
+/// * `scan_lines` - Whether scanlines are enabled (doubles effective cell height)
+/// * `scale_factor` - The display scale factor (e.g., 2.0 for HiDPI)
+///
+/// # Returns
+/// `true` if the terminal height was changed, `false` otherwise.
+pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, bounds_height: f32, scan_lines: bool, scale_factor: f32) -> bool {
+    let scale_factor = scale_factor.max(0.001);
+    let avail_h_px = bounds_height.max(1.0) * scale_factor;
+
+    let font_h = editable.font_dimensions().height as f32;
+    let scan_mult = if scan_lines { 2.0 } else { 1.0 };
+    let cell_h_px = (font_h * scan_mult).max(1.0);
+
+    // Get the actual buffer height (document content height in rows).
+    let buffer_height = editable.height();
+
+    // Compute desired terminal height: how many rows can fit in the viewport?
+    let viewport_rows = (avail_h_px / cell_h_px).floor().max(1.0) as i32;
+
+    let desired_rows = viewport_rows.min(buffer_height);
+    if desired_rows != editable.terminal_state().height() {
+        editable.terminal_state_mut().set_height(desired_rows);
+        true
+    } else {
+        false
+    }
+}
 
 /// Program wrapper that renders the terminal using sliding window tile approach
 pub struct CRTShaderProgram<'a> {
@@ -47,8 +87,8 @@ impl<'a> CRTShaderProgram<'a> {
         let visible_width: f32;
         let full_content_height: f32;
         let texture_width: u32;
-        let mut blink_on: bool;
-        let mut char_blink_supported: bool;
+        let blink_on: bool;
+        let char_blink_supported: bool;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -70,21 +110,17 @@ impl<'a> CRTShaderProgram<'a> {
             font_w = font_dims.width as usize;
             font_h = font_dims.height as usize;
 
-            // Optional: Fit the terminal *window* height (TerminalState) to the widget bounds.
-            // This adjusts `screen.resolution()` (used as the visible region in Auto scaling),
-            // without resizing the underlying buffer/scrollback.
-            if self.term.fit_terminal_height_to_bounds && !self.monitor_settings.scaling_mode.is_auto() {
-                println!("fit!");
-                if let Some(editable) = screen.as_editable() {
-                    let scale_factor = get_scale_factor().max(0.001);
-                    let avail_h_px = bounds.height.max(1.0) * scale_factor;
-                    let scan_mult = if scan_lines { 2.0 } else { 1.0 };
-                    let cell_h_px = (font_h as f32 * scan_mult).max(1.0);
-                    let desired_rows = (avail_h_px / cell_h_px).floor().max(1.0) as i32;
+            // Get the ORIGINAL document resolution BEFORE fit_terminal_height_to_bounds modifies it.
+            // This is needed for proper centering calculation.
+            let original_resolution = screen.resolution();
+            let original_res_h = original_resolution.height as f32;
 
-                    if desired_rows != editable.terminal_state().height() {
-                        editable.terminal_state_mut().set_height(desired_rows);
-                    }
+            // Optional: Clamp the terminal window height to fit within bounds.
+            // For small documents, this preserves their height (enabling centering).
+            // For large documents, this shrinks to viewport (using full screen).
+            if self.term.fit_terminal_height_to_bounds && !self.monitor_settings.scaling_mode.is_auto() {
+                if let Some(editable) = screen.as_editable() {
+                    clamp_terminal_height_to_viewport(editable, bounds.height, scan_lines, get_scale_factor());
                 }
             }
 
@@ -101,6 +137,8 @@ impl<'a> CRTShaderProgram<'a> {
             // The visible region must maintain the content's aspect ratio.
             // We use resolution() for the visible aspect ratio (terminal size × font),
             // not the full content_height which includes scrollback.
+            // NOTE: We get resolution AFTER fit_terminal_height_to_bounds may have modified it,
+            // but we use original_res_h (saved before) for centering in Manual zoom mode.
             let resolution = screen.resolution();
             let res_w = resolution.width as f32;
             let res_h = resolution.height as f32;
@@ -124,14 +162,25 @@ impl<'a> CRTShaderProgram<'a> {
                 scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
             } else {
                 // Manual zoom: calculate visible portion based on zoom
+                // IMPORTANT: Use original_res_h for centering calculation, not the inflated res_h
+                // from fit_terminal_height_to_bounds. This ensures small documents are centered
+                // properly in the viewport instead of "sticking to the top".
                 let zoom = self
                     .monitor_settings
                     .scaling_mode
-                    .compute_zoom(res_w, res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
+                    .compute_zoom(res_w, original_res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
                     .max(0.001);
 
                 visible_width = (bounds.width / zoom).min(res_w);
-                visible_height = (bounds.height / zoom).min(res_h);
+                visible_height = (bounds.height / zoom).min(original_res_h);
+
+                // Debug output for centering issue
+                if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VISIBLE").is_ok() {
+                    eprintln!(
+                        "[crt_shader] Manual zoom: res=({:.1},{:.1}) original_h={:.1} bounds=({:.1},{:.1}) zoom={:.2} => visible=({:.1},{:.1})",
+                        res_w, res_h, original_res_h, bounds.width, bounds.height, zoom, visible_width, visible_height
+                    );
+                }
 
                 let max_scroll_y = (vp.content_height - visible_height).max(0.0);
                 scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);

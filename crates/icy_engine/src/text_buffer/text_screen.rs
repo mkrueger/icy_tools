@@ -288,7 +288,7 @@ impl EditableScreen for TextScreen {
         self.buffer.layers[self.current_layer].lines.get(line)
     }
 
-    fn line_count(&self) -> usize {
+    fn physical_line_count(&self) -> usize {
         self.buffer.line_count() as usize
     }
 

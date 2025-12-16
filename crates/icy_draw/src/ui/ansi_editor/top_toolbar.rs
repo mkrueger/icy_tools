@@ -366,8 +366,10 @@ impl TopToolbar {
         row![
             Space::new().width(Length::Fill),
             segmented_control,
-            Space::new().width(Length::Fixed(24.0)),
-            text("⇧: add   ⌃/Ctrl: remove").size(14),
+            Space::new().width(Length::Fixed(16.0)),
+            text("⇧: add   ⌃/Ctrl: remove").size(14).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().secondary.base.color),
+            }),
             Space::new().width(Length::Fill),
         ]
         .spacing(8)

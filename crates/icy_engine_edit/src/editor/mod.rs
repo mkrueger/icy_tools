@@ -832,8 +832,8 @@ impl EditableScreen for EditState {
         self.screen.get_line(line)
     }
 
-    fn line_count(&self) -> usize {
-        EditableScreen::line_count(&self.screen)
+    fn physical_line_count(&self) -> usize {
+        EditableScreen::physical_line_count(&self.screen)
     }
 
     fn set_resolution(&mut self, size: Size) {

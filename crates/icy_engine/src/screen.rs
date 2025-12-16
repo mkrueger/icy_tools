@@ -168,7 +168,7 @@ pub trait EditableScreen: Screen {
 
     // Line access for editing
     fn get_line(&self, line: usize) -> Option<&Line>;
-    fn line_count(&self) -> usize;
+    fn physical_line_count(&self) -> usize;
 
     #[must_use]
     fn upper_left_position(&self) -> Position {

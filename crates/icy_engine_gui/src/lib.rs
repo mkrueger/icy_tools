@@ -88,7 +88,6 @@ pub mod music;
 //pub mod terminal_shader_widget;
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
