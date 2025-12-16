@@ -3,9 +3,9 @@ use std::fmt::Alignment;
 use std::io::{Cursor, Read, Write};
 
 use base64::{Engine, engine::general_purpose};
+use bzip2::Compression as BzCompression;
 use bzip2::read::BzDecoder;
 use bzip2::write::BzEncoder;
-use bzip2::Compression as BzCompression;
 use icy_sauce::SauceRecord;
 use regex::Regex;
 
@@ -17,19 +17,19 @@ mod constants {
     pub const ICED_VERSION: u16 = 1;
     pub const ICED_HEADER_SIZEV0: usize = 19;
     pub const ICED_HEADER_SIZE: usize = 21;
-    
+
     /// Compression methods for ICED format (stored in first byte of Type field)
     pub mod compression {
         pub const NONE: u8 = 0;
         pub const BZ2: u8 = 1;
     }
-    
+
     /// Sixel image format (stored in second byte of Type field)
     pub mod sixel_format {
         pub const RAW_RGBA: u8 = 0;
         pub const PNG: u8 = 1;
     }
-    
+
     pub mod layer {
         pub const IS_VISIBLE: u32 = 0b0000_0001;
         pub const POS_LOCK: u32 = 0b0000_0010;
@@ -74,16 +74,14 @@ fn write_icyd_record<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &s
 }
 
 /// Compresses data with bz2 and writes it as an icYD chunk
-fn write_compressed_chunk<W: std::io::Write>(
-    writer: &mut png::Writer<W>,
-    keyword: &str,
-    data: &[u8],
-) -> std::result::Result<(), IcedError> {
+fn write_compressed_chunk<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &str, data: &[u8]) -> std::result::Result<(), IcedError> {
     // Compress data with bz2
     let mut encoder = BzEncoder::new(Vec::new(), BzCompression::best());
-    encoder.write_all(data).map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 compression failed: {e}")))?;
+    encoder
+        .write_all(data)
+        .map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 compression failed: {e}")))?;
     let compressed = encoder.finish().map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 finish failed: {e}")))?;
-    
+
     let record = build_icyd_record(keyword, &compressed).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
     writer
         .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
@@ -95,18 +93,22 @@ fn write_compressed_chunk<W: std::io::Write>(
 fn encode_sixel_as_png(sixel: &Sixel) -> std::result::Result<Vec<u8>, IcedError> {
     let width = sixel.width() as u32;
     let height = sixel.height() as u32;
-    
+
     let mut png_data = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut png_data, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         encoder.set_compression(png::Compression::Fast);
-        
-        let mut writer = encoder.write_header().map_err(|e| IcedError::ErrorEncodingZText(format!("PNG header failed: {e}")))?;
-        writer.write_image_data(&sixel.picture_data).map_err(|e| IcedError::ErrorEncodingZText(format!("PNG write failed: {e}")))?;
+
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| IcedError::ErrorEncodingZText(format!("PNG header failed: {e}")))?;
+        writer
+            .write_image_data(&sixel.picture_data)
+            .map_err(|e| IcedError::ErrorEncodingZText(format!("PNG write failed: {e}")))?;
     }
-    
+
     Ok(png_data)
 }
 
@@ -117,7 +119,7 @@ fn decode_png_to_rgba(png_data: &[u8]) -> Result<(i32, i32, Vec<u8>)> {
     let mut reader = decoder.read_info().map_err(|e| crate::EngineError::UnsupportedFormat {
         description: format!("PNG decode failed: {e}"),
     })?;
-    
+
     let buf_size = reader.output_buffer_size().ok_or_else(|| crate::EngineError::UnsupportedFormat {
         description: "PNG output buffer size unknown".to_string(),
     })?;
@@ -125,7 +127,7 @@ fn decode_png_to_rgba(png_data: &[u8]) -> Result<(i32, i32, Vec<u8>)> {
     let info = reader.next_frame(&mut buf).map_err(|e| crate::EngineError::UnsupportedFormat {
         description: format!("PNG frame read failed: {e}"),
     })?;
-    
+
     buf.truncate(info.buffer_size());
     Ok((info.width as i32, info.height as i32, buf))
 }
@@ -232,7 +234,7 @@ fn process_icy_draw_decoded_chunk(
             }
 
             let mut o: usize = 2; // skip version
-            
+
             // Read Type field: [compression: u8][sixel_format: u8][reserved: u16]
             *compression = bytes[o];
             *sixel_format = bytes[o + 1];
@@ -636,7 +638,7 @@ fn process_icy_draw_decoded_chunk(
                 o += 4;
                 let horiz_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                 o += 4;
-                
+
                 // Check sixel format: PNG or raw RGBA
                 let picture_data = if *sixel_format == constants::sixel_format::PNG {
                     // Decode PNG to RGBA
@@ -647,7 +649,7 @@ fn process_icy_draw_decoded_chunk(
                     // Raw RGBA data
                     bytes[o..].to_vec()
                 };
-                
+
                 layer
                     .sixels
                     .push(Sixel::from_data((sixel_width, sixel_height), vert_scale, horiz_scale, picture_data));
@@ -793,7 +795,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     {
         let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
         // Type field: [compression: u8][sixel_format: u8][reserved: u16]
-        result.push(constants::compression::BZ2);  // compression method
+        result.push(constants::compression::BZ2); // compression method
         result.push(constants::sixel_format::PNG); // sixel format
         result.extend([0, 0]); // reserved
         // Modes
@@ -888,10 +890,10 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
 
         if matches!(layer.role, crate::Role::Image) {
             let sixel = &layer.sixels[0];
-            
+
             // Encode sixel as PNG for better compression
             let png_data = encode_sixel_as_png(sixel)?;
-            
+
             layer_data.extend(u64::to_le_bytes(png_data.len() as u64));
             layer_data.extend(i32::to_le_bytes(sixel.width()));
             layer_data.extend(i32::to_le_bytes(sixel.height()));
@@ -901,7 +903,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
         } else {
             // Build char data
             let mut char_data = Vec::new();
-            
+
             for y in 0..layer.height() {
                 let real_length = get_invisible_line_length(layer, y);
                 for x in 0..real_length {
@@ -942,11 +944,11 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
                     char_data.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
                 }
             }
-            
+
             layer_data.extend(u64::to_le_bytes(char_data.len() as u64));
             layer_data.extend(char_data);
         }
-        
+
         // Write the layer data with bz2 compression
         let keyword = format!("LAYER_{i}");
         write_compressed_chunk(&mut writer, &keyword, &layer_data)?;
@@ -1042,7 +1044,7 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
 
     // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
     let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
-    
+
     // Compression and sixel format from ICED header
     let mut compression = constants::compression::NONE;
     let mut sixel_format = constants::sixel_format::RAW_RGBA;
@@ -1055,7 +1057,7 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     let mut is_running = true;
     for payload in records {
         let (keyword, bytes) = parse_icyd_record(&payload)?;
-        
+
         // Decompress data if needed (except for ICED header and END which are never compressed)
         let decompressed_data: Vec<u8>;
         let actual_bytes: &[u8] = if keyword != "ICED" && keyword != "END" && compression == constants::compression::BZ2 {
@@ -1071,7 +1073,7 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
             let _ = &decompressed_data; // suppress unused warning
             bytes
         };
-        
+
         let keep_running = process_icy_draw_decoded_chunk(&keyword, actual_bytes, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
         if !keep_running {
             is_running = false;
@@ -1094,7 +1096,7 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
 
     // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
     let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
-    
+
     // Legacy files have no compression
     let mut compression = constants::compression::NONE;
     let mut sixel_format = constants::sixel_format::RAW_RGBA;
@@ -1129,7 +1131,14 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
                         }
                     };
 
-                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
+                    let keep_running = process_icy_draw_decoded_chunk(
+                        chunk.keyword.as_str(),
+                        &decoded,
+                        &mut result,
+                        &mut layer_resume_y,
+                        &mut compression,
+                        &mut sixel_format,
+                    )?;
                     if !keep_running {
                         is_running = false;
                         break;
@@ -1156,7 +1165,14 @@ fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
                         }
                     };
 
-                    let keep_running = process_icy_draw_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
+                    let keep_running = process_icy_draw_decoded_chunk(
+                        chunk.keyword.as_str(),
+                        &decoded,
+                        &mut result,
+                        &mut layer_resume_y,
+                        &mut compression,
+                        &mut sixel_format,
+                    )?;
                     if !keep_running {
                         is_running = false;
                         break;

@@ -83,15 +83,36 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn anchor_layer(&mut self) -> Result<()> {
-        let Some(cur_layer) = self.get_cur_layer() else {
-            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        // Find the floating layer by role (it's at current_layer + 1)
+        let floating_idx = self.screen.buffer.layers.iter().position(|l| l.role.is_paste());
+
+        let Some(floating_idx) = floating_idx else {
+            // No floating layer - nothing to anchor
+            return Ok(());
         };
-        let role = cur_layer.role;
-        if !matches!(role, Role::PastePreview) {
+
+        let role = self.screen.buffer.layers[floating_idx].role;
+
+        // PasteImage layers are handled differently (just convert role)
+        if matches!(role, Role::PasteImage) {
+            // Just convert the role to Image
+            self.screen.buffer.layers[floating_idx].role = Role::Image;
+            // Keep current_layer pointing to this layer (now a normal Image layer)
             return Ok(());
         }
+
+        // PastePreview layers are merged down
         let _op = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "layer-anchor"));
-        self.merge_layer_down(self.get_current_layer()?)
+        let result = self.merge_layer_down(floating_idx);
+
+        // After merge, set current_layer to the layer that was below the floating layer
+        if floating_idx > 0 {
+            self.screen.current_layer = floating_idx - 1;
+        } else {
+            self.screen.current_layer = 0;
+        }
+
+        result
     }
 
     pub fn add_floating_layer(&mut self) -> Result<()> {
@@ -192,6 +213,13 @@ impl EditState {
         cur_layer.set_preview_offset(None);
         let op = undo_operations::MoveLayer::new(i, cur_layer.offset(), to);
         self.push_undo_action(Box::new(op))
+    }
+
+    /// Set preview offset on the current layer (for drag preview without undo)
+    pub fn set_layer_preview_offset(&mut self, offset: Option<Position>) {
+        if let Some(layer) = self.get_cur_layer_mut() {
+            layer.set_preview_offset(offset);
+        }
     }
 
     pub fn set_layer_size(&mut self, layer: usize, size: impl Into<Size>) -> Result<()> {

@@ -408,12 +408,16 @@ impl UndoOperation for Paste {
 
     fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         self.layer = Some(edit_state.screen.buffer.layers.remove(self.current_layer + 1));
+        // Restore current_layer to the original layer
+        edit_state.screen.current_layer = self.current_layer;
         Ok(())
     }
 
     fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         if let Some(layer) = self.layer.take() {
             edit_state.screen.buffer.layers.insert(self.current_layer + 1, layer);
+            // Set current_layer to the floating layer so all operations target it
+            edit_state.screen.current_layer = self.current_layer + 1;
             Ok(())
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))

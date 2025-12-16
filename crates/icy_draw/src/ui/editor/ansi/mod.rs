@@ -56,12 +56,15 @@ use icy_engine_edit::tools::{self, Tool, ToolEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use clipboard_rs::common::RustImage;
+use clipboard_rs::{Clipboard, ClipboardContent, ContentFormat};
 use iced::{
     Alignment, Element, Length, Task, Theme,
     widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{MouseButton, Position, Screen, Tag, TagRole, TextBuffer, TextPane};
+use icy_engine::{MouseButton, Position, Screen, Sixel, Tag, TagRole, TextBuffer, TextPane};
+use icy_engine_gui::ICY_CLIPBOARD_TYPE;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::{Mutex, RwLock};
@@ -420,7 +423,6 @@ pub struct AnsiEditor {
     layer_drag_start_offset: icy_engine::Position,
 }
 
-
 impl AnsiEditor {
     // NOTE (Layer-local coordinates)
     // ============================
@@ -723,7 +725,6 @@ impl AnsiEditor {
 
     /// Create an ANSI editor with an existing buffer
     pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
-
         // Clone the palette before moving buffer into EditState
         let palette = buffer.palette.clone();
         let format_mode = icy_engine_edit::FormatMode::from_buffer(&buffer);
@@ -1411,6 +1412,136 @@ impl AnsiEditor {
         }
     }
 
+    // ========================================================================
+    // Clipboard operations
+    // ========================================================================
+
+    /// Check if cut operation is available (selection exists)
+    pub fn can_cut(&self) -> bool {
+        self.with_edit_state_readonly(|state| state.selection().is_some())
+    }
+
+    /// Cut selection to clipboard
+    pub fn cut(&mut self) -> Result<(), String> {
+        self.copy()?;
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            edit_state.erase_selection().map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Check if copy operation is available (selection exists)
+    pub fn can_copy(&self) -> bool {
+        self.with_edit_state_readonly(|state| state.selection().is_some())
+    }
+
+    /// Copy selection to clipboard in multiple formats (ICY, RTF, Text)
+    pub fn copy(&mut self) -> Result<(), String> {
+        let mut screen = self.screen.lock();
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .ok_or_else(|| "Could not access edit state".to_string())?;
+
+        let mut contents = Vec::new();
+
+        // Plain text (required - if no text, nothing to copy)
+        let text = match edit_state.copy_text() {
+            Some(t) => t,
+            None => return Err("No selection to copy".to_string()),
+        };
+
+        // ICY binary format (for paste between ICY applications)
+        if let Some(data) = edit_state.clipboard_data() {
+            contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
+        }
+
+        // RTF (rich text with colors)
+        if let Some(rich_text) = edit_state.copy_rich_text() {
+            contents.push(ClipboardContent::Rtf(rich_text));
+        }
+
+        // Plain text - MUST be last on Windows
+        contents.push(ClipboardContent::Text(text));
+
+        // Set clipboard contents
+        crate::CLIPBOARD_CONTEXT.set(contents).map_err(|e| format!("Failed to set clipboard: {e}"))?;
+
+        Ok(())
+    }
+
+    /// Check if paste operation is available (clipboard has compatible content)
+    pub fn can_paste(&self) -> bool {
+        crate::CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
+            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Image)
+            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Text)
+    }
+
+    /// Paste from clipboard (ICY format, image, or text)
+    /// Creates a floating layer that can be positioned before anchoring
+    pub fn paste(&mut self) -> Result<(), String> {
+        // Don't paste if already have a floating layer
+        if self.with_edit_state_readonly(|state| state.has_floating_layer()) {
+            return Ok(());
+        }
+
+        let mut screen = self.screen.lock();
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .ok_or_else(|| "Could not access edit state".to_string())?;
+
+        // Priority: ICY binary > Image > Text
+        if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+            edit_state.paste_clipboard_data(&data).map_err(|e| e.to_string())?;
+        } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
+            let mut sixel = Sixel::new(Position::default());
+            sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
+            let (w, h) = {
+                let (w, h) = img.get_size();
+                (w as i32, h as i32)
+            };
+            sixel.set_width(w);
+            sixel.set_height(h);
+            edit_state.paste_sixel(sixel).map_err(|e| e.to_string())?;
+        } else if let Ok(text) = crate::CLIPBOARD_CONTEXT.get_text() {
+            edit_state.paste_text(&text).map_err(|e| e.to_string())?;
+        } else {
+            return Err("No compatible clipboard content".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Check if there's a floating layer (paste preview)
+    pub fn has_floating_layer(&self) -> bool {
+        self.with_edit_state_readonly(|state| state.has_floating_layer())
+    }
+
+    /// Anchor the floating layer (finalize paste)
+    pub fn anchor_layer(&mut self) -> Result<(), String> {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            edit_state.anchor_layer().map_err(|e| e.to_string())
+        } else {
+            Err("Could not access edit state".to_string())
+        }
+    }
+
+    /// Discard the floating layer (cancel paste)
+    pub fn discard_floating_layer(&mut self) -> Result<(), String> {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            // Remove the floating layer by undoing the paste
+            if edit_state.has_floating_layer() {
+                edit_state.undo().map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        } else {
+            Err("Could not access edit state".to_string())
+        }
+    }
     /// Save the document to the given path
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let mut screen = self.screen.lock();
@@ -4727,6 +4858,7 @@ impl AnsiEditor {
                     self.tag_add_new_index.is_some(),
                     selected_tag_info,
                     self.tag_selection.len(),
+                    self.has_floating_layer(),
                 )
                 .map(AnsiEditorMessage::TopToolbar)
         };
@@ -5088,9 +5220,9 @@ impl AnsiEditor {
 
         FontPanelInfo {
             font_name,
-            
+
             has_fonts,
-            
+
             char_availability,
             outline_style,
         }

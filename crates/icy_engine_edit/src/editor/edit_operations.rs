@@ -88,9 +88,18 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn paste_clipboard_data(&mut self, data: &[u8]) -> Result<()> {
+        log::debug!("paste_clipboard_data: received {} bytes", data.len());
         if let Some(layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
+            log::debug!(
+                "paste_clipboard_data: created layer {}x{} at offset {:?}",
+                layer.size().width,
+                layer.size().height,
+                layer.offset()
+            );
             let op = Paste::new(self.get_current_layer()?, layer);
             self.push_undo_action(Box::new(op))?;
+        } else {
+            log::warn!("paste_clipboard_data: from_clipboard_data returned None");
         }
         self.selection_opt = None;
         Ok(())

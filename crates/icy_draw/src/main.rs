@@ -28,6 +28,11 @@ lazy_static! {
 }
 
 lazy_static! {
+    /// Global clipboard context for copy/paste operations
+    pub static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
+}
+
+lazy_static! {
     static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
         if let Ok(ver) = github.get_all_versions("mkrueger/icy_tools") {

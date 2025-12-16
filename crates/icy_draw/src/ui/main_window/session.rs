@@ -276,7 +276,6 @@ impl SessionManager {
             false
         }
     }
-
 }
 
 impl Default for SessionManager {

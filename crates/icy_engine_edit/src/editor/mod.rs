@@ -734,7 +734,8 @@ impl Screen for EditState {
     }
 
     fn clipboard_data(&self) -> Option<Vec<u8>> {
-        self.screen.clipboard_data()
+        // Use EditState's own selection_mask and selection_opt, not screen's
+        clipboard::clipboard_data(&self.screen.buffer, self.screen.current_layer, &self.selection_mask, &self.selection_opt)
     }
 
     fn mouse_fields(&self) -> &Vec<MouseField> {

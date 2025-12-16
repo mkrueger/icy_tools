@@ -4,6 +4,21 @@ pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {
     let selection_rect = selection_mask.selected_rectangle(selection);
 
+    log::debug!(
+        "clipboard_data: selection_rect=({}, {}, w={}, h={}), selection={:?}",
+        selection_rect.start.x,
+        selection_rect.start.y,
+        selection_rect.size().width,
+        selection_rect.size().height,
+        selection.as_ref().map(|s| format!("anchor={:?}, lead={:?}", s.anchor, s.lead))
+    );
+
+    // Return None if selection is empty
+    if selection_rect.is_empty() {
+        log::warn!("clipboard_data: selection_rect is empty");
+        return None;
+    }
+
     let mut data = Vec::new();
     data.push(0);
     data.extend(i32::to_le_bytes(selection_rect.start.x));
@@ -38,13 +53,43 @@ pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &Select
 ///
 /// Panics if .
 pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer> {
+    if data.len() < 17 {
+        log::warn!("from_clipboard_data: data too short ({} bytes)", data.len());
+        return None;
+    }
     if data[0] != 0 {
+        log::warn!("from_clipboard_data: invalid header byte {}", data[0]);
         return None;
     }
     let x = i32::from_le_bytes(data[1..5].try_into().unwrap());
     let y = i32::from_le_bytes(data[5..9].try_into().unwrap());
     let width = u32::from_le_bytes(data[9..13].try_into().unwrap()) as usize;
     let height = u32::from_le_bytes(data[13..17].try_into().unwrap()) as usize;
+
+    log::debug!(
+        "from_clipboard_data: x={}, y={}, width={}, height={}, data_len={}",
+        x,
+        y,
+        width,
+        height,
+        data.len()
+    );
+
+    if width == 0 || height == 0 {
+        log::warn!("from_clipboard_data: empty dimensions {}x{}", width, height);
+        return None;
+    }
+
+    let expected_size = 17 + width * height * 16;
+    if data.len() < expected_size {
+        log::warn!(
+            "from_clipboard_data: data too short for dimensions (expected {}, got {})",
+            expected_size,
+            data.len()
+        );
+        return None;
+    }
+
     let mut data = &data[17..];
 
     let mut layer = Layer::new(format!("New Layer"), (width, height));

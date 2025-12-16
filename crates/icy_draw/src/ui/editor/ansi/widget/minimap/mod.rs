@@ -425,7 +425,7 @@ impl MinimapView {
             instance_id: self.instance_id,
             viewport_info: ViewportInfo::default(),
             scroll_offset: 0.0,
-            
+
             full_content_height: 1.0,
             first_slice_start_y: 0.0,
             shared_state: Arc::clone(&self.shared_state),
@@ -456,7 +456,7 @@ impl MinimapView {
             instance_id: self.instance_id,
             viewport_info: viewport_info.clone(),
             scroll_offset,
-            
+
             full_content_height: full_content_size.1 as f32,
             first_slice_start_y,
             shared_state: Arc::clone(&self.shared_state),

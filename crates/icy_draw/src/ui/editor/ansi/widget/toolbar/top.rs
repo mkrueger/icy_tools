@@ -129,6 +129,22 @@ pub enum TopToolbarMessage {
     EditSelectedTag,
     /// Delete the selected tag(s)
     DeleteSelectedTags,
+
+    // === Paste Mode Actions ===
+    /// Stamp (copy) the floating layer down without anchoring
+    PasteStamp,
+    /// Rotate the floating layer 90° clockwise
+    PasteRotate,
+    /// Flip the floating layer horizontally
+    PasteFlipX,
+    /// Flip the floating layer vertically
+    PasteFlipY,
+    /// Toggle transparent mode for the floating layer
+    PasteToggleTransparent,
+    /// Anchor the floating layer (finalize paste)
+    PasteAnchor,
+    /// Cancel paste and discard the floating layer
+    PasteCancel,
 }
 
 /// Information about a selected tag for the toolbar
@@ -320,6 +336,16 @@ impl TopToolbar {
             TopToolbarMessage::DeleteSelectedTags => {
                 // handled at a higher level (AnsiEditor)
             }
+            // Paste mode actions - all handled at AnsiEditor level
+            TopToolbarMessage::PasteStamp
+            | TopToolbarMessage::PasteRotate
+            | TopToolbarMessage::PasteFlipX
+            | TopToolbarMessage::PasteFlipY
+            | TopToolbarMessage::PasteToggleTransparent
+            | TopToolbarMessage::PasteAnchor
+            | TopToolbarMessage::PasteCancel => {
+                // handled at a higher level (AnsiEditor)
+            }
         }
         Task::none()
     }
@@ -340,7 +366,13 @@ impl TopToolbar {
         tag_add_mode: bool,
         selected_tag: Option<SelectedTagInfo>,
         tag_selection_count: usize,
+        has_floating_layer: bool,
     ) -> Element<'_, TopToolbarMessage> {
+        // If there's a floating layer (paste preview), show paste mode toolbar
+        if has_floating_layer {
+            return self.view_paste_panel();
+        }
+
         let content: Element<'_, TopToolbarMessage> = match current_tool {
             Tool::Click => self.view_click_panel(fkeys, buffer_type),
             Tool::Select => self.view_select_panel(font.clone(), theme),
@@ -362,6 +394,60 @@ impl TopToolbar {
             .padding([0, 4])
             .center_y(Length::Fill)
             .style(container::rounded_box)
+            .into()
+    }
+
+    /// Paste mode panel - shown when there's a floating layer
+    fn view_paste_panel(&self) -> Element<'_, TopToolbarMessage> {
+        // Helper to create a toolbar button
+        fn paste_btn<'a>(label: &'a str, shortcut: &'a str, msg: TopToolbarMessage) -> Element<'a, TopToolbarMessage> {
+            button(
+                row![
+                    text(shortcut).size(12).style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                    }),
+                    text(label).size(14),
+                ]
+                .spacing(4)
+                .align_y(iced::Alignment::Center),
+            )
+            .padding([4, 8])
+            .on_press(msg)
+            .into()
+        }
+
+        let content = row![
+            text("Paste Mode:").size(14).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().primary.strong.color),
+            }),
+            Space::new().width(Length::Fixed(16.0)),
+            paste_btn("Stamp", "S", TopToolbarMessage::PasteStamp),
+            paste_btn("Rotate", "R", TopToolbarMessage::PasteRotate),
+            paste_btn("Flip X", "X", TopToolbarMessage::PasteFlipX),
+            paste_btn("Flip Y", "Y", TopToolbarMessage::PasteFlipY),
+            paste_btn("Transparent", "T", TopToolbarMessage::PasteToggleTransparent),
+            Space::new().width(Length::Fill),
+            text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().secondary.base.color),
+            }),
+            Space::new().width(Length::Fixed(16.0)),
+            button(text("✓ Anchor").size(14))
+                .padding([4, 12])
+                .style(button::success)
+                .on_press(TopToolbarMessage::PasteAnchor),
+            button(text("✕ Cancel").size(14))
+                .padding([4, 12])
+                .style(button::danger)
+                .on_press(TopToolbarMessage::PasteCancel),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding([0, 8])
+            .center_y(Length::Fill)
             .into()
     }
 

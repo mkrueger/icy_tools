@@ -606,10 +606,7 @@ impl shader::Primitive for MinimapPrimitive {
 
                 let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
-                slices.push(TextureSlice {
-                    texture,
-                    texture_view,
-                });
+                slices.push(TextureSlice { texture, texture_view });
             }
 
             // Create uniform buffer

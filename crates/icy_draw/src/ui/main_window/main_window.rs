@@ -21,7 +21,7 @@ use icy_engine::formats::FileFormat;
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog, export_dialog_with_defaults_from_msg};
-use icy_engine_gui::{command_handler, command_handlers};
+use icy_engine_gui::{Toast, ToastManager, command_handler, command_handlers};
 
 use super::commands::create_draw_commands;
 use super::{
@@ -414,6 +414,10 @@ pub enum Message {
     // Internal
     Tick,
     AnimationTick,
+
+    // Toast notifications
+    ShowToast(Toast),
+    CloseToast(usize),
 }
 
 /// Status bar information that can be provided by any editor mode
@@ -536,6 +540,9 @@ pub struct MainWindow {
 
     /// Loaded plugins from the plugin directory
     plugins: Arc<Vec<Plugin>>,
+
+    /// Toast notifications for user feedback
+    toasts: Vec<Toast>,
 }
 
 impl MainWindow {
@@ -620,6 +627,7 @@ impl MainWindow {
             ui_revision: Cell::new(0),
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
+            toasts: Vec::new(),
         };
         window.update_title();
         window
@@ -812,6 +820,7 @@ impl MainWindow {
             ui_revision: Cell::new(0),
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
+            toasts: Vec::new(),
         };
         window.update_title();
         window
@@ -1392,8 +1401,10 @@ impl MainWindow {
                         }
                         editor.invalidate_caches();
                     }
-                    ModeState::Ansi(_) => {
-                        // TODO: Implement cut for ANSI
+                    ModeState::Ansi(editor) => {
+                        if let Err(e) = editor.cut() {
+                            log::error!("Cut failed: {}", e);
+                        }
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement cut for CharFont
@@ -1412,8 +1423,10 @@ impl MainWindow {
                         }
                         editor.invalidate_caches();
                     }
-                    ModeState::Ansi(_) => {
-                        // TODO: Implement copy for ANSI
+                    ModeState::Ansi(editor) => {
+                        if let Err(e) = editor.copy() {
+                            log::error!("Copy failed: {}", e);
+                        }
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement copy for CharFont
@@ -1432,8 +1445,10 @@ impl MainWindow {
                         }
                         editor.invalidate_caches();
                     }
-                    ModeState::Ansi(_) => {
-                        // TODO: Implement paste for ANSI
+                    ModeState::Ansi(editor) => {
+                        if let Err(e) = editor.paste() {
+                            log::error!("Paste failed: {}", e);
+                        }
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement paste for CharFont
@@ -1568,6 +1583,18 @@ impl MainWindow {
                     }
                     ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
                 }
+            }
+
+            // Toast notifications
+            Message::ShowToast(toast) => {
+                self.toasts.push(toast);
+                Task::none()
+            }
+            Message::CloseToast(index) => {
+                if index < self.toasts.len() {
+                    self.toasts.remove(index);
+                }
+                Task::none()
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -2502,7 +2529,10 @@ impl MainWindow {
         let main_content: Element<'_, Message> = column![menu_bar, content, rule::horizontal(1), status_bar,].into();
 
         // Show dialogs from dialog stack
-        self.dialogs.view(main_content)
+        let with_dialogs = self.dialogs.view(main_content);
+
+        // Wrap with toast manager
+        ToastManager::new(with_dialogs, &self.toasts, Message::CloseToast).into()
     }
 
     fn view_status_bar(&self) -> Element<'_, Message> {
