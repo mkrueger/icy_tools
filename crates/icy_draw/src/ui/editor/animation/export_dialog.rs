@@ -29,17 +29,19 @@ use crate::ui::Message;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
     Gif,
+    Mp4,
     Asciicast,
 }
 
 impl ExportFormat {
     pub fn all() -> &'static [ExportFormat] {
-        &[ExportFormat::Gif, ExportFormat::Asciicast]
+        &[ExportFormat::Gif, ExportFormat::Mp4, ExportFormat::Asciicast]
     }
 
     pub fn extension(&self) -> &'static str {
         match self {
             ExportFormat::Gif => "gif",
+            ExportFormat::Mp4 => "mp4",
             ExportFormat::Asciicast => "cast",
         }
     }
@@ -47,6 +49,7 @@ impl ExportFormat {
     pub fn name(&self) -> &'static str {
         match self {
             ExportFormat::Gif => "GIF Animation",
+            ExportFormat::Mp4 => "MP4 Video (H.264)",
             ExportFormat::Asciicast => "Asciicast v2",
         }
     }
@@ -168,6 +171,7 @@ impl AnimationExportDialog {
         thread::spawn(move || {
             let result = match format {
                 ExportFormat::Gif => export_to_gif_with_progress(&animator, &path, &progress),
+                ExportFormat::Mp4 => export_to_mp4_with_progress(&animator, &path, &progress),
                 ExportFormat::Asciicast => export_to_asciicast_with_progress(&animator, &path, &progress),
             };
 
@@ -312,6 +316,7 @@ impl Dialog<Message> for AnimationExportDialog {
                         async move {
                             let (filter_name, ext) = match format {
                                 ExportFormat::Gif => ("GIF Animation", "gif"),
+                                ExportFormat::Mp4 => ("MP4 Video", "mp4"),
                                 ExportFormat::Asciicast => ("Asciicast", "cast"),
                             };
 
@@ -452,6 +457,180 @@ fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
             || progress.cancelled.load(Ordering::Relaxed),
         )
         .map_err(|e| format!("GIF encoding failed: {}", e))
+}
+
+/// Export animation frames to MP4 (H.264) with progress tracking
+fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
+    use minimp4::Mp4Muxer;
+    use openh264::encoder::{Encoder, EncoderConfig};
+    use openh264::formats::YUVBuffer;
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let animator_guard = animator.lock();
+
+    if animator_guard.frames.is_empty() {
+        return Err("No frames to export".to_string());
+    }
+
+    let frame_count = animator_guard.frames.len();
+    progress.total_frames.store(frame_count, Ordering::Relaxed);
+    progress.current_frame.store(0, Ordering::Relaxed);
+
+    // Get dimensions from first frame
+    let first_frame = &animator_guard.frames[0].0;
+    let screen_width = first_frame.width();
+    let screen_height = first_frame.height();
+    let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
+    let options = RenderOptions {
+        rect: full_rect.into(),
+        blink_on: true,
+        ..Default::default()
+    };
+
+    let (render_size, _) = first_frame.render_to_rgba(&options);
+    // Ensure dimensions are even (required for H.264)
+    let width = (render_size.width as usize + 1) & !1;
+    let height = (render_size.height as usize + 1) & !1;
+
+    // Calculate average FPS from frame delays
+    let total_delay_ms: u32 = animator_guard.frames.iter().map(|(_, _, delay)| *delay).sum();
+    let avg_delay_ms = if frame_count > 0 { total_delay_ms / frame_count as u32 } else { 100 };
+    let fps = (1000.0 / avg_delay_ms as f64).round() as u32;
+    let fps = fps.clamp(1, 60);
+
+    // Create H.264 encoder
+    let config = EncoderConfig::new(width as u32, height as u32);
+    let mut h264_encoder = Encoder::with_config(config).map_err(|e| format!("Failed to create H.264 encoder: {:?}", e))?;
+
+    // Create MP4 file
+    let file = File::create(path).map_err(|e| format!("Failed to create MP4 file: {}", e))?;
+    let writer = BufWriter::new(file);
+    let mut mp4_muxer = Mp4Muxer::new(writer);
+    mp4_muxer.init_video(width as i32, height as i32, false, "icy_draw animation");
+
+    // Encode each frame
+    for (i, (screen, _settings, _delay_ms)) in animator_guard.frames.iter().enumerate() {
+        // Check for cancellation
+        if progress.cancelled.load(Ordering::Relaxed) {
+            return Err("Export cancelled".to_string());
+        }
+
+        progress.current_frame.store(i + 1, Ordering::Relaxed);
+
+        // Render frame to RGBA
+        let full_rect = Rectangle::from_coords(0, 0, screen.width(), screen.height());
+        let options = RenderOptions {
+            rect: full_rect.into(),
+            blink_on: true,
+            ..Default::default()
+        };
+        let (_, rgba_data) = screen.render_to_rgba(&options);
+
+        // Convert RGBA to YUV (I420 format required by openh264)
+        let yuv_buffer = rgba_to_yuv420(&rgba_data, width, height);
+
+        // Encode frame to H.264
+        let yuv = YUVBuffer::with_strides(
+            yuv_buffer.y_plane.clone(),
+            yuv_buffer.u_plane.clone(),
+            yuv_buffer.v_plane.clone(),
+            width,
+            height,
+        );
+
+        let bitstream = h264_encoder.encode(&yuv).map_err(|e| format!("H.264 encoding failed: {:?}", e))?;
+
+        // Write NAL units to MP4
+        let nal_data = bitstream.to_vec();
+        if !nal_data.is_empty() {
+            mp4_muxer.write_video_with_fps(&nal_data, fps);
+        }
+    }
+
+    // Drop the animator lock before finalizing
+    drop(animator_guard);
+
+    // Finalize MP4 file
+    mp4_muxer.close();
+
+    Ok(())
+}
+
+/// YUV420 buffer for H.264 encoding
+struct Yuv420Buffer {
+    y_plane: Vec<u8>,
+    u_plane: Vec<u8>,
+    v_plane: Vec<u8>,
+}
+
+/// Convert RGBA image data to YUV420 (I420) format
+fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Buffer {
+    let y_size = width * height;
+    let uv_size = (width / 2) * (height / 2);
+
+    let mut y_plane = vec![0u8; y_size];
+    let mut u_plane = vec![0u8; uv_size];
+    let mut v_plane = vec![0u8; uv_size];
+
+    // Convert each pixel to Y
+    for y in 0..height {
+        for x in 0..width {
+            let rgba_idx = (y * width + x) * 4;
+            if rgba_idx + 2 < rgba.len() {
+                let r = rgba[rgba_idx] as f32;
+                let g = rgba[rgba_idx + 1] as f32;
+                let b = rgba[rgba_idx + 2] as f32;
+
+                // BT.601 conversion
+                let y_val = (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
+                y_plane[y * width + x] = y_val;
+            }
+        }
+    }
+
+    // Convert 2x2 blocks to U and V (subsampled)
+    for y in (0..height).step_by(2) {
+        for x in (0..width).step_by(2) {
+            let mut r_sum = 0.0f32;
+            let mut g_sum = 0.0f32;
+            let mut b_sum = 0.0f32;
+            let mut count = 0.0f32;
+
+            // Average 2x2 block
+            for dy in 0..2 {
+                for dx in 0..2 {
+                    let px = x + dx;
+                    let py = y + dy;
+                    if px < width && py < height {
+                        let rgba_idx = (py * width + px) * 4;
+                        if rgba_idx + 2 < rgba.len() {
+                            r_sum += rgba[rgba_idx] as f32;
+                            g_sum += rgba[rgba_idx + 1] as f32;
+                            b_sum += rgba[rgba_idx + 2] as f32;
+                            count += 1.0;
+                        }
+                    }
+                }
+            }
+
+            if count > 0.0 {
+                let r = r_sum / count;
+                let g = g_sum / count;
+                let b = b_sum / count;
+
+                // BT.601 conversion for U and V
+                let u_val = (128.0 + (-0.169 * r - 0.331 * g + 0.500 * b)).clamp(0.0, 255.0) as u8;
+                let v_val = (128.0 + (0.500 * r - 0.419 * g - 0.081 * b)).clamp(0.0, 255.0) as u8;
+
+                let uv_idx = (y / 2) * (width / 2) + (x / 2);
+                u_plane[uv_idx] = u_val;
+                v_plane[uv_idx] = v_val;
+            }
+        }
+    }
+
+    Yuv420Buffer { y_plane, u_plane, v_plane }
 }
 
 /// Export animation frames to Asciicast v2 format with progress tracking
