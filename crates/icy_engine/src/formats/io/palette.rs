@@ -1,7 +1,10 @@
+/*
+
 use std::path::Path;
 
 use crate::formats::PaletteFormat;
 use crate::{EngineError, Result};
+
 
 pub(crate) fn detect_palette_format_from_path_and_bytes(file_path: &Path, data: &[u8]) -> Result<PaletteFormat> {
     let ext = file_path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
@@ -40,8 +43,6 @@ pub(crate) fn detect_palette_format_from_path_and_bytes(file_path: &Path, data: 
         }),
     }
 }
-
-/*
 
 pub(crate) fn load_palette(file_path: &Path) -> Result<crate::Palette> {
     let data = std::fs::read(file_path)?;

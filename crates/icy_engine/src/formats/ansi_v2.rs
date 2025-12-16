@@ -394,7 +394,7 @@ impl StringGeneratorV2 {
         // Foreground-only style bits are irrelevant for blank cells and keeping
         // them stable greatly reduces output size (avoids SGR resets between
         // bold glyphs and non-bold spaces).
-        let mut is_bold: bool = if is_blank_cell { state.is_bold } else { attr.is_bold() || fore_needs_bold };
+        let is_bold: bool = if is_blank_cell { state.is_bold } else { attr.is_bold() || fore_needs_bold };
         let mut is_blink = attr.is_blinking();
         let is_faint = if is_blank_cell { state.is_faint } else { attr.is_faint() };
         let is_italic = if is_blank_cell { state.is_italic } else { attr.is_italic() };

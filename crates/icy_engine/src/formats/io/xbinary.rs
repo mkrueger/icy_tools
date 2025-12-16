@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Position, Result, SavingError, TextBuffer, TextPane,
-    TextScreen, analyze_font_usage, attribute, guess_font_name,
+    AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Result, SavingError, TextBuffer, TextPane, TextScreen,
+    analyze_font_usage, attribute, guess_font_name,
 };
 
 use rayon::prelude::*;

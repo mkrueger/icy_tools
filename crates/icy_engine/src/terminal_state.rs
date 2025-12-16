@@ -1,5 +1,3 @@
-use std::backtrace;
-
 use icy_parser_core::BaudEmulation;
 
 use crate::{Position, Size};

@@ -6,7 +6,6 @@
 use std::sync::OnceLock;
 
 use super::BitFont;
-use crate::ParserError;
 
 /// Macro to create array of OnceLock
 macro_rules! once_lock_array {

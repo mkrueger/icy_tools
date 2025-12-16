@@ -1,11 +1,11 @@
 use std::fs;
 
-use icy_engine::{Position, TextBuffer, TextPane, formats::FileFormat};
+use icy_engine::{TextBuffer, formats::FileFormat};
 
 const TEST_FILE: &str = "tests/output/ar9px/files/aeleus-usta1.ans";
 
 fn load_test_buffer() -> TextBuffer {
-    let path = std::path::Path::new(TEST_FILE);
+    let path: &std::path::Path = std::path::Path::new(TEST_FILE);
     let data = fs::read(path).expect("Failed to read test file");
     FileFormat::Ansi.from_bytes(&data, None).expect("Failed to parse test file").buffer
 }
@@ -17,17 +17,8 @@ pub fn test_9px_rendering() {
 
     let mut buffer = load_test_buffer();
 
-    // Debug: Check what character is at position 29, 0 (pixel 269 = 29*9 + 8)
-    let ch = buffer.char_at(Position::new(29, 0));
-
-    // Check the original font
-    let font = buffer.font(0).unwrap();
-
     // Set letter spacing to trigger 9px font creation
     buffer.set_use_letter_spacing(true);
-
-    // Check the 9px font
-    let font_9px = buffer.font_for_render(0).unwrap();
 
     crate::compare_buffer_output_with_options(
         &mut buffer,

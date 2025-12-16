@@ -15,7 +15,7 @@ fn create_test_buffer_default() -> TextBuffer {
     for y in 0..5 {
         for x in 0..20 {
             let ch = ((y * 20 + x) % 26) as u8 + b'A';
-            buffer.layers[0].set_char((x, y), unsafe {
+            buffer.layers[0].set_char((x, y), {
                 icy_engine::AttributedChar::new(ch as char, icy_engine::TextAttribute::new((x % 16) as u32, ((y + 1) % 16) as u32))
             });
         }
