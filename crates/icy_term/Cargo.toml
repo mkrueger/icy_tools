@@ -27,9 +27,9 @@ webbrowser = { workspace = true }
 icy_engine_gui = { workspace = true }
 fastrand = { workspace = true }
 clap = { workspace = true }
-jsonrpc-core = { workspace = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
+schemars = "1.0"
 
 #sound
 rodio = { workspace = true }
@@ -67,10 +67,9 @@ async-trait = "0.1"
 ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }
 ym2149-gist-replayer = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound" }
 
-# MCP
-rmcp = { workspace = true }
-warp = { version = "0.4.2", features = ["server"]}
-bytes = "1.10.1"
+# MCP (rmcp + HTTP server)
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+axum = "0.8"
 
 [build-dependencies]
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }

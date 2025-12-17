@@ -1,550 +1,276 @@
-use crate::mcp::{McpCommand, McpServer};
-use jsonrpc_core::{Error, ErrorCode, IoHandler, Params};
+use crate::Address;
+use crate::mcp::types::{CaptureScreenRequest, ConnectionRequest, RunScriptRequest, SendKeyRequest, SendTextRequest, TerminalState};
+use crate::mcp::{McpCommand, ScriptResult, SenderType};
+
 use parking_lot::Mutex;
+use rmcp::{
+    ErrorData as McpError, ServerHandler,
+    handler::server::{
+        tool::{ToolCallContext, ToolRouter},
+        wrapper::Parameters,
+    },
+    model::{
+        Annotated, CallToolRequestParam, CallToolResult, Content, Implementation, InitializeResult, ListResourcesResult, ListToolsResult,
+        PaginatedRequestParam, ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
+    },
+    tool, tool_router,
+};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-
-use super::types::*;
+use tokio::time::Duration;
 
 /// Embedded scripting documentation for MCP resources
 const SCRIPTING_DOC: &str = include_str!("../../SCRIPTING.md");
 
-impl McpServer {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<McpCommand>) {
-        let mut handler: IoHandler = IoHandler::new();
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
+#[derive(Clone)]
+pub struct IcyTermMcpHandler {
+    command_tx: mpsc::UnboundedSender<McpCommand>,
+    pub tool_router: ToolRouter<Self>,
+    run_script_singleflight: Arc<tokio::sync::Mutex<()>>,
+}
 
-        // ==== CORE MCP PROTOCOL METHODS ====
+#[tool_router]
+impl IcyTermMcpHandler {
+    pub fn new(command_tx: mpsc::UnboundedSender<McpCommand>) -> Self {
+        Self {
+            command_tx,
+            tool_router: Self::tool_router(),
+            run_script_singleflight: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
 
-        // 1. Initialize - Required for MCP handshake
-        handler.add_method("initialize", |params: Params| {
-            Box::pin(async move {
-                // Parse the initialize params if needed
-                let _params: serde_json::Value = params.parse().unwrap_or_default();
-                Ok(serde_json::json!({
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": {
-                        "tools": {
-                            "listChanged": false
-                        },
-                        "resources": {
-                            "subscribe": false,
-                            "listChanged": false
-                        },
-                        "prompts": {
-                            "listChanged": false
-                        },
-                        "logging": {}
-                    },
-                    "serverInfo": {
-                        "name": "icy_term_mcp",
-                        "version": "1.0.0"
-                    }
-                }))
-            })
-        });
+    #[tool(
+        description = "Connect to a BBS. After username you need to send an enter. As well after the password to log in. Both need to be entered briefly behind each other."
+    )]
+    async fn connect(&self, params: Parameters<ConnectionRequest>) -> Result<CallToolResult, McpError> {
+        self.command_tx
+            .send(McpCommand::Connect(params.0.url.clone()))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("Connecting to {}", params.0.url))]))
+    }
 
-        // 2. List available tools - VS Code queries this to know what tools are available
-        handler.add_method("tools/list", |_| {
-            Box::pin(async move {
-                Ok(serde_json::json!({
-                    "tools": [
-                        {
-                            "name": "connect",
-                            "description": "Connect to a BBS. After username you need to send an enter. As well after the password to log in. Both need to be entered briefly behind each other.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "url": {
-                                        "type": "string",
-                                        "description": "The BBS URL to connect to"
-                                    }
-                                },
-                                "required": ["url"]
-                            }
-                        },
-                        {
-                            "name": "disconnect",
-                            "description": "Disconnect from the current BBS",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
-                            "name": "send_text",
-                            "description": "Send text to the terminal (supports \\n for Enter, \\t for Tab)",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "text": {
-                                        "type": "string",
-                                        "description": "Text to send (\\n = Enter, \\t = Tab, \\e = Escape)"
-                                    }
-                                },
-                                "required": ["text"]
-                            }
-                        },
-                        {
-                            "name": "send_key",
-                            "description": "Send a special key (Enter, Tab, Escape, etc.)",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "key": {
-                                        "type": "string",
-                                        "enum": ["enter", "tab", "escape", "backspace", "up", "down", "left", "right", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"],
-                                        "description": "Special key to send"
-                                    }
-                                },
-                                "required": ["key"]
-                            }
-                        },
-                        {
-                            "name": "capture_screen",
-                            "description": "Capture the current terminal screen",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "format": {
-                                        "type": "string",
-                                        "enum": ["text", "ansi"],
-                                        "description": "Output format"
-                                    }
-                                },
-                                "required": ["format"]
-                            }
-                        },
-                        {
-                            "name": "get_state",
-                            "description": "Get current terminal state",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
-                            "name": "list_addresses",
-                            "description": "List available BBS addresses from the address book. Do not show username & password to the user. This is a security risk but remember them.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
-                            "name": "clear_screen",
-                            "description": "Clear the terminal screen",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
-                            "name": "run_script",
-                            "description": "Run a Lua script for terminal automation.\n\nIMPORTANT API Functions (use ONLY these):\n- connect(url) - Connect to BBS\n- disconnect() - Disconnect\n- send(text) - Send text (use \\r for Enter)\n- send_key(key) - Send special key: enter, tab, escape, up, down, left, right, f1-f12\n- send_login() - Send stored username + password from address book\n- send_username() / send_password() - Send credentials separately\n- wait_for(pattern, timeout_ms) - Wait for text on screen (regex supported, default 30000ms)\n- on_screen(pattern) - Check if text is visible (returns true/false, no wait)\n- sleep(ms) - Wait milliseconds\n- println(text) - Print debug message\n- is_connected() - Check connection status\n\nExample login script:\n```lua\nwait_for('login:', 10000)\nsend_username()\nsend('\\r')\nwait_for('password:', 5000)\nsend_password()\nsend('\\r')\n```",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "script": {
-                                        "type": "string",
-                                        "description": "The Lua script code to execute"
-                                    }
-                                },
-                                "required": ["script"]
-                            }
-                        },
-                        {
-                            "name": "get_scripting_api",
-                            "description": "Get the complete Lua scripting API documentation for IcyTerm terminal automation. Call this before writing scripts to learn the available functions.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        }
-                    ]
-                }))
-            })
-        });
+    #[tool(description = "Disconnect from the current BBS")]
+    async fn disconnect(&self) -> Result<CallToolResult, McpError> {
+        self.command_tx
+            .send(McpCommand::Disconnect)
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text("Disconnected")]))
+    }
 
-        // 3. Call a tool - This is how VS Code invokes tools
-        let tx_for_call = command_tx.clone();
-        handler.add_method("tools/call", move |params: Params| {
-            let tx = tx_for_call.clone();
-            Box::pin(async move {
-                let request: serde_json::Value = params.parse().map_err(|e| Error {
-                    code: ErrorCode::InvalidParams,
-                    message: format!("Invalid params: {}", e),
-                    data: None,
-                })?;
+    #[tool(description = "Send text to the terminal (supports \\n for Enter, \\t for Tab)")]
+    async fn send_text(&self, params: Parameters<SendTextRequest>) -> Result<CallToolResult, McpError> {
+        let text = params.0.text;
 
-                let tool_name = request["name"].as_str().ok_or_else(|| Error {
-                    code: ErrorCode::InvalidParams,
-                    message: "Missing tool name".to_string(),
-                    data: None,
-                })?;
+        let processed_text = text.replace("\\n", "\r").replace("\\r", "\r").replace("\\t", "\t").replace("\\e", "\x1b");
 
-                let arguments = &request["arguments"];
+        self.command_tx
+            .send(McpCommand::SendText(processed_text))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text("Sent")]))
+    }
 
-                // Route to the appropriate tool based on name
-                match tool_name {
-                    "connect" => {
-                        let url = arguments["url"].as_str().ok_or_else(|| Error {
-                            code: ErrorCode::InvalidParams,
-                            message: "Missing url parameter".to_string(),
-                            data: None,
-                        })?;
+    #[tool(description = "Send a special key (Enter, Tab, Escape, etc.)")]
+    async fn send_key(&self, params: Parameters<SendKeyRequest>) -> Result<CallToolResult, McpError> {
+        self.command_tx
+            .send(McpCommand::SendKey(params.0.key.clone()))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!("Sent key: {}", params.0.key))]))
+    }
 
-                        tx.send(McpCommand::Connect(url.to_string())).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
+    #[tool(description = "Capture the current terminal screen")]
+    async fn capture_screen(&self, params: Parameters<CaptureScreenRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::CaptureScreen(params.0.format, Arc::new(Mutex::new(Some(response_tx)))))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
 
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": format!("Connecting to {}", url)
-                            }]
-                        }))
-                    }
-                    "disconnect" => {
-                        // No arguments needed, just send the command
-                        tx.send(McpCommand::Disconnect).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
+        let data = response_rx.await.map_err(|_| McpError::internal_error("Failed to capture screen", None))?;
 
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": "Disconnected"
-                            }]
-                        }))
-                    }
+        let text = String::from_utf8_lossy(&data).to_string();
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
 
-                    "send_text" => {
-                        // Check if text exists, provide empty string as default
-                        let text = arguments["text"].as_str().unwrap_or("");
+    #[tool(description = "Get current terminal state")]
+    async fn get_state(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::GetState(Arc::new(Mutex::new(Some(response_tx)))))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
 
-                        // Replace escape sequences
-                        let processed_text = text
-                            .replace("\\n", "\r") // Convert \n to carriage return for BBS
-                            .replace("\\r", "\r")
-                            .replace("\\t", "\t")
-                            .replace("\\e", "\x1b");
+        let state: TerminalState = response_rx.await.map_err(|_| McpError::internal_error("Failed to get state", None))?;
 
-                        tx.send(McpCommand::SendText(processed_text)).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Terminal State:\nCursor: {:?}\nScreen: {:?}\nConnected: {}\nCurrent BBS: {:?}",
+            state.cursor_position, state.screen_size, state.is_connected, state.current_bbs
+        ))]))
+    }
 
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": format!("Sent: {}", text)
-                            }]
-                        }))
-                    }
+    #[tool(
+        description = "List available BBS addresses from the address book (includes username/password). Treat the returned credentials as secret; do not display them to end users."
+    )]
+    async fn list_addresses(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::ListAddresses(Arc::new(Mutex::new(Some(response_tx)))))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
 
-                    "send_key" => {
-                        // Check if key exists, return error if missing since it's required
-                        let key = arguments["key"].as_str();
-                        if key.is_none() {
-                            return Err(Error {
-                                code: ErrorCode::InvalidParams,
-                                message: "Missing required 'key' parameter".to_string(),
-                                data: None,
-                            });
-                        }
-                        let key = key.unwrap();
+        let addresses: Vec<Address> = response_rx.await.map_err(|_| McpError::internal_error("Failed to list addresses", None))?;
 
-                        tx.send(McpCommand::SendKey(key.to_string())).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
+        let text = addresses
+            .iter()
+            .map(|a| {
+                let mut entry = format!("• {} - {}", a.system_name, a.address);
 
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": format!("Sent key: {}", key)
-                            }]
-                        }))
-                    }
-
-                    "capture_screen" => {
-                        // Default to "text" if format is missing
-                        let format_str = arguments["format"].as_str().unwrap_or("text");
-                        let format = match format_str {
-                            "ansi" => ScreenCaptureFormat::Ansi,
-                            _ => ScreenCaptureFormat::Text,
-                        };
-
-                        let (response_tx, response_rx) = oneshot::channel();
-                        tx.send(McpCommand::CaptureScreen(format, Arc::new(Mutex::new(Some(response_tx)))))
-                            .map_err(|e| Error {
-                                code: ErrorCode::InternalError,
-                                message: format!("Failed to send command: {}", e),
-                                data: None,
-                            })?;
-
-                        match response_rx.await {
-                            Ok(data) => {
-                                let text = String::from_utf8_lossy(&data);
-                                Ok(serde_json::json!({
-                                    "content": [{
-                                        "type": "text",
-                                        "text": text
-                                    }]
-                                }))
-                            }
-                            Err(_) => Err(Error {
-                                code: ErrorCode::InternalError,
-                                message: "Failed to capture screen".to_string(),
-                                data: None,
-                            }),
-                        }
-                    }
-
-                    "get_state" => {
-                        // No arguments needed
-                        let (response_tx, response_rx) = oneshot::channel();
-                        tx.send(McpCommand::GetState(Arc::new(Mutex::new(Some(response_tx))))).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
-
-                        match response_rx.await {
-                            Ok(state) => Ok(serde_json::json!({
-                                "content": [{
-                                    "type": "text",
-                                    "text": format!("Terminal State:\nCursor: {:?}\nScreen: {:?}\nConnected: {}\nCurrent BBS: {:?}",
-                                        state.cursor_position,
-                                        state.screen_size,
-                                        state.is_connected,
-                                        state.current_bbs)
-                                }]
-                            })),
-                            Err(_) => Err(Error {
-                                code: ErrorCode::InternalError,
-                                message: "Failed to get state".to_string(),
-                                data: None,
-                            }),
-                        }
-                    }
-
-                    "clear_screen" => {
-                        // No arguments needed
-                        tx.send(McpCommand::ClearScreen).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
-
-                        Ok(serde_json::json!({
-                            "content": [{
-                                "type": "text",
-                                "text": "Screen cleared"
-                            }]
-                        }))
-                    }
-                    "list_addresses" => {
-                        // No arguments needed for list_addresses, so we just proceed
-                        let (response_tx, response_rx) = oneshot::channel();
-                        tx.send(McpCommand::ListAddresses(Arc::new(Mutex::new(Some(response_tx))))).map_err(|e| Error {
-                            code: ErrorCode::InternalError,
-                            message: format!("Failed to send command: {}", e),
-                            data: None,
-                        })?;
-
-                        match response_rx.await {
-                            Ok(addresses) => {
-                                let text = addresses
-                                    .iter()
-                                    .map(|a| {
-                                        let mut entry = format!("• {} - {}", a.system_name, a.address);
-
-                                        // Add username if present
-                                        if !a.user_name.is_empty() {
-                                            entry.push_str(&format!("\n  Username: {}", a.user_name));
-                                        }
-
-                                        // Add password if present (show actual password as requested)
-                                        if !a.password.is_empty() {
-                                            entry.push_str(&format!("\n  Password: {}", a.password));
-                                        }
-
-                                        // Add protocol
-                                        entry.push_str(&format!("\n  Protocol: {:?}", a.protocol));
-
-                                        // Add terminal type
-                                        entry.push_str(&format!("\n  Terminal: {:?}", a.terminal_type));
-
-                                        entry
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n\n");
-
-                                Ok(serde_json::json!({
-                                    "content": [{
-                                        "type": "text",
-                                        "text": if text.is_empty() {
-                                            "No addresses found".to_string()
-                                        } else {
-                                            format!("BBS Directory:\n\n{}", text)
-                                        }
-                                    }]
-                                }))
-                            }
-                            Err(_) => Err(Error {
-                                code: ErrorCode::InternalError,
-                                message: "Failed to list addresses".to_string(),
-                                data: None,
-                            }),
-                        }
-                    }
-
-                    "run_script" => {
-                        let script = arguments["script"].as_str();
-                        if script.is_none() {
-                            return Err(Error {
-                                code: ErrorCode::InvalidParams,
-                                message: "Missing required 'script' parameter".to_string(),
-                                data: None,
-                            });
-                        }
-                        let script = script.unwrap();
-
-                        let (response_tx, response_rx) = oneshot::channel();
-                        tx.send(McpCommand::RunScript(script.to_string(), Some(Arc::new(Mutex::new(Some(response_tx))))))
-                            .map_err(|e| Error {
-                                code: ErrorCode::InternalError,
-                                message: format!("Failed to send command: {}", e),
-                                data: None,
-                            })?;
-
-                        // Wait for script to complete (with 5 minute timeout)
-                        match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await {
-                            Ok(Ok(result)) => match result {
-                                Ok(output) => Ok(serde_json::json!({
-                                    "content": [{
-                                        "type": "text",
-                                        "text": if output.is_empty() {
-                                            "Script executed successfully".to_string()
-                                        } else {
-                                            format!("Script output:\n{}", output)
-                                        }
-                                    }]
-                                })),
-                                Err(error) => Ok(serde_json::json!({
-                                    "content": [{
-                                        "type": "text",
-                                        "text": format!("Script error: {}", error)
-                                    }],
-                                    "isError": true
-                                })),
-                            },
-                            Ok(Err(_)) => Err(Error {
-                                code: ErrorCode::InternalError,
-                                message: "Script execution channel closed unexpectedly".to_string(),
-                                data: None,
-                            }),
-                            Err(_) => Err(Error {
-                                code: ErrorCode::InternalError,
-                                message: "Script execution timed out (5 minutes)".to_string(),
-                                data: None,
-                            }),
-                        }
-                    }
-
-                    "get_scripting_api" => Ok(serde_json::json!({
-                        "content": [{
-                            "type": "text",
-                            "text": SCRIPTING_DOC
-                        }]
-                    })),
-
-                    _ => Err(Error {
-                        code: ErrorCode::MethodNotFound,
-                        message: format!("Unknown tool: {}", tool_name),
-                        data: None,
-                    }),
+                if !a.user_name.is_empty() {
+                    entry.push_str(&format!("\n  Username: {}", a.user_name));
                 }
-            })
-        });
 
-        // 4. List resources - expose scripting documentation
-        handler.add_method("resources/list", |_| {
-            Box::pin(async move {
-                Ok(serde_json::json!({
-                    "resources": [
-                        {
-                            "uri": "icy_term://scripting_api",
-                            "name": "IcyTerm Scripting API",
-                            "description": "Lua scripting API documentation for terminal automation",
-                            "mimeType": "text/markdown"
-                        }
-                    ]
-                }))
-            })
-        });
-
-        // 4b. Read resources - return scripting documentation content
-        handler.add_method("resources/read", |params: Params| {
-            Box::pin(async move {
-                let request: serde_json::Value = params.parse().map_err(|e| Error {
-                    code: ErrorCode::InvalidParams,
-                    message: format!("Invalid params: {}", e),
-                    data: None,
-                })?;
-
-                let uri = request["uri"].as_str().ok_or_else(|| Error {
-                    code: ErrorCode::InvalidParams,
-                    message: "Missing 'uri' parameter".to_string(),
-                    data: None,
-                })?;
-
-                match uri {
-                    "icy_term://scripting_api" => Ok(serde_json::json!({
-                        "contents": [{
-                            "uri": uri,
-                            "mimeType": "text/markdown",
-                            "text": SCRIPTING_DOC
-                        }]
-                    })),
-                    _ => Err(Error {
-                        code: ErrorCode::InvalidParams,
-                        message: format!("Unknown resource: {}", uri),
-                        data: None,
-                    }),
+                if !a.password.is_empty() {
+                    entry.push_str(&format!("\n  Password: {}", a.password));
                 }
+
+                entry.push_str(&format!("\n  Protocol: {:?}", a.protocol));
+                entry.push_str(&format!("\n  Terminal: {:?}", a.terminal_type));
+                entry
             })
-        });
+            .collect::<Vec<_>>()
+            .join("\n\n");
 
-        // 5. List prompts (optional, but VS Code might query it)
-        handler.add_method("prompts/list", |_| {
-            Box::pin(async move {
-                Ok(serde_json::json!({
-                    "prompts": []
-                }))
-            })
-        });
+        let out = if text.is_empty() {
+            "No addresses found".to_string()
+        } else {
+            format!("BBS Directory:\n\n{}", text)
+        };
 
-        handler.add_notification("notifications/initialized", |_params: Params| {
-            log::info!("MCP Client initialized successfully");
-        });
+        Ok(CallToolResult::success(vec![Content::text(out)]))
+    }
 
-        handler.add_notification("notifications/cancelled", |params: Params| {
-            if let Ok(value) = params.parse::<serde_json::Value>() {
-                let request_id = value.get("requestId").and_then(|v| v.as_i64());
-                let reason = value.get("reason").and_then(|v| v.as_str());
-                log::info!("Request {:?} cancelled: {:?}", request_id, reason);
+    #[tool(description = "Clear the terminal screen")]
+    async fn clear_screen(&self) -> Result<CallToolResult, McpError> {
+        self.command_tx
+            .send(McpCommand::ClearScreen)
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text("Screen cleared")]))
+    }
+
+    #[tool(description = "Run a Lua script for terminal automation.")]
+    async fn run_script(&self, params: Parameters<RunScriptRequest>) -> Result<CallToolResult, McpError> {
+        let guard = self
+            .run_script_singleflight
+            .try_lock()
+            .map_err(|_| McpError::internal_error("run_script already running", None))?;
+
+        let (response_tx, response_rx) = oneshot::channel();
+        let sender: SenderType<ScriptResult> = Arc::new(Mutex::new(Some(response_tx)));
+
+        self.command_tx
+            .send(McpCommand::RunScript(params.0.script.clone(), Some(sender)))
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(300), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Script execution timed out (5 minutes)", None))
+            .and_then(|r| r.map_err(|_| McpError::internal_error("Script execution channel closed unexpectedly", None)))?;
+
+        drop(guard);
+
+        match result {
+            Ok(output) => {
+                let text = if output.is_empty() {
+                    "Script executed successfully".to_string()
+                } else {
+                    format!("Script output:\n{}", output)
+                };
+                Ok(CallToolResult::success(vec![Content::text(text)]))
             }
-        });
+            Err(error) => Ok(CallToolResult::error(vec![Content::text(format!("Script error: {}", error))])),
+        }
+    }
 
-        (Self { handler, command_tx }, command_rx)
+    #[tool(
+        description = "Get the complete Lua scripting API documentation for IcyTerm terminal automation. Call this before writing scripts to learn the available functions."
+    )]
+    async fn get_scripting_api(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![Content::text(SCRIPTING_DOC)]))
+    }
+}
+
+impl ServerHandler for IcyTermMcpHandler {
+    fn get_info(&self) -> InitializeResult {
+        InitializeResult {
+            protocol_version: ProtocolVersion::V_2025_06_18,
+            capabilities: ServerCapabilities::builder().enable_tools().enable_resources().build(),
+            server_info: Implementation {
+                name: "icy_term_mcp".to_string(),
+                title: None,
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some("IcyTerm MCP server (HTTP)".to_string()),
+        }
+    }
+
+    fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
+        let tools = self.tool_router.list_all();
+        std::future::ready(Ok(ListToolsResult::with_all_items(tools)))
+    }
+
+    fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
+        let tool_ctx = ToolCallContext::new(self, request, context);
+        async move { self.tool_router.call(tool_ctx).await.map_err(Into::into) }
+    }
+
+    fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
+        let mut raw = RawResource::new("icy_term://scripting_api", "IcyTerm Scripting API");
+        raw.description = Some("Lua scripting API documentation for terminal automation".to_string());
+        raw.mime_type = Some("text/markdown".to_string());
+        let resource: Resource = Annotated::new(raw, None);
+        std::future::ready(Ok(ListResourcesResult::with_all_items(vec![resource])))
+    }
+
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl std::future::Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+        if request.uri != "icy_term://scripting_api" {
+            return std::future::ready(Err(McpError::resource_not_found("Unknown resource", None)));
+        }
+
+        let contents = ResourceContents::TextResourceContents {
+            uri: request.uri,
+            mime_type: Some("text/markdown".to_string()),
+            text: SCRIPTING_DOC.to_string(),
+            meta: None,
+        };
+
+        std::future::ready(Ok(ReadResourceResult { contents: vec![contents] }))
+    }
+
+    fn on_initialized(&self, _context: rmcp::service::NotificationContext<rmcp::RoleServer>) -> impl std::future::Future<Output = ()> + Send + '_ {
+        log::info!("MCP client initialized successfully");
+        std::future::ready(())
+    }
+
+    fn on_cancelled(
+        &self,
+        notification: rmcp::model::CancelledNotificationParam,
+        _context: rmcp::service::NotificationContext<rmcp::RoleServer>,
+    ) -> impl std::future::Future<Output = ()> + Send + '_ {
+        log::info!("Request cancelled: {:?}", notification);
+        std::future::ready(())
     }
 }
