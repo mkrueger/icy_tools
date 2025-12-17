@@ -18,6 +18,14 @@ use crate::items::{
 #[cfg(windows)]
 use super::get_drives;
 
+#[cfg(windows)]
+fn is_windows_drive_root(path: &Path) -> bool {
+    // We normalize many paths to use '/' elsewhere; accept both separators here.
+    let s = path.to_string_lossy();
+    let b = s.as_bytes();
+    b.len() == 3 && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/') && (b[0] as char).is_ascii_alphabetic()
+}
+
 /// Read contents of a filesystem folder
 pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
     fs::read_dir(path).map(|entries| {
@@ -53,13 +61,16 @@ pub fn read_folder(path: &Path) -> Result<Vec<Box<dyn Item>>, std::io::Error> {
 
         #[cfg(windows)]
         {
-            let drives = get_drives();
-            let mut infos: Vec<Box<dyn Item>> = Vec::with_capacity(drives.len() + directories.len());
-            for drive in drives {
-                infos.push(Box::new(ItemFolder::new(drive.to_string_lossy().replace('\\', "/"))));
+            // Only show drives at the filesystem root (e.g. "C:/").
+            if is_windows_drive_root(path) {
+                let drives = get_drives();
+                let mut infos: Vec<Box<dyn Item>> = Vec::with_capacity(drives.len() + directories.len());
+                for drive in drives {
+                    infos.push(Box::new(ItemFolder::new(drive.to_string_lossy().replace('\\', "/"))));
+                }
+                infos.append(&mut directories);
+                directories = infos;
             }
-            infos.append(&mut directories);
-            directories = infos;
         }
         directories.append(&mut files);
         directories
