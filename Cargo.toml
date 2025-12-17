@@ -106,6 +106,3 @@ strip = true        # Strip symbols from binary*
 inherits = "release"
 debug = true
 strip = false
-
-[patch."https://github.com/mkrueger/iced_aw.git"]
-iced_aw = { path = "vendor/iced_aw" }

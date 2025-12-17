@@ -24,6 +24,7 @@
 
 pub mod constants;
 pub mod dialog;
+pub mod tools;
 pub mod widget;
 
 use dialog::tag::{TagDialog, TagDialogMessage};
@@ -51,7 +52,7 @@ pub use widget::toolbar::top::*;
 use icy_engine_edit::EditState;
 use icy_engine_edit::OperationType;
 use icy_engine_edit::UndoState;
-use icy_engine_edit::tools::{self, Tool, ToolEvent};
+use icy_engine_edit::tools::{self as engine_tools, Tool, ToolEvent};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -259,7 +260,9 @@ impl SelectionDrag {
 }
 
 /// Pipette tool state - stores the currently hovered character and modifiers
+/// TODO: This is the old state, migrate to tools::PipetteTool
 #[derive(Default, Clone, Debug)]
+#[allow(dead_code)]
 pub struct PipetteState {
     /// Currently hovered character (if any)
     pub cur_char: Option<icy_engine::AttributedChar>,
@@ -271,6 +274,7 @@ pub struct PipetteState {
     pub take_bg: bool,
 }
 
+#[allow(dead_code)]
 impl PipetteState {
     /// Update the modifier flags based on current keyboard state
     pub fn update_modifiers(&mut self) {
@@ -417,6 +421,35 @@ pub struct AnsiEditor {
     // === Pipette Tool State ===
     /// Pipette tool state (current character, modifiers)
     pub pipette: PipetteState,
+
+    // === New Tool Handler System ===
+    /// Tool handler for Pipette (new trait-based system)
+    pipette_handler: tools::PipetteTool,
+    /// Tool handler for Line (new trait-based system)
+    line_handler: tools::LineTool,
+    /// Tool handler for Select (new trait-based system)
+    /// TODO: Integrate dispatcher calls into handle_tool_mouse_* methods
+    #[allow(dead_code)]
+    select_handler: tools::SelectTool,
+    /// Tool handler for Pencil (new trait-based system)
+    /// TODO: Integrate dispatcher calls into handle_tool_mouse_* methods
+    #[allow(dead_code)]
+    pencil_handler: tools::PencilTool,
+    /// Tool handler for Shape tools (new trait-based system)
+    #[allow(dead_code)]
+    shape_handler: tools::ShapeTool,
+    /// Tool handler for Fill (new trait-based system)
+    #[allow(dead_code)]
+    fill_handler: tools::FillTool,
+    /// Tool handler for Click/Text (new trait-based system)
+    #[allow(dead_code)]
+    click_handler: tools::ClickTool,
+    /// Tool handler for Font (new trait-based system)
+    #[allow(dead_code)]
+    font_handler: tools::FontTool,
+    /// Tool handler for Tag (new trait-based system)
+    #[allow(dead_code)]
+    tag_handler: tools::TagTool,
 
     // === Layer Drag State (Ctrl+Click+Drag in Click tool) ===
     /// If true, we are dragging a layer (Ctrl+Click+Drag)
@@ -710,6 +743,401 @@ impl AnsiEditor {
         }
     }
 
+    // =========================================================================
+    // Tool Handler Dispatch (new trait-based system)
+    // =========================================================================
+
+    /// Get current drag state for passing to tool handlers
+    fn get_drag_state(&self) -> tools::DragState {
+        tools::DragState {
+            start: self.drag_pos.start,
+            cur: self.drag_pos.cur,
+            start_abs: self.drag_pos.start_abs,
+            cur_abs: self.drag_pos.cur_abs,
+            start_half_block: self.drag_pos.start_half_block,
+            cur_half_block: self.drag_pos.cur_half_block,
+        }
+    }
+
+    /// Dispatch a tool input event to the Pipette handler and process the result.
+    /// Returns the ToolEvent from icy_engine_edit for compatibility with existing code.
+    fn dispatch_pipette_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        // Create ToolContext - requires mutable borrow of screen
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        // Create resources (we'll expand this later)
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        // Dispatch to handler
+        let result = self.pipette_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        // Process result
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch a tool input event to the Line handler and process the result.
+    fn dispatch_line_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.line_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the SelectTool handler and process the result
+    /// TODO: Integrate into handle_tool_mouse_* methods
+    #[allow(dead_code)]
+    fn dispatch_select_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.select_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the PencilTool handler and process the result
+    /// TODO: Integrate into handle_tool_mouse_* methods
+    #[allow(dead_code)]
+    fn dispatch_pencil_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.pencil_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the ShapeTool handler and process the result
+    #[allow(dead_code)]
+    fn dispatch_shape_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.shape_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the FillTool handler and process the result
+    #[allow(dead_code)]
+    fn dispatch_fill_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.fill_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the ClickTool handler and process the result
+    #[allow(dead_code)]
+    fn dispatch_click_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.click_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the FontTool handler and process the result
+    #[allow(dead_code)]
+    fn dispatch_font_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.font_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the TagTool handler and process the result
+    #[allow(dead_code)]
+    fn dispatch_tag_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut resources = tools::ToolResources {
+            font_library: self.font_tool.font_library.clone(),
+            options: self.options.clone(),
+        };
+
+        let mut undo_guard = None;
+        let drag_state = self.get_drag_state();
+        let mut ctx = tools::ToolContext {
+            state,
+            undo_guard: &mut undo_guard,
+            resources: &mut resources,
+            is_dragging: self.is_dragging,
+            drag_pos: drag_state,
+        };
+
+        let result = self.tag_handler.handle_event(&mut ctx, input);
+        drop(screen_guard);
+
+        self.process_tool_result(result)
+    }
+
+    /// Dispatch an event to the appropriate tool handler based on current tool
+    fn dispatch_tool_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+        match self.current_tool {
+            Tool::Pipette => self.dispatch_pipette_event(input),
+            Tool::Line => self.dispatch_line_event(input),
+            Tool::Select => self.dispatch_select_event(input),
+            Tool::Pencil => self.dispatch_pencil_event(input),
+            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => self.dispatch_shape_event(input),
+            Tool::Fill => self.dispatch_fill_event(input),
+            Tool::Click | Tool::Font => self.dispatch_click_event(input),
+            Tool::Tag => self.dispatch_tag_event(input),
+        }
+    }
+
+    /// Create a ToolInput::MouseDown from the given parameters
+    fn create_mouse_down_input(&self, pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) -> tools::ToolInput {
+        let half_block_pos = self.compute_half_block_pos(pixel_position);
+        tools::ToolInput::MouseDown {
+            pos,
+            pos_abs: pos,
+            pos_half_block: half_block_pos,
+            button: if button == iced::mouse::Button::Left {
+                icy_engine::MouseButton::Left
+            } else if button == iced::mouse::Button::Right {
+                icy_engine::MouseButton::Right
+            } else {
+                icy_engine::MouseButton::Middle
+            },
+            modifiers: icy_engine::KeyModifiers {
+                shift: is_shift_pressed(),
+                ctrl: is_ctrl_pressed(),
+                alt: false,
+                meta: is_command_pressed(),
+            },
+        }
+    }
+
+    /// Create a ToolInput::MouseMove from the given parameters
+    fn create_mouse_move_input(&self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> tools::ToolInput {
+        let half_block_pos = self.compute_half_block_pos(pixel_position);
+        tools::ToolInput::MouseMove {
+            pos,
+            pos_abs: pos,
+            pos_half_block: half_block_pos,
+            is_dragging: self.is_dragging,
+            modifiers: icy_engine::KeyModifiers {
+                shift: is_shift_pressed(),
+                ctrl: is_ctrl_pressed(),
+                alt: false,
+                meta: is_command_pressed(),
+            },
+        }
+    }
+
+    /// Create a ToolInput::MouseUp from the given parameters
+    fn create_mouse_up_input(&self, pos: icy_engine::Position, button: iced::mouse::Button) -> tools::ToolInput {
+        tools::ToolInput::MouseUp {
+            pos,
+            pos_abs: pos,
+            button: if button == iced::mouse::Button::Left {
+                icy_engine::MouseButton::Left
+            } else if button == iced::mouse::Button::Right {
+                icy_engine::MouseButton::Right
+            } else {
+                icy_engine::MouseButton::Middle
+            },
+        }
+    }
+
+    /// Create a ToolInput::KeyDown from the given parameters
+    fn create_key_down_input(&self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> tools::ToolInput {
+        tools::ToolInput::KeyDown {
+            key: key.clone(),
+            modifiers: icy_engine::KeyModifiers {
+                shift: modifiers.shift(),
+                ctrl: modifiers.control(),
+                alt: modifiers.alt(),
+                meta: modifiers.logo(),
+            },
+        }
+    }
+
+    /// Process a ToolResult and convert to ToolEvent + perform side effects
+    fn process_tool_result(&mut self, result: tools::ToolResult) -> ToolEvent {
+        use tools::ToolResult;
+
+        match result {
+            ToolResult::None => ToolEvent::None,
+            ToolResult::Redraw => ToolEvent::Redraw,
+            ToolResult::Commit(msg) => ToolEvent::Commit(msg),
+            ToolResult::Status(msg) => ToolEvent::Status(msg),
+            ToolResult::SwitchTool(tool) => {
+                self.change_tool(tool);
+                ToolEvent::Redraw
+            }
+            ToolResult::StartCapture => {
+                self.mouse_capture_tool = Some(self.current_tool);
+                ToolEvent::None
+            }
+            ToolResult::EndCapture => {
+                self.mouse_capture_tool = None;
+                ToolEvent::None
+            }
+            ToolResult::Multi(results) => {
+                let mut last_event = ToolEvent::None;
+                for r in results {
+                    last_event = self.process_tool_result(r);
+                }
+                last_event
+            }
+        }
+    }
+
     /// Create a new empty ANSI editor
     pub fn new(options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
         let buffer = TextBuffer::create((80, 25));
@@ -835,6 +1263,17 @@ impl AnsiEditor {
             shape_clear: false,
 
             pipette: PipetteState::default(),
+
+            // New tool handler system
+            pipette_handler: tools::PipetteTool::new(),
+            line_handler: tools::LineTool::new(),
+            select_handler: tools::SelectTool::new(),
+            pencil_handler: tools::PencilTool::new(),
+            shape_handler: tools::ShapeTool::new(tools::ShapeType::RectangleOutline),
+            fill_handler: tools::FillTool::new(),
+            click_handler: tools::ClickTool::new(),
+            font_handler: tools::FontTool::new(),
+            tag_handler: tools::TagTool::new(),
 
             layer_drag_active: false,
             layer_drag_start_offset: icy_engine::Position::default(),
@@ -2738,7 +3177,7 @@ impl AnsiEditor {
             }
             AnsiEditorMessage::SelectTool(idx) => {
                 // Select tool by slot index
-                self.change_tool(tools::click_tool_slot(idx, self.current_tool));
+                self.change_tool(engine_tools::click_tool_slot(idx, self.current_tool));
                 self.tool_panel.set_tool(self.current_tool);
                 Task::none()
             }
@@ -3837,6 +4276,10 @@ impl AnsiEditor {
                 }
             }
             Tool::Font => {
+                // Dispatch keyboard events to Font handler for state tracking
+                let input = self.create_key_down_input(key, modifiers);
+                let _ = self.dispatch_font_event(input);
+
                 // Handle TDF/Figlet font rendering
                 match key {
                     iced::keyboard::Key::Character(c) => {
@@ -3853,31 +4296,21 @@ impl AnsiEditor {
                 }
             }
             Tool::Select => {
-                if let iced::keyboard::Key::Named(named) = key {
-                    match named {
-                        Named::Delete | Named::Backspace => {
-                            let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| {
-                                if state.is_something_selected() {
-                                    state.erase_selection()
-                                } else {
-                                    // No selection: do nothing in Select tool.
-                                    Ok(())
-                                }
-                            });
-                            if let Err(e) = result {
-                                log::warn!("Failed to delete selection: {}", e);
-                            }
-                            self.update_selection_display();
-                            return ToolEvent::Commit("Delete".to_string());
-                        }
-                        Named::Escape => {
-                            self.with_edit_state(|state| {
-                                let _ = state.clear_selection();
-                            });
-                            return self.redraw_with_selection_display();
-                        }
-                        _ => {}
-                    }
+                // Dispatch keyboard events to Select handler
+                let input = self.create_key_down_input(key, modifiers);
+                let result = self.dispatch_select_event(input);
+                if !matches!(result, ToolEvent::None) {
+                    self.update_selection_display();
+                    return result;
+                }
+            }
+            Tool::Tag => {
+                // Dispatch keyboard events to Tag handler
+                let input = self.create_key_down_input(key, modifiers);
+                let result = self.dispatch_tag_event(input);
+                if !matches!(result, ToolEvent::None) {
+                    self.update_tag_overlays();
+                    return result;
                 }
             }
             _ => {
@@ -3982,6 +4415,10 @@ impl AnsiEditor {
 
         match self.current_tool {
             Tool::Tag => {
+                // Dispatch to tag handler for state tracking
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let _ = self.dispatch_tag_event(input);
+
                 // Close context menu on any click
                 self.close_tag_context_menu();
 
@@ -4082,6 +4519,10 @@ impl AnsiEditor {
                 }
             }
             Tool::Click | Tool::Font => {
+                // Dispatch to click handler for state tracking
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let _ = self.dispatch_click_event(input);
+
                 // Ctrl+Click = Start layer drag
                 if button == iced::mouse::Button::Left && (is_ctrl_pressed() || is_command_pressed()) {
                     // Start layer drag
@@ -4267,7 +4708,31 @@ impl AnsiEditor {
                 }
                 ToolEvent::Redraw
             }
-            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+            Tool::Line => {
+                // Dispatch to new tool handler system
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let half_block_pos = self.compute_half_block_pos(pixel_position);
+
+                // Also set drag state for compatibility with existing overlay preview
+                self.selection_drag = SelectionDrag::None;
+                self.is_dragging = true;
+                self.drag_pos.start = pos;
+                self.drag_pos.cur = pos;
+                self.drag_pos.start_abs = pos;
+                self.drag_pos.cur_abs = pos;
+                self.paint_button = button;
+                self.shape_clear = is_shift_pressed();
+                self.drag_pos.start_half_block = half_block_pos;
+                self.drag_pos.cur_half_block = half_block_pos;
+                self.update_shape_tool_overlay_preview();
+
+                self.dispatch_line_event(input)
+            }
+            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                // Dispatch to shape handler for state tracking
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let _ = self.dispatch_shape_event(input);
+
                 // Start shape drag (preview is rendered as translucent overlay mask like Moebius)
                 self.selection_drag = SelectionDrag::None;
                 self.is_dragging = true;
@@ -4288,28 +4753,11 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Pipette => {
-                // Pipette: Pick character/color at position (Moebius-style)
-                // Update modifier state based on current keys
-                self.pipette.update_modifiers();
+                // Dispatch to new tool handler system
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let result = self.dispatch_pipette_event(input);
 
-                // Get character at position
-                let ch = self.with_edit_state(|state| {
-                    use icy_engine::TextPane;
-                    state.char_at(pos)
-                });
-
-                // Apply to caret attribute based on modifiers
-                let (take_fg, take_bg) = (self.pipette.take_fg, self.pipette.take_bg);
-                self.with_edit_state(|state| {
-                    if take_fg {
-                        state.set_caret_foreground(ch.attribute.foreground());
-                    }
-                    if take_bg {
-                        state.set_caret_background(ch.attribute.background());
-                    }
-                });
-
-                // Update palette grid to reflect new colors
+                // Update palette grid to reflect new colors (side effect)
                 let (fg, bg) = self.with_edit_state(|state| {
                     let attr = state.get_caret().attribute;
                     (attr.foreground(), attr.background())
@@ -4317,10 +4765,13 @@ impl AnsiEditor {
                 self.palette_grid.set_foreground(fg);
                 self.palette_grid.set_background(bg);
 
-                // TODO: Go back to previous tool (like Moebius)
-                ToolEvent::Commit(format!("Picked color at ({}, {})", pos.x, pos.y))
+                result
             }
             Tool::Fill => {
+                // Dispatch to fill handler for state tracking
+                let input = self.create_mouse_down_input(pos, pixel_position, button);
+                let _ = self.dispatch_fill_event(input);
+
                 use std::collections::HashSet;
 
                 // Store half-block click position for HalfBlock fill mode.
@@ -4745,20 +5196,10 @@ impl AnsiEditor {
         // Update brush/pencil hover preview (shader rectangle)
         self.update_brush_preview(pos, pixel_position);
 
-        // Pipette tool: always update hover state (even when not dragging)
+        // Pipette tool: dispatch hover to handler
         if self.current_tool == Tool::Pipette {
-            self.pipette.cur_pos = Some(pos);
-            self.pipette.update_modifiers();
-
-            // Get character at position
-            let ch = self.with_edit_state(|state| {
-                use icy_engine::TextPane;
-                state.char_at(pos)
-            });
-            self.pipette.cur_char = Some(ch);
-
-            // No special overlay needed - the toolbar shows the picked colors
-            return ToolEvent::Redraw;
+            let input = self.create_mouse_move_input(pos, pixel_position);
+            return self.dispatch_pipette_event(input);
         }
 
         // Tag tool: always show tag overlays (even when not dragging)
@@ -4883,7 +5324,18 @@ impl AnsiEditor {
                 }
                 ToolEvent::Redraw
             }
-            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+            Tool::Line => {
+                // Dispatch to new tool handler system
+                let input = self.create_mouse_move_input(pos, pixel_position);
+                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
+
+                // Also update drag state for compatibility
+                self.drag_pos.cur_half_block = new_half_block_pos;
+                self.update_shape_tool_overlay_preview();
+
+                self.dispatch_line_event(input)
+            }
+            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
                 // Update half-block drag positions too so half-block previews are correct.
                 let new_half_block_pos = self.compute_half_block_pos(pixel_position);
                 self.drag_pos.cur_half_block = new_half_block_pos;
@@ -4892,6 +5344,10 @@ impl AnsiEditor {
                 ToolEvent::Redraw
             }
             Tool::Tag => {
+                // Dispatch to tag handler for state tracking
+                let input = self.create_mouse_move_input(pos, pixel_position);
+                let _ = self.dispatch_tag_event(input);
+
                 // Handle tag drag (multi-selection)
                 if self.tag_drag_active && !self.tag_drag_indices.is_empty() {
                     let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;

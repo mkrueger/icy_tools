@@ -142,7 +142,7 @@ impl Default for AnsiSaveOptionsV2 {
             modern_terminal_output: false,
             level: None,
             save_sauce: None,
-            compress: true,
+            compress: false,
             use_cursor_forward: true,
             use_repeat_sequences: false,
             preserve_line_length: false,
