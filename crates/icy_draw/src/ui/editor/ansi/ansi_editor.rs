@@ -616,6 +616,53 @@ impl AnsiEditor {
         false
     }
 
+    /// Update the shape preview overlay during drag operations
+    fn update_shape_preview(&mut self) {
+        let Some(shape) = self.current_tool.as_any().downcast_ref::<tools::ShapeTool>() else {
+            return;
+        };
+
+        let Some(snapshot) = shape.drag_snapshot() else {
+            self.clear_tool_overlay();
+            return;
+        };
+
+        // Get font dimensions and foreground color from caret
+        let (font_width, font_height, paint_color) = {
+            let screen = self.screen.lock();
+            let font = screen.font(0);
+            let (fw, fh) = if let Some(f) = font {
+                let size = f.size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (8.0, 16.0)
+            };
+
+            // Get the foreground color from the caret attribute
+            let caret_fg = screen.caret().attribute.foreground();
+            let palette = screen.palette();
+            let rgb = palette.rgb(caret_fg);
+
+            (fw, fh, rgb)
+        };
+
+        // Get the current tool variant and brush settings from the shape tool
+        let tool = shape.tool();
+        let is_half_block = shape.brush_primary() == crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode::HalfBlock;
+
+        let (mask, rect) = if is_half_block {
+            // Half-block mode uses different coordinates
+            let (Some(start_hb), Some(end_hb)) = (snapshot.start_half_block, snapshot.current_half_block) else {
+                self.clear_tool_overlay();
+                return;
+            };
+            tools::ShapeTool::overlay_mask_for_drag_half_block(tool, font_width, font_height, start_hb, end_hb, paint_color)
+        } else {
+            tools::ShapeTool::overlay_mask_for_drag(tool, font_width, font_height, snapshot.start_pos, snapshot.current_pos, paint_color)
+        };
+        self.canvas.set_tool_overlay_mask(mask, rect);
+    }
+
     fn set_current_fkey_set(&mut self, set_idx: usize) {
         if let Some(click) = self.current_tool.as_any_mut().downcast_mut::<tools::ClickTool>() {
             click.set_current_fkey_set(&self.options, set_idx);
@@ -978,7 +1025,6 @@ impl AnsiEditor {
                         // Selecting a character implicitly closes the overlay.
                         self.char_selector_target = None;
                         let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
-                        self.update_mouse_tracking_mode();
                         task
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
@@ -1055,7 +1101,6 @@ impl AnsiEditor {
                         let _ = self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::ToggleFilled(v)));
 
                         let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar);
-                        self.update_mouse_tracking_mode();
                         task
                     }
 
@@ -1091,7 +1136,6 @@ impl AnsiEditor {
 
                     _ => {
                         let task: Task<AnsiEditorMessage> = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
-                        self.update_mouse_tracking_mode();
                         task
                     }
                 }
@@ -1137,7 +1181,6 @@ impl AnsiEditor {
 
                     if let Some(task) = pending_task {
                         let _ = self.process_tool_result_from(source, result);
-                        self.update_mouse_tracking_mode();
                         return task;
                     }
                 }
@@ -1153,7 +1196,6 @@ impl AnsiEditor {
                     }
                 }
 
-                self.update_mouse_tracking_mode();
                 Task::none()
             }
             AnsiEditorMessage::CharSelector(msg) => {
@@ -1735,6 +1777,10 @@ impl AnsiEditor {
                                     }
                                 }
                             }
+                            id if Self::is_shape_tool_id(id) => {
+                                // Clear shape preview overlay after release
+                                self.clear_tool_overlay();
+                            }
                             _ => {}
                         }
 
@@ -1802,6 +1848,10 @@ impl AnsiEditor {
                                         self.canvas.set_tool_overlay_mask(mask, rect);
                                     }
                                 }
+                            }
+                            id if Self::is_shape_tool_id(id) => {
+                                // Update shape preview overlay during drag
+                                self.update_shape_preview();
                             }
                             _ => {}
                         }
@@ -1980,6 +2030,18 @@ impl AnsiEditor {
             return;
         }
 
+        // Check if the current tool and the new tool share the same handler (e.g., all shape tools).
+        // If so, just reconfigure the current tool instead of swapping with the registry.
+        if let tools::ToolId::Tool(new_tool_variant) = tool {
+            if self.current_tool.is_same_handler(new_tool_variant) {
+                // Reconfigure the current tool (e.g., switch Line -> Rectangle in ShapeTool)
+                if let Some(shape) = self.current_tool.as_any_mut().downcast_mut::<tools::ShapeTool>() {
+                    shape.set_tool(new_tool_variant);
+                }
+                return;
+            }
+        }
+
         // Cancels any in-progress shape preview/drag when switching tools.
         let _ = self.cancel_shape_drag();
 
@@ -1997,8 +2059,6 @@ impl AnsiEditor {
         let old_tool = std::mem::replace(&mut self.current_tool, new_tool);
         tool_registry.put_back(old_tool);
 
-        self.update_mouse_tracking_mode();
-
         // Clear tool hover preview when switching tools.
         if !matches!(tool, tools::ToolId::Tool(Tool::Pencil)) {
             self.canvas.set_brush_preview(None);
@@ -2012,41 +2072,5 @@ impl AnsiEditor {
             self.canvas.set_tool_overlay_mask(None, None);
         }
         // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
-    }
-
-    fn update_mouse_tracking_mode(&mut self) {
-        // HalfBlock tracking is tied to the tool *options* (brush primary mode).
-        let wants_half_block = match self.current_tool.id() {
-            tools::ToolId::Tool(Tool::Pencil) => self
-                .current_tool
-                .as_any()
-                .downcast_ref::<tools::PencilTool>()
-                .is_some_and(|t| t.brush_primary() == BrushPrimaryMode::HalfBlock),
-            tools::ToolId::Tool(Tool::Fill) => self
-                .current_tool
-                .as_any()
-                .downcast_ref::<tools::FillTool>()
-                .is_some_and(|t| t.brush_primary() == BrushPrimaryMode::HalfBlock),
-            id if Self::is_shape_tool_id(id) => self
-                .current_tool
-                .as_any()
-                .downcast_ref::<tools::ShapeTool>()
-                .is_some_and(|t| t.brush_primary() == BrushPrimaryMode::HalfBlock),
-            _ => false,
-        };
-        let tool_allows = matches!(
-            self.current_tool.id(),
-            tools::ToolId::Tool(
-                Tool::Pencil | Tool::Fill | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
-            )
-        );
-
-        let tracking = if wants_half_block && tool_allows {
-            icy_engine_gui::MouseTracking::HalfBlock
-        } else {
-            icy_engine_gui::MouseTracking::Chars
-        };
-
-        self.canvas.terminal.set_mouse_tracking(tracking);
     }
 }

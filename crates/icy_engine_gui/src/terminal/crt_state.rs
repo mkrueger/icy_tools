@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use super::{CRTShaderProgram, MouseTracking, TextureSliceData};
+use super::{CRTShaderProgram, TextureSliceData};
 use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
 use iced::Element;
 use iced::widget::shader;
@@ -137,9 +137,6 @@ pub struct CRTShaderState {
     // Hover tracking
     pub hovered_cell: Option<Position>,
 
-    /// Current mouse tracking mode (mirrors `Terminal.mouse_tracking`).
-    pub mouse_tracking: MouseTracking,
-
     /// Last emitted mouse move position (for central Move dedup).
     pub last_move_position: Option<Position>,
 
@@ -174,7 +171,6 @@ impl CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
-            mouse_tracking: MouseTracking::Chars,
             last_move_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
@@ -300,49 +296,6 @@ impl CRTShaderState {
 
         Position::new(abs_cx, cy)
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Half-Block Coordinate Mapping
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /// Map mouse coordinates to half-block cell position.
-    /// Returns absolute document coordinates with 2x Y resolution.
-    /// In half-block coordinates, Y is doubled: cell row 0 → rows 0,1; cell row 1 → rows 2,3.
-    pub fn map_mouse_to_half_block_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
-        let (cell_x, half_block_y) = render_info.screen_to_half_block_cell(mx, my)?;
-
-        // scroll_x is in content coordinates - convert to columns
-        let font_width = render_info.font_width.max(1.0);
-        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
-
-        // scroll_y is in content coordinates - convert to half-block lines (2x)
-        let scroll_offset_half_lines = (viewport.scroll_y / render_info.font_height * 2.0).floor() as i32;
-
-        // Add scroll offset to get absolute document half-block row
-        let abs_half_block_y = half_block_y + scroll_offset_half_lines;
-
-        Some(Position::new(cell_x + scroll_offset_cols, abs_half_block_y))
-    }
-
-    /// Map mouse coordinates to half-block cell position without bounds checking.
-    /// Used during drag operations where mouse can leave the viewport.
-    /// Returns absolute document coordinates with 2x Y resolution.
-    pub fn map_mouse_to_half_block_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
-        let (cell_x, half_block_y) = render_info.screen_to_half_block_cell_unclamped(mx, my);
-
-        // scroll_x is in content coordinates - convert to columns
-        let font_width = render_info.font_width.max(1.0);
-        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
-
-        // scroll_y is in content coordinates - convert to half-block lines (2x)
-        let font_height = render_info.font_height.max(1.0);
-        let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
-
-        // Add scroll offset to get absolute document half-block row
-        let abs_half_block_y = half_block_y + scroll_offset_half_lines;
-
-        Position::new(cell_x + scroll_offset_cols, abs_half_block_y)
-    }
 }
 
 impl Drop for CRTShaderState {
@@ -363,7 +316,6 @@ impl Default for CRTShaderState {
             last_drag_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
-            mouse_tracking: MouseTracking::Chars,
             last_move_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),

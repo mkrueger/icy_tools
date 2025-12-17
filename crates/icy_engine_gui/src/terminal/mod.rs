@@ -56,9 +56,6 @@ pub struct Terminal {
     /// Editor markers (raster grid, guide crosshair, reference image)
     pub markers: Arc<RwLock<EditorMarkers>>,
 
-    /// Mouse tracking mode for `TerminalMouseEvent.text_position`.
-    pub mouse_tracking: Arc<RwLock<MouseTracking>>,
-
     /// If enabled, the terminal's *window* height (TerminalState height) is adjusted to the
     /// available widget height. This changes `screen.resolution()` but does NOT resize the buffer.
     ///
@@ -95,18 +92,8 @@ impl Terminal {
             render_cache: create_shared_render_cache(),
             markers: Arc::new(RwLock::new(EditorMarkers::default())),
 
-            mouse_tracking: Arc::new(RwLock::new(MouseTracking::Chars)),
-
             fit_terminal_height_to_bounds: false,
         }
-    }
-
-    pub fn set_mouse_tracking(&self, tracking: MouseTracking) {
-        *self.mouse_tracking.write() = tracking;
-    }
-
-    pub fn mouse_tracking(&self) -> MouseTracking {
-        *self.mouse_tracking.read()
     }
 
     /// Enable/disable automatic adjustment of the terminal window height to the widget bounds.

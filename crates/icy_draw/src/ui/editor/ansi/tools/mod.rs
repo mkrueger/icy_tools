@@ -439,4 +439,13 @@ pub trait ToolHandler: Send + Sync {
     fn show_selection(&self) -> bool {
         true
     }
+
+    /// Check if this tool handler also handles the given tool variant.
+    ///
+    /// This is used to avoid registry swaps when switching between variants
+    /// of the same handler (e.g., switching from Line to Rectangle within ShapeTool).
+    /// Default: false (most tools handle only one variant).
+    fn is_same_handler(&self, _other: Tool) -> bool {
+        false
+    }
 }

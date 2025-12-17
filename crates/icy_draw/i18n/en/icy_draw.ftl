@@ -563,7 +563,6 @@ undo-backspace=Backspace
 undo-render_character=Render character
 undo-delete_character=Delete character
 undo-select=Select
-undo-plugin=Plugin { $title }
 undo-animation-edit=Edit
 
 font_selector-ansi_font=ANSI

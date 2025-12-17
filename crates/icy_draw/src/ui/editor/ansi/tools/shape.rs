@@ -102,6 +102,10 @@ impl ShapeTool {
         self.brush.brush_size
     }
 
+    pub fn tool(&self) -> Tool {
+        self.tool
+    }
+
     pub fn set_tool(&mut self, tool: Tool) {
         self.tool = tool;
     }
@@ -119,6 +123,140 @@ impl ShapeTool {
             draw_button: self.draw_button,
             clear_mode: self.clear_mode,
         })
+    }
+
+    /// Generate overlay mask for shape preview during drag (character mode).
+    /// Returns (rgba_data, mask_rect) for the overlay.
+    pub fn overlay_mask_for_drag(
+        tool: Tool,
+        font_width: f32,
+        font_height: f32,
+        start: Position,
+        end: Position,
+        color: (u8, u8, u8), // RGB paint color
+    ) -> (Option<(Vec<u8>, u32, u32)>, Option<(f32, f32, f32, f32)>) {
+        let points = shape_points(tool, start, end);
+        if points.is_empty() {
+            return (None, None);
+        }
+
+        // Find bounding box
+        let min_x = points.iter().map(|p| p.x).min().unwrap_or(0);
+        let max_x = points.iter().map(|p| p.x).max().unwrap_or(0);
+        let min_y = points.iter().map(|p| p.y).min().unwrap_or(0);
+        let max_y = points.iter().map(|p| p.y).max().unwrap_or(0);
+
+        // Convert to pixel coordinates
+        let px_min_x = min_x as f32 * font_width;
+        let px_min_y = min_y as f32 * font_height;
+        let px_max_x = (max_x + 1) as f32 * font_width;
+        let px_max_y = (max_y + 1) as f32 * font_height;
+
+        let w = (px_max_x - px_min_x).ceil() as u32;
+        let h = (px_max_y - px_min_y).ceil() as u32;
+
+        if w == 0 || h == 0 {
+            return (None, None);
+        }
+
+        // Create RGBA buffer
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+
+        // Fill cells that are part of the shape
+        for point in &points {
+            // Cell position relative to bounding box
+            let rel_x = point.x - min_x;
+            let rel_y = point.y - min_y;
+
+            // Pixel range for this cell
+            let cell_px_x = (rel_x as f32 * font_width) as u32;
+            let cell_px_y = (rel_y as f32 * font_height) as u32;
+            let cell_px_w = font_width.ceil() as u32;
+            let cell_px_h = font_height.ceil() as u32;
+
+            // Fill the cell with semi-transparent paint color
+            for py in cell_px_y..(cell_px_y + cell_px_h).min(h) {
+                for px in cell_px_x..(cell_px_x + cell_px_w).min(w) {
+                    let idx = ((py * w + px) * 4) as usize;
+                    if idx + 3 < rgba.len() {
+                        rgba[idx] = color.0;
+                        rgba[idx + 1] = color.1;
+                        rgba[idx + 2] = color.2;
+                        rgba[idx + 3] = 140; // A - semi-transparent
+                    }
+                }
+            }
+        }
+
+        (Some((rgba, w, h)), Some((px_min_x, px_min_y, w as f32, h as f32)))
+    }
+
+    /// Generate overlay mask for shape preview during drag (half-block mode).
+    /// In half-block mode, Y coordinates have 2x resolution.
+    /// Returns (rgba_data, mask_rect) for the overlay.
+    pub fn overlay_mask_for_drag_half_block(
+        tool: Tool,
+        font_width: f32,
+        font_height: f32,
+        start: Position,     // half-block coordinates (Y has 2x resolution)
+        end: Position,       // half-block coordinates (Y has 2x resolution)
+        color: (u8, u8, u8), // RGB paint color
+    ) -> (Option<(Vec<u8>, u32, u32)>, Option<(f32, f32, f32, f32)>) {
+        let points = shape_points(tool, start, end);
+        if points.is_empty() {
+            return (None, None);
+        }
+
+        // Find bounding box in half-block space
+        let min_x = points.iter().map(|p| p.x).min().unwrap_or(0);
+        let max_x = points.iter().map(|p| p.x).max().unwrap_or(0);
+        let min_y = points.iter().map(|p| p.y).min().unwrap_or(0);
+        let max_y = points.iter().map(|p| p.y).max().unwrap_or(0);
+
+        // Convert to pixel coordinates (Y is half-block, so divide font height by 2)
+        let half_height = font_height / 2.0;
+        let px_min_x = min_x as f32 * font_width;
+        let px_min_y = min_y as f32 * half_height;
+        let px_max_x = (max_x + 1) as f32 * font_width;
+        let px_max_y = (max_y + 1) as f32 * half_height;
+
+        let w = (px_max_x - px_min_x).ceil() as u32;
+        let h = (px_max_y - px_min_y).ceil() as u32;
+
+        if w == 0 || h == 0 {
+            return (None, None);
+        }
+
+        // Create RGBA buffer
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+
+        // Fill half-cells that are part of the shape
+        for point in &points {
+            // Cell position relative to bounding box (in half-block space)
+            let rel_x = point.x - min_x;
+            let rel_y = point.y - min_y;
+
+            // Pixel range for this half-cell
+            let cell_px_x = (rel_x as f32 * font_width) as u32;
+            let cell_px_y = (rel_y as f32 * half_height) as u32;
+            let cell_px_w = font_width.ceil() as u32;
+            let cell_px_h = half_height.ceil() as u32;
+
+            // Fill the half-cell with semi-transparent paint color
+            for py in cell_px_y..(cell_px_y + cell_px_h).min(h) {
+                for px in cell_px_x..(cell_px_x + cell_px_w).min(w) {
+                    let idx = ((py * w + px) * 4) as usize;
+                    if idx + 3 < rgba.len() {
+                        rgba[idx] = color.0;
+                        rgba[idx + 1] = color.1;
+                        rgba[idx + 2] = color.2;
+                        rgba[idx + 3] = 140; // A - semi-transparent
+                    }
+                }
+            }
+        }
+
+        (Some((rgba, w, h)), Some((px_min_x, px_min_y, w as f32, h as f32)))
     }
 }
 
@@ -143,6 +281,14 @@ impl ToolHandler for ShapeTool {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn is_same_handler(&self, other: Tool) -> bool {
+        // All shape tools (Line, Rectangle*, Ellipse*) share this handler
+        matches!(
+            other,
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+        )
     }
 
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {

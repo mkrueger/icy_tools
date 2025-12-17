@@ -4,20 +4,6 @@ use iced::Element;
 use icy_engine::{KeyModifiers, MouseButton, Position};
 use std::sync::Arc;
 
-/// Controls how the terminal maps mouse positions into `TerminalMouseEvent.text_position`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MouseTracking {
-    /// Track standard character-cell coordinates.
-    #[default]
-    Chars,
-    /// Track half-block coordinates (Y has 2× resolution).
-    ///
-    /// In this mode, `TerminalMouseEvent.text_position` contains *half-block* coordinates:
-    /// - X is in character columns
-    /// - Y is in half-block rows (cell row * 2)
-    HalfBlock,
-}
-
 /// Re-export iced's scroll delta for convenience
 pub use iced::mouse::ScrollDelta as WheelDelta;
 
