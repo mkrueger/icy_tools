@@ -5,7 +5,7 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    CRTShaderState, Message, MonitorSettings, Terminal, TerminalMouseEvent, TerminalShader, TextureSliceData, get_scale_factor, is_alt_pressed,
+    CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData, get_scale_factor, is_alt_pressed,
     is_ctrl_pressed, is_shift_pressed,
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
     tile_cache::MAX_TEXTURE_SLICES,
@@ -510,7 +510,7 @@ impl<'a> CRTShaderProgram<'a> {
         event: &iced::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<Message>> {
+    ) -> Option<iced::widget::Action<TerminalMessage>> {
         let now = crate::Blink::now_ms();
 
         // Gate blink work to cases where it is actually visible/relevant.
@@ -647,7 +647,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                     let modifiers = Self::get_modifiers();
                     let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
-                    return Some(iced::widget::Action::publish(Message::Release(evt)));
+                    return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                 }
             }
 
@@ -668,7 +668,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                         let modifiers = Self::get_modifiers();
                         let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), MouseButton::Left, modifiers);
-                        return Some(iced::widget::Action::publish(Message::Drag(evt)));
+                        return Some(iced::widget::Action::publish(TerminalMessage::Drag(evt)));
                     }
                 }
             }
@@ -700,9 +700,9 @@ impl<'a> CRTShaderProgram<'a> {
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
 
                         if state.dragging {
-                            return Some(iced::widget::Action::publish(Message::Drag(evt)));
+                            return Some(iced::widget::Action::publish(TerminalMessage::Drag(evt)));
                         } else {
-                            return Some(iced::widget::Action::publish(Message::Move(evt)));
+                            return Some(iced::widget::Action::publish(TerminalMessage::Move(evt)));
                         }
                     }
                 }
@@ -731,7 +731,7 @@ impl<'a> CRTShaderProgram<'a> {
                         let modifiers = Self::get_modifiers();
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
-                        return Some(iced::widget::Action::publish(Message::Press(evt)));
+                        return Some(iced::widget::Action::publish(TerminalMessage::Press(evt)));
                     }
                 }
 
@@ -753,7 +753,7 @@ impl<'a> CRTShaderProgram<'a> {
                             let modifiers = Self::get_modifiers();
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
-                            return Some(iced::widget::Action::publish(Message::Release(evt)));
+                            return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
                     } else if !state.dragging {
                         if let Some(position) = local_pos_in_bounds {
@@ -771,7 +771,7 @@ impl<'a> CRTShaderProgram<'a> {
                             let modifiers = Self::get_modifiers();
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
 
-                            return Some(iced::widget::Action::publish(Message::Release(evt)));
+                            return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
                     }
                 }
@@ -780,10 +780,10 @@ impl<'a> CRTShaderProgram<'a> {
                     let modifiers = Self::get_modifiers();
 
                     if modifiers.ctrl || crate::is_command_pressed() {
-                        return Some(iced::widget::Action::publish(Message::Zoom(crate::ZoomMessage::Wheel(*delta))));
+                        return Some(iced::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 
-                    return Some(iced::widget::Action::publish(Message::Scroll(*delta)));
+                    return Some(iced::widget::Action::publish(TerminalMessage::Scroll(*delta)));
                 }
 
                 _ => {}
@@ -793,7 +793,7 @@ impl<'a> CRTShaderProgram<'a> {
     }
 }
 
-impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
+impl<'a> shader::Program<TerminalMessage> for CRTShaderProgram<'a> {
     type State = CRTShaderState;
     type Primitive = TerminalShader;
 
@@ -801,7 +801,13 @@ impl<'a> shader::Program<Message> for CRTShaderProgram<'a> {
         self.internal_draw(state, _cursor, _bounds)
     }
 
-    fn update(&self, state: &mut CRTShaderState, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+    fn update(
+        &self,
+        state: &mut CRTShaderState,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<iced::widget::Action<TerminalMessage>> {
         self.internal_update(state, event, bounds, cursor)
     }
 

@@ -8,6 +8,10 @@
 //! - Large background rectangle (bottom-right, behind foreground)
 //! - Small default color rectangles (bottom-left corner)
 //! - Swap icon (top-right corner)
+//!
+//! NOTE: Some helper functions are defined for future use.
+
+#![allow(dead_code)]
 
 use iced::{
     Color, Element, Length, Point, Rectangle, Size, Theme, mouse,
@@ -17,7 +21,6 @@ use icy_engine::{Palette, TextAttribute};
 
 /// Size of the color switcher widget (square like in egui version)
 pub const SWITCHER_SIZE: f32 = 62.0;
-
 /// Messages from the color switcher
 #[derive(Clone, Debug)]
 pub enum ColorSwitcherMessage {

@@ -3,49 +3,23 @@
 //! The main editing area in the center, displaying the buffer with terminal rendering.
 //! This is similar to PreviewView in icy_view but for editing.
 //! Includes scrollbars, zoom support, and CRT shader effects.
+//!
+//! NOTE: Some scroll methods are prepared for future smooth animation support.
+
+#![allow(dead_code)]
 
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Task, Theme,
-    widget::{button, column, container, stack, text},
+    Alignment, Element, Length, Task,
+    widget::{container, stack},
 };
-use iced_aw::ContextMenu;
 use icy_engine::Screen;
 
-use crate::fl;
+use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
-
-/// Messages for the canvas view
-#[derive(Clone, Debug)]
-pub enum CanvasMessage {
-    /// Scroll viewport by delta (direct, no animation - for mouse wheel)
-    ScrollViewport(f32, f32),
-    /// Scroll viewport with smooth animation (for PageUp/PageDown)
-    ScrollViewportSmooth(f32, f32),
-    /// Scroll viewport to absolute position (direct, no animation)
-    ScrollViewportTo(f32, f32),
-    /// Scroll viewport to absolute position with smooth animation (for Home/End)
-    ScrollViewportToSmooth(f32, f32),
-    /// Unified zoom message
-    Zoom(ZoomMessage),
-    /// Terminal message from the view
-    TerminalMessage(icy_engine_gui::Message),
-    /// Mouse pressed on canvas
-    MousePress(iced::Point, iced::mouse::Button),
-    /// Mouse released on canvas
-    MouseRelease(iced::Point, iced::mouse::Button),
-    /// Mouse moved on canvas
-    MouseMove(iced::Point),
-    /// Cut selection (context menu)
-    Cut,
-    /// Copy selection (context menu)
-    Copy,
-    /// Paste clipboard (context menu)
-    Paste,
-}
 
 /// Canvas view state for the ANSI editor
 pub struct CanvasView {
@@ -241,147 +215,65 @@ impl CanvasView {
     }
 
     /// Update the canvas view state
-    pub fn update(&mut self, message: CanvasMessage) -> Task<CanvasMessage> {
+    pub fn update(&mut self, message: TerminalMessage) -> Task<TerminalMessage> {
         match message {
-            CanvasMessage::ScrollViewport(dx, dy) => {
-                self.scroll_by(dx, dy);
-                Task::none()
+            icy_engine_gui::TerminalMessage::Press(evt)
+            | icy_engine_gui::TerminalMessage::Release(evt)
+            | icy_engine_gui::TerminalMessage::Move(evt)
+            | icy_engine_gui::TerminalMessage::Drag(evt) => {
+                self.handle_terminal_mouse_event(evt);
             }
-            CanvasMessage::ScrollViewportSmooth(dx, dy) => {
-                self.scroll_by_smooth(dx, dy);
-                Task::none()
+            icy_engine_gui::TerminalMessage::Scroll(delta) => {
+                let (dx, dy) = match delta {
+                    icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
+                    icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
+                };
+                self.scroll_by(-dx, -dy);
             }
-            CanvasMessage::ScrollViewportTo(x, y) => {
-                self.scroll_to(x, y);
-                Task::none()
-            }
-            CanvasMessage::ScrollViewportToSmooth(x, y) => {
-                self.scroll_to_smooth(x, y);
-                Task::none()
-            }
-            CanvasMessage::Zoom(zoom_msg) => {
+            icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => {
                 self.apply_zoom(zoom_msg);
-                Task::none()
-            }
-            CanvasMessage::TerminalMessage(msg) => {
-                match msg {
-                    icy_engine_gui::Message::Press(evt)
-                    | icy_engine_gui::Message::Release(evt)
-                    | icy_engine_gui::Message::Move(evt)
-                    | icy_engine_gui::Message::Drag(evt) => {
-                        self.handle_terminal_mouse_event(evt);
-                    }
-                    icy_engine_gui::Message::Scroll(delta) => {
-                        let (dx, dy) = match delta {
-                            icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
-                            icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
-                        };
-                        self.scroll_by(-dx, -dy);
-                    }
-                    icy_engine_gui::Message::Zoom(zoom_msg) => {
-                        self.apply_zoom(zoom_msg);
-                    }
-                }
-                Task::none()
-            }
-            CanvasMessage::MousePress(_pos, _button) => {
-                // TODO: Forward to active tool
-                Task::none()
-            }
-            CanvasMessage::MouseRelease(_pos, _button) => Task::none(),
-            CanvasMessage::MouseMove(_pos) => Task::none(),
-            CanvasMessage::Cut | CanvasMessage::Copy | CanvasMessage::Paste => {
-                // These are handled by the parent AnsiEditor
-                Task::none()
             }
         }
+        Task::none()
     }
 
-    /// Create a menu item button for the context menu
-    fn menu_item(label: String, message: Option<CanvasMessage>) -> Element<'static, CanvasMessage> {
-        let is_enabled = message.is_some();
-
-        button(text(label).size(13))
-            .on_press_maybe(message)
-            .width(Length::Fill)
-            .padding([6, 10])
-            .style(move |theme: &Theme, status: button::Status| {
-                let palette = theme.extended_palette();
-
-                match status {
-                    button::Status::Hovered if is_enabled => button::Style {
-                        background: Some(iced::Background::Color(palette.primary.base.color)),
-                        text_color: palette.primary.base.text,
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    button::Status::Pressed if is_enabled => button::Style {
-                        background: Some(iced::Background::Color(palette.primary.strong.color)),
-                        text_color: palette.primary.strong.text,
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    _ if !is_enabled => button::Style {
-                        background: None,
-                        text_color: palette.background.weak.text.scale_alpha(0.4),
-                        ..Default::default()
-                    },
-                    _ => button::Style {
-                        background: None,
-                        text_color: palette.background.weak.text,
-                        ..Default::default()
-                    },
-                }
-            })
-            .into()
+    /// Scroll viewport by delta
+    pub fn scroll_viewport(&mut self, dx: f32, dy: f32) {
+        self.scroll_by(dx, dy);
     }
 
-    /// Build the context menu for the canvas
-    fn build_context_menu() -> Element<'static, CanvasMessage> {
-        let cut_btn = Self::menu_item(fl!("menu-cut"), Some(CanvasMessage::Cut));
-        let copy_btn = Self::menu_item(fl!("menu-copy"), Some(CanvasMessage::Copy));
-        let paste_btn = Self::menu_item(fl!("menu-paste"), Some(CanvasMessage::Paste));
-
-        container(column![cut_btn, copy_btn, paste_btn].spacing(2).width(Length::Fixed(150.0)))
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
-            })
-            .padding(4)
-            .into()
+    /// Scroll viewport with smooth animation
+    pub fn scroll_viewport_smooth(&mut self, dx: f32, dy: f32) {
+        self.scroll_by_smooth(dx, dy);
     }
 
-    /// Render the canvas view with scrollbars, optionally wrapped with the Cut/Copy/Paste context menu.
-    pub fn view_with_context_menu(&self, show_context_menu: bool) -> Element<'_, CanvasMessage> {
+    /// Scroll viewport to absolute position
+    pub fn scroll_viewport_to(&mut self, x: f32, y: f32) {
+        self.scroll_to(x, y);
+    }
+
+    /// Scroll viewport to absolute position with smooth animation
+    pub fn scroll_viewport_to_smooth(&mut self, x: f32, y: f32) {
+        self.scroll_to_smooth(x, y);
+    }
+
+    /// Render the canvas view with scrollbars
+    pub fn view(&self) -> Element<'_, TerminalMessage> {
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone())).map(CanvasMessage::TerminalMessage);
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone()));
 
         // Get scrollbar info using shared logic from icy_engine_gui
         let scrollbar_info = self.terminal.scrollbar_info();
 
         if scrollbar_info.needs_any_scrollbar() {
-            let mut layers: Vec<Element<'_, CanvasMessage>> = vec![terminal_view];
+            let mut layers: Vec<Element<'_, TerminalMessage>> = vec![terminal_view];
 
             // Add vertical scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_vscrollbar {
                 let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
                 // Map () to CanvasMessage - scrollbar mutates viewport directly via Arc<RwLock>
-                let vscrollbar_mapped: Element<'_, CanvasMessage> = vscrollbar_view.map(|_| unreachable!());
-                let vscrollbar_container: container::Container<'_, CanvasMessage> =
+                let vscrollbar_mapped: Element<'_, TerminalMessage> = vscrollbar_view.map(|_| unreachable!());
+                let vscrollbar_container: container::Container<'_, TerminalMessage> =
                     container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
                 layers.push(vscrollbar_container.into());
             }
@@ -389,39 +281,29 @@ impl CanvasView {
             // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
             if scrollbar_info.needs_hscrollbar {
                 let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
-                let hscrollbar_mapped: Element<'_, CanvasMessage> = hscrollbar_view.map(|_| unreachable!());
-                let hscrollbar_container: container::Container<'_, CanvasMessage> =
+                let hscrollbar_mapped: Element<'_, TerminalMessage> = hscrollbar_view.map(|_| unreachable!());
+                let hscrollbar_container: container::Container<'_, TerminalMessage> =
                     container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
                 layers.push(hscrollbar_container.into());
             }
 
-            let canvas_view = container(stack(layers))
+            container(stack(layers))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|theme: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(main_area_background(theme))),
                     ..Default::default()
-                });
-
-            if show_context_menu {
-                ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
-            } else {
-                canvas_view.into()
-            }
+                })
+                .into()
         } else {
-            let canvas_view = container(terminal_view)
+            container(terminal_view)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|theme: &iced::Theme| container::Style {
                     background: Some(iced::Background::Color(main_area_background(theme))),
                     ..Default::default()
-                });
-
-            if show_context_menu {
-                ContextMenu::new(canvas_view, || Self::build_context_menu()).into()
-            } else {
-                canvas_view.into()
-            }
+                })
+                .into()
         }
     }
 }

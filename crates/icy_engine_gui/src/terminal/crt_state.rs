@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use super::{CRTShaderProgram, MouseTracking, TextureSliceData};
-use crate::{Blink, Message, MonitorSettings, Terminal, UnicodeGlyphCache, Viewport};
+use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
 use iced::Element;
 use iced::widget::shader;
 use icy_engine::GraphicsType;
@@ -379,7 +379,7 @@ impl Default for CRTShaderState {
 }
 
 // Helper function to create shader with terminal and monitor settings
-pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>) -> Element<'a, Message> {
+pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>) -> Element<'a, TerminalMessage> {
     // Let the parent wrapper decide sizing; shader can just be Fill.
     shader(CRTShaderProgram::new(term, monitor_settings))
         .width(iced::Length::Fill)

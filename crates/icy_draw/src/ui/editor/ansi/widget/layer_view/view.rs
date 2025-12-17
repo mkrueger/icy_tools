@@ -3,6 +3,10 @@
 //! Shows the layer stack with visibility toggles and layer management controls.
 //! Each layer shows a preview rendered via Canvas with checkerboard background
 //! for transparent areas.
+//!
+//! NOTE: Some fields and methods are prepared for future preview caching.
+
+#![allow(dead_code)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -738,7 +742,6 @@ impl LayerView {
     }
 }
 
-#[allow(dead_code)]
 struct LayerListWidget<'a> {
     screen: Arc<Mutex<Box<dyn Screen>>>,
     rows: Vec<LayerRowInfo>,
@@ -1453,7 +1456,6 @@ impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
     }
 }
 
-#[allow(dead_code)]
 pub struct LayerListBackgroundRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group: iced::wgpu::BindGroup,

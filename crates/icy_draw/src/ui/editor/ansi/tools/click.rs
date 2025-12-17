@@ -8,14 +8,28 @@
 //! - Layer dragging (Ctrl+Click+Drag)
 
 use iced::Element;
-use iced::widget::{column, text};
-use icy_engine::{Position, TextPane};
+use icy_engine::BufferType;
+use icy_engine::{Position, Selection, TextPane};
+use icy_engine_edit::AtomicUndoGuard;
+use icy_engine_gui::TerminalMessage;
+use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 
-use super::{ToolContext, ToolHandler, ToolInput, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolMessage, ToolResult, ToolViewContext};
+use crate::ui::Options;
+use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
+use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
 
 /// Click tool state
-#[derive(Clone, Debug, Default)]
+#[derive(Default)]
 pub struct ClickTool {
+    /// F-key toolbar (GPU shader version)
+    pub fkey_toolbar: ShaderFKeyToolbar,
+
+    /// Currently selected F-key set index (mirrors `Options.fkeys.current_set`)
+    current_fkey_set: usize,
+
+    pending_ui_action: Option<ClickToolUiAction>,
+
     /// Whether layer drag is active (Ctrl+Click+Drag)
     layer_drag_active: bool,
     /// Layer offset at start of drag
@@ -24,6 +38,22 @@ pub struct ClickTool {
     drag_start: Option<Position>,
     /// Current position during drag
     drag_current: Option<Position>,
+
+    /// Atomic undo guard for layer drag operations
+    layer_drag_undo: Option<AtomicUndoGuard>,
+
+    // === Selection Drag State (shared behavior with SelectTool) ===
+    selection_drag: SelectionDrag,
+    hover_drag: SelectionDrag,
+    selection_start_pos: Option<Position>,
+    selection_cur_pos: Option<Position>,
+    selection_start_rect: Option<icy_engine::Rectangle>,
+}
+
+/// UI-only actions that the editor still owns (popups, overlays).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClickToolUiAction {
+    OpenCharSelectorForFKey(usize),
 }
 
 impl ClickTool {
@@ -31,18 +61,147 @@ impl ClickTool {
         Self::default()
     }
 
-    /// Check if layer drag is active
-    #[allow(dead_code)]
-    pub fn is_layer_dragging(&self) -> bool {
-        self.layer_drag_active
+    pub fn clear_fkey_cache(&mut self) {
+        self.fkey_toolbar.clear_cache();
+    }
+
+    pub fn type_fkey_slot(&mut self, ctx: &mut ToolContext, set_idx: usize, slot: usize) -> ToolResult {
+        let Some(options) = ctx.options else {
+            return ToolResult::None;
+        };
+
+        let code = {
+            let opts = options.read();
+            opts.fkeys.code_at(set_idx, slot)
+        };
+
+        let buffer_type = ctx.state.get_buffer().buffer_type;
+        let raw = char::from_u32(code as u32).unwrap_or(' ');
+        let unicode_cp437 = BufferType::CP437.convert_to_unicode(raw);
+        let target = buffer_type.convert_from_unicode(unicode_cp437);
+
+        if let Err(e) = ctx.state.type_key(target) {
+            log::warn!("Failed to type fkey (set {}, slot {}): {}", set_idx, slot, e);
+            return ToolResult::None;
+        }
+
+        self.clear_fkey_cache();
+        ToolResult::Commit("Type fkey".to_string())
+    }
+
+    pub fn set_current_fkey_set(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Options>>, set_idx: usize) {
+        let fkeys_to_save = {
+            let mut opts = options.write();
+            opts.fkeys.clamp_current_set();
+
+            let count = opts.fkeys.set_count();
+            let clamped = if count == 0 { 0 } else { set_idx % count };
+
+            opts.fkeys.current_set = clamped;
+            opts.fkeys.clone()
+        };
+
+        self.current_fkey_set = {
+            let opts = options.read();
+            opts.fkeys.current_set
+        };
+
+        std::thread::spawn(move || {
+            let _ = fkeys_to_save.save();
+        });
+
+        self.clear_fkey_cache();
+    }
+
+    pub fn sync_fkey_set_from_options(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Options>>) {
+        self.current_fkey_set = {
+            let opts = options.read();
+            opts.fkeys.current_set
+        };
+    }
+
+    pub fn current_fkey_set(&self) -> usize {
+        self.current_fkey_set
+    }
+
+    pub fn take_ui_action(&mut self) -> Option<ClickToolUiAction> {
+        self.pending_ui_action.take()
+    }
+
+    pub fn handle_fkey_toolbar_message(&mut self, ctx: &mut ToolContext, msg: FKeyToolbarMessage) -> (ToolResult, Option<ClickToolUiAction>) {
+        match msg {
+            FKeyToolbarMessage::TypeFKey(slot) => {
+                let result = self.type_fkey_slot(ctx, self.current_fkey_set, slot);
+                (result, None)
+            }
+            FKeyToolbarMessage::OpenCharSelector(slot) => (ToolResult::None, Some(ClickToolUiAction::OpenCharSelectorForFKey(slot))),
+            FKeyToolbarMessage::NextSet => {
+                let Some(options) = ctx.options else {
+                    return (ToolResult::None, None);
+                };
+                let next = self.current_fkey_set.saturating_add(1);
+                self.set_current_fkey_set(options, next);
+                (ToolResult::Redraw, None)
+            }
+            FKeyToolbarMessage::PrevSet => {
+                let Some(options) = ctx.options else {
+                    return (ToolResult::None, None);
+                };
+                let cur = self.current_fkey_set;
+                let prev = {
+                    let opts = options.read();
+                    let count = opts.fkeys.set_count();
+                    if count == 0 { 0 } else { (cur + count - 1) % count }
+                };
+                self.set_current_fkey_set(options, prev);
+                (ToolResult::Redraw, None)
+            }
+        }
     }
 }
 
 impl ToolHandler for ClickTool {
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: ToolInput) -> ToolResult {
-        match event {
-            ToolInput::MouseDown { pos, modifiers, .. } => {
-                if modifiers.ctrl || modifiers.meta {
+    fn view_toolbar<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+        self.fkey_toolbar
+            .view(ctx.fkeys.clone(), ctx.font.clone(), ctx.palette.clone(), ctx.caret_fg, ctx.caret_bg, ctx.theme)
+            .map(ToolMessage::ClickFKeyToolbar)
+    }
+
+    fn handle_message(&mut self, ctx: &mut ToolContext, msg: &ToolMessage) -> ToolResult {
+        match msg {
+            ToolMessage::ClickFKeyToolbar(m) => {
+                let (result, ui_action) = self.handle_fkey_toolbar_message(ctx, m.clone());
+                self.pending_ui_action = ui_action;
+                result
+            }
+            _ => ToolResult::None,
+        }
+    }
+
+    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+        match msg {
+            TerminalMessage::Move(evt) => {
+                if self.layer_drag_active {
+                    return ToolResult::None;
+                }
+
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+
+                // Hover: update cursor interaction for selection resize handles.
+                self.hover_drag = hit_test_selection(ctx.state.selection(), pos);
+                ToolResult::None
+            }
+
+            TerminalMessage::Press(evt) => {
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+
+                // Only handle Ctrl/Cmd layer drag here for now.
+                // Normal caret positioning + selection drag are still handled by AnsiEditor.
+                if evt.button == icy_engine::MouseButton::Left && (is_ctrl_pressed() || is_command_pressed()) {
                     // Start layer drag
                     self.layer_drag_active = true;
                     self.drag_start = Some(pos);
@@ -53,63 +212,226 @@ impl ToolHandler for ClickTool {
                         self.layer_drag_start_offset = layer.offset();
                     }
 
-                    ToolResult::StartCapture.and(ToolResult::Redraw)
-                } else {
-                    // Normal click - position caret
-                    ctx.state.set_caret_position(pos);
-                    ToolResult::Redraw
-                }
-            }
-
-            ToolInput::MouseMove { pos, is_dragging, .. } => {
-                if is_dragging && self.layer_drag_active {
-                    self.drag_current = Some(pos);
-
-                    // Calculate delta and update layer preview
-                    if let Some(start) = self.drag_start {
-                        let delta = pos - start;
-                        let new_offset = self.layer_drag_start_offset + delta;
-
-                        if let Some(layer) = ctx.state.get_cur_layer_mut() {
-                            layer.set_preview_offset(Some(new_offset));
-                        }
+                    if self.layer_drag_undo.is_none() {
+                        self.layer_drag_undo = Some(ctx.state.begin_atomic_undo("Move layer".to_string()));
                     }
 
-                    ToolResult::Redraw
+                    ToolResult::StartCapture.and(ToolResult::Redraw)
+                } else if evt.button == icy_engine::MouseButton::Left {
+                    // Selection drag handling (shared behavior with SelectTool)
+                    let current_selection = ctx.state.selection();
+                    let hit = hit_test_selection(current_selection, pos);
+
+                    if hit != SelectionDrag::None {
+                        // Start move/resize of existing selection
+                        self.selection_drag = hit;
+                        self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
+                    } else {
+                        // Start new selection + position caret like the old AnsiEditor behavior
+                        let _ = ctx.state.clear_selection();
+                        ctx.state.set_caret_position(pos);
+                        self.selection_drag = SelectionDrag::Create;
+                        self.selection_start_rect = None;
+                    }
+
+                    self.selection_start_pos = Some(pos);
+                    self.selection_cur_pos = Some(pos);
+                    self.hover_drag = SelectionDrag::None;
+
+                    ToolResult::StartCapture.and(ToolResult::Redraw)
                 } else {
                     ToolResult::None
                 }
             }
 
-            ToolInput::MouseUp { pos, .. } => {
+            TerminalMessage::Drag(evt) => {
+                if self.layer_drag_active {
+                    if let Some(pos) = evt.text_position {
+                        self.drag_current = Some(pos);
+
+                        // Calculate delta and update layer preview
+                        if let Some(start) = self.drag_start {
+                            let delta = pos - start;
+                            let new_offset = self.layer_drag_start_offset + delta;
+
+                            ctx.state.set_layer_preview_offset(Some(new_offset));
+                        }
+
+                        return ToolResult::Redraw;
+                    }
+                }
+
+                // Selection drag update
+                if self.selection_drag != SelectionDrag::None {
+                    let Some(pos) = evt.text_position else {
+                        return ToolResult::None;
+                    };
+
+                    self.selection_cur_pos = Some(pos);
+
+                    let Some(start_pos) = self.selection_start_pos else {
+                        return ToolResult::None;
+                    };
+
+                    if self.selection_drag == SelectionDrag::Create {
+                        let selection = Selection {
+                            anchor: start_pos,
+                            lead: pos,
+                            locked: false,
+                            shape: icy_engine::Shape::Rectangle,
+                            add_type: icy_engine::AddType::Default,
+                        };
+                        let _ = ctx.state.set_selection(selection);
+                        return ToolResult::Redraw;
+                    }
+
+                    let Some(start_rect) = self.selection_start_rect else {
+                        return ToolResult::None;
+                    };
+
+                    let params = DragParameters {
+                        start_rect,
+                        start_pos,
+                        cur_pos: pos,
+                    };
+
+                    if let Some(new_rect) = compute_dragged_selection(self.selection_drag, params) {
+                        let mut selection = Selection::from(new_rect);
+                        selection.add_type = icy_engine::AddType::Default;
+                        let _ = ctx.state.set_selection(selection);
+                        return ToolResult::Redraw;
+                    }
+                }
+
+                ToolResult::None
+            }
+
+            TerminalMessage::Release(evt) => {
                 if self.layer_drag_active {
                     self.layer_drag_active = false;
 
                     // Apply final layer offset
-                    if let Some(start) = self.drag_start {
+                    if let (Some(start), Some(pos)) = (self.drag_start, evt.text_position) {
                         let delta = pos - start;
                         let new_offset = self.layer_drag_start_offset + delta;
 
-                        if let Some(layer) = ctx.state.get_cur_layer_mut() {
-                            layer.set_preview_offset(None);
-                            layer.set_offset(new_offset);
-                        }
+                        ctx.state.set_layer_preview_offset(None);
+                        let _ = ctx.state.move_layer(new_offset);
                     }
 
                     self.drag_start = None;
                     self.drag_current = None;
 
+                    // Dropping the guard groups everything into one undo entry.
+                    self.layer_drag_undo = None;
+
                     ToolResult::EndCapture.and(ToolResult::Commit("Move layer".to_string()))
+                } else if self.selection_drag != SelectionDrag::None {
+                    // Finalize selection drag
+                    let end_pos = evt.text_position;
+
+                    if self.selection_drag == SelectionDrag::Create {
+                        if let (Some(start), Some(end)) = (self.selection_start_pos, end_pos) {
+                            if start == end {
+                                // Click without drag -> clear selection (old AnsiEditor behavior for Click tool)
+                                let _ = ctx.state.clear_selection();
+                            }
+                        }
+                    }
+
+                    self.selection_drag = SelectionDrag::None;
+                    self.hover_drag = SelectionDrag::None;
+                    self.selection_start_pos = None;
+                    self.selection_cur_pos = None;
+                    self.selection_start_rect = None;
+
+                    ToolResult::EndCapture.and(ToolResult::Redraw)
                 } else {
                     ToolResult::None
                 }
             }
 
-            ToolInput::KeyDown { key, modifiers } => {
+            _ => ToolResult::None,
+        }
+    }
+
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+        match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 use iced::keyboard::key::Named;
+
+                // Character input (ANSI art typing)
+                match key {
+                    iced::keyboard::Key::Character(s) => {
+                        if !modifiers.control() && !modifiers.alt() {
+                            if let Some(ch) = s.chars().next() {
+                                // Convert Unicode -> buffer encoding (CP437 etc.)
+                                let buffer_type = ctx.state.get_buffer().buffer_type;
+                                let encoded = buffer_type.convert_from_unicode(ch);
+                                if let Err(e) = ctx.state.type_key(encoded) {
+                                    log::warn!("Failed to type character: {}", e);
+                                    return ToolResult::None;
+                                }
+                                return ToolResult::Commit("Type character".to_string());
+                            }
+                        }
+                    }
+                    iced::keyboard::Key::Named(Named::Space) => {
+                        let buffer_type = ctx.state.get_buffer().buffer_type;
+                        let encoded = buffer_type.convert_from_unicode(' ');
+                        if let Err(e) = ctx.state.type_key(encoded) {
+                            log::warn!("Failed to type space: {}", e);
+                            return ToolResult::None;
+                        }
+                        return ToolResult::Commit("Type character".to_string());
+                    }
+                    _ => {}
+                }
 
                 if let iced::keyboard::Key::Named(named) = key {
                     match named {
+                        // F-keys
+                        Named::F1
+                        | Named::F2
+                        | Named::F3
+                        | Named::F4
+                        | Named::F5
+                        | Named::F6
+                        | Named::F7
+                        | Named::F8
+                        | Named::F9
+                        | Named::F10
+                        | Named::F11
+                        | Named::F12 => {
+                            let slot = match named {
+                                Named::F1 => 0,
+                                Named::F2 => 1,
+                                Named::F3 => 2,
+                                Named::F4 => 3,
+                                Named::F5 => 4,
+                                Named::F6 => 5,
+                                Named::F7 => 6,
+                                Named::F8 => 7,
+                                Named::F9 => 8,
+                                Named::F10 => 9,
+                                Named::F11 => 10,
+                                Named::F12 => 11,
+                                _ => 0,
+                            };
+
+                            // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
+                            if modifiers.alt() && slot < 10 {
+                                let Some(options) = ctx.options else {
+                                    return ToolResult::None;
+                                };
+                                let base = if modifiers.shift() { 10 } else { 0 };
+                                self.set_current_fkey_set(options, base + slot);
+                                return ToolResult::Redraw;
+                            }
+
+                            return self.type_fkey_slot(ctx, self.current_fkey_set, slot);
+                        }
+
                         Named::ArrowUp => {
                             ctx.state.move_caret_up(1);
                             return ToolResult::Redraw;
@@ -127,79 +449,75 @@ impl ToolHandler for ClickTool {
                             return ToolResult::Redraw;
                         }
                         Named::Home => {
-                            if modifiers.ctrl {
-                                ctx.state.set_caret_position(Position::new(0, 0));
-                            } else {
-                                let pos = ctx.state.get_caret().position();
-                                ctx.state.set_caret_position(Position::new(0, pos.y));
-                            }
+                            ctx.state.set_caret_x(0);
                             return ToolResult::Redraw;
                         }
                         Named::End => {
-                            let pos = ctx.state.get_caret().position();
                             let width = ctx.state.get_buffer().width();
-                            ctx.state.set_caret_position(Position::new(width - 1, pos.y));
+                            ctx.state.set_caret_x(width.saturating_sub(1));
+                            return ToolResult::Redraw;
+                        }
+                        Named::PageUp => {
+                            ctx.state.move_caret_up(24);
+                            return ToolResult::Redraw;
+                        }
+                        Named::PageDown => {
+                            ctx.state.move_caret_down(24);
                             return ToolResult::Redraw;
                         }
                         Named::Delete => {
-                            let _ = ctx.state.delete_key();
+                            let _ = if ctx.state.is_something_selected() {
+                                ctx.state.erase_selection()
+                            } else {
+                                ctx.state.delete_key()
+                            };
                             return ToolResult::Commit("Delete".to_string());
                         }
                         Named::Backspace => {
-                            let _ = ctx.state.backspace();
+                            let _ = if ctx.state.is_something_selected() {
+                                ctx.state.erase_selection()
+                            } else {
+                                ctx.state.backspace()
+                            };
                             return ToolResult::Commit("Backspace".to_string());
                         }
                         Named::Enter => {
-                            // Move to next line
-                            let pos = ctx.state.get_caret().position();
-                            ctx.state.set_caret_position(Position::new(0, pos.y + 1));
-                            return ToolResult::Redraw;
+                            let _ = ctx.state.new_line();
+                            return ToolResult::Commit("New line".to_string());
                         }
                         Named::Tab => {
-                            // Move to next tab stop (every 8 columns)
-                            let pos = ctx.state.get_caret().position();
-                            let next_tab = ((pos.x / 8) + 1) * 8;
-                            ctx.state.set_caret_position(Position::new(next_tab, pos.y));
+                            if modifiers.shift() {
+                                ctx.state.handle_reverse_tab();
+                            } else {
+                                ctx.state.handle_tab();
+                            }
+                            return ToolResult::Redraw;
+                        }
+                        Named::Insert => {
+                            ctx.state.toggle_insert_mode();
+                            return ToolResult::Redraw;
+                        }
+                        Named::Escape => {
+                            let _ = ctx.state.clear_selection();
                             return ToolResult::Redraw;
                         }
                         _ => {}
                     }
                 }
 
-                // Character input is handled by the editor's character input handling
                 ToolResult::None
             }
-
-            ToolInput::Deactivate => {
-                self.layer_drag_active = false;
-                self.drag_start = None;
-                self.drag_current = None;
-                ToolResult::None
-            }
-
             _ => ToolResult::None,
         }
-    }
-
-    fn view_toolbar<'a>(&'a self, _ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
-        column![].into()
-    }
-
-    fn view_status<'a>(&'a self, ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
-        let caret = ctx.state.get_caret();
-        let pos = caret.position();
-
-        let status = if self.layer_drag_active {
-            "Click | Dragging layer...".to_string()
-        } else {
-            format!("Click | Pos: ({},{}) | Ctrl+Drag=Move layer", pos.x, pos.y)
-        };
-        text(status).into()
     }
 
     fn cursor(&self) -> iced::mouse::Interaction {
         if self.layer_drag_active {
             iced::mouse::Interaction::Grabbing
+        } else if self.selection_drag != SelectionDrag::None {
+            self.selection_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
+        } else if self.hover_drag != SelectionDrag::None {
+            self.hover_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
         } else {
             iced::mouse::Interaction::Text
         }

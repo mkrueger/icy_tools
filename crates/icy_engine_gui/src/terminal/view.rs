@@ -82,7 +82,7 @@ impl TerminalMouseEvent {
 /// Messages emitted by the terminal view widget.
 /// Applications handle these to implement their own mouse logic.
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum TerminalMessage {
     /// Mouse button was pressed
     Press(TerminalMouseEvent),
     /// Mouse button was released
@@ -102,7 +102,7 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>) -> Element<'a, Message> {
+    pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>) -> Element<'a, TerminalMessage> {
         iced::widget::container(create_crt_shader(term, settings)).id(term.id.clone()).into()
     }
 }

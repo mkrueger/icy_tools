@@ -1,0 +1,522 @@
+//! Paste Tool Handler
+//!
+//! Handles the paste mode where a floating layer can be positioned before anchoring.
+//! This tool is automatically activated when content is pasted and handles:
+//! - Mouse drag to move the floating layer
+//! - Keyboard shortcuts for layer manipulation (rotate, flip, stamp, anchor, cancel)
+
+use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use clipboard_rs::Clipboard;
+use clipboard_rs::ContentFormat;
+use clipboard_rs::common::RustImage;
+use iced::widget::{Space, button, row, text};
+use iced::{Element, Length, Theme};
+use icy_engine::{MouseButton, Position, Sixel};
+use icy_engine_edit::AtomicUndoGuard;
+use icy_engine_edit::EditState;
+use icy_engine_edit::UndoState;
+use icy_engine_edit::tools::Tool;
+use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
+
+/// State for the paste/floating layer tool
+#[derive(Default)]
+pub struct PasteTool {
+    /// Whether paste mode is active (floating layer exists)
+    active: bool,
+    /// Tool that was active before paste mode started
+    previous_tool: Option<Tool>,
+
+    /// Whether a drag is currently active
+    drag_active: bool,
+    /// Layer offset when drag started
+    drag_start_offset: Position,
+    /// Mouse position when drag started
+    drag_start_pos: Position,
+    /// Current mouse position during drag
+    drag_cur_pos: Position,
+
+    /// Atomic undo guard for moving pasted layer during drag
+    move_undo: Option<AtomicUndoGuard>,
+}
+
+impl PasteTool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn begin_paste(&mut self, previous_tool: Tool) {
+        self.active = true;
+        self.previous_tool = Some(previous_tool);
+        self.abort();
+    }
+
+    pub fn can_paste(&self) -> bool {
+        crate::CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
+            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Image)
+            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Text)
+    }
+
+    pub fn paste_from_clipboard(&mut self, ctx: &mut ToolContext<'_>, previous_tool: Tool) -> Result<ToolResult, String> {
+        if self.active {
+            return Ok(ToolResult::None);
+        }
+
+        // Priority: ICY binary > Image > Text
+        if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+            log::debug!("paste: Using ICY binary data, size={}", data.len());
+            ctx.state.paste_clipboard_data(&data).map_err(|e| e.to_string())?;
+        } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
+            log::debug!("paste: Using image data");
+
+            let mut sixel = Sixel::new(Position::default());
+            sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
+            let (w, h) = img.get_size();
+            sixel.set_width(w as i32);
+            sixel.set_height(h as i32);
+
+            ctx.state.paste_sixel(sixel).map_err(|e| e.to_string())?;
+        } else if let Ok(text) = crate::CLIPBOARD_CONTEXT.get_text() {
+            log::debug!("paste: Using text data: {:?}", text);
+            ctx.state.paste_text(&text).map_err(|e| e.to_string())?;
+        } else {
+            return Err("No compatible clipboard content".to_string());
+        }
+
+        self.begin_paste(previous_tool);
+        Ok(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
+            .and(ToolResult::UpdateLayerBounds)
+            .and(ToolResult::Redraw))
+    }
+
+    pub fn view_paste_sidebar_controls(&self) -> iced::Element<'_, crate::ui::editor::ansi::AnsiEditorMessage> {
+        use crate::ui::editor::ansi::{AnsiEditorMessage, TopToolbarMessage};
+        use iced::Length;
+        use iced::widget::{Space, button, column, container, text};
+        use icy_engine_gui::ui::TEXT_SIZE_SMALL;
+
+        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> iced::Element<'a, AnsiEditorMessage> {
+            button(text(label).size(TEXT_SIZE_SMALL).center())
+                .width(Length::Fill)
+                .padding([6, 8])
+                .on_press(AnsiEditorMessage::TopToolbar(msg))
+                .into()
+        }
+
+        let content = column![
+            text("Paste Mode").size(14),
+            Space::new().height(Length::Fixed(8.0)),
+            paste_btn("✓ Anchor (Enter)", TopToolbarMessage::PasteAnchor),
+            paste_btn("✕ Cancel (Esc)", TopToolbarMessage::PasteCancel),
+            Space::new().height(Length::Fixed(12.0)),
+            text("Transform").size(12),
+            paste_btn("Stamp (S)", TopToolbarMessage::PasteStamp),
+            paste_btn("Rotate (R)", TopToolbarMessage::PasteRotate),
+            paste_btn("Flip X", TopToolbarMessage::PasteFlipX),
+            paste_btn("Flip Y", TopToolbarMessage::PasteFlipY),
+            paste_btn("Transparent (T)", TopToolbarMessage::PasteToggleTransparent),
+            Space::new().height(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::Fill);
+
+        container(content).width(Length::Fill).padding(8).into()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    fn finish_paste(&mut self) -> Tool {
+        self.active = false;
+        self.abort();
+        self.previous_tool.take().unwrap_or(Tool::Click)
+    }
+
+    /// Check if a drag is currently active
+    pub fn is_drag_active(&self) -> bool {
+        self.drag_active
+    }
+
+    pub fn perform_action(&mut self, state: &mut EditState, action: PasteAction) -> ToolResult {
+        if !self.active {
+            return ToolResult::None;
+        }
+
+        match action {
+            PasteAction::None => ToolResult::None,
+
+            PasteAction::Move(dx, dy) => {
+                let current_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                let new_pos = Position::new(current_offset.x + dx, current_offset.y + dy);
+                if let Err(e) = state.move_layer(new_pos) {
+                    log::warn!("Failed to move layer: {}", e);
+                }
+                ToolResult::UpdateLayerBounds.and(ToolResult::Redraw)
+            }
+
+            PasteAction::Stamp => {
+                if let Err(e) = state.stamp_layer_down() {
+                    log::warn!("Failed to stamp layer: {}", e);
+                }
+                ToolResult::Commit("Stamp floating layer".to_string()).and(ToolResult::Redraw)
+            }
+
+            PasteAction::Rotate => {
+                if let Err(e) = state.rotate_layer() {
+                    log::warn!("Failed to rotate layer: {}", e);
+                }
+                ToolResult::UpdateLayerBounds
+                    .and(ToolResult::Commit("Rotate floating layer".to_string()))
+                    .and(ToolResult::Redraw)
+            }
+
+            PasteAction::FlipX => {
+                if let Err(e) = state.flip_x() {
+                    log::warn!("Failed to flip layer X: {}", e);
+                }
+                ToolResult::UpdateLayerBounds
+                    .and(ToolResult::Commit("Flip floating layer X".to_string()))
+                    .and(ToolResult::Redraw)
+            }
+
+            PasteAction::FlipY => {
+                if let Err(e) = state.flip_y() {
+                    log::warn!("Failed to flip layer Y: {}", e);
+                }
+                ToolResult::UpdateLayerBounds
+                    .and(ToolResult::Commit("Flip floating layer Y".to_string()))
+                    .and(ToolResult::Redraw)
+            }
+
+            PasteAction::ToggleTransparent => {
+                if let Err(e) = state.make_layer_transparent() {
+                    log::warn!("Failed to make layer transparent: {}", e);
+                }
+                ToolResult::Commit("Toggle floating layer transparent".to_string()).and(ToolResult::Redraw)
+            }
+
+            PasteAction::Anchor => {
+                // If user anchors while a paste drag is active, first commit the drag position.
+                if let Some(new_offset) = self.finish_pending_move() {
+                    state.set_layer_preview_offset(None);
+                    let _ = state.move_layer(new_offset);
+                }
+
+                if let Err(e) = state.anchor_layer() {
+                    log::error!("Failed to anchor layer: {}", e);
+                }
+
+                let prev = self.finish_paste();
+                ToolResult::Multi(vec![
+                    ToolResult::EndCapture,
+                    ToolResult::SetCursorIcon(None),
+                    ToolResult::UpdateLayerBounds,
+                    ToolResult::Commit("Anchor floating layer".to_string()),
+                    ToolResult::SwitchTool(prev),
+                    ToolResult::Redraw,
+                ])
+            }
+
+            PasteAction::Discard => {
+                // Cancel any active paste drag.
+                self.abort();
+                state.set_layer_preview_offset(None);
+
+                // Remove the floating layer by undoing the paste.
+                if let Err(e) = state.undo() {
+                    log::error!("Failed to discard floating layer: {}", e);
+                }
+
+                let prev = self.finish_paste();
+                ToolResult::Multi(vec![
+                    ToolResult::EndCapture,
+                    ToolResult::SetCursorIcon(None),
+                    ToolResult::UpdateLayerBounds,
+                    ToolResult::Commit("Discard floating layer".to_string()),
+                    ToolResult::SwitchTool(prev),
+                    ToolResult::Redraw,
+                ])
+            }
+        }
+    }
+
+    /// Get the current drag offset (delta from start)
+    pub fn drag_offset(&self) -> Position {
+        if self.drag_active {
+            Position::new(self.drag_cur_pos.x - self.drag_start_pos.x, self.drag_cur_pos.y - self.drag_start_pos.y)
+        } else {
+            Position::default()
+        }
+    }
+
+    /// Get the target layer offset based on current drag state
+    pub fn target_layer_offset(&self) -> Position {
+        if self.drag_active {
+            let delta = self.drag_offset();
+            Position::new(self.drag_start_offset.x + delta.x, self.drag_start_offset.y + delta.y)
+        } else {
+            self.drag_start_offset
+        }
+    }
+
+    /// Start a drag operation
+    pub fn start_drag(&mut self, start_pos: Position, layer_offset: Position) {
+        self.drag_active = true;
+        self.drag_start_pos = start_pos;
+        self.drag_cur_pos = start_pos;
+        self.drag_start_offset = layer_offset;
+    }
+
+    /// Update the current drag position
+    pub fn update_drag(&mut self, pos: Position) {
+        if self.drag_active {
+            self.drag_cur_pos = pos;
+        }
+    }
+
+    /// End the drag operation and return the final offset
+    pub fn end_drag(&mut self) -> Position {
+        let offset = self.target_layer_offset();
+        self.drag_active = false;
+        offset
+    }
+
+    /// Cancel the drag operation (returns to original position)
+    pub fn cancel_drag(&mut self) {
+        self.drag_active = false;
+    }
+
+    /// Finish an in-progress drag (if any) and return the final target offset.
+    /// Also clears the atomic undo guard used for the move.
+    pub fn finish_pending_move(&mut self) -> Option<Position> {
+        if self.drag_active {
+            let offset = self.end_drag();
+            self.move_undo = None;
+            Some(offset)
+        } else {
+            None
+        }
+    }
+
+    /// Abort any in-progress drag/move without committing.
+    pub fn abort(&mut self) {
+        self.drag_active = false;
+        self.move_undo = None;
+    }
+}
+
+/// Result of paste tool keyboard handling
+#[derive(Clone, Debug, PartialEq)]
+pub enum PasteAction {
+    /// No action taken
+    None,
+    /// Anchor the floating layer (finalize paste)
+    Anchor,
+    /// Discard the floating layer (cancel paste)
+    Discard,
+    /// Move layer by delta
+    Move(i32, i32),
+    /// Stamp layer down (copy to layer below without anchoring)
+    Stamp,
+    /// Rotate layer 90° clockwise
+    Rotate,
+    /// Flip layer horizontally
+    FlipX,
+    /// Flip layer vertically
+    FlipY,
+    /// Toggle transparent mode
+    ToggleTransparent,
+}
+
+impl PasteTool {
+    /// Handle a keyboard event in paste mode
+    /// Returns the action to perform
+    pub fn handle_key(&self, key: &iced::keyboard::Key) -> PasteAction {
+        use iced::keyboard::Key;
+        use iced::keyboard::key::Named;
+
+        match key {
+            // Escape - cancel paste
+            Key::Named(Named::Escape) => PasteAction::Discard,
+            // Enter - anchor layer
+            Key::Named(Named::Enter) => PasteAction::Anchor,
+            // Arrow keys - move floating layer
+            Key::Named(Named::ArrowUp) => PasteAction::Move(0, -1),
+            Key::Named(Named::ArrowDown) => PasteAction::Move(0, 1),
+            Key::Named(Named::ArrowLeft) => PasteAction::Move(-1, 0),
+            Key::Named(Named::ArrowRight) => PasteAction::Move(1, 0),
+            // S - stamp
+            Key::Character(c) if c.eq_ignore_ascii_case("s") => PasteAction::Stamp,
+            // R - rotate
+            Key::Character(c) if c.eq_ignore_ascii_case("r") => PasteAction::Rotate,
+            // X - flip horizontal
+            Key::Character(c) if c.eq_ignore_ascii_case("x") => PasteAction::FlipX,
+            // Y - flip vertical
+            Key::Character(c) if c.eq_ignore_ascii_case("y") => PasteAction::FlipY,
+            // T - toggle transparent
+            Key::Character(c) if c.eq_ignore_ascii_case("t") => PasteAction::ToggleTransparent,
+            _ => PasteAction::None,
+        }
+    }
+}
+
+impl ToolHandler for PasteTool {
+    fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
+        if !self.active {
+            return ToolResult::None;
+        }
+
+        let action = match *msg {
+            ToolMessage::PasteStamp => PasteAction::Stamp,
+            ToolMessage::PasteRotate => PasteAction::Rotate,
+            ToolMessage::PasteFlipX => PasteAction::FlipX,
+            ToolMessage::PasteFlipY => PasteAction::FlipY,
+            ToolMessage::PasteToggleTransparent => PasteAction::ToggleTransparent,
+            ToolMessage::PasteAnchor => PasteAction::Anchor,
+            ToolMessage::PasteCancel => PasteAction::Discard,
+            _ => PasteAction::None,
+        };
+
+        if matches!(action, PasteAction::None) {
+            return ToolResult::None;
+        }
+
+        self.perform_action(ctx.state, action)
+    }
+
+    fn view_toolbar<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+        if !self.active {
+            return row![].into();
+        }
+
+        fn paste_btn<'a>(label: &'a str, shortcut: &'a str, msg: ToolMessage) -> Element<'a, ToolMessage> {
+            button(
+                row![
+                    text(shortcut).size(12).style(move |theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().secondary.base.color),
+                    }),
+                    text(label).size(14),
+                ]
+                .spacing(4)
+                .align_y(iced::Alignment::Center),
+            )
+            .padding([4, 8])
+            .on_press(msg)
+            .style(button::secondary)
+            .into()
+        }
+
+        let content = row![
+            text("Paste Mode:").size(14).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().primary.strong.color),
+            }),
+            Space::new().width(Length::Fixed(16.0)),
+            paste_btn("Stamp", "S", ToolMessage::PasteStamp),
+            paste_btn("Rotate", "R", ToolMessage::PasteRotate),
+            paste_btn("Flip X", "X", ToolMessage::PasteFlipX),
+            paste_btn("Flip Y", "Y", ToolMessage::PasteFlipY),
+            paste_btn("Transparent", "T", ToolMessage::PasteToggleTransparent),
+            Space::new().width(Length::Fill),
+            text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().secondary.base.color),
+            }),
+            Space::new().width(Length::Fixed(16.0)),
+            button(text("✓ Anchor").size(14))
+                .padding([4, 12])
+                .style(button::success)
+                .on_press(ToolMessage::PasteAnchor),
+            button(text("✕ Cancel").size(14))
+                .padding([4, 12])
+                .style(button::danger)
+                .on_press(ToolMessage::PasteCancel),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        // Center vertically; AnsiEditor wraps this into the rounded container.
+        row![Space::new().width(Length::Fill), content, Space::new().width(Length::Fill)]
+            .align_y(iced::Alignment::Center)
+            .into()
+    }
+
+    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+        if !self.active {
+            return ToolResult::None;
+        }
+
+        match msg {
+            TerminalMessage::Press(evt) => {
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+                if evt.button == MouseButton::Left {
+                    // Get current layer offset
+                    let layer_offset = ctx.state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    self.start_drag(pos, layer_offset);
+
+                    if self.move_undo.is_none() {
+                        self.move_undo = Some(ctx.state.begin_atomic_undo("Move pasted layer".to_string()));
+                    }
+                    ToolResult::StartCapture.and(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing)))
+                } else {
+                    ToolResult::None
+                }
+            }
+            TerminalMessage::Drag(evt) => {
+                if let Some(pos) = evt.text_position {
+                    if self.drag_active {
+                        self.update_drag(pos);
+                        // Set preview offset for visual feedback
+                        let new_offset = self.target_layer_offset();
+                        ctx.state.set_layer_preview_offset(Some(new_offset));
+                        return ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing))
+                            .and(ToolResult::UpdateLayerBounds)
+                            .and(ToolResult::Redraw);
+                    }
+                }
+                ToolResult::None
+            }
+            TerminalMessage::Move(_evt) => {
+                if self.drag_active {
+                    ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing))
+                } else {
+                    ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
+                }
+            }
+            TerminalMessage::Release(_evt) => {
+                if self.drag_active {
+                    let final_offset = self.end_drag();
+                    // Clear preview and commit the actual move
+                    ctx.state.set_layer_preview_offset(None);
+                    let _ = ctx.state.move_layer(final_offset);
+
+                    // Dropping the guard groups everything into one undo entry.
+                    self.move_undo = None;
+                    ToolResult::Multi(vec![
+                        ToolResult::EndCapture,
+                        ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab)),
+                        ToolResult::UpdateLayerBounds,
+                        ToolResult::Commit("Move pasted layer".to_string()),
+                    ])
+                } else {
+                    ToolResult::None
+                }
+            }
+            _ => ToolResult::None,
+        }
+    }
+
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+        if !self.active {
+            return ToolResult::None;
+        }
+
+        match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+                let action: PasteAction = self.handle_key(key);
+                self.perform_action(ctx.state, action)
+            }
+            _ => ToolResult::None,
+        }
+    }
+}

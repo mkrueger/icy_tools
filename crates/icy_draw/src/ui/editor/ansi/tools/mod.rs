@@ -6,7 +6,7 @@
 //! # Architecture
 //!
 //! - `ToolHandler`: Main trait that tools implement
-//! - `ToolInput`: All input events (mouse, keyboard, lifecycle)
+//! - Tools receive raw `iced::Event` (keyboard/window) and `TerminalMessage` (mouse)
 //! - `ToolResult`: Results from tool operations (redraw, commit, switch tool, etc.)
 //! - `ToolMessage`: Centralized enum for all tool-specific UI messages
 //! - `ToolContext`: Mutable context passed to tools (EditState, resources, etc.)
@@ -15,11 +15,12 @@
 //!
 //! ```ignore
 //! impl ToolHandler for PipetteTool {
-//!     fn handle_event(&mut self, ctx: &mut ToolContext, event: ToolInput) -> ToolResult {
-//!         match event {
-//!             ToolInput::MouseDown { pos, button, .. } => {
-//!                 if let Some(ch) = ctx.state.get_char(pos) {
-//!                     ctx.state.caret.set_foreground(ch.attribute.foreground());
+//!     fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+//!         match msg {
+//!             TerminalMessage::Press(evt) => {
+//!                 if let Some(pos) = evt.text_position {
+//!                     let ch = ctx.state.get_buffer().char_at(pos);
+//!                     ctx.state.set_caret_foreground(ch.attribute.foreground());
 //!                 }
 //!                 ToolResult::SwitchTool(Tool::Click)
 //!             }
@@ -29,107 +30,107 @@
 //! }
 //! ```
 
+// NOTE: Some types and methods are reserved for future UI integration
+// (tool-specific toolbars, options panels, status text).
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod click;
 mod fill;
 mod font;
-mod line;
+mod paint;
+mod paste;
 mod pencil;
 mod pipette;
 mod select;
 mod shape;
 mod tag;
 
-pub use click::ClickTool;
-pub use fill::{FillMode, FillTool};
-pub use font::FontTool;
-pub use line::LineTool;
+pub use click::{ClickTool, ClickToolUiAction};
+pub use fill::{FillSettings, FillTool};
+pub use font::{FontTool, FontToolUiAction};
+pub use paint::BrushSettings;
+pub use paste::{PasteAction, PasteTool};
 pub use pencil::PencilTool;
 pub use pipette::PipetteTool;
-pub use select::{SelectDragMode, SelectModifier, SelectTool};
-pub use shape::{ShapeTool, ShapeType};
-pub use tag::TagTool;
-
-use std::sync::Arc;
+pub use select::SelectTool;
+pub use shape::ShapeTool;
+pub use tag::{TagTool, TagToolState};
 
 use iced::Element;
 use iced::widget::{column, text};
-use icy_engine::{AttributedChar, KeyModifiers, Position, Rectangle};
+use icy_engine::Position;
+use icy_engine::{BitFont, Palette};
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::Tool;
+use icy_engine_gui::TerminalMessage;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
-use crate::SharedFontLibrary;
+use crate::ui::FKeySets;
 use crate::ui::Options;
+use crate::ui::editor::ansi::FKeyToolbarMessage;
+use crate::ui::editor::ansi::widget::toolbar::top::SelectedTagInfo;
+use crate::ui::editor::ansi::widget::toolbar::top::{BrushPrimaryMode, SelectionMode};
 
-// ============================================================================
-// Tool Input Events
-// ============================================================================
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HalfBlockMapper {
+    pub bounds_x: f32,
+    pub bounds_y: f32,
+    pub viewport_x: f32,
+    pub viewport_y: f32,
+    pub display_scale: f32,
+    pub scan_lines: bool,
+    pub font_width: f32,
+    pub font_height: f32,
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    /// Layer offset in half-block coordinates (Y is doubled).
+    pub layer_offset: Position,
+}
 
-/// All input events a tool can receive
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub enum ToolInput {
-    // === Mouse Events ===
-    /// Mouse button pressed
-    MouseDown {
-        /// Position in buffer coordinates
-        pos: Position,
-        /// Position including scroll offset
-        pos_abs: Position,
-        /// Position in half-block coordinates (2x Y resolution)
-        pos_half_block: Position,
-        /// Which button was pressed
-        button: icy_engine::MouseButton,
-        /// Keyboard modifiers at time of event
-        modifiers: KeyModifiers,
-    },
-    /// Mouse moved (during drag or hover)
-    MouseMove {
-        /// Position in buffer coordinates
-        pos: Position,
-        /// Position including scroll offset
-        pos_abs: Position,
-        /// Position in half-block coordinates
-        pos_half_block: Position,
-        /// Whether a drag is in progress
-        is_dragging: bool,
-        /// Keyboard modifiers
-        modifiers: KeyModifiers,
-    },
-    /// Mouse button released
-    MouseUp {
-        /// Position in buffer coordinates
-        pos: Position,
-        /// Position including scroll offset
-        pos_abs: Position,
-        /// Which button was released
-        button: icy_engine::MouseButton,
-    },
+impl HalfBlockMapper {
+    /// Map widget-local pixel position to layer-local half-block coordinates.
+    /// Y has 2x resolution (upper/lower half of each cell).
+    pub fn pixel_to_layer_half_block(&self, pixel_position: (f32, f32)) -> Position {
+        // Convert widget-local to screen coordinates.
+        let screen_x = self.bounds_x + pixel_position.0;
+        let screen_y = self.bounds_y + pixel_position.1;
 
-    // === Keyboard Events ===
-    /// Key pressed
-    KeyDown {
-        /// The key that was pressed
-        key: iced::keyboard::Key,
-        /// Keyboard modifiers
-        modifiers: KeyModifiers,
-    },
-    /// Key released
-    KeyUp {
-        /// The key that was released
-        key: iced::keyboard::Key,
-    },
+        // Convert to widget-local coordinates.
+        let local_x = screen_x - self.bounds_x;
+        let local_y = screen_y - self.bounds_y;
 
-    // === Lifecycle Events ===
-    /// Tool became active
-    Activate,
-    /// Tool is being deactivated (switching to another tool)
-    Deactivate,
+        // Position relative to viewport.
+        let vp_local_x = local_x - self.viewport_x;
+        let vp_local_y = local_y - self.viewport_y;
 
-    // === UI Message ===
-    /// Tool-specific message from UI (toolbar, options panel, etc.)
-    Message(ToolMessage),
+        // Convert from screen pixels to terminal pixels.
+        let scale = self.display_scale.max(0.001);
+        let term_x = vp_local_x / scale;
+        let mut term_y = vp_local_y / scale;
+
+        if self.scan_lines {
+            term_y /= 2.0;
+        }
+
+        let font_width = self.font_width.max(1.0);
+        let font_height = self.font_height.max(1.0);
+
+        // Half-block: divide by half the font height for 2x Y resolution.
+        let half_font_height = font_height / 2.0;
+
+        let cell_x = (term_x / font_width).floor() as i32;
+        let half_block_y = (term_y / half_font_height).floor() as i32;
+
+        // Viewport scroll offsets (in content pixels).
+        let scroll_offset_cols = (self.scroll_x / font_width).floor() as i32;
+        let scroll_offset_half_lines = (self.scroll_y / font_height * 2.0).floor() as i32;
+
+        let abs_half_block = Position::new(cell_x + scroll_offset_cols, half_block_y + scroll_offset_half_lines);
+        abs_half_block - self.layer_offset
+    }
 }
 
 // ============================================================================
@@ -138,7 +139,7 @@ pub enum ToolInput {
 
 /// Result of a tool operation
 #[derive(Clone, Debug, Default)]
-#[allow(dead_code)]
+
 pub enum ToolResult {
     /// No action needed
     #[default]
@@ -149,12 +150,16 @@ pub enum ToolResult {
     Commit(String),
     /// Update status bar text
     Status(String),
+    /// Request updating layer bounds overlay/UI (e.g. paste mode moving floating layer)
+    UpdateLayerBounds,
     /// Switch to another tool
     SwitchTool(Tool),
     /// Start mouse capture (all mouse events go to this tool until release)
     StartCapture,
     /// End mouse capture
     EndCapture,
+    /// Set the mouse cursor icon (UI-only)
+    SetCursorIcon(Option<iced::mouse::Interaction>),
     /// Multiple results (processed in order)
     Multi(Vec<ToolResult>),
 }
@@ -191,9 +196,13 @@ impl ToolResult {
 /// This allows type-safe message passing while keeping the trait object-safe.
 /// Each tool handles the messages relevant to it and ignores the rest.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
+
 pub enum ToolMessage {
     // === Shared Brush Settings (Pencil, Line, Shape tools) ===
+    /// Set the primary brush mode (exclusive)
+    SetBrushPrimary(BrushPrimaryMode),
+    /// Request opening the brush character selector popup
+    BrushOpenCharSelector,
     /// Set the brush character
     SetBrushChar(char),
     /// Set brush size (1-5)
@@ -202,22 +211,29 @@ pub enum ToolMessage {
     ToggleForeground(bool),
     /// Toggle background color usage
     ToggleBackground(bool),
-    /// Set color mode (FG only, BG only, both)
-    SetColorMode(ColorMode),
 
     // === Shape Tools ===
     /// Toggle filled vs outline mode
     ToggleFilled(bool),
+
+    // === Fill Tool ===
+    /// Toggle exact matching
+    FillToggleExact(bool),
 
     // === Font Tool ===
     /// Select font slot (0-9)
     FontSelectSlot(usize),
     /// Open font selector dialog
     FontOpenSelector,
+    /// Open the font directory in the system file manager
+    FontOpenDirectory,
     /// Set outline style
     FontSetOutline(usize),
     /// Open outline selector popup
     FontOpenOutlineSelector,
+
+    // === Click Tool / F-Key Toolbar ===
+    ClickFKeyToolbar(FKeyToolbarMessage),
 
     // === Tag Tool ===
     /// Edit a tag
@@ -226,20 +242,35 @@ pub enum ToolMessage {
     TagDelete(usize),
     /// Clone a tag
     TagClone(usize),
+    /// Close the tag context menu overlay
+    TagContextMenuClose,
     /// Open tag list dialog
     TagOpenList,
     /// Start adding a new tag
     TagStartAdd,
+    /// Edit currently selected tag (editor resolves selection)
+    TagEditSelected,
     /// Delete selected tags
     TagDeleteSelected,
 
     // === Select Tool ===
+    /// Set selection mode
+    SelectSetMode(SelectionMode),
     /// Select all
     SelectAll,
     /// Deselect
     SelectNone,
     /// Invert selection
     SelectInvert,
+
+    // === Paste Tool (floating layer) ===
+    PasteStamp,
+    PasteRotate,
+    PasteFlipX,
+    PasteFlipY,
+    PasteToggleTransparent,
+    PasteAnchor,
+    PasteCancel,
 
     // === Pipette Tool ===
     /// Take foreground color
@@ -250,97 +281,54 @@ pub enum ToolMessage {
     PipetteTakeChar(bool),
 }
 
-/// Color mode for brush tools
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum ColorMode {
-    #[default]
-    Both,
-    ForegroundOnly,
-    BackgroundOnly,
-}
-
 // ============================================================================
-// Tool Overlay
+// Tool View Context (UI-only)
 // ============================================================================
 
-/// Overlay data for preview rendering on the canvas.
+/// Read-only context for tool UI rendering.
 ///
-/// Tools can return this to show previews (shape outlines, selection rects, etc.)
-/// without modifying the actual buffer.
-#[derive(Clone, Debug, Default)]
-#[allow(dead_code)]
-pub struct ToolOverlay {
-    /// Characters to render as overlay (position -> char)
-    pub chars: Vec<(Position, AttributedChar)>,
-    /// Optional selection rectangle to show
-    pub selection_rect: Option<Rectangle>,
-    /// Optional shape preview points (for line/rect/ellipse tools)
-    pub shape_preview: Option<ShapePreview>,
-}
+/// Important: this must not borrow the `EditState` behind a mutex lock.
+pub struct ToolViewContext<'a> {
+    pub theme: &'a iced::Theme,
+    pub current_tool: Tool,
+    pub fkeys: FKeySets,
+    pub font: Option<BitFont>,
+    pub palette: Palette,
+    pub caret_fg: u32,
+    pub caret_bg: u32,
 
-/// Shape preview for line/rect/ellipse tools
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub enum ShapePreview {
-    /// Line from start to end (half-block coordinates)
-    Line { start: Position, end: Position },
-    /// Rectangle outline
-    Rectangle { rect: Rectangle },
-    /// Filled rectangle
-    RectangleFilled { rect: Rectangle },
-    /// Ellipse outline
-    Ellipse { rect: Rectangle },
-    /// Filled ellipse
-    EllipseFilled { rect: Rectangle },
+    // Tag toolbar info (computed by editor, rendered by TagTool)
+    pub tag_add_mode: bool,
+    pub selected_tag: Option<SelectedTagInfo>,
+    pub tag_selection_count: usize,
 }
 
 // ============================================================================
 // Tool Context
 // ============================================================================
 
-/// Shared resources that tools might need
-#[allow(dead_code)]
-pub struct ToolResources {
-    /// Shared font library for TDF/Figlet fonts
-    pub font_library: SharedFontLibrary,
-    /// Application options
-    pub options: Arc<RwLock<Options>>,
-}
-
-/// Drag position state for tracking mouse drags
-#[derive(Clone, Debug, Default)]
-pub struct DragState {
-    /// Start position of drag (buffer coordinates)
-    pub start: Position,
-    /// Current position of drag (buffer coordinates)
-    pub cur: Position,
-    /// Start position including layer offset (absolute)
-    pub start_abs: Position,
-    /// Current position including layer offset (absolute)
-    pub cur_abs: Position,
-    /// Start position in half-block coordinates
-    pub start_half_block: Position,
-    /// Current position in half-block coordinates
-    pub cur_half_block: Position,
-}
-
 /// Context passed to tool handlers.
 ///
 /// Contains mutable references to all state a tool might need.
-#[allow(dead_code)]
 pub struct ToolContext<'a> {
     /// The edit state (buffer, caret, selection, undo stack, etc.)
     pub state: &'a mut EditState,
+
+    /// Shared UI/editor options (read-mostly, may be updated by some tools)
+    pub options: Option<&'a Arc<RwLock<Options>>>,
     /// Atomic undo guard for multi-step operations
     /// Set by tool during MouseDown, cleared on MouseUp/Commit
     pub undo_guard: &'a mut Option<AtomicUndoGuard>,
-    /// Shared resources (fonts, options, etc.)
-    pub resources: &'a mut ToolResources,
-    /// Whether a drag is currently in progress
-    pub is_dragging: bool,
-    /// Current drag positions (start, current, half-block variants)
-    pub drag_pos: DragState,
+
+    /// Optional pixel→half-block mapper (layer-local).
+    /// Used by tools that need 2x Y resolution (e.g. HalfBlock fill/paint).
+    pub half_block_mapper: Option<HalfBlockMapper>,
+
+    /// Optional Tag tool state when dispatching to the Tag tool.
+    ///
+    /// This keeps tag event handling inside the tool while allowing the editor
+    /// to retain ownership of tag UI/overlay state.
+    pub tag_state: Option<&'a mut TagToolState>,
 }
 
 // ============================================================================
@@ -351,15 +339,28 @@ pub struct ToolContext<'a> {
 ///
 /// Each tool implements this trait. The editor dispatches events to the active
 /// tool's `handle_event` method and renders the tool's UI components.
-#[allow(dead_code)]
+
 pub trait ToolHandler: Send + Sync {
     // === Event Handling ===
 
-    /// Handle any input event.
+    /// Handle non-terminal Iced events.
     ///
-    /// This is the main entry point for tool logic. The tool receives all
-    /// mouse, keyboard, lifecycle, and UI message events here.
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: ToolInput) -> ToolResult;
+    /// Intended for keyboard/window lifecycle events.
+    fn handle_event(&mut self, _ctx: &mut ToolContext, _event: &iced::Event) -> ToolResult {
+        ToolResult::None
+    }
+
+    /// Handle terminal widget messages.
+    ///
+    /// Intended for mouse input from the terminal widget with correct coordinate/modifier state.
+    fn handle_terminal_message(&mut self, _ctx: &mut ToolContext, _msg: &TerminalMessage) -> ToolResult {
+        ToolResult::None
+    }
+
+    /// Handle tool-specific UI messages (toolbars/options/status widgets).
+    fn handle_message(&mut self, _ctx: &mut ToolContext, _msg: &ToolMessage) -> ToolResult {
+        ToolResult::None
+    }
 
     // === UI Rendering ===
 
@@ -367,7 +368,7 @@ pub trait ToolHandler: Send + Sync {
     ///
     /// Returns an Element that sends `ToolMessage` when interacted with.
     /// Default: empty row.
-    fn view_toolbar<'a>(&'a self, ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
+    fn view_toolbar<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
         let _ = ctx;
         column![].into()
     }
@@ -375,7 +376,7 @@ pub trait ToolHandler: Send + Sync {
     /// Render tool-specific sidebar options (left panel, under tool icons).
     ///
     /// Default: empty column.
-    fn view_options<'a>(&'a self, ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
+    fn view_options<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
         let _ = ctx;
         column![].into()
     }
@@ -383,18 +384,9 @@ pub trait ToolHandler: Send + Sync {
     /// Render status bar content for this tool.
     ///
     /// Default: empty text.
-    fn view_status<'a>(&'a self, ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
+    fn view_status<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
         let _ = ctx;
         text("").into()
-    }
-
-    // === Canvas Overlay ===
-
-    /// Get overlay to render on canvas (preview, guides, selection, etc.).
-    ///
-    /// Called during canvas rendering. Return None for no overlay.
-    fn get_overlay(&self) -> Option<ToolOverlay> {
-        None
     }
 
     // === Appearance ===
@@ -418,30 +410,5 @@ pub trait ToolHandler: Send + Sync {
     /// Default: true.
     fn show_selection(&self) -> bool {
         true
-    }
-}
-
-// ============================================================================
-// Tool Registry
-// ============================================================================
-
-/// Create a new tool handler for the given tool type
-#[allow(dead_code)]
-pub fn create_tool_handler(tool: Tool) -> Box<dyn ToolHandler> {
-    match tool {
-        Tool::Pipette => Box::new(PipetteTool::new()),
-        // TODO: Implement other tools
-        _ => Box::new(DefaultTool),
-    }
-}
-
-/// Default/fallback tool that does nothing.
-/// Used as placeholder until tools are implemented.
-#[allow(dead_code)]
-struct DefaultTool;
-
-impl ToolHandler for DefaultTool {
-    fn handle_event(&mut self, _ctx: &mut ToolContext, _event: ToolInput) -> ToolResult {
-        ToolResult::None
     }
 }

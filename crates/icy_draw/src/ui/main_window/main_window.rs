@@ -2305,7 +2305,7 @@ impl MainWindow {
             Message::OpenTdfFontSelector => {
                 // Open the TDF font selector dialog
                 if let ModeState::Ansi(editor) = &self.mode_state {
-                    let dialog = crate::ui::editor::ansi::TdfFontSelectorDialog::new(editor.font_tool.font_library());
+                    let dialog = crate::ui::editor::ansi::TdfFontSelectorDialog::new(editor.font_tool_library());
                     self.dialogs.push(dialog);
                 }
                 Task::none()
@@ -2314,7 +2314,7 @@ impl MainWindow {
                 // Handle confirm message to apply selected font
                 if let crate::ui::editor::ansi::TdfFontSelectorMessage::Confirm(font_idx) = msg {
                     if let ModeState::Ansi(editor) = &mut self.mode_state {
-                        editor.font_tool.select_font(font_idx);
+                        editor.font_tool_select_font(font_idx);
                     }
                 }
                 // Other messages (filter, select, generate preview, etc.) are handled by the dialog
@@ -2729,29 +2729,9 @@ impl MainWindow {
 
         // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {
-            ModeState::Ansi(_editor) => {
-                match event {
-                    // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
-                    Event::Window(iced::window::Event::Unfocused) | Event::Mouse(iced::mouse::Event::CursorLeft) => {
-                        return (
-                            Some(Message::AnsiEditor(crate::ui::editor::ansi::AnsiEditorMessage::CancelShapeDrag)),
-                            Task::none(),
-                        );
-                    }
-                    // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
-                    Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
-                        return (
-                            Some(Message::AnsiEditor(crate::ui::editor::ansi::AnsiEditorMessage::CancelMinimapDrag)),
-                            Task::none(),
-                        );
-                    }
-
-                    // Forward keyboard events to AnsiEditor
-                    Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        let msg = crate::ui::editor::ansi::AnsiEditorMessage::KeyPressed(key.clone(), *modifiers);
-                        return (Some(Message::AnsiEditor(msg)), Task::none());
-                    }
-                    _ => {}
+            ModeState::Ansi(editor) => {
+                if editor.handle_event(event) {
+                    return (None, Task::none());
                 }
             }
             ModeState::BitFont(state) => {

@@ -5,7 +5,7 @@ use icy_engine_edit::bitfont::BitFontFocusedPanel;
 
 use super::{BitFontTool, BitFontToolPanelMessage, BitFontTopToolbarMessage};
 use crate::ui::editor::ansi::PaletteGridMessage;
-use icy_engine_gui::terminal::view::Message as TerminalMessage;
+use icy_engine_gui::terminal::view::TerminalMessage;
 
 /// Direction for arrow key navigation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -90,7 +90,7 @@ impl AboutDialogState {
         let on_msg = on_message.clone();
         let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(move |terminal_msg| {
             match terminal_msg {
-                crate::Message::Press(evt) => {
+                crate::TerminalMessage::Press(evt) => {
                     // Check if clicking on a hyperlink
                     if let Some(screen_guard) = screen.try_lock() {
                         if let Some(url) = evt.get_hyperlink(&**screen_guard) {
@@ -100,7 +100,7 @@ impl AboutDialogState {
                     // Not on a link - do nothing (don't close)
                     on_msg(AboutDialogMessage::None)
                 }
-                crate::Message::Move(evt) => {
+                crate::TerminalMessage::Move(evt) => {
                     // Update cursor for hyperlink hover
                     if let Some(screen_guard) = screen.try_lock() {
                         if let Some(cell) = evt.text_position {

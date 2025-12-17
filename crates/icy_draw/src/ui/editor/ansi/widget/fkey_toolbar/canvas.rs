@@ -3,6 +3,10 @@
 //! Renders F1-F12 function key slots with characters from the current font.
 //! Uses the caret's foreground/background colors and the current font for rendering.
 //! Features a professional dark theme look with drop shadows and glow effects.
+//!
+//! NOTE: Some constants and helpers are prepared for future features.
+
+#![allow(dead_code)]
 
 use iced::{
     Color, Element, Length, Point, Rectangle, Size, Theme,

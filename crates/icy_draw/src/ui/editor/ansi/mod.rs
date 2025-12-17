@@ -24,11 +24,15 @@
 
 pub mod constants;
 pub mod dialog;
+pub mod selection_drag;
+mod shape_points;
 pub mod tools;
 pub mod widget;
 
-use dialog::tag::{TagDialog, TagDialogMessage};
-use dialog::tag_list::{TagListDialog, TagListDialogMessage, TagListItem};
+pub use selection_drag::SelectionDrag;
+
+use dialog::tag::TagDialogMessage;
+use dialog::tag_list::TagListDialogMessage;
 
 pub use dialog::edit_layer::*;
 pub use dialog::file_settings::*;
@@ -41,7 +45,6 @@ pub use widget::canvas::*;
 pub use widget::char_selector::*;
 pub use widget::color_switcher::gpu::*;
 pub use widget::fkey_toolbar::gpu::*;
-pub use widget::font_tool::FontToolState;
 pub use widget::layer_view::*;
 pub use widget::minimap::*;
 pub use widget::palette_grid::*;
@@ -50,29 +53,24 @@ pub use widget::toolbar::tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
 pub use widget::toolbar::top::*;
 
 use icy_engine_edit::EditState;
-use icy_engine_edit::OperationType;
-use icy_engine_edit::UndoState;
-use icy_engine_edit::tools::{self as engine_tools, Tool, ToolEvent};
+use icy_engine_edit::tools::{self as engine_tools, Tool};
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clipboard_rs::common::RustImage;
-use clipboard_rs::{Clipboard, ClipboardContent, ContentFormat};
+use clipboard_rs::{Clipboard, ClipboardContent};
 use iced::{
     Alignment, Element, Length, Task, Theme,
     widget::{column, container, row},
 };
 use icy_engine::formats::{FileFormat, LoadData};
-use icy_engine::{MouseButton, Position, Screen, Sixel, Tag, TagRole, TextBuffer, TextPane};
-use icy_engine_gui::ICY_CLIPBOARD_TYPE;
-use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
+use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::theme::main_area_background;
+use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
 use parking_lot::{Mutex, RwLock};
 
 use crate::SharedFontLibrary;
 use crate::ui::Options;
-use icy_engine::BufferType;
 
 /// Target for the character selector popup
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,16 +81,6 @@ pub enum CharSelectorTarget {
     BrushChar,
 }
 
-/// Convert icy_engine MouseButton to iced mouse button
-fn convert_mouse_button(button: MouseButton) -> iced::mouse::Button {
-    match button {
-        MouseButton::Left => iced::mouse::Button::Left,
-        MouseButton::Right => iced::mouse::Button::Right,
-        MouseButton::Middle => iced::mouse::Button::Middle,
-        _ => iced::mouse::Button::Left, // Default to left for other buttons
-    }
-}
-
 /// Messages for the ANSI editor
 use widget::outline_selector::{OutlineSelector, OutlineSelectorMessage, outline_selector_width};
 
@@ -101,13 +89,13 @@ pub enum AnsiEditorMessage {
     /// Tool panel messages
     ToolPanel(ToolPanelMessage),
     /// Canvas view messages  
-    Canvas(CanvasMessage),
+    Canvas(TerminalMessage),
     /// Right panel messages (minimap, layers, etc.)
     RightPanel(RightPanelMessage),
     /// Top toolbar messages
     TopToolbar(TopToolbarMessage),
-    /// F-key toolbar messages (Click tool)
-    FKeyToolbar(FKeyToolbarMessage),
+    /// Tool-owned toolbar/options/status messages
+    ToolMessage(tools::ToolMessage),
     /// Char selector popup messages (F-key character selection)
     CharSelector(CharSelectorMessage),
     /// Outline selector popup messages (font tool outline style)
@@ -116,11 +104,6 @@ pub enum AnsiEditorMessage {
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
     PaletteGrid(PaletteGridMessage),
-
-    /// Cancel an in-progress shape drag (clears preview overlay).
-    CancelShapeDrag,
-    /// Cancel an in-progress minimap drag/autoscroll.
-    CancelMinimapDrag,
     /// Periodic tick while minimap drag is active (drives drag-out autoscroll).
     MinimapAutoscrollTick(f32),
     /// Tool selection changed
@@ -147,10 +130,6 @@ pub enum AnsiEditorMessage {
     ClearLayer(usize),
     /// Scroll viewport
     ScrollViewport(f32, f32),
-    /// Key pressed
-    KeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
-    /// Mouse event on canvas
-    CanvasMouseEvent(CanvasMouseEvent),
 
     // === Marker/Guide Messages ===
     /// Set guide position (in characters, e.g. 80x25)
@@ -171,10 +150,6 @@ pub enum AnsiEditorMessage {
     ToggleLineNumbers,
     /// Toggle layer borders display
     ToggleLayerBorders,
-    /// Open TDF font selector
-    OpenTdfFontSelector,
-    /// TDF font selector messages
-    TdfFontSelector(TdfFontSelectorMessage),
 
     /// Tag config dialog messages
     TagDialog(TagDialogMessage),
@@ -183,131 +158,9 @@ pub enum AnsiEditorMessage {
     OpenTagListDialog,
     /// Tag list dialog messages
     TagListDialog(TagListDialogMessage),
-
-    // === Tag Context Menu Messages ===
-    /// Edit a tag (opens dialog in edit mode)
-    TagEdit(usize),
-    /// Delete a tag
-    TagDelete(usize),
-    /// Clone a tag
-    TagClone(usize),
-    /// Close tag context menu
-    TagContextMenuClose,
-    /// Delete all selected tags
-    TagDeleteSelected,
-    /// Start "Add Tag" mode - cursor shows TAG preview until user clicks
-    TagStartAddMode,
-    /// Cancel "Add Tag" mode
-    TagCancelAddMode,
 }
 
-/// Mouse events on the canvas (using text/buffer coordinates)
-#[derive(Clone, Debug)]
-pub enum CanvasMouseEvent {
-    Press {
-        position: icy_engine::Position,
-        pixel_position: (f32, f32),
-        button: iced::mouse::Button,
-        modifiers: icy_engine::KeyModifiers,
-    },
-    Release {
-        position: icy_engine::Position,
-        pixel_position: (f32, f32),
-        button: iced::mouse::Button,
-    },
-    Move {
-        position: icy_engine::Position,
-        pixel_position: (f32, f32),
-    },
-    Scroll {
-        delta: iced::mouse::ScrollDelta,
-    },
-}
-
-/// Selection drag mode - determines what part of selection is being dragged
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
-pub enum SelectionDrag {
-    #[default]
-    None,
-    /// Create new selection
-    Create,
-    /// Move existing selection
-    Move,
-    /// Resize from edges/corners
-    Left,
-    Right,
-    Top,
-    Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-impl SelectionDrag {
-    /// Convert to mouse cursor interaction for resize handles
-    pub fn to_cursor_interaction(self) -> Option<iced::mouse::Interaction> {
-        use iced::mouse::Interaction;
-        match self {
-            SelectionDrag::None | SelectionDrag::Create => None,
-            SelectionDrag::Move => Some(Interaction::Grab),
-            SelectionDrag::Left | SelectionDrag::Right => Some(Interaction::ResizingHorizontally),
-            SelectionDrag::Top | SelectionDrag::Bottom => Some(Interaction::ResizingVertically),
-            SelectionDrag::TopLeft | SelectionDrag::BottomRight => Some(Interaction::ResizingDiagonallyDown),
-            SelectionDrag::TopRight | SelectionDrag::BottomLeft => Some(Interaction::ResizingDiagonallyUp),
-        }
-    }
-}
-
-/// Pipette tool state - stores the currently hovered character and modifiers
-/// TODO: This is the old state, migrate to tools::PipetteTool
-#[derive(Default, Clone, Debug)]
-#[allow(dead_code)]
-pub struct PipetteState {
-    /// Currently hovered character (if any)
-    pub cur_char: Option<icy_engine::AttributedChar>,
-    /// Current hover position
-    pub cur_pos: Option<icy_engine::Position>,
-    /// Take foreground color (Shift=only FG, Ctrl=only BG, neither=both)
-    pub take_fg: bool,
-    /// Take background color
-    pub take_bg: bool,
-}
-
-#[allow(dead_code)]
-impl PipetteState {
-    /// Update the modifier flags based on current keyboard state
-    pub fn update_modifiers(&mut self) {
-        let shift = is_shift_pressed();
-        let ctrl = is_ctrl_pressed() || is_command_pressed();
-
-        // Moebius-style:
-        // - No modifier: both FG and BG
-        // - Shift only: FG only
-        // - Ctrl only: BG only
-        // - Both: both (fallback)
-        self.take_fg = !ctrl || shift;
-        self.take_bg = !shift || ctrl;
-    }
-}
-
-/// Drag position tracking for mouse operations
-#[derive(Default, Clone, Copy, Debug)]
-pub struct DragPos {
-    /// Start position in buffer coordinates
-    pub start: icy_engine::Position,
-    /// Current position in buffer coordinates
-    pub cur: icy_engine::Position,
-    /// Start position absolute (including scroll offset)
-    pub start_abs: icy_engine::Position,
-    /// Current position absolute (including scroll offset)
-    pub cur_abs: icy_engine::Position,
-    /// Start position in half-block coordinates (2x Y resolution)
-    /// Used for line/shape tools in half-block mode
-    pub start_half_block: icy_engine::Position,
-    /// Current position in half-block coordinates (2x Y resolution)
-    pub cur_half_block: icy_engine::Position,
-}
+// CanvasMouseEvent removed - use TerminalMessage directly from icy_engine_gui
 
 /// The main ANSI editor component
 pub struct AnsiEditor {
@@ -322,8 +175,6 @@ pub struct AnsiEditor {
     pub current_tool: Tool,
     /// Top toolbar (tool-specific options)
     pub top_toolbar: TopToolbar,
-    /// F-key toolbar (GPU shader version, Click tool only)
-    pub fkey_toolbar: ShaderFKeyToolbar,
     /// Color switcher (FG/BG display)
     pub color_switcher: ColorSwitcher,
     /// Palette grid
@@ -342,12 +193,10 @@ pub struct AnsiEditor {
     minimap_drag_pointer: Option<(f32, f32)>,
 
     // === Selection/Drag State ===
-    /// Current drag positions for mouse operations
-    pub drag_pos: DragPos,
     /// Whether mouse is currently dragging
     pub is_dragging: bool,
     /// Tool that currently has mouse capture during a drag (move/up are routed here)
-    mouse_capture_tool: Option<Tool>,
+    mouse_capture_tool: Option<MouseCaptureTarget>,
     /// Current selection drag mode
     pub selection_drag: SelectionDrag,
     /// Selection state at start of drag (for resize operations)
@@ -373,101 +222,42 @@ pub struct AnsiEditor {
     /// If Some, show the character selector popup for the given target
     pub char_selector_target: Option<CharSelectorTarget>,
 
-    // === Font Tool State ===
-    /// Font tool state (loaded fonts, selected font, etc.)
-    pub font_tool: FontToolState,
-    /// If true, show the outline selector popup for font tool
-    pub outline_selector_open: bool,
-    /// If true, show the TDF font selector dialog
-    pub tdf_font_selector_open: bool,
-    /// TDF font selector dialog state
-    pub tdf_font_selector: TdfFontSelectorDialog,
-
     // === Tag Tool State ===
-    pub tag_dialog: Option<TagDialog>,
-    pub tag_list_dialog: Option<TagListDialog>,
-    /// If true, we are dragging a tag
-    tag_drag_active: bool,
-    /// Indices of tags being dragged (supports multi-selection)
-    tag_drag_indices: Vec<usize>,
-    /// Tag positions at start of drag (parallel to tag_drag_indices)
-    tag_drag_start_positions: Vec<icy_engine::Position>,
-    /// Selected tag indices for multi-selection
-    pub tag_selection: Vec<usize>,
-    /// Context menu state: Some((tag_index, screen_position)) when open
-    pub tag_context_menu: Option<(usize, icy_engine::Position)>,
-    /// If Some(index), we are adding a new tag and dragging it - stores the index of the new tag
-    pub tag_add_new_index: Option<usize>,
-    /// If true, we are doing a selection rectangle drag to select multiple tags
-    tag_selection_drag_active: bool,
-    /// Atomic undo guard for tag drag operations
-    tag_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
+    /// Consolidated tag tool state (dialogs, drag, selection, context menu)
+    pub tag_state: tools::TagToolState,
 
     // === Paint Stroke State (Pencil/Brush/Erase) ===
-    paint_undo: Option<icy_engine_edit::AtomicUndoGuard>,
-    paint_last_pos: Option<icy_engine::Position>,
-    paint_button: iced::mouse::Button,
-
-    // === Half-Block Mode State ===
-    /// Current mouse position in half-block coordinates (2x Y resolution).
-    /// Used for pencil/brush drawing and line interpolation in half-block mode.
-    /// Updated on every mouse move during drag operations.
-    pub half_block_click_pos: icy_engine::Position,
+    paint_button: MouseButton,
 
     // === Shape Tool State ===
     /// If true, shape tools clear/erase instead of drawing (Moebius-style shift behavior).
     shape_clear: bool,
 
-    // === Pipette Tool State ===
-    /// Pipette tool state (current character, modifiers)
-    pub pipette: PipetteState,
-
-    // === New Tool Handler System ===
-    /// Tool handler for Pipette (new trait-based system)
+    // === Tool Handler System ===
+    /// Tool handler for Pipette
     pipette_handler: tools::PipetteTool,
-    /// Tool handler for Line (new trait-based system)
-    line_handler: tools::LineTool,
-    /// Tool handler for Select (new trait-based system)
-    /// TODO: Integrate dispatcher calls into handle_tool_mouse_* methods
-    #[allow(dead_code)]
+    /// Tool handler for Select
     select_handler: tools::SelectTool,
-    /// Tool handler for Pencil (new trait-based system)
-    /// TODO: Integrate dispatcher calls into handle_tool_mouse_* methods
-    #[allow(dead_code)]
+    /// Tool handler for Pencil
     pencil_handler: tools::PencilTool,
-    /// Tool handler for Shape tools (new trait-based system)
-    #[allow(dead_code)]
+    /// Tool handler for Shape tools (Line, Rectangle, Ellipse)
     shape_handler: tools::ShapeTool,
-    /// Tool handler for Fill (new trait-based system)
-    #[allow(dead_code)]
+    /// Tool handler for Fill
     fill_handler: tools::FillTool,
-    /// Tool handler for Click/Text (new trait-based system)
-    #[allow(dead_code)]
+    /// Tool handler for Click/Text
     click_handler: tools::ClickTool,
-    /// Tool handler for Font (new trait-based system)
-    #[allow(dead_code)]
+    /// Tool handler for Font
     font_handler: tools::FontTool,
-    /// Tool handler for Tag (new trait-based system)
-    #[allow(dead_code)]
+    /// Tool handler for Tag
     tag_handler: tools::TagTool,
+    /// Tool handler for Paste/Floating layer
+    paste_handler: tools::PasteTool,
+}
 
-    // === Layer Drag State (Ctrl+Click+Drag in Click tool) ===
-    /// If true, we are dragging a layer (Ctrl+Click+Drag)
-    layer_drag_active: bool,
-    /// Layer offset at start of drag
-    layer_drag_start_offset: icy_engine::Position,
-    /// Atomic undo guard for layer drag operations
-    layer_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
-
-    // === Paste Mode State ===
-    /// If true, we are dragging the floating paste layer
-    paste_drag_active: bool,
-    /// Floating layer offset at start of drag
-    paste_drag_start_offset: icy_engine::Position,
-    /// Atomic undo guard for paste drag operations
-    paste_drag_undo: Option<icy_engine_edit::AtomicUndoGuard>,
-    /// Tool that was active before paste mode started (to restore after anchor/cancel)
-    paste_previous_tool: Option<Tool>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MouseCaptureTarget {
+    Tool(Tool),
+    Paste,
 }
 
 impl AnsiEditor {
@@ -478,10 +268,6 @@ impl AnsiEditor {
     // *layer-local* coordinates, i.e. relative to the current layer's offset.
     // Do NOT pass document/global positions into brush algorithms.
     // Selection/mask operations are handled by EditState and keep using document coords.
-
-    fn doc_to_layer_pos(&mut self, pos: icy_engine::Position) -> icy_engine::Position {
-        self.with_edit_state(|state| if let Some(layer) = state.get_cur_layer() { pos - layer.offset() } else { pos })
-    }
 
     /// Compute half-block coordinates from widget-local pixel position.
     /// Returns layer-local half-block coordinates (Y has 2x resolution).
@@ -532,610 +318,370 @@ impl AnsiEditor {
         f(edit_state)
     }
 
-    fn half_block_is_top_from_pixel(&self, pixel_position: (f32, f32)) -> bool {
-        let render_info = self.canvas.terminal.render_info.read();
-        let font_h = render_info.font_height.max(1.0);
-        let scale = render_info.display_scale.max(0.001);
-
-        // pixel_position is widget-local.
-        let mut y = (pixel_position.1 - render_info.viewport_y) / scale;
-        if render_info.scan_lines {
-            y /= 2.0;
-        }
-
-        let cell_y = (y / font_h).floor();
-        let within = y - cell_y * font_h;
-        within < (font_h * 0.5)
-    }
-
-    /// Paint a half-block point with brush_size expansion in half-block coordinates.
-    /// This is similar to Moebius's half_block_line pattern where brush_size
-    /// expands around the half-block coordinate.
-    fn apply_half_block_with_brush_size(&mut self, half_block_pos: icy_engine::Position, button: iced::mouse::Button) {
-        let brush_size = self.top_toolbar.brush_options.brush_size.max(1) as i32;
-        let half = brush_size / 2;
-
-        for dy in 0..brush_size {
-            for dx in 0..brush_size {
-                let hb_x = half_block_pos.x + dx - half;
-                let hb_y = half_block_pos.y + dy - half;
-
-                // Skip negative coordinates (would be outside document)
-                if hb_y < 0 {
-                    continue;
-                }
-
-                // Convert half-block to cell coordinates
-                let cell_pos = icy_engine::Position::new(hb_x, hb_y / 2);
-                let is_top = (hb_y % 2) == 0;
-
-                self.apply_paint_stamp_with_half_block_info(cell_pos, is_top, button);
-            }
-        }
-    }
-
-    /// Internal: Paint stamp at cell position with explicit half-block top/bottom info
-    fn apply_paint_stamp_with_half_block_info(&mut self, doc_pos: icy_engine::Position, half_block_is_top: bool, button: iced::mouse::Button) {
-        let tool = self.current_tool;
-
-        let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
-            let opts = &self.top_toolbar.brush_options;
-            (opts.primary, opts.paint_char, opts.brush_size.max(1), opts.colorize_fg, opts.colorize_bg)
-        };
-
-        let swap_colors = button == iced::mouse::Button::Right;
-        // Shift key also swaps colors (like in many graphics programs)
-        let shift_swap = is_shift_pressed();
-        // half_block_is_top is passed in directly for HalfBlock mode with brush_size
-
-        self.with_edit_state(|state| {
-            let (offset, layer_w, layer_h) = if let Some(layer) = state.get_cur_layer() {
-                (layer.offset(), layer.width(), layer.height())
-            } else {
-                return;
-            };
-            let use_selection = state.is_something_selected();
-
-            let caret_attr = state.get_caret().attribute;
-            // Don't swap colors for Shading (has its own up/down behavior) or Char mode (right-click = erase)
-            // Shift key swaps colors for all modes except those with special right-click behavior
-            let swap_for_colors = (swap_colors || shift_swap) && !matches!(primary, BrushPrimaryMode::Shading | BrushPrimaryMode::Char);
-            let (fg, bg) = if swap_for_colors {
-                (caret_attr.background(), caret_attr.foreground())
-            } else {
-                (caret_attr.foreground(), caret_attr.background())
-            };
-
-            // Note: Pencil and Brush now both use brush_size from slider.
-            // For HalfBlock mode, brush_size expansion happens in half-block coordinates
-            // at the call site, so here we use size 1 to paint single points.
-            let effective_brush_size = if matches!(primary, BrushPrimaryMode::HalfBlock) { 1 } else { brush_size };
-            let brush_size_i: i32 = effective_brush_size as i32;
-
-            let center = doc_pos - offset;
-            let half = brush_size_i / 2;
-
-            for dy in 0..brush_size_i {
-                for dx in 0..brush_size_i {
-                    let layer_pos = icy_engine::Position::new(center.x + dx - half, center.y + dy - half);
-
-                    // Bounds check against layer.
-                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                        continue;
-                    }
-
-                    // Selection is in document coords.
-                    if use_selection {
-                        let doc_cell = layer_pos + offset;
-                        if !state.is_selected(doc_cell) {
-                            continue;
-                        }
-                    }
-
-                    match tool {
-                        Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                            use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
-
-                            let brush_mode = match primary {
-                                BrushPrimaryMode::Char => {
-                                    // Right-click in Char mode = erase (set to space)
-                                    if swap_colors {
-                                        EngineBrushMode::Char(' ')
-                                    } else {
-                                        EngineBrushMode::Char(paint_char)
-                                    }
-                                }
-                                BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
-                                BrushPrimaryMode::Shading => {
-                                    if swap_colors {
-                                        EngineBrushMode::ShadeDown
-                                    } else {
-                                        EngineBrushMode::Shade
-                                    }
-                                }
-                                BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
-                                BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
-                                BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
-                            };
-
-                            let color_mode = if matches!(primary, BrushPrimaryMode::Colorize) {
-                                match (colorize_fg, colorize_bg) {
-                                    (true, true) => EngineColorMode::Both,
-                                    (true, false) => EngineColorMode::Foreground,
-                                    (false, true) => EngineColorMode::Background,
-                                    (false, false) => EngineColorMode::None,
-                                }
-                            } else {
-                                EngineColorMode::Both
-                            };
-
-                            let mut template = caret_attr;
-                            template.set_foreground(fg);
-                            template.set_background(bg);
-
-                            // Use the brush library on a small adapter around the current layer.
-                            struct LayerTarget<'a> {
-                                state: &'a mut icy_engine_edit::EditState,
-                                width: i32,
-                                height: i32,
-                            }
-                            impl<'a> icy_engine_edit::brushes::DrawTarget for LayerTarget<'a> {
-                                fn width(&self) -> i32 {
-                                    self.width
-                                }
-                                fn height(&self) -> i32 {
-                                    self.height
-                                }
-                                fn char_at(&self, pos: icy_engine_edit::Position) -> Option<icy_engine_edit::AttributedChar> {
-                                    self.state.get_cur_layer().map(|l| l.char_at(pos))
-                                }
-                                fn set_char(&mut self, pos: icy_engine_edit::Position, ch: icy_engine_edit::AttributedChar) {
-                                    let _ = self.state.set_char_in_atomic(pos, ch);
-                                }
-                            }
-
-                            let ctx = DrawContext::default()
-                                .with_brush_mode(brush_mode)
-                                .with_color_mode(color_mode)
-                                .with_foreground(fg)
-                                .with_background(bg)
-                                .with_template_attribute(template)
-                                .with_half_block_is_top(half_block_is_top);
-
-                            let mut target = LayerTarget {
-                                state,
-                                width: layer_w,
-                                height: layer_h,
-                            };
-
-                            ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        });
-    }
-
-    /// Paint stamp at cell position, determining half-block top/bottom from pixel position
-    fn apply_paint_stamp(&mut self, doc_pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) {
-        let half_block_is_top = self.half_block_is_top_from_pixel(pixel_position);
-        self.apply_paint_stamp_with_half_block_info(doc_pos, half_block_is_top, button);
-    }
-
-    #[allow(dead_code)]
-    fn layer_to_doc_pos(&mut self, pos: icy_engine::Position) -> icy_engine::Position {
-        self.with_edit_state(|state| if let Some(layer) = state.get_cur_layer() { pos + layer.offset() } else { pos })
-    }
-
-    fn current_select_add_type(&self) -> icy_engine::AddType {
-        if self.current_tool != Tool::Select {
-            return icy_engine::AddType::Default;
-        }
-
-        // Modifiers are read from global state because event modifiers may be unreliable.
-        if is_ctrl_pressed() || is_command_pressed() {
-            icy_engine::AddType::Subtract
-        } else if is_shift_pressed() {
-            icy_engine::AddType::Add
-        } else {
-            icy_engine::AddType::Default
-        }
-    }
-
     // =========================================================================
     // Tool Handler Dispatch (new trait-based system)
     // =========================================================================
 
-    /// Get current drag state for passing to tool handlers
-    fn get_drag_state(&self) -> tools::DragState {
-        tools::DragState {
-            start: self.drag_pos.start,
-            cur: self.drag_pos.cur,
-            start_abs: self.drag_pos.start_abs,
-            cur_abs: self.drag_pos.cur_abs,
-            start_half_block: self.drag_pos.start_half_block,
-            cur_half_block: self.drag_pos.cur_half_block,
+    fn build_half_block_mapper(&self, state: &EditState) -> tools::HalfBlockMapper {
+        let render_info = self.canvas.terminal.render_info.read();
+        let viewport = self.canvas.terminal.viewport.read();
+
+        let layer_offset = state
+            .get_cur_layer()
+            .map(|l| {
+                let o = l.offset();
+                icy_engine::Position::new(o.x, o.y * 2)
+            })
+            .unwrap_or_default();
+
+        tools::HalfBlockMapper {
+            bounds_x: render_info.bounds_x,
+            bounds_y: render_info.bounds_y,
+            viewport_x: render_info.viewport_x,
+            viewport_y: render_info.viewport_y,
+            display_scale: render_info.display_scale,
+            scan_lines: render_info.scan_lines,
+            font_width: render_info.font_width,
+            font_height: render_info.font_height,
+            scroll_x: viewport.scroll_x,
+            scroll_y: viewport.scroll_y,
+            layer_offset,
         }
     }
 
-    /// Dispatch a tool input event to the Pipette handler and process the result.
-    /// Returns the ToolEvent from icy_engine_edit for compatibility with existing code.
-    fn dispatch_pipette_event(&mut self, input: tools::ToolInput) -> ToolEvent {
-        use tools::ToolHandler;
-
-        // Create ToolContext - requires mutable borrow of screen
-        let mut screen_guard = self.screen.lock();
-        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
-
-        // Create resources (we'll expand this later)
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
-        let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
-        let mut ctx = tools::ToolContext {
-            state,
-            undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
-        };
-
-        // Dispatch to handler
-        let result = self.pipette_handler.handle_event(&mut ctx, input);
-        drop(screen_guard);
-
-        // Process result
-        self.process_tool_result(result)
-    }
-
-    /// Dispatch a tool input event to the Line handler and process the result.
-    fn dispatch_line_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_pipette_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.line_handler.handle_event(&mut ctx, input);
+        let result = self.pipette_handler.handle_terminal_message(&mut ctx, msg);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Pipette), result)
     }
 
-    /// Dispatch an event to the SelectTool handler and process the result
-    /// TODO: Integrate into handle_tool_mouse_* methods
-    #[allow(dead_code)]
-    fn dispatch_select_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_select_event(&mut self, event: &iced::Event) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.select_handler.handle_event(&mut ctx, input);
+        let result = self.select_handler.handle_event(&mut ctx, event);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Select), result)
     }
 
-    /// Dispatch an event to the PencilTool handler and process the result
-    /// TODO: Integrate into handle_tool_mouse_* methods
-    #[allow(dead_code)]
-    fn dispatch_pencil_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_select_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.pencil_handler.handle_event(&mut ctx, input);
+        let result = self.select_handler.handle_terminal_message(&mut ctx, msg);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Select), result)
     }
 
-    /// Dispatch an event to the ShapeTool handler and process the result
-    #[allow(dead_code)]
-    fn dispatch_shape_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_pencil_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.shape_handler.handle_event(&mut ctx, input);
+        let result = self.pencil_handler.handle_terminal_message(&mut ctx, msg);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Pencil), result)
     }
 
-    /// Dispatch an event to the FillTool handler and process the result
-    #[allow(dead_code)]
-    fn dispatch_fill_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_shape_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.fill_handler.handle_event(&mut ctx, input);
-        drop(screen_guard);
+        self.shape_handler.set_tool(self.current_tool);
 
-        self.process_tool_result(result)
+        let result = self.shape_handler.handle_terminal_message(&mut ctx, msg);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Tool(self.current_tool), result)
     }
 
-    /// Dispatch an event to the ClickTool handler and process the result
-    #[allow(dead_code)]
-    fn dispatch_click_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_fill_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.click_handler.handle_event(&mut ctx, input);
+        let result = self.fill_handler.handle_terminal_message(&mut ctx, msg);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Fill), result)
     }
 
-    /// Dispatch an event to the FontTool handler and process the result
-    #[allow(dead_code)]
-    fn dispatch_font_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_click_terminal_message(&mut self, source_tool: Tool, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.font_handler.handle_event(&mut ctx, input);
+        let result = self.click_handler.handle_terminal_message(&mut ctx, msg);
         drop(screen_guard);
-
-        self.process_tool_result(result)
+        self.process_tool_result_from(MouseCaptureTarget::Tool(source_tool), result)
     }
 
-    /// Dispatch an event to the TagTool handler and process the result
-    #[allow(dead_code)]
-    fn dispatch_tag_event(&mut self, input: tools::ToolInput) -> ToolEvent {
+    fn dispatch_click_event(&mut self, event: &iced::Event) -> tools::ToolResult {
         use tools::ToolHandler;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
-        let mut resources = tools::ToolResources {
-            font_library: self.font_tool.font_library.clone(),
-            options: self.options.clone(),
-        };
-
         let mut undo_guard = None;
-        let drag_state = self.get_drag_state();
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
         let mut ctx = tools::ToolContext {
             state,
+            options: Some(&self.options),
             undo_guard: &mut undo_guard,
-            resources: &mut resources,
-            is_dragging: self.is_dragging,
-            drag_pos: drag_state,
+            half_block_mapper,
+            tag_state: None,
         };
 
-        let result = self.tag_handler.handle_event(&mut ctx, input);
+        let result = self.click_handler.handle_event(&mut ctx, event);
         drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Click), result)
+    }
 
+    fn dispatch_font_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: None,
+        };
+
+        let result = self.font_handler.handle_event(&mut ctx, event);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Font), result)
+    }
+
+    fn dispatch_tag_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: Some(&mut self.tag_state),
+        };
+
+        let result = self.tag_handler.handle_event(&mut ctx, event);
+        drop(screen_guard);
         self.process_tool_result(result)
     }
 
-    /// Dispatch an event to the appropriate tool handler based on current tool
-    fn dispatch_tool_event(&mut self, input: tools::ToolInput) -> ToolEvent {
-        match self.current_tool {
-            Tool::Pipette => self.dispatch_pipette_event(input),
-            Tool::Line => self.dispatch_line_event(input),
-            Tool::Select => self.dispatch_select_event(input),
-            Tool::Pencil => self.dispatch_pencil_event(input),
-            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => self.dispatch_shape_event(input),
-            Tool::Fill => self.dispatch_fill_event(input),
-            Tool::Click | Tool::Font => self.dispatch_click_event(input),
-            Tool::Tag => self.dispatch_tag_event(input),
-        }
+    fn dispatch_tag_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: Some(&mut self.tag_state),
+        };
+
+        let result = self.tag_handler.handle_terminal_message(&mut ctx, msg);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Tag), result)
     }
 
-    /// Create a ToolInput::MouseDown from the given parameters
-    fn create_mouse_down_input(&self, pos: icy_engine::Position, pixel_position: (f32, f32), button: iced::mouse::Button) -> tools::ToolInput {
-        let half_block_pos = self.compute_half_block_pos(pixel_position);
-        tools::ToolInput::MouseDown {
-            pos,
-            pos_abs: pos,
-            pos_half_block: half_block_pos,
-            button: if button == iced::mouse::Button::Left {
-                icy_engine::MouseButton::Left
-            } else if button == iced::mouse::Button::Right {
-                icy_engine::MouseButton::Right
-            } else {
-                icy_engine::MouseButton::Middle
-            },
-            modifiers: icy_engine::KeyModifiers {
-                shift: is_shift_pressed(),
-                ctrl: is_ctrl_pressed(),
-                alt: false,
-                meta: is_command_pressed(),
-            },
-        }
+    fn dispatch_paste_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: None,
+        };
+
+        let result = self.paste_handler.handle_terminal_message(&mut ctx, msg);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Paste, result)
     }
 
-    /// Create a ToolInput::MouseMove from the given parameters
-    fn create_mouse_move_input(&self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> tools::ToolInput {
-        let half_block_pos = self.compute_half_block_pos(pixel_position);
-        tools::ToolInput::MouseMove {
-            pos,
-            pos_abs: pos,
-            pos_half_block: half_block_pos,
-            is_dragging: self.is_dragging,
-            modifiers: icy_engine::KeyModifiers {
-                shift: is_shift_pressed(),
-                ctrl: is_ctrl_pressed(),
-                alt: false,
-                meta: is_command_pressed(),
-            },
-        }
+    fn dispatch_paste_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+        use tools::ToolHandler;
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: None,
+        };
+
+        let result = self.paste_handler.handle_event(&mut ctx, event);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Paste, result)
     }
 
-    /// Create a ToolInput::MouseUp from the given parameters
-    fn create_mouse_up_input(&self, pos: icy_engine::Position, button: iced::mouse::Button) -> tools::ToolInput {
-        tools::ToolInput::MouseUp {
-            pos,
-            pos_abs: pos,
-            button: if button == iced::mouse::Button::Left {
-                icy_engine::MouseButton::Left
-            } else if button == iced::mouse::Button::Right {
-                icy_engine::MouseButton::Right
-            } else {
-                icy_engine::MouseButton::Middle
-            },
-        }
+    fn dispatch_paste_action(&mut self, action: tools::PasteAction) -> tools::ToolResult {
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
+
+        let result = self.paste_handler.perform_action(state, action);
+        drop(screen_guard);
+        self.process_tool_result_from(MouseCaptureTarget::Paste, result)
     }
 
-    /// Create a ToolInput::KeyDown from the given parameters
-    fn create_key_down_input(&self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> tools::ToolInput {
-        tools::ToolInput::KeyDown {
-            key: key.clone(),
-            modifiers: icy_engine::KeyModifiers {
-                shift: modifiers.shift(),
-                ctrl: modifiers.control(),
-                alt: modifiers.alt(),
-                meta: modifiers.logo(),
-            },
-        }
-    }
-
-    /// Process a ToolResult and convert to ToolEvent + perform side effects
-    fn process_tool_result(&mut self, result: tools::ToolResult) -> ToolEvent {
+    /// Process a ToolResult and perform editor-side effects.
+    ///
+    /// `source` is used to attribute mouse capture correctly (e.g. paste mode has its own capture).
+    fn process_tool_result_from(&mut self, source: MouseCaptureTarget, result: tools::ToolResult) -> tools::ToolResult {
         use tools::ToolResult;
 
         match result {
-            ToolResult::None => ToolEvent::None,
-            ToolResult::Redraw => ToolEvent::Redraw,
-            ToolResult::Commit(msg) => ToolEvent::Commit(msg),
-            ToolResult::Status(msg) => ToolEvent::Status(msg),
+            ToolResult::None => ToolResult::None,
+            ToolResult::Redraw => ToolResult::Redraw,
+            ToolResult::Commit(msg) => {
+                self.is_modified = true;
+                ToolResult::Commit(msg)
+            }
+            ToolResult::Status(msg) => ToolResult::Status(msg),
+            ToolResult::UpdateLayerBounds => {
+                self.update_layer_bounds();
+                ToolResult::None
+            }
             ToolResult::SwitchTool(tool) => {
                 self.change_tool(tool);
-                ToolEvent::Redraw
+                ToolResult::Redraw
             }
             ToolResult::StartCapture => {
-                self.mouse_capture_tool = Some(self.current_tool);
-                ToolEvent::None
+                self.mouse_capture_tool = Some(source);
+                self.is_dragging = true;
+                ToolResult::None
             }
             ToolResult::EndCapture => {
                 self.mouse_capture_tool = None;
-                ToolEvent::None
+                self.is_dragging = false;
+                ToolResult::None
+            }
+            ToolResult::SetCursorIcon(icon) => {
+                *self.canvas.terminal.cursor_icon.write() = icon;
+                ToolResult::None
             }
             ToolResult::Multi(results) => {
-                let mut last_event = ToolEvent::None;
+                let mut last_result = ToolResult::None;
                 for r in results {
-                    last_event = self.process_tool_result(r);
+                    last_result = self.process_tool_result_from(source, r);
                 }
-                last_event
+                last_result
             }
         }
+    }
+
+    /// Backwards-compatible entrypoint when the source is the currently active editor tool.
+    fn process_tool_result(&mut self, result: tools::ToolResult) -> tools::ToolResult {
+        self.process_tool_result_from(MouseCaptureTarget::Tool(self.current_tool), result)
     }
 
     /// Create a new empty ANSI editor
@@ -1204,8 +750,12 @@ impl AnsiEditor {
             opts.fkeys.current_set
         };
 
-        let mut top_toolbar = TopToolbar::new();
-        top_toolbar.select_options.current_fkey_page = initial_fkey_set;
+        let top_toolbar = TopToolbar::new();
+
+        let mut click_handler = tools::ClickTool::new();
+        // Keep the Click tool in sync with persisted FKey set selection.
+        let _ = initial_fkey_set;
+        click_handler.sync_fkey_set_from_options(&options);
 
         Self {
             file_path,
@@ -1213,7 +763,6 @@ impl AnsiEditor {
             tool_panel: ToolPanel::new(),
             current_tool: Tool::Click,
             top_toolbar,
-            fkey_toolbar: ShaderFKeyToolbar::new(),
             color_switcher,
             palette_grid,
             canvas,
@@ -1223,7 +772,6 @@ impl AnsiEditor {
 
             minimap_drag_pointer: None,
             // Selection/drag state
-            drag_pos: DragPos::default(),
             is_dragging: false,
             mouse_capture_tool: None,
             selection_drag: SelectionDrag::None,
@@ -1238,71 +786,27 @@ impl AnsiEditor {
 
             char_selector_target: None,
 
-            font_tool: FontToolState::new(font_library.clone()),
-            outline_selector_open: false,
-            tdf_font_selector_open: false,
-            tdf_font_selector: TdfFontSelectorDialog::new(font_library),
+            tag_state: tools::TagToolState::new(),
 
-            tag_dialog: None,
-            tag_list_dialog: None,
-            tag_drag_active: false,
-            tag_drag_indices: Vec::new(),
-            tag_drag_start_positions: Vec::new(),
-            tag_selection: Vec::new(),
-            tag_context_menu: None,
-            tag_add_new_index: None,
-            tag_selection_drag_active: false,
-            tag_drag_undo: None,
-
-            paint_undo: None,
-            paint_last_pos: None,
-            paint_button: iced::mouse::Button::Left,
-
-            half_block_click_pos: icy_engine::Position::default(),
+            paint_button: MouseButton::Left,
 
             shape_clear: false,
 
-            pipette: PipetteState::default(),
-
-            // New tool handler system
+            // Tool handler system
             pipette_handler: tools::PipetteTool::new(),
-            line_handler: tools::LineTool::new(),
             select_handler: tools::SelectTool::new(),
             pencil_handler: tools::PencilTool::new(),
-            shape_handler: tools::ShapeTool::new(tools::ShapeType::RectangleOutline),
+            shape_handler: tools::ShapeTool::new(),
             fill_handler: tools::FillTool::new(),
-            click_handler: tools::ClickTool::new(),
-            font_handler: tools::FontTool::new(),
+            click_handler,
+            font_handler: tools::FontTool::new(font_library),
             tag_handler: tools::TagTool::new(),
-
-            layer_drag_active: false,
-            layer_drag_start_offset: icy_engine::Position::default(),
-            layer_drag_undo: None,
-
-            paste_drag_active: false,
-            paste_drag_start_offset: icy_engine::Position::default(),
-            paste_drag_undo: None,
-            paste_previous_tool: None,
+            paste_handler: tools::PasteTool::new(),
         }
     }
 
     fn clear_tool_overlay(&mut self) {
         self.canvas.set_tool_overlay_mask(None, None);
-    }
-
-    fn redraw_with_tag_overlays(&mut self) -> ToolEvent {
-        self.update_tag_overlays();
-        ToolEvent::Redraw
-    }
-
-    fn redraw_with_selection_display(&mut self) -> ToolEvent {
-        self.update_selection_display();
-        ToolEvent::Redraw
-    }
-
-    fn redraw_with_layer_bounds(&mut self) -> ToolEvent {
-        self.update_layer_bounds();
-        ToolEvent::Redraw
     }
 
     fn task_none_with_markers_update(&mut self) -> Task<AnsiEditorMessage> {
@@ -1315,18 +819,17 @@ impl AnsiEditor {
         Task::none()
     }
 
-    fn task_none_with_tag_overlays_update(&mut self) -> Task<AnsiEditorMessage> {
-        self.update_tag_overlays();
+    fn apply_tag_tool_result(&mut self, result: tools::ToolResult) -> Task<AnsiEditorMessage> {
+        let processed = self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Tag), result);
+
+        if !matches!(processed, tools::ToolResult::None) {
+            self.update_tag_overlays();
+            if self.tag_state.add_new_index.is_none() && !self.tag_state.selection_drag_active {
+                self.clear_tool_overlay();
+            }
+        }
+
         Task::none()
-    }
-
-    fn close_tag_context_menu(&mut self) {
-        self.tag_context_menu = None;
-    }
-
-    fn commit_and_update_tag_overlays(&mut self, description: impl Into<String>) -> Task<AnsiEditorMessage> {
-        self.handle_tool_event(ToolEvent::Commit(description.into()));
-        self.task_none_with_tag_overlays_update()
     }
 
     fn end_drag_capture(&mut self) {
@@ -1334,171 +837,6 @@ impl AnsiEditor {
         self.mouse_capture_tool = None;
         self.selection_drag = SelectionDrag::None;
         self.start_selection = None;
-    }
-
-    fn cancel_layer_drag(&mut self) {
-        if !self.layer_drag_active {
-            return;
-        }
-
-        self.layer_drag_active = false;
-        self.layer_drag_undo = None;
-
-        self.clear_current_layer_preview_offset();
-        self.update_layer_bounds();
-
-        self.end_drag_capture();
-    }
-
-    fn clear_current_layer_preview_offset(&mut self) {
-        self.with_edit_state(|state| {
-            if let Some(layer) = state.get_cur_layer_mut() {
-                layer.set_preview_offset(None);
-            }
-            state.mark_dirty();
-        });
-    }
-
-    fn finish_layer_drag(&mut self) -> ToolEvent {
-        if !self.layer_drag_active {
-            return ToolEvent::None;
-        }
-
-        self.layer_drag_active = false;
-        self.end_drag_capture();
-
-        // Calculate final offset and apply
-        let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-        let new_offset = self.layer_drag_start_offset + delta;
-
-        self.with_edit_state(|state| {
-            if let Some(layer) = state.get_cur_layer_mut() {
-                layer.set_preview_offset(None);
-            }
-            let _ = state.move_layer(new_offset);
-        });
-
-        // Finalize atomic undo
-        self.layer_drag_undo = None;
-
-        // Update layer border display after move
-        self.update_layer_bounds();
-
-        ToolEvent::Commit("Move layer".to_string())
-    }
-
-    fn cancel_tag_selection_drag(&mut self) {
-        if !self.tag_selection_drag_active {
-            return;
-        }
-        self.tag_selection_drag_active = false;
-        self.clear_tool_overlay();
-        self.end_drag_capture();
-    }
-
-    fn finish_tag_selection_drag(&mut self) -> ToolEvent {
-        if !self.tag_selection_drag_active {
-            return ToolEvent::None;
-        }
-
-        self.tag_selection_drag_active = false;
-        self.end_drag_capture();
-
-        // Calculate selection rectangle
-        let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x);
-        let max_x = self.drag_pos.start.x.max(self.drag_pos.cur.x);
-        let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y);
-        let max_y = self.drag_pos.start.y.max(self.drag_pos.cur.y);
-
-        // Find all tags that intersect with the selection rectangle
-        let selected_indices: Vec<usize> = self.with_edit_state(|state| {
-            state
-                .get_buffer()
-                .tags
-                .iter()
-                .enumerate()
-                .filter(|(_, tag)| {
-                    let tag_min_x = tag.position.x;
-                    let tag_max_x = tag.position.x + tag.len() as i32 - 1;
-                    let tag_y = tag.position.y;
-
-                    // Check if tag intersects with selection rectangle
-                    tag_y >= min_y && tag_y <= max_y && tag_max_x >= min_x && tag_min_x <= max_x
-                })
-                .map(|(i, _)| i)
-                .collect()
-        });
-
-        self.tag_selection = selected_indices;
-
-        // Clear selection overlay
-        self.clear_tool_overlay();
-        self.update_tag_overlays();
-
-        ToolEvent::Redraw
-    }
-
-    fn finish_selection_drag(&mut self) -> ToolEvent {
-        if self.selection_drag == SelectionDrag::None {
-            return ToolEvent::None;
-        }
-
-        // Finalize selection
-        if self.selection_drag == SelectionDrag::Create {
-            // If start == cur, treat as click
-            if self.drag_pos.start == self.drag_pos.cur {
-                if self.current_tool == Tool::Select {
-                    // Keep selection mask intact.
-                    self.with_edit_state(|state| {
-                        let _ = state.deselect();
-                    });
-                } else {
-                    self.with_edit_state(|state| {
-                        let _ = state.clear_selection();
-                    });
-                }
-            } else if self.current_tool == Tool::Select {
-                // Get current add_type before committing
-                let add_type = self.with_edit_state(|state| state.selection().map(|s| s.add_type));
-
-                #[cfg(debug_assertions)]
-                eprintln!("[DEBUG] Mouse up - Tool::Select, add_type: {:?}", add_type);
-
-                // Only commit to mask for Add/Subtract modes.
-                // Default mode keeps the selection active (not in mask) so move/resize doesn't leave stale mask artifacts.
-                match add_type {
-                    Some(icy_engine::AddType::Add) | Some(icy_engine::AddType::Subtract) => {
-                        #[cfg(debug_assertions)]
-                        eprintln!("[DEBUG] Mouse up - Committing selection to mask and deselecting");
-                        self.with_edit_state(|state| {
-                            let _ = state.add_selection_to_mask();
-                            let _ = state.deselect();
-                        });
-                    }
-                    _ => {
-                        #[cfg(debug_assertions)]
-                        eprintln!("[DEBUG] Mouse up - Default mode: keeping selection active");
-                        // Default mode: keep selection active, don't commit to mask
-                    }
-                }
-            }
-        }
-        // Move/Resize: selection is already updated during drag, just keep it active
-
-        // Always update selection display after any selection drag ends
-        self.update_selection_display();
-
-        self.end_drag_capture();
-        ToolEvent::Redraw
-    }
-
-    fn end_tag_drag(&mut self) {
-        self.tag_drag_active = false;
-        self.tag_drag_indices.clear();
-        self.tag_drag_start_positions.clear();
-        // Drop the guard to finalize/commit the atomic undo.
-        self.tag_drag_undo = None;
-        self.end_drag_capture();
     }
 
     fn cancel_shape_drag(&mut self) -> bool {
@@ -1509,7 +847,7 @@ impl AnsiEditor {
             )
         {
             self.end_drag_capture();
-            self.paint_button = iced::mouse::Button::Left;
+            self.paint_button = MouseButton::Left;
             self.shape_clear = false;
             self.clear_tool_overlay();
             return true;
@@ -1517,496 +855,30 @@ impl AnsiEditor {
         false
     }
 
-    fn shape_points(tool: Tool, p0: icy_engine::Position, p1: icy_engine::Position) -> Vec<icy_engine::Position> {
-        use icy_engine_edit::brushes;
-
-        match tool {
-            Tool::Line => brushes::get_line_points(p0, p1),
-            Tool::RectangleOutline => brushes::get_rectangle_points(p0, p1).into_iter().map(|(p, _)| p).collect(),
-            Tool::RectangleFilled => brushes::get_filled_rectangle_points(p0, p1).into_iter().map(|(p, _)| p).collect(),
-            Tool::EllipseOutline => {
-                use std::collections::HashSet;
-                let points = brushes::get_ellipse_points_from_rect(p0, p1);
-                let mut set: HashSet<(i32, i32)> = HashSet::new();
-                for (p, _) in points {
-                    set.insert((p.x, p.y));
-                }
-                set.into_iter().map(|(x, y)| icy_engine::Position::new(x, y)).collect()
-            }
-            Tool::EllipseFilled => brushes::get_filled_ellipse_points_from_rect(p0, p1).into_iter().map(|(p, _)| p).collect(),
-            _ => Vec::new(),
-        }
-    }
-
-    fn update_shape_tool_overlay_preview(&mut self) {
-        let is_shape_tool = matches!(
-            self.current_tool,
-            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
-        );
-        if !is_shape_tool || !self.is_dragging {
-            return;
-        }
-
-        let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
-
-        // Use the same coordinate system as the terminal shader:
-        // - x uses `render_info.font_width`
-        // - y uses `render_info.font_height`, doubled when scan_lines is enabled.
-        let (shader_font_w, shader_font_h, shader_scan_lines) = {
-            let render_info = self.canvas.terminal.render_info.read();
-            (render_info.font_width.max(1.0), render_info.font_height.max(1.0), render_info.scan_lines)
-        };
-        let shader_font_h_effective = shader_font_h * if shader_scan_lines { 2.0 } else { 1.0 };
-
-        let debug_overlay = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TOOL_OVERLAY").is_ok_and(|v| v != "0");
-
-        let alpha: u8 = 153; // ~0.6 like Moebius overlay
-
-        let (overlay_rect_px, overlay_rgba) = (|| {
-            use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, DrawTarget, PointRole};
-
-            let mut screen = self.screen.lock();
-            let edit_state = screen
-                .as_any_mut()
-                .downcast_mut::<icy_engine_edit::EditState>()
-                .expect("screen should be EditState");
-
-            let base_buffer = edit_state.get_buffer();
-
-            let caret_attr = edit_state.get_caret().attribute;
-            let swap_colors = self.paint_button == iced::mouse::Button::Right;
-            // Shift key also swaps colors
-            let shift_swap = is_shift_pressed();
-
-            let (primary, paint_char, brush_size, colorize_fg, colorize_bg) = {
-                let opts = &self.top_toolbar.brush_options;
-                (opts.primary, opts.paint_char, opts.brush_size.max(1), opts.colorize_fg, opts.colorize_bg)
-            };
-
-            let (doc_p0, doc_p1, points): (icy_engine_edit::Position, icy_engine_edit::Position, Vec<(icy_engine_edit::Position, bool)>) = if is_half_block_mode
-            {
-                // Convert layer-local half-block drag positions to document half-block coordinates.
-                let offset = edit_state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                let hb_off = icy_engine_edit::Position::new(offset.x, offset.y * 2);
-                let start_hb = self.drag_pos.start_half_block + hb_off;
-                let cur_hb = self.drag_pos.cur_half_block + hb_off;
-
-                let pts_hb = Self::shape_points(self.current_tool, start_hb, cur_hb);
-                let pts = pts_hb
-                    .into_iter()
-                    .filter(|p| p.y >= 0)
-                    .map(|p| {
-                        let cell = icy_engine_edit::Position::new(p.x, p.y / 2);
-                        let is_top = (p.y % 2) == 0;
-                        (cell, is_top)
-                    })
-                    .collect::<Vec<_>>();
-                (start_hb, cur_hb, pts)
-            } else {
-                let p0 = self.drag_pos.start;
-                let p1 = self.drag_pos.cur;
-                let pts = Self::shape_points(self.current_tool, p0, p1)
-                    .into_iter()
-                    .filter(|p| p.x >= 0 && p.y >= 0)
-                    .map(|p| (p, true))
-                    .collect::<Vec<_>>();
-                (p0, p1, pts)
-            };
-
-            let _ = (doc_p0, doc_p1); // keep for debugging symmetry
-
-            if points.is_empty() {
-                return (None, Vec::new());
-            }
-
-            // IMPORTANT: Temp-layer must match the current target layer size and position.
-            // Most operations are defined in layer-local coordinates.
-            let (layer_offset, layer_w, layer_h, layer_vis, layer_locked, layer_title) = if let Some(layer) = edit_state.get_cur_layer() {
-                (
-                    layer.offset(),
-                    layer.width().max(1),
-                    layer.height().max(1),
-                    layer.properties.is_visible,
-                    layer.properties.is_locked,
-                    layer.title().to_string(),
-                )
-            } else {
-                (
-                    icy_engine_edit::Position::default(),
-                    base_buffer.width().max(1),
-                    base_buffer.height().max(1),
-                    true,
-                    false,
-                    "<none>".to_string(),
-                )
-            };
-
-            if debug_overlay {
-                eprintln!(
-                    "[tool_overlay] begin tool={:?} half_block={} clear={} button={:?} scan_lines={} font_w={} font_h={} eff_h={}",
-                    self.current_tool,
-                    is_half_block_mode,
-                    self.shape_clear,
-                    self.paint_button,
-                    shader_scan_lines,
-                    shader_font_w,
-                    shader_font_h,
-                    shader_font_h_effective
-                );
-                eprintln!(
-                    "[tool_overlay] target_layer title='{}' off=({}, {}) size=({}, {}) visible={} locked={}",
-                    layer_title, layer_offset.x, layer_offset.y, layer_w, layer_h, layer_vis, layer_locked
-                );
-            }
-
-            // Prepare a temporary buffer sized like the target layer.
-            let mut tmp = icy_engine_edit::TextBuffer::create((layer_w, layer_h));
-            tmp.palette = base_buffer.palette.clone();
-            tmp.palette_mode = base_buffer.palette_mode;
-            tmp.ice_mode = base_buffer.ice_mode;
-            tmp.font_mode = base_buffer.font_mode;
-            tmp.set_font_table(base_buffer.font_table());
-            tmp.set_font_dimensions(icy_engine_edit::Size::new(shader_font_w as i32, shader_font_h as i32));
-            tmp.set_use_letter_spacing(base_buffer.use_letter_spacing());
-            tmp.set_use_aspect_ratio(base_buffer.use_aspect_ratio());
-
-            // TextBuffer::create uses default layer properties where `is_visible` is false.
-            // We must explicitly enable it, otherwise `Layer::set_char` becomes a no-op
-            // and the overlay diff ends up empty (invisible).
-            if let Some(layer0) = tmp.layers.get_mut(0) {
-                layer0.properties.is_visible = true;
-                layer0.properties.is_locked = false;
-            }
-
-            if debug_overlay {
-                let l0 = &tmp.layers[0];
-                eprintln!(
-                    "[tool_overlay] tmp_layer size=({}, {}) visible={} locked={} off=({}, {})",
-                    l0.width(),
-                    l0.height(),
-                    l0.properties.is_visible,
-                    l0.properties.is_locked,
-                    l0.properties.offset.x,
-                    l0.properties.offset.y
-                );
-            }
-
-            // Fill from the current target layer.
-            if let Some(layer) = edit_state.get_cur_layer() {
-                for y in 0..layer_h {
-                    for x in 0..layer_w {
-                        let ch = layer.char_at(icy_engine_edit::Position::new(x, y));
-                        tmp.layers[0].set_char((x, y), ch);
-                    }
-                }
-            } else {
-                // Fallback: no layer available, fill from composited screen.
-                for y in 0..layer_h {
-                    for x in 0..layer_w {
-                        let doc_pos = icy_engine_edit::Position::new(layer_offset.x + x, layer_offset.y + y);
-                        let ch = edit_state.char_at(doc_pos);
-                        tmp.layers[0].set_char((x, y), ch);
-                    }
-                }
-            }
-
-            let options = icy_engine_edit::RenderOptions::from(icy_engine_edit::Rectangle::from(0, 0, layer_w, layer_h));
-
-            if debug_overlay {
-                let expected_px_w = (layer_w as f32 * shader_font_w).round() as i32;
-                let expected_px_h = (layer_h as f32 * shader_font_h_effective).round() as i32;
-                eprintln!(
-                    "[tool_overlay] render_rect chars=({}, {}) expected_px=({}, {})",
-                    layer_w, layer_h, expected_px_w, expected_px_h
-                );
-            }
-            let (size_before, rgba_before) = tmp.render_to_rgba(&options, shader_scan_lines);
-
-            if debug_overlay {
-                let all_black = rgba_before.iter().all(|b| *b == 0);
-                eprintln!(
-                    "[tool_overlay] before_render size=({}, {}) bytes={} all black={}",
-                    size_before.width,
-                    size_before.height,
-                    rgba_before.len(),
-                    all_black
-                );
-            }
-
-            // Apply the shape operation onto tmp.
-            let use_selection = edit_state.is_something_selected();
-
-            if debug_overlay {
-                eprintln!("[tool_overlay] points_total={} use_selection={}", points.len(), use_selection);
-            }
-
-            if self.shape_clear {
-                let mut in_bounds = 0usize;
-                let mut sel_kept = 0usize;
-                let mut changed_cells = 0usize;
-                for (p, _) in &points {
-                    // p is in document coordinates; map to layer-local.
-                    let layer_pos = *p - layer_offset;
-                    if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                        continue;
-                    }
-                    in_bounds += 1;
-                    if use_selection && !edit_state.is_selected(*p) {
-                        continue;
-                    }
-                    sel_kept += 1;
-                    let before = tmp.layers[0].char_at(layer_pos);
-                    let after = icy_engine_edit::AttributedChar::invisible();
-                    if before != after {
-                        changed_cells += 1;
-                    }
-                    tmp.layers[0].set_char(layer_pos, after);
-                }
-
-                if debug_overlay {
-                    eprintln!(
-                        "[tool_overlay] clear_op in_bounds={} after_selection={} changed_cells={} ",
-                        in_bounds, sel_kept, changed_cells
-                    );
-                }
-            } else {
-                let brush_mode = match primary {
-                    BrushPrimaryMode::Char => {
-                        // Right-click in Char mode = erase (set to space)
-                        if swap_colors {
-                            EngineBrushMode::Char(' ')
-                        } else {
-                            EngineBrushMode::Char(paint_char)
-                        }
-                    }
-                    BrushPrimaryMode::HalfBlock => EngineBrushMode::HalfBlock,
-                    BrushPrimaryMode::Shading => {
-                        if swap_colors {
-                            EngineBrushMode::ShadeDown
-                        } else {
-                            EngineBrushMode::Shade
-                        }
-                    }
-                    BrushPrimaryMode::Replace => EngineBrushMode::Replace(paint_char),
-                    BrushPrimaryMode::Blink => EngineBrushMode::Blink(!swap_colors),
-                    BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
-                };
-
-                let color_mode = if matches!(primary, BrushPrimaryMode::Colorize) {
-                    match (colorize_fg, colorize_bg) {
-                        (true, true) => EngineColorMode::Both,
-                        (true, false) => EngineColorMode::Foreground,
-                        (false, true) => EngineColorMode::Background,
-                        (false, false) => EngineColorMode::None,
-                    }
-                } else {
-                    EngineColorMode::Both
-                };
-
-                // Don't swap colors for Shading (has its own up/down behavior) or Char mode (right-click = erase)
-                // Shift key swaps colors for all modes except those with special right-click behavior
-                let swap_for_colors = (swap_colors || shift_swap) && !matches!(primary, BrushPrimaryMode::Shading | BrushPrimaryMode::Char);
-                let (fg, bg) = if swap_for_colors {
-                    (caret_attr.background(), caret_attr.foreground())
-                } else {
-                    (caret_attr.foreground(), caret_attr.background())
-                };
-
-                let mut template = caret_attr;
-                template.set_foreground(fg);
-                template.set_background(bg);
-
-                struct BufferTarget<'a> {
-                    buffer: &'a mut icy_engine_edit::TextBuffer,
-                    width: i32,
-                    height: i32,
-                    changed_cells: &'a mut usize,
-                }
-                impl<'a> DrawTarget for BufferTarget<'a> {
-                    fn width(&self) -> i32 {
-                        self.width
-                    }
-                    fn height(&self) -> i32 {
-                        self.height
-                    }
-                    fn char_at(&self, pos: icy_engine_edit::Position) -> Option<icy_engine_edit::AttributedChar> {
-                        if pos.x < 0 || pos.y < 0 || pos.x >= self.width || pos.y >= self.height {
-                            return None;
-                        }
-                        Some(self.buffer.char_at(pos))
-                    }
-                    fn set_char(&mut self, pos: icy_engine_edit::Position, ch: icy_engine_edit::AttributedChar) {
-                        let before = self.buffer.char_at(pos);
-                        if before != ch {
-                            *self.changed_cells += 1;
-                        }
-                        self.buffer.layers[0].set_char(pos, ch);
-                    }
-                }
-
-                let mut changed_cells = 0usize;
-                let mut target = BufferTarget {
-                    buffer: &mut tmp,
-                    width: layer_w,
-                    height: layer_h,
-                    changed_cells: &mut changed_cells,
-                };
-
-                // For HalfBlock mode, brush_size expansion happens in half-block coordinates,
-                // so here we use size 1. For other modes, use the actual brush_size.
-                let effective_brush_size = if is_half_block_mode { 1 } else { brush_size as i32 };
-                let half = effective_brush_size / 2;
-
-                let mut in_bounds = 0usize;
-                let mut sel_kept = 0usize;
-                for (p, is_top) in &points {
-                    // Expand each point by brush_size (like in apply_paint_stamp_with_half_block_info)
-                    for dy in 0..effective_brush_size {
-                        for dx in 0..effective_brush_size {
-                            let expanded_pos = *p + icy_engine_edit::Position::new(dx - half, dy - half);
-                            let layer_pos = expanded_pos - layer_offset;
-                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                                continue;
-                            }
-                            in_bounds += 1;
-                            if use_selection && !edit_state.is_selected(expanded_pos) {
-                                continue;
-                            }
-                            sel_kept += 1;
-
-                            let ctx = DrawContext::default()
-                                .with_brush_mode(brush_mode.clone())
-                                .with_color_mode(color_mode.clone())
-                                .with_foreground(fg)
-                                .with_background(bg)
-                                .with_template_attribute(template)
-                                .with_half_block_is_top(*is_top);
-                            ctx.plot_point(&mut target, layer_pos, PointRole::Fill);
-                        }
-                    }
-                }
-
-                if debug_overlay {
-                    eprintln!(
-                        "[tool_overlay] draw_op in_bounds={} after_selection={} changed_cells={} ",
-                        in_bounds, sel_kept, changed_cells
-                    );
-                }
-            }
-
-            let (size_after, rgba_after) = tmp.render_to_rgba(&options, shader_scan_lines);
-            if size_before != size_after || rgba_before.len() != rgba_after.len() {
-                if debug_overlay {
-                    eprintln!(
-                        "[tool_overlay] ERROR size_mismatch before=({}, {}) after=({}, {}) bytes_before={} bytes_after={}",
-                        size_before.width,
-                        size_before.height,
-                        size_after.width,
-                        size_after.height,
-                        rgba_before.len(),
-                        rgba_after.len()
-                    );
-                }
-                return (None, Vec::new());
-            }
-
-            let mut overlay = Vec::with_capacity(rgba_after.len());
-            let mut changed_pixels = 0usize;
-            for i in (0..rgba_after.len()).step_by(4) {
-                let pixel_changed = rgba_after[i..i + 4] != rgba_before[i..i + 4];
-                if pixel_changed {
-                    changed_pixels += 1;
-                    overlay.push(rgba_after[i]);
-                    overlay.push(rgba_after[i + 1]);
-                    overlay.push(rgba_after[i + 2]);
-                    overlay.push(alpha);
-                } else {
-                    overlay.extend_from_slice(&[0u8, 0u8, 0u8, 0u8]);
-                }
-            }
-
-            let rect_x = layer_offset.x as f32 * shader_font_w;
-            let rect_y = layer_offset.y as f32 * shader_font_h_effective;
-            let rect_w = size_after.width as f32;
-            let rect_h = size_after.height as f32;
-
-            if debug_overlay {
-                eprintln!(
-                    "[tool_overlay] after_render size=({}, {}) changed_pixels={} rect=({}, {}, {}, {})",
-                    size_after.width, size_after.height, changed_pixels, rect_x, rect_y, rect_w, rect_h
-                );
-            }
-
-            (Some((rect_x, rect_y, rect_w, rect_h)), overlay)
-        })();
-
-        if let (Some((x, y, w, h)), rgba) = (overlay_rect_px, overlay_rgba) {
-            if w > 0.0 && h > 0.0 {
-                let mask_w = w as u32;
-                let mask_h = h as u32;
-                self.canvas.set_tool_overlay_mask(Some((rgba, mask_w, mask_h)), Some((x, y, w, h)));
-                return;
-            }
-        }
-
-        self.clear_tool_overlay();
-    }
-
     fn set_current_fkey_set(&mut self, set_idx: usize) {
-        let fkeys_to_save = {
-            let mut opts = self.options.write();
-            opts.fkeys.clamp_current_set();
-
-            let count = opts.fkeys.set_count();
-            let clamped = if count == 0 { 0 } else { set_idx % count };
-
-            self.top_toolbar.select_options.current_fkey_page = clamped;
-            opts.fkeys.current_set = clamped;
-            opts.fkeys.clone()
-        };
-
-        // Save off-thread to avoid blocking the UI/event loop.
-        std::thread::spawn(move || {
-            let _ = fkeys_to_save.save();
-        });
+        // F-key set switching is owned by ClickTool.
+        self.click_handler.set_current_fkey_set(&self.options, set_idx);
     }
 
-    fn snapshot_tags(&mut self) -> Vec<TagListItem> {
-        self.with_edit_state(|state| {
-            state
-                .get_buffer()
-                .tags
-                .iter()
-                .enumerate()
-                .map(|(index, tag)| TagListItem {
-                    index,
-                    is_enabled: tag.is_enabled,
-                    preview: tag.preview.clone(),
-                    replacement_value: tag.replacement_value.clone(),
-                    position: tag.position,
-                    placement: tag.tag_placement,
-                })
-                .collect()
-        })
-    }
+    fn type_fkey_slot(&mut self, slot: usize) -> tools::ToolResult {
+        let set_idx = self.click_handler.current_fkey_set();
 
-    fn type_fkey_slot(&mut self, slot: usize) {
-        let set_idx = self.top_toolbar.select_options.current_fkey_page;
-        let code = {
-            let opts = self.options.read();
-            opts.fkeys.code_at(set_idx, slot)
-        };
-
-        let buffer_type = self.with_edit_state(|state| state.get_buffer().buffer_type);
-
-        let raw = char::from_u32(code as u32).unwrap_or(' ');
-        let unicode_cp437 = BufferType::CP437.convert_to_unicode(raw);
-        let target = buffer_type.convert_from_unicode(unicode_cp437);
-
-        let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| state.type_key(target));
-        if let Err(e) = result {
-            log::warn!("Failed to type fkey (set {}, slot {}): {}", set_idx, slot, e);
+        let mut screen_guard = self.screen.lock();
+        if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+            let mut undo_guard = None;
+            let mut ctx = tools::ToolContext {
+                state,
+                options: Some(&self.options),
+                undo_guard: &mut undo_guard,
+                half_block_mapper: None,
+                tag_state: None,
+            };
+            let result = self.click_handler.type_fkey_slot(&mut ctx, set_idx, slot);
+            drop(screen_guard);
+            return self.process_tool_result_from(MouseCaptureTarget::Tool(Tool::Click), result);
         }
+
+        tools::ToolResult::None
     }
 
     /// Set the file path (for session restore)
@@ -2050,18 +922,13 @@ impl AnsiEditor {
         f(edit_state)
     }
 
-    /// Get the character at the given position from the current layer
-    fn get_char_at(&self, pos: icy_engine::Position) -> icy_engine::AttributedChar {
+    fn with_edit_state_and_tag_state<T, F: FnOnce(&mut EditState, &mut tools::TagToolState) -> T>(&mut self, f: F) -> T {
         let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Some(cur_layer) = edit_state.get_cur_layer() {
-                cur_layer.char_at(pos - cur_layer.offset())
-            } else {
-                icy_engine::AttributedChar::invisible()
-            }
-        } else {
-            icy_engine::AttributedChar::invisible()
-        }
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .expect("AnsiEditor screen should always be EditState");
+        f(edit_state, &mut self.tag_state)
     }
 
     /// Get undo stack length for dirty tracking
@@ -2157,9 +1024,7 @@ impl AnsiEditor {
     /// Check if paste operation is available (clipboard has compatible content)
     #[allow(dead_code)]
     pub fn can_paste(&self) -> bool {
-        crate::CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
-            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Image)
-            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Text)
+        self.paste_handler.can_paste()
     }
 
     /// Paste from clipboard (ICY format, image, or text)
@@ -2170,211 +1035,43 @@ impl AnsiEditor {
             return Ok(());
         }
 
-        // Save current tool to restore after paste mode ends
-        self.paste_previous_tool = Some(self.current_tool);
+        let previous_tool = self.current_tool;
 
-        let mut screen = self.screen.lock();
-        let edit_state = screen
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard
             .as_any_mut()
             .downcast_mut::<EditState>()
             .ok_or_else(|| "Could not access edit state".to_string())?;
 
-        // Priority: ICY binary > Image > Text
-        if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
-            log::debug!("paste: Using ICY binary data, size={}", data.len());
-            edit_state.paste_clipboard_data(&data).map_err(|e| e.to_string())?;
-        } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
-            log::debug!("paste: Using image data");
-            let mut sixel = Sixel::new(Position::default());
-            sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
-            let (w, h) = img.get_size();
-            sixel.set_width(w as i32);
-            sixel.set_height(h as i32);
-            edit_state.paste_sixel(sixel).map_err(|e| e.to_string())?;
-        } else if let Ok(text) = crate::CLIPBOARD_CONTEXT.get_text() {
-            log::debug!("paste: Using text data: {:?}", text);
-            edit_state.paste_text(&text).map_err(|e| e.to_string())?;
-        } else {
-            // Paste failed, restore tool state
-            self.paste_previous_tool = None;
-            return Err("No compatible clipboard content".to_string());
-        }
+        let mut undo_guard = None;
+        let half_block_mapper = Some(self.build_half_block_mapper(state));
+        let mut ctx = tools::ToolContext {
+            state,
+            options: Some(&self.options),
+            undo_guard: &mut undo_guard,
+            half_block_mapper,
+            tag_state: None,
+        };
 
-        // Drop the screen lock before calling methods that need it
-        drop(screen);
-
-        // Update layer bounds to show the floating layer
-        self.update_layer_bounds();
+        let result = self.paste_handler.paste_from_clipboard(&mut ctx, previous_tool)?;
+        drop(screen_guard);
+        let _ = self.process_tool_result(result);
 
         Ok(())
+    }
+
+    pub fn font_tool_library(&self) -> SharedFontLibrary {
+        self.font_handler.font_tool.font_library()
+    }
+
+    pub fn font_tool_select_font(&mut self, font_idx: i32) {
+        self.font_handler.select_font(font_idx);
     }
 
     /// Check if we are in paste mode (floating layer active for positioning)
     /// This is the primary check for paste mode UI and input handling
     pub fn is_paste_mode(&self) -> bool {
-        self.paste_previous_tool.is_some()
-    }
-
-    /// Anchor the floating layer (finalize paste)
-    #[allow(dead_code)]
-    pub fn anchor_layer(&mut self) -> Result<(), String> {
-        // If user anchors while a paste drag is active, first commit the drag position.
-        let pending_paste_move = if self.paste_drag_active {
-            let delta = self.drag_pos.cur - self.drag_pos.start;
-            Some(Position::new(
-                self.paste_drag_start_offset.x + delta.x,
-                self.paste_drag_start_offset.y + delta.y,
-            ))
-        } else {
-            None
-        };
-
-        let result = {
-            let mut screen = self.screen.lock();
-            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                if let Some(new_offset) = pending_paste_move {
-                    edit_state.set_layer_preview_offset(None);
-                    let _ = edit_state.move_layer(new_offset);
-                }
-                edit_state.anchor_layer().map_err(|e| e.to_string())
-            } else {
-                Err("Could not access edit state".to_string())
-            }
-        };
-
-        // Restore previous tool after paste mode ends
-        self.restore_previous_tool();
-
-        result
-    }
-
-    /// Discard the floating layer (cancel paste)
-    #[allow(dead_code)]
-    pub fn discard_floating_layer(&mut self) -> Result<(), String> {
-        // Only discard if in paste mode
-        if !self.is_paste_mode() {
-            return Ok(());
-        }
-
-        // Cancel any active paste drag + atomic undo guard.
-        self.paste_drag_active = false;
-        self.paste_drag_undo = None;
-        self.end_drag_capture();
-
-        let result = {
-            let mut screen = self.screen.lock();
-            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                // Remove the floating layer by undoing the paste
-                edit_state.undo().map_err(|e| e.to_string())?;
-                Ok(())
-            } else {
-                Err("Could not access edit state".to_string())
-            }
-        };
-
-        // Restore previous tool after paste mode ends
-        self.restore_previous_tool();
-
-        result
-    }
-
-    /// Restore the tool that was active before paste mode started
-    fn restore_previous_tool(&mut self) {
-        // Leaving paste mode: ensure no drag/capture state leaks out.
-        self.paste_drag_active = false;
-        self.paste_drag_undo = None;
-        self.end_drag_capture();
-
-        if let Some(tool) = self.paste_previous_tool.take() {
-            // Temporarily clear floating layer check to allow tool change
-            self.current_tool = tool;
-            self.tool_panel.set_tool(tool);
-            self.update_mouse_tracking_mode();
-        }
-    }
-
-    /// Stamp the floating layer down without anchoring (copies the layer content to the layer below)
-    pub fn stamp_floating_layer(&mut self) {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Err(e) = edit_state.stamp_layer_down() {
-                log::warn!("Failed to stamp layer: {}", e);
-            }
-        }
-    }
-
-    /// Rotate the floating layer 90° clockwise
-    pub fn rotate_floating_layer(&mut self) {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Err(e) = edit_state.rotate_layer() {
-                log::warn!("Failed to rotate layer: {}", e);
-            }
-        }
-    }
-
-    /// Flip the floating layer horizontally
-    pub fn flip_floating_layer_x(&mut self) {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Err(e) = edit_state.flip_x() {
-                log::warn!("Failed to flip layer X: {}", e);
-            }
-        }
-    }
-
-    /// Flip the floating layer vertically
-    pub fn flip_floating_layer_y(&mut self) {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Err(e) = edit_state.flip_y() {
-                log::warn!("Failed to flip layer Y: {}", e);
-            }
-        }
-    }
-
-    /// Toggle transparent mode for the floating layer
-    pub fn toggle_floating_layer_transparent(&mut self) {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            if let Err(e) = edit_state.make_layer_transparent() {
-                log::warn!("Failed to make layer transparent: {}", e);
-            }
-        }
-    }
-
-    /// Create sidebar controls for paste mode (replaces tool panel)
-    fn view_paste_sidebar_controls(&self) -> Element<'_, AnsiEditorMessage> {
-        use iced::widget::{Space, button, column, container, text};
-        use icy_engine_gui::ui::TEXT_SIZE_SMALL;
-
-        // Helper to create a paste action button
-        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> Element<'a, AnsiEditorMessage> {
-            button(text(label).size(TEXT_SIZE_SMALL).center())
-                .width(Length::Fill)
-                .padding([6, 8])
-                .on_press(AnsiEditorMessage::TopToolbar(msg))
-                .into()
-        }
-
-        let content = column![
-            text("Paste Mode").size(14),
-            Space::new().height(Length::Fixed(8.0)),
-            paste_btn("✓ Anchor (Enter)", TopToolbarMessage::PasteAnchor),
-            paste_btn("✕ Cancel (Esc)", TopToolbarMessage::PasteCancel),
-            Space::new().height(Length::Fixed(12.0)),
-            text("Transform").size(12),
-            paste_btn("Stamp (S)", TopToolbarMessage::PasteStamp),
-            paste_btn("Rotate (R)", TopToolbarMessage::PasteRotate),
-            paste_btn("Flip X", TopToolbarMessage::PasteFlipX),
-            paste_btn("Flip Y", TopToolbarMessage::PasteFlipY),
-            paste_btn("Transparent (T)", TopToolbarMessage::PasteToggleTransparent),
-            Space::new().height(Length::Fill),
-        ]
-        .spacing(4)
-        .width(Length::Fill);
-
-        container(content).width(Length::Fill).padding(8).into()
+        self.paste_handler.is_active()
     }
 
     /// Save the document to the given path
@@ -2497,251 +1194,18 @@ impl AnsiEditor {
     pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
         match message {
             AnsiEditorMessage::OpenTagListDialog => {
-                // Avoid stacked modals.
-                self.tag_dialog = None;
-                self.tag_list_dialog = Some(TagListDialog::new(self.snapshot_tags()));
+                self.with_edit_state_and_tag_state(|state, tag_state| {
+                    tag_state.open_list_dialog(state);
+                });
                 Task::none()
             }
-            AnsiEditorMessage::TagListDialog(msg) => match msg {
-                TagListDialogMessage::Close => {
-                    self.tag_list_dialog = None;
-                    Task::none()
-                }
-                TagListDialogMessage::Delete(index) => {
-                    if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
-                        log::warn!("Failed to remove tag: {}", err);
-                        return Task::none();
-                    }
-                    self.handle_tool_event(ToolEvent::Commit("Remove tag".to_string()));
-                    let items = self.snapshot_tags();
-                    if let Some(dialog) = self.tag_list_dialog.as_mut() {
-                        dialog.items = items;
-                    }
-                    Task::none()
-                }
-            },
+            AnsiEditorMessage::TagListDialog(msg) => {
+                let result = self.with_edit_state_and_tag_state(|state, tag_state| tag_state.handle_list_dialog_message(state, msg));
+                self.apply_tag_tool_result(result)
+            }
             AnsiEditorMessage::TagDialog(msg) => {
-                let Some(dialog) = &mut self.tag_dialog else {
-                    return Task::none();
-                };
-
-                match msg {
-                    TagDialogMessage::SetPreview(s) => {
-                        dialog.preview = s.clone();
-                        Task::none()
-                    }
-                    TagDialogMessage::SetReplacement(s) => {
-                        dialog.replacement_value = s.clone();
-                        Task::none()
-                    }
-                    TagDialogMessage::SetPosX(s) => {
-                        dialog.pos_x = s;
-                        Task::none()
-                    }
-                    TagDialogMessage::SetPosY(s) => {
-                        dialog.pos_y = s;
-                        Task::none()
-                    }
-                    TagDialogMessage::SetPlacement(p) => {
-                        dialog.placement = p;
-                        Task::none()
-                    }
-                    TagDialogMessage::Cancel => {
-                        self.tag_dialog = None;
-                        Task::none()
-                    }
-                    TagDialogMessage::Ok => {
-                        let mut position = dialog.position;
-                        let preview = dialog.preview.trim().to_string();
-                        let replacement_value = dialog.replacement_value.clone();
-                        let placement = dialog.placement;
-                        let pos_x = dialog.pos_x.trim().to_string();
-                        let pos_y = dialog.pos_y.trim().to_string();
-                        let edit_index = dialog.edit_index;
-                        let tag_length = dialog.length.unwrap_or(0);
-                        let from_selection = dialog.from_selection;
-                        self.tag_dialog = None;
-
-                        if preview.is_empty() {
-                            return Task::none();
-                        }
-
-                        if let Ok(x) = pos_x.parse::<i32>() {
-                            position.x = x;
-                        }
-                        if let Ok(y) = pos_y.parse::<i32>() {
-                            position.y = y;
-                        }
-
-                        let attribute = self.with_edit_state(|state| state.get_caret().attribute);
-                        let new_tag = Tag {
-                            is_enabled: true,
-                            preview,
-                            replacement_value,
-                            position,
-                            length: tag_length,
-                            alignment: std::fmt::Alignment::Left,
-                            tag_placement: placement.to_engine(),
-                            tag_role: TagRole::Displaycode,
-                            attribute,
-                        };
-
-                        let commit_message = if edit_index.is_some() { "Edit tag" } else { "Add tag" };
-
-                        if let Some(index) = edit_index {
-                            // Edit existing tag
-                            if let Err(err) = self.with_edit_state(|state| {
-                                let size = state.get_buffer().size();
-                                let max_x = (size.width - 1).max(0);
-                                let max_y = (size.height - 1).max(0);
-
-                                let mut new_tag = new_tag;
-                                new_tag.position.x = new_tag.position.x.clamp(0, max_x);
-                                new_tag.position.y = new_tag.position.y.clamp(0, max_y);
-
-                                state.update_tag(new_tag, index)
-                            }) {
-                                log::warn!("Failed to update tag: {}", err);
-                                return Task::none();
-                            }
-                        } else {
-                            // Add new tag
-                            if let Err(err) = self.with_edit_state(|state| {
-                                let size = state.get_buffer().size();
-                                let max_x = (size.width - 1).max(0);
-                                let max_y = (size.height - 1).max(0);
-
-                                let mut new_tag = new_tag;
-                                new_tag.position.x = new_tag.position.x.clamp(0, max_x);
-                                new_tag.position.y = new_tag.position.y.clamp(0, max_y);
-
-                                if !state.get_buffer().show_tags {
-                                    state.show_tags(true)?;
-                                }
-                                state.add_new_tag(new_tag)?;
-
-                                // Clear selection if tag was created from selection
-                                if from_selection {
-                                    let _ = state.clear_selection();
-                                }
-                                Ok::<(), icy_engine::EngineError>(())
-                            }) {
-                                log::warn!("Failed to add tag: {}", err);
-                                return Task::none();
-                            }
-                        }
-                        self.commit_and_update_tag_overlays(commit_message.to_string())
-                    }
-                }
-            }
-            AnsiEditorMessage::TagEdit(index) => {
-                self.close_tag_context_menu();
-                let tag = self.with_edit_state(|state| state.get_buffer().tags.get(index).cloned());
-                if let Some(tag) = tag {
-                    self.tag_list_dialog = None;
-                    self.tag_dialog = Some(TagDialog::edit(&tag, index));
-                }
-                Task::none()
-            }
-            AnsiEditorMessage::TagDelete(index) => {
-                self.close_tag_context_menu();
-                if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
-                    log::warn!("Failed to remove tag: {}", err);
-                    return Task::none();
-                }
-                self.tag_selection.retain(|&i| i != index);
-                // Adjust indices for tags after the deleted one
-                for i in &mut self.tag_selection {
-                    if *i > index {
-                        *i -= 1;
-                    }
-                }
-                self.commit_and_update_tag_overlays("Remove tag")
-            }
-            AnsiEditorMessage::TagClone(index) => {
-                self.close_tag_context_menu();
-                if let Err(err) = self.with_edit_state(|state| state.clone_tag(index)) {
-                    log::warn!("Failed to clone tag: {}", err);
-                    return Task::none();
-                }
-                self.commit_and_update_tag_overlays("Clone tag")
-            }
-            AnsiEditorMessage::TagContextMenuClose => {
-                self.close_tag_context_menu();
-                Task::none()
-            }
-            AnsiEditorMessage::TagDeleteSelected => {
-                self.close_tag_context_menu();
-                // Delete tags in reverse order to keep indices valid
-                let mut indices: Vec<usize> = self.tag_selection.clone();
-                indices.sort_by(|a, b| b.cmp(a)); // Sort descending
-                for index in indices {
-                    if let Err(err) = self.with_edit_state(|state| state.remove_tag(index)) {
-                        log::warn!("Failed to remove tag {}: {}", index, err);
-                    }
-                }
-                let count = self.tag_selection.len();
-                self.tag_selection.clear();
-                self.commit_and_update_tag_overlays(format!("Remove {} tags", count))
-            }
-            AnsiEditorMessage::TagStartAddMode => {
-                // Create a new tag immediately and start dragging it
-                self.close_tag_context_menu();
-
-                // Generate unique tag name
-                let next_tag_name = self.generate_next_tag_name();
-                let attribute = self.with_edit_state(|state| state.get_caret().attribute);
-
-                // Create new tag at origin (will be moved by drag)
-                let new_tag = icy_engine::Tag {
-                    position: icy_engine::Position::default(),
-                    length: next_tag_name.len(),
-                    preview: next_tag_name,
-                    is_enabled: true,
-                    alignment: std::fmt::Alignment::Left,
-                    replacement_value: String::new(),
-                    tag_placement: icy_engine::TagPlacement::InText,
-                    tag_role: icy_engine::TagRole::Displaycode,
-                    attribute,
-                };
-
-                // Start atomic undo for the add operation
-                self.tag_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Add tag")));
-
-                // Add the tag
-                if let Err(err) = self.with_edit_state(|state| {
-                    if !state.get_buffer().show_tags {
-                        let _ = state.show_tags(true);
-                    }
-                    state.add_new_tag(new_tag)
-                }) {
-                    log::warn!("Failed to add tag: {}", err);
-                    self.tag_drag_undo = None;
-                    return Task::none();
-                }
-
-                // Get the index of the new tag and start dragging it
-                let new_index = self.with_edit_state(|state| state.get_buffer().tags.len() - 1);
-                self.tag_add_new_index = Some(new_index);
-                self.tag_selection.clear();
-                self.tag_selection.push(new_index);
-                self.tag_drag_active = true;
-                self.tag_drag_indices = vec![new_index];
-                self.tag_drag_start_positions = vec![icy_engine::Position::default()];
-                self.is_dragging = true;
-
-                self.task_none_with_tag_overlays_update()
-            }
-            AnsiEditorMessage::TagCancelAddMode => {
-                // Cancel adding tag - undo the add operation
-                if self.tag_add_new_index.is_some() {
-                    self.tag_add_new_index = None;
-                    self.end_tag_drag();
-                    // Undo the add operation
-                    let _ = self.with_edit_state(|state| state.undo());
-                    return self.task_none_with_tag_overlays_update();
-                }
-                Task::none()
+                let result = self.with_edit_state_and_tag_state(|state, tag_state| tag_state.handle_dialog_message(state, msg));
+                self.apply_tag_tool_result(result)
             }
             AnsiEditorMessage::ToolPanel(msg) => {
                 // Block tool panel changes during paste mode
@@ -2762,66 +1226,8 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::Canvas(msg) => {
-                // Handle clipboard operations from context menu
-                match &msg {
-                    CanvasMessage::Cut => {
-                        if let Err(e) = self.cut() {
-                            log::error!("Cut failed: {}", e);
-                        }
-                        return Task::none();
-                    }
-                    CanvasMessage::Copy => {
-                        if let Err(e) = self.copy() {
-                            log::error!("Copy failed: {}", e);
-                        }
-                        return Task::none();
-                    }
-                    CanvasMessage::Paste => {
-                        if let Err(e) = self.paste() {
-                            log::error!("Paste failed: {}", e);
-                        }
-                        return Task::none();
-                    }
-                    _ => {}
-                }
-
-                // Intercept terminal mouse events and forward to tool handling
-                match &msg {
-                    CanvasMessage::TerminalMessage(terminal_msg) => match terminal_msg {
-                        icy_engine_gui::Message::Press(evt) => {
-                            if let Some(text_pos) = evt.text_position {
-                                let event = CanvasMouseEvent::Press {
-                                    position: text_pos,
-                                    pixel_position: evt.pixel_position,
-                                    button: convert_mouse_button(evt.button),
-                                    modifiers: evt.modifiers.clone(),
-                                };
-                                self.handle_canvas_mouse_event(event);
-                            }
-                        }
-                        icy_engine_gui::Message::Release(evt) => {
-                            if let Some(text_pos) = evt.text_position {
-                                let event = CanvasMouseEvent::Release {
-                                    position: text_pos,
-                                    pixel_position: evt.pixel_position,
-                                    button: convert_mouse_button(evt.button),
-                                };
-                                self.handle_canvas_mouse_event(event);
-                            }
-                        }
-                        icy_engine_gui::Message::Move(evt) | icy_engine_gui::Message::Drag(evt) => {
-                            if let Some(text_pos) = evt.text_position {
-                                let event = CanvasMouseEvent::Move {
-                                    position: text_pos,
-                                    pixel_position: evt.pixel_position,
-                                };
-                                self.handle_canvas_mouse_event(event);
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
+                // Forward terminal mouse events directly to tool handling
+                self.handle_terminal_mouse_event(&msg);
                 self.canvas.update(msg).map(AnsiEditorMessage::Canvas)
             }
             AnsiEditorMessage::RightPanel(msg) => {
@@ -2909,17 +1315,16 @@ impl AnsiEditor {
                         task
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
-                        self.type_fkey_slot(slot);
-                        self.handle_tool_event(ToolEvent::Commit("Type fkey".to_string()));
+                        let _ = self.type_fkey_slot(slot);
                         Task::none()
                     }
                     TopToolbarMessage::NextFKeyPage => {
-                        let next = self.top_toolbar.select_options.current_fkey_page.saturating_add(1);
+                        let next = self.click_handler.current_fkey_set().saturating_add(1);
                         self.set_current_fkey_set(next);
                         Task::none()
                     }
                     TopToolbarMessage::PrevFKeyPage => {
-                        let cur = self.top_toolbar.select_options.current_fkey_page;
+                        let cur = self.click_handler.current_fkey_set();
                         let prev = {
                             let opts = self.options.read();
                             let count = opts.fkeys.set_count();
@@ -2942,8 +1347,7 @@ impl AnsiEditor {
                         Task::none()
                     }
                     TopToolbarMessage::SelectFont(index) => {
-                        self.font_tool.select_font(index);
-                        self.font_tool.prev_char = '\0'; // Reset kerning
+                        self.font_handler.select_font(index);
                         Task::none()
                     }
                     TopToolbarMessage::SelectOutline(index) => {
@@ -2953,7 +1357,7 @@ impl AnsiEditor {
                     }
                     TopToolbarMessage::OpenOutlineSelector => {
                         // Open the outline selector popup
-                        self.outline_selector_open = true;
+                        self.font_handler.open_outline_selector();
                         Task::none()
                     }
                     TopToolbarMessage::OpenFontSelector => {
@@ -2962,29 +1366,24 @@ impl AnsiEditor {
                         Task::none()
                     }
                     TopToolbarMessage::OpenTagList => {
-                        // Delegate to the existing OpenTagListDialog handler
-                        return self.update(AnsiEditorMessage::OpenTagListDialog);
+                        // Route to tag tool
+                        return self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagOpenList));
                     }
                     TopToolbarMessage::StartAddTag => {
-                        // Toggle add tag mode or start it
-                        if self.tag_add_new_index.is_some() {
-                            // Already in add mode - toggle off (cancel)
-                            return self.update(AnsiEditorMessage::TagCancelAddMode);
-                        } else {
-                            return self.update(AnsiEditorMessage::TagStartAddMode);
-                        }
+                        // Toggle add-tag mode
+                        return self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagStartAdd));
                     }
                     TopToolbarMessage::EditSelectedTag => {
                         // Edit the first selected tag
-                        if let Some(&idx) = self.tag_selection.first() {
-                            return self.update(AnsiEditorMessage::TagEdit(idx));
+                        if let Some(&idx) = self.tag_state.selection.first() {
+                            return self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagEdit(idx)));
                         }
                         Task::none()
                     }
                     TopToolbarMessage::DeleteSelectedTags => {
                         // Delete all selected tags
-                        if !self.tag_selection.is_empty() {
-                            return self.update(AnsiEditorMessage::TagDeleteSelected);
+                        if !self.tag_state.selection.is_empty() {
+                            return self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagDeleteSelected));
                         }
                         Task::none()
                     }
@@ -3020,71 +1419,132 @@ impl AnsiEditor {
 
                     // === Paste Mode Actions ===
                     TopToolbarMessage::PasteStamp => {
-                        self.stamp_floating_layer();
+                        let _ = self.dispatch_paste_action(tools::PasteAction::Stamp);
                         Task::none()
                     }
                     TopToolbarMessage::PasteRotate => {
-                        self.rotate_floating_layer();
+                        let _ = self.dispatch_paste_action(tools::PasteAction::Rotate);
                         Task::none()
                     }
                     TopToolbarMessage::PasteFlipX => {
-                        self.flip_floating_layer_x();
+                        let _ = self.dispatch_paste_action(tools::PasteAction::FlipX);
                         Task::none()
                     }
                     TopToolbarMessage::PasteFlipY => {
-                        self.flip_floating_layer_y();
+                        let _ = self.dispatch_paste_action(tools::PasteAction::FlipY);
                         Task::none()
                     }
                     TopToolbarMessage::PasteToggleTransparent => {
-                        self.toggle_floating_layer_transparent();
+                        let _ = self.dispatch_paste_action(tools::PasteAction::ToggleTransparent);
                         Task::none()
                     }
                     TopToolbarMessage::PasteAnchor => {
-                        if let Err(e) = self.anchor_layer() {
-                            log::error!("Failed to anchor layer: {}", e);
-                        }
+                        let _ = self.dispatch_paste_action(tools::PasteAction::Anchor);
                         Task::none()
                     }
                     TopToolbarMessage::PasteCancel => {
-                        if let Err(e) = self.discard_floating_layer() {
-                            log::error!("Failed to discard floating layer: {}", e);
-                        }
+                        let _ = self.dispatch_paste_action(tools::PasteAction::Discard);
                         Task::none()
                     }
 
                     _ => {
-                        let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
+                        let task: Task<AnsiEditorMessage> = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
                         self.update_mouse_tracking_mode();
                         task
                     }
                 }
             }
-            AnsiEditorMessage::FKeyToolbar(msg) => {
-                match msg {
-                    FKeyToolbarMessage::TypeFKey(slot) => {
-                        self.type_fkey_slot(slot);
-                        self.handle_tool_event(ToolEvent::Commit("Type fkey".to_string()));
-                        self.fkey_toolbar.clear_cache();
-                    }
-                    FKeyToolbarMessage::OpenCharSelector(slot) => {
-                        // Open the character selector popup for this F-key slot
-                        self.char_selector_target = Some(CharSelectorTarget::FKeySlot(slot));
-                    }
-                    FKeyToolbarMessage::NextSet => {
-                        let next = self.top_toolbar.select_options.current_fkey_page.saturating_add(1);
-                        self.set_current_fkey_set(next);
-                        self.fkey_toolbar.clear_cache();
-                    }
-                    FKeyToolbarMessage::PrevSet => {
-                        let cur = self.top_toolbar.select_options.current_fkey_page;
-                        let prev = {
-                            let opts = self.options.read();
-                            let count = opts.fkeys.set_count();
-                            if count == 0 { 0 } else { (cur + count - 1) % count }
+            AnsiEditorMessage::ToolMessage(msg) => {
+                use tools::ToolHandler;
+
+                let paste_mode = self.is_paste_mode();
+                let current_tool = self.current_tool;
+
+                let mut screen_guard = self.screen.lock();
+                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                    let mut undo_guard = None;
+                    let mut ctx = tools::ToolContext {
+                        state,
+                        options: Some(&self.options),
+                        undo_guard: &mut undo_guard,
+                        half_block_mapper: None,
+                        tag_state: if matches!(current_tool, Tool::Tag) { Some(&mut self.tag_state) } else { None },
+                    };
+
+                    let (source, result) = if paste_mode {
+                        (MouseCaptureTarget::Paste, self.paste_handler.handle_message(&mut ctx, &msg))
+                    } else {
+                        let r = match current_tool {
+                            Tool::Click => self.click_handler.handle_message(&mut ctx, &msg),
+                            Tool::Font => self.font_handler.handle_message(&mut ctx, &msg),
+                            Tool::Pencil => self.pencil_handler.handle_message(&mut ctx, &msg),
+                            Tool::Pipette => self.pipette_handler.handle_message(&mut ctx, &msg),
+                            Tool::Select => self.select_handler.handle_message(&mut ctx, &msg),
+                            Tool::Fill => self.fill_handler.handle_message(&mut ctx, &msg),
+                            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                                self.shape_handler.set_tool(self.current_tool);
+                                self.shape_handler.handle_message(&mut ctx, &msg)
+                            }
+                            Tool::Tag => self.tag_handler.handle_message(&mut ctx, &msg),
                         };
-                        self.set_current_fkey_set(prev);
-                        self.fkey_toolbar.clear_cache();
+                        (MouseCaptureTarget::Tool(current_tool), r)
+                    };
+
+                    drop(screen_guard);
+
+                    // Tool may request editor-owned UI (e.g. open popups)
+                    if paste_mode {
+                        // Paste tool currently doesn't request editor-owned popups.
+                    } else {
+                        match current_tool {
+                            Tool::Click => {
+                                if let Some(tools::ClickToolUiAction::OpenCharSelectorForFKey(slot)) = self.click_handler.take_ui_action() {
+                                    self.char_selector_target = Some(CharSelectorTarget::FKeySlot(slot));
+                                }
+                            }
+                            Tool::Font => {
+                                if let Some(action) = self.font_handler.take_ui_action() {
+                                    let _ = self.process_tool_result_from(source, result);
+
+                                    return match action {
+                                        tools::FontToolUiAction::OpenTdfFontSelector => {
+                                            Task::done(AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontSelector))
+                                        }
+                                        tools::FontToolUiAction::OpenFontDirectory => {
+                                            Task::done(AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontDirectory))
+                                        }
+                                    };
+                                }
+                            }
+                            Tool::Pencil => {
+                                if self.pencil_handler.take_ui_action().is_some() {
+                                    self.char_selector_target = Some(CharSelectorTarget::BrushChar);
+                                }
+                            }
+                            Tool::Fill => {
+                                if self.fill_handler.take_ui_action().is_some() {
+                                    self.char_selector_target = Some(CharSelectorTarget::BrushChar);
+                                }
+                            }
+                            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                                if self.shape_handler.take_ui_action().is_some() {
+                                    self.char_selector_target = Some(CharSelectorTarget::BrushChar);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
+
+                    let processed = self.process_tool_result_from(source, result);
+
+                    if matches!(current_tool, Tool::Tag) && !matches!(processed, tools::ToolResult::None) {
+                        self.update_tag_overlays();
+                        if self.tag_state.add_new_index.is_none() && !self.tag_state.selection_drag_active {
+                            self.clear_tool_overlay();
+                        }
+                    }
+
+                    self.update_mouse_tracking_mode();
                 }
                 Task::none()
             }
@@ -3094,7 +1554,7 @@ impl AnsiEditor {
                         match self.char_selector_target {
                             Some(CharSelectorTarget::FKeySlot(slot)) => {
                                 // Update the F-key slot with the selected character
-                                let set_idx = self.top_toolbar.select_options.current_fkey_page;
+                                let set_idx = self.click_handler.current_fkey_set();
                                 let fkeys_to_save = {
                                     let mut opts = self.options.write();
                                     opts.fkeys.set_code_at(set_idx, slot, code);
@@ -3104,12 +1564,13 @@ impl AnsiEditor {
                                 std::thread::spawn(move || {
                                     let _ = fkeys_to_save.save();
                                 });
-                                self.fkey_toolbar.clear_cache();
+                                self.click_handler.clear_fkey_cache();
                             }
                             Some(CharSelectorTarget::BrushChar) => {
-                                // Update the brush paint character
                                 let ch = char::from_u32(code as u32).unwrap_or(' ');
-                                self.top_toolbar.brush_options.paint_char = ch;
+                                // Route brush char selection back to the active tool.
+                                let msg = tools::ToolMessage::SetBrushChar(ch);
+                                let _ = self.update(AnsiEditorMessage::ToolMessage(msg));
                             }
                             None => {}
                         }
@@ -3122,16 +1583,7 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::OutlineSelector(msg) => {
-                match msg {
-                    OutlineSelectorMessage::SelectOutline(style) => {
-                        // Update outline style in options
-                        *self.options.read().font_outline_style.write() = style;
-                        self.outline_selector_open = false;
-                    }
-                    OutlineSelectorMessage::Cancel => {
-                        self.outline_selector_open = false;
-                    }
-                }
+                self.font_handler.handle_outline_selector_message(&self.options, msg);
                 Task::none()
             }
             AnsiEditorMessage::ColorSwitcher(msg) => {
@@ -3256,19 +1708,6 @@ impl AnsiEditor {
                 self.canvas.scroll_by(dx, dy);
                 Task::none()
             }
-            AnsiEditorMessage::KeyPressed(key, modifiers) => {
-                self.handle_key_press(key, modifiers);
-                Task::none()
-            }
-            AnsiEditorMessage::CancelShapeDrag => {
-                let _ = self.cancel_shape_drag();
-                self.minimap_drag_pointer = None;
-                Task::none()
-            }
-            AnsiEditorMessage::CancelMinimapDrag => {
-                self.minimap_drag_pointer = None;
-                Task::none()
-            }
             AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
                 let Some((pointer_x, pointer_y)) = self.minimap_drag_pointer else {
                     return Task::none();
@@ -3286,10 +1725,6 @@ impl AnsiEditor {
                     self.scroll_canvas_to_normalized(norm_x, norm_y);
                 }
 
-                Task::none()
-            }
-            AnsiEditorMessage::CanvasMouseEvent(event) => {
-                self.handle_canvas_mouse_event(event);
                 Task::none()
             }
             AnsiEditorMessage::EditLayer(_layer_index) => {
@@ -3341,11 +1776,6 @@ impl AnsiEditor {
                 self.show_layer_borders = !self.show_layer_borders;
                 self.task_none_with_layer_bounds_update()
             }
-            AnsiEditorMessage::OpenTdfFontSelector => {
-                self.tdf_font_selector_open = true;
-                Task::none()
-            }
-            AnsiEditorMessage::TdfFontSelector(msg) => self.handle_tdf_font_selector_message(msg),
         }
     }
 
@@ -3449,12 +1879,6 @@ impl AnsiEditor {
         self.canvas.set_layer_bounds(layer_bounds, true);
     }
 
-    /// Generate a unique tag name based on existing tags (TAG1, TAG2, etc.)
-    fn generate_next_tag_name(&mut self) -> String {
-        let tag_count = self.with_edit_state(|state| state.get_buffer().tags.len());
-        format!("TAG{}", tag_count + 1)
-    }
-
     /// Update tag rectangle overlays when Tag tool is active
     fn update_tag_overlays(&mut self) {
         // First, get all the data we need (position, length, is_selected)
@@ -3472,25 +1896,8 @@ impl AnsiEditor {
 
             // Access EditState to get tags and update overlay mask
             let tags = if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                // First collect tag info with selection state
-                let tag_info: Vec<_> = edit_state
-                    .get_buffer()
-                    .tags
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, tag)| (tag.position, tag.len(), self.tag_selection.contains(&idx)))
-                    .collect();
-
-                // Then update overlays
-                let overlays = edit_state.get_tool_overlay_mask_mut();
-                overlays.clear();
-
-                for (pos, len, _) in &tag_info {
-                    let rect = icy_engine::Rectangle::new(*pos, (*len as i32, 1).into());
-                    overlays.add_rectangle(rect);
-                }
-
-                edit_state.mark_dirty();
+                let tag_info = self.tag_state.collect_overlay_data(edit_state);
+                tools::TagTool::update_overlay_mask_in_state(edit_state);
                 tag_info
             } else {
                 vec![]
@@ -3500,184 +1907,8 @@ impl AnsiEditor {
         };
 
         // Now render overlay to canvas (no longer holding screen lock)
-        self.render_tag_overlay_to_canvas(font_width, font_height, &tag_data);
-    }
-
-    /// Render tag overlay rectangles to the canvas
-    fn render_tag_overlay_to_canvas(&mut self, font_width: f32, font_height: f32, tag_data: &[(icy_engine::Position, usize, bool)]) {
-        let overlay_rects: Vec<(f32, f32, f32, f32, bool)> = tag_data
-            .iter()
-            .map(|(pos, len, is_selected)| {
-                let x = pos.x as f32 * font_width;
-                let y = pos.y as f32 * font_height;
-                let w = *len as f32 * font_width;
-                let h = font_height;
-                (x, y, w, h, *is_selected)
-            })
-            .collect();
-
-        // Create overlay mask with all tag rectangles
-        if overlay_rects.is_empty() {
-            self.canvas.set_tool_overlay_mask(None, None);
-            return;
-        }
-
-        // Find bounding box of all tags
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-
-        for (x, y, w, h, _) in &overlay_rects {
-            min_x = min_x.min(*x);
-            min_y = min_y.min(*y);
-            max_x = max_x.max(x + w);
-            max_y = max_y.max(y + h);
-        }
-
-        let total_w = (max_x - min_x).ceil() as u32;
-        let total_h = (max_y - min_y).ceil() as u32;
-
-        if total_w == 0 || total_h == 0 {
-            self.canvas.set_tool_overlay_mask(None, None);
-            return;
-        }
-
-        // Create RGBA buffer for overlay
-        let mut rgba = vec![0u8; (total_w * total_h * 4) as usize];
-
-        for (x, y, w, h, is_selected) in &overlay_rects {
-            let local_x = (x - min_x) as u32;
-            let local_y = (y - min_y) as u32;
-            let rect_w = *w as u32;
-            let rect_h = *h as u32;
-
-            // Different colors for selected vs non-selected tags
-            let (r, g, b, a) = if *is_selected {
-                (255, 200, 50, 255) // Yellow/orange for selected
-            } else {
-                (100, 150, 255, 200) // Translucent blue for normal
-            };
-
-            // Draw border
-            for py in local_y..(local_y + rect_h).min(total_h) {
-                for px in local_x..(local_x + rect_w).min(total_w) {
-                    // Border pixels only
-                    let is_border =
-                        px == local_x || px == (local_x + rect_w - 1).min(total_w - 1) || py == local_y || py == (local_y + rect_h - 1).min(total_h - 1);
-
-                    if is_border {
-                        let idx = ((py * total_w + px) * 4) as usize;
-                        if idx + 3 < rgba.len() {
-                            rgba[idx] = r;
-                            rgba[idx + 1] = g;
-                            rgba[idx + 2] = b;
-                            rgba[idx + 3] = a;
-                        }
-                    }
-                }
-            }
-        }
-
-        self.canvas
-            .set_tool_overlay_mask(Some((rgba, total_w, total_h)), Some((min_x, min_y, total_w as f32, total_h as f32)));
-    }
-
-    /// Update the selection rectangle overlay during tag selection drag
-    fn update_tag_selection_drag_overlay(&mut self) {
-        // Get font dimensions
-        let (font_width, font_height) = {
-            let screen = self.screen.lock();
-            let font = screen.font(0);
-            if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0)
-            }
-        };
-
-        // Calculate selection rectangle in pixel coordinates
-        let min_x = self.drag_pos.start.x.min(self.drag_pos.cur.x) as f32 * font_width;
-        let max_x = (self.drag_pos.start.x.max(self.drag_pos.cur.x) + 1) as f32 * font_width;
-        let min_y = self.drag_pos.start.y.min(self.drag_pos.cur.y) as f32 * font_height;
-        let max_y = (self.drag_pos.start.y.max(self.drag_pos.cur.y) + 1) as f32 * font_height;
-
-        let w = (max_x - min_x).ceil() as u32;
-        let h = (max_y - min_y).ceil() as u32;
-
-        if w == 0 || h == 0 {
-            return;
-        }
-
-        // Create RGBA buffer for selection rectangle overlay (dashed border, translucent fill)
-        let mut rgba = vec![0u8; (w * h * 4) as usize];
-
-        // Draw translucent fill and dashed border
-        for py in 0..h {
-            for px in 0..w {
-                let idx = ((py * w + px) * 4) as usize;
-                if idx + 3 >= rgba.len() {
-                    continue;
-                }
-
-                let is_border = px == 0 || px == w - 1 || py == 0 || py == h - 1;
-
-                if is_border {
-                    // Dashed border pattern (every 4 pixels)
-                    let is_dash = ((px + py) / 4) % 2 == 0;
-                    if is_dash {
-                        rgba[idx] = 255; // R - white
-                        rgba[idx + 1] = 255; // G
-                        rgba[idx + 2] = 255; // B
-                        rgba[idx + 3] = 200; // A
-                    }
-                } else {
-                    // Translucent fill
-                    rgba[idx] = 100; // R
-                    rgba[idx + 1] = 150; // G
-                    rgba[idx + 2] = 255; // B - blue tint
-                    rgba[idx + 3] = 30; // A - very translucent
-                }
-            }
-        }
-
-        self.canvas.set_tool_overlay_mask(Some((rgba, w, h)), Some((min_x, min_y, w as f32, h as f32)));
-    }
-
-    /// Handle TDF font selector messages
-    fn handle_tdf_font_selector_message(&mut self, msg: TdfFontSelectorMessage) -> Task<AnsiEditorMessage> {
-        match msg {
-            TdfFontSelectorMessage::Cancel => {
-                self.tdf_font_selector_open = false;
-            }
-            TdfFontSelectorMessage::Confirm(font_idx) => {
-                // Apply selected font and close dialog
-                if font_idx >= 0 {
-                    self.font_tool.select_font(font_idx);
-                }
-                self.tdf_font_selector_open = false;
-            }
-            TdfFontSelectorMessage::SelectFont(idx) => {
-                self.tdf_font_selector.select_font(idx);
-            }
-            TdfFontSelectorMessage::FilterChanged(filter) => {
-                self.tdf_font_selector.set_filter(filter);
-            }
-            TdfFontSelectorMessage::ToggleOutline => {
-                self.tdf_font_selector.toggle_outline();
-            }
-            TdfFontSelectorMessage::ToggleBlock => {
-                self.tdf_font_selector.toggle_block();
-            }
-            TdfFontSelectorMessage::ToggleColor => {
-                self.tdf_font_selector.toggle_color();
-            }
-            TdfFontSelectorMessage::ToggleFiglet => {
-                self.tdf_font_selector.toggle_figlet();
-            }
-        }
-        Task::none()
+        let (mask, rect) = tools::TagTool::overlay_mask_for_tags(font_width, font_height, &tag_data);
+        self.canvas.set_tool_overlay_mask(mask, rect);
     }
 
     /// Update the selection display in the shader
@@ -3790,1597 +2021,248 @@ impl AnsiEditor {
         self.canvas.toggle_reference_image();
     }
 
-    /// Handle key press events
-    fn handle_key_press(&mut self, key: iced::keyboard::Key, modifiers: iced::keyboard::Modifiers) {
-        // Character selector overlay has priority and is closed with Escape.
-        if self.char_selector_target.is_some() {
-            if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
-                self.char_selector_target = None;
-                return;
+    /// Handle top-level window/input events that must reach the editor even when
+    /// the inner widgets don't receive them (focus loss, cursor leaving window,
+    /// global key presses).
+    ///
+    /// Returns `true` if the event was handled.
+    pub fn handle_event(&mut self, event: &iced::Event) -> bool {
+        match event {
+            // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
+            iced::Event::Window(iced::window::Event::Unfocused) | iced::Event::Mouse(iced::mouse::Event::CursorLeft) => {
+                let _ = self.cancel_shape_drag();
+                self.minimap_drag_pointer = None;
+                true
             }
-        }
+            // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                self.minimap_drag_pointer = None;
+                true
+            }
+            // Forward keyboard events directly into the editor.
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers: _, .. }) => {
+                // Character selector overlay has priority and is closed with Escape.
+                if self.char_selector_target.is_some() {
+                    if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                        self.char_selector_target = None;
+                        return true;
+                    }
+                }
 
-        // Paste mode has priority for special keys
-        if self.is_paste_mode() {
-            log::debug!("handle_key_press: key={:?}, paste_mode=true", key);
-            if self.handle_paste_mode_key(&key, &modifiers) {
-                return;
-            }
-        }
+                // Editor-owned Escape handling for transient shape drag overlays.
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                    let _ = self.cancel_shape_drag();
+                }
 
-        // Handle tool-specific key events
-        let event = self.handle_tool_key(&key, &modifiers);
-        self.handle_tool_event(event);
-    }
+                // Paste mode has priority for special keys (handled by PasteTool)
+                if self.is_paste_mode() {
+                    log::debug!("handle_key_press: key={:?}, paste_mode=true", key);
+                    let result = self.dispatch_paste_event(event);
+                    if !matches!(result, tools::ToolResult::None) {
+                        return true;
+                    }
+                }
 
-    /// Handle keyboard input in paste mode
-    /// Returns true if the key was handled
-    fn handle_paste_mode_key(&mut self, key: &iced::keyboard::Key, _modifiers: &iced::keyboard::Modifiers) -> bool {
-        use iced::keyboard::Key;
-        use iced::keyboard::key::Named;
+                // Tool-specific key events are owned by the active tool.
+                let result = match self.current_tool {
+                    Tool::Click => self.dispatch_click_event(event),
+                    Tool::Font => self.dispatch_font_event(event),
+                    Tool::Select => self.dispatch_select_event(event),
+                    Tool::Tag => self.dispatch_tag_event(event),
+                    _ => tools::ToolResult::None,
+                };
 
-        log::debug!("handle_paste_mode_key: received key {:?}", key);
+                // UI-only updates owned by the editor.
+                match self.current_tool {
+                    Tool::Click | Tool::Font | Tool::Select => {
+                        if !matches!(result, tools::ToolResult::None) {
+                            self.update_selection_display();
+                        }
+                    }
+                    Tool::Tag => {
+                        if !matches!(result, tools::ToolResult::None) {
+                            self.update_tag_overlays();
+                            if self.tag_state.add_new_index.is_none() && !self.tag_state.selection_drag_active {
+                                self.clear_tool_overlay();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
 
-        match key {
-            // Escape - cancel paste
-            Key::Named(Named::Escape) => {
-                log::debug!("handle_paste_mode_key: Escape pressed, discarding floating layer");
-                let _ = self.discard_floating_layer();
-                true
-            }
-            // Enter - anchor layer
-            Key::Named(Named::Enter) => {
-                log::debug!("handle_paste_mode_key: Enter pressed, anchoring layer");
-                let _ = self.anchor_layer();
-                true
-            }
-            // Arrow keys - move floating layer
-            Key::Named(Named::ArrowUp) => {
-                self.move_floating_layer(0, -1);
-                true
-            }
-            Key::Named(Named::ArrowDown) => {
-                self.move_floating_layer(0, 1);
-                true
-            }
-            Key::Named(Named::ArrowLeft) => {
-                self.move_floating_layer(-1, 0);
-                true
-            }
-            Key::Named(Named::ArrowRight) => {
-                self.move_floating_layer(1, 0);
-                true
-            }
-            // S - stamp
-            Key::Character(c) if c.eq_ignore_ascii_case("s") => {
-                self.stamp_floating_layer();
-                true
-            }
-            // R - rotate
-            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                self.rotate_floating_layer();
-                true
-            }
-            // X - flip horizontal
-            Key::Character(c) if c.eq_ignore_ascii_case("x") => {
-                self.flip_floating_layer_x();
-                true
-            }
-            // Y - flip vertical
-            Key::Character(c) if c.eq_ignore_ascii_case("y") => {
-                self.flip_floating_layer_y();
-                true
-            }
-            // T - toggle transparent
-            Key::Character(c) if c.eq_ignore_ascii_case("t") => {
-                self.toggle_floating_layer_transparent();
                 true
             }
             _ => false,
         }
     }
 
-    /// Move the floating layer by the given delta
-    fn move_floating_layer(&mut self, dx: i32, dy: i32) {
-        {
-            let mut screen = self.screen.lock();
-            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                // Get current offset of the current layer and add delta
-                let current_offset = edit_state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                let new_pos = Position::new(current_offset.x + dx, current_offset.y + dy);
-                if let Err(e) = edit_state.move_layer(new_pos) {
-                    log::warn!("Failed to move layer: {}", e);
+    /// Handle terminal mouse events directly from icy_engine_gui
+    fn handle_terminal_mouse_event(&mut self, msg: &TerminalMessage) {
+        match msg {
+            TerminalMessage::Press(evt) => {
+                if evt.text_position.is_none() {
+                    return;
                 }
-            }
-        }
-        // Update layer bounds to show new position
-        self.update_layer_bounds();
-    }
 
-    /// Handle named key events for Click and Font tools (shared navigation/editing)
-    fn handle_click_font_named_key(&mut self, named: &iced::keyboard::key::Named, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
-        use iced::keyboard::key::Named;
-        match named {
-            Named::F1
-            | Named::F2
-            | Named::F3
-            | Named::F4
-            | Named::F5
-            | Named::F6
-            | Named::F7
-            | Named::F8
-            | Named::F9
-            | Named::F10
-            | Named::F11
-            | Named::F12 => {
-                let slot = match named {
-                    Named::F1 => 0,
-                    Named::F2 => 1,
-                    Named::F3 => 2,
-                    Named::F4 => 3,
-                    Named::F5 => 4,
-                    Named::F6 => 5,
-                    Named::F7 => 6,
-                    Named::F8 => 7,
-                    Named::F9 => 8,
-                    Named::F10 => 9,
-                    Named::F11 => 10,
-                    Named::F12 => 11,
-                    _ => 0,
+                // Paste mode always has priority.
+                if self.is_paste_mode() {
+                    let _ = self.dispatch_paste_terminal_message(msg);
+                    return;
+                }
+
+                let _result = match self.current_tool {
+                    Tool::Pipette => self.dispatch_pipette_terminal_message(msg),
+                    Tool::Pencil => self.dispatch_pencil_terminal_message(msg),
+                    Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                        self.dispatch_shape_terminal_message(msg)
+                    }
+                    Tool::Fill => self.dispatch_fill_terminal_message(msg),
+                    Tool::Select => {
+                        let ev = self.dispatch_select_terminal_message(msg);
+                        self.update_selection_display();
+                        ev
+                    }
+                    Tool::Click | Tool::Font => {
+                        let ev = self.dispatch_click_terminal_message(self.current_tool, msg);
+                        self.update_selection_display();
+                        ev
+                    }
+                    Tool::Tag => {
+                        let ev = self.dispatch_tag_terminal_message(msg);
+                        self.update_tag_overlays();
+                        ev
+                    }
+                };
+            }
+            TerminalMessage::Release(evt) => {
+                if evt.text_position.is_none() {
+                    return;
+                }
+
+                let target = self.mouse_capture_tool.unwrap_or_else(|| {
+                    if self.is_paste_mode() {
+                        MouseCaptureTarget::Paste
+                    } else {
+                        MouseCaptureTarget::Tool(self.current_tool)
+                    }
+                });
+
+                let _result = match target {
+                    MouseCaptureTarget::Paste => self.dispatch_paste_terminal_message(msg),
+                    MouseCaptureTarget::Tool(tool) => match tool {
+                        Tool::Pipette => self.dispatch_pipette_terminal_message(msg),
+                        Tool::Pencil => self.dispatch_pencil_terminal_message(msg),
+                        Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                            let prev = self.current_tool;
+                            self.current_tool = tool;
+                            let ev = self.dispatch_shape_terminal_message(msg);
+                            self.current_tool = prev;
+                            ev
+                        }
+                        Tool::Fill => self.dispatch_fill_terminal_message(msg),
+                        Tool::Select => {
+                            let ev = self.dispatch_select_terminal_message(msg);
+                            self.update_selection_display();
+                            ev
+                        }
+                        Tool::Click | Tool::Font => {
+                            let ev = self.dispatch_click_terminal_message(tool, msg);
+                            self.update_selection_display();
+                            ev
+                        }
+                        Tool::Tag => {
+                            let ev = self.dispatch_tag_terminal_message(msg);
+                            self.update_tag_overlays();
+                            if !self.tag_state.selection_drag_active {
+                                self.clear_tool_overlay();
+                            }
+                            ev
+                        }
+                    },
+                };
+            }
+            TerminalMessage::Move(evt) | TerminalMessage::Drag(evt) => {
+                use tools::ToolHandler;
+
+                let Some(pos) = evt.text_position else {
+                    return;
                 };
 
-                // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
-                if modifiers.alt() && slot < 10 {
-                    let base = if modifiers.shift() { 10 } else { 0 };
-                    self.set_current_fkey_set(base + slot);
-                    return ToolEvent::Redraw;
-                }
+                // Brush hover preview is editor-owned UI.
+                self.update_brush_preview(pos, evt.pixel_position);
 
-                self.type_fkey_slot(slot);
-                ToolEvent::Commit("Type fkey".to_string())
-            }
-            // Cursor movement
-            Named::ArrowUp => {
-                self.with_edit_state(|state| state.move_caret_up(1));
-                ToolEvent::Redraw
-            }
-            Named::ArrowDown => {
-                self.with_edit_state(|state| state.move_caret_down(1));
-                ToolEvent::Redraw
-            }
-            Named::ArrowLeft => {
-                self.with_edit_state(|state| state.move_caret_left(1));
-                ToolEvent::Redraw
-            }
-            Named::ArrowRight => {
-                self.with_edit_state(|state| state.move_caret_right(1));
-                ToolEvent::Redraw
-            }
-            Named::Home => {
-                self.with_edit_state(|state| state.set_caret_x(0));
-                ToolEvent::Redraw
-            }
-            Named::End => {
-                let width = self.with_edit_state(|state| state.get_buffer().width());
-                self.with_edit_state(|state| state.set_caret_x(width - 1));
-                ToolEvent::Redraw
-            }
-            Named::PageUp => {
-                self.with_edit_state(|state| state.move_caret_up(24));
-                ToolEvent::Redraw
-            }
-            Named::PageDown => {
-                self.with_edit_state(|state| state.move_caret_down(24));
-                ToolEvent::Redraw
-            }
-            // Text editing
-            Named::Backspace => {
-                if self.current_tool == Tool::Font {
-                    return self.handle_font_tool_backspace();
-                }
-                let result = self.with_edit_state(|state| {
-                    if state.is_something_selected() {
-                        state.erase_selection()
+                let target = self.mouse_capture_tool.unwrap_or_else(|| {
+                    if self.is_paste_mode() {
+                        MouseCaptureTarget::Paste
                     } else {
-                        state.backspace()
+                        MouseCaptureTarget::Tool(self.current_tool)
                     }
                 });
-                if let Err(e) = result {
-                    log::warn!("Failed to backspace: {}", e);
-                }
-                self.update_selection_display();
-                ToolEvent::Commit("Backspace".to_string())
-            }
-            Named::Delete => {
-                let result = self.with_edit_state(|state| {
-                    if state.is_something_selected() {
-                        state.erase_selection()
-                    } else {
-                        state.delete_key()
-                    }
-                });
-                if let Err(e) = result {
-                    log::warn!("Failed to delete: {}", e);
-                }
-                self.update_selection_display();
-                ToolEvent::Commit("Delete".to_string())
-            }
-            Named::Enter => {
-                if self.current_tool == Tool::Font {
-                    // Font tool: move to next line using font height
-                    let font_height = self.font_tool.max_height();
-                    self.with_edit_state(|state| {
-                        let pos = state.get_caret().position();
-                        state.set_caret_position(Position::new(0, pos.y + font_height as i32));
-                    });
-                    self.font_tool.prev_char = '\0';
-                    ToolEvent::Redraw
-                } else {
-                    let result = self.with_edit_state(|state| state.new_line());
-                    if let Err(e) = result {
-                        log::warn!("Failed to new line: {}", e);
-                    }
-                    ToolEvent::Commit("New line".to_string())
-                }
-            }
-            Named::Tab => {
-                if modifiers.shift() {
-                    self.with_edit_state(|state| state.handle_reverse_tab());
-                } else {
-                    self.with_edit_state(|state| state.handle_tab());
-                }
-                ToolEvent::Redraw
-            }
-            Named::Insert => {
-                self.with_edit_state(|state| state.toggle_insert_mode());
-                ToolEvent::Redraw
-            }
-            Named::Space => {
-                if self.current_tool == Tool::Font {
-                    return self.handle_font_tool_char(' ');
-                }
-                // Space is a named key in iced, treat as character input
-                let result = self.with_edit_state(|state| state.type_key(' '));
-                if let Err(e) = result {
-                    log::warn!("Failed to type space: {}", e);
-                }
-                ToolEvent::Commit("Type character".to_string())
-            }
-            Named::Escape => {
-                // Cancel tag add mode if active
-                if self.tag_add_new_index.is_some() {
-                    self.tag_add_new_index = None;
-                    self.tag_selection_drag_active = false;
-                    // Drop the undo guard and then undo to remove the tag
-                    self.end_tag_drag();
-                    let _ = self.with_edit_state(|state| state.undo());
-                    return self.redraw_with_tag_overlays();
-                }
 
-                // Clear selection
-                self.with_edit_state(|state| {
-                    let _ = state.clear_selection();
-                });
-                self.redraw_with_selection_display()
-            }
-            _ => ToolEvent::None,
-        }
-    }
+                let _result = match target {
+                    MouseCaptureTarget::Paste => self.dispatch_paste_terminal_message(msg),
+                    MouseCaptureTarget::Tool(tool) => match tool {
+                        Tool::Pipette => self.dispatch_pipette_terminal_message(msg),
+                        Tool::Pencil => self.dispatch_pencil_terminal_message(msg),
+                        Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                            let prev = self.current_tool;
+                            self.current_tool = tool;
+                            let ev = self.dispatch_shape_terminal_message(msg);
+                            self.current_tool = prev;
+                            ev
+                        }
+                        Tool::Fill => self.dispatch_fill_terminal_message(msg),
+                        Tool::Select => {
+                            let ev = self.dispatch_select_terminal_message(msg);
+                            self.update_selection_display();
+                            *self.canvas.terminal.cursor_icon.write() = Some(self.select_handler.cursor());
+                            ev
+                        }
+                        Tool::Click | Tool::Font => {
+                            let ev = self.dispatch_click_terminal_message(tool, msg);
+                            self.update_selection_display();
+                            *self.canvas.terminal.cursor_icon.write() = Some(self.click_handler.cursor());
+                            ev
+                        }
+                        Tool::Tag => {
+                            let ev = self.dispatch_tag_terminal_message(msg);
+                            self.update_tag_overlays();
+                            if self.tag_state.selection_drag_active {
+                                let (font_width, font_height) = {
+                                    let screen = self.screen.lock();
+                                    let font = screen.font(0);
+                                    if let Some(f) = font {
+                                        let size = f.size();
+                                        (size.width as f32, size.height as f32)
+                                    } else {
+                                        (8.0, 16.0)
+                                    }
+                                };
 
-    /// Handle character input for Font tool (TDF/Figlet rendering)
-    fn handle_font_tool_char(&mut self, ch: char) -> ToolEvent {
-        use icy_engine_edit::TdfEditStateRenderer;
-
-        // Check if we have a selected font
-        let font_idx = self.font_tool.selected_font;
-        if font_idx < 0 || (font_idx as usize) >= self.font_tool.font_count() {
-            log::warn!("No font selected for Font tool");
-            return ToolEvent::None;
-        }
-
-        // Check if character is supported (access font through library)
-        let has_char = self.font_tool.with_font_at(font_idx as usize, |font| font.has_char(ch));
-        if !has_char.unwrap_or(false) {
-            log::debug!("Character '{}' not supported by current font", ch);
-            return ToolEvent::None;
-        }
-
-        // Get outline style from options
-        let outline_style = { *self.options.read().font_outline_style.read() };
-
-        // Render the glyph - access screen and font library
-        // Returns (new_x, start_y) - Y stays at original row, X advances
-        let result: Result<Position, icy_engine::EngineError> = {
-            let mut screen = self.screen.lock();
-            let edit_state = screen
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-
-            // Begin atomic undo with RenderCharacter operation type for backspace support
-            let _undo_guard = edit_state.begin_typed_atomic_undo("Render font character", OperationType::RenderCharacter);
-
-            // Save caret position for undo - this allows backspace to restore position
-            let _ = edit_state.undo_caret_position();
-
-            let caret_pos = edit_state.get_caret().position();
-            let start_y = caret_pos.y;
-
-            match TdfEditStateRenderer::new(edit_state, caret_pos.x, start_y) {
-                Ok(mut renderer) => {
-                    let render_options = retrofont::RenderOptions {
-                        outline_style,
-                        ..Default::default()
-                    };
-
-                    // Access font through library and render
-                    let lib = self.font_tool.font_library.read();
-                    if let Some(font) = lib.get_font(font_idx as usize) {
-                        match font.render_glyph(&mut renderer, ch, &render_options) {
-                            Ok(_) => {
-                                // Return new X position but keep original Y (don't move caret down)
-                                Ok(Position::new(renderer.max_x(), start_y))
+                                let (mask, rect) = tools::TagTool::overlay_mask_for_selection_drag(
+                                    font_width,
+                                    font_height,
+                                    self.tag_state.drag_start,
+                                    self.tag_state.drag_cur,
+                                );
+                                self.canvas.set_tool_overlay_mask(mask, rect);
                             }
-                            Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {}", e))),
+                            ev
                         }
-                    } else {
-                        Err(icy_engine::EngineError::Generic("Font not found".to_string()))
-                    }
-                }
-                Err(e) => Err(e),
+                    },
+                };
             }
-        };
-
-        match result {
-            Ok(new_pos) => {
-                // Update prev_char for kerning
-                self.font_tool.prev_char = ch;
-
-                // Move caret to new position
-                self.with_edit_state(|state| {
-                    state.set_caret_position(new_pos);
-                });
-
-                ToolEvent::Commit("Render font character".to_string())
-            }
-            Err(e) => {
-                log::warn!("Failed to render font character: {}", e);
-                ToolEvent::None
-            }
-        }
-    }
-
-    /// Handle backspace for Font tool (undo last rendered character)
-    fn handle_font_tool_backspace(&mut self) -> ToolEvent {
-        // Try to find and reverse the last RenderCharacter operation in the undo stack
-        let mut use_backspace = true;
-
-        let _reverse_result: Option<Result<(), icy_engine::EngineError>> = {
-            let mut screen = self.screen.lock();
-            let edit_state = screen
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-
-            // Find the last RenderCharacter operation that hasn't been reversed
-            let undo_stack = edit_state.get_undo_stack();
-            let Ok(stack) = undo_stack.lock() else {
-                return ToolEvent::None;
-            };
-
-            let mut reverse_count = 0;
-            let mut found_index = None;
-
-            for i in (0..stack.len()).rev() {
-                match stack[i].get_operation_type() {
-                    OperationType::RenderCharacter => {
-                        if reverse_count == 0 {
-                            found_index = Some(i);
-                            break;
-                        }
-                        reverse_count -= 1;
-                    }
-                    OperationType::ReversedRenderCharacter => {
-                        reverse_count += 1;
-                    }
-                    OperationType::Unknown => {
-                        // Stop at unknown operations
-                        break;
-                    }
-                }
-            }
-
-            if let Some(idx) = found_index {
-                if let Some(op) = stack[idx].try_clone() {
-                    drop(stack); // Release the lock before push_reverse_undo
-
-                    // Push a reverse undo operation
-                    match edit_state.push_reverse_undo("Undo font character", op, OperationType::ReversedRenderCharacter) {
-                        Ok(_) => {
-                            use_backspace = false;
-                            Some(Ok(()))
-                        }
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        // Reset prev_char since we're going backwards
-        self.font_tool.prev_char = '\0';
-
-        if use_backspace {
-            // Fall back to normal backspace if no RenderCharacter found
-            let result = self.with_edit_state(|state| {
-                if state.is_something_selected() {
-                    state.erase_selection()
-                } else {
-                    state.backspace()
-                }
-            });
-            if let Err(e) = result {
-                log::warn!("Failed to backspace: {}", e);
-            }
-        }
-
-        self.update_selection_display();
-        ToolEvent::Commit("Font backspace".to_string())
-    }
-
-    /// Handle tool-specific key events based on current tool
-    fn handle_tool_key(&mut self, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> ToolEvent {
-        use iced::keyboard::key::Named;
-
-        // Escape cancels active drags (shape/layer/tag-selection) and clears previews.
-        if let iced::keyboard::Key::Named(Named::Escape) = key {
-            if self.cancel_shape_drag() {
-                return ToolEvent::Redraw;
-            }
-
-            if self.layer_drag_active {
-                self.cancel_layer_drag();
-                return ToolEvent::Redraw;
-            }
-
-            if self.tag_selection_drag_active {
-                self.cancel_tag_selection_drag();
-                return ToolEvent::Redraw;
-            }
-        }
-        match self.current_tool {
-            Tool::Click => {
-                // Handle typing and cursor movement for Click tool (normal text input)
-                match key {
-                    iced::keyboard::Key::Character(c) => {
-                        if !modifiers.control() && !modifiers.alt() {
-                            if let Some(ch) = c.chars().next() {
-                                // Convert Unicode to CP437 for ANSI art
-                                let cp437_char = self.with_edit_state(|state| state.get_buffer().buffer_type.convert_from_unicode(ch));
-                                // Type character at cursor using terminal_input
-                                let result: Result<(), icy_engine::EngineError> = self.with_edit_state(|state| state.type_key(cp437_char));
-                                if let Err(e) = result {
-                                    log::warn!("Failed to type character: {}", e);
-                                }
-                                return ToolEvent::Commit("Type character".to_string());
-                            }
-                        }
-                    }
-                    iced::keyboard::Key::Named(named) => {
-                        return self.handle_click_font_named_key(named, modifiers);
-                    }
-                    _ => {}
-                }
-            }
-            Tool::Font => {
-                // Dispatch keyboard events to Font handler for state tracking
-                let input = self.create_key_down_input(key, modifiers);
-                let _ = self.dispatch_font_event(input);
-
-                // Handle TDF/Figlet font rendering
-                match key {
-                    iced::keyboard::Key::Character(c) => {
-                        if !modifiers.control() && !modifiers.alt() {
-                            if let Some(ch) = c.chars().next() {
-                                return self.handle_font_tool_char(ch);
-                            }
-                        }
-                    }
-                    iced::keyboard::Key::Named(named) => {
-                        return self.handle_click_font_named_key(named, modifiers);
-                    }
-                    _ => {}
-                }
-            }
-            Tool::Select => {
-                // Dispatch keyboard events to Select handler
-                let input = self.create_key_down_input(key, modifiers);
-                let result = self.dispatch_select_event(input);
-                if !matches!(result, ToolEvent::None) {
-                    self.update_selection_display();
-                    return result;
-                }
-            }
-            Tool::Tag => {
-                // Dispatch keyboard events to Tag handler
-                let input = self.create_key_down_input(key, modifiers);
-                let result = self.dispatch_tag_event(input);
-                if !matches!(result, ToolEvent::None) {
-                    self.update_tag_overlays();
-                    return result;
-                }
-            }
-            _ => {
-                // Other tools don't handle keyboard in the same way
-            }
-        }
-        ToolEvent::None
-    }
-
-    /// Handle canvas mouse events by forwarding to current tool
-    fn handle_canvas_mouse_event(&mut self, event: CanvasMouseEvent) {
-        // Position is already in text/buffer coordinates from TerminalMouseEvent
-        match event {
-            CanvasMouseEvent::Press {
-                position,
-                pixel_position,
-                button,
-                modifiers,
-            } => {
-                let start_tool = self.current_tool;
-                let tool_event = self.handle_tool_mouse_down(position, pixel_position, button, modifiers);
-                self.handle_tool_event(tool_event);
-
-                // Capture tool for the duration of a drag so move/up keep going to the same tool.
-                // Paste mode already takes exclusive routing inside the handlers.
-                if !self.is_paste_mode() && self.is_dragging {
-                    self.mouse_capture_tool = Some(start_tool);
-                }
-            }
-            CanvasMouseEvent::Release {
-                position,
-                pixel_position,
-                button,
-            } => {
-                let prev_tool = self.current_tool;
-                if !self.is_paste_mode() {
-                    if let Some(captured) = self.mouse_capture_tool {
-                        self.current_tool = captured;
-                    }
-                }
-
-                let tool_event = self.handle_tool_mouse_up(position, pixel_position, button);
-                self.handle_tool_event(tool_event);
-
-                self.current_tool = prev_tool;
-                if !self.is_dragging {
-                    self.mouse_capture_tool = None;
-                }
-            }
-            CanvasMouseEvent::Move { position, pixel_position } => {
-                let prev_tool = self.current_tool;
-                if !self.is_paste_mode() {
-                    if let Some(captured) = self.mouse_capture_tool {
-                        self.current_tool = captured;
-                    }
-                }
-
-                let tool_event = self.handle_tool_mouse_move(position, pixel_position);
-                self.handle_tool_event(tool_event);
-
-                self.current_tool = prev_tool;
-                if !self.is_dragging {
-                    self.mouse_capture_tool = None;
-                }
-            }
-            CanvasMouseEvent::Scroll { delta } => match delta {
+            TerminalMessage::Scroll(delta) => match delta {
                 iced::mouse::ScrollDelta::Lines { x, y } => {
-                    self.canvas.scroll_by(x * 20.0, y * 20.0);
+                    self.canvas.scroll_by(*x * 20.0, *y * 20.0);
                 }
                 iced::mouse::ScrollDelta::Pixels { x, y } => {
-                    self.canvas.scroll_by(x, y);
+                    self.canvas.scroll_by(*x, *y);
                 }
             },
-        }
-    }
-
-    /// Handle mouse down based on current tool
-    fn handle_tool_mouse_down(
-        &mut self,
-        pos: icy_engine::Position,
-        pixel_position: (f32, f32),
-        button: iced::mouse::Button,
-        modifiers: icy_engine::KeyModifiers,
-    ) -> ToolEvent {
-        // === Paste Mode: exclusive handling ===
-        // When in paste mode, ALL mouse actions are for moving the floating layer
-        if self.is_paste_mode() {
-            log::debug!("handle_tool_mouse_down: pos={:?}, button={:?}, paste_mode=true", pos, button);
-            if button == iced::mouse::Button::Left {
-                // Start dragging the current layer (which is the paste layer)
-                let start_offset = self.with_edit_state(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
-                self.paste_drag_active = true;
-                self.paste_drag_start_offset = start_offset;
-                self.paste_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Move pasted layer".to_string())));
-                self.drag_pos.start = pos;
-                self.drag_pos.cur = pos;
-                self.is_dragging = true;
-                log::debug!("Paste drag started at {:?}, layer offset {:?}", pos, start_offset);
+            TerminalMessage::Zoom(_) => {
+                // Zoom is handled elsewhere
             }
-            return ToolEvent::None;
-        }
-
-        match self.current_tool {
-            Tool::Tag => {
-                // Dispatch to tag handler for state tracking
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let _ = self.dispatch_tag_event(input);
-
-                // Close context menu on any click
-                self.close_tag_context_menu();
-
-                if button == iced::mouse::Button::Left {
-                    // If in add mode (dragging new tag), do nothing on click - already dragging
-                    if self.tag_add_new_index.is_some() {
-                        return ToolEvent::None;
-                    }
-
-                    // Check if clicking on an existing tag
-                    let tag_at_pos = self.with_edit_state(|state| {
-                        state
-                            .get_buffer()
-                            .tags
-                            .iter()
-                            .enumerate()
-                            .find(|(_, t)| t.contains(pos))
-                            .map(|(i, t)| (i, t.position))
-                    });
-
-                    if let Some((index, tag_pos)) = tag_at_pos {
-                        // Handle Ctrl+Click for multi-selection toggle (meta = Cmd on macOS)
-                        if modifiers.ctrl || modifiers.meta {
-                            if self.tag_selection.contains(&index) {
-                                self.tag_selection.retain(|&i| i != index);
-                            } else {
-                                self.tag_selection.push(index);
-                            }
-                            return self.redraw_with_tag_overlays();
-                        }
-
-                        // Check if this tag is part of multi-selection
-                        if self.tag_selection.contains(&index) {
-                            // Drag all selected tags - clone selection to avoid borrow conflict
-                            let selection = self.tag_selection.clone();
-                            let selected_positions: Vec<(usize, icy_engine::Position)> = self.with_edit_state(|state| {
-                                selection
-                                    .iter()
-                                    .filter_map(|&i| state.get_buffer().tags.get(i).map(|t| (i, t.position)))
-                                    .collect()
-                            });
-                            self.tag_drag_indices = selected_positions.iter().map(|(i, _)| *i).collect();
-                            self.tag_drag_start_positions = selected_positions.iter().map(|(_, p)| *p).collect();
-                        } else {
-                            // Clear selection and drag single tag
-                            self.tag_selection.clear();
-                            self.tag_selection.push(index);
-                            self.tag_drag_indices = vec![index];
-                            self.tag_drag_start_positions = vec![tag_pos];
-                        }
-
-                        self.tag_drag_active = true;
-                        self.is_dragging = true;
-                        self.drag_pos.start = pos;
-                        self.drag_pos.cur = pos;
-                        self.drag_pos.start_abs = pos;
-                        self.drag_pos.cur_abs = pos;
-                        // Start atomic undo for drag operation
-                        let desc = if self.tag_selection.len() > 1 {
-                            format!("Move {} tags", self.tag_selection.len())
-                        } else {
-                            "Move tag".to_string()
-                        };
-                        self.tag_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
-                        return self.redraw_with_tag_overlays();
-                    }
-
-                    // No tag at position - start a selection drag to select multiple tags
-                    self.tag_selection.clear();
-                    self.tag_list_dialog = None;
-                    self.update_tag_overlays();
-
-                    // Start selection rectangle drag
-                    self.tag_selection_drag_active = true;
-                    self.is_dragging = true;
-                    self.drag_pos.start = pos;
-                    self.drag_pos.cur = pos;
-                    self.drag_pos.start_abs = pos;
-                    self.drag_pos.cur_abs = pos;
-
-                    ToolEvent::Redraw
-                } else if button == iced::mouse::Button::Right {
-                    // Right-click: open context menu if clicking on a tag
-                    let tag_at_pos = self.with_edit_state(|state| state.get_buffer().tags.iter().enumerate().find(|(_, t)| t.contains(pos)).map(|(i, _)| i));
-
-                    if let Some(index) = tag_at_pos {
-                        // If the tag is not in selection, select only this tag
-                        if !self.tag_selection.contains(&index) {
-                            self.tag_selection.clear();
-                            self.tag_selection.push(index);
-                        }
-                        self.tag_context_menu = Some((index, pos));
-                        return ToolEvent::Redraw;
-                    }
-                    ToolEvent::None
-                } else {
-                    ToolEvent::None
-                }
-            }
-            Tool::Click | Tool::Font => {
-                // Dispatch to click handler for state tracking
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let _ = self.dispatch_click_event(input);
-
-                // Ctrl+Click = Start layer drag
-                if button == iced::mouse::Button::Left && (is_ctrl_pressed() || is_command_pressed()) {
-                    // Start layer drag
-                    let layer_offset = self.with_edit_state(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
-                    self.layer_drag_active = true;
-                    self.layer_drag_start_offset = layer_offset;
-                    self.layer_drag_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo("Move layer".to_string())));
-                    self.is_dragging = true;
-                    self.drag_pos.start = pos;
-                    self.drag_pos.cur = pos;
-                    self.drag_pos.start_abs = pos;
-                    self.drag_pos.cur_abs = pos;
-                    return ToolEvent::Redraw;
-                }
-
-                // Check if clicking inside existing selection for drag/resize
-                let selection_drag = self.get_selection_drag_at(pos);
-
-                if selection_drag != SelectionDrag::None {
-                    // Start dragging existing selection
-                    self.selection_drag = selection_drag;
-                    self.is_dragging = true;
-                    self.drag_pos.start = pos;
-                    self.drag_pos.cur = pos;
-                    self.drag_pos.start_abs = pos;
-                    self.drag_pos.cur_abs = pos;
-
-                    // Save selection state for resize operations
-                    self.start_selection = self.with_edit_state(|state| state.selection().map(|s| s.as_rectangle()));
-                } else {
-                    // Clear selection and move cursor, or start new selection
-                    self.with_edit_state(|state| {
-                        let _ = state.clear_selection();
-                        state.set_caret_position(pos);
-                    });
-                    self.update_selection_display();
-
-                    // Start new selection drag
-                    self.selection_drag = SelectionDrag::Create;
-                    self.is_dragging = true;
-                    self.drag_pos.start = pos;
-                    self.drag_pos.cur = pos;
-                    self.drag_pos.start_abs = pos;
-                    self.drag_pos.cur_abs = pos;
-                    self.start_selection = None;
-                }
-                ToolEvent::Redraw
-            }
-            Tool::Select => {
-                use widget::toolbar::top::{SelectionMode, SelectionModifier};
-                let selection_mode = self.top_toolbar.select_options.selection_mode;
-
-                // Determine modifier from *global* keyboard state (event modifiers can be stale).
-                let selection_modifier = if is_shift_pressed() {
-                    SelectionModifier::Add
-                } else if is_ctrl_pressed() || is_command_pressed() {
-                    SelectionModifier::Remove
-                } else {
-                    SelectionModifier::Replace
-                };
-
-                match selection_mode {
-                    SelectionMode::Normal => {
-                        // In Add/Remove mode we always start a *new* rectangle selection
-                        // (new anchor at mouse-down), even if the click is inside the
-                        // existing selection. Otherwise we would move/resize and reuse
-                        // the old anchor, which looks like the selection is being expanded.
-                        if selection_modifier != SelectionModifier::Replace {
-                            #[cfg(debug_assertions)]
-                            eprintln!("[DEBUG] Mouse down - Add/Remove mode: force new selection (commit old to mask)");
-                            self.with_edit_state(|state| {
-                                let _ = state.add_selection_to_mask();
-                                let _ = state.deselect();
-                            });
-
-                            self.selection_drag = SelectionDrag::Create;
-                            self.is_dragging = true;
-                            self.drag_pos.start = pos;
-                            self.drag_pos.cur = pos;
-                            self.drag_pos.start_abs = pos;
-                            self.drag_pos.cur_abs = pos;
-                            self.start_selection = None;
-                        } else {
-                            // Replace: starting a new selection interaction should always start from a clean mask.
-                            // We intentionally keep the active selection so move/resize still works.
-                            self.with_edit_state(|state| {
-                                let _ = state.clear_selection_mask();
-                            });
-
-                            let selection_drag = self.get_selection_drag_at(pos);
-
-                            if selection_drag != SelectionDrag::None {
-                                // Start dragging existing selection
-                                self.selection_drag = selection_drag;
-                                self.is_dragging = true;
-                                self.drag_pos.start = pos;
-                                self.drag_pos.cur = pos;
-                                self.drag_pos.start_abs = pos;
-                                self.drag_pos.cur_abs = pos;
-                                self.start_selection = self.with_edit_state(|state| state.selection().map(|s| s.as_rectangle()));
-                            } else {
-                                // Starting a new selection (replace).
-                                #[cfg(debug_assertions)]
-                                eprintln!("[DEBUG] Mouse down - Replace mode: clearing selection and mask");
-                                self.with_edit_state(|state| {
-                                    let _ = state.clear_selection();
-                                });
-
-                                self.selection_drag = SelectionDrag::Create;
-                                self.is_dragging = true;
-                                self.drag_pos.start = pos;
-                                self.drag_pos.cur = pos;
-                                self.drag_pos.start_abs = pos;
-                                self.drag_pos.cur_abs = pos;
-                                self.start_selection = None;
-                            }
-                        }
-
-                        self.update_selection_display();
-                    }
-                    SelectionMode::Character => {
-                        // Get character at clicked position
-                        let cur_ch = self.get_char_at(pos);
-                        self.with_edit_state(|state| {
-                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.ch == cur_ch.ch));
-                        });
-                        self.update_selection_display();
-                    }
-                    SelectionMode::Attribute => {
-                        let cur_ch = self.get_char_at(pos);
-                        self.with_edit_state(|state| {
-                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute == cur_ch.attribute));
-                        });
-                        self.update_selection_display();
-                    }
-                    SelectionMode::Foreground => {
-                        let cur_ch = self.get_char_at(pos);
-                        self.with_edit_state(|state| {
-                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute.foreground() == cur_ch.attribute.foreground()));
-                        });
-                        self.update_selection_display();
-                    }
-                    SelectionMode::Background => {
-                        let cur_ch = self.get_char_at(pos);
-                        self.with_edit_state(|state| {
-                            state.enumerate_selections(|_, ch, _| selection_modifier.get_response(ch.attribute.background() == cur_ch.attribute.background()));
-                        });
-                        self.update_selection_display();
-                    }
-                }
-                ToolEvent::Redraw
-            }
-            Tool::Pencil => {
-                // Start paint stroke (layer-local painting; selection stays doc-based)
-                self.selection_drag = SelectionDrag::None;
-                self.is_dragging = true;
-                self.drag_pos.start = pos;
-                self.drag_pos.cur = pos;
-
-                // Compute and store half-block coordinates for interpolation
-                let half_block_pos = self.compute_half_block_pos(pixel_position);
-                self.half_block_click_pos = half_block_pos;
-                self.drag_pos.start_half_block = half_block_pos;
-                self.drag_pos.cur_half_block = half_block_pos;
-
-                if self.paint_undo.is_none() {
-                    let desc = "Pencil";
-                    self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(desc)));
-                }
-
-                self.paint_last_pos = Some(pos);
-                self.paint_button = button;
-
-                // Check if we're in half-block mode
-                let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
-
-                if is_half_block_mode {
-                    // Apply brush_size in half-block coordinates
-                    self.apply_half_block_with_brush_size(half_block_pos, button);
-                } else {
-                    // Normal mode: apply at cell position
-                    self.apply_paint_stamp(pos, pixel_position, button);
-                }
-                ToolEvent::Redraw
-            }
-            Tool::Line => {
-                // Dispatch to new tool handler system
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let half_block_pos = self.compute_half_block_pos(pixel_position);
-
-                // Also set drag state for compatibility with existing overlay preview
-                self.selection_drag = SelectionDrag::None;
-                self.is_dragging = true;
-                self.drag_pos.start = pos;
-                self.drag_pos.cur = pos;
-                self.drag_pos.start_abs = pos;
-                self.drag_pos.cur_abs = pos;
-                self.paint_button = button;
-                self.shape_clear = is_shift_pressed();
-                self.drag_pos.start_half_block = half_block_pos;
-                self.drag_pos.cur_half_block = half_block_pos;
-                self.update_shape_tool_overlay_preview();
-
-                self.dispatch_line_event(input)
-            }
-            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                // Dispatch to shape handler for state tracking
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let _ = self.dispatch_shape_event(input);
-
-                // Start shape drag (preview is rendered as translucent overlay mask like Moebius)
-                self.selection_drag = SelectionDrag::None;
-                self.is_dragging = true;
-                self.drag_pos.start = pos;
-                self.drag_pos.cur = pos;
-                self.drag_pos.start_abs = pos;
-                self.drag_pos.cur_abs = pos;
-
-                self.paint_button = button;
-                self.shape_clear = is_shift_pressed();
-
-                // Track half-block drag positions as well (used when HalfBlock primary mode is active)
-                let half_block_pos = self.compute_half_block_pos(pixel_position);
-                self.drag_pos.start_half_block = half_block_pos;
-                self.drag_pos.cur_half_block = half_block_pos;
-
-                self.update_shape_tool_overlay_preview();
-                ToolEvent::Redraw
-            }
-            Tool::Pipette => {
-                // Dispatch to new tool handler system
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let result = self.dispatch_pipette_event(input);
-
-                // Update palette grid to reflect new colors (side effect)
-                let (fg, bg) = self.with_edit_state(|state| {
-                    let attr = state.get_caret().attribute;
-                    (attr.foreground(), attr.background())
-                });
-                self.palette_grid.set_foreground(fg);
-                self.palette_grid.set_background(bg);
-
-                result
-            }
-            Tool::Fill => {
-                // Dispatch to fill handler for state tracking
-                let input = self.create_mouse_down_input(pos, pixel_position, button);
-                let _ = self.dispatch_fill_event(input);
-
-                use std::collections::HashSet;
-
-                // Store half-block click position for HalfBlock fill mode.
-                let half_block_pos = self.compute_half_block_pos(pixel_position);
-                self.half_block_click_pos = half_block_pos;
-
-                let (primary, paint_char, colorize_fg, colorize_bg, exact) = {
-                    let opts = &self.top_toolbar.brush_options;
-                    (
-                        opts.primary,
-                        opts.paint_char,
-                        opts.colorize_fg,
-                        opts.colorize_bg,
-                        self.top_toolbar.fill_exact_matching,
-                    )
-                };
-
-                // Fill only supports HalfBlock / Char / Colorize (matches src_egui Fill UI).
-                let primary = match primary {
-                    BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => primary,
-                    _ => BrushPrimaryMode::Char,
-                };
-
-                // If Colorize mode is selected but no channels are enabled, do nothing.
-                if matches!(primary, BrushPrimaryMode::Colorize) && !colorize_fg && !colorize_bg {
-                    return ToolEvent::None;
-                }
-
-                let swap_colors = button == iced::mouse::Button::Right;
-                // Shift key also swaps colors
-                let shift_swap = is_shift_pressed();
-
-                // Begin atomic undo for the entire fill.
-                let _undo = self.with_edit_state(|state| state.begin_atomic_undo("Bucket fill"));
-
-                match primary {
-                    BrushPrimaryMode::HalfBlock => {
-                        let start_hb = half_block_pos;
-                        self.with_edit_state(|state| {
-                            let (offset, width, height) = if let Some(layer) = state.get_cur_layer() {
-                                (layer.offset(), layer.width(), layer.height())
-                            } else {
-                                return;
-                            };
-                            let use_selection = state.is_something_selected();
-
-                            let caret_attr = state.get_caret().attribute;
-                            let (fg, bg) = if swap_colors || shift_swap {
-                                (caret_attr.background(), caret_attr.foreground())
-                            } else {
-                                (caret_attr.foreground(), caret_attr.background())
-                            };
-
-                            // Determine the target color at the start position.
-                            let start_cell = icy_engine::Position::new(start_hb.x, start_hb.y / 2);
-                            if start_cell.x < 0 || start_hb.y < 0 || start_cell.x >= width || start_cell.y >= height {
-                                return;
-                            }
-
-                            let start_char = { state.get_cur_layer().unwrap().char_at(start_cell) };
-                            let start_block = icy_engine::paint::HalfBlock::from_char(start_char, start_hb);
-                            if !start_block.is_blocky() {
-                                return;
-                            }
-                            let target_color = if start_block.is_top {
-                                start_block.upper_block_color
-                            } else {
-                                start_block.lower_block_color
-                            };
-                            if target_color == fg {
-                                return;
-                            }
-
-                            let mut visited: HashSet<icy_engine::Position> = HashSet::new();
-                            let mut stack: Vec<(icy_engine::Position, icy_engine::Position)> = vec![(start_hb, start_hb)];
-
-                            while let Some((from, to)) = stack.pop() {
-                                let text_pos = icy_engine::Position::new(to.x, to.y / 2);
-                                if to.x < 0 || to.y < 0 || to.x >= width || text_pos.y >= height || !visited.insert(to) {
-                                    continue;
-                                }
-
-                                if use_selection {
-                                    let doc_cell = text_pos + offset;
-                                    if !state.is_selected(doc_cell) {
-                                        continue;
-                                    }
-                                }
-
-                                let cur = { state.get_cur_layer().unwrap().char_at(text_pos) };
-                                let block = icy_engine::paint::HalfBlock::from_char(cur, to);
-
-                                if block.is_blocky()
-                                    && ((block.is_top && block.upper_block_color == target_color) || (!block.is_top && block.lower_block_color == target_color))
-                                {
-                                    let ch = block.get_half_block_char(fg, true);
-                                    let _ = state.set_char_in_atomic(text_pos, ch);
-
-                                    stack.push((to, to + icy_engine::Position::new(-1, 0)));
-                                    stack.push((to, to + icy_engine::Position::new(1, 0)));
-                                    stack.push((to, to + icy_engine::Position::new(0, -1)));
-                                    stack.push((to, to + icy_engine::Position::new(0, 1)));
-                                } else if block.is_vertically_blocky() {
-                                    let ch = if from.y == to.y - 1 && block.left_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            221 as char,
-                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
-                                        ))
-                                    } else if from.y == to.y - 1 && block.right_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            222 as char,
-                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
-                                        ))
-                                    } else if from.y == to.y + 1 && block.right_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            222 as char,
-                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
-                                        ))
-                                    } else if from.y == to.y + 1 && block.left_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            221 as char,
-                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
-                                        ))
-                                    } else if from.x == to.x - 1 && block.left_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            221 as char,
-                                            icy_engine::TextAttribute::new(fg, block.right_block_color),
-                                        ))
-                                    } else if from.x == to.x + 1 && block.right_block_color == target_color {
-                                        Some(icy_engine::AttributedChar::new(
-                                            222 as char,
-                                            icy_engine::TextAttribute::new(fg, block.left_block_color),
-                                        ))
-                                    } else {
-                                        None
-                                    };
-
-                                    if let Some(ch) = ch {
-                                        let _ = state.set_char_in_atomic(text_pos, ch);
-                                    }
-                                }
-                            }
-
-                            let _ = bg; // keep symmetry with other tools; currently unused for half-block fill
-                        });
-                    }
-                    BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => {
-                        let start_cell_layer = self.doc_to_layer_pos(pos);
-
-                        self.with_edit_state(|state| {
-                            let (offset, width, height) = if let Some(layer) = state.get_cur_layer() {
-                                (layer.offset(), layer.width(), layer.height())
-                            } else {
-                                return;
-                            };
-                            let use_selection = state.is_something_selected();
-
-                            if start_cell_layer.x < 0 || start_cell_layer.y < 0 || start_cell_layer.x >= width || start_cell_layer.y >= height {
-                                return;
-                            }
-
-                            let base_char = { state.get_cur_layer().unwrap().char_at(start_cell_layer) };
-
-                            let caret_attr = state.get_caret().attribute;
-                            let (fg, bg) = if swap_colors || shift_swap {
-                                (caret_attr.background(), caret_attr.foreground())
-                            } else {
-                                (caret_attr.foreground(), caret_attr.background())
-                            };
-                            let caret_font_page = caret_attr.font_page();
-
-                            let mut visited: HashSet<icy_engine::Position> = HashSet::new();
-                            let mut stack: Vec<icy_engine::Position> = vec![start_cell_layer];
-
-                            while let Some(p) = stack.pop() {
-                                if p.x < 0 || p.y < 0 || p.x >= width || p.y >= height || !visited.insert(p) {
-                                    continue;
-                                }
-
-                                if use_selection {
-                                    let doc_cell = p + offset;
-                                    if !state.is_selected(doc_cell) {
-                                        continue;
-                                    }
-                                }
-
-                                let cur = { state.get_cur_layer().unwrap().char_at(p) };
-
-                                // Determine if this cell matches (like src_egui FillOperation).
-                                match primary {
-                                    BrushPrimaryMode::Char => {
-                                        if (exact && cur != base_char) || (!exact && cur.ch != base_char.ch) {
-                                            continue;
-                                        }
-                                    }
-                                    BrushPrimaryMode::Colorize => {
-                                        if (exact && cur != base_char) || (!exact && cur.attribute != base_char.attribute) {
-                                            continue;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-
-                                let mut repl = cur;
-
-                                if matches!(primary, BrushPrimaryMode::Char) {
-                                    repl.ch = paint_char;
-                                }
-
-                                if colorize_fg {
-                                    repl.attribute.set_foreground(fg);
-                                    repl.attribute.set_is_bold(caret_attr.is_bold());
-                                }
-                                if colorize_bg {
-                                    repl.attribute.set_background(bg);
-                                }
-
-                                repl.set_font_page(caret_font_page);
-                                repl.attribute.attr &= !icy_engine::attribute::INVISIBLE;
-
-                                let _ = state.set_char_in_atomic(p, repl);
-
-                                stack.push(p + icy_engine::Position::new(-1, 0));
-                                stack.push(p + icy_engine::Position::new(1, 0));
-                                stack.push(p + icy_engine::Position::new(0, -1));
-                                stack.push(p + icy_engine::Position::new(0, 1));
-                            }
-                        });
-                    }
-                    _ => {}
-                }
-
-                ToolEvent::Commit("Bucket fill".to_string())
-            }
-        }
-    }
-
-    /// Handle mouse up based on current tool
-    fn handle_tool_mouse_up(&mut self, _pos: icy_engine::Position, _pixel_position: (f32, f32), _button: iced::mouse::Button) -> ToolEvent {
-        // === Paste Mode: finalize drag ===
-        if self.paste_drag_active {
-            self.paste_drag_active = false;
-            self.end_drag_capture();
-
-            // Calculate final offset and commit the move
-            let delta = self.drag_pos.cur - self.drag_pos.start;
-            let new_offset = Position::new(self.paste_drag_start_offset.x + delta.x, self.paste_drag_start_offset.y + delta.y);
-
-            log::debug!("Paste drag ended, moving to {:?}", new_offset);
-
-            {
-                let mut screen = self.screen.lock();
-                if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                    // Clear preview offset and commit the actual move
-                    edit_state.set_layer_preview_offset(None);
-                    let _ = edit_state.move_layer(new_offset);
-                }
-            }
-
-            // Finalize atomic undo
-            self.paste_drag_undo = None;
-
-            // Update layer bounds
-            self.update_layer_bounds();
-
-            *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
-            return ToolEvent::Commit("Move pasted layer".to_string());
-        }
-
-        // Handle new tag placement completion
-        if let Some(new_tag_index) = self.tag_add_new_index.take() {
-            self.end_tag_drag();
-
-            // Open edit dialog for the newly placed tag
-            let tag = self.with_edit_state(|state| state.get_buffer().tags.get(new_tag_index).cloned());
-            if let Some(tag) = tag {
-                self.tag_dialog = Some(TagDialog::edit(&tag, new_tag_index));
-            }
-            return self.redraw_with_tag_overlays();
-        }
-
-        // Handle regular tag drag completion
-        if self.tag_drag_active {
-            self.end_tag_drag();
-            return ToolEvent::None;
-        }
-
-        // Handle tag selection drag completion - select all tags in the rectangle
-        if self.tag_selection_drag_active {
-            return self.finish_tag_selection_drag();
-        }
-
-        // Handle layer drag completion
-        if self.layer_drag_active {
-            return self.finish_layer_drag();
-        }
-
-        if self.is_dragging && self.selection_drag != SelectionDrag::None {
-            return self.finish_selection_drag();
-        }
-
-        if self.is_dragging && matches!(self.current_tool, Tool::Pencil) {
-            self.end_drag_capture();
-            self.paint_last_pos = None;
-            // Dropping the guard groups everything into one undo entry.
-            self.paint_undo = None;
-            self.paint_button = iced::mouse::Button::Left;
-
-            let desc = "Pencil stroke";
-            return ToolEvent::Commit(desc.to_string());
-        }
-
-        if self.is_dragging
-            && matches!(
-                self.current_tool,
-                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
-            )
-        {
-            self.end_drag_capture();
-
-            let desc = format!("{} drawn", self.current_tool.name());
-            self.paint_undo = Some(self.with_edit_state(|state| state.begin_atomic_undo(&desc)));
-
-            let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
-
-            if is_half_block_mode {
-                // Convert layer-local half-block drag to document half-block coordinates.
-                let (start_hb_doc, cur_hb_doc) = self.with_edit_state_readonly(|state| {
-                    let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                    let hb_off = icy_engine::Position::new(offset.x, offset.y * 2);
-                    (self.drag_pos.start_half_block + hb_off, self.drag_pos.cur_half_block + hb_off)
-                });
-
-                let points = Self::shape_points(self.current_tool, start_hb_doc, cur_hb_doc);
-                if self.shape_clear {
-                    self.with_edit_state(|state| {
-                        let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                        let layer_w = state.get_cur_layer().map(|l| l.width()).unwrap_or(0);
-                        let layer_h = state.get_cur_layer().map(|l| l.height()).unwrap_or(0);
-                        for p in &points {
-                            let cell_doc = icy_engine::Position::new(p.x, p.y / 2);
-                            let layer_pos = cell_doc - offset;
-                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                                continue;
-                            }
-                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
-                        }
-                    });
-                } else {
-                    for p in points {
-                        if p.y < 0 {
-                            continue;
-                        }
-                        let cell_doc = icy_engine::Position::new(p.x, p.y / 2);
-                        let is_top = (p.y % 2) == 0;
-                        self.apply_paint_stamp_with_half_block_info(cell_doc, is_top, self.paint_button);
-                    }
-                }
-            } else {
-                let points = Self::shape_points(self.current_tool, self.drag_pos.start, self.drag_pos.cur);
-                if self.shape_clear {
-                    self.with_edit_state(|state| {
-                        let offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
-                        let layer_w = state.get_cur_layer().map(|l| l.width()).unwrap_or(0);
-                        let layer_h = state.get_cur_layer().map(|l| l.height()).unwrap_or(0);
-                        for p in &points {
-                            let layer_pos = *p - offset;
-                            if layer_pos.x < 0 || layer_pos.y < 0 || layer_pos.x >= layer_w || layer_pos.y >= layer_h {
-                                continue;
-                            }
-                            let _ = state.set_char_in_atomic(layer_pos, icy_engine::AttributedChar::invisible());
-                        }
-                    });
-                } else {
-                    for p in points {
-                        self.apply_paint_stamp_with_half_block_info(p, true, self.paint_button);
-                    }
-                }
-            }
-
-            self.paint_undo = None;
-            self.paint_button = iced::mouse::Button::Left;
-            self.shape_clear = false;
-            self.clear_tool_overlay();
-            return ToolEvent::Commit(desc);
-        }
-
-        match self.current_tool {
-            Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                // TODO: Commit the drawn shape
-                ToolEvent::Commit(format!("{} drawn", self.current_tool.name()))
-            }
-            _ => ToolEvent::None,
-        }
-    }
-
-    /// Handle mouse move based on current tool
-    fn handle_tool_mouse_move(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) -> ToolEvent {
-        // === Paste Mode: exclusive handling ===
-        if self.is_paste_mode() {
-            if self.paste_drag_active {
-                self.drag_pos.cur = pos;
-                let delta = self.drag_pos.cur - self.drag_pos.start;
-                let new_offset = Position::new(self.paste_drag_start_offset.x + delta.x, self.paste_drag_start_offset.y + delta.y);
-
-                // Update preview offset on the current layer for visual feedback
-                self.with_edit_state(|state| {
-                    state.set_layer_preview_offset(Some(new_offset));
-                });
-
-                // Update layer bounds to show new preview position
-                self.update_layer_bounds();
-
-                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grabbing);
-            } else {
-                // Not dragging - show grab cursor to indicate layer can be moved
-                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
-            }
-            return ToolEvent::Redraw;
-        }
-
-        // Update brush/pencil hover preview (shader rectangle)
-        self.update_brush_preview(pos, pixel_position);
-
-        // Pipette tool: dispatch hover to handler
-        if self.current_tool == Tool::Pipette {
-            let input = self.create_mouse_move_input(pos, pixel_position);
-            return self.dispatch_pipette_event(input);
-        }
-
-        // Tag tool: always show tag overlays (even when not dragging)
-        if self.current_tool == Tool::Tag {
-            // In add mode - update the new tag's position as we drag
-            if self.tag_add_new_index.is_some() && self.tag_drag_active {
-                // Move the new tag to current mouse position
-                self.drag_pos.cur = pos;
-                self.drag_pos.cur_abs = pos;
-
-                let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-                let moves: Vec<(usize, icy_engine::Position)> = self
-                    .tag_drag_indices
-                    .iter()
-                    .zip(self.tag_drag_start_positions.iter())
-                    .map(|(&tag_idx, &start_pos)| (tag_idx, start_pos + delta))
-                    .collect();
-
-                self.with_edit_state(|state| {
-                    for (tag_idx, new_pos) in moves {
-                        let _ = state.move_tag(tag_idx, new_pos);
-                    }
-                    state.mark_dirty();
-                });
-                *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grabbing);
-                return self.redraw_with_tag_overlays();
-            }
-
-            self.update_tag_overlays();
-            if !self.is_dragging {
-                // Check if hovering over a tag - show move cursor
-                let hovering_tag = self.with_edit_state(|state| state.get_buffer().tags.iter().any(|t| t.contains(pos)));
-                if hovering_tag {
-                    *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Grab);
-                } else {
-                    *self.canvas.terminal.cursor_icon.write() = None;
-                }
-                return ToolEvent::Redraw;
-            }
-            // Continue to drag handling below if dragging
-        }
-
-        if !self.is_dragging {
-            // Just hovering - update cursor for selection resize handles
-            if matches!(self.current_tool, Tool::Click | Tool::Select) {
-                let selection_drag = self.get_selection_drag_at(pos);
-                let cursor = selection_drag.to_cursor_interaction();
-                *self.canvas.terminal.cursor_icon.write() = cursor;
-            } else if self.current_tool != Tool::Tag {
-                // Reset cursor for other tools (Tag tool handles its own cursor above)
-                *self.canvas.terminal.cursor_icon.write() = None;
-            }
-
-            if !matches!(
-                self.current_tool,
-                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
-            ) {
-                self.clear_tool_overlay();
-            }
-            return ToolEvent::None;
-        }
-
-        self.drag_pos.cur = pos;
-        self.drag_pos.cur_abs = pos;
-
-        match self.current_tool {
-            Tool::Click | Tool::Font | Tool::Select => {
-                // Check if we're doing a layer drag
-                if self.layer_drag_active {
-                    // Calculate new offset from drag delta
-                    let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-                    let new_offset = self.layer_drag_start_offset + delta;
-
-                    // Update preview offset for visual feedback
-                    self.with_edit_state(|state| {
-                        if let Some(layer) = state.get_cur_layer_mut() {
-                            layer.set_preview_offset(Some(new_offset));
-                        }
-                        state.mark_dirty();
-                    });
-                    // Update layer border display
-                    return self.redraw_with_layer_bounds();
-                }
-
-                self.update_selection_from_drag();
-                ToolEvent::Redraw
-            }
-            Tool::Pencil => {
-                // Compute current half-block position
-                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
-
-                // Check if we're in half-block mode
-                let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
-
-                if is_half_block_mode {
-                    // Interpolate in half-block coordinates for smooth 2x Y resolution
-                    let mut c_abs = self.half_block_click_pos;
-
-                    while c_abs != new_half_block_pos {
-                        let s = (new_half_block_pos - c_abs).signum();
-                        c_abs = c_abs + s;
-                        self.half_block_click_pos = c_abs;
-
-                        // Apply brush_size in half-block coordinates
-                        self.apply_half_block_with_brush_size(c_abs, self.paint_button);
-                    }
-                    self.drag_pos.cur_half_block = new_half_block_pos;
-                } else {
-                    // Normal mode: interpolate in cell coordinates
-                    let Some(last) = self.paint_last_pos else {
-                        self.paint_last_pos = Some(pos);
-                        self.half_block_click_pos = new_half_block_pos;
-                        return ToolEvent::Redraw;
-                    };
-
-                    let points = icy_engine_edit::brushes::get_line_points(last, pos);
-                    for p in points {
-                        self.apply_paint_stamp(p, pixel_position, self.paint_button);
-                    }
-                    self.paint_last_pos = Some(pos);
-                    self.half_block_click_pos = new_half_block_pos;
-                }
-                ToolEvent::Redraw
-            }
-            Tool::Line => {
-                // Dispatch to new tool handler system
-                let input = self.create_mouse_move_input(pos, pixel_position);
-                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
-
-                // Also update drag state for compatibility
-                self.drag_pos.cur_half_block = new_half_block_pos;
-                self.update_shape_tool_overlay_preview();
-
-                self.dispatch_line_event(input)
-            }
-            Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                // Update half-block drag positions too so half-block previews are correct.
-                let new_half_block_pos = self.compute_half_block_pos(pixel_position);
-                self.drag_pos.cur_half_block = new_half_block_pos;
-
-                self.update_shape_tool_overlay_preview();
-                ToolEvent::Redraw
-            }
-            Tool::Tag => {
-                // Dispatch to tag handler for state tracking
-                let input = self.create_mouse_move_input(pos, pixel_position);
-                let _ = self.dispatch_tag_event(input);
-
-                // Handle tag drag (multi-selection)
-                if self.tag_drag_active && !self.tag_drag_indices.is_empty() {
-                    let delta = self.drag_pos.cur_abs - self.drag_pos.start_abs;
-
-                    // Collect moves to apply (to avoid borrow conflict)
-                    let moves: Vec<(usize, icy_engine::Position)> = self
-                        .tag_drag_indices
-                        .iter()
-                        .zip(self.tag_drag_start_positions.iter())
-                        .map(|(&tag_idx, &start_pos)| (tag_idx, start_pos + delta))
-                        .collect();
-
-                    // Apply all moves
-                    self.with_edit_state(|state| {
-                        for (tag_idx, new_pos) in moves {
-                            let _ = state.move_tag(tag_idx, new_pos);
-                        }
-                        state.mark_dirty();
-                    });
-                    // Update tag overlays
-                    return self.redraw_with_tag_overlays();
-                }
-
-                // Handle selection rectangle drag
-                if self.tag_selection_drag_active {
-                    // Draw selection rectangle overlay
-                    self.update_tag_selection_drag_overlay();
-                    return ToolEvent::Redraw;
-                }
-
-                ToolEvent::None
-            }
-            _ => ToolEvent::None,
         }
     }
 
@@ -5391,7 +2273,7 @@ impl AnsiEditor {
             return;
         }
 
-        let brush_size = self.top_toolbar.brush_options.brush_size.max(1) as i32;
+        let brush_size = self.pencil_handler.brush_size().max(1) as i32;
         let half = brush_size / 2;
 
         // Get font dimensions for pixel conversion
@@ -5401,7 +2283,7 @@ impl AnsiEditor {
             (size.width as f32, size.height as f32)
         };
 
-        let is_half_block_mode = matches!(self.top_toolbar.brush_options.primary, BrushPrimaryMode::HalfBlock);
+        let is_half_block_mode = matches!(self.pencil_handler.brush_primary(), BrushPrimaryMode::HalfBlock);
 
         let rect = if is_half_block_mode {
             // Compute doc-space half-block coordinate (Y doubled)
@@ -5433,278 +2315,6 @@ impl AnsiEditor {
         self.canvas.set_brush_preview(rect);
     }
 
-    /// Get what kind of selection drag would happen at this position
-    fn get_selection_drag_at(&mut self, pos: icy_engine::Position) -> SelectionDrag {
-        let selection = self.with_edit_state(|state| state.selection());
-
-        if let Some(selection) = selection {
-            let rect = selection.as_rectangle();
-
-            if rect.contains_pt(pos) {
-                // Check edges/corners (within 2 chars)
-                let left = pos.x - rect.left() < 2;
-                let top = pos.y - rect.top() < 2;
-                let right = rect.right() - pos.x < 2;
-                let bottom = rect.bottom() - pos.y < 2;
-
-                // Corners first
-                if left && top {
-                    return SelectionDrag::TopLeft;
-                }
-                if right && top {
-                    return SelectionDrag::TopRight;
-                }
-                if left && bottom {
-                    return SelectionDrag::BottomLeft;
-                }
-                if right && bottom {
-                    return SelectionDrag::BottomRight;
-                }
-
-                // Edges
-                if left {
-                    return SelectionDrag::Left;
-                }
-                if right {
-                    return SelectionDrag::Right;
-                }
-                if top {
-                    return SelectionDrag::Top;
-                }
-                if bottom {
-                    return SelectionDrag::Bottom;
-                }
-
-                // Inside - move
-                return SelectionDrag::Move;
-            }
-        }
-
-        SelectionDrag::None
-    }
-
-    /// Update selection based on current drag state
-    fn update_selection_from_drag(&mut self) {
-        use icy_engine::{Rectangle, Selection};
-
-        let add_type = self.current_select_add_type();
-
-        match self.selection_drag {
-            SelectionDrag::None => {}
-            SelectionDrag::Create => {
-                // Create new selection from drag start to current
-                let selection = Selection {
-                    anchor: self.drag_pos.start_abs,
-                    lead: self.drag_pos.cur_abs,
-                    locked: false,
-                    shape: icy_engine::Shape::Rectangle,
-                    add_type,
-                };
-                self.with_edit_state(|state| {
-                    let _ = state.set_selection(selection);
-                });
-            }
-            SelectionDrag::Move => {
-                // Move entire selection
-                if let Some(start_rect) = self.start_selection {
-                    let delta_x = self.drag_pos.cur_abs.x - self.drag_pos.start_abs.x;
-                    let delta_y = self.drag_pos.cur_abs.y - self.drag_pos.start_abs.y;
-
-                    let new_rect = Rectangle::from(start_rect.left() + delta_x, start_rect.top() + delta_y, start_rect.width(), start_rect.height());
-
-                    self.with_edit_state(|state| {
-                        let mut selection = Selection::from(new_rect);
-                        selection.add_type = add_type;
-                        let _ = state.set_selection(selection);
-                    });
-                }
-            }
-            SelectionDrag::Left => {
-                self.resize_selection_left();
-            }
-            SelectionDrag::Right => {
-                self.resize_selection_right();
-            }
-            SelectionDrag::Top => {
-                self.resize_selection_top();
-            }
-            SelectionDrag::Bottom => {
-                self.resize_selection_bottom();
-            }
-            SelectionDrag::TopLeft => {
-                self.resize_selection_corner(true, true);
-            }
-            SelectionDrag::TopRight => {
-                self.resize_selection_corner(false, true);
-            }
-            SelectionDrag::BottomLeft => {
-                self.resize_selection_corner(true, false);
-            }
-            SelectionDrag::BottomRight => {
-                self.resize_selection_corner(false, false);
-            }
-        }
-
-        // Keep add/subtract preview consistent while resizing/moving too.
-        if self.current_tool == Tool::Select {
-            self.with_edit_state(|state| {
-                if let Some(mut sel) = state.selection() {
-                    if sel.add_type != add_type {
-                        sel.add_type = add_type;
-                        let _ = state.set_selection(sel);
-                    }
-                }
-            });
-        }
-
-        // Update the shader's selection display
-        self.update_selection_display();
-    }
-
-    fn resize_selection_left(&mut self) {
-        use icy_engine::{Rectangle, Selection};
-        if let Some(start_rect) = self.start_selection {
-            let delta = self.drag_pos.start_abs.x - self.drag_pos.cur_abs.x;
-            let mut new_left = start_rect.left() - delta;
-            let mut new_width = start_rect.width() + delta;
-
-            if new_width < 0 {
-                new_width = new_left - start_rect.right();
-                new_left = start_rect.right();
-            }
-
-            let new_rect = Rectangle::from(new_left, start_rect.top(), new_width, start_rect.height());
-            self.with_edit_state(|state| {
-                let _ = state.set_selection(Selection::from(new_rect));
-            });
-        }
-    }
-
-    fn resize_selection_right(&mut self) {
-        use icy_engine::{Rectangle, Selection};
-        if let Some(start_rect) = self.start_selection {
-            let mut new_width = start_rect.width() - self.drag_pos.start_abs.x + self.drag_pos.cur_abs.x;
-            let mut new_left = start_rect.left();
-
-            if new_width < 0 {
-                new_left = start_rect.left() + new_width;
-                new_width = start_rect.left() - new_left;
-            }
-
-            let new_rect = Rectangle::from(new_left, start_rect.top(), new_width, start_rect.height());
-            self.with_edit_state(|state| {
-                let _ = state.set_selection(Selection::from(new_rect));
-            });
-        }
-    }
-
-    fn resize_selection_top(&mut self) {
-        use icy_engine::{Rectangle, Selection};
-        if let Some(start_rect) = self.start_selection {
-            let delta = self.drag_pos.start_abs.y - self.drag_pos.cur_abs.y;
-            let mut new_top = start_rect.top() - delta;
-            let mut new_height = start_rect.height() + delta;
-
-            if new_height < 0 {
-                new_height = new_top - start_rect.bottom();
-                new_top = start_rect.bottom();
-            }
-
-            let new_rect = Rectangle::from(start_rect.left(), new_top, start_rect.width(), new_height);
-            self.with_edit_state(|state| {
-                let _ = state.set_selection(Selection::from(new_rect));
-            });
-        }
-    }
-
-    fn resize_selection_bottom(&mut self) {
-        use icy_engine::{Rectangle, Selection};
-        if let Some(start_rect) = self.start_selection {
-            let mut new_height = start_rect.height() - self.drag_pos.start_abs.y + self.drag_pos.cur_abs.y;
-            let mut new_top = start_rect.top();
-
-            if new_height < 0 {
-                new_top = start_rect.top() + new_height;
-                new_height = start_rect.top() - new_top;
-            }
-
-            let new_rect = Rectangle::from(start_rect.left(), new_top, start_rect.width(), new_height);
-            self.with_edit_state(|state| {
-                let _ = state.set_selection(Selection::from(new_rect));
-            });
-        }
-    }
-
-    /// Resize selection from a corner (changes both X and Y dimensions at once)
-    fn resize_selection_corner(&mut self, resize_left: bool, resize_top: bool) {
-        use icy_engine::{Rectangle, Selection};
-        if let Some(start_rect) = self.start_selection {
-            // Calculate new X dimension
-            let (new_left, new_width) = if resize_left {
-                let delta = self.drag_pos.start_abs.x - self.drag_pos.cur_abs.x;
-                let mut left = start_rect.left() - delta;
-                let mut width = start_rect.width() + delta;
-                if width < 0 {
-                    width = left - start_rect.right();
-                    left = start_rect.right();
-                }
-                (left, width)
-            } else {
-                let mut width = start_rect.width() - self.drag_pos.start_abs.x + self.drag_pos.cur_abs.x;
-                let mut left = start_rect.left();
-                if width < 0 {
-                    left = start_rect.left() + width;
-                    width = start_rect.left() - left;
-                }
-                (left, width)
-            };
-
-            // Calculate new Y dimension
-            let (new_top, new_height) = if resize_top {
-                let delta = self.drag_pos.start_abs.y - self.drag_pos.cur_abs.y;
-                let mut top = start_rect.top() - delta;
-                let mut height = start_rect.height() + delta;
-                if height < 0 {
-                    height = top - start_rect.bottom();
-                    top = start_rect.bottom();
-                }
-                (top, height)
-            } else {
-                let mut height = start_rect.height() - self.drag_pos.start_abs.y + self.drag_pos.cur_abs.y;
-                let mut top = start_rect.top();
-                if height < 0 {
-                    top = start_rect.top() + height;
-                    height = start_rect.top() - top;
-                }
-                (top, height)
-            };
-
-            let new_rect = Rectangle::from(new_left, new_top, new_width, new_height);
-            self.with_edit_state(|state| {
-                let _ = state.set_selection(Selection::from(new_rect));
-            });
-        }
-    }
-
-    /// Handle tool events (redraw, commit, status)
-    fn handle_tool_event(&mut self, event: ToolEvent) {
-        match event {
-            ToolEvent::None => {}
-            ToolEvent::Redraw => {
-                // Trigger redraw - handled automatically by Iced
-            }
-            ToolEvent::Commit(description) => {
-                self.is_modified = true;
-                // TODO: Add to undo stack with description
-                let _ = description;
-            }
-            ToolEvent::Status(message) => {
-                // TODO: Update status bar
-                let _ = message;
-            }
-        }
-    }
-
     /// Render the editor view with Moebius-style layout:
     /// - Left sidebar: Palette (vertical) + Tool icons
     /// - Top toolbar: Color switcher + Tool-specific options
@@ -5716,7 +2326,7 @@ impl AnsiEditor {
         let sidebar_width = constants::LEFT_BAR_WIDTH;
 
         // Get caret position and colors from the edit state (also used for palette mode decisions)
-        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode, buffer_type) = {
+        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode) = {
             let mut screen_guard = self.screen.lock();
             let state = screen_guard
                 .as_any_mut()
@@ -5732,8 +2342,7 @@ impl AnsiEditor {
             let caret_y = caret.y;
             let height = buffer.height();
             let width = buffer.width();
-            let buffer_type = buffer.buffer_type;
-            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode, buffer_type)
+            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode)
         };
 
         // Palette grid - adapts to sidebar width
@@ -5750,7 +2359,7 @@ impl AnsiEditor {
 
         // In paste mode, show paste controls instead of tool panel
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if self.is_paste_mode() {
-            let paste_controls = self.view_paste_sidebar_controls();
+            let paste_controls = self.paste_handler.view_paste_sidebar_controls();
             column![palette_view, paste_controls].spacing(4)
         } else {
             let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
@@ -5783,60 +2392,53 @@ impl AnsiEditor {
         // Clone font for char selector overlay (will be used later if popup is open)
         let font_for_char_selector = current_font.clone();
 
-        // Build font panel info for Font tool
-        let font_panel_info = if self.current_tool == Tool::Font {
-            Some(self.build_font_panel_info())
-        } else {
-            None
-        };
+        // Tool-owned top toolbar (no legacy TopToolbar rendering).
+        use tools::ToolHandler;
 
-        // Build pipette panel info for Pipette tool
-        let pipette_info = if self.current_tool == Tool::Pipette {
-            Some(self.build_pipette_panel_info(&palette))
-        } else {
-            None
-        };
-
-        // Use GPU FKeyToolbar for Click tool, regular TopToolbar for other tools
-        let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.current_tool == Tool::Click {
-            self.fkey_toolbar
-                .view(fkeys.clone(), current_font, palette.clone(), caret_fg, caret_bg, &Theme::Dark)
-                .map(AnsiEditorMessage::FKeyToolbar)
-        } else {
-            // Get selected tag info for Tag tool toolbar
-            let selected_tag_info = if self.current_tool == Tool::Tag && self.tag_selection.len() == 1 {
-                let idx = self.tag_selection[0];
-                let mut screen_guard = self.screen.lock();
-                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
-                    state.get_buffer().tags.get(idx).map(|tag| widget::toolbar::top::SelectedTagInfo {
-                        position: tag.position,
-                        replacement: tag.replacement_value.clone(),
-                    })
-                } else {
-                    None
-                }
+        // Selected tag info (TagTool displays this in its toolbar)
+        let selected_tag_info = if self.current_tool == Tool::Tag && self.tag_state.selection.len() == 1 {
+            let idx = self.tag_state.selection[0];
+            let mut screen_guard = self.screen.lock();
+            if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                state.get_buffer().tags.get(idx).map(|tag| widget::toolbar::top::SelectedTagInfo {
+                    position: tag.position,
+                    replacement: tag.replacement_value.clone(),
+                })
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
-            self.top_toolbar
-                .view(
-                    self.current_tool,
-                    &fkeys,
-                    buffer_type,
-                    font_for_char_selector.clone(),
-                    &Theme::Dark,
-                    caret_fg,
-                    caret_bg,
-                    &palette,
-                    font_panel_info.as_ref(),
-                    pipette_info.as_ref(),
-                    self.tag_add_new_index.is_some(),
-                    selected_tag_info,
-                    self.tag_selection.len(),
-                    self.is_paste_mode(),
-                )
-                .map(AnsiEditorMessage::TopToolbar)
+        let view_ctx = tools::ToolViewContext {
+            theme: &Theme::Dark,
+            current_tool: self.current_tool,
+            fkeys: fkeys.clone(),
+            font: current_font,
+            palette: palette.clone(),
+            caret_fg,
+            caret_bg,
+            tag_add_mode: self.tag_state.add_new_index.is_some(),
+            selected_tag: selected_tag_info,
+            tag_selection_count: self.tag_state.selection.len(),
+        };
+
+        let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.is_paste_mode() {
+            self.paste_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
+        } else {
+            match self.current_tool {
+                Tool::Click => self.click_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Font => self.font_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Pencil => self.pencil_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Pipette => self.pipette_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Select => self.select_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Fill => self.fill_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                    self.shape_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
+                }
+                Tool::Tag => self.tag_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
+            }
         };
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
@@ -5847,10 +2449,7 @@ impl AnsiEditor {
 
         // === CENTER: Canvas ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
-        let canvas = self
-            .canvas
-            .view_with_context_menu(self.current_tool == Tool::Click)
-            .map(AnsiEditorMessage::Canvas);
+        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
 
         // === RIGHT PANEL ===
         // Right panel created AFTER canvas because minimap uses Terminal's render cache
@@ -5899,9 +2498,14 @@ impl AnsiEditor {
         }
 
         // Add tag context menu overlay if active
-        if let Some((tag_index, _menu_pos)) = self.tag_context_menu {
-            let context_menu = self.build_tag_context_menu(tag_index);
-            center_layers.push(context_menu);
+        if self.tag_state.has_context_menu() {
+            let display_scale = self.canvas.terminal.render_info.read().display_scale;
+            if let Some(context_menu) = self
+                .tag_state
+                .view_context_menu_overlay(font_width, font_height, scroll_x, scroll_y, display_scale)
+            {
+                center_layers.push(context_menu.map(AnsiEditorMessage::ToolMessage));
+            }
         }
 
         let center_area: Element<'_, AnsiEditorMessage> = iced::widget::stack(center_layers).width(Length::Fill).height(Length::Fill).into();
@@ -5936,16 +2540,26 @@ impl AnsiEditor {
         .into();
 
         // Apply tag dialog modal overlay if active
-        if let Some(tag_dialog) = &self.tag_dialog {
+        if let Some(tag_dialog) = &self.tag_state.dialog {
             let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
             icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
-        } else if let Some(tag_list_dialog) = &self.tag_list_dialog {
+        } else if let Some(tag_list_dialog) = &self.tag_state.list_dialog {
             let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
             icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
         } else if let Some(target) = self.char_selector_target {
             let current_code = match target {
                 CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
-                CharSelectorTarget::BrushChar => self.top_toolbar.brush_options.paint_char as u16,
+                CharSelectorTarget::BrushChar => {
+                    let ch = match self.current_tool {
+                        Tool::Pencil => self.pencil_handler.paint_char(),
+                        Tool::Fill => self.fill_handler.paint_char(),
+                        Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                            self.shape_handler.paint_char()
+                        }
+                        _ => ' ',
+                    };
+                    ch as u16
+                }
             };
 
             let selector_canvas = CharSelector::new(current_code)
@@ -5956,7 +2570,7 @@ impl AnsiEditor {
 
             // Use modal() which closes on click outside (on_blur)
             icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
-        } else if self.outline_selector_open {
+        } else if self.font_handler.is_outline_selector_open() {
             // Apply outline selector modal overlay if active
             let current_style = *self.options.read().font_outline_style.read();
 
@@ -5971,87 +2585,6 @@ impl AnsiEditor {
         }
     }
 
-    /// Build the tag context menu overlay
-    fn build_tag_context_menu(&self, tag_index: usize) -> Element<'_, AnsiEditorMessage> {
-        use iced::widget::{button, mouse_area, text};
-        use icy_engine_gui::ui::TEXT_SIZE_NORMAL;
-
-        let edit_btn = button(text("Edit").size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .style(iced::widget::button::text)
-            .on_press(AnsiEditorMessage::TagEdit(tag_index));
-
-        let clone_btn = button(text("Clone").size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .style(iced::widget::button::text)
-            .on_press(AnsiEditorMessage::TagClone(tag_index));
-
-        let delete_btn = button(text("Delete").size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .style(iced::widget::button::text)
-            .on_press(AnsiEditorMessage::TagDelete(tag_index));
-
-        let mut menu_items: Vec<Element<'_, AnsiEditorMessage>> = vec![edit_btn.into(), clone_btn.into(), delete_btn.into()];
-
-        // Add "Delete Selected" option if multiple tags are selected
-        if self.tag_selection.len() > 1 {
-            let delete_selected_btn = button(text(format!("Delete {} Selected", self.tag_selection.len())).size(TEXT_SIZE_NORMAL))
-                .padding([4, 12])
-                .style(iced::widget::button::text)
-                .on_press(AnsiEditorMessage::TagDeleteSelected);
-            menu_items.push(delete_selected_btn.into());
-        }
-
-        let menu_content = container(column(menu_items).spacing(2).width(Length::Fixed(150.0)))
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
-            })
-            .padding(4);
-
-        // Get menu position from the tag's screen position
-        let (menu_x, menu_y) = if let Some((_, pos)) = self.tag_context_menu {
-            // Convert buffer position to screen pixels
-            let render_info = self.canvas.terminal.render_info.read();
-            let viewport = self.canvas.terminal.viewport.read();
-            let scale = render_info.display_scale;
-
-            // Get font dimensions
-            let (font_w, font_h) = {
-                let screen = self.screen.lock();
-                let size = screen.font_dimensions();
-                (size.width as f32, size.height as f32)
-            };
-
-            let x = ((pos.x as f32 - viewport.scroll_x) * font_w * scale) as f32;
-            let y = ((pos.y as f32 - viewport.scroll_y + 1.0) * font_h * scale) as f32;
-            (x, y)
-        } else {
-            (100.0, 100.0)
-        };
-
-        // Wrap in a mouse_area to handle clicks outside (close menu)
-        let menu_positioned = container(menu_content).padding(iced::Padding {
-            top: menu_y,
-            left: menu_x,
-            right: 0.0,
-            bottom: 0.0,
-        });
-
-        // Full-screen clickable area that closes the menu when clicked outside
-        let backdrop = mouse_area(container(menu_positioned).width(Length::Fill).height(Length::Fill)).on_press(AnsiEditorMessage::TagContextMenuClose);
-
-        backdrop.into()
-    }
-
     /// Sync UI components with the current edit state
     /// Call this after operations that may change the palette or tags
     pub fn sync_ui(&mut self) {
@@ -6061,7 +2594,7 @@ impl AnsiEditor {
         self.palette_grid.sync_palette(&palette, palette_limit);
         self.color_switcher.sync_palette(&palette);
         // Clear invalid tag selections (tags may have been removed by undo)
-        self.tag_selection.retain(|&idx| idx < tag_count);
+        self.tag_state.selection.retain(|&idx| idx < tag_count);
         // Update tag overlays (tag positions may have changed due to undo/redo)
         self.update_tag_overlays();
     }
@@ -6153,9 +2686,6 @@ impl AnsiEditor {
         // Enable terminal focus for caret blinking in Click/Font tools
         self.canvas.set_has_focus(is_visble);
 
-        // Sync toolbar filled toggle with the selected tool.
-        self.top_toolbar.filled = matches!(tool, Tool::RectangleFilled | Tool::EllipseFilled);
-
         self.current_tool = tool;
 
         self.update_mouse_tracking_mode();
@@ -6183,8 +2713,15 @@ impl AnsiEditor {
     }
 
     fn update_mouse_tracking_mode(&mut self) {
-        // HalfBlock tracking is tied to the tool *options* (brush primary mode), not the tool itself.
-        let wants_half_block = self.top_toolbar.brush_options.primary == BrushPrimaryMode::HalfBlock;
+        // HalfBlock tracking is tied to the tool *options* (brush primary mode).
+        let wants_half_block = match self.current_tool {
+            Tool::Pencil => self.pencil_handler.brush_primary() == BrushPrimaryMode::HalfBlock,
+            Tool::Fill => self.fill_handler.brush_primary() == BrushPrimaryMode::HalfBlock,
+            Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
+                self.shape_handler.brush_primary() == BrushPrimaryMode::HalfBlock
+            }
+            _ => false,
+        };
         let tool_allows = Self::tool_supports_half_block_mode(self.current_tool);
 
         let tracking = if wants_half_block && tool_allows {
@@ -6194,53 +2731,6 @@ impl AnsiEditor {
         };
 
         self.canvas.terminal.set_mouse_tracking(tracking);
-    }
-
-    /// Build FontPanelInfo from current font tool state
-    fn build_font_panel_info(&self) -> FontPanelInfo {
-        let font_name = self.font_tool.with_selected_font(|f| f.name().to_string()).unwrap_or_default();
-
-        let has_fonts = self.font_tool.has_fonts();
-
-        // Build char availability for preview (chars ! to ~)
-        let char_availability: Vec<(char, bool)> = ('!'..='~').map(|ch| (ch, self.font_tool.has_char(ch))).collect();
-
-        // Get current outline style
-        let outline_style = { *self.options.read().font_outline_style.read() };
-
-        FontPanelInfo {
-            font_name,
-            has_fonts,
-            char_availability,
-            outline_style,
-        }
-    }
-
-    /// Build pipette panel info from current state
-    fn build_pipette_panel_info(&self, palette: &icy_engine::Palette) -> PipettePanelInfo {
-        let cur_char = self.pipette.cur_char;
-        let take_fg = self.pipette.take_fg;
-        let take_bg = self.pipette.take_bg;
-
-        let (fg_color, bg_color) = if let Some(ch) = cur_char {
-            let fg_idx = ch.attribute.foreground();
-            let bg_idx = ch.attribute.background();
-
-            let fg_rgb = palette.color(fg_idx).rgb();
-            let bg_rgb = palette.color(bg_idx).rgb();
-
-            (Some(fg_rgb), Some(bg_rgb))
-        } else {
-            (None, None)
-        };
-
-        PipettePanelInfo {
-            cur_char,
-            take_fg,
-            take_bg,
-            fg_color,
-            bg_color,
-        }
     }
 }
 

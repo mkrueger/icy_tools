@@ -1,36 +1,65 @@
 //! Fill Tool (Bucket Fill / Flood Fill)
 //!
 //! Fills connected regions with color/character.
-//! Supports multiple modes:
-//! - Character mode: Fill with character
-//! - Half-block mode: Fill with half-block characters
-//! - Colorize mode: Change only colors
 
-use iced::Element;
-use iced::widget::{column, text};
-use icy_engine::{MouseButton, Position};
+use iced::widget::{Space, row, text, toggler};
+use iced::{Element, Length};
+use icy_engine::{AttributedChar, MouseButton, Position, TextAttribute, TextPane};
+use icy_engine_gui::TerminalMessage;
+use icy_engine_gui::terminal::crt_state::is_shift_pressed;
 
-use super::{ToolContext, ToolHandler, ToolInput, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
+use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 
-/// Fill mode
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum FillMode {
-    #[default]
-    Character,
-    HalfBlock,
-    Colorize,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FillToolUiAction {
+    OpenBrushCharSelector,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FillSettings {
+    pub primary: BrushPrimaryMode,
+    pub paint_char: char,
+    pub colorize_fg: bool,
+    pub colorize_bg: bool,
+    pub exact: bool,
+}
+
+impl Default for FillSettings {
+    fn default() -> Self {
+        Self {
+            primary: BrushPrimaryMode::Char,
+            paint_char: ' ',
+            colorize_fg: true,
+            colorize_bg: true,
+            exact: false,
+        }
+    }
 }
 
 /// Fill tool state
-#[derive(Clone, Debug, Default)]
 pub struct FillTool {
-    /// Current fill mode
-    mode: FillMode,
     /// Last fill position (for status display)
     last_fill_pos: Option<Position>,
-    /// Whether exact matching is enabled
-    exact_matching: bool,
+
+    settings: FillSettings,
+
+    brush_mode_control: ShaderSegmentedControl,
+    color_filter_control: ShaderSegmentedControl,
+    pending_ui_action: Option<FillToolUiAction>,
+}
+
+impl Default for FillTool {
+    fn default() -> Self {
+        Self {
+            last_fill_pos: None,
+            settings: FillSettings::default(),
+            brush_mode_control: ShaderSegmentedControl::new(),
+            color_filter_control: ShaderSegmentedControl::new(),
+            pending_ui_action: None,
+        }
+    }
 }
 
 impl FillTool {
@@ -38,70 +67,339 @@ impl FillTool {
         Self::default()
     }
 
-    /// Get current fill mode
-    #[allow(dead_code)]
-    pub fn mode(&self) -> FillMode {
-        self.mode
+    pub fn set_settings(&mut self, settings: FillSettings) {
+        self.settings = settings;
     }
 
-    /// Set fill mode
-    #[allow(dead_code)]
-    pub fn set_mode(&mut self, mode: FillMode) {
-        self.mode = mode;
+    pub fn settings(&self) -> FillSettings {
+        self.settings
+    }
+
+    pub(crate) fn paint_char(&self) -> char {
+        self.settings.paint_char
+    }
+
+    pub(crate) fn brush_primary(&self) -> BrushPrimaryMode {
+        self.settings.primary
+    }
+
+    pub fn take_ui_action(&mut self) -> Option<FillToolUiAction> {
+        self.pending_ui_action.take()
     }
 }
 
 impl ToolHandler for FillTool {
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: ToolInput) -> ToolResult {
-        match event {
-            ToolInput::MouseDown { pos, button, .. } => {
-                self.last_fill_pos = Some(pos);
-
-                // Begin atomic undo
-                let _undo = ctx.state.begin_atomic_undo("Bucket fill".to_string());
-
-                // The actual fill logic is complex and still handled by AnsiEditor
-                // This handler just tracks state and provides the interface
-
-                let action = if button == MouseButton::Right { "Fill (swap colors)" } else { "Fill" };
-
-                ToolResult::Commit(format!("{} at ({},{})", action, pos.x, pos.y))
-            }
-
-            ToolInput::MouseMove { pos, .. } => {
-                // Update hover position for status display
-                self.last_fill_pos = Some(pos);
+    fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
+        match *msg {
+            ToolMessage::SetBrushPrimary(primary) => {
+                self.settings.primary = primary;
                 ToolResult::None
             }
+            ToolMessage::BrushOpenCharSelector => {
+                self.pending_ui_action = Some(FillToolUiAction::OpenBrushCharSelector);
+                ToolResult::None
+            }
+            ToolMessage::SetBrushChar(ch) => {
+                self.settings.paint_char = ch;
+                ToolResult::None
+            }
+            ToolMessage::ToggleForeground(v) => {
+                self.settings.colorize_fg = v;
+                ToolResult::None
+            }
+            ToolMessage::ToggleBackground(v) => {
+                self.settings.colorize_bg = v;
+                ToolResult::None
+            }
+            ToolMessage::FillToggleExact(v) => {
+                self.settings.exact = v;
+                ToolResult::None
+            }
+            _ => ToolResult::None,
+        }
+    }
+    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+        match msg {
+            TerminalMessage::Press(evt) => {
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
 
-            ToolInput::Message(msg) => match msg {
-                ToolMessage::ToggleFilled(exact) => {
-                    self.exact_matching = exact;
-                    ToolResult::None
+                self.last_fill_pos = Some(pos);
+
+                // Fill only supports HalfBlock / Char / Colorize.
+                let primary = match self.settings.primary {
+                    BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.settings.primary,
+                    _ => BrushPrimaryMode::Char,
+                };
+
+                // If Colorize mode is selected but no channels are enabled, do nothing.
+                if matches!(primary, BrushPrimaryMode::Colorize) && !self.settings.colorize_fg && !self.settings.colorize_bg {
+                    return ToolResult::None;
                 }
-                _ => ToolResult::None,
-            },
+
+                use std::collections::HashSet;
+
+                let swap_colors = evt.button == MouseButton::Right;
+                let shift_swap = is_shift_pressed();
+
+                // Begin atomic undo for the entire fill.
+                let _undo = ctx.state.begin_atomic_undo("Bucket fill".to_string());
+
+                if matches!(primary, BrushPrimaryMode::HalfBlock) {
+                    let Some(mapper) = ctx.half_block_mapper else {
+                        return ToolResult::None;
+                    };
+
+                    let start_hb = mapper.pixel_to_layer_half_block(evt.pixel_position);
+
+                    let (offset, width, height) = if let Some(layer) = ctx.state.get_cur_layer() {
+                        (layer.offset(), layer.width(), layer.height())
+                    } else {
+                        return ToolResult::None;
+                    };
+                    let use_selection = ctx.state.is_something_selected();
+
+                    let caret_attr = ctx.state.get_caret().attribute;
+                    let (fg, bg) = if swap_colors || shift_swap {
+                        (caret_attr.background(), caret_attr.foreground())
+                    } else {
+                        (caret_attr.foreground(), caret_attr.background())
+                    };
+
+                    // Determine the target color at the start position.
+                    let start_cell = icy_engine::Position::new(start_hb.x, start_hb.y / 2);
+                    if start_cell.x < 0 || start_hb.y < 0 || start_cell.x >= width || start_cell.y >= height {
+                        return ToolResult::Commit("Bucket fill".to_string());
+                    }
+
+                    let start_char = { ctx.state.get_cur_layer().unwrap().char_at(start_cell) };
+                    let start_block = icy_engine::paint::HalfBlock::from_char(start_char, start_hb);
+                    if !start_block.is_blocky() {
+                        return ToolResult::Commit("Bucket fill".to_string());
+                    }
+                    let target_color = if start_block.is_top {
+                        start_block.upper_block_color
+                    } else {
+                        start_block.lower_block_color
+                    };
+                    if target_color == fg {
+                        return ToolResult::Commit("Bucket fill".to_string());
+                    }
+
+                    let mut visited: HashSet<icy_engine::Position> = HashSet::new();
+                    let mut stack: Vec<(icy_engine::Position, icy_engine::Position)> = vec![(start_hb, start_hb)];
+
+                    while let Some((from, to)) = stack.pop() {
+                        let text_pos = icy_engine::Position::new(to.x, to.y / 2);
+                        if to.x < 0 || to.y < 0 || to.x >= width || text_pos.y >= height || !visited.insert(to) {
+                            continue;
+                        }
+
+                        if use_selection {
+                            let doc_cell = text_pos + offset;
+                            if !ctx.state.is_selected(doc_cell) {
+                                continue;
+                            }
+                        }
+
+                        let cur = { ctx.state.get_cur_layer().unwrap().char_at(text_pos) };
+                        let block = icy_engine::paint::HalfBlock::from_char(cur, to);
+
+                        if block.is_blocky()
+                            && ((block.is_top && block.upper_block_color == target_color) || (!block.is_top && block.lower_block_color == target_color))
+                        {
+                            let ch = block.get_half_block_char(fg, true);
+                            let _ = ctx.state.set_char_in_atomic(text_pos, ch);
+
+                            stack.push((to, to + icy_engine::Position::new(-1, 0)));
+                            stack.push((to, to + icy_engine::Position::new(1, 0)));
+                            stack.push((to, to + icy_engine::Position::new(0, -1)));
+                            stack.push((to, to + icy_engine::Position::new(0, 1)));
+                        } else if block.is_vertically_blocky() {
+                            let ch = if from.y == to.y - 1 && block.left_block_color == target_color {
+                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                            } else if from.y == to.y - 1 && block.right_block_color == target_color {
+                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                            } else if from.y == to.y + 1 && block.right_block_color == target_color {
+                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                            } else if from.y == to.y + 1 && block.left_block_color == target_color {
+                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                            } else if from.x == to.x - 1 && block.left_block_color == target_color {
+                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                            } else if from.x == to.x + 1 && block.right_block_color == target_color {
+                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                            } else {
+                                None
+                            };
+
+                            if let Some(ch) = ch {
+                                let _ = ctx.state.set_char_in_atomic(text_pos, ch);
+                            }
+                        }
+                    }
+
+                    let _ = bg; // keep symmetry with other tools; currently unused for half-block fill
+                    return ToolResult::Commit("Bucket fill".to_string());
+                }
+
+                let (offset, width, height) = if let Some(layer) = ctx.state.get_cur_layer() {
+                    (layer.offset(), layer.width(), layer.height())
+                } else {
+                    return ToolResult::None;
+                };
+                let use_selection = ctx.state.is_something_selected();
+
+                let start_cell_layer = pos - offset;
+                if start_cell_layer.x < 0 || start_cell_layer.y < 0 || start_cell_layer.x >= width || start_cell_layer.y >= height {
+                    return ToolResult::Commit("Bucket fill".to_string());
+                }
+
+                let base_char = { ctx.state.get_cur_layer().unwrap().char_at(start_cell_layer) };
+
+                let caret_attr = ctx.state.get_caret().attribute;
+                let (fg, bg) = if swap_colors || shift_swap {
+                    (caret_attr.background(), caret_attr.foreground())
+                } else {
+                    (caret_attr.foreground(), caret_attr.background())
+                };
+                let caret_font_page = caret_attr.font_page();
+
+                let mut visited: HashSet<icy_engine::Position> = HashSet::new();
+                let mut stack: Vec<icy_engine::Position> = vec![start_cell_layer];
+
+                while let Some(p) = stack.pop() {
+                    if p.x < 0 || p.y < 0 || p.x >= width || p.y >= height || !visited.insert(p) {
+                        continue;
+                    }
+
+                    if use_selection {
+                        let doc_cell = p + offset;
+                        if !ctx.state.is_selected(doc_cell) {
+                            continue;
+                        }
+                    }
+
+                    let cur = { ctx.state.get_cur_layer().unwrap().char_at(p) };
+
+                    // Determine if this cell matches (like src_egui FillOperation).
+                    match primary {
+                        BrushPrimaryMode::Char => {
+                            if (self.settings.exact && cur != base_char) || (!self.settings.exact && cur.ch != base_char.ch) {
+                                continue;
+                            }
+                        }
+                        BrushPrimaryMode::Colorize => {
+                            if (self.settings.exact && cur != base_char) || (!self.settings.exact && cur.attribute != base_char.attribute) {
+                                continue;
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    let mut repl = cur;
+
+                    if matches!(primary, BrushPrimaryMode::Char) {
+                        repl.ch = self.settings.paint_char;
+                    }
+
+                    if self.settings.colorize_fg {
+                        repl.attribute.set_foreground(fg);
+                        repl.attribute.set_is_bold(caret_attr.is_bold());
+                    }
+                    if self.settings.colorize_bg {
+                        repl.attribute.set_background(bg);
+                    }
+
+                    repl.set_font_page(caret_font_page);
+                    repl.attribute.attr &= !icy_engine::attribute::INVISIBLE;
+
+                    let _ = ctx.state.set_char_in_atomic(p, repl);
+
+                    stack.push(p + icy_engine::Position::new(-1, 0));
+                    stack.push(p + icy_engine::Position::new(1, 0));
+                    stack.push(p + icy_engine::Position::new(0, -1));
+                    stack.push(p + icy_engine::Position::new(0, 1));
+                }
+
+                ToolResult::Commit("Bucket fill".to_string())
+            }
+
+            TerminalMessage::Move(evt) | TerminalMessage::Drag(evt) => {
+                // Update hover position for status display
+                if let Some(pos) = evt.text_position {
+                    self.last_fill_pos = Some(pos);
+                }
+                ToolResult::None
+            }
 
             _ => ToolResult::None,
         }
     }
 
-    fn view_toolbar<'a>(&'a self, _ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
-        // Fill options are rendered by AnsiEditor for now
-        column![].into()
-    }
-
-    fn view_status<'a>(&'a self, _ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
-        let mode_str = match self.mode {
-            FillMode::Character => "Char",
-            FillMode::HalfBlock => "Half-Block",
-            FillMode::Colorize => "Colorize",
+    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+        let primary = match self.settings.primary {
+            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.settings.primary,
+            _ => BrushPrimaryMode::Char,
         };
 
+        let segments = vec![
+            Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
+            Segment::char(self.settings.paint_char, BrushPrimaryMode::Char),
+            Segment::text("Colorize", BrushPrimaryMode::Colorize),
+        ];
+
+        let font_for_color_filter = ctx.font.clone();
+        let segmented_control = self
+            .brush_mode_control
+            .view_with_char_colors(segments, primary, ctx.font.clone(), ctx.theme, ctx.caret_fg, ctx.caret_bg, &ctx.palette)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Selected(m) | SegmentedControlMessage::Toggled(m) => ToolMessage::SetBrushPrimary(m),
+                SegmentedControlMessage::CharClicked(_) => ToolMessage::BrushOpenCharSelector,
+            });
+
+        let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
+        let mut selected_indices = Vec::new();
+        if self.settings.colorize_fg {
+            selected_indices.push(0);
+        }
+        if self.settings.colorize_bg {
+            selected_indices.push(1);
+        }
+        let color_filter = self
+            .color_filter_control
+            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, ctx.theme)
+            .map(|msg| match msg {
+                SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.settings.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.settings.colorize_bg),
+                _ => ToolMessage::ToggleForeground(self.settings.colorize_fg),
+            });
+
+        let exact_toggle: Element<'a, ToolMessage> = toggler(self.settings.exact)
+            .label("Exact")
+            .on_toggle(ToolMessage::FillToggleExact)
+            .text_size(11)
+            .into();
+
+        row![
+            Space::new().width(Length::Fill),
+            segmented_control,
+            Space::new().width(Length::Fixed(16.0)),
+            exact_toggle,
+            Space::new().width(Length::Fixed(16.0)),
+            color_filter,
+            Space::new().width(Length::Fill),
+        ]
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+
+    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
         let status = if let Some(pos) = self.last_fill_pos {
-            format!("Fill ({}) | Position: ({},{}) | Right-click=Swap colors", mode_str, pos.x, pos.y)
+            format!("Fill | Position: ({},{}) | Right-click=Swap colors", pos.x, pos.y)
         } else {
-            format!("Fill ({}) | Click to fill region", mode_str)
+            "Fill | Click to fill region".to_string()
         };
         text(status).into()
     }

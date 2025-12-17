@@ -90,7 +90,7 @@ pub enum PreviewMessage {
     /// Scroll viewport to absolute position with smooth animation (for Home/End)
     ScrollViewportToSmooth(f32, f32),
     /// Terminal view message
-    TerminalMessage(icy_engine_gui::Message),
+    TerminalMessage(icy_engine_gui::TerminalMessage),
     /// Image loaded from background thread (with dimensions)
     ImageLoaded(u64, Result<(iced_image::Handle, u32, u32), String>),
     /// Image viewer message
@@ -688,7 +688,7 @@ impl PreviewView {
                 use iced::mouse;
 
                 match msg {
-                    icy_engine_gui::Message::Press(evt) => {
+                    icy_engine_gui::TerminalMessage::Press(evt) => {
                         // Only start drag if clicking on the actual content (not border)
                         if evt.text_position.is_some() {
                             let viewport_pos = self.with_content_view(|cv| (cv.scroll_x(), cv.scroll_y()));
@@ -699,13 +699,13 @@ impl PreviewView {
                             *self.terminal.cursor_icon.write() = Some(mouse::Interaction::Grabbing);
                         }
                     }
-                    icy_engine_gui::Message::Release(_) => {
+                    icy_engine_gui::TerminalMessage::Release(_) => {
                         // End drag scrolling, start inertia if we have velocity
                         self.drag_scroll.end_drag();
                         // Reset cursor to default (will be set to Grab on next Move if over content)
                         *self.terminal.cursor_icon.write() = None;
                     }
-                    icy_engine_gui::Message::Move(evt) => {
+                    icy_engine_gui::TerminalMessage::Move(evt) => {
                         // Show grab cursor only when over the actual terminal content area
                         if !self.drag_scroll.is_dragging {
                             if evt.text_position.is_some() {
@@ -715,7 +715,7 @@ impl PreviewView {
                             }
                         }
                     }
-                    icy_engine_gui::Message::Drag(evt) => {
+                    icy_engine_gui::TerminalMessage::Drag(evt) => {
                         let zoom = self.terminal.get_zoom();
                         if let Some((x, y)) = self.drag_scroll.process_drag(evt.pixel_position, zoom) {
                             self.with_content_view(|cv| {
@@ -724,7 +724,7 @@ impl PreviewView {
                             });
                         }
                     }
-                    icy_engine_gui::Message::Scroll(delta) => {
+                    icy_engine_gui::TerminalMessage::Scroll(delta) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
                         self.drag_scroll.stop();
@@ -737,7 +737,7 @@ impl PreviewView {
                             cv.sync_scrollbar();
                         });
                     }
-                    icy_engine_gui::Message::Zoom(zoom_msg) => {
+                    icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => {
                         // Handle zoom via unified ZoomMessage
                         // Create a new Arc with updated scaling_mode
                         let current_zoom = self.terminal.get_zoom();

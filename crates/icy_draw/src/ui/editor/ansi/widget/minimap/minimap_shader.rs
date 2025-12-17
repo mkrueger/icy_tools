@@ -396,7 +396,6 @@ impl MinimapPrimitive {
 
 /// Texture slice for GPU
 struct TextureSlice {
-    #[allow(dead_code)]
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
 }

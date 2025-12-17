@@ -9,11 +9,13 @@
 //! - Alt+click: Take character as well
 
 use iced::Element;
-use iced::widget::{checkbox, row, text};
+use iced::widget::{Space, checkbox, column, container, row, text};
+use iced::{Length, Theme};
 use icy_engine::{AttributedChar, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
+use icy_engine_gui::TerminalMessage;
 
-use super::{ToolContext, ToolHandler, ToolInput, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 
 /// Pipette tool state
 #[derive(Clone, Debug, Default)]
@@ -42,23 +44,46 @@ impl PipetteTool {
 }
 
 impl ToolHandler for PipetteTool {
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: ToolInput) -> ToolResult {
-        match event {
-            ToolInput::MouseMove { pos, .. } => {
+    fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
+        match *msg {
+            ToolMessage::PipetteTakeForeground(v) => {
+                self.take_fg = v;
+                ToolResult::None
+            }
+            ToolMessage::PipetteTakeBackground(v) => {
+                self.take_bg = v;
+                ToolResult::None
+            }
+            ToolMessage::PipetteTakeChar(v) => {
+                self.take_char = v;
+                ToolResult::None
+            }
+            _ => ToolResult::None,
+        }
+    }
+
+    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+        match msg {
+            TerminalMessage::Move(evt) | TerminalMessage::Drag(evt) => {
                 // Update hover preview
-                self.hovered_pos = Some(pos);
-                // Get character from buffer using TextPane trait
-                self.hovered_char = Some(ctx.state.get_buffer().char_at(pos));
+                if let Some(pos) = evt.text_position {
+                    self.hovered_pos = Some(pos);
+                    self.hovered_char = Some(ctx.state.get_buffer().char_at(pos));
+                }
                 ToolResult::Redraw
             }
 
-            ToolInput::MouseDown { pos, button, modifiers, .. } => {
+            TerminalMessage::Press(evt) => {
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+
                 // Determine what to take based on button and modifiers
-                let (take_fg, take_bg) = if modifiers.shift {
+                let (take_fg, take_bg) = if evt.modifiers.shift {
                     (true, false) // Shift: FG only
-                } else if modifiers.ctrl {
+                } else if evt.modifiers.ctrl {
                     (false, true) // Ctrl: BG only
-                } else if button == MouseButton::Right {
+                } else if evt.button == MouseButton::Right {
                     (false, true) // Right click: BG only
                 } else {
                     (self.take_fg, self.take_bg) // Use current settings
@@ -73,7 +98,7 @@ impl ToolHandler for PipetteTool {
                 if take_bg {
                     ctx.state.set_caret_background(ch.attribute.background());
                 }
-                if self.take_char && modifiers.alt {
+                if self.take_char && evt.modifiers.alt {
                     // Could set brush char in resources here
                 }
 
@@ -81,29 +106,18 @@ impl ToolHandler for PipetteTool {
                 ToolResult::SwitchTool(Tool::Click)
             }
 
-            ToolInput::Message(msg) => {
-                match msg {
-                    ToolMessage::PipetteTakeForeground(v) => self.take_fg = v,
-                    ToolMessage::PipetteTakeBackground(v) => self.take_bg = v,
-                    ToolMessage::PipetteTakeChar(v) => self.take_char = v,
-                    _ => return ToolResult::None,
-                }
-                ToolResult::Redraw
-            }
-
-            ToolInput::Deactivate => {
-                // Clear hover state when leaving
-                self.hovered_char = None;
-                self.hovered_pos = None;
-                ToolResult::None
-            }
-
             _ => ToolResult::None,
         }
     }
 
-    fn view_toolbar<'a>(&'a self, _ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
-        row![
+    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+        let mut content = row![].spacing(16).align_y(iced::Alignment::Center);
+
+        // Center content
+        content = content.push(Space::new().width(Length::Fill));
+
+        // Options
+        let options = row![
             text("FG"),
             checkbox(self.take_fg).on_toggle(ToolMessage::PipetteTakeForeground),
             text("BG"),
@@ -111,11 +125,82 @@ impl ToolHandler for PipetteTool {
             text("Char"),
             checkbox(self.take_char).on_toggle(ToolMessage::PipetteTakeChar),
         ]
-        .spacing(10)
-        .into()
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
+
+        content = content.push(options);
+
+        if let Some(ch) = self.hovered_char {
+            let char_display = if !ch.ch.is_control() && ch.ch as u32 >= 32 {
+                format!("'{}'", ch.ch)
+            } else {
+                String::new()
+            };
+            content = content.push(text(format!("Code {} {}", ch.ch as u32, char_display)).size(12));
+
+            // Foreground box
+            if self.take_fg {
+                let fg_idx = ch.attribute.foreground();
+                let (r, g, b) = ctx.palette.color(fg_idx).rgb();
+                let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
+                    iced::Color::BLACK
+                } else {
+                    iced::Color::WHITE
+                };
+                let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+                let fg_label = text(format!("Vordergrund {}", fg_idx)).size(12);
+                let fg_box = container(text(hex_text).size(12).style(move |_| iced::widget::text::Style { color: Some(text_color) }))
+                    .padding([4, 8])
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
+                        border: iced::Border {
+                            color: iced::Color::WHITE,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                content = content.push(column![fg_label, fg_box].spacing(2).align_x(iced::Alignment::Center));
+            }
+
+            // Background box
+            if self.take_bg {
+                let bg_idx = ch.attribute.background();
+                let (r, g, b) = ctx.palette.color(bg_idx).rgb();
+                let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
+                    iced::Color::BLACK
+                } else {
+                    iced::Color::WHITE
+                };
+                let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+                let bg_label = text(format!("Hintergrund {}", bg_idx)).size(12);
+                let bg_box = container(text(hex_text).size(12).style(move |_| iced::widget::text::Style { color: Some(text_color) }))
+                    .padding([4, 8])
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
+                        border: iced::Border {
+                            color: iced::Color::WHITE,
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                content = content.push(column![bg_label, bg_box].spacing(2).align_x(iced::Alignment::Center));
+            }
+        } else {
+            content = content.push(text("Hover over canvas to pick colors").size(12));
+        }
+
+        // Help text
+        content = content.push(Space::new().width(Length::Fixed(24.0)));
+        content = content.push(text("⇧: FG only   ⌃: BG only").size(12));
+
+        content = content.push(Space::new().width(Length::Fill));
+
+        content.into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &'a ToolContext) -> Element<'a, ToolMessage> {
+    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
         let status = if let (Some(pos), Some(ch)) = (&self.hovered_pos, &self.hovered_char) {
             format!(
                 "Pipette | Pos: ({}, {}) | Char: '{}' | FG: {} | BG: {}",

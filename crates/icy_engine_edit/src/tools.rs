@@ -227,19 +227,6 @@ pub fn get_slot_display_tool(slot: usize, current_tool: Tool) -> Tool {
     if pair.contains(current_tool) { current_tool } else { pair.primary }
 }
 
-/// Tool event returned from tool operations
-#[derive(Clone, Debug)]
-pub enum ToolEvent {
-    /// No action needed
-    None,
-    /// Request a redraw (e.g., after cursor move)
-    Redraw,
-    /// Commit an operation to undo stack
-    Commit(String),
-    /// Status message to display
-    Status(String),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

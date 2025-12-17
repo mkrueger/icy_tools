@@ -5,6 +5,10 @@
 //! - Drop shadows for depth
 //! - Swap icon rendering via shader
 //! - Hover effects
+//!
+//! NOTE: Some fields are prepared for future features.
+
+#![allow(dead_code)]
 
 use iced::{
     Element, Length, Rectangle, mouse,
@@ -302,7 +306,7 @@ pub struct ColorSwitcherRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group: iced::wgpu::BindGroup,
     uniform_buffer: iced::wgpu::Buffer,
-    #[allow(dead_code)]
+
     swap_icon_texture: iced::wgpu::Texture,
 }
 

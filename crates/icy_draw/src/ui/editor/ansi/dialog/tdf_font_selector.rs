@@ -7,6 +7,8 @@
 //! - Keyboard navigation support
 //! - Viewport-based scrolling with overlay scrollbar
 
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;

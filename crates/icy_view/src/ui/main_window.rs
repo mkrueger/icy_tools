@@ -826,7 +826,7 @@ impl MainWindow {
                 // Check if this is a zoom change message
                 let is_zoom_change = matches!(
                     &msg,
-                    PreviewMessage::TerminalMessage(icy_engine_gui::Message::Zoom(_)) | PreviewMessage::Zoom(_)
+                    PreviewMessage::TerminalMessage(icy_engine_gui::TerminalMessage::Zoom(_)) | PreviewMessage::Zoom(_)
                 );
                 let result = self.preview.update(msg).map(Message::Preview);
                 // Sync scaling_mode from preview to options after zoom changes

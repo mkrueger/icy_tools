@@ -65,12 +65,12 @@ impl TerminalWindow {
 
         // Create the main terminal area
         let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(|terminal_msg| match terminal_msg {
-            icy_engine_gui::Message::Press(evt) => Message::MousePress(evt),
-            icy_engine_gui::Message::Release(evt) => Message::MouseRelease(evt),
-            icy_engine_gui::Message::Move(evt) => Message::MouseMove(evt),
-            icy_engine_gui::Message::Drag(evt) => Message::MouseDrag(evt),
-            icy_engine_gui::Message::Scroll(delta) => Message::MouseScroll(delta),
-            icy_engine_gui::Message::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
+            icy_engine_gui::TerminalMessage::Press(evt) => Message::MousePress(evt),
+            icy_engine_gui::TerminalMessage::Release(evt) => Message::MouseRelease(evt),
+            icy_engine_gui::TerminalMessage::Move(evt) => Message::MouseMove(evt),
+            icy_engine_gui::TerminalMessage::Drag(evt) => Message::MouseDrag(evt),
+            icy_engine_gui::TerminalMessage::Scroll(delta) => Message::MouseScroll(delta),
+            icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
         });
 
         // Get scrollback info from Box<dyn Screen>

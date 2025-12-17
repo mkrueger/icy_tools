@@ -3,6 +3,8 @@
 //! Shows tool-specific options in a horizontal bar above the canvas.
 //! Inspired by Moebius toolbar design.
 
+#![allow(dead_code)]
+
 use iced::{
     Element, Length, Task, Theme,
     widget::{Space, button, column, container, row, svg, text, toggler},
@@ -15,12 +17,12 @@ use icy_engine::{BitFont, BufferType, Palette};
 use icy_engine_edit::tools::Tool;
 
 // Navigation icons for F-key set chooser
-const NAV_PREV_SVG: &[u8] = include_bytes!("../../../../../../data/icons/navigate_prev.svg");
-const NAV_NEXT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/navigate_next.svg");
+pub(crate) const NAV_PREV_SVG: &[u8] = include_bytes!("../../../../../../data/icons/navigate_prev.svg");
+pub(crate) const NAV_NEXT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/navigate_next.svg");
 
 // Arrow icons for brush size selector
-const ARROW_LEFT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/arrow_left.svg");
-const ARROW_RIGHT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/arrow_right.svg");
+pub(crate) const ARROW_LEFT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/arrow_left.svg");
+pub(crate) const ARROW_RIGHT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/arrow_right.svg");
 
 /// Selection mode for the select tool
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -191,7 +193,6 @@ pub struct BrushOptions {
 /// Selection mode options
 #[derive(Clone, Debug, Default)]
 pub struct SelectOptions {
-    pub current_fkey_page: usize,
     pub selected_fkey: usize,
     pub selection_mode: SelectionMode,
 }
@@ -487,7 +488,7 @@ impl TopToolbar {
     }
 
     fn view_click_panel(&self, fkeys: &FKeySets, buffer_type: BufferType) -> Element<'_, TopToolbarMessage> {
-        let set_idx = self.select_options.current_fkey_page;
+        let set_idx = fkeys.current_set;
         let set_count = fkeys.set_count();
 
         let mut keys = row![].spacing(8).align_y(iced::Alignment::Center);

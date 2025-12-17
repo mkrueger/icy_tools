@@ -1,6 +1,10 @@
 //! GPU-accelerated Segmented Control (one-pass)
 //!
 //! Uses a WGSL shader to render both background and glyphs in a single pass.
+//!
+//! NOTE: Some fields are prepared for atlas caching.
+
+#![allow(dead_code)]
 
 use super::layout::{
     BORDER_WIDTH, CORNER_RADIUS, MAX_SEGMENTS, NO_HOVER, PREVIEW_GLYPH_HEIGHT, SEGMENT_FONT_SCALE, SEGMENT_HEIGHT, SEGMENT_PADDING_H, SHADOW_PADDING,
@@ -814,7 +818,6 @@ impl SegmentContent {
         Self::Text(s.into())
     }
 
-    #[allow(dead_code)]
     pub fn char(c: char) -> Self {
         Self::Char(c)
     }
@@ -906,7 +909,7 @@ impl ShaderSegmentedControl {
     }
 
     /// Clear internal caches (no-op; one-pass renderer has no per-widget cache)
-    #[allow(dead_code)]
+
     pub fn clear_cache(&mut self) {
         // Intentionally empty.
     }
