@@ -18,7 +18,7 @@ use iced::{
 };
 use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
-use icy_engine_edit::{EditState, UndoState};
+use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog, export_dialog_with_defaults_from_msg};
 use icy_engine_gui::{Toast, ToastManager, command_handler, command_handlers};
@@ -29,7 +29,7 @@ use super::{
     menu::{MenuBarState, UndoInfo},
 };
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
-use crate::ui::editor::ansi::{AnsiEditor, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage, TopToolbarMessage};
+use crate::ui::editor::ansi::{AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage, TopToolbarMessage};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
 use crate::ui::editor::palette::{PaletteEditorDialog, PaletteEditorMessage};
 use crate::ui::widget::plugins::Plugin;
@@ -109,7 +109,7 @@ pub type CharFontEditorState = crate::ui::editor::charfont::CharFontEditor;
 
 /// Mode-specific state
 pub enum ModeState {
-    Ansi(AnsiEditor),
+    Ansi(AnsiEditorMainArea),
     BitFont(BitFontEditorState),
     CharFont(CharFontEditorState),
     Animation(AnimationEditor),
@@ -138,7 +138,7 @@ impl ModeState {
     /// Get the file path if any
     pub fn file_path(&self) -> Option<&PathBuf> {
         match self {
-            Self::Ansi(editor) => editor.file_path.as_ref(),
+            Self::Ansi(editor) => editor.file_path(),
             Self::BitFont(editor) => editor.file_path(),
             Self::CharFont(editor) => editor.file_path(),
             Self::Animation(editor) => editor.file_path(),
@@ -148,7 +148,7 @@ impl ModeState {
     /// Set the file path
     pub fn set_file_path(&mut self, path: PathBuf) {
         match self {
-            Self::Ansi(editor) => editor.file_path = Some(path),
+            Self::Ansi(editor) => editor.set_file_path(path),
             Self::BitFont(editor) => editor.set_file_path(path),
             Self::CharFont(editor) => editor.set_file_path(path),
             Self::Animation(editor) => editor.set_file_path(path),
@@ -587,18 +587,18 @@ impl MainWindow {
                 }
                 _ => {
                     // Try as ANSI/ASCII art file
-                    match AnsiEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
+                    match AnsiEditorMainArea::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
                             log::error!("Error loading file '{}': {}", p.display(), error.as_ref().unwrap().1);
-                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
+                            (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                         }
                     }
                 }
             }
         } else {
-            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), None)
+            (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), None)
         };
 
         let last_save = mode_state.undo_stack_len();
@@ -681,11 +681,11 @@ impl MainWindow {
                     }
                     _ => {
                         // ANSI/other formats
-                        match AnsiEditor::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
+                        match AnsiEditorMainArea::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::Ansi(editor), None),
                             Err(e) => {
                                 let error = Some(("Error Loading Autosave".to_string(), format!("{}", e)));
-                                (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
+                                (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                             }
                         }
                     }
@@ -733,7 +733,7 @@ impl MainWindow {
                             (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
                         }
                     },
-                    _ => match AnsiEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
+                    _ => match AnsiEditorMainArea::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(mut editor) => {
                             if let Some(ref orig) = original_path {
                                 editor.set_file_path(orig.clone());
@@ -742,7 +742,7 @@ impl MainWindow {
                         }
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", p.display(), e)));
-                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
+                            (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                         }
                     },
                 }
@@ -774,18 +774,18 @@ impl MainWindow {
                             (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
                         }
                     },
-                    _ => match AnsiEditor::with_file(orig.clone(), options.clone(), font_library.clone()) {
+                    _ => match AnsiEditorMainArea::with_file(orig.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading File".to_string(), format!("Failed to load '{}': {}", orig.display(), e)));
-                            (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), error)
+                            (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                         }
                     },
                 }
             }
 
             // Case 4: No paths - create empty
-            (None, None) => (ModeState::Ansi(AnsiEditor::new(options.clone(), font_library.clone())), None),
+            (None, None) => (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), None),
         };
 
         // Determine last_save based on dirty state
@@ -860,7 +860,7 @@ impl MainWindow {
     /// Get zoom info string for display in title bar (e.g., "[AUTO]" or "[150%]")
     pub fn get_zoom_info_string(&self) -> String {
         if let ModeState::Ansi(editor) = &self.mode_state {
-            editor.canvas.monitor_settings.read().scaling_mode.format_zoom_string()
+            editor.zoom_info_string()
         } else {
             String::new()
         }
@@ -954,7 +954,7 @@ impl MainWindow {
                     _ => {
                         // Create ANSI editor with buffer from template
                         let buf = create_buffer_for_template(template, width, height);
-                        self.mode_state = ModeState::Ansi(AnsiEditor::with_buffer(buf, None, self.options.clone(), self.font_library.clone()));
+                        self.mode_state = ModeState::Ansi(AnsiEditorMainArea::with_buffer(buf, None, self.options.clone(), self.font_library.clone()));
                     }
                 }
                 self.mark_saved();
@@ -1152,7 +1152,7 @@ impl MainWindow {
                     }
                     _ => {
                         // Open in ANSI editor (default for all other formats)
-                        match AnsiEditor::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
+                        match AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
                             Ok(editor) => {
                                 self.mode_state = ModeState::Ansi(editor);
                                 self.mark_saved();
@@ -1347,15 +1347,11 @@ impl MainWindow {
                 // Dispatch undo to the current editor mode
                 match &mut self.mode_state {
                     ModeState::Ansi(editor) => {
-                        // Access EditState through the screen
-                        {
-                            let mut screen = editor.screen.lock();
-                            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                                if let Err(e) = edit_state.undo() {
-                                    log::error!("Undo failed: {}", e);
-                                }
+                        editor.with_edit_state(|state| {
+                            if let Err(e) = state.undo() {
+                                log::error!("Undo failed: {}", e);
                             }
-                        }
+                        });
                         // Sync UI after undo (palette may have changed)
                         editor.sync_ui();
                         Task::none()
@@ -1372,15 +1368,11 @@ impl MainWindow {
                 // Dispatch redo to the current editor mode
                 match &mut self.mode_state {
                     ModeState::Ansi(editor) => {
-                        // Access EditState through the screen
-                        {
-                            let mut screen = editor.screen.lock();
-                            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                                if let Err(e) = edit_state.redo() {
-                                    log::error!("Redo failed: {}", e);
-                                }
+                        editor.with_edit_state(|state| {
+                            if let Err(e) = state.redo() {
+                                log::error!("Redo failed: {}", e);
                             }
-                        }
+                        });
                         // Sync UI after redo (palette may have changed)
                         editor.sync_ui();
                         Task::none()
@@ -1471,19 +1463,19 @@ impl MainWindow {
             }
             Message::ZoomIn => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.zoom_in();
+                    editor.zoom_in();
                 }
                 Task::none()
             }
             Message::ZoomOut => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.zoom_out();
+                    editor.zoom_out();
                 }
                 Task::none()
             }
             Message::ZoomReset => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.zoom_reset();
+                    editor.zoom_reset();
                 }
                 Task::none()
             }
@@ -1493,7 +1485,7 @@ impl MainWindow {
             }
             Message::SwitchMode(mode) => {
                 self.mode_state = match mode {
-                    EditMode::Ansi => ModeState::Ansi(AnsiEditor::new(self.options.clone(), self.font_library.clone())),
+                    EditMode::Ansi => ModeState::Ansi(AnsiEditorMainArea::new(self.options.clone(), self.font_library.clone())),
                     EditMode::BitFont => ModeState::BitFont(BitFontEditor::new()),
                     EditMode::CharFont => ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(self.options.clone())),
                     EditMode::Animation => ModeState::Animation(AnimationEditor::new()),
@@ -1652,15 +1644,13 @@ impl MainWindow {
             // Edit Layer Dialog
             // ═══════════════════════════════════════════════════════════════════
             Message::ShowEditLayerDialog(layer_index) => {
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let data = editor.with_edit_state_readonly(|state| {
                         let buffer = state.get_buffer();
-                        if let Some(layer) = buffer.layers.get(layer_index) {
-                            let properties = layer.properties.clone();
-                            let size = layer.size();
-                            self.dialogs.push(crate::ui::editor::ansi::EditLayerDialog::new(layer_index, properties, size));
-                        }
+                        buffer.layers.get(layer_index).map(|layer| (layer.properties.clone(), layer.size()))
+                    });
+                    if let Some((properties, size)) = data {
+                        self.dialogs.push(crate::ui::editor::ansi::EditLayerDialog::new(layer_index, properties, size));
                     }
                 }
                 Task::none()
@@ -1669,8 +1659,7 @@ impl MainWindow {
             Message::EditLayerDialog(_) => Task::none(),
             Message::ApplyEditLayer(result) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                    editor.with_edit_state(|state| {
                         // Update properties
                         if let Err(e) = state.update_layer_properties(result.layer_index, result.properties) {
                             log::error!("Failed to update layer properties: {}", e);
@@ -1681,7 +1670,7 @@ impl MainWindow {
                                 log::error!("Failed to resize layer: {}", e);
                             }
                         }
-                    }
+                    });
                 }
                 Task::none()
             }
@@ -1690,11 +1679,9 @@ impl MainWindow {
             // File Settings Dialog
             // ═══════════════════════════════════════════════════════════════════
             Message::ShowFileSettingsDialog => {
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
-                        self.dialogs.push(crate::ui::editor::ansi::FileSettingsDialog::from_edit_state(state));
-                    }
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let dialog = editor.with_edit_state(|state| crate::ui::editor::ansi::FileSettingsDialog::from_edit_state(state));
+                    self.dialogs.push(dialog);
                 }
                 Task::none()
             }
@@ -1702,8 +1689,7 @@ impl MainWindow {
             Message::FileSettingsDialog(_) => Task::none(),
             Message::ApplyFileSettings(result) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                    editor.with_edit_state(|state| {
                         // Apply canvas size
                         let current_size = state.get_buffer().size();
                         if result.width != current_size.width || result.height != current_size.height {
@@ -1737,7 +1723,7 @@ impl MainWindow {
                         // Apply display options
                         state.set_use_letter_spacing_no_undo(result.use_9px_font);
                         state.set_use_aspect_ratio_no_undo(result.legacy_aspect);
-                    }
+                    });
                 }
                 Task::none()
             }
@@ -1753,7 +1739,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     // Get buffer type and screen
                     let buffer_type = editor.with_edit_state(|state| state.get_buffer().buffer_type);
-                    let screen = editor.screen.clone();
+                    let screen = editor.screen().clone();
 
                     // Get export path from file path or default
                     let export_path = self
@@ -1853,7 +1839,7 @@ impl MainWindow {
                         }
                     });
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                     editor.refresh_selection_display();
                 }
@@ -1867,7 +1853,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.center_line());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1876,7 +1862,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.justify_line_left());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1885,7 +1871,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.justify_line_right());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1894,7 +1880,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.insert_row());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1903,7 +1889,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.delete_row());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1912,7 +1898,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.insert_column());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1921,7 +1907,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.delete_column());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1930,7 +1916,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_row());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1939,7 +1925,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_row_to_start());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1948,7 +1934,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_row_to_end());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1957,7 +1943,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_column());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1966,7 +1952,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_column_to_start());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1975,7 +1961,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.erase_column_to_end());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1984,7 +1970,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.scroll_area_up());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -1993,7 +1979,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.scroll_area_down());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2002,7 +1988,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.scroll_area_left());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2011,7 +1997,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.scroll_area_right());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2024,7 +2010,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.flip_x());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2033,7 +2019,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.flip_y());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2042,7 +2028,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.crop());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2051,7 +2037,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.center());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2060,7 +2046,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.justify_left());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2069,7 +2055,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let result = editor.with_edit_state(|state| state.justify_right());
                     if result.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                     }
                 }
                 Task::none()
@@ -2174,7 +2160,7 @@ impl MainWindow {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     let res = editor.with_edit_state(|state| state.switch_to_palette(pal.clone()));
                     if res.is_ok() {
-                        editor.is_modified = true;
+                        editor.mark_modified();
                         editor.sync_ui();
                     }
                 }
@@ -2189,42 +2175,42 @@ impl MainWindow {
                 let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
 
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                    let dialog = editor.with_edit_state(|state| {
                         // Always switch to the clicked slot
                         state.set_caret_font_page(slot);
 
                         // On double-click, also open the font selector
-                        if is_double_click {
-                            self.dialogs.push(crate::ui::editor::ansi::FontSelectorDialog::new(state));
-                        }
+                        is_double_click.then(|| crate::ui::editor::ansi::FontSelectorDialog::new(state))
+                    });
+                    if let Some(dialog) = dialog {
+                        self.dialogs.push(dialog);
                     }
                 }
                 Task::none()
             }
             Message::OpenFontSelector => {
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
-                        // In Unrestricted mode, open the Font Slot Manager instead
-                        // The user can then select a slot and the FontSelector will be opened for that slot
-                        if state.get_format_mode() == icy_engine_edit::FormatMode::Unrestricted {
-                            self.dialogs.push(crate::ui::editor::ansi::FontSlotManagerDialog::new(state));
-                        } else {
-                            self.dialogs.push(crate::ui::editor::ansi::FontSelectorDialog::new(state));
-                        }
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    // In Unrestricted mode, open the Font Slot Manager instead.
+                    let is_unrestricted = editor.with_edit_state_readonly(|state| state.get_format_mode() == icy_engine_edit::FormatMode::Unrestricted);
+
+                    if is_unrestricted {
+                        let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSlotManagerDialog::new);
+                        self.dialogs.push(dialog);
+                    } else {
+                        let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSelectorDialog::new);
+                        self.dialogs.push(dialog);
                     }
                 }
                 Task::none()
             }
             Message::OpenFontSelectorForSlot(slot) => {
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let dialog = editor.with_edit_state(|state| {
                         // Set caret to the target slot before opening font selector
                         state.set_caret_font_page(slot);
-                        self.dialogs.push(crate::ui::editor::ansi::FontSelectorDialog::new(state));
-                    }
+                        crate::ui::editor::ansi::FontSelectorDialog::new(state)
+                    });
+                    self.dialogs.push(dialog);
                 }
                 Task::none()
             }
@@ -2232,8 +2218,7 @@ impl MainWindow {
             Message::FontSelector(_) => Task::none(),
             Message::ApplyFontSelection(result) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
+                    editor.with_edit_state(|state| {
                         // Use EditState methods for proper undo support!
                         // DO NOT use buffer.set_font() directly - it bypasses undo.
                         match result {
@@ -2250,16 +2235,14 @@ impl MainWindow {
                                 }
                             }
                         }
-                    }
+                    });
                 }
                 Task::none()
             }
             Message::OpenFontSlotManager => {
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
-                        self.dialogs.push(crate::ui::editor::ansi::FontSlotManagerDialog::new(state));
-                    }
+                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                    let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSlotManagerDialog::new);
+                    self.dialogs.push(dialog);
                 }
                 Task::none()
             }
@@ -2267,35 +2250,32 @@ impl MainWindow {
             Message::FontSlotManager(_) => Task::none(),
             Message::ApplyFontSlotChange(result) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let mut screen = editor.screen.lock();
-                    if let Some(state) = screen.as_any_mut().downcast_mut::<icy_engine_edit::EditState>() {
-                        match result {
-                            crate::ui::editor::ansi::FontSlotManagerResult::SelectSlot { slot } => {
-                                // Set the selected slot as the active font page
-                                state.set_caret_font_page(slot);
-                            }
-                            crate::ui::editor::ansi::FontSlotManagerResult::ResetSlot { slot, font } => {
-                                if let Some(font) = font {
-                                    if let Err(e) = state.set_font_in_slot(slot, font) {
-                                        log::error!("Failed to reset font in slot {}: {}", slot, e);
-                                    }
-                                }
-                            }
-                            crate::ui::editor::ansi::FontSlotManagerResult::RemoveSlot { slot } => {
-                                if let Err(e) = state.remove_font(slot) {
-                                    log::error!("Failed to remove font slot {}: {}", slot, e);
-                                }
-                            }
-                            crate::ui::editor::ansi::FontSlotManagerResult::OpenFontSelector { slot: _ } => {
-                                // This should not happen - OpenFontSelectorForSlot is used instead
-                            }
-                            crate::ui::editor::ansi::FontSlotManagerResult::AddSlot { slot, font } => {
+                    editor.with_edit_state(|state| match result {
+                        crate::ui::editor::ansi::FontSlotManagerResult::SelectSlot { slot } => {
+                            // Set the selected slot as the active font page
+                            state.set_caret_font_page(slot);
+                        }
+                        crate::ui::editor::ansi::FontSlotManagerResult::ResetSlot { slot, font } => {
+                            if let Some(font) = font {
                                 if let Err(e) = state.set_font_in_slot(slot, font) {
-                                    log::error!("Failed to add font slot {}: {}", slot, e);
+                                    log::error!("Failed to reset font in slot {}: {}", slot, e);
                                 }
                             }
                         }
-                    }
+                        crate::ui::editor::ansi::FontSlotManagerResult::RemoveSlot { slot } => {
+                            if let Err(e) = state.remove_font(slot) {
+                                log::error!("Failed to remove font slot {}: {}", slot, e);
+                            }
+                        }
+                        crate::ui::editor::ansi::FontSlotManagerResult::OpenFontSelector { slot: _ } => {
+                            // This should not happen - OpenFontSelectorForSlot is used instead
+                        }
+                        crate::ui::editor::ansi::FontSlotManagerResult::AddSlot { slot, font } => {
+                            if let Err(e) = state.set_font_in_slot(slot, font) {
+                                log::error!("Failed to add font slot {}: {}", slot, e);
+                            }
+                        }
+                    });
                 }
                 Task::none()
             }
@@ -2326,7 +2306,7 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             Message::SetZoom(zoom) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.canvas.set_zoom(zoom);
+                    editor.set_zoom(zoom);
                 }
                 Task::none()
             }
@@ -2427,7 +2407,7 @@ impl MainWindow {
                 if let Some(plugin) = self.plugins.get(id) {
                     if let ModeState::Ansi(editor) = &mut self.mode_state {
                         let plugin = plugin.clone();
-                        if let Err(err) = plugin.run_plugin(&editor.screen) {
+                        if let Err(err) = plugin.run_plugin(editor.screen()) {
                             self.dialogs
                                 .push(error_dialog(fl!("error-plugin-title"), format!("{}", err), |_| Message::CloseDialog));
                         }
@@ -2678,14 +2658,7 @@ impl MainWindow {
     /// Get undo/redo descriptions for menu display
     fn get_undo_info(&self) -> UndoInfo {
         match &self.mode_state {
-            ModeState::Ansi(editor) => {
-                let mut screen = editor.screen.lock();
-                if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                    UndoInfo::new(edit_state.undo_description(), edit_state.redo_description())
-                } else {
-                    UndoInfo::default()
-                }
-            }
+            ModeState::Ansi(editor) => editor.with_edit_state_readonly(|state| UndoInfo::new(state.undo_description(), state.redo_description())),
             ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::CharFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::Animation(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),

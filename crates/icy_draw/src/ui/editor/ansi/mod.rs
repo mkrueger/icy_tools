@@ -24,6 +24,7 @@
 
 pub mod constants;
 pub mod dialog;
+pub mod main_area;
 pub mod selection_drag;
 mod shape_points;
 pub mod tools;
@@ -41,6 +42,8 @@ pub use dialog::font_slot_manager::*;
 pub use dialog::reference_image::*;
 pub use dialog::tdf_font_selector::{TdfFontSelectorDialog, TdfFontSelectorMessage};
 
+pub use main_area::AnsiEditorMainArea;
+
 pub use widget::canvas::*;
 pub use widget::char_selector::*;
 pub use widget::color_switcher::gpu::*;
@@ -53,19 +56,15 @@ pub use widget::toolbar::tool_panel_wrapper::{ToolPanel, ToolPanelMessage};
 pub use widget::toolbar::top::*;
 
 use icy_engine_edit::EditState;
-use icy_engine_edit::tools::{self as engine_tools, Tool};
+use icy_engine_edit::tools::Tool;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use clipboard_rs::{Clipboard, ClipboardContent};
-use iced::{
-    Alignment, Element, Length, Task, Theme,
-    widget::{column, container, row},
-};
-use icy_engine::formats::{FileFormat, LoadData};
+use iced::{Element, Length, Task};
+use icy_engine::formats::FileFormat;
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
-use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
 use parking_lot::{Mutex, RwLock};
 
@@ -162,27 +161,22 @@ pub enum AnsiEditorMessage {
 
 // CanvasMouseEvent removed - use TerminalMessage directly from icy_engine_gui
 
-/// The main ANSI editor component
-pub struct AnsiEditor {
-    /// File path (if saved)
-    pub file_path: Option<PathBuf>,
+/// Core ANSI editor logic/state (tools, dispatching, canvas, etc.).
+///
+/// This is intentionally not exposed publicly; the public entrypoint is
+/// `AnsiEditorMainArea`, which owns the UI chrome/panels and delegates into this.
+struct AnsiEditor {
     /// The screen (contains EditState which wraps buffer, caret, undo stack, etc.)
     /// Use screen.lock().as_any_mut().downcast_mut::<EditState>() to access EditState methods
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
-    /// Tool panel state (left sidebar icons)
-    pub tool_panel: ToolPanel,
     /// Current active tool
     pub current_tool: Tool,
     /// Top toolbar (tool-specific options)
     pub top_toolbar: TopToolbar,
     /// Color switcher (FG/BG display)
     pub color_switcher: ColorSwitcher,
-    /// Palette grid
-    pub palette_grid: PaletteGrid,
     /// Canvas view state
     pub canvas: CanvasView,
-    /// Right panel state (minimap, layers)
-    pub right_panel: RightPanel,
     /// Shared options
     pub options: Arc<RwLock<Options>>,
     /// Whether the document is modified
@@ -261,6 +255,71 @@ enum MouseCaptureTarget {
 }
 
 impl AnsiEditor {
+    /// Renders the center canvas area (canvas + overlays).
+    ///
+    /// This is intentionally kept in the core editor so the surrounding layout/chrome
+    /// can stay in `AnsiEditorMainArea`.
+    pub(super) fn view<'a>(&'a self) -> Element<'a, AnsiEditorMessage> {
+        // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
+        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
+
+        // Get scroll position from viewport for overlay positioning.
+        let (scroll_x, scroll_y) = {
+            let vp = self.canvas.terminal.viewport.read();
+            (vp.scroll_x, vp.scroll_y)
+        };
+
+        // Get font dimensions for overlays.
+        let (font_width, font_height) = {
+            let screen = self.screen.lock();
+            let size = screen.font_dimensions();
+            (size.width as f32, size.height as f32)
+        };
+
+        // Caret + buffer dimensions for line numbers.
+        let (caret_row, caret_col, buffer_height, buffer_width) = {
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let caret = state.get_caret();
+            let buffer = state.get_buffer();
+            (caret.y as usize, caret.x as usize, buffer.height(), buffer.width() as usize)
+        };
+
+        // Build the center area with optional line numbers overlay and tag context menu.
+        let mut center_layers: Vec<Element<'_, AnsiEditorMessage>> = vec![iced::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
+
+        if self.show_line_numbers {
+            let line_numbers_overlay = widget::line_numbers::line_numbers_overlay(
+                self.canvas.terminal.render_info.clone(),
+                buffer_width,
+                buffer_height as usize,
+                font_width,
+                font_height,
+                caret_row,
+                caret_col,
+                scroll_x,
+                scroll_y,
+            );
+            center_layers.push(line_numbers_overlay);
+        }
+
+        // Add tag context menu overlay if active.
+        if self.tag_state.has_context_menu() {
+            let display_scale = self.canvas.terminal.render_info.read().display_scale;
+            if let Some(context_menu) = self
+                .tag_state
+                .view_context_menu_overlay(font_width, font_height, scroll_x, scroll_y, display_scale)
+            {
+                center_layers.push(context_menu.map(AnsiEditorMessage::ToolMessage));
+            }
+        }
+
+        iced::widget::stack(center_layers).width(Length::Fill).height(Length::Fill).into()
+    }
+
     // NOTE (Layer-local coordinates)
     // ============================
     // The terminal/canvas events provide positions in *document* coordinates.
@@ -684,35 +743,15 @@ impl AnsiEditor {
         self.process_tool_result_from(MouseCaptureTarget::Tool(self.current_tool), result)
     }
 
-    /// Create a new empty ANSI editor
-    pub fn new(options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
-        let buffer = TextBuffer::create((80, 25));
-        Self::with_buffer(buffer, None, options, font_library)
-    }
-
-    /// Create an ANSI editor with a file
+    /// Construct the core editor from a buffer.
     ///
-    /// Returns the editor with the loaded buffer, or an error if loading failed.
-    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> anyhow::Result<Self> {
-        // Detect file format
-        let format = FileFormat::from_path(&path).ok_or_else(|| anyhow::anyhow!("Unknown file format"))?;
-
-        if !format.is_supported() {
-            anyhow::bail!("Format '{}' is not supported for editing", format.name());
-        }
-
-        // Read file data
-        let data = std::fs::read(&path)?;
-
-        // Load buffer using the format
-        let load_data = LoadData::default();
-        let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
-
-        Ok(Self::with_buffer(buffer, Some(path), options, font_library))
-    }
-
-    /// Create an ANSI editor with an existing buffer
-    pub fn with_buffer(buffer: TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    /// Returns (editor, palette, format_mode) so the public wrapper can initialize
+    /// palette-dependent UI widgets.
+    fn from_buffer_inner(
+        buffer: TextBuffer,
+        options: Arc<RwLock<Options>>,
+        font_library: SharedFontLibrary,
+    ) -> (Self, icy_engine::Palette, icy_engine_edit::FormatMode) {
         // Clone the palette before moving buffer into EditState
         let palette = buffer.palette.clone();
         let format_mode = icy_engine_edit::FormatMode::from_buffer(&buffer);
@@ -729,11 +768,6 @@ impl AnsiEditor {
                 state.set_outline_style(outline_style);
             }
         }
-
-        // Create palette components with synced palette
-        let mut palette_grid = PaletteGrid::new();
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        palette_grid.sync_palette(&palette, palette_limit);
 
         let mut color_switcher = ColorSwitcher::new();
         color_switcher.sync_palette(&palette);
@@ -757,16 +791,12 @@ impl AnsiEditor {
         let _ = initial_fkey_set;
         click_handler.sync_fkey_set_from_options(&options);
 
-        Self {
-            file_path,
+        let editor = Self {
             screen,
-            tool_panel: ToolPanel::new(),
             current_tool: Tool::Click,
             top_toolbar,
             color_switcher,
-            palette_grid,
             canvas,
-            right_panel: RightPanel::new(),
             options,
             is_modified: false,
 
@@ -802,7 +832,9 @@ impl AnsiEditor {
             font_handler: tools::FontTool::new(font_library),
             tag_handler: tools::TagTool::new(),
             paste_handler: tools::PasteTool::new(),
-        }
+        };
+
+        (editor, palette, format_mode)
     }
 
     fn clear_tool_overlay(&mut self) {
@@ -879,36 +911,6 @@ impl AnsiEditor {
         }
 
         tools::ToolResult::None
-    }
-
-    /// Set the file path (for session restore)
-    pub fn set_file_path(&mut self, path: PathBuf) {
-        self.file_path = Some(path);
-    }
-
-    /// Load from an autosave file, using the original path for format detection
-    ///
-    /// The autosave file is always saved in ICY format (to preserve layers, fonts, etc.),
-    /// but we set the original path so future saves use the correct format.
-    pub fn load_from_autosave(
-        autosave_path: &std::path::Path,
-        original_path: PathBuf,
-        options: Arc<RwLock<Options>>,
-        font_library: SharedFontLibrary,
-    ) -> anyhow::Result<Self> {
-        // Autosaves are always saved in ICY format
-        let format = FileFormat::IcyDraw;
-
-        // Read autosave data
-        let data = std::fs::read(autosave_path)?;
-
-        // Load buffer using ICY format
-        let load_data = LoadData::default();
-        let buffer = format.from_bytes(&data, Some(load_data))?.buffer;
-
-        let mut editor = Self::with_buffer(buffer, Some(original_path), options, font_library);
-        editor.is_modified = true; // Autosave means we have unsaved changes
-        Ok(editor)
     }
 
     /// Access the EditState via downcast from the Screen trait object
@@ -1095,25 +1097,9 @@ impl AnsiEditor {
         }
     }
 
-    /// Get bytes for autosave (saves in ICY format with thumbnail skipped for performance)
-    pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_ref::<EditState>() {
-            // Use ICY format for autosave to preserve all data (layers, fonts, etc.)
-            let format = FileFormat::IcyDraw;
-            let buffer = edit_state.get_buffer();
-            // Skip thumbnail generation for faster autosave
-            let mut options = icy_engine::AnsiSaveOptionsV2::default();
-            options.skip_thumbnail = true;
-            format.to_bytes(buffer, &options).map_err(|e| e.to_string())
-        } else {
-            Err("Could not access edit state".to_string())
-        }
-    }
-
     /// Check if this editor needs animation updates (for smooth animations)
     pub fn needs_animation(&self) -> bool {
-        self.current_tool == Tool::Click || self.tool_panel.needs_animation() || self.minimap_drag_pointer.is_some()
+        self.current_tool == Tool::Click || self.minimap_drag_pointer.is_some()
     }
 
     /// Get the current marker state for menu display
@@ -1208,21 +1194,8 @@ impl AnsiEditor {
                 self.apply_tag_tool_result(result)
             }
             AnsiEditorMessage::ToolPanel(msg) => {
-                // Block tool panel changes during paste mode
-                if self.is_paste_mode() {
-                    return Task::none();
-                }
-                // Handle tool panel messages
-                match &msg {
-                    ToolPanelMessage::ClickSlot(_) => {
-                        // After the tool panel updates, sync our current_tool
-                        let _ = self.tool_panel.update(msg.clone());
-                        self.change_tool(self.tool_panel.current_tool());
-                    }
-                    ToolPanelMessage::Tick(delta) => {
-                        self.tool_panel.tick(*delta);
-                    }
-                }
+                // Handled by AnsiEditorMainArea.
+                let _ = msg;
                 Task::none()
             }
             AnsiEditorMessage::Canvas(msg) => {
@@ -1231,74 +1204,9 @@ impl AnsiEditor {
                 self.canvas.update(msg).map(AnsiEditorMessage::Canvas)
             }
             AnsiEditorMessage::RightPanel(msg) => {
-                // Handle minimap click-to-navigate before passing to right_panel
-                if let RightPanelMessage::Minimap(ref minimap_msg) = msg {
-                    match minimap_msg {
-                        MinimapMessage::Click {
-                            norm_x,
-                            norm_y,
-                            pointer_x,
-                            pointer_y,
-                        }
-                        | MinimapMessage::Drag {
-                            norm_x,
-                            norm_y,
-                            pointer_x,
-                            pointer_y,
-                        } => {
-                            self.minimap_drag_pointer = Some((*pointer_x, *pointer_y));
-                            // Convert normalized position to content coordinates and scroll
-                            self.scroll_canvas_to_normalized(*norm_x, *norm_y);
-                        }
-                        MinimapMessage::DragEnd => {
-                            self.minimap_drag_pointer = None;
-                        }
-                        _ => {}
-                    }
-                }
-                // Handle layer messages - translate to AnsiEditorMessage
-                if let RightPanelMessage::Layers(ref layer_msg) = msg {
-                    match layer_msg {
-                        LayerMessage::Select(idx) => {
-                            // Check for double-click
-                            if self.right_panel.layers.check_double_click(*idx) {
-                                return Task::done(AnsiEditorMessage::EditLayer(*idx));
-                            }
-                            return Task::done(AnsiEditorMessage::SelectLayer(*idx));
-                        }
-                        LayerMessage::ToggleVisibility(idx) => {
-                            return Task::done(AnsiEditorMessage::ToggleLayerVisibility(*idx));
-                        }
-                        LayerMessage::Add => {
-                            return Task::done(AnsiEditorMessage::AddLayer);
-                        }
-                        LayerMessage::Remove(idx) => {
-                            return Task::done(AnsiEditorMessage::RemoveLayer(*idx));
-                        }
-                        LayerMessage::MoveUp(idx) => {
-                            return Task::done(AnsiEditorMessage::MoveLayerUp(*idx));
-                        }
-                        LayerMessage::MoveDown(idx) => {
-                            return Task::done(AnsiEditorMessage::MoveLayerDown(*idx));
-                        }
-                        LayerMessage::Rename(_, _) => {
-                            // TODO: Implement layer rename
-                        }
-                        LayerMessage::EditLayer(idx) => {
-                            return Task::done(AnsiEditorMessage::EditLayer(*idx));
-                        }
-                        LayerMessage::Duplicate(idx) => {
-                            return Task::done(AnsiEditorMessage::DuplicateLayer(*idx));
-                        }
-                        LayerMessage::MergeDown(idx) => {
-                            return Task::done(AnsiEditorMessage::MergeLayerDown(*idx));
-                        }
-                        LayerMessage::Clear(idx) => {
-                            return Task::done(AnsiEditorMessage::ClearLayer(*idx));
-                        }
-                    }
-                }
-                self.right_panel.update(msg).map(AnsiEditorMessage::RightPanel)
+                // Handled by AnsiEditorMainArea.
+                let _ = msg;
+                Task::none()
             }
             AnsiEditorMessage::TopToolbar(msg) => {
                 // Intercept brush char-table requests here (keeps the dialog local to the editor)
@@ -1409,7 +1317,6 @@ impl AnsiEditor {
 
                         if new_tool != self.current_tool {
                             self.change_tool(new_tool);
-                            self.tool_panel.set_tool(self.current_tool);
                         }
 
                         let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar);
@@ -1586,51 +1493,16 @@ impl AnsiEditor {
                 self.font_handler.handle_outline_selector_message(&self.options, msg);
                 Task::none()
             }
-            AnsiEditorMessage::ColorSwitcher(msg) => {
-                match msg {
-                    ColorSwitcherMessage::SwapColors => {
-                        // Just start the animation, don't swap yet
-                        self.color_switcher.start_swap_animation();
-                    }
-                    ColorSwitcherMessage::AnimationComplete => {
-                        // Animation finished - now actually swap the colors
-                        let (fg, bg) = self.with_edit_state(|state| state.swap_caret_colors());
-                        self.palette_grid.set_foreground(fg);
-                        self.palette_grid.set_background(bg);
-                        // Confirm the swap so the shader resets to normal display
-                        self.color_switcher.confirm_swap();
-                    }
-                    ColorSwitcherMessage::ResetToDefault => {
-                        self.with_edit_state(|state| state.reset_caret_colors());
-                        self.palette_grid.set_foreground(7);
-                        self.palette_grid.set_background(0);
-                    }
-                    ColorSwitcherMessage::Tick(delta) => {
-                        if self.color_switcher.tick(delta) {
-                            // Animation completed - trigger the actual color swap
-                            return Task::done(AnsiEditorMessage::ColorSwitcher(ColorSwitcherMessage::AnimationComplete));
-                        }
-                    }
-                }
+            AnsiEditorMessage::ColorSwitcher(_) => {
+                // handled by wrapper (AnsiEditorMainArea)
                 Task::none()
             }
-            AnsiEditorMessage::PaletteGrid(msg) => {
-                match msg {
-                    PaletteGridMessage::SetForeground(color) => {
-                        self.with_edit_state(|state| state.set_caret_foreground(color));
-                        self.palette_grid.set_foreground(color);
-                    }
-                    PaletteGridMessage::SetBackground(color) => {
-                        self.with_edit_state(|state| state.set_caret_background(color));
-                        self.palette_grid.set_background(color);
-                    }
-                }
+            AnsiEditorMessage::PaletteGrid(_) => {
+                // handled by wrapper (AnsiEditorMainArea)
                 Task::none()
             }
-            AnsiEditorMessage::SelectTool(idx) => {
-                // Select tool by slot index
-                self.change_tool(engine_tools::click_tool_slot(idx, self.current_tool));
-                self.tool_panel.set_tool(self.current_tool);
+            AnsiEditorMessage::SelectTool(_) => {
+                // handled by wrapper (AnsiEditorMainArea)
                 Task::none()
             }
             AnsiEditorMessage::SelectLayer(idx) => {
@@ -1708,23 +1580,8 @@ impl AnsiEditor {
                 self.canvas.scroll_by(dx, dy);
                 Task::none()
             }
-            AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
-                let Some((pointer_x, pointer_y)) = self.minimap_drag_pointer else {
-                    return Task::none();
-                };
-
-                // Recompute normalized position from the last known pointer position. This is
-                // essential when no further cursor events arrive (drag-out), but the minimap and
-                // viewport keep moving.
-                let render_cache = &self.canvas.terminal.render_cache;
-                if let Some((norm_x, norm_y)) =
-                    self.right_panel
-                        .minimap
-                        .handle_click(iced::Size::new(0.0, 0.0), iced::Point::new(pointer_x, pointer_y), Some(render_cache))
-                {
-                    self.scroll_canvas_to_normalized(norm_x, norm_y);
-                }
-
+            AnsiEditorMessage::MinimapAutoscrollTick(_) => {
+                // handled by wrapper (AnsiEditorMainArea)
                 Task::none()
             }
             AnsiEditorMessage::EditLayer(_layer_index) => {
@@ -2315,283 +2172,14 @@ impl AnsiEditor {
         self.canvas.set_brush_preview(rect);
     }
 
-    /// Render the editor view with Moebius-style layout:
-    /// - Left sidebar: Palette (vertical) + Tool icons
-    /// - Top toolbar: Color switcher + Tool-specific options
-    /// - Center: Canvas
-    /// - Right panel: Minimap, Layers, Channels
-    pub fn view(&self) -> Element<'_, AnsiEditorMessage> {
-        // === LEFT SIDEBAR ===
-        // Fixed sidebar width - palette and tool panel adapt to this
-        let sidebar_width = constants::LEFT_BAR_WIDTH;
-
-        // Get caret position and colors from the edit state (also used for palette mode decisions)
-        let (caret_fg, caret_bg, caret_row, caret_col, buffer_height, buffer_width, format_mode) = {
-            let mut screen_guard = self.screen.lock();
-            let state = screen_guard
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-            state.set_caret_visible(state.selection().is_none());
-            let caret = state.get_caret();
-            let buffer = state.get_buffer();
-            let format_mode = state.get_format_mode();
-            let fg = caret.attribute.foreground();
-            let bg = caret.attribute.background();
-            let caret_x = caret.x;
-            let caret_y = caret.y;
-            let height = buffer.height();
-            let width = buffer.width();
-            (fg, bg, caret_y as usize, caret_x as usize, height, width as usize, format_mode)
-        };
-
-        // Palette grid - adapts to sidebar width
-        // In XBinExtended only 8 colors are available
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        let palette_view = self
-            .palette_grid
-            .view_with_width(sidebar_width, palette_limit)
-            .map(AnsiEditorMessage::PaletteGrid);
-
-        // Tool panel - calculate columns based on sidebar width
-        // Use theme's main area background color
-        let bg_weakest = main_area_background(&Theme::Dark);
-
-        // In paste mode, show paste controls instead of tool panel
-        let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if self.is_paste_mode() {
-            let paste_controls = self.paste_handler.view_paste_sidebar_controls();
-            column![palette_view, paste_controls].spacing(4)
-        } else {
-            let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
-            column![palette_view, tool_panel].spacing(4)
-        };
-
-        // === TOP TOOLBAR (with color switcher on the left) ===
-
-        // Color switcher (classic icy_draw style) - shows caret's foreground/background colors
-        let color_switcher = self.color_switcher.view(caret_fg, caret_bg).map(AnsiEditorMessage::ColorSwitcher);
-
-        // Get FKeys and font/palette for toolbar
-        let (fkeys, current_font, palette) = {
-            let opts = self.options.read();
-            let fkeys = opts.fkeys.clone();
-
-            let mut screen_guard = self.screen.lock();
-            let state = screen_guard
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-            let buffer = state.get_buffer();
-            let caret = state.get_caret();
-            let font_page = caret.font_page();
-            let font = buffer.font(font_page).or_else(|| buffer.font(0)).cloned();
-            let palette = buffer.palette.clone();
-            (fkeys, font, palette)
-        };
-
-        // Clone font for char selector overlay (will be used later if popup is open)
-        let font_for_char_selector = current_font.clone();
-
-        // Tool-owned top toolbar (no legacy TopToolbar rendering).
-        use tools::ToolHandler;
-
-        // Selected tag info (TagTool displays this in its toolbar)
-        let selected_tag_info = if self.current_tool == Tool::Tag && self.tag_state.selection.len() == 1 {
-            let idx = self.tag_state.selection[0];
-            let mut screen_guard = self.screen.lock();
-            if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
-                state.get_buffer().tags.get(idx).map(|tag| widget::toolbar::top::SelectedTagInfo {
-                    position: tag.position,
-                    replacement: tag.replacement_value.clone(),
-                })
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let view_ctx = tools::ToolViewContext {
-            theme: &Theme::Dark,
-            current_tool: self.current_tool,
-            fkeys: fkeys.clone(),
-            font: current_font,
-            palette: palette.clone(),
-            caret_fg,
-            caret_bg,
-            tag_add_mode: self.tag_state.add_new_index.is_some(),
-            selected_tag: selected_tag_info,
-            tag_selection_count: self.tag_state.selection.len(),
-        };
-
-        let top_toolbar_content: Element<'_, AnsiEditorMessage> = if self.is_paste_mode() {
-            self.paste_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
-        } else {
-            match self.current_tool {
-                Tool::Click => self.click_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Font => self.font_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Pencil => self.pencil_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Pipette => self.pipette_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Select => self.select_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Fill => self.fill_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                    self.shape_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
-                }
-                Tool::Tag => self.tag_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-            }
-        };
-
-        let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
-
-        let _tags_button: Element<'_, AnsiEditorMessage> = icy_engine_gui::ui::secondary_button("Tags…", Some(AnsiEditorMessage::OpenTagListDialog)).into();
-
-        let top_toolbar = row![color_switcher, top_toolbar_content].spacing(4).align_y(Alignment::Start);
-
-        // === CENTER: Canvas ===
-        // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
-        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
-
-        // === RIGHT PANEL ===
-        // Right panel created AFTER canvas because minimap uses Terminal's render cache
-        // which is populated when canvas.view() calls the Terminal shader
-
-        // Compute viewport info for the minimap from the canvas terminal
-        let viewport_info = self.compute_viewport_info();
-        // Pass the terminal's render cache to the minimap for shared texture access
-        let render_cache = &self.canvas.terminal.render_cache;
-        let right_panel = self
-            .right_panel
-            .view(&self.screen, &viewport_info, Some(render_cache))
-            .map(AnsiEditorMessage::RightPanel);
-
-        // === LINE NUMBERS (optional) ===
-        // Get scroll position from viewport for line numbers
-        let (scroll_x, scroll_y) = {
-            let vp = self.canvas.terminal.viewport.read();
-            (vp.scroll_x, vp.scroll_y)
-        };
-
-        // Get font dimensions for line numbers positioning
-        let (font_width, font_height) = {
-            let screen: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = self.screen.lock();
-            let size = screen.font_dimensions();
-            (size.width as f32, size.height as f32)
-        };
-
-        // Build the center area with optional line numbers overlay and tag context menu
-        let mut center_layers: Vec<Element<'_, AnsiEditorMessage>> = vec![container(canvas).width(Length::Fill).height(Length::Fill).into()];
-
-        if self.show_line_numbers {
-            // Create line numbers overlay - uses RenderInfo.display_scale for actual zoom
-            let line_numbers_overlay = widget::line_numbers::line_numbers_overlay(
-                self.canvas.terminal.render_info.clone(),
-                buffer_width,
-                buffer_height as usize,
-                font_width,
-                font_height,
-                caret_row,
-                caret_col,
-                scroll_x,
-                scroll_y,
-            );
-            center_layers.push(line_numbers_overlay);
-        }
-
-        // Add tag context menu overlay if active
-        if self.tag_state.has_context_menu() {
-            let display_scale = self.canvas.terminal.render_info.read().display_scale;
-            if let Some(context_menu) = self
-                .tag_state
-                .view_context_menu_overlay(font_width, font_height, scroll_x, scroll_y, display_scale)
-            {
-                center_layers.push(context_menu.map(AnsiEditorMessage::ToolMessage));
-            }
-        }
-
-        let center_area: Element<'_, AnsiEditorMessage> = iced::widget::stack(center_layers).width(Length::Fill).height(Length::Fill).into();
-
-        // Main layout:
-        // Left column: toolbar on top, then left sidebar + canvas
-        // Right: right panel spanning full height
-
-        let left_content_row = row![
-            // Left sidebar - dynamic width based on palette size
-            container(left_sidebar).width(Length::Fixed(sidebar_width)),
-            // Center - canvas with optional line numbers
-            center_area,
-        ];
-
-        let left_column = column![
-            // Top toolbar - full width of left area
-            container(top_toolbar)
-                .width(Length::Fill)
-                .height(Length::Fixed(toolbar_height))
-                .style(container::rounded_box),
-            // Left sidebar + canvas
-            left_content_row,
-        ]
-        .spacing(0);
-
-        let main_layout: Element<'_, AnsiEditorMessage> = row![
-            left_column,
-            // Right panel - fixed width, full height
-            container(right_panel).width(Length::Fixed(RIGHT_PANEL_BASE_WIDTH)),
-        ]
-        .into();
-
-        // Apply tag dialog modal overlay if active
-        if let Some(tag_dialog) = &self.tag_state.dialog {
-            let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
-        } else if let Some(tag_list_dialog) = &self.tag_state.list_dialog {
-            let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
-        } else if let Some(target) = self.char_selector_target {
-            let current_code = match target {
-                CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
-                CharSelectorTarget::BrushChar => {
-                    let ch = match self.current_tool {
-                        Tool::Pencil => self.pencil_handler.paint_char(),
-                        Tool::Fill => self.fill_handler.paint_char(),
-                        Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                            self.shape_handler.paint_char()
-                        }
-                        _ => ' ',
-                    };
-                    ch as u16
-                }
-            };
-
-            let selector_canvas = CharSelector::new(current_code)
-                .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
-                .map(AnsiEditorMessage::CharSelector);
-
-            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
-
-            // Use modal() which closes on click outside (on_blur)
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
-        } else if self.font_handler.is_outline_selector_open() {
-            // Apply outline selector modal overlay if active
-            let current_style = *self.options.read().font_outline_style.read();
-
-            let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
-
-            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
-
-            // Use modal() which closes on click outside (on_blur)
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel))
-        } else {
-            main_layout
-        }
-    }
+    // view() moved to `AnsiEditorMainArea` (see `main_area.rs`).
 
     /// Sync UI components with the current edit state
     /// Call this after operations that may change the palette or tags
     pub fn sync_ui(&mut self) {
         let (palette, format_mode, tag_count) =
             self.with_edit_state(|state| (state.get_buffer().palette.clone(), state.get_format_mode(), state.get_buffer().tags.len()));
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        self.palette_grid.sync_palette(&palette, palette_limit);
+        let _palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.color_switcher.sync_palette(&palette);
         // Clear invalid tag selections (tags may have been removed by undo)
         self.tag_state.selection.retain(|&idx| idx < tag_count);
