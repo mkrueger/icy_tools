@@ -233,35 +233,39 @@ mod tests {
 
     #[test]
     fn test_toggle_click_select() {
-        assert_eq!(click_tool_slot(0, Tool::Click), Tool::Select);
-        assert_eq!(click_tool_slot(0, Tool::Select), Tool::Click);
+        // Click is now its own slot (slot 0), Select is slot 1
+        // Clicking on slot 0 when already Click returns Click (single tool)
+        assert_eq!(click_tool_slot(0, Tool::Click), Tool::Click);
+        // Clicking on slot 1 when current is Click switches to Select
+        assert_eq!(click_tool_slot(1, Tool::Click), Tool::Select);
     }
 
     #[test]
     fn test_toggle_rectangle() {
-        assert_eq!(click_tool_slot(3, Tool::RectangleOutline), Tool::RectangleFilled);
-        assert_eq!(click_tool_slot(3, Tool::RectangleFilled), Tool::RectangleOutline);
+        // Rectangle is slot 4 (0=Click, 1=Select, 2=Pencil, 3=Line, 4=Rectangle)
+        assert_eq!(click_tool_slot(4, Tool::RectangleOutline), Tool::RectangleFilled);
+        assert_eq!(click_tool_slot(4, Tool::RectangleFilled), Tool::RectangleOutline);
     }
 
     #[test]
     fn test_single_tool_no_toggle() {
-        // Fill has no partner, clicking again returns Fill
-        assert_eq!(click_tool_slot(5, Tool::Fill), Tool::Fill);
+        // Fill is slot 6
+        assert_eq!(click_tool_slot(6, Tool::Fill), Tool::Fill);
     }
 
     #[test]
     fn test_switch_to_new_slot() {
-        // From Click, click on Pencil slot -> Pencil (primary)
-        assert_eq!(click_tool_slot(1, Tool::Click), Tool::Pencil);
+        // From Click, click on Pencil slot (2) -> Pencil (primary)
+        assert_eq!(click_tool_slot(2, Tool::Click), Tool::Pencil);
     }
 
     #[test]
     fn test_slot_index() {
         assert_eq!(Tool::Click.slot_index(), 0);
-        assert_eq!(Tool::Select.slot_index(), 0);
-        assert_eq!(Tool::Pencil.slot_index(), 1);
-        assert_eq!(Tool::Line.slot_index(), 2);
-        assert_eq!(Tool::Fill.slot_index(), 5);
+        assert_eq!(Tool::Select.slot_index(), 1);
+        assert_eq!(Tool::Pencil.slot_index(), 2);
+        assert_eq!(Tool::Line.slot_index(), 3);
+        assert_eq!(Tool::Fill.slot_index(), 6);
     }
 
     #[test]
@@ -276,8 +280,8 @@ mod tests {
     fn test_display_tool_for_slot() {
         // When Click is selected, slot 0 shows Click
         assert_eq!(get_slot_display_tool(0, Tool::Click), Tool::Click);
-        // When Select is selected, slot 0 shows Select
-        assert_eq!(get_slot_display_tool(0, Tool::Select), Tool::Select);
+        // When Select is selected, slot 1 shows Select
+        assert_eq!(get_slot_display_tool(1, Tool::Select), Tool::Select);
         // When Pencil is selected, slot 0 shows primary (Click)
         assert_eq!(get_slot_display_tool(0, Tool::Pencil), Tool::Click);
     }

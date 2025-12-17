@@ -69,7 +69,7 @@ pub enum CharSelectorTarget {
 }
 
 /// Messages for the ANSI editor
-use widget::outline_selector::{OutlineSelector, OutlineSelectorMessage, outline_selector_width};
+use widget::outline_selector::OutlineSelectorMessage;
 
 #[derive(Clone, Debug)]
 pub enum AnsiEditorMessage {

@@ -1,4 +1,4 @@
-use crate::{AttributedChar, Position, TextAttribute, TextPane};
+use crate::{AttributeColor, AttributedChar, Position, TextAttribute, TextPane};
 
 pub(crate) const FULL_BLOCK: char = 219 as char;
 pub(crate) const HALF_BLOCK_TOP: char = 223 as char;
@@ -10,8 +10,8 @@ pub(crate) const RIGHT_BLOCK: char = 222 as char;
 
 fn flip_colors(attribute: TextAttribute) -> TextAttribute {
     let mut result = attribute;
-    result.set_foreground(attribute.background());
-    result.set_background(attribute.foreground());
+    result.set_foreground_color(attribute.background_color());
+    result.set_background_color(attribute.foreground_color());
     result
 }
 
@@ -30,10 +30,10 @@ pub enum HalfBlockType {
 #[derive(Debug)]
 pub struct HalfBlock {
     pub ch: AttributedChar,
-    pub upper_block_color: u32,
-    pub lower_block_color: u32,
-    pub left_block_color: u32,
-    pub right_block_color: u32,
+    pub upper_block_color: AttributeColor,
+    pub lower_block_color: AttributeColor,
+    pub left_block_color: AttributeColor,
+    pub right_block_color: AttributeColor,
     pub is_top: bool,
     pub block_type: HalfBlockType,
 }
@@ -46,46 +46,46 @@ impl HalfBlock {
 
     pub fn from_char(ch: AttributedChar, pos: Position) -> Self {
         let is_top = pos.y % 2 == 0;
-        let mut upper_block_color = 0;
-        let mut lower_block_color = 0;
-        let mut left_block_color = 0;
-        let mut right_block_color = 0;
+        let mut upper_block_color = AttributeColor::Palette(0);
+        let mut lower_block_color = AttributeColor::Palette(0);
+        let mut left_block_color = AttributeColor::Palette(0);
+        let mut right_block_color = AttributeColor::Palette(0);
         let block_type;
         match ch.ch {
             EMPTY_BLOCK1 | ' ' | EMPTY_BLOCK2 => {
-                upper_block_color = ch.attribute.background_color;
-                lower_block_color = ch.attribute.background_color;
+                upper_block_color = ch.attribute.background_color();
+                lower_block_color = ch.attribute.background_color();
                 block_type = HalfBlockType::Empty;
             }
             HALF_BLOCK_BOTTOM => {
-                upper_block_color = ch.attribute.background_color;
-                lower_block_color = ch.attribute.foreground_color;
+                upper_block_color = ch.attribute.background_color();
+                lower_block_color = ch.attribute.foreground_color();
                 block_type = HalfBlockType::Lower;
             }
             HALF_BLOCK_TOP => {
-                upper_block_color = ch.attribute.foreground_color;
-                lower_block_color = ch.attribute.background_color;
+                upper_block_color = ch.attribute.foreground_color();
+                lower_block_color = ch.attribute.background_color();
                 block_type = HalfBlockType::Upper;
             }
             FULL_BLOCK => {
-                upper_block_color = ch.attribute.foreground_color;
-                lower_block_color = ch.attribute.foreground_color;
+                upper_block_color = ch.attribute.foreground_color();
+                lower_block_color = ch.attribute.foreground_color();
                 block_type = HalfBlockType::Full;
             }
             LEFT_BLOCK => {
-                left_block_color = ch.attribute.foreground_color;
-                right_block_color = ch.attribute.background_color;
+                left_block_color = ch.attribute.foreground_color();
+                right_block_color = ch.attribute.background_color();
                 block_type = HalfBlockType::Left;
             }
             RIGHT_BLOCK => {
-                left_block_color = ch.attribute.background_color;
-                right_block_color = ch.attribute.foreground_color;
+                left_block_color = ch.attribute.background_color();
+                right_block_color = ch.attribute.foreground_color();
                 block_type = HalfBlockType::Right;
             }
             _ => {
-                if ch.attribute.background_color == ch.attribute.foreground_color {
-                    upper_block_color = ch.attribute.foreground_color;
-                    lower_block_color = ch.attribute.foreground_color;
+                if ch.attribute.background_color() == ch.attribute.foreground_color() {
+                    upper_block_color = ch.attribute.foreground_color();
+                    lower_block_color = ch.attribute.foreground_color();
                     block_type = HalfBlockType::Full;
                 } else {
                     block_type = HalfBlockType::None;
@@ -114,19 +114,19 @@ impl HalfBlock {
         self.block_type == HalfBlockType::Left || self.block_type == HalfBlockType::Right
     }
 
-    pub fn get_half_block_char(&self, col: u32, transparent_color: bool) -> AttributedChar {
+    pub fn get_half_block_char(&self, col: AttributeColor, transparent_color: bool) -> AttributedChar {
         let transparent_color = self.ch.is_transparent() && transparent_color;
 
         let block = if self.is_blocky() {
             if self.is_top && self.lower_block_color == col || !self.is_top && self.upper_block_color == col {
-                AttributedChar::new(FULL_BLOCK, TextAttribute::new(col, 0))
+                AttributedChar::new(FULL_BLOCK, TextAttribute::from_colors(col, AttributeColor::Palette(0)))
             } else if self.is_top {
                 AttributedChar::new(
                     HALF_BLOCK_TOP,
-                    TextAttribute::new(
+                    TextAttribute::from_colors(
                         col,
                         if transparent_color {
-                            TextAttribute::TRANSPARENT_COLOR
+                            AttributeColor::Transparent
                         } else {
                             self.lower_block_color
                         },
@@ -135,10 +135,10 @@ impl HalfBlock {
             } else {
                 AttributedChar::new(
                     HALF_BLOCK_BOTTOM,
-                    TextAttribute::new(
+                    TextAttribute::from_colors(
                         col,
                         if transparent_color {
-                            TextAttribute::TRANSPARENT_COLOR
+                            AttributeColor::Transparent
                         } else {
                             self.upper_block_color
                         },
@@ -149,24 +149,24 @@ impl HalfBlock {
             if self.is_top {
                 AttributedChar::new(
                     HALF_BLOCK_TOP,
-                    TextAttribute::new(
+                    TextAttribute::from_colors(
                         col,
                         if transparent_color {
-                            TextAttribute::TRANSPARENT_COLOR
+                            AttributeColor::Transparent
                         } else {
-                            self.ch.attribute.background_color
+                            self.ch.attribute.background_color()
                         },
                     ),
                 )
             } else {
                 AttributedChar::new(
                     HALF_BLOCK_BOTTOM,
-                    TextAttribute::new(
+                    TextAttribute::from_colors(
                         col,
                         if transparent_color {
-                            TextAttribute::TRANSPARENT_COLOR
+                            AttributeColor::Transparent
                         } else {
-                            self.ch.attribute.background_color
+                            self.ch.attribute.background_color()
                         },
                     ),
                 )

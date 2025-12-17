@@ -57,9 +57,9 @@ impl<'a> ScreenSink<'a> {
             self.screen.caret().attribute
         };
 
-        if self.screen.terminal_state().ice_colors && attr.is_blinking() && attr.background_color < 8 {
+        if self.screen.terminal_state().ice_colors && attr.is_blinking() && attr.background() < 8 {
             attr.set_is_blinking(false);
-            attr.background_color += 8;
+            attr.set_background(attr.background() + 8);
         }
         attr
     }

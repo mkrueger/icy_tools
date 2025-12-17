@@ -1,4 +1,4 @@
-use crate::{AttributedChar, BufferType, Layer, Position, Role, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
+use crate::{AttributeColor, AttributedChar, BufferType, Layer, Position, Role, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
 pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
 pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {
@@ -38,10 +38,10 @@ pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &Select
             let c = buffer.buffer_type.convert_to_unicode(ch.ch);
             data.extend(u32::to_le_bytes(c as u32));
             data.extend(u16::to_le_bytes(ch.attribute.attr));
-            data.push(ch.attribute.font_page);
-            data.push(ch.attribute.ext_attr);
-            data.extend(u32::to_le_bytes(ch.attribute.background_color));
-            data.extend(u32::to_le_bytes(ch.attribute.foreground_color));
+            data.push(ch.attribute.font_page() as u8);
+            data.push(0); // ext_attr removed, write 0 for wire format compatibility
+            data.extend(u32::to_le_bytes(ch.attribute.background_color().to_u32()));
+            data.extend(u32::to_le_bytes(ch.attribute.foreground_color().to_u32()));
         }
     }
     Some(data)
@@ -100,16 +100,14 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
         for x in 0..width {
             let ch = unsafe { char::from_u32_unchecked(u32::from_le_bytes(data[0..4].try_into().unwrap())) };
             let ch = buffer_type.convert_from_unicode(ch);
-            let attr_ch = AttributedChar {
-                ch,
-                attribute: TextAttribute {
-                    attr: u16::from_le_bytes(data[4..6].try_into().unwrap()),
-                    font_page: data[6],
-                    background_color: u32::from_le_bytes(data[8..12].try_into().unwrap()),
-                    foreground_color: u32::from_le_bytes(data[12..16].try_into().unwrap()),
-                    ext_attr: data[7],
-                },
-            };
+            let fg_color = AttributeColor::from_u32(u32::from_le_bytes(data[12..16].try_into().unwrap()));
+            let bg_color = AttributeColor::from_u32(u32::from_le_bytes(data[8..12].try_into().unwrap()));
+            let mut text_attr = TextAttribute::default();
+            text_attr.attr = u16::from_le_bytes(data[4..6].try_into().unwrap());
+            text_attr.set_font_page(data[6] as usize);
+            text_attr.set_foreground_color(fg_color);
+            text_attr.set_background_color(bg_color);
+            let attr_ch = AttributedChar { ch, attribute: text_attr };
             layer.set_char((x as i32, y as i32), attr_ch);
             data = &data[16..];
         }

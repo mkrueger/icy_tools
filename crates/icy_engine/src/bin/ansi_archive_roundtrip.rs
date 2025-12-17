@@ -106,10 +106,10 @@ fn terminalize_for_compare(buffer: &icy_engine::TextBuffer) -> icy_engine::TextB
                 // Clear internal invisible markers.
                 ch.attribute.attr &= !icy_engine::attribute::INVISIBLE;
 
-                if ch.attribute.foreground() == icy_engine::TextAttribute::TRANSPARENT_COLOR {
+                if ch.attribute.is_foreground_transparent() {
                     ch.attribute.set_foreground(7);
                 }
-                if ch.attribute.background() == icy_engine::TextAttribute::TRANSPARENT_COLOR {
+                if ch.attribute.is_background_transparent() {
                     ch.attribute.set_background(0);
                 }
 

@@ -52,7 +52,7 @@ pub use ellipse::{
 pub use line::{draw_line, get_line_points};
 pub use rectangle::{draw_rectangle, fill_rectangle, get_filled_rectangle_points, get_rectangle_points};
 
-use icy_engine::{AttributedChar, Position, TextAttribute};
+use icy_engine::{AttributeColor, AttributedChar, Position, TextAttribute};
 
 /// Standard CP437 shade gradient characters (from light to dark)
 ///
@@ -262,7 +262,7 @@ impl DrawContext {
         };
         let hb_pos = Position::new(pos.x, if self.half_block_is_top { 0 } else { 1 });
         let hb = icy_engine::paint::HalfBlock::from_char(current, hb_pos);
-        let col = self.foreground;
+        let col = AttributeColor::Palette(self.foreground as u8);
         let block = hb.get_half_block_char(col, true);
         target.set_char(pos, block);
     }

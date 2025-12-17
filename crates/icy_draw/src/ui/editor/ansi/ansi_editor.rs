@@ -14,6 +14,8 @@ use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
 use parking_lot::{Mutex, RwLock};
 
+use super::widget::outline_selector::{OutlineSelector, outline_selector_width};
+
 /// Core ANSI editor logic/state (tools, dispatching, canvas, etc.).
 ///
 /// This is intentionally not exposed publicly; the public entrypoint is
@@ -84,6 +86,67 @@ pub struct AnsiEditor {
 }
 
 impl AnsiEditor {
+    pub(super) fn wrap_with_modals<'a>(&'a self, main_layout: Element<'a, AnsiEditorMessage>) -> Element<'a, AnsiEditorMessage> {
+        // Compute context for modal rendering (fkeys, font, palette, caret colors).
+        let (fkeys, current_font, palette, caret_fg, caret_bg) = {
+            let opts = self.options.read();
+            let fkeys = opts.fkeys.clone();
+
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let buffer = state.get_buffer();
+            let caret = state.get_caret();
+            let font_page = caret.font_page();
+            let font = buffer.font(font_page).or_else(|| buffer.font(0)).cloned();
+            let palette = buffer.palette.clone();
+            (fkeys, font, palette, caret.attribute.foreground(), caret.attribute.background())
+        };
+
+        // Precedence:
+        // 1) Tag dialogs (only when Tag tool is active)
+        // 2) Char selector
+        // 3) Outline selector (only when Font tool is active)
+
+        if let Some(tag_tool) = self.active_tag_tool() {
+            if let Some(tag_dialog) = &tag_tool.state().dialog {
+                let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel));
+            }
+            if let Some(tag_list_dialog) = &tag_tool.state().list_dialog {
+                let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close));
+            }
+        }
+
+        if let Some(target) = self.char_selector_target {
+            let current_code = match target {
+                CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
+                CharSelectorTarget::BrushChar => self.brush_paint_char() as u16,
+            };
+
+            let selector_canvas = CharSelector::new(current_code)
+                .view(current_font, palette.clone(), caret_fg, caret_bg)
+                .map(AnsiEditorMessage::CharSelector);
+
+            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
+            return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel));
+        }
+
+        if let Some(font) = self.active_font_tool() {
+            if font.is_outline_selector_open() {
+                let current_style = *self.options.read().font_outline_style.read();
+                let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
+                let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel));
+            }
+        }
+
+        main_layout
+    }
+
     /// Renders the center canvas area (canvas + overlays).
     ///
     /// This is intentionally kept in the core editor so the surrounding layout/chrome
@@ -1130,8 +1193,9 @@ impl AnsiEditor {
                 Task::none()
             }
             AnsiEditorMessage::OutlineSelector(msg) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                let _ = msg;
+                if let Some(font) = self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>() {
+                    font.handle_outline_selector_message(&self.options, msg);
+                }
                 Task::none()
             }
             AnsiEditorMessage::ColorSwitcher(_) => {

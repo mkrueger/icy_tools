@@ -12,6 +12,7 @@ mod bin;
 mod ctrla;
 mod ice_draw;
 mod icy_draw;
+mod icy_draw_v0;
 mod palette;
 mod pcboard;
 mod renegade;

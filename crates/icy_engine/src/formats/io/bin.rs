@@ -41,7 +41,7 @@ pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<T
             screen.buffer.layers[0].set_height(pos.y + 1);
             let mut attribute = TextAttribute::from_u8(data[o + 1], screen.buffer.ice_mode);
             if attribute.is_bold() {
-                attribute.set_foreground(attribute.foreground_color + 8);
+                attribute.set_foreground(attribute.foreground() + 8);
                 attribute.set_is_bold(false);
             }
 

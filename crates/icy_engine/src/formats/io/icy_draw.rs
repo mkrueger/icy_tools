@@ -1,17 +1,78 @@
 use std::collections::HashMap;
 use std::fmt::Alignment;
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
 
 use base64::{Engine, engine::general_purpose};
-use bzip2::Compression as BzCompression;
-use bzip2::read::BzDecoder;
-use bzip2::write::BzEncoder;
 use icy_sauce::SauceRecord;
 use regex::Regex;
+use zstd::stream::{decode_all as zstd_decode_all, encode_all as zstd_encode_all};
 
-use crate::{BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextBuffer, TextPane, TextScreen, attribute};
+use crate::{AttributeColor, BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen, attribute};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
+
+/// Decode legacy wire format (ext_attr + u32 fg/bg) into AttributeColor.
+/// This handles V0/V1 legacy files that used the old representation.
+fn decode_legacy_color(raw_color: u32, ext_attr: u8, is_foreground: bool) -> AttributeColor {
+    // Check for old TRANSPARENT_COLOR sentinel (1<<31)
+    if raw_color == 0x8000_0000 {
+        return AttributeColor::Transparent;
+    }
+
+    let (rgb_flag, ext_flag) = if is_foreground {
+        (0b0000_0001, 0b0000_0100) // FG_RGBA, FG_EXT
+    } else {
+        (0b0000_0010, 0b0000_1000) // BG_RGBA, BG_EXT
+    };
+
+    if (ext_attr & rgb_flag) != 0 {
+        // RGB mode: color is packed as 0x00RRGGBB
+        let r = ((raw_color >> 16) & 0xFF) as u8;
+        let g = ((raw_color >> 8) & 0xFF) as u8;
+        let b = (raw_color & 0xFF) as u8;
+        AttributeColor::Rgb(r, g, b)
+    } else if (ext_attr & ext_flag) != 0 {
+        // Extended palette (xterm 256)
+        AttributeColor::ExtendedPalette((raw_color & 0xFF) as u8)
+    } else {
+        // Standard palette
+        AttributeColor::Palette((raw_color & 0xFF) as u8)
+    }
+}
+
+/// Encode AttributeColor pairs to legacy wire format (fg_u32, bg_u32, ext_attr).
+/// Used for saving in ICY format for backwards compatibility.
+fn encode_colors_to_legacy(fg: AttributeColor, bg: AttributeColor) -> (u32, u32, u8) {
+    let mut ext_attr: u8 = 0;
+
+    let fg_u32 = match fg {
+        AttributeColor::Transparent => 0x8000_0000,
+        AttributeColor::Palette(p) => p as u32,
+        AttributeColor::ExtendedPalette(p) => {
+            ext_attr |= 0b0000_0100; // FG_EXT
+            p as u32
+        }
+        AttributeColor::Rgb(r, g, b) => {
+            ext_attr |= 0b0000_0001; // FG_RGBA
+            ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+        }
+    };
+
+    let bg_u32 = match bg {
+        AttributeColor::Transparent => 0x8000_0000,
+        AttributeColor::Palette(p) => p as u32,
+        AttributeColor::ExtendedPalette(p) => {
+            ext_attr |= 0b0000_1000; // BG_EXT
+            p as u32
+        }
+        AttributeColor::Rgb(r, g, b) => {
+            ext_attr |= 0b0000_0010; // BG_RGBA
+            ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+        }
+    };
+
+    (fg_u32, bg_u32, ext_attr)
+}
 
 mod constants {
     pub const ICED_VERSION: u16 = 1;
@@ -21,7 +82,7 @@ mod constants {
     /// Compression methods for ICED format (stored in first byte of Type field)
     pub mod compression {
         pub const NONE: u8 = 0;
-        pub const BZ2: u8 = 1;
+        pub const ZSTD: u8 = 2;
     }
 
     /// Sixel image format (stored in second byte of Type field)
@@ -38,6 +99,9 @@ mod constants {
         pub const ALPHA_LOCKED: u32 = 0b0001_0000;
     }
 }
+
+// Default for new ICED v1 saves.
+const DEFAULT_V1_COMPRESSION: u8 = constants::compression::ZSTD;
 
 lazy_static::lazy_static! {
     static ref LAYER_CONTINUE_REGEX: Regex = Regex::new(r"LAYER_(\d+)~(\d+)").unwrap();
@@ -73,14 +137,15 @@ fn write_icyd_record<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &s
     Ok(())
 }
 
-/// Compresses data with bz2 and writes it as an icYD chunk
+/// Compresses data and writes it as an icYD chunk
 fn write_compressed_chunk<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &str, data: &[u8]) -> std::result::Result<(), IcedError> {
-    // Compress data with bz2
-    let mut encoder = BzEncoder::new(Vec::new(), BzCompression::best());
-    encoder
-        .write_all(data)
-        .map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 compression failed: {e}")))?;
-    let compressed = encoder.finish().map_err(|e| IcedError::ErrorEncodingZText(format!("bz2 finish failed: {e}")))?;
+    let compressed = match DEFAULT_V1_COMPRESSION {
+        constants::compression::NONE => data.to_vec(),
+        constants::compression::ZSTD => {
+            zstd_encode_all(Cursor::new(data), 3).map_err(|e| IcedError::ErrorEncodingZText(format!("zstd compression failed: {e}")))?
+        }
+        other => return Err(IcedError::ErrorEncodingZText(format!("unsupported compression id {other}"))),
+    };
 
     let record = build_icyd_record(keyword, &compressed).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
     writer
@@ -359,26 +424,10 @@ fn process_icy_draw_decoded_chunk(
                 if cur.len() < 2 {
                     return Err(crate::EngineError::OutOfBounds { offset: 2 });
                 }
-                let mut attr = u16::from_le_bytes(cur[..2].try_into().unwrap());
+                let attr = u16::from_le_bytes(cur[..2].try_into().unwrap());
                 cur = &cur[2..];
 
-                let is_short = if attr & attribute::SHORT_DATA != 0 {
-                    attr &= !attribute::SHORT_DATA;
-                    true
-                } else {
-                    false
-                };
-
-                let (fg, bg, font_page, ext_attr) = if is_short {
-                    if cur.len() < 3 {
-                        return Err(crate::EngineError::OutOfBounds { offset: 3 });
-                    }
-                    let fg = cur[0] as u32;
-                    let bg = cur[1] as u32;
-                    let font_page = cur[2];
-                    cur = &cur[3..];
-                    (fg, bg, font_page, 0)
-                } else {
+                let (fg, bg, font_page, ext_attr) = {
                     if cur.len() < 10 {
                         return Err(crate::EngineError::OutOfBounds { offset: 10 });
                     }
@@ -395,6 +444,12 @@ fn process_icy_draw_decoded_chunk(
                 }
                 cur = &cur[16..]; // unused data for future use
 
+                let mut text_attr = TextAttribute::default();
+                text_attr.attr = attr;
+                text_attr.set_font_page(font_page as usize);
+                text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
+                text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
+
                 result.tags.push(crate::Tag {
                     preview,
                     replacement_value,
@@ -404,13 +459,7 @@ fn process_icy_draw_decoded_chunk(
                     alignment,
                     tag_placement,
                     tag_role,
-                    attribute: crate::TextAttribute {
-                        foreground_color: fg,
-                        background_color: bg,
-                        font_page,
-                        ext_attr,
-                        attr,
-                    },
+                    attribute: text_attr,
                 });
             }
         }
@@ -460,34 +509,19 @@ fn process_icy_draw_decoded_chunk(
                                 if bytes.len() < o + 2 {
                                     return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
                                 }
-                                let mut attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+                                let attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
                                 o += 2;
-                                if attr_raw == attribute::INVISIBLE_SHORT {
-                                    break;
-                                }
-
-                                let is_short = (attr_raw & attribute::SHORT_DATA) != 0;
-                                if is_short {
-                                    attr_raw &= !attribute::SHORT_DATA;
-                                }
                                 let attr = attr_raw;
                                 if attr == attribute::INVISIBLE {
                                     continue;
                                 }
 
-                                let need = if is_short { 4 } else { 14 };
+                                let need = 14;
                                 if bytes.len() < o + need {
                                     return Err(crate::EngineError::OutOfBounds { offset: o + need });
                                 }
 
-                                let (ch_u32, fg, bg, ext_attr, font_page) = if is_short {
-                                    let ch = bytes[o] as u32;
-                                    let fg = bytes[o + 1] as u32;
-                                    let bg = bytes[o + 2] as u32;
-                                    let font_page = bytes[o + 3];
-                                    o += 4;
-                                    (ch, fg, bg, 0, font_page)
-                                } else {
+                                let (ch_u32, fg, bg, ext_attr, font_page) = {
                                     let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                                     let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
                                     let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
@@ -501,19 +535,13 @@ fn process_icy_draw_decoded_chunk(
                                     description: format!("invalid unicode scalar value: {ch_u32}"),
                                 })?;
 
-                                layer.set_char(
-                                    (x, y),
-                                    crate::AttributedChar {
-                                        ch,
-                                        attribute: crate::TextAttribute {
-                                            foreground_color: fg,
-                                            background_color: bg,
-                                            font_page,
-                                            ext_attr,
-                                            attr,
-                                        },
-                                    },
-                                );
+                                let mut text_attr = TextAttribute::default();
+                                text_attr.attr = attr;
+                                text_attr.set_font_page(font_page as usize);
+                                text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
+                                text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
+
+                                layer.set_char((x, y), crate::AttributedChar { ch, attribute: text_attr });
                             }
                             y += 1;
                         }
@@ -667,34 +695,20 @@ fn process_icy_draw_decoded_chunk(
                         if bytes.len() < o + 2 {
                             return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
                         }
-                        let mut attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+                        let attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
                         o += 2;
-                        if attr_raw == attribute::INVISIBLE_SHORT {
-                            break;
-                        }
 
-                        let is_short = (attr_raw & attribute::SHORT_DATA) != 0;
-                        if is_short {
-                            attr_raw &= !attribute::SHORT_DATA;
-                        }
                         let attr = attr_raw;
                         if attr == attribute::INVISIBLE {
                             continue;
                         }
 
-                        let need = if is_short { 4 } else { 14 };
+                        let need = 14;
                         if bytes.len() < o + need {
                             return Err(crate::EngineError::OutOfBounds { offset: o + need });
                         }
 
-                        let (ch_u32, fg, bg, ext_attr, font_page) = if is_short {
-                            let ch = bytes[o] as u32;
-                            let fg = bytes[o + 1] as u32;
-                            let bg = bytes[o + 2] as u32;
-                            let font_page = bytes[o + 3];
-                            o += 4;
-                            (ch, fg, bg, 0u8, font_page)
-                        } else {
+                        let (ch_u32, fg, bg, ext_attr, font_page) = {
                             let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
                             let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
                             let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
@@ -708,19 +722,13 @@ fn process_icy_draw_decoded_chunk(
                             description: format!("invalid unicode scalar value: {ch_u32}"),
                         })?;
 
-                        layer.set_char(
-                            (x, y),
-                            crate::AttributedChar {
-                                ch,
-                                attribute: crate::TextAttribute {
-                                    foreground_color: fg,
-                                    background_color: bg,
-                                    font_page,
-                                    ext_attr,
-                                    attr,
-                                },
-                            },
-                        );
+                        let mut text_attr = TextAttribute::default();
+                        text_attr.attr = attr;
+                        text_attr.set_font_page(font_page as usize);
+                        text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
+                        text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
+
+                        layer.set_char((x, y), crate::AttributedChar { ch, attribute: text_attr });
                     }
                     y += 1;
                 }
@@ -795,7 +803,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     {
         let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
         // Type field: [compression: u8][sixel_format: u8][reserved: u16]
-        result.push(constants::compression::BZ2); // compression method
+        result.push(DEFAULT_V1_COMPRESSION); // compression method
         result.push(constants::sixel_format::PNG); // sixel format
         result.extend([0, 0]); // reserved
         // Modes
@@ -908,40 +916,18 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
                 let real_length = get_invisible_line_length(layer, y);
                 for x in 0..real_length {
                     let ch = layer.char_at((x, y).into());
-                    let mut attr = ch.attribute.attr;
-
-                    let is_short = if ch.is_visible()
-                        && ch.ch as u32 <= 255
-                        && ch.attribute.foreground_color <= 255
-                        && ch.attribute.background_color <= 255
-                        && ch.attribute.ext_attr == 0
-                    {
-                        attr |= attribute::SHORT_DATA;
-                        true
-                    } else {
-                        false
-                    };
-
+                    let attr = ch.attribute.attr;
                     char_data.extend(u16::to_le_bytes(attr));
                     if !ch.is_visible() {
                         continue;
                     }
 
-                    if is_short {
-                        char_data.push(ch.ch as u8);
-                        char_data.push(ch.attribute.foreground_color as u8);
-                        char_data.push(ch.attribute.background_color as u8);
-                        char_data.push(ch.attribute.font_page);
-                    } else {
-                        char_data.extend(u32::to_le_bytes(ch.ch as u32));
-                        char_data.extend(u32::to_le_bytes(ch.attribute.foreground_color));
-                        char_data.extend(u32::to_le_bytes(ch.attribute.background_color));
-                        char_data.push(ch.attribute.font_page);
-                        char_data.push(ch.attribute.ext_attr);
-                    }
-                }
-                if layer.width() > real_length {
-                    char_data.extend(u16::to_le_bytes(attribute::INVISIBLE_SHORT));
+                    let (fg_u32, bg_u32, ext_attr) = encode_colors_to_legacy(ch.attribute.foreground_color(), ch.attribute.background_color());
+                    char_data.extend(u32::to_le_bytes(ch.ch as u32));
+                    char_data.extend(u32::to_le_bytes(fg_u32));
+                    char_data.extend(u32::to_le_bytes(bg_u32));
+                    char_data.push(ch.attribute.font_page() as u8);
+                    char_data.push(ext_attr);
                 }
             }
 
@@ -949,7 +935,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
             layer_data.extend(char_data);
         }
 
-        // Write the layer data with bz2 compression
+        // Write the layer data with the configured ICED compression
         let keyword = format!("LAYER_{i}");
         write_compressed_chunk(&mut writer, &keyword, &layer_data)?;
     }
@@ -981,25 +967,14 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
                 crate::TagRole::Displaycode => data.push(0),
                 crate::TagRole::Hyperlink => data.push(1),
             }
-            let mut attr = tag.attribute.attr;
-
-            let is_short = if tag.attribute.foreground_color <= 255 && tag.attribute.background_color <= 255 && tag.attribute.ext_attr == 0 {
-                attr |= attribute::SHORT_DATA;
-                true
-            } else {
-                false
-            };
+            let attr = tag.attribute.attr;
             data.extend(u16::to_le_bytes(attr));
-            if is_short {
-                data.push(tag.attribute.foreground_color as u8);
-                data.push(tag.attribute.background_color as u8);
-                data.push(tag.attribute.font_page as u8);
-            } else {
-                data.extend(u32::to_le_bytes(tag.attribute.foreground_color));
-                data.extend(u32::to_le_bytes(tag.attribute.background_color));
-                data.push(tag.attribute.font_page);
-                data.push(tag.attribute.ext_attr);
-            }
+
+            let (fg_u32, bg_u32, ext_attr) = encode_colors_to_legacy(tag.attribute.foreground_color(), tag.attribute.background_color());
+            data.extend(u32::to_le_bytes(fg_u32));
+            data.extend(u32::to_le_bytes(bg_u32));
+            data.push(tag.attribute.font_page() as u8);
+            data.push(ext_attr);
             // unused data for future use
             data.extend(&[0, 0, 0, 0]);
             data.extend(&[0, 0, 0, 0]);
@@ -1034,6 +1009,11 @@ pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Re
     if let Some(screen) = load_icy_draw_binary_chunks(data)? {
         return Ok(screen);
     }
+
+    if let Some(screen) = super::icy_draw_v0::load_icy_draw_v0_base64_text_chunks(data)? {
+        return Ok(screen);
+    }
+
     load_icy_draw_legacy_base64_text_chunks(data)
 }
 
@@ -1060,14 +1040,26 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
 
         // Decompress data if needed (except for ICED header and END which are never compressed)
         let decompressed_data: Vec<u8>;
-        let actual_bytes: &[u8] = if keyword != "ICED" && keyword != "END" && compression == constants::compression::BZ2 {
-            let mut decoder = BzDecoder::new(bytes);
-            let mut buf = Vec::new();
-            decoder.read_to_end(&mut buf).map_err(|e| crate::EngineError::UnsupportedFormat {
-                description: format!("bz2 decompression failed for '{}': {e}", keyword),
-            })?;
-            decompressed_data = buf;
-            &decompressed_data
+        let actual_bytes: &[u8] = if keyword != "ICED" && keyword != "END" {
+            match compression {
+                constants::compression::NONE => {
+                    decompressed_data = Vec::new();
+                    let _ = &decompressed_data; // suppress unused warning
+                    bytes
+                }
+                constants::compression::ZSTD => {
+                    let buf = zstd_decode_all(Cursor::new(bytes)).map_err(|e| crate::EngineError::UnsupportedFormat {
+                        description: format!("zstd decompression failed for '{}': {e}", keyword),
+                    })?;
+                    decompressed_data = buf;
+                    &decompressed_data
+                }
+                other => {
+                    return Err(crate::EngineError::UnsupportedFormat {
+                        description: format!("unsupported ICED compression id {other}"),
+                    });
+                }
+            }
         } else {
             decompressed_data = Vec::new();
             let _ = &decompressed_data; // suppress unused warning

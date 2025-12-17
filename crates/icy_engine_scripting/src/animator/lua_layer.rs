@@ -282,7 +282,7 @@ impl UserData for LuaLayer {
                 let layer_count = editable.layer_count();
                 let mut attr = editable.caret().attribute;
                 attr.attr &= !attribute::INVISIBLE;
-                let ch = AttributedChar::new(ch, attr);
+                let ch: AttributedChar = AttributedChar::new(ch, attr);
                 if let Some(layer) = editable.get_layer_mut(cur_layer) {
                     layer.set_char(Position::new(x, y), ch);
                     Ok(())

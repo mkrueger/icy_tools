@@ -26,11 +26,50 @@ fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) ->
 
         for x in 0..width as usize {
             let px = x * 4;
-            for c in 0..4 {
+
+            // We only support binary alpha (0/255) and want to avoid RGB bleed when scaling.
+            // Strategy:
+            // - Compute alpha via vertical interpolation, then threshold to 0/255
+            // - For RGB, only blend samples that are opaque (alpha=255), renormalize weights
+            let a0 = pixels[src_row0 + px + 3] as f32;
+            let a1 = pixels[src_row1 + px + 3] as f32;
+            let a = a0 + (a1 - a0) * t;
+            let out_a = if a >= 128.0 { 255u8 } else { 0u8 };
+
+            if out_a == 0 {
+                scaled[dst_row + px] = 0;
+                scaled[dst_row + px + 1] = 0;
+                scaled[dst_row + px + 2] = 0;
+                scaled[dst_row + px + 3] = 0;
+                continue;
+            }
+
+            let mut w0 = 1.0 - t;
+            let mut w1 = t;
+            if pixels[src_row0 + px + 3] == 0 {
+                w0 = 0.0;
+            }
+            if pixels[src_row1 + px + 3] == 0 {
+                w1 = 0.0;
+            }
+
+            let w_sum = w0 + w1;
+            if w_sum <= f32::EPSILON {
+                scaled[dst_row + px] = 0;
+                scaled[dst_row + px + 1] = 0;
+                scaled[dst_row + px + 2] = 0;
+                scaled[dst_row + px + 3] = 0;
+                continue;
+            }
+            w0 /= w_sum;
+            w1 /= w_sum;
+
+            for c in 0..3 {
                 let v0 = pixels[src_row0 + px + c] as f32;
                 let v1 = pixels[src_row1 + px + c] as f32;
-                scaled[dst_row + px + c] = (v0 + (v1 - v0) * t).round() as u8;
+                scaled[dst_row + px + c] = (v0 * w0 + v1 * w1).round() as u8;
             }
+            scaled[dst_row + px + 3] = 255;
         }
     }
 
@@ -419,30 +458,37 @@ impl TextBuffer {
                     (fg_color, bg_color)
                 };
 
+                let bg_is_transparent = !is_selected && ch.attribute.is_background_transparent();
+                let fg_is_transparent = !is_selected && ch.attribute.is_foreground_transparent();
+
                 let cell_pixel_w = font_size.width;
                 let cell_pixel_h = font_size.height;
                 let base_px = x * cell_pixel_w;
 
-                // Background fill first - using unchecked access for performance
-                unsafe {
-                    for cy in 0..cell_pixel_h {
-                        let line_offset = (cy * line_width + base_px) as usize;
-                        for cx in 0..cell_pixel_w as usize {
-                            *row_pixels.get_unchecked_mut(line_offset + cx) = bg_u32;
+                // Background fill first - leave pixels untouched for transparent background (alpha=0 holes)
+                if !bg_is_transparent {
+                    unsafe {
+                        for cy in 0..cell_pixel_h {
+                            let line_offset = (cy * line_width + base_px) as usize;
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = bg_u32;
+                            }
                         }
                     }
                 }
 
                 // Foreground glyph overlay
-                if let Some(glyph) = font.glyph(ch.ch) {
-                    let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
-                    unsafe {
-                        for cy in 0..max_cy {
-                            let row = glyph.bitmap.pixels.get_unchecked(cy);
-                            let line_offset = (cy as i32 * line_width + base_px) as usize;
-                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
-                                if *row.get_unchecked(cx) {
-                                    *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                if !fg_is_transparent {
+                    if let Some(glyph) = font.glyph(ch.ch) {
+                        let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
+                        unsafe {
+                            for cy in 0..max_cy {
+                                let row = glyph.bitmap.pixels.get_unchecked(cy);
+                                let line_offset = (cy as i32 * line_width + base_px) as usize;
+                                for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
+                                    if *row.get_unchecked(cx) {
+                                        *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                                    }
                                 }
                             }
                         }
@@ -450,6 +496,9 @@ impl TextBuffer {
                 }
 
                 if ch.attribute.is_underlined() || ch.attribute.is_overlined() || ch.attribute.is_crossed_out() {
+                    if fg_is_transparent {
+                        return;
+                    }
                     // Underline
                     if ch.attribute.is_underlined() {
                         let lines: &[i32] = if ch.attribute.is_double_underlined() {
@@ -562,16 +611,20 @@ impl TextBuffer {
                             }
                         };
 
+                        let bg_is_transparent = above_ch.attribute.is_background_transparent();
+
                         let cell_pixel_w = font_size.width;
                         let cell_pixel_h = font_size.height;
                         let base_pixel_x = x * cell_pixel_w;
                         let base_pixel_y = y * cell_pixel_h;
 
-                        unsafe {
-                            for cy in 0..cell_pixel_h {
-                                let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
-                                for cx in 0..cell_pixel_w as usize {
-                                    *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
+                        if !bg_is_transparent {
+                            unsafe {
+                                for cy in 0..cell_pixel_h {
+                                    let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
+                                    for cx in 0..cell_pixel_w as usize {
+                                        *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
+                                    }
                                 }
                             }
                         }
@@ -692,18 +745,23 @@ impl TextBuffer {
             let base_pixel_x = x * cell_pixel_w;
             let base_pixel_y = y * cell_pixel_h;
 
+            let bg_is_transparent = !is_selected && render_ch.attribute.is_background_transparent();
+            let fg_is_transparent = !is_selected && render_ch.attribute.is_foreground_transparent();
+
             // Background fill first
-            unsafe {
-                for cy in 0..cell_pixel_h {
-                    let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
-                    for cx in 0..cell_pixel_w as usize {
-                        *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
+            if !bg_is_transparent {
+                unsafe {
+                    for cy in 0..cell_pixel_h {
+                        let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
+                        for cx in 0..cell_pixel_w as usize {
+                            *pixels.get_unchecked_mut(line_start + cx) = bg_u32;
+                        }
                     }
                 }
             }
 
             // Decide how to render the glyph
-            if is_rendering_bottom_half || (is_in_double_height_line && render_ch.attribute.is_double_height()) {
+            if !fg_is_transparent && (is_rendering_bottom_half || (is_in_double_height_line && render_ch.attribute.is_double_height())) {
                 // Render double-height (either top or bottom half)
                 if let Some(glyph) = font.glyph(render_ch.ch) {
                     let glyph_height = glyph.bitmap.pixels.len();
@@ -734,7 +792,7 @@ impl TextBuffer {
                         }
                     }
                 }
-            } else {
+            } else if !fg_is_transparent {
                 // Normal height rendering (including non-double-height chars in double-height lines)
                 if let Some(glyph) = font.glyph(render_ch.ch) {
                     let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
@@ -755,7 +813,8 @@ impl TextBuffer {
 
             // Overlay attributes (underline, overline, crossed out) - only for original character's attributes
             // and not when rendering bottom half
-            if !is_rendering_bottom_half && (ch.attribute.is_underlined() || ch.attribute.is_overlined() || ch.attribute.is_crossed_out()) {
+            if !fg_is_transparent && !is_rendering_bottom_half && (ch.attribute.is_underlined() || ch.attribute.is_overlined() || ch.attribute.is_crossed_out())
+            {
                 if ch.attribute.is_underlined() {
                     let lines = if ch.attribute.is_double_underlined() {
                         vec![cell_pixel_h - 2, cell_pixel_h - 1]

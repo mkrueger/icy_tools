@@ -647,7 +647,7 @@ impl StringGeneratorV2 {
             let mut len = if self.options.compress && !self.options.preserve_line_length {
                 let mut last = area.width() - 1;
                 let last_attr = layer.char_at((last, y).into()).attribute;
-                if last_attr.background_color == 0 {
+                if last_attr.background() == 0 {
                     while last > area.left() {
                         let c = layer.char_at((last, y).into());
                         if c.ch != ' ' && c.ch != 0xFF as char && c.ch != 0 as char {

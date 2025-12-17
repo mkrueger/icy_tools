@@ -18,7 +18,7 @@ pub(crate) fn save_atascii(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Re
         while pos.x < line_length {
             let attr_ch = buf.char_at(pos);
             let mut ch = attr_ch.ch as u8;
-            if attr_ch.attribute.background_color > 0 {
+            if attr_ch.attribute.background() > 0 {
                 ch += 0x80;
             }
 

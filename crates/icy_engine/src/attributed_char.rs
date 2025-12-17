@@ -1,3 +1,5 @@
+use crate::AttributeColor;
+
 use super::TextAttribute;
 
 #[derive(Clone, Copy, Debug)]
@@ -17,15 +19,11 @@ impl Default for AttributedChar {
 
 impl AttributedChar {
     pub fn invisible() -> Self {
-        AttributedChar {
-            ch: ' ',
-            attribute: super::TextAttribute {
-                attr: crate::attribute::INVISIBLE,
-                foreground_color: TextAttribute::TRANSPARENT_COLOR,
-                background_color: TextAttribute::TRANSPARENT_COLOR,
-                ..Default::default()
-            },
-        }
+        let mut attr = super::TextAttribute::default();
+        attr.attr = crate::attribute::INVISIBLE;
+        attr.set_foreground_color(AttributeColor::Transparent);
+        attr.set_background_color(AttributeColor::Transparent);
+        AttributedChar { ch: ' ', attribute: attr }
     }
     pub fn is_visible(&self) -> bool {
         (self.attribute.attr & crate::attribute::INVISIBLE) == 0

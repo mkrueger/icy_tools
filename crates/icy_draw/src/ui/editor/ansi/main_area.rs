@@ -254,18 +254,6 @@ impl AnsiEditorMainArea {
         let _ = self.tool_registry.borrow_mut().with_mut::<tools::FontTool, _>(|t| t.select_font(font_idx));
     }
 
-    fn font_tool_is_outline_selector_open(&self) -> bool {
-        if let Some(font) = self.inner.active_font_tool() {
-            return font.is_outline_selector_open();
-        }
-
-        self.tool_registry
-            .borrow()
-            .get_ref::<tools::FontTool>()
-            .map(|t| t.is_outline_selector_open())
-            .unwrap_or(false)
-    }
-
     pub fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
         self.inner.with_edit_state(f)
     }
@@ -280,18 +268,6 @@ impl AnsiEditorMainArea {
                 let mut reg = self.tool_registry.borrow_mut();
                 self.inner.change_tool(&mut *reg, tool);
                 self.tool_panel.set_tool(self.inner.current_tool_for_panel());
-                Task::none()
-            }
-            AnsiEditorMessage::OutlineSelector(msg) => {
-                let options = Arc::clone(&self.inner.options);
-                if let Some(font) = self.inner.active_font_tool_mut() {
-                    font.handle_outline_selector_message(&options, msg);
-                } else {
-                    let _ = self
-                        .tool_registry
-                        .borrow_mut()
-                        .with_mut::<tools::FontTool, _>(|t| t.handle_outline_selector_message(&options, msg));
-                }
                 Task::none()
             }
             AnsiEditorMessage::ToolPanel(msg) => {
@@ -505,9 +481,6 @@ impl AnsiEditorMainArea {
             (fkeys, font, palette)
         };
 
-        // Clone font for char selector overlay (will be used later if popup is open)
-        let font_for_char_selector = current_font.clone();
-
         // Tag toolbar info (selection, add-mode) lives in TagTool.
         let (tag_add_mode, tag_selection, selected_tag_info) = if let Some(tag_tool) = editor.active_tag_tool() {
             let selection = tag_tool.state().selection.clone();
@@ -602,72 +575,6 @@ impl AnsiEditorMainArea {
         .into();
 
         // Apply tag dialog modal overlay if active
-        if let Some(tag_tool) = editor.active_tag_tool() {
-            if let Some(tag_dialog) = &tag_tool.state().dialog {
-                let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
-                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
-            } else if let Some(tag_list_dialog) = &tag_tool.state().list_dialog {
-                let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
-                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
-            } else if let Some(target) = editor.char_selector_target {
-                let current_code = match target {
-                    CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
-                    CharSelectorTarget::BrushChar => {
-                        let ch = editor.brush_paint_char();
-                        ch as u16
-                    }
-                };
-
-                let selector_canvas = CharSelector::new(current_code)
-                    .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
-                    .map(AnsiEditorMessage::CharSelector);
-
-                let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
-
-                // Use modal() which closes on click outside (on_blur)
-                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
-            } else if self.font_tool_is_outline_selector_open() {
-                // Apply outline selector modal overlay if active
-                let current_style = *editor.options.read().font_outline_style.read();
-
-                let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
-
-                let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
-
-                // Use modal() which closes on click outside (on_blur)
-                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel))
-            } else {
-                main_layout
-            }
-        } else if let Some(target) = editor.char_selector_target {
-            let current_code = match target {
-                CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
-                CharSelectorTarget::BrushChar => {
-                    let ch = editor.brush_paint_char();
-                    ch as u16
-                }
-            };
-
-            let selector_canvas = CharSelector::new(current_code)
-                .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
-                .map(AnsiEditorMessage::CharSelector);
-
-            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
-
-            // Use modal() which closes on click outside (on_blur)
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
-        } else if self.font_tool_is_outline_selector_open() {
-            // Apply outline selector modal overlay if active
-            let current_style = *editor.options.read().font_outline_style.read();
-
-            let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
-
-            let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
-
-            // Use modal() which closes on click outside (on_blur)
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel))
-        } else {
-            main_layout
-        }
+        editor.wrap_with_modals(main_layout)
     }
 }

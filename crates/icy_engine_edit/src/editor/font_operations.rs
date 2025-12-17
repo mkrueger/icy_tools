@@ -2,7 +2,7 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, IceMode, Layer, Palette, PaletteMode, Result, TextAttribute, TextPane};
+use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, IceMode, Layer, Palette, PaletteMode, Result, TextPane};
 
 use super::EditState;
 
@@ -167,7 +167,7 @@ impl EditState {
             for line in &mut layer.lines {
                 for ch in &mut line.chars {
                     let fg = ch.attribute.foreground();
-                    let new_fg = if fg == TextAttribute::TRANSPARENT_COLOR {
+                    let new_fg = if ch.attribute.is_foreground_transparent() {
                         7
                     } else {
                         table.get(fg as usize).copied().unwrap_or(7)
@@ -178,7 +178,7 @@ impl EditState {
 
                     let bg = ch.attribute.background();
 
-                    let new_bg = if bg == TextAttribute::TRANSPARENT_COLOR {
+                    let new_bg = if ch.attribute.is_background_transparent() {
                         0
                     } else {
                         table.get(bg as usize).copied().unwrap_or(0)

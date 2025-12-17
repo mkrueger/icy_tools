@@ -36,8 +36,10 @@ utf8parse = "0.2"
 unarc-rs = { workspace = true }
 
 zip = { workspace = true }
-bzip2 = { workspace = true }
 libyaff = { workspace = true }
+
+# Faster compression options (used by ICY v1 chunk compression)
+zstd = "0.13"
 
 # Image export support
 image = { workspace = true }
@@ -75,3 +77,4 @@ harness = false
 [[bin]]
 name = "generate_icy_draw_testdata"
 path = "src/bin/generate_icy_draw_testdata.rs"
+

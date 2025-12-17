@@ -333,19 +333,17 @@ impl TextBuffer {
                     *found_char = cur_char;
                 }
 
-                if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR
-                    || found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR
-                {
+                if found_char.attribute.is_foreground_transparent() || found_char.attribute.is_background_transparent() {
                     *found_char = self.make_solid_color(*found_char, underlying_char);
                 }
 
                 if !cur_layer.properties.has_alpha_channel {
                     found_char.attribute.attr &= !attribute::INVISIBLE;
-                    if found_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
-                        found_char.attribute.background_color = 0;
+                    if found_char.attribute.is_background_transparent() {
+                        found_char.attribute.set_background_color(crate::AttributeColor::Palette(0));
                     }
-                    if found_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
-                        found_char.attribute.foreground_color = 0;
+                    if found_char.attribute.is_foreground_transparent() {
+                        found_char.attribute.set_foreground_color(crate::AttributeColor::Palette(0));
                     }
                 }
             }
@@ -807,27 +805,27 @@ impl TextBuffer {
 
         match transparent_char.ch {
             crate::paint::HALF_BLOCK_TOP => {
-                if transparent_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.foreground_color = half_block.upper_block_color;
+                if transparent_char.attribute.is_foreground_transparent() {
+                    transparent_char.attribute.set_foreground_color(half_block.upper_block_color);
                 }
-                if transparent_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.background_color = half_block.lower_block_color;
+                if transparent_char.attribute.is_background_transparent() {
+                    transparent_char.attribute.set_background_color(half_block.lower_block_color);
                 }
             }
             crate::paint::HALF_BLOCK_BOTTOM => {
-                if transparent_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.background_color = half_block.upper_block_color;
+                if transparent_char.attribute.is_background_transparent() {
+                    transparent_char.attribute.set_background_color(half_block.upper_block_color);
                 }
-                if transparent_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.foreground_color = half_block.lower_block_color;
+                if transparent_char.attribute.is_foreground_transparent() {
+                    transparent_char.attribute.set_foreground_color(half_block.lower_block_color);
                 }
             }
             _ => {
-                if transparent_char.attribute.foreground_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.foreground_color = half_block.lower_block_color;
+                if transparent_char.attribute.is_foreground_transparent() {
+                    transparent_char.attribute.set_foreground_color(half_block.lower_block_color);
                 }
-                if transparent_char.attribute.background_color == TextAttribute::TRANSPARENT_COLOR {
-                    transparent_char.attribute.background_color = half_block.lower_block_color;
+                if transparent_char.attribute.is_background_transparent() {
+                    transparent_char.attribute.set_background_color(half_block.lower_block_color);
                 }
             }
         }
@@ -890,8 +888,8 @@ impl TextPane for TextBuffer {
             pos.x = x;
             let ch = self.char_at(pos);
             if x > 0 && ch.is_transparent() {
-                let bg = last_char.attribute.background();
-                if bg != TextAttribute::TRANSPARENT_COLOR && bg > 0 {
+                // Check if the previous char has a visible background
+                if !last_char.attribute.is_background_transparent() && last_char.attribute.background() > 0 {
                     length = x + 1;
                 }
             } else if !ch.is_transparent() {

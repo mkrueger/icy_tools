@@ -1,6 +1,6 @@
 use crate::{
-    AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Result, SavingError, TextBuffer, TextPane, TextScreen,
-    analyze_font_usage, attribute, guess_font_name,
+    AttributeColor, AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Result, SavingError, TextBuffer, TextPane,
+    TextScreen, analyze_font_usage, attribute, guess_font_name,
 };
 
 use rayon::prelude::*;
@@ -21,15 +21,13 @@ lazy_static::lazy_static! {
     static ref ATTR_TABLE_ICE: [TextAttribute; 256] = {
         let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
         for i in 0u8..=255 {
-            let bg = (i >> 4) as u32;
-            let fg = (i & 0b1111) as u32;
-            table[i as usize] = TextAttribute {
-                font_page: 0,
-                foreground_color: fg,
-                background_color: bg,
-                ext_attr: 0,
-                attr: attribute::NONE,
-            };
+            let bg = i >> 4;
+            let fg = i & 0b1111;
+            let mut text_attr = TextAttribute::default();
+            text_attr.set_font_page(0);
+            text_attr.set_foreground_color(AttributeColor::Palette(fg));
+            text_attr.set_background_color(AttributeColor::Palette(bg));
+            table[i as usize] = text_attr;
         }
         table
     };
@@ -38,16 +36,14 @@ lazy_static::lazy_static! {
     static ref ATTR_TABLE_ICE_EXT: [TextAttribute; 256] = {
         let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
         for i in 0u8..=255 {
-            let bg = (i >> 4) as u32;
-            let fg = (i & 0b1111) as u32;
+            let bg = i >> 4;
+            let fg = i & 0b1111;
             let (font_page, actual_fg) = if fg > 7 { (1, fg - 8) } else { (0, fg) };
-            table[i as usize] = TextAttribute {
-                font_page,
-                foreground_color: actual_fg,
-                background_color: bg,
-                ext_attr: 0,
-                attr: attribute::NONE,
-            };
+            let mut text_attr = TextAttribute::default();
+            text_attr.set_font_page(font_page);
+            text_attr.set_foreground_color(AttributeColor::Palette(actual_fg));
+            text_attr.set_background_color(AttributeColor::Palette(bg));
+            table[i as usize] = text_attr;
         }
         table
     };
@@ -57,15 +53,14 @@ lazy_static::lazy_static! {
         let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
         for i in 0u8..=255 {
             let blink = i & 0b1000_0000 != 0;
-            let bg = ((i >> 4) & 0b0111) as u32;
-            let fg = (i & 0b1111) as u32;
-            table[i as usize] = TextAttribute {
-                font_page: 0,
-                foreground_color: fg,
-                background_color: bg,
-                ext_attr: 0,
-                attr: if blink { attribute::BLINK } else { attribute::NONE },
-            };
+            let bg = (i >> 4) & 0b0111;
+            let fg = i & 0b1111;
+            let mut text_attr = TextAttribute::default();
+            text_attr.attr = if blink { attribute::BLINK } else { attribute::NONE };
+            text_attr.set_font_page(0);
+            text_attr.set_foreground_color(AttributeColor::Palette(fg));
+            text_attr.set_background_color(AttributeColor::Palette(bg));
+            table[i as usize] = text_attr;
         }
         table
     };
@@ -75,16 +70,15 @@ lazy_static::lazy_static! {
         let mut table: [TextAttribute; 256] = [TextAttribute::default(); 256];
         for i in 0u8..=255 {
             let blink = i & 0b1000_0000 != 0;
-            let bg = ((i >> 4) & 0b0111) as u32;
-            let fg = (i & 0b1111) as u32;
+            let bg = (i >> 4) & 0b0111;
+            let fg = i & 0b1111;
             let (font_page, actual_fg) = if fg > 7 { (1, fg - 8) } else { (0, fg) };
-            table[i as usize] = TextAttribute {
-                font_page,
-                foreground_color: actual_fg,
-                background_color: bg,
-                ext_attr: 0,
-                attr: if blink { attribute::BLINK } else { attribute::NONE },
-            };
+            let mut text_attr = TextAttribute::default();
+            text_attr.attr = if blink { attribute::BLINK } else { attribute::NONE };
+            text_attr.set_font_page(font_page);
+            text_attr.set_foreground_color(AttributeColor::Palette(actual_fg));
+            text_attr.set_background_color(AttributeColor::Palette(bg));
+            table[i as usize] = text_attr;
         }
         table
     };
@@ -540,7 +534,7 @@ fn decode_char(attr_table: &[TextAttribute; 256], char_code: u8, attr: u8) -> At
 #[inline(always)]
 fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
     if fonts.len() == 2 {
-        (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page as usize == fonts[1] { 0b1000 } else { 0 }
+        (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page() == fonts[1] { 0b1000 } else { 0 }
     } else {
         ch.attribute.as_u8(buf.ice_mode)
     }

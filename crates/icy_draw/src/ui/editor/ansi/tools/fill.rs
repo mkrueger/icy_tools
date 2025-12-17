@@ -161,9 +161,9 @@ impl ToolHandler for FillTool {
 
                     let caret_attr = ctx.state.get_caret().attribute;
                     let (fg, bg) = if swap_colors || shift_swap {
-                        (caret_attr.background(), caret_attr.foreground())
+                        (caret_attr.background_color(), caret_attr.foreground_color())
                     } else {
-                        (caret_attr.foreground(), caret_attr.background())
+                        (caret_attr.foreground_color(), caret_attr.background_color())
                     };
 
                     // Determine the target color at the start position.
@@ -217,17 +217,17 @@ impl ToolHandler for FillTool {
                             stack.push((to, to + icy_engine::Position::new(0, 1)));
                         } else if block.is_vertically_blocky() {
                             let ch = if from.y == to.y - 1 && block.left_block_color == target_color {
-                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                                Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
                             } else if from.y == to.y - 1 && block.right_block_color == target_color {
-                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                                Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
                             } else if from.y == to.y + 1 && block.right_block_color == target_color {
-                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                                Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
                             } else if from.y == to.y + 1 && block.left_block_color == target_color {
-                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                                Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
                             } else if from.x == to.x - 1 && block.left_block_color == target_color {
-                                Some(AttributedChar::new(221 as char, TextAttribute::new(fg, block.right_block_color)))
+                                Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
                             } else if from.x == to.x + 1 && block.right_block_color == target_color {
-                                Some(AttributedChar::new(222 as char, TextAttribute::new(fg, block.left_block_color)))
+                                Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
                             } else {
                                 None
                             };
