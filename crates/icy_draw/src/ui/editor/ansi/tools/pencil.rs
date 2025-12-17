@@ -6,22 +6,18 @@
 //! - Colorize mode: Changes only colors
 //! - Shade mode: Lightens/darkens existing content
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use iced::widget::{Space, button, column, row, svg, text};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position};
 use icy_engine_edit::brushes;
+use icy_engine_edit::tools::Tool;
 use icy_engine_gui::TerminalMessage;
 
 use super::paint::{BrushSettings, apply_stamp_at_doc_pos, begin_paint_undo};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 use crate::ui::editor::ansi::widget::toolbar::top::{ARROW_LEFT_SVG, ARROW_RIGHT_SVG};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PencilToolUiAction {
-    OpenBrushCharSelector,
-}
 
 /// State for freehand pencil drawing
 pub struct PencilTool {
@@ -41,7 +37,6 @@ pub struct PencilTool {
 
     brush_mode_control: ShaderSegmentedControl,
     color_filter_control: ShaderSegmentedControl,
-    pending_ui_action: Option<PencilToolUiAction>,
 }
 
 impl Default for PencilTool {
@@ -56,7 +51,6 @@ impl Default for PencilTool {
 
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
-            pending_ui_action: None,
         }
     }
 }
@@ -98,10 +92,6 @@ impl PencilTool {
         self.brush.brush_size
     }
 
-    pub fn take_ui_action(&mut self) -> Option<PencilToolUiAction> {
-        self.pending_ui_action.take()
-    }
-
     fn apply_half_block_with_brush_size(&self, ctx: &mut ToolContext<'_>, half_block_layer: Position, button: MouseButton) {
         let brush_size = self.brush.brush_size.max(1) as i32;
         let half = brush_size / 2;
@@ -128,6 +118,18 @@ impl PencilTool {
 }
 
 impl ToolHandler for PencilTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(Tool::Pencil)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext<'_>, msg: &TerminalMessage) -> ToolResult {
         match msg {
             TerminalMessage::Press(evt) => {
@@ -220,7 +222,34 @@ impl ToolHandler for PencilTool {
         }
     }
 
-    fn view_toolbar<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
+        match *msg {
+            ToolMessage::SetBrushPrimary(primary) => {
+                self.brush.primary = primary;
+                ToolResult::None
+            }
+            ToolMessage::BrushOpenCharSelector => ToolResult::Ui(UiAction::OpenCharSelectorForBrush),
+            ToolMessage::SetBrushChar(ch) => {
+                self.brush.paint_char = ch;
+                ToolResult::None
+            }
+            ToolMessage::SetBrushSize(size) => {
+                self.brush.brush_size = (size.max(1).min(9)) as usize;
+                ToolResult::None
+            }
+            ToolMessage::ToggleForeground(v) => {
+                self.brush.colorize_fg = v;
+                ToolResult::None
+            }
+            ToolMessage::ToggleBackground(v) => {
+                self.brush.colorize_bg = v;
+                ToolResult::None
+            }
+            _ => ToolResult::None,
+        }
+    }
+
+    fn view_toolbar(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let primary = self.brush.primary;
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
@@ -234,7 +263,7 @@ impl ToolHandler for PencilTool {
         let font_for_color_filter = _ctx.font.clone();
         let segmented_control = self
             .brush_mode_control
-            .view_with_char_colors(segments, primary, _ctx.font.clone(), _ctx.theme, _ctx.caret_fg, _ctx.caret_bg, &_ctx.palette)
+            .view_with_char_colors(segments, primary, _ctx.font.clone(), &_ctx.theme, _ctx.caret_fg, _ctx.caret_bg, &_ctx.palette)
             .map(|msg| match msg {
                 SegmentedControlMessage::Selected(m) | SegmentedControlMessage::Toggled(m) => ToolMessage::SetBrushPrimary(m),
                 SegmentedControlMessage::CharClicked(_) => ToolMessage::BrushOpenCharSelector,
@@ -251,7 +280,7 @@ impl ToolHandler for PencilTool {
         }
         let color_filter = self
             .color_filter_control
-            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, _ctx.theme)
+            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, &_ctx.theme)
             .map(|msg| match msg {
                 SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.brush.colorize_fg),
                 SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.brush.colorize_bg),
@@ -348,44 +377,14 @@ impl ToolHandler for PencilTool {
         .into()
     }
 
-    fn view_options<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_options(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         // Brush options are rendered by AnsiEditor for now
         column![].into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         // Status rendering by AnsiEditor for now
         column![].into()
-    }
-
-    fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
-        match *msg {
-            ToolMessage::SetBrushPrimary(primary) => {
-                self.brush.primary = primary;
-                ToolResult::None
-            }
-            ToolMessage::BrushOpenCharSelector => {
-                self.pending_ui_action = Some(PencilToolUiAction::OpenBrushCharSelector);
-                ToolResult::None
-            }
-            ToolMessage::SetBrushChar(ch) => {
-                self.brush.paint_char = ch;
-                ToolResult::None
-            }
-            ToolMessage::SetBrushSize(size) => {
-                self.brush.brush_size = (size.max(1).min(9)) as usize;
-                ToolResult::None
-            }
-            ToolMessage::ToggleForeground(v) => {
-                self.brush.colorize_fg = v;
-                ToolResult::None
-            }
-            ToolMessage::ToggleBackground(v) => {
-                self.brush.colorize_bg = v;
-                ToolResult::None
-            }
-            _ => ToolResult::None,
-        }
     }
 
     fn cursor(&self) -> iced::mouse::Interaction {

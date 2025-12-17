@@ -73,11 +73,6 @@ impl ToolPanel {
         }
     }
 
-    /// Get the current tool
-    pub fn current_tool(&self) -> Tool {
-        self.current_tool
-    }
-
     /// Set the current tool
     pub fn set_tool(&mut self, tool: Tool) {
         self.current_tool = tool;

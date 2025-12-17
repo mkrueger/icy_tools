@@ -1,5 +1,7 @@
 use std::{
+    cell::RefCell,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -13,6 +15,9 @@ use icy_engine_edit::tools::{Tool, click_tool_slot};
 use icy_engine_gui::theme::main_area_background;
 use parking_lot::RwLock;
 
+use crate::SharedFontLibrary;
+use crate::ui::Options;
+
 use crate::ui::{LayerMessage, MinimapMessage};
 
 use super::*;
@@ -23,6 +28,7 @@ use super::*;
 /// layout/panels (tool panel, palette grid, right panel, overlays).
 pub struct AnsiEditorMainArea {
     inner: AnsiEditor,
+    tool_registry: Rc<RefCell<tool_registry::ToolRegistry>>,
     /// File path (if saved)
     file_path: Option<PathBuf>,
     /// Tool panel state (left sidebar icons)
@@ -41,10 +47,18 @@ impl AnsiEditorMainArea {
     }
 
     pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
-        let (inner, palette, format_mode) = AnsiEditor::from_buffer_inner(buffer, options, font_library);
+        let tool_registry = Rc::new(RefCell::new(tool_registry::ToolRegistry::new(font_library)));
+
+        // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
+        let mut current_tool = tool_registry.borrow_mut().take_for(tools::ToolId::Tool(Tool::Click));
+        if let Some(click) = current_tool.as_any_mut().downcast_mut::<tools::ClickTool>() {
+            click.sync_fkey_set_from_options(&options);
+        }
+
+        let (inner, palette, format_mode) = AnsiEditor::from_buffer_inner(buffer, options, current_tool);
 
         let mut tool_panel = ToolPanel::new();
-        tool_panel.set_tool(inner.current_tool);
+        tool_panel.set_tool(inner.current_tool_for_panel());
 
         let mut palette_grid = PaletteGrid::new();
         let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
@@ -52,6 +66,7 @@ impl AnsiEditorMainArea {
 
         Self {
             inner,
+            tool_registry,
             file_path,
             tool_panel,
             palette_grid,
@@ -113,7 +128,7 @@ impl AnsiEditorMainArea {
     }
 
     pub fn needs_animation(&self) -> bool {
-        self.inner.needs_animation() || self.tool_panel.needs_animation() || self.inner.minimap_drag_pointer.is_some()
+        self.inner.needs_animation() || self.tool_panel.needs_animation() || self.inner.is_minimap_drag_active()
     }
 
     pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
@@ -150,16 +165,32 @@ impl AnsiEditorMainArea {
 
     pub fn sync_ui(&mut self) {
         self.inner.sync_ui();
-        let (palette, format_mode, caret_fg, caret_bg) = self.inner.with_edit_state(|state| {
+        let (palette, format_mode, caret_fg, caret_bg, tag_count) = self.inner.with_edit_state(|state| {
             let palette = state.get_buffer().palette.clone();
             let format_mode = state.get_format_mode();
             let caret = state.get_caret();
-            (palette, format_mode, caret.attribute.foreground(), caret.attribute.background())
+            let tag_count = state.get_buffer().tags.len();
+            (palette, format_mode, caret.attribute.foreground(), caret.attribute.background(), tag_count)
         });
         let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.palette_grid.sync_palette(&palette, palette_limit);
         self.palette_grid.set_foreground(caret_fg);
         self.palette_grid.set_background(caret_bg);
+
+        // Clear invalid tag selections (tags may have been removed by undo).
+        if let Some(tag_tool) = self.inner.active_tag_tool_mut() {
+            tag_tool.state_mut().selection.retain(|&idx| idx < tag_count);
+        } else {
+            let _ = self
+                .tool_registry
+                .borrow_mut()
+                .with_mut::<tools::TagTool, _>(|t| t.state_mut().selection.retain(|&idx| idx < tag_count));
+        }
+
+        // Tag overlays are only visible when Tag tool is active.
+        if self.inner.active_tag_tool().is_some() {
+            self.inner.update_tag_overlays();
+        }
     }
 
     pub fn refresh_selection_display(&mut self) {
@@ -203,11 +234,36 @@ impl AnsiEditorMainArea {
     }
 
     pub fn font_tool_library(&self) -> SharedFontLibrary {
-        self.inner.font_tool_library()
+        if let Some(font) = self.inner.active_font_tool() {
+            return font.font_tool.font_library();
+        }
+
+        self.tool_registry
+            .borrow()
+            .get_ref::<tools::FontTool>()
+            .map(|t| t.font_tool.font_library())
+            .expect("FontTool should exist")
     }
 
     pub fn font_tool_select_font(&mut self, font_idx: i32) {
-        self.inner.font_tool_select_font(font_idx);
+        if let Some(font) = self.inner.active_font_tool_mut() {
+            font.select_font(font_idx);
+            return;
+        }
+
+        let _ = self.tool_registry.borrow_mut().with_mut::<tools::FontTool, _>(|t| t.select_font(font_idx));
+    }
+
+    fn font_tool_is_outline_selector_open(&self) -> bool {
+        if let Some(font) = self.inner.active_font_tool() {
+            return font.is_outline_selector_open();
+        }
+
+        self.tool_registry
+            .borrow()
+            .get_ref::<tools::FontTool>()
+            .map(|t| t.is_outline_selector_open())
+            .unwrap_or(false)
     }
 
     pub fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
@@ -220,22 +276,45 @@ impl AnsiEditorMainArea {
 
     pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
         match message {
+            AnsiEditorMessage::SwitchTool(tool) => {
+                let mut reg = self.tool_registry.borrow_mut();
+                self.inner.change_tool(&mut *reg, tool);
+                self.tool_panel.set_tool(self.inner.current_tool_for_panel());
+                Task::none()
+            }
+            AnsiEditorMessage::OutlineSelector(msg) => {
+                let options = Arc::clone(&self.inner.options);
+                if let Some(font) = self.inner.active_font_tool_mut() {
+                    font.handle_outline_selector_message(&options, msg);
+                } else {
+                    let _ = self
+                        .tool_registry
+                        .borrow_mut()
+                        .with_mut::<tools::FontTool, _>(|t| t.handle_outline_selector_message(&options, msg));
+                }
+                Task::none()
+            }
             AnsiEditorMessage::ToolPanel(msg) => {
                 // Keep tool panel internal animation state in sync.
                 let _ = self.tool_panel.update(msg.clone());
 
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
-                    let new_tool = click_tool_slot(slot, self.inner.current_tool);
-                    self.inner.change_tool(new_tool);
-                    self.tool_panel.set_tool(self.inner.current_tool);
+                    let current_tool = self.inner.current_tool_for_panel();
+                    let new_tool = click_tool_slot(slot, current_tool);
+                    let mut reg = self.tool_registry.borrow_mut();
+                    self.inner.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                    // Tool changes may be blocked, so always sync from core.
+                    self.tool_panel.set_tool(self.inner.current_tool_for_panel());
                 }
 
                 Task::none()
             }
             AnsiEditorMessage::SelectTool(slot) => {
-                let new_tool = click_tool_slot(slot, self.inner.current_tool);
-                self.inner.change_tool(new_tool);
-                self.tool_panel.set_tool(self.inner.current_tool);
+                let current_tool = self.inner.current_tool_for_panel();
+                let new_tool = click_tool_slot(slot, current_tool);
+                let mut reg = self.tool_registry.borrow_mut();
+                self.inner.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                self.tool_panel.set_tool(self.inner.current_tool_for_panel());
                 Task::none()
             }
             AnsiEditorMessage::PaletteGrid(msg) => {
@@ -292,11 +371,11 @@ impl AnsiEditorMainArea {
                                 pointer_x,
                                 pointer_y,
                             } => {
-                                self.inner.minimap_drag_pointer = Some((pointer_x, pointer_y));
+                                self.inner.set_minimap_drag_pointer(Some((pointer_x, pointer_y)));
                                 self.inner.scroll_canvas_to_normalized(norm_x, norm_y);
                             }
                             MinimapMessage::DragEnd => {
-                                self.inner.minimap_drag_pointer = None;
+                                self.inner.set_minimap_drag_pointer(None);
                             }
                             MinimapMessage::Scroll(_dy) => {
                                 // handled internally by the minimap view
@@ -327,7 +406,7 @@ impl AnsiEditorMainArea {
                 task
             }
             AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
-                let Some((pointer_x, pointer_y)) = self.inner.minimap_drag_pointer else {
+                let Some((pointer_x, pointer_y)) = self.inner.minimap_drag_pointer() else {
                     return Task::none();
                 };
 
@@ -349,7 +428,7 @@ impl AnsiEditorMainArea {
 
                 // Keep chrome widgets in sync with core state (tool changes can originate
                 // from keyboard shortcuts and tool results).
-                self.tool_panel.set_tool(self.inner.current_tool);
+                self.tool_panel.set_tool(self.inner.current_tool_for_panel());
 
                 task
             }
@@ -396,7 +475,7 @@ impl AnsiEditorMainArea {
 
         // In paste mode, show paste controls instead of tool panel
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
-            let paste_controls = editor.paste_handler.view_paste_sidebar_controls();
+            let paste_controls = editor.view_paste_sidebar_controls();
             column![palette_view, paste_controls].spacing(4)
         } else {
             let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
@@ -429,53 +508,47 @@ impl AnsiEditorMainArea {
         // Clone font for char selector overlay (will be used later if popup is open)
         let font_for_char_selector = current_font.clone();
 
-        // Tool-owned top toolbar (no legacy TopToolbar rendering).
-        use tools::ToolHandler;
+        // Tag toolbar info (selection, add-mode) lives in TagTool.
+        let (tag_add_mode, tag_selection, selected_tag_info) = if let Some(tag_tool) = editor.active_tag_tool() {
+            let selection = tag_tool.state().selection.clone();
+            let add_mode = tag_tool.state().add_new_index.is_some();
 
-        // Selected tag info (TagTool displays this in its toolbar)
-        let selected_tag_info = if editor.current_tool == Tool::Tag && editor.tag_state.selection.len() == 1 {
-            let idx = editor.tag_state.selection[0];
-            let mut screen_guard = editor.screen.lock();
-            if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
-                state.get_buffer().tags.get(idx).map(|tag| widget::toolbar::top::SelectedTagInfo {
-                    position: tag.position,
-                    replacement: tag.replacement_value.clone(),
-                })
+            let selected_tag_info = if selection.len() == 1 {
+                let idx = selection[0];
+                let mut screen_guard = editor.screen.lock();
+                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                    state.get_buffer().tags.get(idx).map(|tag| widget::toolbar::top::SelectedTagInfo {
+                        position: tag.position,
+                        replacement: tag.replacement_value.clone(),
+                    })
+                } else {
+                    None
+                }
             } else {
                 None
-            }
+            };
+
+            (add_mode, selection, selected_tag_info)
         } else {
-            None
+            (false, Vec::new(), None)
         };
 
         let view_ctx = tools::ToolViewContext {
-            theme: &Theme::Dark,
-            current_tool: editor.current_tool,
+            theme: Theme::Dark,
             fkeys: fkeys.clone(),
             font: current_font,
             palette: palette.clone(),
             caret_fg,
             caret_bg,
-            tag_add_mode: editor.tag_state.add_new_index.is_some(),
+            tag_add_mode,
             selected_tag: selected_tag_info,
-            tag_selection_count: editor.tag_state.selection.len(),
+            tag_selection_count: tag_selection.len(),
         };
 
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
-            editor.paste_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
+            editor.view_paste_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
         } else {
-            match editor.current_tool {
-                Tool::Click => editor.click_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Font => editor.font_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Pencil => editor.pencil_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Pipette => editor.pipette_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Select => editor.select_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Fill => editor.fill_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-                Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                    editor.shape_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
-                }
-                Tool::Tag => editor.tag_handler.view_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage),
-            }
+            editor.view_current_tool_toolbar(&view_ctx).map(AnsiEditorMessage::ToolMessage)
         };
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
@@ -529,24 +602,48 @@ impl AnsiEditorMainArea {
         .into();
 
         // Apply tag dialog modal overlay if active
-        if let Some(tag_dialog) = &editor.tag_state.dialog {
-            let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
-        } else if let Some(tag_list_dialog) = &editor.tag_state.list_dialog {
-            let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
-            icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
+        if let Some(tag_tool) = editor.active_tag_tool() {
+            if let Some(tag_dialog) = &tag_tool.state().dialog {
+                let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
+                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel))
+            } else if let Some(tag_list_dialog) = &tag_tool.state().list_dialog {
+                let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
+                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close))
+            } else if let Some(target) = editor.char_selector_target {
+                let current_code = match target {
+                    CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
+                    CharSelectorTarget::BrushChar => {
+                        let ch = editor.brush_paint_char();
+                        ch as u16
+                    }
+                };
+
+                let selector_canvas = CharSelector::new(current_code)
+                    .view(font_for_char_selector, palette.clone(), caret_fg, caret_bg)
+                    .map(AnsiEditorMessage::CharSelector);
+
+                let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
+
+                // Use modal() which closes on click outside (on_blur)
+                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
+            } else if self.font_tool_is_outline_selector_open() {
+                // Apply outline selector modal overlay if active
+                let current_style = *editor.options.read().font_outline_style.read();
+
+                let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
+
+                let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
+
+                // Use modal() which closes on click outside (on_blur)
+                icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel))
+            } else {
+                main_layout
+            }
         } else if let Some(target) = editor.char_selector_target {
             let current_code = match target {
                 CharSelectorTarget::FKeySlot(slot) => fkeys.code_at(fkeys.current_set(), slot),
                 CharSelectorTarget::BrushChar => {
-                    let ch = match editor.current_tool {
-                        Tool::Pencil => editor.pencil_handler.paint_char(),
-                        Tool::Fill => editor.fill_handler.paint_char(),
-                        Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled => {
-                            editor.shape_handler.paint_char()
-                        }
-                        _ => ' ',
-                    };
+                    let ch = editor.brush_paint_char();
                     ch as u16
                 }
             };
@@ -559,7 +656,7 @@ impl AnsiEditorMainArea {
 
             // Use modal() which closes on click outside (on_blur)
             icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel))
-        } else if editor.font_handler.is_outline_selector_open() {
+        } else if self.font_tool_is_outline_selector_open() {
             // Apply outline selector modal overlay if active
             let current_style = *editor.options.read().font_outline_style.read();
 

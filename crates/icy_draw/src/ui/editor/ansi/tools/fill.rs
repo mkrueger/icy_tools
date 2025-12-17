@@ -8,14 +8,10 @@ use icy_engine::{AttributedChar, MouseButton, Position, TextAttribute, TextPane}
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::is_shift_pressed;
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FillToolUiAction {
-    OpenBrushCharSelector,
-}
+use icy_engine_edit::tools::Tool;
 
 #[derive(Clone, Copy, Debug)]
 pub struct FillSettings {
@@ -47,7 +43,6 @@ pub struct FillTool {
 
     brush_mode_control: ShaderSegmentedControl,
     color_filter_control: ShaderSegmentedControl,
-    pending_ui_action: Option<FillToolUiAction>,
 }
 
 impl Default for FillTool {
@@ -57,7 +52,6 @@ impl Default for FillTool {
             settings: FillSettings::default(),
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
-            pending_ui_action: None,
         }
     }
 }
@@ -82,23 +76,28 @@ impl FillTool {
     pub(crate) fn brush_primary(&self) -> BrushPrimaryMode {
         self.settings.primary
     }
-
-    pub fn take_ui_action(&mut self) -> Option<FillToolUiAction> {
-        self.pending_ui_action.take()
-    }
 }
 
 impl ToolHandler for FillTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(Tool::Fill)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::SetBrushPrimary(primary) => {
                 self.settings.primary = primary;
                 ToolResult::None
             }
-            ToolMessage::BrushOpenCharSelector => {
-                self.pending_ui_action = Some(FillToolUiAction::OpenBrushCharSelector);
-                ToolResult::None
-            }
+            ToolMessage::BrushOpenCharSelector => ToolResult::Ui(UiAction::OpenCharSelectorForBrush),
             ToolMessage::SetBrushChar(ch) => {
                 self.settings.paint_char = ch;
                 ToolResult::None
@@ -337,7 +336,7 @@ impl ToolHandler for FillTool {
         }
     }
 
-    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let primary = match self.settings.primary {
             BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.settings.primary,
             _ => BrushPrimaryMode::Char,
@@ -352,7 +351,7 @@ impl ToolHandler for FillTool {
         let font_for_color_filter = ctx.font.clone();
         let segmented_control = self
             .brush_mode_control
-            .view_with_char_colors(segments, primary, ctx.font.clone(), ctx.theme, ctx.caret_fg, ctx.caret_bg, &ctx.palette)
+            .view_with_char_colors(segments, primary, ctx.font.clone(), &ctx.theme, ctx.caret_fg, ctx.caret_bg, &ctx.palette)
             .map(|msg| match msg {
                 SegmentedControlMessage::Selected(m) | SegmentedControlMessage::Toggled(m) => ToolMessage::SetBrushPrimary(m),
                 SegmentedControlMessage::CharClicked(_) => ToolMessage::BrushOpenCharSelector,
@@ -368,14 +367,14 @@ impl ToolHandler for FillTool {
         }
         let color_filter = self
             .color_filter_control
-            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, ctx.theme)
+            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, &ctx.theme)
             .map(|msg| match msg {
                 SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.settings.colorize_fg),
                 SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.settings.colorize_bg),
                 _ => ToolMessage::ToggleForeground(self.settings.colorize_fg),
             });
 
-        let exact_toggle: Element<'a, ToolMessage> = toggler(self.settings.exact)
+        let exact_toggle: Element<'_, ToolMessage> = toggler(self.settings.exact)
             .label("Exact")
             .on_toggle(ToolMessage::FillToggleExact)
             .text_size(11)
@@ -395,7 +394,7 @@ impl ToolHandler for FillTool {
         .into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let status = if let Some(pos) = self.last_fill_pos {
             format!("Fill | Position: ({},{}) | Right-click=Swap colors", pos.x, pos.y)
         } else {

@@ -7,10 +7,11 @@ use iced::Element;
 use iced::widget::{Space, button, column, container, row, text};
 use iced::{Length, Theme};
 use icy_engine::Position;
+use icy_engine_edit::tools::Tool;
 use icy_engine_edit::{OperationType, TdfEditStateRenderer};
 use icy_engine_gui::TerminalMessage;
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 
 use crate::SharedFontLibrary;
 use crate::ui::Options;
@@ -26,13 +27,6 @@ pub struct FontTool {
     pub font_tool: FontToolState,
     outline_selector_open: bool,
     outline_style_cache: usize,
-    pending_ui_action: Option<FontToolUiAction>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FontToolUiAction {
-    OpenTdfFontSelector,
-    OpenFontDirectory,
 }
 
 impl FontTool {
@@ -42,12 +36,7 @@ impl FontTool {
             font_tool: FontToolState::new(font_library.clone()),
             outline_selector_open: false,
             outline_style_cache: 0,
-            pending_ui_action: None,
         }
-    }
-
-    pub fn take_ui_action(&mut self) -> Option<FontToolUiAction> {
-        self.pending_ui_action.take()
     }
 
     pub fn build_font_panel_info(&self, options: &Options) -> crate::ui::editor::ansi::widget::toolbar::top::FontPanelInfo {
@@ -216,6 +205,18 @@ impl FontTool {
 }
 
 impl ToolHandler for FontTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(Tool::Font)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         // Keep cached outline style in sync for toolbar label.
         self.outline_style_cache = Self::outline_style_from_ctx(ctx);
@@ -225,15 +226,8 @@ impl ToolHandler for FontTool {
                 self.font_slot = slot.min(9);
                 ToolResult::Status(format!("Font slot: {}", self.font_slot))
             }
-            ToolMessage::FontOpenSelector => {
-                // Bubble up to MainWindow via AnsiEditor (see intercept there).
-                self.pending_ui_action = Some(FontToolUiAction::OpenTdfFontSelector);
-                ToolResult::None
-            }
-            ToolMessage::FontOpenDirectory => {
-                self.pending_ui_action = Some(FontToolUiAction::OpenFontDirectory);
-                ToolResult::None
-            }
+            ToolMessage::FontOpenSelector => ToolResult::Ui(UiAction::OpenTdfFontSelector),
+            ToolMessage::FontOpenDirectory => ToolResult::Ui(UiAction::OpenFontDirectory),
             ToolMessage::FontOpenOutlineSelector => {
                 self.open_outline_selector();
                 ToolResult::None
@@ -327,7 +321,7 @@ impl ToolHandler for FontTool {
         }
     }
 
-    fn view_toolbar<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         // Outline style names for the button label
         const OUTLINE_NAMES: [&str; 19] = [
             "Normal", "Round", "Square", "Shadow", "3D", "Block 1", "Block 2", "Block 3", "Block 4", "Fancy 1", "Fancy 2", "Fancy 3", "Fancy 4", "Fancy 5",
@@ -365,7 +359,7 @@ impl ToolHandler for FontTool {
             .style(button::primary)
             .on_press(ToolMessage::FontOpenSelector);
 
-        let row1: Element<'a, ToolMessage> = ('!'..='O')
+        let row1: Element<'_, ToolMessage> = ('!'..='O')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
                 r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
@@ -377,7 +371,7 @@ impl ToolHandler for FontTool {
             })
             .into();
 
-        let row2: Element<'a, ToolMessage> = ('P'..='~')
+        let row2: Element<'_, ToolMessage> = ('P'..='~')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
                 r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
@@ -389,7 +383,7 @@ impl ToolHandler for FontTool {
             })
             .into();
 
-        let char_preview: Element<'a, ToolMessage> = container(column![row1, row2].spacing(2))
+        let char_preview: Element<'_, ToolMessage> = container(column![row1, row2].spacing(2))
             .padding([2, 6])
             .style(|theme: &Theme| {
                 let p = theme.extended_palette();
@@ -423,7 +417,7 @@ impl ToolHandler for FontTool {
         content.into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         text(format!("Font | Slot: {} | Ctrl+0-9=Switch font", self.font_slot)).into()
     }
 

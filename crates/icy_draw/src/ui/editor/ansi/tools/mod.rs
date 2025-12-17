@@ -22,7 +22,7 @@
 //!                     let ch = ctx.state.get_buffer().char_at(pos);
 //!                     ctx.state.set_caret_foreground(ch.attribute.foreground());
 //!                 }
-//!                 ToolResult::SwitchTool(Tool::Click)
+//!                 ToolResult::SwitchTool(ToolId::Tool(Tool::Click))
 //!             }
 //!             _ => ToolResult::None,
 //!         }
@@ -46,9 +46,9 @@ mod select;
 mod shape;
 mod tag;
 
-pub use click::{ClickTool, ClickToolUiAction};
+pub use click::ClickTool;
 pub use fill::{FillSettings, FillTool};
-pub use font::{FontTool, FontToolUiAction};
+pub use font::FontTool;
 pub use paint::BrushSettings;
 pub use paste::{PasteAction, PasteTool};
 pub use pencil::PencilTool;
@@ -153,13 +153,15 @@ pub enum ToolResult {
     /// Request updating layer bounds overlay/UI (e.g. paste mode moving floating layer)
     UpdateLayerBounds,
     /// Switch to another tool
-    SwitchTool(Tool),
+    SwitchTool(ToolId),
     /// Start mouse capture (all mouse events go to this tool until release)
     StartCapture,
     /// End mouse capture
     EndCapture,
     /// Set the mouse cursor icon (UI-only)
     SetCursorIcon(Option<iced::mouse::Interaction>),
+    /// Request a UI action owned by the editor (open dialogs/popups, etc.)
+    Ui(UiAction),
     /// Multiple results (processed in order)
     Multi(Vec<ToolResult>),
 }
@@ -185,6 +187,28 @@ impl ToolResult {
             (this, other) => ToolResult::Multi(vec![this, other]),
         }
     }
+}
+
+// ============================================================================
+// Tool Id + UI Actions
+// ============================================================================
+
+/// Identifier for the currently active editor tool.
+///
+/// This extends the engine-level `Tool` with editor-only modes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ToolId {
+    Tool(Tool),
+    Paste,
+}
+
+/// UI actions that must be performed by the editor (outside the tool object).
+#[derive(Clone, Debug)]
+pub enum UiAction {
+    OpenCharSelectorForFKey(usize),
+    OpenCharSelectorForBrush,
+    OpenTdfFontSelector,
+    OpenFontDirectory,
 }
 
 // ============================================================================
@@ -288,9 +312,12 @@ pub enum ToolMessage {
 /// Read-only context for tool UI rendering.
 ///
 /// Important: this must not borrow the `EditState` behind a mutex lock.
-pub struct ToolViewContext<'a> {
-    pub theme: &'a iced::Theme,
-    pub current_tool: Tool,
+///
+/// This is intentionally **owned** so tool rendering can be object-safe
+/// (`Element<'static, _>`).
+#[derive(Clone)]
+pub struct ToolViewContext {
+    pub theme: iced::Theme,
     pub fkeys: FKeySets,
     pub font: Option<BitFont>,
     pub palette: Palette,
@@ -323,12 +350,6 @@ pub struct ToolContext<'a> {
     /// Optional pixel→half-block mapper (layer-local).
     /// Used by tools that need 2x Y resolution (e.g. HalfBlock fill/paint).
     pub half_block_mapper: Option<HalfBlockMapper>,
-
-    /// Optional Tag tool state when dispatching to the Tag tool.
-    ///
-    /// This keeps tag event handling inside the tool while allowing the editor
-    /// to retain ownership of tag UI/overlay state.
-    pub tag_state: Option<&'a mut TagToolState>,
 }
 
 // ============================================================================
@@ -341,6 +362,13 @@ pub struct ToolContext<'a> {
 /// tool's `handle_event` method and renders the tool's UI components.
 
 pub trait ToolHandler: Send + Sync {
+    /// Tool identifier (used for routing/editor decisions).
+    fn id(&self) -> ToolId;
+
+    /// Downcasting support (used by editor/tool registry glue code).
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
     // === Event Handling ===
 
     /// Handle non-terminal Iced events.
@@ -368,7 +396,7 @@ pub trait ToolHandler: Send + Sync {
     ///
     /// Returns an Element that sends `ToolMessage` when interacted with.
     /// Default: empty row.
-    fn view_toolbar<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let _ = ctx;
         column![].into()
     }
@@ -376,7 +404,7 @@ pub trait ToolHandler: Send + Sync {
     /// Render tool-specific sidebar options (left panel, under tool icons).
     ///
     /// Default: empty column.
-    fn view_options<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_options(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let _ = ctx;
         column![].into()
     }
@@ -384,7 +412,7 @@ pub trait ToolHandler: Send + Sync {
     /// Render status bar content for this tool.
     ///
     /// Default: empty text.
-    fn view_status<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let _ = ctx;
         text("").into()
     }

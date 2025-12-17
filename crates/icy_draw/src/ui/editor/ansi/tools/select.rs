@@ -9,10 +9,11 @@ use icy_engine::{AddType, Position, Rectangle, Selection, TextPane};
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext};
 use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::{SelectionMode, SelectionModifier};
+use icy_engine_edit::tools::Tool;
 
 /// Select tool state
 pub struct SelectTool {
@@ -76,6 +77,18 @@ impl SelectTool {
 }
 
 impl ToolHandler for SelectTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(Tool::Select)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::SelectSetMode(mode) => {
@@ -289,7 +302,7 @@ impl ToolHandler for SelectTool {
         }
     }
 
-    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let mode = self.selection_mode;
 
         let segments = vec![
@@ -302,7 +315,7 @@ impl ToolHandler for SelectTool {
 
         let segmented_control = self
             .selection_mode_control
-            .view(segments, mode, ctx.font.clone(), ctx.theme)
+            .view(segments, mode, ctx.font.clone(), &ctx.theme)
             .map(|msg| match msg {
                 SegmentedControlMessage::Selected(m) | SegmentedControlMessage::Toggled(m) | SegmentedControlMessage::CharClicked(m) => {
                     ToolMessage::SelectSetMode(m)
@@ -323,7 +336,7 @@ impl ToolHandler for SelectTool {
         .into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let status = if let (Some(start), Some(end)) = (self.start_pos, self.current_pos) {
             let w = (end.x - start.x).abs() + 1;
             let h = (end.y - start.y).abs() + 1;

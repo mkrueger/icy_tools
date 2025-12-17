@@ -12,17 +12,12 @@ use icy_engine_edit::AttributedChar;
 use icy_engine_gui::TerminalMessage;
 
 use super::paint::{BrushSettings, apply_stamp_at_doc_pos, begin_paint_undo};
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::shape_points::shape_points;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 use crate::ui::editor::ansi::widget::toolbar::top::{ARROW_LEFT_SVG, ARROW_RIGHT_SVG};
 use icy_engine_edit::tools::Tool;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ShapeToolUiAction {
-    OpenBrushCharSelector,
-}
 
 /// Shape tool state
 pub struct ShapeTool {
@@ -47,7 +42,6 @@ pub struct ShapeTool {
 
     brush_mode_control: ShaderSegmentedControl,
     color_filter_control: ShaderSegmentedControl,
-    pending_ui_action: Option<ShapeToolUiAction>,
 
     undo: Option<icy_engine_edit::AtomicUndoGuard>,
 }
@@ -67,7 +61,6 @@ impl Default for ShapeTool {
 
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
-            pending_ui_action: None,
             undo: None,
         }
     }
@@ -109,10 +102,6 @@ impl ShapeTool {
         self.brush.brush_size
     }
 
-    pub fn take_ui_action(&mut self) -> Option<ShapeToolUiAction> {
-        self.pending_ui_action.take()
-    }
-
     pub fn set_tool(&mut self, tool: Tool) {
         self.tool = tool;
     }
@@ -144,16 +133,25 @@ pub struct ShapeDragSnapshot {
 }
 
 impl ToolHandler for ShapeTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(self.tool)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::SetBrushPrimary(primary) => {
                 self.brush.primary = primary;
                 ToolResult::None
             }
-            ToolMessage::BrushOpenCharSelector => {
-                self.pending_ui_action = Some(ShapeToolUiAction::OpenBrushCharSelector);
-                ToolResult::None
-            }
+            ToolMessage::BrushOpenCharSelector => ToolResult::Ui(UiAction::OpenCharSelectorForBrush),
             ToolMessage::SetBrushChar(ch) => {
                 self.brush.paint_char = ch;
                 ToolResult::None
@@ -190,7 +188,7 @@ impl ToolHandler for ShapeTool {
                 };
 
                 if new_tool != self.tool {
-                    ToolResult::SwitchTool(new_tool)
+                    ToolResult::SwitchTool(super::ToolId::Tool(new_tool))
                 } else {
                     ToolResult::None
                 }
@@ -199,7 +197,7 @@ impl ToolHandler for ShapeTool {
         }
     }
 
-    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let primary = self.brush.primary;
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
@@ -213,7 +211,7 @@ impl ToolHandler for ShapeTool {
         let font_for_color_filter = ctx.font.clone();
         let segmented_control = self
             .brush_mode_control
-            .view_with_char_colors(segments, primary, ctx.font.clone(), ctx.theme, ctx.caret_fg, ctx.caret_bg, &ctx.palette)
+            .view_with_char_colors(segments, primary, ctx.font.clone(), &ctx.theme, ctx.caret_fg, ctx.caret_bg, &ctx.palette)
             .map(|msg| match msg {
                 SegmentedControlMessage::Selected(m) | SegmentedControlMessage::Toggled(m) => ToolMessage::SetBrushPrimary(m),
                 SegmentedControlMessage::CharClicked(_) => ToolMessage::BrushOpenCharSelector,
@@ -229,7 +227,7 @@ impl ToolHandler for ShapeTool {
         }
         let color_filter = self
             .color_filter_control
-            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, ctx.theme)
+            .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, &ctx.theme)
             .map(|msg| match msg {
                 SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.brush.colorize_fg),
                 SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.brush.colorize_bg),
@@ -237,11 +235,11 @@ impl ToolHandler for ShapeTool {
             });
 
         let show_filled_toggle = matches!(
-            ctx.current_tool,
+            self.tool,
             Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
         );
-        let is_filled = matches!(ctx.current_tool, Tool::RectangleFilled | Tool::EllipseFilled);
-        let filled_toggle: Element<'a, ToolMessage> = if show_filled_toggle {
+        let is_filled = matches!(self.tool, Tool::RectangleFilled | Tool::EllipseFilled);
+        let filled_toggle: Element<'_, ToolMessage> = if show_filled_toggle {
             toggler(is_filled).label("Filled").on_toggle(ToolMessage::ToggleFilled).text_size(11).into()
         } else {
             Space::new().width(Length::Fixed(0.0)).into()
@@ -473,7 +471,7 @@ impl ToolHandler for ShapeTool {
         }
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let status = if let (Some(start), Some(end)) = (self.start_pos, self.current_pos) {
             let w = (end.x - start.x).abs() + 1;
             let h = (end.y - start.y).abs() + 1;

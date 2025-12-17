@@ -15,7 +15,7 @@ use icy_engine::{AttributedChar, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::TerminalMessage;
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext};
 
 /// Pipette tool state
 #[derive(Clone, Debug, Default)]
@@ -44,6 +44,18 @@ impl PipetteTool {
 }
 
 impl ToolHandler for PipetteTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(Tool::Pipette)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::PipetteTakeForeground(v) => {
@@ -103,14 +115,14 @@ impl ToolHandler for PipetteTool {
                 }
 
                 // Switch back to Click tool after picking
-                ToolResult::SwitchTool(Tool::Click)
+                ToolResult::SwitchTool(super::ToolId::Tool(Tool::Click))
             }
 
             _ => ToolResult::None,
         }
     }
 
-    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         let mut content = row![].spacing(16).align_y(iced::Alignment::Center);
 
         // Center content
@@ -200,7 +212,7 @@ impl ToolHandler for PipetteTool {
         content.into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
         let status = if let (Some(pos), Some(ch)) = (&self.hovered_pos, &self.hovered_char) {
             format!(
                 "Pipette | Pos: ({}, {}) | Char: '{}' | FG: {} | BG: {}",

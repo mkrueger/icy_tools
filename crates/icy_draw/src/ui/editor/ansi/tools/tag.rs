@@ -460,13 +460,22 @@ impl TagToolState {
 /// Tag tool handler
 ///
 /// Owns toolbar message dispatch and (eventually) mouse interaction logic.
-/// Persistent state is still in the editor via `TagToolState`.
-#[derive(Default)]
-pub struct TagTool {}
+/// Persistent state is owned by the tool.
+pub struct TagTool {
+    state: TagToolState,
+}
 
 impl TagTool {
     pub fn new() -> Self {
-        Self::default()
+        Self { state: TagToolState::new() }
+    }
+
+    pub fn state(&self) -> &TagToolState {
+        &self.state
+    }
+
+    pub fn state_mut(&mut self) -> &mut TagToolState {
+        &mut self.state
     }
 
     pub fn update_overlay_mask_in_state(state: &mut EditState) {
@@ -618,55 +627,59 @@ impl TagTool {
 }
 
 impl ToolHandler for TagTool {
-    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
-        let Some(tag_state) = ctx.tag_state.as_deref_mut() else {
-            return ToolResult::None;
-        };
+    fn id(&self) -> super::ToolId {
+        super::ToolId::Tool(icy_engine_edit::tools::Tool::Tag)
+    }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
         match msg {
             TerminalMessage::Press(evt) => {
                 let Some(pos) = evt.text_position else {
                     return ToolResult::None;
                 };
-                Self::handle_mouse_down(ctx.state, tag_state, pos, evt.modifiers.clone(), evt.button)
+                Self::handle_mouse_down(ctx.state, &mut self.state, pos, evt.modifiers.clone(), evt.button)
             }
             TerminalMessage::Move(evt) | TerminalMessage::Drag(evt) => {
                 let Some(pos) = evt.text_position else {
                     return ToolResult::None;
                 };
-                let cursor = Some(Self::cursor_for_state(tag_state));
-                let result = Self::handle_mouse_drag(ctx.state, tag_state, pos);
+                let cursor = Some(Self::cursor_for_state(&self.state));
+                let result = Self::handle_mouse_drag(ctx.state, &mut self.state, pos);
                 ToolResult::SetCursorIcon(cursor).and(result)
             }
             TerminalMessage::Release(evt) => {
                 let pos = evt.text_position.unwrap_or_default();
-                Self::handle_mouse_up(ctx.state, tag_state, pos)
+                Self::handle_mouse_up(ctx.state, &mut self.state, pos)
             }
             _ => ToolResult::None,
         }
     }
 
     fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
-        let Some(tag_state) = ctx.tag_state.as_deref_mut() else {
-            return ToolResult::None;
-        };
-
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
                 use iced::keyboard::key::Named;
                 if matches!(key, iced::keyboard::Key::Named(Named::Escape)) {
                     // Cancel add-tag mode (undo the newly created tag)
-                    if tag_state.add_new_index.is_some() {
-                        tag_state.add_new_index = None;
-                        tag_state.selection_drag_active = false;
-                        tag_state.end_drag();
+                    if self.state.add_new_index.is_some() {
+                        self.state.add_new_index = None;
+                        self.state.selection_drag_active = false;
+                        self.state.end_drag();
                         let _ = ctx.state.undo();
                         return ToolResult::EndCapture.and(ToolResult::Redraw);
                     }
 
                     // Cancel selection-drag rectangle
-                    if tag_state.selection_drag_active {
-                        tag_state.cancel_selection_drag();
+                    if self.state.selection_drag_active {
+                        self.state.cancel_selection_drag();
                         return ToolResult::EndCapture.and(ToolResult::Redraw);
                     }
                 }
@@ -677,47 +690,43 @@ impl ToolHandler for TagTool {
     }
 
     fn handle_message(&mut self, ctx: &mut ToolContext, msg: &ToolMessage) -> ToolResult {
-        let Some(tag_state) = ctx.tag_state.as_deref_mut() else {
-            return ToolResult::None;
-        };
-
         match *msg {
             ToolMessage::TagEdit(index) => {
-                tag_state.open_edit_dialog_for_tag(ctx.state, index);
+                self.state.open_edit_dialog_for_tag(ctx.state, index);
                 ToolResult::Redraw
             }
-            ToolMessage::TagDelete(index) => tag_state.delete_tag(ctx.state, index),
-            ToolMessage::TagClone(index) => tag_state.clone_tag(ctx.state, index),
+            ToolMessage::TagDelete(index) => self.state.delete_tag(ctx.state, index),
+            ToolMessage::TagClone(index) => self.state.clone_tag(ctx.state, index),
             ToolMessage::TagContextMenuClose => {
-                tag_state.close_context_menu();
+                self.state.close_context_menu();
                 ToolResult::Redraw
             }
             ToolMessage::TagOpenList => {
-                tag_state.open_list_dialog(ctx.state);
+                self.state.open_list_dialog(ctx.state);
                 ToolResult::Redraw
             }
             ToolMessage::TagStartAdd => {
-                if tag_state.add_new_index.is_some() {
-                    tag_state.cancel_add_mode(ctx.state)
+                if self.state.add_new_index.is_some() {
+                    self.state.cancel_add_mode(ctx.state)
                 } else {
-                    tag_state.start_add_mode(ctx.state)
+                    self.state.start_add_mode(ctx.state)
                 }
             }
             ToolMessage::TagEditSelected => {
-                if tag_state.selection.len() == 1 {
-                    let idx = tag_state.selection[0];
-                    tag_state.open_edit_dialog_for_tag(ctx.state, idx);
+                if self.state.selection.len() == 1 {
+                    let idx = self.state.selection[0];
+                    self.state.open_edit_dialog_for_tag(ctx.state, idx);
                     ToolResult::Redraw
                 } else {
                     ToolResult::None
                 }
             }
-            ToolMessage::TagDeleteSelected => tag_state.delete_selected_tags(ctx.state),
+            ToolMessage::TagDeleteSelected => self.state.delete_selected_tags(ctx.state),
             _ => ToolResult::None,
         }
     }
 
-    fn view_toolbar<'a>(&'a self, ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
         let add_button = if ctx.tag_add_mode {
             button(text("Add").size(TEXT_SIZE_SMALL))
                 .on_press(ToolMessage::TagStartAdd)
@@ -736,7 +745,7 @@ impl ToolHandler for TagTool {
 
         let has_selected_tags = ctx.tag_selection_count > 0;
 
-        let middle: Element<'a, ToolMessage> = if ctx.tag_selection_count > 1 {
+        let middle: Element<'_, ToolMessage> = if ctx.tag_selection_count > 1 {
             text(format!("({} tags)", ctx.tag_selection_count)).size(TEXT_SIZE_SMALL).into()
         } else if let Some(tag_info) = ctx.selected_tag.clone() {
             let edit_button = button(text("Edit").size(TEXT_SIZE_SMALL))
@@ -757,7 +766,7 @@ impl ToolHandler for TagTool {
             text("").into()
         };
 
-        let right_side: Element<'a, ToolMessage> = if has_selected_tags {
+        let right_side: Element<'_, ToolMessage> = if has_selected_tags {
             button(text("Delete").size(TEXT_SIZE_SMALL))
                 .on_press(ToolMessage::TagDeleteSelected)
                 .style(button::danger)
@@ -777,7 +786,7 @@ impl ToolHandler for TagTool {
         .into()
     }
 
-    fn view_status<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_status(&self, _ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
         // Status is managed by editor using TagToolState
         text("Tag").into()
     }

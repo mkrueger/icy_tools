@@ -14,7 +14,7 @@ use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 
-use super::{ToolContext, ToolHandler, ToolMessage, ToolResult, ToolViewContext};
+use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::Options;
 use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
@@ -27,8 +27,6 @@ pub struct ClickTool {
 
     /// Currently selected F-key set index (mirrors `Options.fkeys.current_set`)
     current_fkey_set: usize,
-
-    pending_ui_action: Option<ClickToolUiAction>,
 
     /// Whether layer drag is active (Ctrl+Click+Drag)
     layer_drag_active: bool,
@@ -48,12 +46,6 @@ pub struct ClickTool {
     selection_start_pos: Option<Position>,
     selection_cur_pos: Option<Position>,
     selection_start_rect: Option<icy_engine::Rectangle>,
-}
-
-/// UI-only actions that the editor still owns (popups, overlays).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ClickToolUiAction {
-    OpenCharSelectorForFKey(usize),
 }
 
 impl ClickTool {
@@ -124,28 +116,21 @@ impl ClickTool {
         self.current_fkey_set
     }
 
-    pub fn take_ui_action(&mut self) -> Option<ClickToolUiAction> {
-        self.pending_ui_action.take()
-    }
-
-    pub fn handle_fkey_toolbar_message(&mut self, ctx: &mut ToolContext, msg: FKeyToolbarMessage) -> (ToolResult, Option<ClickToolUiAction>) {
+    pub fn handle_fkey_toolbar_message(&mut self, ctx: &mut ToolContext, msg: FKeyToolbarMessage) -> ToolResult {
         match msg {
-            FKeyToolbarMessage::TypeFKey(slot) => {
-                let result = self.type_fkey_slot(ctx, self.current_fkey_set, slot);
-                (result, None)
-            }
-            FKeyToolbarMessage::OpenCharSelector(slot) => (ToolResult::None, Some(ClickToolUiAction::OpenCharSelectorForFKey(slot))),
+            FKeyToolbarMessage::TypeFKey(slot) => self.type_fkey_slot(ctx, self.current_fkey_set, slot),
+            FKeyToolbarMessage::OpenCharSelector(slot) => ToolResult::Ui(UiAction::OpenCharSelectorForFKey(slot)),
             FKeyToolbarMessage::NextSet => {
                 let Some(options) = ctx.options else {
-                    return (ToolResult::None, None);
+                    return ToolResult::None;
                 };
                 let next = self.current_fkey_set.saturating_add(1);
                 self.set_current_fkey_set(options, next);
-                (ToolResult::Redraw, None)
+                ToolResult::Redraw
             }
             FKeyToolbarMessage::PrevSet => {
                 let Some(options) = ctx.options else {
-                    return (ToolResult::None, None);
+                    return ToolResult::None;
                 };
                 let cur = self.current_fkey_set;
                 let prev = {
@@ -154,26 +139,34 @@ impl ClickTool {
                     if count == 0 { 0 } else { (cur + count - 1) % count }
                 };
                 self.set_current_fkey_set(options, prev);
-                (ToolResult::Redraw, None)
+                ToolResult::Redraw
             }
         }
     }
 }
 
 impl ToolHandler for ClickTool {
-    fn view_toolbar<'a>(&'a self, ctx: &ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn id(&self) -> ToolId {
+        ToolId::Tool(icy_engine_edit::tools::Tool::Click)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         self.fkey_toolbar
-            .view(ctx.fkeys.clone(), ctx.font.clone(), ctx.palette.clone(), ctx.caret_fg, ctx.caret_bg, ctx.theme)
+            .view(ctx.fkeys.clone(), ctx.font.clone(), ctx.palette.clone(), ctx.caret_fg, ctx.caret_bg, &ctx.theme)
             .map(ToolMessage::ClickFKeyToolbar)
     }
 
     fn handle_message(&mut self, ctx: &mut ToolContext, msg: &ToolMessage) -> ToolResult {
         match msg {
-            ToolMessage::ClickFKeyToolbar(m) => {
-                let (result, ui_action) = self.handle_fkey_toolbar_message(ctx, m.clone());
-                self.pending_ui_action = ui_action;
-                result
-            }
+            ToolMessage::ClickFKeyToolbar(m) => self.handle_fkey_toolbar_message(ctx, m.clone()),
             _ => ToolResult::None,
         }
     }

@@ -24,7 +24,7 @@ pub struct PasteTool {
     /// Whether paste mode is active (floating layer exists)
     active: bool,
     /// Tool that was active before paste mode started
-    previous_tool: Option<Tool>,
+    previous_tool: Option<super::ToolId>,
 
     /// Whether a drag is currently active
     drag_active: bool,
@@ -44,7 +44,7 @@ impl PasteTool {
         Self::default()
     }
 
-    pub fn begin_paste(&mut self, previous_tool: Tool) {
+    pub fn begin_paste(&mut self, previous_tool: super::ToolId) {
         self.active = true;
         self.previous_tool = Some(previous_tool);
         self.abort();
@@ -56,7 +56,7 @@ impl PasteTool {
             || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Text)
     }
 
-    pub fn paste_from_clipboard(&mut self, ctx: &mut ToolContext<'_>, previous_tool: Tool) -> Result<ToolResult, String> {
+    pub fn paste_from_clipboard(&mut self, ctx: &mut ToolContext<'_>, previous_tool: super::ToolId) -> Result<ToolResult, String> {
         if self.active {
             return Ok(ToolResult::None);
         }
@@ -126,10 +126,10 @@ impl PasteTool {
         self.active
     }
 
-    fn finish_paste(&mut self) -> Tool {
+    fn finish_paste(&mut self) -> super::ToolId {
         self.active = false;
         self.abort();
-        self.previous_tool.take().unwrap_or(Tool::Click)
+        self.previous_tool.take().unwrap_or(super::ToolId::Tool(Tool::Click))
     }
 
     /// Check if a drag is currently active
@@ -361,6 +361,18 @@ impl PasteTool {
 }
 
 impl ToolHandler for PasteTool {
+    fn id(&self) -> super::ToolId {
+        super::ToolId::Paste
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         if !self.active {
             return ToolResult::None;
@@ -384,12 +396,12 @@ impl ToolHandler for PasteTool {
         self.perform_action(ctx.state, action)
     }
 
-    fn view_toolbar<'a>(&'a self, _ctx: &super::ToolViewContext<'_>) -> Element<'a, ToolMessage> {
+    fn view_toolbar(&self, _ctx: &super::ToolViewContext) -> Element<'static, ToolMessage> {
         if !self.active {
             return row![].into();
         }
 
-        fn paste_btn<'a>(label: &'a str, shortcut: &'a str, msg: ToolMessage) -> Element<'a, ToolMessage> {
+        fn paste_btn(label: &'static str, shortcut: &'static str, msg: ToolMessage) -> Element<'static, ToolMessage> {
             button(
                 row![
                     text(shortcut).size(12).style(move |theme: &Theme| text::Style {
