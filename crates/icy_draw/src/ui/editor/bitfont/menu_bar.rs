@@ -3,184 +3,46 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::{
-    Border, Element, Length, Theme, alignment,
-    border::Radius,
-    widget::{button, row, text},
-};
+use iced::{Border, Element, Theme};
 use iced_aw::menu::{self, Menu};
-use iced_aw::menu_bar;
-use iced_aw::menu_items;
 use iced_aw::style::{Status, menu_bar::primary};
+use iced_aw::{menu_bar, menu_items};
 
 use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
 use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::bitfont_cmd;
-use crate::ui::main_window::menu::{build_recent_files_menu, menu_button, menu_item_style, menu_item_submenu, separator};
-use icy_engine_gui::commands::{CommandDef, Hotkey, cmd, hotkey_from_iced};
+use crate::ui::main_window::menu::{MenuItem, MenuState, menu_button, menu_items_to_iced};
+use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 use super::BitFontEditorMessage;
 
 // ============================================================================
-// Menu Item Data Structure
+// Recent Files Submenu Builder
 // ============================================================================
 
-/// A menu item that can be rendered and checked for hotkeys
-#[derive(Clone)]
-pub enum MenuItem {
-    /// Command-based item with hotkey support
-    Command {
-        cmd: &'static CommandDef,
-        message: Message,
-        enabled: bool,
-        /// Optional dynamic label override (e.g., "Undo Clear Glyph")
-        label_override: Option<String>,
-    },
-    /// Simple item without command (no hotkey)
-    Simple {
-        label: String,
-        hotkey_display: String,
-        message: Message,
-        enabled: bool,
-    },
-    /// Separator line
-    Separator,
-}
+fn build_recent_files_items(state: &MenuState<'_>) -> Vec<MenuItem> {
+    let files = state.recent_files.files();
 
-impl MenuItem {
-    /// Create a command-based menu item
-    pub fn cmd(cmd: &'static CommandDef, message: Message) -> Self {
-        Self::Command {
-            cmd,
-            message,
-            enabled: true,
-            label_override: None,
-        }
+    if files.is_empty() {
+        vec![MenuItem::simple(fl!("menu-no_recent_files"), "", Message::Noop).enabled(false)]
+    } else {
+        let mut items: Vec<MenuItem> = files
+            .iter()
+            .rev()
+            .map(|file| {
+                let file_name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| file.display().to_string());
+                MenuItem::simple(file_name, "", Message::OpenRecentFile(file.clone()))
+            })
+            .collect();
+
+        items.push(MenuItem::separator());
+        items.push(MenuItem::simple(fl!("menu-clear_recent_files"), "", Message::ClearRecentFiles));
+        items
     }
-
-    /// Create a command item with dynamic label (e.g., for Undo/Redo)
-    pub fn cmd_with_label(cmd: &'static CommandDef, message: Message, label: impl Into<String>) -> Self {
-        Self::Command {
-            cmd,
-            message,
-            enabled: true,
-            label_override: Some(label.into()),
-        }
-    }
-
-    /// Create a simple menu item without command
-    pub fn simple(label: impl Into<String>, hotkey: impl Into<String>, message: Message) -> Self {
-        Self::Simple {
-            label: label.into(),
-            hotkey_display: hotkey.into(),
-            message,
-            enabled: true,
-        }
-    }
-
-    /// Create a separator
-    pub fn separator() -> Self {
-        Self::Separator
-    }
-
-    /// Set enabled state
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        match &mut self {
-            Self::Command { enabled: e, .. } => *e = enabled,
-            Self::Simple { enabled: e, .. } => *e = enabled,
-            _ => {}
-        }
-        self
-    }
-
-    /// Check if this item's hotkey matches the given hotkey
-    pub fn matches_hotkey(&self, hotkey: &Hotkey) -> Option<Message> {
-        match self {
-            Self::Command {
-                cmd, message, enabled: true, ..
-            } => {
-                if cmd.active_hotkeys().iter().any(|hk| hk == hotkey) {
-                    Some(message.clone())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// Get the command definition if this is a command item
-    #[allow(dead_code)]
-    pub fn command(&self) -> Option<&'static CommandDef> {
-        match self {
-            Self::Command { cmd, .. } => Some(*cmd),
-            _ => None,
-        }
-    }
-
-    /// Get the message for this item
-    #[allow(dead_code)]
-    pub fn message(&self) -> Option<&Message> {
-        match self {
-            Self::Command { message, .. } | Self::Simple { message, .. } => Some(message),
-            Self::Separator => None,
-        }
-    }
-
-    /// Check if enabled
-    #[allow(dead_code)]
-    pub fn is_enabled(&self) -> bool {
-        match self {
-            Self::Command { enabled, .. } | Self::Simple { enabled, .. } => *enabled,
-            Self::Separator => true,
-        }
-    }
-
-    /// Get label (with optional override)
-    pub fn label(&self) -> String {
-        match self {
-            Self::Command { cmd, label_override, .. } => label_override
-                .clone()
-                .unwrap_or_else(|| if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() }),
-            Self::Simple { label, .. } => label.clone(),
-            Self::Separator => String::new(),
-        }
-    }
-
-    /// Get hotkey display string
-    pub fn hotkey_display(&self) -> String {
-        match self {
-            Self::Command { cmd, .. } => cmd.primary_hotkey_display().unwrap_or_default(),
-            Self::Simple { hotkey_display, .. } => hotkey_display.clone(),
-            Self::Separator => String::new(),
-        }
-    }
-}
-
-/// Render a menu item button
-fn render_menu_item_enabled(label: String, hotkey: String, message: Message, enabled: bool) -> Element<'static, Message> {
-    let mut btn = button(
-        row![
-            text(label).size(14).width(Length::Fill),
-            text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
-                }
-            }),
-        ]
-        .spacing(16)
-        .align_y(alignment::Vertical::Center),
-    )
-    .width(Length::Fill)
-    .padding([4, 8])
-    .style(menu_item_style);
-
-    if enabled {
-        btn = btn.on_press(message);
-    }
-
-    btn.into()
 }
 
 // ============================================================================
@@ -215,6 +77,7 @@ impl BitFontMenu {
                 MenuItem::simple(fl!("menu-import-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowImportFontDialog)),
                 MenuItem::simple(fl!("menu-export-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowExportFontDialog)),
                 // Recent files submenu handled separately in view
+                MenuItem::dynamic_submenu(fl!("menu-open_recent"), build_recent_files_items),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
@@ -298,66 +161,34 @@ pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_d
 }
 
 // ============================================================================
-// Menu View - Helper macros/functions to render MenuItem to iced_aw items
+// Menu View
 // ============================================================================
 
-/// Render a MenuItem as an Element for use in menu_items!
-fn menu_item_view(item: &MenuItem) -> Element<'static, Message> {
-    match item {
-        MenuItem::Command { message, enabled, .. } | MenuItem::Simple { message, enabled, .. } => {
-            render_menu_item_enabled(item.label(), item.hotkey_display(), message.clone(), *enabled)
-        }
-        MenuItem::Separator => separator().into(),
-    }
-}
-
-fn menu_items_from_slice(items: &[MenuItem]) -> Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> {
-    items.iter().map(|item| iced_aw::menu::Item::new(menu_item_view(item))).collect()
-}
+use iced::border::Radius;
 
 /// Build the BitFont editor menu bar from the menu data structure
 pub fn view_bitfont(recent_files: &MostRecentlyUsedFiles, undo_desc: Option<&str>, redo_desc: Option<&str>) -> Element<'static, Message> {
     let menu = BitFontMenu::new(undo_desc, redo_desc);
+
+    let state = MenuState {
+        recent_files,
+        undo_description: undo_desc,
+        redo_description: redo_desc,
+    };
+
     let menu_template = |items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>>| Menu::new(items).width(300.0).offset(5.0);
 
-    // File menu: insert "Open Recent" submenu before the first separator.
-    let mut file_items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
-    let mut inserted_recent = false;
-    for item in &menu.file {
-        if !inserted_recent {
-            if let MenuItem::Separator = item {
-                file_items.push(iced_aw::menu::Item::with_menu(
-                    menu_item_submenu(fl!("menu-open_recent")),
-                    build_recent_files_menu(recent_files),
-                ));
-                inserted_recent = true;
-            }
-        }
-
-        file_items.push(iced_aw::menu::Item::new(menu_item_view(item)));
-    }
-    if !inserted_recent {
-        file_items.push(iced_aw::menu::Item::with_menu(
-            menu_item_submenu(fl!("menu-open_recent")),
-            build_recent_files_menu(recent_files),
-        ));
-    }
-
-    let edit_items = menu_items_from_slice(&menu.edit);
-    let selection_items = menu_items_from_slice(&menu.selection);
-    let view_items = menu_items_from_slice(&menu.view);
-    let help_items = menu_items_from_slice(&menu.help);
+    let file_items = menu_items_to_iced(&menu.file, &state);
+    let edit_items = menu_items_to_iced(&menu.edit, &state);
+    let selection_items = menu_items_to_iced(&menu.selection, &state);
+    let view_items = menu_items_to_iced(&menu.view, &state);
+    let help_items = menu_items_to_iced(&menu.help, &state);
 
     let mb = menu_bar!(
-        // File menu - with special handling for recent files submenu
         (menu_button(fl!("menu-file")), menu_template(file_items)),
-        // Edit menu
         (menu_button(fl!("menu-edit")), menu_template(edit_items)),
-        // Selection menu
         (menu_button(fl!("menu-selection")), menu_template(selection_items)),
-        // View menu
         (menu_button(fl!("menu-view")), menu_template(view_items)),
-        // Help menu
         (menu_button(fl!("menu-help")), menu_template(help_items))
     )
     .spacing(4.0)
