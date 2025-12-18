@@ -147,6 +147,12 @@ impl CanvasView {
         markers.show_layer_bounds = show;
     }
 
+    /// Set paste mode for animated layer border
+    pub fn set_paste_mode(&mut self, paste_mode: bool) {
+        let mut markers = self.terminal.markers.write();
+        markers.paste_mode = paste_mode;
+    }
+
     /// Set the selection rectangle for shader rendering (in pixels)
     /// bounds: (x, y, width, height) in document pixels
     pub fn set_selection(&mut self, bounds: Option<(f32, f32, f32, f32)>) {

@@ -332,9 +332,16 @@ impl From<AnsiStatusInfo> for StatusBarInfo {
             None
         };
 
+        // Show paste layer info in center when in paste mode
+        let center = if let (Some(pos), Some(size)) = (info.paste_layer_position, info.paste_layer_size) {
+            format!("Paste: {}×{} @ ({}, {})", size.0, size.1, pos.0, pos.1)
+        } else {
+            format!("Layer {}/{}", info.current_layer + 1, info.total_layers)
+        };
+
         Self {
             left: format!("{}×{}", info.buffer_size.0, info.buffer_size.1,),
-            center: format!("Layer {}/{}", info.current_layer + 1, info.total_layers,),
+            center,
             right: format!(
                 "{}  {}  ({}, {})",
                 info.current_tool,

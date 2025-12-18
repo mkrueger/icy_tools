@@ -321,10 +321,6 @@ impl AnsiEditorCore {
         self.current_tool.as_any().downcast_ref::<tools::FontTool>()
     }
 
-    pub(super) fn view_paste_sidebar_controls<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
-        self.paste_handler.view_paste_sidebar_controls()
-    }
-
     pub(super) fn view_paste_toolbar(&self, view_ctx: &tools::ToolViewContext) -> Element<'_, tools::ToolMessage> {
         use tools::ToolHandler;
         self.paste_handler.view_toolbar(view_ctx)
@@ -1145,8 +1141,16 @@ impl AnsiEditorCore {
                         let _ = self.dispatch_paste_action(tools::PasteAction::Anchor);
                         Task::none()
                     }
+                    TopToolbarMessage::PasteKeepAsLayer => {
+                        let _ = self.dispatch_paste_action(tools::PasteAction::KeepAsLayer);
+                        Task::none()
+                    }
                     TopToolbarMessage::PasteCancel => {
                         let _ = self.dispatch_paste_action(tools::PasteAction::Discard);
+                        Task::none()
+                    }
+                    TopToolbarMessage::PasteMove(dx, dy) => {
+                        let _ = self.dispatch_paste_action(tools::PasteAction::Move(dx, dy));
                         Task::none()
                     }
 
@@ -1750,8 +1754,11 @@ impl AnsiEditorCore {
 
     /// Update the layer bounds display based on current layer selection
     fn update_layer_bounds(&mut self) {
-        // Always set layer bounds (needed for selection marching ants drawing)
-        self.canvas.set_show_layer_borders(self.show_layer_borders);
+        // In paste mode, always show layer borders so the floating layer is visible
+        let is_paste = self.is_paste_mode();
+        let show_borders = self.show_layer_borders || is_paste;
+        self.canvas.set_show_layer_borders(show_borders);
+        self.canvas.set_paste_mode(is_paste);
         // Get current layer info from EditState
         let layer_bounds = {
             let mut screen = self.screen.lock();
@@ -2303,6 +2310,22 @@ impl AnsiEditorCore {
             (font_name, font_page, None)
         };
 
+        // Get paste layer info if in paste mode
+        let (paste_layer_position, paste_layer_size) = if state.has_floating_layer() {
+            buffer
+                .layers
+                .iter()
+                .find(|l| l.role.is_paste())
+                .map(|layer| {
+                    let offset = layer.offset();
+                    let size = layer.size();
+                    (Some((offset.x, offset.y)), Some((size.width, size.height)))
+                })
+                .unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
+
         AnsiStatusInfo {
             cursor_position: (caret.x, caret.y),
             buffer_size: (buffer.width(), buffer.height()),
@@ -2314,6 +2337,8 @@ impl AnsiEditorCore {
             format_mode,
             current_font_slot,
             slot_fonts,
+            paste_layer_position,
+            paste_layer_size,
         }
     }
 

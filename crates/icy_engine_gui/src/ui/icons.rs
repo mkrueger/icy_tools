@@ -15,6 +15,13 @@ const ARROW_DOWNWARD_SVG: &[u8] = include_bytes!("icons/arrow_downward.svg");
 const ADD_SVG: &[u8] = include_bytes!("icons/add.svg");
 const EDIT_SVG: &[u8] = include_bytes!("icons/edit.svg");
 
+// Paste tool icons
+const ROTATE_RIGHT_SVG: &[u8] = include_bytes!("icons/rotate_right.svg");
+const FLIP_SVG: &[u8] = include_bytes!("icons/flip.svg");
+const FLIP_VERTICAL_SVG: &[u8] = include_bytes!("icons/flip_vertical.svg");
+const STAMP_SVG: &[u8] = include_bytes!("icons/stamp.svg");
+const OPACITY_SVG: &[u8] = include_bytes!("icons/opacity.svg");
+
 // File type icons
 const FILE_TEXT_SVG: &[u8] = include_bytes!("icons/files/file_text.svg");
 const FILE_IMAGE_SVG: &[u8] = include_bytes!("icons/files/file_image.svg");
@@ -83,6 +90,33 @@ pub fn add_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
 
 pub fn edit_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(EDIT_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+// Paste tool icons
+pub fn rotate_right_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(ROTATE_RIGHT_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+}
+
+pub fn flip_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(FLIP_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+pub fn flip_vertical_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(FLIP_VERTICAL_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+}
+
+pub fn stamp_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(STAMP_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+pub fn opacity_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(OPACITY_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
 }
 
 // File type icons

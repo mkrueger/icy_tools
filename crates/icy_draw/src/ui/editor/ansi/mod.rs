@@ -194,6 +194,8 @@ pub enum AnsiEditorMessage {
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
     PaletteGrid(PaletteGridMessage),
+    /// Paste controls messages
+    PasteControls(crate::ui::widget::paste_controls::PasteControlsMessage),
 
     // --- Tool Switching ---
     SelectTool(usize),
@@ -258,4 +260,8 @@ pub struct AnsiStatusInfo {
     pub current_font_slot: usize,
     /// Font names for slots (only set for XBinExtended)
     pub slot_fonts: Option<[Option<String>; 2]>,
+    /// Paste layer position (if in paste mode)
+    pub paste_layer_position: Option<(i32, i32)>,
+    /// Paste layer size (if in paste mode)
+    pub paste_layer_size: Option<(i32, i32)>,
 }

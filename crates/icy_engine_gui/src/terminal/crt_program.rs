@@ -524,6 +524,7 @@ impl<'a> CRTShaderProgram<'a> {
         let markers = self.term.markers.read();
         let layer_rect = markers.layer_bounds.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let show_layer_bounds = markers.show_layer_bounds;
+        let paste_mode = markers.paste_mode;
         let selection_rect = markers.selection_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let selection_color = markers.selection_color;
         let selection_mask_data = markers.selection_mask_data.clone();
@@ -575,8 +576,10 @@ impl<'a> CRTShaderProgram<'a> {
             reference_image_scale,
             // Layer bounds rendering
             layer_rect,
-            layer_color: [1.0, 1.0, 0.0, 1.0], // Yellow border for layer bounds
+            // Yellow for normal, Cyan for paste mode
+            layer_color: if paste_mode { [0.0, 1.0, 1.0, 1.0] } else { [1.0, 1.0, 0.0, 1.0] },
             show_layer_bounds,
+            paste_mode,
             // Selection rendering
             selection_rect,
             selection_color,

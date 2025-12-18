@@ -84,6 +84,11 @@ pub enum LayerMessage {
     MergeDown(usize),
     /// Clear layer contents (context menu)
     Clear(usize),
+    // === Paste mode messages ===
+    /// Keep paste as separate layer (exit paste mode without merging)
+    PasteKeepAsLayer,
+    /// Cancel paste mode (discard floating layer)
+    PasteCancel,
 }
 
 #[derive(Clone)]
@@ -620,7 +625,12 @@ impl LayerView {
     }
 
     /// Render the layer view
-    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, font_page: Option<usize>) -> Element<'a, LayerMessage> {
+    /// If `paste_mode` is true, the layer view shows paste-specific behavior:
+    /// - Layer selection is disabled (paste layer is always selected)
+    /// - Add button anchors the paste layer
+    /// - Up/Down move the paste layer position
+    /// - Delete cancels the paste operation
+    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, font_page: Option<usize>, paste_mode: bool) -> Element<'a, LayerMessage> {
         // Read layer data (no per-frame preview cloning)
         let (rows, current_layer, layer_count, buffer_version, font_key) = {
             let mut screen_guard = screen.lock();
@@ -689,6 +699,7 @@ impl LayerView {
             hovered_list_idx: self.hovered_list_idx.clone(),
             visibility_icon_cache: &self.visibility_icon_cache,
             preview_atlas: self.preview_atlas.clone(),
+            paste_mode,
         }
         .into();
 
@@ -729,23 +740,44 @@ impl LayerView {
             }
         });
 
-        // Button bar
-        let add_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::Add);
-        let has_layers = layer_count > 0;
-        let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
-        let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
-        let delete_btn = Self::icon_button_opt(DELETE_SVG, has_layers.then(|| LayerMessage::Remove(current_layer)));
+        // Button bar - changes behavior in paste mode
+        let button_bar = if paste_mode {
+            // Paste mode: Add=Keep as layer, Up/Down=Move layer order, Delete=Cancel
+            let keep_layer_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::PasteKeepAsLayer);
+            let move_up_btn = Self::icon_button(MOVE_UP_SVG, LayerMessage::MoveUp(current_layer));
+            let move_down_btn = Self::icon_button(MOVE_DOWN_SVG, LayerMessage::MoveDown(current_layer));
+            let cancel_btn = Self::icon_button(DELETE_SVG, LayerMessage::PasteCancel);
 
-        let button_bar = container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
-            .padding([2, 0])
-            .width(Length::Fill)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    ..Default::default()
-                }
-            });
+            container(row![keep_layer_btn, move_up_btn, move_down_btn, cancel_btn].spacing(0))
+                .padding([2, 0])
+                .width(Length::Fill)
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style {
+                        // Slightly different background to indicate paste mode
+                        background: Some(iced::Background::Color(palette.primary.weak.color.scale_alpha(0.3))),
+                        ..Default::default()
+                    }
+                })
+        } else {
+            // Normal mode
+            let add_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::Add);
+            let has_layers = layer_count > 0;
+            let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
+            let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
+            let delete_btn = Self::icon_button_opt(DELETE_SVG, has_layers.then(|| LayerMessage::Remove(current_layer)));
+
+            container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
+                .padding([2, 0])
+                .width(Length::Fill)
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style {
+                        background: Some(iced::Background::Color(palette.background.weak.color)),
+                        ..Default::default()
+                    }
+                })
+        };
 
         let content = column![list_container, button_bar];
 
@@ -774,6 +806,9 @@ struct LayerListWidget<'a> {
     visibility_icon_cache: &'a RefCell<HashMap<bool, image::Handle>>,
 
     preview_atlas: Arc<Mutex<PreviewAtlasState>>,
+
+    /// When true, layer selection is disabled (paste layer is always selected)
+    paste_mode: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1104,6 +1139,11 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                 }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                // In paste mode, layer selection is disabled
+                if self.paste_mode {
+                    return;
+                }
+
                 if state.left_button_down {
                     return;
                 }

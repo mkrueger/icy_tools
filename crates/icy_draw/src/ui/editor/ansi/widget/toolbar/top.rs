@@ -143,10 +143,14 @@ pub enum TopToolbarMessage {
     PasteFlipY,
     /// Toggle transparent mode for the floating layer
     PasteToggleTransparent,
-    /// Anchor the floating layer (finalize paste)
+    /// Anchor the floating layer (merge with layer below)
     PasteAnchor,
+    /// Keep paste as separate layer and exit paste mode
+    PasteKeepAsLayer,
     /// Cancel paste and discard the floating layer
     PasteCancel,
+    /// Move the floating layer by (dx, dy) characters
+    PasteMove(i32, i32),
 }
 
 /// Information about a selected tag for the toolbar
@@ -344,7 +348,9 @@ impl TopToolbar {
             | TopToolbarMessage::PasteFlipY
             | TopToolbarMessage::PasteToggleTransparent
             | TopToolbarMessage::PasteAnchor
-            | TopToolbarMessage::PasteCancel => {
+            | TopToolbarMessage::PasteKeepAsLayer
+            | TopToolbarMessage::PasteCancel
+            | TopToolbarMessage::PasteMove(_, _) => {
                 // handled at a higher level (AnsiEditor)
             }
         }
@@ -418,10 +424,6 @@ impl TopToolbar {
         }
 
         let content = row![
-            text("Paste Mode:").size(14).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().primary.strong.color),
-            }),
-            Space::new().width(Length::Fixed(16.0)),
             paste_btn("Stamp", "S", TopToolbarMessage::PasteStamp),
             paste_btn("Rotate", "R", TopToolbarMessage::PasteRotate),
             paste_btn("Flip X", "X", TopToolbarMessage::PasteFlipX),
@@ -431,17 +433,9 @@ impl TopToolbar {
             text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().secondary.base.color),
             }),
-            Space::new().width(Length::Fixed(16.0)),
-            button(text("✓ Anchor").size(14))
-                .padding([4, 12])
-                .style(button::success)
-                .on_press(TopToolbarMessage::PasteAnchor),
-            button(text("✕ Cancel").size(14))
-                .padding([4, 12])
-                .style(button::danger)
-                .on_press(TopToolbarMessage::PasteCancel),
         ]
         .spacing(8)
+        .height(Length::Fill)
         .align_y(iced::Alignment::Center);
 
         container(content)

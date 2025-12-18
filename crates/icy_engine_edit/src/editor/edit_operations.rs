@@ -89,7 +89,10 @@ impl EditState {
     /// This function will return an error if .
     pub fn paste_clipboard_data(&mut self, data: &[u8]) -> Result<()> {
         log::debug!("paste_clipboard_data: received {} bytes", data.len());
-        if let Some(layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
+        if let Some(mut layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
+            // Position the pasted layer at the current caret position
+            let caret_pos = self.screen.caret.position();
+            layer.set_offset((caret_pos.x, caret_pos.y));
             log::debug!(
                 "paste_clipboard_data: created layer {}x{} at offset {:?}",
                 layer.size().width,
@@ -107,6 +110,7 @@ impl EditState {
 
     pub fn paste_sixel(&mut self, sixel: Sixel) -> Result<()> {
         let dims = self.get_buffer().font_dimensions();
+        let caret_pos = self.screen.caret.position();
 
         let mut layer = Layer::new(
             fl!(crate::LANGUAGE_LOADER, "layer-pasted-name"),
@@ -118,6 +122,8 @@ impl EditState {
         layer.role = crate::Role::PasteImage;
         layer.properties.has_alpha_channel = true;
         layer.sixels.push(sixel);
+        // Position the pasted layer at the current caret position
+        layer.set_offset((caret_pos.x, caret_pos.y));
 
         let op = Paste::new(self.get_current_layer()?, layer);
         self.push_undo_action(Box::new(op))?;

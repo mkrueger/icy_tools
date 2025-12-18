@@ -7,9 +7,6 @@
 //! The ToolPanel now takes a reference to the ToolRegistry and uses it to
 //! determine which tool slots to display and how to handle clicks.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use iced::{Color, Element};
 use icy_engine_edit::tools::Tool;
 
@@ -53,20 +50,19 @@ pub struct ToolPanel {
     /// Generic tool panel for GPU rendering
     inner: GenericToolPanel,
     /// Tool registry reference (used to get slot configuration)
-    registry: Rc<RefCell<ToolRegistry>>,
+    pub registry: ToolRegistry,
 }
 
 impl ToolPanel {
     /// Create a tool panel with the given tool registry
-    pub fn new(registry: Rc<RefCell<ToolRegistry>>) -> Self {
-        let num_slots = registry.borrow().num_slots();
+    pub fn new(registry: ToolRegistry) -> Self {
+        let num_slots = registry.num_slots();
         let mut inner = GenericToolPanel::new_with_slots(num_slots);
 
         // Initialize each slot with its default tool's atlas index
         {
-            let reg = registry.borrow();
             for slot in 0..num_slots {
-                let display_tool = reg.get_slot_display_tool(slot, Tool::Click);
+                let display_tool = registry.get_slot_display_tool(slot, Tool::Click);
                 inner.set_slot_display(slot, tool_to_index(display_tool));
             }
         }
@@ -91,16 +87,15 @@ impl ToolPanel {
 
     /// Update button states based on current tool
     fn update_button_states(&mut self) {
-        let reg = self.registry.borrow();
-        let num_slots = reg.num_slots();
+        let num_slots = self.registry.num_slots();
 
         for slot in 0..num_slots {
-            let display_tool = reg.get_slot_display_tool(slot, self.current_tool);
+            let display_tool = self.registry.get_slot_display_tool(slot, self.current_tool);
             self.inner.set_slot_display(slot, tool_to_index(display_tool));
         }
 
         // Update selected slot
-        if let Some(slot) = reg.tool_to_slot(self.current_tool) {
+        if let Some(slot) = self.registry.tool_to_slot(self.current_tool) {
             self.inner.set_selected_slot(slot);
         }
     }

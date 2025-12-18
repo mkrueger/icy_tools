@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::Arc,
 };
 
@@ -24,6 +23,8 @@ use crate::ui::editor::palette::PaletteEditorDialog;
 use crate::ui::main_window::Message;
 use crate::ui::{LayerMessage, MinimapMessage};
 
+use crate::ui::widget::paste_controls::{PasteControls, PasteControlsMessage};
+
 use super::*;
 
 /// Public entrypoint for the ANSI editor mode.
@@ -32,7 +33,6 @@ use super::*;
 /// layout/panels (tool panel, palette grid, right panel, overlays).
 pub struct AnsiEditorMainArea {
     core: AnsiEditorCore,
-    tool_registry: Rc<RefCell<tool_registry::ToolRegistry>>,
     /// File path (if saved)
     file_path: Option<PathBuf>,
     /// Tool panel state (left sidebar icons)
@@ -43,6 +43,8 @@ pub struct AnsiEditorMainArea {
     right_panel: RightPanel,
     /// Double-click detector for font slot buttons
     slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
+    /// Paste controls widget
+    paste_controls: PasteControls,
 }
 
 impl AnsiEditorMainArea {
@@ -53,17 +55,17 @@ impl AnsiEditorMainArea {
     }
 
     pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
-        let tool_registry = Rc::new(RefCell::new(tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library)));
+        let mut tool_registry = tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library);
 
         // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
-        let mut current_tool = tool_registry.borrow_mut().take_for(tools::ToolId::Tool(Tool::Click));
+        let mut current_tool = tool_registry.take_for(tools::ToolId::Tool(Tool::Click));
         if let Some(click) = current_tool.as_any_mut().downcast_mut::<tools::ClickTool>() {
             click.sync_fkey_set_from_options(&options);
         }
 
         let (core, palette, format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool);
 
-        let mut tool_panel = ToolPanel::new(tool_registry.clone());
+        let mut tool_panel = ToolPanel::new(tool_registry);
         tool_panel.set_tool(core.current_tool_for_panel());
 
         let mut palette_grid = PaletteGrid::new();
@@ -72,12 +74,12 @@ impl AnsiEditorMainArea {
 
         Self {
             core,
-            tool_registry,
             file_path,
             tool_panel,
             palette_grid,
             right_panel: RightPanel::new(),
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
+            paste_controls: PasteControls::new(),
         }
     }
 
@@ -181,8 +183,8 @@ impl AnsiEditorMainArea {
             tag_tool.state_mut().selection.retain(|&idx| idx < tag_count);
         } else {
             let _ = self
-                .tool_registry
-                .borrow_mut()
+                .tool_panel
+                .registry
                 .with_mut::<tools::TagTool, _>(|t| t.state_mut().selection.retain(|&idx| idx < tag_count));
         }
 
@@ -209,11 +211,15 @@ impl AnsiEditorMainArea {
     }
 
     pub fn cut(&mut self) -> Result<(), String> {
-        self.core.cut()
+        let result = self.core.cut();
+        self.refresh_selection_display();
+        result
     }
 
     pub fn copy(&mut self) -> Result<(), String> {
-        self.core.copy()
+        let result = self.core.copy();
+        self.refresh_selection_display();
+        result
     }
 
     pub fn paste(&mut self) -> Result<(), String> {
@@ -229,8 +235,8 @@ impl AnsiEditorMainArea {
             return font.font_tool.font_library();
         }
 
-        self.tool_registry
-            .borrow()
+        self.tool_panel
+            .registry
             .get_ref::<tools::FontTool>()
             .map(|t| t.font_tool.font_library())
             .expect("FontTool should exist")
@@ -419,8 +425,8 @@ impl AnsiEditorMainArea {
             // Tool and panel messages
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorMessage::SwitchTool(tool) => {
-                let mut reg = self.tool_registry.borrow_mut();
-                self.core.change_tool(&mut *reg, tool);
+                let reg = &mut self.tool_panel.registry;
+                self.core.change_tool(reg, tool);
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
                 Task::none()
             }
@@ -430,10 +436,10 @@ impl AnsiEditorMainArea {
 
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
                     let current_tool = self.core.current_tool_for_panel();
-                    let new_tool = self.tool_registry.borrow().click_tool_slot(slot, current_tool);
+                    let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                     {
-                        let mut reg = self.tool_registry.borrow_mut();
-                        self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                        let reg = &mut self.tool_panel.registry;
+                        self.core.change_tool(reg, tools::ToolId::Tool(new_tool));
                     }
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.core.current_tool_for_panel());
@@ -443,10 +449,10 @@ impl AnsiEditorMainArea {
             }
             AnsiEditorMessage::SelectTool(slot) => {
                 let current_tool = self.core.current_tool_for_panel();
-                let new_tool = self.tool_registry.borrow().click_tool_slot(slot, current_tool);
+                let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                 {
-                    let mut reg = self.tool_registry.borrow_mut();
-                    self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                    let reg = &mut self.tool_panel.registry;
+                    self.core.change_tool(reg, tools::ToolId::Tool(new_tool));
                 }
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
                 Task::none()
@@ -463,6 +469,14 @@ impl AnsiEditorMainArea {
                     }
                 }
                 Task::none()
+            }
+            AnsiEditorMessage::PasteControls(msg) => {
+                // Convert paste controls messages to core messages
+                let core_msg = match msg {
+                    PasteControlsMessage::Anchor => AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::PasteAnchor),
+                    PasteControlsMessage::Cancel => AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::PasteCancel),
+                };
+                self.update(AnsiEditorMessage::Core(core_msg), dialogs, plugins)
             }
             AnsiEditorMessage::ColorSwitcher(msg) => {
                 match msg {
@@ -522,6 +536,15 @@ impl AnsiEditorMainArea {
                             LayerMessage::MergeDown(idx) => self.core.update(AnsiEditorCoreMessage::MergeLayerDown(idx)).map(AnsiEditorMessage::Core),
                             LayerMessage::Clear(idx) => self.core.update(AnsiEditorCoreMessage::ClearLayer(idx)).map(AnsiEditorMessage::Core),
                             LayerMessage::Rename(_idx, _name) => Task::none(),
+                            // Paste mode messages - forward to TopToolbar paste actions
+                            LayerMessage::PasteKeepAsLayer => self
+                                .core
+                                .update(AnsiEditorCoreMessage::TopToolbar(super::TopToolbarMessage::PasteKeepAsLayer))
+                                .map(AnsiEditorMessage::Core),
+                            LayerMessage::PasteCancel => self
+                                .core
+                                .update(AnsiEditorCoreMessage::TopToolbar(super::TopToolbarMessage::PasteCancel))
+                                .map(AnsiEditorMessage::Core),
                         };
                     }
                     RightPanelMessage::PaneResized(_) => {}
@@ -565,7 +588,9 @@ impl AnsiEditorMainArea {
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
-            state.set_caret_visible(state.selection().is_none());
+            // Hide caret in paste mode, otherwise show if no selection
+            let caret_visible = !editor.is_paste_mode() && state.selection().is_none();
+            state.set_caret_visible(caret_visible);
             let caret = state.get_caret();
             let format_mode = state.get_format_mode();
             let fg = caret.attribute.foreground();
@@ -587,7 +612,7 @@ impl AnsiEditorMainArea {
 
         // In paste mode, show paste controls instead of tool panel
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
-            let paste_controls = editor.view_paste_sidebar_controls().map(AnsiEditorMessage::Core);
+            let paste_controls = self.paste_controls.view(sidebar_width, bg_weakest).map(AnsiEditorMessage::PasteControls);
             column![palette_view, paste_controls].spacing(4)
         } else {
             let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
@@ -680,9 +705,10 @@ impl AnsiEditorMainArea {
         let viewport_info = editor.compute_viewport_info();
         // Pass the terminal's render cache to the minimap for shared texture access
         let render_cache = &editor.canvas.terminal.render_cache;
+        let paste_mode = editor.is_paste_mode();
         let right_panel = self
             .right_panel
-            .view(&editor.screen, &viewport_info, Some(render_cache))
+            .view(&editor.screen, &viewport_info, Some(render_cache), paste_mode)
             .map(AnsiEditorMessage::RightPanel);
 
         // Main layout:

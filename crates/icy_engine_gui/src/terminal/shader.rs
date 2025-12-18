@@ -130,8 +130,10 @@ struct CRTUniforms {
     layer_color: [f32; 4],
     /// Layer bounds enabled (1.0 = enabled, 0.0 = disabled)
     layer_enabled: f32,
+    /// Paste mode enabled (1.0 = enabled, 0.0 = disabled) - uses animated pulsing border
+    paste_mode: f32,
     /// Padding for 16-byte alignment (must match WGSL struct size)
-    _layer_padding: [f32; 3],
+    _layer_padding: [f32; 2],
 
     // Selection uniforms (for highlighting selected area)
     /// Selection rectangle in pixels (x, y, x+width, y+height) in document space
@@ -279,10 +281,12 @@ pub struct TerminalShader {
     // Layer bounds rendering
     /// Layer bounds rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
     pub layer_rect: Option<[f32; 4]>,
-    /// Layer bounds border color (RGBA) - yellow for normal, white for preview
+    /// Layer bounds border color (RGBA) - yellow for normal, cyan for paste mode
     pub layer_color: [f32; 4],
     /// Whether to show layer bounds
     pub show_layer_bounds: bool,
+    /// Whether paste mode is active (uses animated pulsing border)
+    pub paste_mode: bool,
 
     // Selection rendering
     /// Selection rectangle in pixels (x, y, x+width, y+height) in document space, None = disabled
@@ -1456,7 +1460,8 @@ impl shader::Primitive for TerminalShader {
             layer_rect: self.layer_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
             layer_color: self.layer_color,
             layer_enabled: if self.show_layer_bounds { 1.0 } else { 0.0 },
-            _layer_padding: [0.0; 3],
+            paste_mode: if self.paste_mode { 1.0 } else { 0.0 },
+            _layer_padding: [0.0; 2],
 
             // Selection uniforms
             selection_rect: self.selection_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),

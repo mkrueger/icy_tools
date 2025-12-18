@@ -540,6 +540,9 @@ pub struct EditorMarkers {
     /// Whether to show layer bounds at all
     pub show_layer_bounds: bool,
 
+    /// Whether paste mode is active (floating layer) - uses animated cyan border
+    pub paste_mode: bool,
+
     /// Selection rectangle in pixels (x, y, width, height)
     /// None = no selection
     pub selection_rect: Option<(f32, f32, f32, f32)>,
@@ -584,6 +587,7 @@ impl Default for EditorMarkers {
             layer_bounds: None,
             layer_is_selected: false,
             show_layer_bounds: false,
+            paste_mode: false,
             selection_rect: None,
             selection_color: selection_colors::DEFAULT,
             selection_mask_data: None,

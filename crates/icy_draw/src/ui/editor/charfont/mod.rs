@@ -14,9 +14,7 @@ mod outline_style_preview;
 pub use charset_canvas::*;
 pub use font_dialogs::*;
 
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use iced::{
@@ -232,8 +230,6 @@ pub struct CharFontEditor {
     charset_state: CharSetEditState,
     /// The ANSI editor core for editing TDF glyphs
     ansi_core: AnsiEditorCore,
-    /// Tool registry for managing tool instances
-    tool_registry: Rc<RefCell<tool_registry::ToolRegistry>>,
     /// Color switcher (FG/BG display)
     color_switcher: ColorSwitcher,
     /// Palette grid
@@ -293,14 +289,14 @@ impl CharFontEditor {
 
         // Create tool registry for managing tool instances with correct slots
         // Use OutlineClickTool for outline fonts
-        let tool_registry = if is_outline {
-            Rc::new(RefCell::new(tool_registry::ToolRegistry::new_for_outline(initial_slots, font_library.clone())))
+        let mut tool_registry = if is_outline {
+            tool_registry::ToolRegistry::new_for_outline(initial_slots, font_library.clone())
         } else {
-            Rc::new(RefCell::new(tool_registry::ToolRegistry::new(initial_slots, font_library.clone())))
+            tool_registry::ToolRegistry::new(initial_slots, font_library.clone())
         };
 
         // Create AnsiEditorCore with a ClickTool from the registry
-        let current_tool = tool_registry.borrow_mut().take_for(tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
+        let current_tool = tool_registry.take_for(tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
         let (ansi_core, _, _) = AnsiEditorCore::from_buffer_inner(buffer, options.clone(), current_tool);
 
         // Create separate outline preview buffer/screen/canvas
@@ -331,13 +327,12 @@ impl CharFontEditor {
         color_switcher.sync_palette(&palette);
 
         // Create tool panel using the registry
-        let mut tool_panel = ToolPanel::new(tool_registry.clone());
+        let mut tool_panel = ToolPanel::new(tool_registry);
         tool_panel.set_tool(ansi_core.current_tool_for_panel());
 
         let mut editor = Self {
             charset_state,
             ansi_core,
-            tool_registry,
             color_switcher,
             palette_grid,
             tool_panel,
@@ -504,38 +499,30 @@ impl CharFontEditor {
 
         // Check if we need to change the registry
         // Compare both slot count AND outline mode (different click tool implementation)
-        let (current_slots_len, current_uses_outline) = {
-            let reg = self.tool_registry.borrow();
-            (reg.num_slots(), reg.uses_outline_click())
-        };
+        let (current_slots_len, current_uses_outline) = (self.tool_panel.registry.num_slots(), self.tool_panel.registry.uses_outline_click());
 
         if current_slots_len == needed_slots.len() && current_uses_outline == is_outline {
             return; // Same configuration, no change needed
         }
 
         // Create new tool registry with the appropriate slots and tool type
-        let new_registry = if is_outline {
-            Rc::new(RefCell::new(tool_registry::ToolRegistry::new_for_outline(
-                needed_slots,
-                self.font_library.clone(),
-            )))
+        let mut new_registry = if is_outline {
+            tool_registry::ToolRegistry::new_for_outline(needed_slots, self.font_library.clone())
         } else {
-            Rc::new(RefCell::new(tool_registry::ToolRegistry::new(needed_slots, self.font_library.clone())))
+            tool_registry::ToolRegistry::new(needed_slots, self.font_library.clone())
         };
 
         // Switch to click tool from the new registry (force because tool ID might be same but implementation differs)
         {
-            let mut reg = new_registry.borrow_mut();
             self.ansi_core
-                .force_change_tool(&mut *reg, tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
+                .force_change_tool(&mut new_registry, tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
         }
 
         // Create new tool panel with the new registry
-        let mut new_tool_panel = ToolPanel::new(new_registry.clone());
+        let mut new_tool_panel = ToolPanel::new(new_registry);
         new_tool_panel.set_tool(self.ansi_core.current_tool_for_panel());
 
-        // Replace registry and tool panel
-        self.tool_registry = new_registry;
+        // Replace tool panel (it owns the registry)
         self.tool_panel = new_tool_panel;
     }
 
@@ -731,11 +718,8 @@ impl CharFontEditor {
 
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
                     let current_tool = self.ansi_core.current_tool_for_panel();
-                    let new_tool = self.tool_registry.borrow().click_tool_slot(slot, current_tool);
-                    {
-                        let mut reg = self.tool_registry.borrow_mut();
-                        self.ansi_core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
-                    }
+                    let new_tool = { self.tool_panel.registry.click_tool_slot(slot, current_tool) };
+                    self.ansi_core.change_tool(&mut self.tool_panel.registry, tools::ToolId::Tool(new_tool));
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.ansi_core.current_tool_for_panel());
                 }

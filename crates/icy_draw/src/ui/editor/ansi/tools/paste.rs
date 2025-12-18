@@ -9,7 +9,7 @@ use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 use clipboard_rs::Clipboard;
 use clipboard_rs::ContentFormat;
 use clipboard_rs::common::RustImage;
-use iced::widget::{Space, button, row, text};
+use iced::widget::{Space, button, row, text, tooltip};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
 use icy_engine_edit::AtomicUndoGuard;
@@ -86,40 +86,6 @@ impl PasteTool {
         Ok(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
             .and(ToolResult::UpdateLayerBounds)
             .and(ToolResult::Redraw))
-    }
-
-    pub fn view_paste_sidebar_controls(&self) -> iced::Element<'_, crate::ui::editor::ansi::AnsiEditorCoreMessage> {
-        use crate::ui::editor::ansi::{AnsiEditorCoreMessage, TopToolbarMessage};
-        use iced::Length;
-        use iced::widget::{Space, button, column, container, text};
-        use icy_engine_gui::ui::TEXT_SIZE_SMALL;
-
-        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> iced::Element<'a, AnsiEditorCoreMessage> {
-            button(text(label).size(TEXT_SIZE_SMALL).center())
-                .width(Length::Fill)
-                .padding([6, 8])
-                .on_press(AnsiEditorCoreMessage::TopToolbar(msg))
-                .into()
-        }
-
-        let content = column![
-            text("Paste Mode").size(14),
-            Space::new().height(Length::Fixed(8.0)),
-            paste_btn("✓ Anchor (Enter)", TopToolbarMessage::PasteAnchor),
-            paste_btn("✕ Cancel (Esc)", TopToolbarMessage::PasteCancel),
-            Space::new().height(Length::Fixed(12.0)),
-            text("Transform").size(12),
-            paste_btn("Stamp (S)", TopToolbarMessage::PasteStamp),
-            paste_btn("Rotate (R)", TopToolbarMessage::PasteRotate),
-            paste_btn("Flip X", TopToolbarMessage::PasteFlipX),
-            paste_btn("Flip Y", TopToolbarMessage::PasteFlipY),
-            paste_btn("Transparent (T)", TopToolbarMessage::PasteToggleTransparent),
-            Space::new().height(Length::Fill),
-        ]
-        .spacing(4)
-        .width(Length::Fill);
-
-        container(content).width(Length::Fill).padding(8).into()
     }
 
     pub fn is_active(&self) -> bool {
@@ -212,6 +178,31 @@ impl PasteTool {
                     ToolResult::SetCursorIcon(None),
                     ToolResult::UpdateLayerBounds,
                     ToolResult::Commit("Anchor floating layer".to_string()),
+                    ToolResult::SwitchTool(prev),
+                    ToolResult::Redraw,
+                ])
+            }
+
+            PasteAction::KeepAsLayer => {
+                // Keep the paste as a separate layer, just exit paste mode
+                // If there's a pending move, commit it first
+                if let Some(new_offset) = self.finish_pending_move() {
+                    state.set_layer_preview_offset(None);
+                    let _ = state.move_layer(new_offset);
+                }
+
+                // Convert the floating layer to a normal layer by pushing the AddFloatingLayer undo operation
+                // This changes the role from PasteImage/PastePreview to Image/Normal
+                if let Err(e) = state.add_floating_layer() {
+                    log::warn!("Failed to finalize floating layer: {}", e);
+                }
+
+                let prev = self.finish_paste();
+                ToolResult::Multi(vec![
+                    ToolResult::EndCapture,
+                    ToolResult::SetCursorIcon(None),
+                    ToolResult::UpdateLayerBounds,
+                    ToolResult::Commit("Keep as layer".to_string()),
                     ToolResult::SwitchTool(prev),
                     ToolResult::Redraw,
                 ])
@@ -310,8 +301,10 @@ impl PasteTool {
 pub enum PasteAction {
     /// No action taken
     None,
-    /// Anchor the floating layer (finalize paste)
+    /// Anchor the floating layer (merge with layer below)
     Anchor,
+    /// Keep as separate layer and exit paste mode
+    KeepAsLayer,
     /// Discard the floating layer (cancel paste)
     Discard,
     /// Move layer by delta
@@ -405,48 +398,42 @@ impl ToolHandler for PasteTool {
             return row![].into();
         }
 
-        fn paste_btn(label: &'static str, shortcut: &'static str, msg: ToolMessage) -> Element<'static, ToolMessage> {
-            button(
-                row![
-                    text(shortcut).size(12).style(move |theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                    }),
-                    text(label).size(14),
-                ]
-                .spacing(4)
-                .align_y(iced::Alignment::Center),
+        // Icon button style: transparent background, secondary color on normal, base color on hover
+        fn icon_btn_style(theme: &Theme, status: button::Status) -> button::Style {
+            button::Style {
+                background: None,
+                text_color: match status {
+                    button::Status::Hovered | button::Status::Pressed => theme.extended_palette().background.base.text,
+                    _ => theme.extended_palette().secondary.base.color,
+                },
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                snap: true,
+            }
+        }
+
+        fn paste_icon_btn(icon: &'static str, tooltip_text: &'static str, msg: ToolMessage) -> Element<'static, ToolMessage> {
+            tooltip(
+                button(text(icon).size(16)).padding([4, 8]).on_press(msg).style(icon_btn_style),
+                tooltip_text,
+                tooltip::Position::Bottom,
             )
-            .padding([4, 8])
-            .on_press(msg)
-            .style(button::secondary)
             .into()
         }
 
         let content = row![
-            text("Paste Mode:").size(14).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().primary.strong.color),
-            }),
-            Space::new().width(Length::Fixed(16.0)),
-            paste_btn("Stamp", "S", ToolMessage::PasteStamp),
-            paste_btn("Rotate", "R", ToolMessage::PasteRotate),
-            paste_btn("Flip X", "X", ToolMessage::PasteFlipX),
-            paste_btn("Flip Y", "Y", ToolMessage::PasteFlipY),
-            paste_btn("Transparent", "T", ToolMessage::PasteToggleTransparent),
+            paste_icon_btn("⌗", "Stamp (S)", ToolMessage::PasteStamp),
+            paste_icon_btn("↻", "Rotate (R)", ToolMessage::PasteRotate),
+            paste_icon_btn("⇆", "Flip X", ToolMessage::PasteFlipX),
+            paste_icon_btn("⇅", "Flip Y", ToolMessage::PasteFlipY),
+            paste_icon_btn("◐", "Transparent (T)", ToolMessage::PasteToggleTransparent),
             Space::new().width(Length::Fill),
             text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().secondary.base.color),
             }),
-            Space::new().width(Length::Fixed(16.0)),
-            button(text("✓ Anchor").size(14))
-                .padding([4, 12])
-                .style(button::success)
-                .on_press(ToolMessage::PasteAnchor),
-            button(text("✕ Cancel").size(14))
-                .padding([4, 12])
-                .style(button::danger)
-                .on_press(ToolMessage::PasteCancel),
         ]
-        .spacing(8)
+        .spacing(2)
+        .height(Length::Fill)
         .align_y(iced::Alignment::Center);
 
         // Center vertically; AnsiEditor wraps this into the rounded container.

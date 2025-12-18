@@ -89,7 +89,7 @@ struct Uniforms {
     layer_rect: vec4<f32>,       // Layer bounds rectangle (x, y, x+width, y+height) in document pixels
     layer_color: vec4<f32>,      // Layer bounds border color (RGBA)
     layer_enabled: f32,          // 1.0 = enabled, 0.0 = disabled
-    _layer_padding1: f32,        // Padding
+    paste_mode: f32,             // 1.0 = paste mode (animated border), 0.0 = normal
     _layer_padding2: f32,        // Padding
     _layer_padding3: f32,        // Padding (completes 16-byte alignment)
 
@@ -1010,15 +1010,34 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                     color = vec3<f32>(0.0, 0.0, 0.0);  // Black
                 }
             } else if (uniforms.layer_enabled > 0.5) {
-                // Outside selection: colored dashed border (static)
+                // Outside selection: colored dashed border
                 // Only draw if layer_enabled is on
-                let dash_phase = floor(edge_pos / dash_length);
-                let is_color = (dash_phase % 2.0) == 0.0;
                 
-                if (is_color) {
-                    color = uniforms.layer_color.rgb;
+                if (uniforms.paste_mode > 0.5) {
+                    // Paste mode: animated marching ants with pulsing brightness
+                    let time_offset = uniforms.time * 12.0;  // Faster animation for paste mode
+                    let dash_phase = floor((edge_pos + time_offset) / dash_length);
+                    let is_color = (dash_phase % 2.0) == 0.0;
+                    
+                    // Pulsing brightness (0.6 to 1.0)
+                    let pulse = 0.8 + 0.2 * sin(uniforms.time * 4.0);
+                    
+                    if (is_color) {
+                        color = uniforms.layer_color.rgb * pulse;
+                    } else {
+                        // Darker cyan for contrast
+                        color = uniforms.layer_color.rgb * 0.3;
+                    }
                 } else {
-                    color = vec3<f32>(0.0, 0.0, 0.0);  // Black
+                    // Normal mode: static dashed border
+                    let dash_phase = floor(edge_pos / dash_length);
+                    let is_color = (dash_phase % 2.0) == 0.0;
+                    
+                    if (is_color) {
+                        color = uniforms.layer_color.rgb;
+                    } else {
+                        color = vec3<f32>(0.0, 0.0, 0.0);  // Black
+                    }
                 }
             }
             // If layer_enabled is off AND not in selection: don't draw anything
