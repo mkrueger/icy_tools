@@ -8,7 +8,7 @@ use iced::widget::shader;
 use iced::{Element, Length, Task};
 use icy_engine::Screen;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
-use icy_engine_gui::{CheckerboardColors, SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
+use icy_engine_gui::{CheckerboardColors, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;
@@ -27,6 +27,24 @@ fn generate_minimap_id() -> usize {
 pub struct SharedMinimapState {
     pub available_width: f32,
     pub available_height: f32,
+}
+
+/// Cache state for optimizing minimap rendering
+#[derive(Debug, Clone)]
+struct MinimapCacheState {
+    /// Last buffer version we rendered for
+    last_buffer_version: u64,
+    /// Cached texture slices
+    cached_slices: Vec<TextureSliceData>,
+    /// Cached slice heights
+    cached_heights: Vec<u32>,
+    /// Total height of cached content
+    cached_total_height: u32,
+    /// First tile index in cache
+    first_tile_idx: i32,
+    /// Content dimensions when cached
+    content_width: u32,
+    content_height: f32,
 }
 
 /// A single texture slice for tall images
@@ -57,6 +75,9 @@ pub enum MinimapMessage {
 ///
 /// This view uses the Terminal's shared render cache for textures,
 /// but maintains its own scroll position that syncs with the terminal viewport.
+///
+/// **Optimization**: The minimap tracks the buffer version and only re-fetches
+/// tiles when the buffer has changed or the visible tile range has changed.
 pub struct MinimapView {
     instance_id: usize,
     /// Shared state for communicating bounds from shader
@@ -65,6 +86,12 @@ pub struct MinimapView {
     scroll_position: RefCell<f32>,
     /// Checkerboard colors for transparency
     checkerboard_colors: CheckerboardColors,
+    /// Cached state for avoiding redundant tile fetches
+    cache_state: RefCell<Option<MinimapCacheState>>,
+    /// Last computed first tile index (for change detection)
+    last_first_tile_idx: RefCell<i32>,
+    /// Last computed tile count (for change detection)
+    last_tile_count: RefCell<i32>,
 }
 
 impl Default for MinimapView {
@@ -80,6 +107,9 @@ impl MinimapView {
             shared_state: Arc::new(Mutex::new(SharedMinimapState::default())),
             scroll_position: RefCell::new(0.0),
             checkerboard_colors: CheckerboardColors::default(),
+            cache_state: RefCell::new(None),
+            last_first_tile_idx: RefCell::new(-1),
+            last_tile_count: RefCell::new(0),
         }
     }
 
@@ -182,9 +212,17 @@ impl MinimapView {
     ///
     /// Uses tiles from the Terminal's shared render cache.
     /// The Terminal must have rendered before calling this.
+    ///
+    /// **Optimization**: Only fetches tiles when:
+    /// - Buffer version has changed (content modified)
+    /// - Visible tile range has changed (scroll/resize)
+    /// - No cached data exists
+    ///
+    /// Missing tiles are skipped (not synchronously rendered) to avoid blocking.
+    /// The Terminal will render them on the next frame.
     pub fn view(
         &self,
-        screen: &Arc<Mutex<Box<dyn Screen>>>,
+        _screen: &Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
@@ -193,10 +231,15 @@ impl MinimapView {
 
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
-            // Read metadata without holding the lock for long; we may need to lock the Screen.
-            let (content_width_u32, content_height_f32, blink_state) = {
+            // Read metadata without holding the lock for long
+            let (content_width_u32, content_height_f32, blink_state, cache_version) = {
                 let shared_cache = cache_handle.read();
-                (shared_cache.content_width, shared_cache.content_height, shared_cache.last_blink_state)
+                (
+                    shared_cache.content_width,
+                    shared_cache.content_height,
+                    shared_cache.last_blink_state,
+                    shared_cache.content_version(),
+                )
             };
 
             // Check if shared cache has usable dimensions
@@ -207,15 +250,13 @@ impl MinimapView {
                 // Auto-scroll to keep viewport visible
                 self.ensure_viewport_visible(viewport_info.y, viewport_info.height, content_width, content_height);
 
-                // Calculate which tiles to select based on visible area (like CRT shader)
+                // Calculate which tiles to select based on visible area
                 let tile_height = TILE_HEIGHT as f32;
-                let scroll_normalized = *self.scroll_position.borrow(); // 0.0 - 1.0
+                let scroll_normalized = *self.scroll_position.borrow();
 
-                // Compute theoretical max tile index from content height. This avoids relying on
-                // cache-internal tile counts/limits when we can synchronously render missing tiles.
                 let max_tile_idx = ((content_height / tile_height).ceil().max(1.0) as i32) - 1;
 
-                // Convert normalized scroll position to document-space pixel Y using the same UV math as the shader
+                // Convert normalized scroll position to document-space pixel Y
                 let scale = (avail_width / content_width).max(0.0001);
                 let scaled_content_height = content_height * scale;
                 let visible_uv_height = (avail_height / scaled_content_height).min(1.0);
@@ -236,158 +277,104 @@ impl MinimapView {
                 let max_first_tile_idx = (max_tile_idx - (desired_count - 1)).max(0);
                 let first_tile_idx = (current_tile_idx - 1).clamp(0, max_first_tile_idx);
 
-                let mut slices = Vec::new();
-                let mut heights = Vec::new();
-                let mut total_height = 0u32;
-                let first_slice_start_y = first_tile_idx as f32 * tile_height;
+                // Check if we can use cached data
+                let needs_refresh = {
+                    let cache_state = self.cache_state.borrow();
+                    let last_first = *self.last_first_tile_idx.borrow();
+                    let last_count = *self.last_tile_count.borrow();
 
-                // Minimap must always be able to paint. If a required tile is missing from the
-                // shared cache, we synchronously render it here (may cause a brief stall during
-                // fast scrolling/resizing, but avoids black/empty areas).
-
-                // Lock order matches Terminal rendering path: Screen -> Cache
-                let screen_guard = screen.lock();
-                let resolution = screen_guard.resolution();
-
-                // Select tiles
-                for i in 0..desired_count {
-                    let tile_idx = first_tile_idx + i;
-                    if tile_idx > max_tile_idx {
-                        break;
-                    }
-
-                    let key = TileCacheKey::new(tile_idx, blink_state);
-
-                    // First try exact match; then try the other blink-state variant.
-                    let (mut tile, found_exact) = {
-                        let cache = cache_handle.read();
-                        if let Some(t) = cache.get(&key).cloned() {
-                            (t, true)
-                        } else if let Some(t) = cache.get(&TileCacheKey::new(tile_idx, !blink_state)).cloned() {
-                            (t, false)
-                        } else {
-                            // Force-render the needed blink_state variant.
-                            drop(cache);
-
-                            let tile_start_y = tile_idx as f32 * tile_height;
-                            let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
-                            let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
-
-                            let tile_region: icy_engine::Rectangle =
-                                icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
-
-                            let render_options = icy_engine::RenderOptions {
-                                rect: icy_engine::Rectangle {
-                                    start: icy_engine::Position::new(0, tile_start_y as i32),
-                                    size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
-                                }
-                                .into(),
-                                blink_on: blink_state,
-                                selection: None,
-                                selection_fg: None,
-                                selection_bg: None,
-                                override_scan_lines: None,
-                            };
-
-                            let (render_size, rgba_data) = screen_guard.render_region_to_rgba(tile_region, &render_options);
-                            let width = render_size.width as u32;
-                            let height = render_size.height as u32;
-
-                            let slice = icy_engine_gui::TextureSliceData {
-                                rgba_data: Arc::new(rgba_data),
-                                width,
-                                height,
-                            };
-
-                            let cached_tile = SharedCachedTile {
-                                texture: slice,
-                                height,
-                                start_y: tile_start_y,
-                            };
-
-                            cache_handle.write().insert(key, cached_tile.clone());
-                            (cached_tile, true)
-                        }
-                    };
-
-                    // If we only found the opposite blink-state variant, ensure the current
-                    // blink-state variant is also present to avoid misses on blink flips.
-                    if !found_exact {
-                        let tile_start_y = tile_idx as f32 * tile_height;
-                        let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
-                        let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
-
-                        let tile_region: icy_engine::Rectangle =
-                            icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
-
-                        let render_options = icy_engine::RenderOptions {
-                            rect: icy_engine::Rectangle {
-                                start: icy_engine::Position::new(0, tile_start_y as i32),
-                                size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
-                            }
-                            .into(),
-                            blink_on: blink_state,
-                            selection: None,
-                            selection_fg: None,
-                            selection_bg: None,
-                            override_scan_lines: None,
-                        };
-
-                        let (render_size, rgba_data) = screen_guard.render_region_to_rgba(tile_region, &render_options);
-                        let width = render_size.width as u32;
-                        let height = render_size.height as u32;
-
-                        let slice = icy_engine_gui::TextureSliceData {
-                            rgba_data: Arc::new(rgba_data),
-                            width,
-                            height,
-                        };
-
-                        let cached_tile = SharedCachedTile {
-                            texture: slice,
-                            height,
-                            start_y: tile_start_y,
-                        };
-
-                        cache_handle.write().insert(key, cached_tile.clone());
-                        tile = cached_tile;
-                    }
-
-                    // Use Arc::clone for cheap reference counting instead of data clone
-                    slices.push(TextureSliceData {
-                        rgba_data: Arc::clone(&tile.texture.rgba_data),
-                        width: tile.texture.width,
-                        height: tile.texture.height,
-                    });
-                    heights.push(tile.height);
-                    total_height += tile.height;
-                }
-
-                drop(screen_guard);
-
-                // Use dimensions from shared cache - they match what Terminal rendered
-                let full_size = (content_width_u32, content_height as u32);
-
-                // The minimap uses a sliding window of slices. The shader's `scroll_offset`
-                // is *local* to the rendered window (0..=1 over the window's scrollable range),
-                // not the global minimap scroll position.
-                let window_h = total_height as f32;
-                let scaled_window_h = window_h * scale;
-                let window_visible_uv_h = (avail_height / scaled_window_h).min(1.0);
-                let window_max_scroll_uv = (1.0 - window_visible_uv_h).max(0.0);
-                let mut window_scroll_uv = if window_h > 0.0 {
-                    ((scroll_pixel_y - first_slice_start_y) / window_h).clamp(0.0, 1.0)
-                } else {
-                    0.0
+                    cache_state.is_none()
+                        || cache_state.as_ref().map_or(true, |cs| {
+                            cs.last_buffer_version != cache_version || cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
+                        })
+                        || last_first != first_tile_idx
+                        || last_count != desired_count
                 };
-                window_scroll_uv = window_scroll_uv.clamp(0.0, window_max_scroll_uv);
-                let local_scroll_offset = if window_max_scroll_uv > 0.0 {
-                    window_scroll_uv / window_max_scroll_uv
+
+                let (slices, heights, total_height, first_slice_start_y) = if needs_refresh {
+                    // Need to fetch tiles from cache
+                    let mut slices = Vec::with_capacity(desired_count as usize);
+                    let mut heights = Vec::with_capacity(desired_count as usize);
+                    let mut total_height = 0u32;
+                    let first_slice_start_y = first_tile_idx as f32 * tile_height;
+
+                    // Only read from cache - don't synchronously render missing tiles
+                    let cache = cache_handle.read();
+
+                    for i in 0..desired_count {
+                        let tile_idx = first_tile_idx + i;
+                        if tile_idx > max_tile_idx {
+                            break;
+                        }
+
+                        let key = TileCacheKey::new(tile_idx, blink_state);
+
+                        // Try exact match first, then opposite blink state
+                        let tile_opt = cache.get(&key).or_else(|| cache.get(&TileCacheKey::new(tile_idx, !blink_state)));
+
+                        if let Some(tile) = tile_opt {
+                            slices.push(TextureSliceData {
+                                rgba_data: Arc::clone(&tile.texture.rgba_data),
+                                width: tile.texture.width,
+                                height: tile.texture.height,
+                            });
+                            heights.push(tile.height);
+                            total_height += tile.height;
+                        }
+                        // Missing tiles are skipped - Terminal will render them next frame
+                    }
+
+                    drop(cache);
+
+                    // Update cache state
+                    if !slices.is_empty() {
+                        *self.cache_state.borrow_mut() = Some(MinimapCacheState {
+                            last_buffer_version: cache_version,
+                            cached_slices: slices.clone(),
+                            cached_heights: heights.clone(),
+                            cached_total_height: total_height,
+                            first_tile_idx,
+                            content_width: content_width_u32,
+                            content_height,
+                        });
+                        *self.last_first_tile_idx.borrow_mut() = first_tile_idx;
+                        *self.last_tile_count.borrow_mut() = desired_count;
+                    }
+
+                    (slices, heights, total_height, first_slice_start_y)
                 } else {
-                    0.0
+                    // Use cached data
+                    let cache_state = self.cache_state.borrow();
+                    let cs = cache_state.as_ref().unwrap();
+                    (
+                        cs.cached_slices.clone(),
+                        cs.cached_heights.clone(),
+                        cs.cached_total_height,
+                        cs.first_tile_idx as f32 * tile_height,
+                    )
                 };
 
                 if !slices.is_empty() {
+                    // Use dimensions from shared cache
+                    let full_size = (content_width_u32, content_height as u32);
+
+                    // Calculate local scroll offset for shader
+                    let window_h = total_height as f32;
+                    let scaled_window_h = window_h * scale;
+                    let window_visible_uv_h = (avail_height / scaled_window_h).min(1.0);
+                    let window_max_scroll_uv = (1.0 - window_visible_uv_h).max(0.0);
+                    let mut window_scroll_uv = if window_h > 0.0 {
+                        ((scroll_pixel_y - first_slice_start_y) / window_h).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    window_scroll_uv = window_scroll_uv.clamp(0.0, window_max_scroll_uv);
+                    let local_scroll_offset = if window_max_scroll_uv > 0.0 {
+                        window_scroll_uv / window_max_scroll_uv
+                    } else {
+                        0.0
+                    };
+
                     return self.create_shader_element(
                         slices,
                         heights,

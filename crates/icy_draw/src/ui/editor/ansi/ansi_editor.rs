@@ -79,6 +79,10 @@ pub(crate) struct AnsiEditorCore {
     /// Tool handler for Paste/Floating layer
     paste_handler: tools::PasteTool,
 
+    /// Whether the currently-dispatched tool explicitly set a cursor icon via `ToolResult::SetCursorIcon`.
+    /// Used to prevent stale cursors (e.g. I-beam) carrying over into other tools.
+    tool_set_cursor_icon: bool,
+
     /// Tool switch requested by a tool result; executed by the wrapper.
     pending_tool_switch: Option<tools::ToolId>,
 }
@@ -309,6 +313,52 @@ impl AnsiEditorCore {
         f(edit_state)
     }
 
+    fn hit_test_visible_layer_at_doc_pos(buffer: &TextBuffer, pos: icy_engine::Position) -> Option<usize> {
+        // Prefer top-most visible layer.
+        for (idx, layer) in buffer.layers.iter().enumerate().rev() {
+            if !layer.is_visible() {
+                continue;
+            }
+
+            if layer.rectangle().is_inside(pos) {
+                return Some(idx);
+            }
+        }
+
+        None
+    }
+
+    fn select_visible_layer_at_doc_pos_for_click_tool(&mut self, pos: icy_engine::Position) -> bool {
+        if !matches!(self.current_tool.id(), tools::ToolId::Tool(Tool::Click)) {
+            return false;
+        }
+        if self.is_paste_mode() {
+            return false;
+        }
+
+        let changed = self.with_edit_state(|state| {
+            let current = state.get_current_layer().ok();
+            let hit = {
+                let buffer = state.get_buffer();
+                Self::hit_test_visible_layer_at_doc_pos(buffer, pos)
+            };
+
+            match (current, hit) {
+                (Some(cur), Some(hit)) if hit != cur => {
+                    state.set_current_layer(hit);
+                    true
+                }
+                _ => false,
+            }
+        });
+
+        if changed {
+            self.update_layer_bounds();
+        }
+
+        changed
+    }
+
     pub(super) fn active_tag_tool(&self) -> Option<&tools::TagTool> {
         self.current_tool.as_any().downcast_ref::<tools::TagTool>()
     }
@@ -375,6 +425,7 @@ impl AnsiEditorCore {
     }
 
     fn dispatch_current_tool_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+        self.tool_set_cursor_icon = false;
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
@@ -394,6 +445,7 @@ impl AnsiEditorCore {
     }
 
     fn dispatch_current_tool_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
+        self.tool_set_cursor_icon = false;
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
@@ -415,6 +467,8 @@ impl AnsiEditorCore {
     fn dispatch_paste_terminal_message(&mut self, msg: &TerminalMessage) -> tools::ToolResult {
         use tools::ToolHandler;
 
+        self.tool_set_cursor_icon = false;
+
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
 
@@ -434,6 +488,8 @@ impl AnsiEditorCore {
 
     fn dispatch_paste_event(&mut self, event: &iced::Event) -> tools::ToolResult {
         use tools::ToolHandler;
+
+        self.tool_set_cursor_icon = false;
 
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
@@ -494,6 +550,7 @@ impl AnsiEditorCore {
                 ToolResult::None
             }
             ToolResult::SetCursorIcon(icon) => {
+                self.tool_set_cursor_icon = true;
                 *self.canvas.terminal.cursor_icon.write() = icon;
                 ToolResult::None
             }
@@ -564,6 +621,12 @@ impl AnsiEditorCore {
 
         let top_toolbar = TopToolbar::new();
 
+        // Read display settings before moving options
+        let (show_line_numbers, show_layer_borders) = {
+            let opts = options.read();
+            (*opts.show_line_numbers.read(), *opts.show_layer_borders.read())
+        };
+
         // Current tool is provided by the wrapper (which owns the registry).
 
         let mut editor = Self {
@@ -585,8 +648,9 @@ impl AnsiEditorCore {
             show_guide: false,
             raster: None,
             show_raster: false,
-            show_line_numbers: false,
-            show_layer_borders: false,
+            // Read from settings
+            show_line_numbers,
+            show_layer_borders,
 
             char_selector_target: None,
 
@@ -594,6 +658,8 @@ impl AnsiEditorCore {
 
             shape_clear: false,
             paste_handler: tools::PasteTool::new(),
+
+            tool_set_cursor_icon: false,
 
             pending_tool_switch: None,
         };
@@ -603,6 +669,8 @@ impl AnsiEditorCore {
         // layer selection click.
         editor.update_markers();
         editor.update_layer_bounds();
+
+        *editor.canvas.terminal.cursor_icon.write() = Some(editor.current_tool.cursor());
 
         (editor, palette, format_mode)
     }
@@ -845,11 +913,20 @@ impl AnsiEditorCore {
     /// Cut selection to clipboard
     pub fn cut(&mut self) -> Result<(), String> {
         self.copy_without_deselect()?;
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            edit_state.erase_selection().map_err(|e| e.to_string())?;
-            let _ = edit_state.clear_selection();
+        {
+            let mut screen = self.screen.lock();
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                edit_state.erase_selection().map_err(|e| e.to_string())?;
+                edit_state.clear_selection().map_err(|e| e.to_string())?;
+            }
         }
+
+        // Robustly reset transient selection/drag state and refresh shader markers.
+        self.is_dragging = false;
+        self.mouse_capture_tool = None;
+        self.selection_drag = SelectionDrag::None;
+        self.start_selection = None;
+        self.refresh_selection_display();
         Ok(())
     }
 
@@ -863,10 +940,19 @@ impl AnsiEditorCore {
     pub fn copy(&mut self) -> Result<(), String> {
         self.copy_without_deselect()?;
         // Clear selection after copy
-        let mut screen = self.screen.lock();
-        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-            let _ = edit_state.clear_selection();
+        {
+            let mut screen = self.screen.lock();
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                edit_state.clear_selection().map_err(|e| e.to_string())?;
+            }
         }
+
+        // Robustly reset transient selection/drag state and refresh shader markers.
+        self.is_dragging = false;
+        self.mouse_capture_tool = None;
+        self.selection_drag = SelectionDrag::None;
+        self.start_selection = None;
+        self.refresh_selection_display();
         Ok(())
     }
 
@@ -1357,7 +1443,17 @@ impl AnsiEditorCore {
             // CORE MESSAGES - Layer Operations
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorCoreMessage::SelectLayer(idx) => {
-                self.with_edit_state(|state| state.set_current_layer(idx));
+                self.with_edit_state(|state| {
+                    // Keep caret at the same absolute document position when switching layers.
+                    // Caret coordinates are layer-local, so we translate via the layer offsets.
+                    let old_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    let abs_caret = state.get_caret().position() + old_offset;
+
+                    state.set_current_layer(idx);
+
+                    let new_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    state.set_caret_position(abs_caret - new_offset);
+                });
                 self.task_none_with_layer_bounds_update()
             }
             AnsiEditorCoreMessage::ToggleLayerVisibility(idx) => {
@@ -1469,10 +1565,16 @@ impl AnsiEditorCore {
             }
             AnsiEditorCoreMessage::ToggleLineNumbers => {
                 self.show_line_numbers = !self.show_line_numbers;
+                // Persist to settings
+                *self.options.read().show_line_numbers.write() = self.show_line_numbers;
+                self.options.read().store_persistent();
                 Task::none()
             }
             AnsiEditorCoreMessage::ToggleLayerBorders => {
                 self.show_layer_borders = !self.show_layer_borders;
+                // Persist to settings
+                *self.options.read().show_layer_borders.write() = self.show_layer_borders;
+                self.options.read().store_persistent();
                 self.task_none_with_layer_bounds_update()
             }
             AnsiEditorCoreMessage::ToggleMirrorMode => {
@@ -1855,7 +1957,7 @@ impl AnsiEditorCore {
         self.canvas.set_show_layer_borders(show_borders);
         self.canvas.set_paste_mode(is_paste);
         // Get current layer info from EditState
-        let layer_bounds = {
+        let (layer_bounds, caret_origin_px) = {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
@@ -1870,6 +1972,17 @@ impl AnsiEditorCore {
             // Access the EditState to get buffer and current layer
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                 let buffer = edit_state.get_buffer();
+
+                // Caret should be rendered relative to the *current* layer.
+                let caret_origin_px = edit_state
+                    .get_current_layer()
+                    .ok()
+                    .and_then(|idx| buffer.layers.get(idx))
+                    .map(|layer| {
+                        let offset = layer.offset();
+                        (offset.x as f32 * font_width, offset.y as f32 * font_height)
+                    })
+                    .unwrap_or((0.0, 0.0));
 
                 // In paste mode, find the floating layer instead of current layer
                 let target_layer = if edit_state.has_floating_layer() {
@@ -1892,19 +2005,20 @@ impl AnsiEditorCore {
                         let w = width as f32 * font_width;
                         let h = height as f32 * font_height;
 
-                        Some((x, y, w, h))
+                        (Some((x, y, w, h)), caret_origin_px)
                     } else {
-                        None
+                        (None, caret_origin_px)
                     }
                 } else {
-                    None
+                    (None, caret_origin_px)
                 }
             } else {
-                None
+                (None, (0.0, 0.0))
             }
         };
 
         self.canvas.set_layer_bounds(layer_bounds, true);
+        self.canvas.set_caret_origin_px(caret_origin_px);
     }
 
     /// Update tag rectangle overlays when Tag tool is active
@@ -2153,6 +2267,12 @@ impl AnsiEditorCore {
                     return;
                 }
 
+                // In Click tool: determine which *visible* layer is under the cursor (document coords)
+                // and switch current layer before dispatch so tools operate on the correct layer.
+                if let Some(pos) = evt.text_position {
+                    self.select_visible_layer_at_doc_pos_for_click_tool(pos);
+                }
+
                 // Paste mode always has priority.
                 if self.is_paste_mode() {
                     let _ = self.dispatch_paste_terminal_message(msg);
@@ -2279,6 +2399,32 @@ impl AnsiEditorCore {
                                 self.update_shape_preview();
                             }
                             _ => {}
+                        }
+
+                        // Baseline cursor for all tools: follow the active tool's preference.
+                        // If the tool explicitly set a cursor icon via ToolResult, keep that.
+                        if !self.tool_set_cursor_icon {
+                            *self.canvas.terminal.cursor_icon.write() = Some(self.current_tool.cursor());
+                        }
+
+                        // Hover hint (Click tool only): if the cursor is over a *different* visible layer,
+                        // show a pointer cursor to indicate layer switching is possible.
+                        if !self.is_dragging
+                            && self.mouse_capture_tool.is_none()
+                            && matches!(self.current_tool.id(), tools::ToolId::Tool(Tool::Click))
+                            && !self.is_paste_mode()
+                        {
+                            let (hit, current) = self.with_edit_state_readonly(|state| {
+                                let current = state.get_current_layer().ok();
+                                let hit = Self::hit_test_visible_layer_at_doc_pos(state.get_buffer(), pos);
+                                (hit, current)
+                            });
+
+                            if let (Some(hit), Some(cur)) = (hit, current) {
+                                if hit != cur {
+                                    *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Pointer);
+                                }
+                            }
                         }
 
                         ev
@@ -2510,6 +2656,9 @@ impl AnsiEditorCore {
         let new_tool = tool_registry.take_for(tool);
         let old_tool = std::mem::replace(&mut self.current_tool, new_tool);
         tool_registry.put_back(old_tool);
+
+        self.tool_set_cursor_icon = false;
+        *self.canvas.terminal.cursor_icon.write() = Some(self.current_tool.cursor());
 
         // Clear tool hover preview when switching tools.
         if !matches!(tool, tools::ToolId::Tool(Tool::Pencil)) {

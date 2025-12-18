@@ -45,6 +45,16 @@ struct PersistedOptions {
 
     #[serde(default)]
     pub tag_render_mode: TagRenderMode,
+
+    #[serde(default = "default_true")]
+    pub show_layer_borders: bool,
+
+    #[serde(default)]
+    pub show_line_numbers: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for PersistedOptions {
@@ -53,6 +63,8 @@ impl Default for PersistedOptions {
             monitor_settings: MonitorSettings::default(),
             font_outline_style: 0,
             tag_render_mode: TagRenderMode::default(),
+            show_layer_borders: true,
+            show_line_numbers: false,
         }
     }
 }
@@ -75,6 +87,12 @@ pub struct Settings {
 
     /// Tag rendering mode (persisted)
     pub tag_render_mode: Arc<RwLock<TagRenderMode>>,
+
+    /// Whether layer borders are shown (persisted, default: true)
+    pub show_layer_borders: Arc<RwLock<bool>>,
+
+    /// Whether line numbers are shown (persisted, default: false)
+    pub show_line_numbers: Arc<RwLock<bool>>,
 }
 
 impl Settings {
@@ -88,6 +106,8 @@ impl Settings {
             monitor_settings: Arc::new(RwLock::new(persistent.monitor_settings)),
             font_outline_style: Arc::new(RwLock::new(persistent.font_outline_style)),
             tag_render_mode: Arc::new(RwLock::new(persistent.tag_render_mode)),
+            show_layer_borders: Arc::new(RwLock::new(persistent.show_layer_borders)),
+            show_line_numbers: Arc::new(RwLock::new(persistent.show_line_numbers)),
         }
     }
 
@@ -96,6 +116,8 @@ impl Settings {
             monitor_settings: self.monitor_settings.read().clone(),
             font_outline_style: *self.font_outline_style.read(),
             tag_render_mode: *self.tag_render_mode.read(),
+            show_layer_borders: *self.show_layer_borders.read(),
+            show_line_numbers: *self.show_line_numbers.read(),
         };
         Self::store_options_file(&settings);
     }

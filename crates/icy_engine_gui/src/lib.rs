@@ -575,6 +575,12 @@ pub struct EditorMarkers {
     /// Brush/Pencil preview rectangle in pixels (x, y, width, height) in document space
     /// None = no brush preview
     pub brush_preview_rect: Option<(f32, f32, f32, f32)>,
+
+    /// Caret origin offset in document pixels (x, y).
+    ///
+    /// Used by editor UIs to render the caret relative to the *current layer* instead
+    /// of absolute document coordinates.
+    pub caret_origin_px: (f32, f32),
 }
 
 impl Default for EditorMarkers {
@@ -596,6 +602,8 @@ impl Default for EditorMarkers {
             tool_overlay_cell_height_scale: 1.0,
             font_dimensions: None,
             brush_preview_rect: None,
+
+            caret_origin_px: (0.0, 0.0),
         }
     }
 }

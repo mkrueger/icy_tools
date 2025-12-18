@@ -142,6 +142,13 @@ impl CanvasView {
         markers.layer_bounds = bounds;
     }
 
+    /// Set caret origin offset (in document pixels).
+    /// This is used to render the caret relative to the current layer.
+    pub fn set_caret_origin_px(&mut self, origin: (f32, f32)) {
+        let mut markers = self.terminal.markers.write();
+        markers.caret_origin_px = origin;
+    }
+
     pub fn set_show_layer_borders(&mut self, show: bool) {
         let mut markers: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, icy_engine_gui::EditorMarkers> = self.terminal.markers.write();
         markers.show_layer_bounds = show;

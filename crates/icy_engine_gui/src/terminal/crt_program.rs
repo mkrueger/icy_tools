@@ -322,19 +322,33 @@ impl<'a> CRTShaderProgram<'a> {
                 let caret = screen.caret();
                 let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on()) && self.term.has_focus;
 
+                // Caret origin offset in *document pixels* (used to anchor caret to current layer)
+                let (caret_origin_x, caret_origin_y) = {
+                    let markers = self.term.markers.read();
+                    markers.caret_origin_px
+                };
+
                 if should_draw && font_w > 0 && font_h > 0 {
                     let caret_cell_pos = caret.position();
                     let scan_mult = if scan_lines { 2.0 } else { 1.0 };
+
+                    // Vertical document pixel space is scaled by scan_mult in the caret path,
+                    // so we must match that scaling for the origin as well.
+                    let origin_x = caret_origin_x;
+                    let origin_y = caret_origin_y * scan_mult;
 
                     // Convert cell position to pixel position (viewport-relative)
                     // IMPORTANT: Use f32 for scroll offsets to avoid truncation errors
                     // that cause the caret to drift when scrolled with fractional offsets.
                     let (px_x, px_y) = if caret.use_pixel_positioning {
-                        (caret_cell_pos.x as f32 - scroll_offset_x, caret_cell_pos.y as f32 * scan_mult - scroll_offset_y)
+                        (
+                            caret_cell_pos.x as f32 + origin_x - scroll_offset_x,
+                            caret_cell_pos.y as f32 * scan_mult + origin_y - scroll_offset_y,
+                        )
                     } else {
                         (
-                            caret_cell_pos.x as f32 * font_w as f32 - scroll_offset_x,
-                            caret_cell_pos.y as f32 * font_h as f32 * scan_mult - scroll_offset_y,
+                            caret_cell_pos.x as f32 * font_w as f32 + origin_x - scroll_offset_x,
+                            caret_cell_pos.y as f32 * font_h as f32 * scan_mult + origin_y - scroll_offset_y,
                         )
                     };
 
