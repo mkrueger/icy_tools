@@ -6,36 +6,15 @@
 
 use icy_engine_gui::ScalingMode;
 
-/// Replicate the centering logic from `terminal_shader.rs` prepare() for testing.
-/// This computes the terminal_rect values that are passed to the WGSL shader.
-///
-/// Returns: (start_x, start_y, width_n, height_n, offset_x, offset_y)
-/// where start_x/y are normalized [0,1] and offset_x/y are in pixels.
-fn compute_terminal_rect(
-    visible_width: f32,
-    visible_height: f32,
-    avail_w: f32,
-    avail_h: f32,
-    scaling_mode: &ScalingMode,
-    use_integer_scaling: bool,
-) -> (f32, f32, f32, f32, f32, f32) {
-    let term_w = visible_width.max(1.0);
-    let term_h = visible_height.max(1.0);
-    let avail_w = avail_w.max(1.0);
-    let avail_h = avail_h.max(1.0);
-
-    let final_scale = scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_integer_scaling);
-    let scaled_w = (term_w * final_scale).min(avail_w);
-    let scaled_h = (term_h * final_scale).min(avail_h);
-
-    let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
-    let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
-    let start_x = offset_x / avail_w;
-    let start_y = offset_y / avail_h;
-    let width_n = scaled_w / avail_w;
-    let height_n = scaled_h / avail_h;
-
-    (start_x, start_y, width_n, height_n, offset_x, offset_y)
+fn assert_near_integer(value: f32, label: &str) {
+    let nearest = value.round();
+    assert!(
+        (value - nearest).abs() < 1e-6,
+        "{} should be integer-like, got {} (nearest {})",
+        label,
+        value,
+        nearest
+    );
 }
 
 #[test]
@@ -49,8 +28,7 @@ fn centering_at_50_percent_zoom() {
     let scaling_mode = ScalingMode::Manual(0.5);
     let use_integer_scaling = false;
 
-    let (start_x, start_y, width_n, height_n, offset_x, offset_y) =
-        compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
     // At 50% zoom:
     // scaled_w = 800 * 0.5 = 400
@@ -64,16 +42,16 @@ fn centering_at_50_percent_zoom() {
 
     // Verify offsets for centering
     assert!(
-        (offset_x - expected_offset_x).abs() < 0.001,
+        (rect.offset_x - expected_offset_x).abs() < 0.001,
         "offset_x should be {} but was {} (content not centered horizontally)",
         expected_offset_x,
-        offset_x
+        rect.offset_x
     );
     assert!(
-        (offset_y - expected_offset_y).abs() < 0.001,
+        (rect.offset_y - expected_offset_y).abs() < 0.001,
         "offset_y should be {} but was {} (content not centered vertically)",
         expected_offset_y,
-        offset_y
+        rect.offset_y
     );
 
     // Verify normalized coordinates
@@ -83,35 +61,35 @@ fn centering_at_50_percent_zoom() {
     let expected_height_n = expected_scaled_h / viewport_h; // 0.375
 
     assert!(
-        (start_x - expected_start_x).abs() < 0.001,
+        (rect.start_x - expected_start_x).abs() < 0.001,
         "start_x should be {} but was {}",
         expected_start_x,
-        start_x
+        rect.start_x
     );
     assert!(
-        (start_y - expected_start_y).abs() < 0.001,
+        (rect.start_y - expected_start_y).abs() < 0.001,
         "start_y should be {} but was {}",
         expected_start_y,
-        start_y
+        rect.start_y
     );
     assert!(
-        (width_n - expected_width_n).abs() < 0.001,
+        (rect.width_n - expected_width_n).abs() < 0.001,
         "width_n should be {} but was {}",
         expected_width_n,
-        width_n
+        rect.width_n
     );
     assert!(
-        (height_n - expected_height_n).abs() < 0.001,
+        (rect.height_n - expected_height_n).abs() < 0.001,
         "height_n should be {} but was {}",
         expected_height_n,
-        height_n
+        rect.height_n
     );
 
     // Verify that the centered rect covers the expected area:
     // start_x + width_n should give us the end, and 1 - (start_x + width_n) should equal start_x
     // for perfect horizontal centering
-    let end_x = start_x + width_n;
-    let margin_left = start_x;
+    let end_x = rect.start_x + rect.width_n;
+    let margin_left = rect.start_x;
     let margin_right = 1.0 - end_x;
     assert!(
         (margin_left - margin_right).abs() < 0.001,
@@ -120,8 +98,8 @@ fn centering_at_50_percent_zoom() {
         margin_right
     );
 
-    let end_y = start_y + height_n;
-    let margin_top = start_y;
+    let end_y = rect.start_y + rect.height_n;
+    let margin_top = rect.start_y;
     let margin_bottom = 1.0 - end_y;
     assert!(
         (margin_top - margin_bottom).abs() < 0.001,
@@ -148,13 +126,12 @@ fn no_centering_for_large_document_at_50_percent_zoom() {
     let scaling_mode = ScalingMode::Manual(zoom);
     let use_integer_scaling = false;
 
-    let (_start_x, _start_y, _width_n, _height_n, offset_x, offset_y) =
-        compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
     // When the document is larger than what fits in the viewport at current zoom,
     // there's no need to center - the content fills the viewport completely.
-    assert_eq!(offset_x, 0.0, "Expected no centering for large document at 50% zoom");
-    assert_eq!(offset_y, 0.0, "Expected no centering for large document at 50% zoom");
+    assert_eq!(rect.offset_x, 0.0, "Expected no centering for large document at 50% zoom");
+    assert_eq!(rect.offset_y, 0.0, "Expected no centering for large document at 50% zoom");
 }
 
 /// Test the actual bug scenario: small document, large viewport, 50% zoom
@@ -180,8 +157,7 @@ fn centering_small_document_at_50_percent_zoom() {
     let scaling_mode = ScalingMode::Manual(zoom);
     let use_integer_scaling = false;
 
-    let (start_x, start_y, _width_n, _height_n, offset_x, offset_y) =
-        compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
     // At 50% zoom with document 800x600:
     // term_w = 800, term_h = 600
@@ -194,16 +170,16 @@ fn centering_small_document_at_50_percent_zoom() {
     let expected_offset_y = 250.0;
 
     assert!(
-        (offset_x - expected_offset_x).abs() < 0.001,
+        (rect.offset_x - expected_offset_x).abs() < 0.001,
         "Small document should be centered: offset_x expected {} but got {}",
         expected_offset_x,
-        offset_x
+        rect.offset_x
     );
     assert!(
-        (offset_y - expected_offset_y).abs() < 0.001,
+        (rect.offset_y - expected_offset_y).abs() < 0.001,
         "Small document should be centered: offset_y expected {} but got {}",
         expected_offset_y,
-        offset_y
+        rect.offset_y
     );
 
     // Verify centering in normalized coordinates
@@ -211,17 +187,43 @@ fn centering_small_document_at_50_percent_zoom() {
     let expected_start_y = 0.3125; // 250/800
 
     assert!(
-        (start_x - expected_start_x).abs() < 0.001,
+        (rect.start_x - expected_start_x).abs() < 0.001,
         "start_x should be {} but was {}",
         expected_start_x,
-        start_x
+        rect.start_x
     );
     assert!(
-        (start_y - expected_start_y).abs() < 0.001,
+        (rect.start_y - expected_start_y).abs() < 0.001,
         "start_y should be {} but was {}",
         expected_start_y,
-        start_y
+        rect.start_y
     );
+}
+
+#[test]
+fn terminal_rect_offsets_are_floored_to_pixels() {
+    // Construct a scenario where perfect centering would yield a half-pixel offset.
+    // Example: avail=101px, content=100px at 100% -> (101-100)/2 = 0.5.
+    // We want this floored to 0px to keep the terminal window pixel-aligned.
+    let visible_w = 100.0_f32;
+    let visible_h = 100.0_f32;
+    let viewport_w = 101.0_f32;
+    let viewport_h = 101.0_f32;
+
+    let scaling_mode = ScalingMode::Manual(1.0);
+    let rect = icy_engine_gui::compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, false);
+
+    assert_near_integer(rect.offset_x, "offset_x");
+    assert_near_integer(rect.offset_y, "offset_y");
+
+    // Also verify start_x/start_y map back to the same integer pixel offsets.
+    assert_near_integer(rect.start_x * viewport_w, "start_x*viewport_w");
+    assert_near_integer(rect.start_y * viewport_h, "start_y*viewport_h");
+
+    assert!(rect.offset_x >= 0.0);
+    assert!(rect.offset_y >= 0.0);
+    assert!(rect.width_n > 0.0 && rect.width_n <= 1.0);
+    assert!(rect.height_n > 0.0 && rect.height_n <= 1.0);
 }
 
 #[test]
@@ -234,8 +236,7 @@ fn centering_when_content_smaller_than_viewport_at_100_percent() {
     let scaling_mode = ScalingMode::Manual(1.0);
     let use_integer_scaling = false;
 
-    let (_start_x, _start_y, _width_n, _height_n, offset_x, offset_y) =
-        compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
     // At 100% zoom with content smaller than viewport:
     // scaled_w = 400 * 1.0 = 400
@@ -246,16 +247,16 @@ fn centering_when_content_smaller_than_viewport_at_100_percent() {
     let expected_offset_y = 250.0;
 
     assert!(
-        (offset_x - expected_offset_x).abs() < 0.001,
+        (rect.offset_x - expected_offset_x).abs() < 0.001,
         "offset_x should be {} but was {}",
         expected_offset_x,
-        offset_x
+        rect.offset_x
     );
     assert!(
-        (offset_y - expected_offset_y).abs() < 0.001,
+        (rect.offset_y - expected_offset_y).abs() < 0.001,
         "offset_y should be {} but was {}",
         expected_offset_y,
-        offset_y
+        rect.offset_y
     );
 }
 
@@ -269,15 +270,22 @@ fn no_centering_when_content_fills_viewport() {
     let scaling_mode = ScalingMode::Manual(1.0);
     let use_integer_scaling = false;
 
-    let (start_x, start_y, width_n, height_n, offset_x, offset_y) =
-        compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(content_w, content_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
-    assert!(offset_x.abs() < 0.001, "offset_x should be 0 when content fills viewport, but was {}", offset_x);
-    assert!(offset_y.abs() < 0.001, "offset_y should be 0 when content fills viewport, but was {}", offset_y);
-    assert!((start_x).abs() < 0.001, "start_x should be 0, but was {}", start_x);
-    assert!((start_y).abs() < 0.001, "start_y should be 0, but was {}", start_y);
-    assert!((width_n - 1.0).abs() < 0.001, "width_n should be 1.0, but was {}", width_n);
-    assert!((height_n - 1.0).abs() < 0.001, "height_n should be 1.0, but was {}", height_n);
+    assert!(
+        rect.offset_x.abs() < 0.001,
+        "offset_x should be 0 when content fills viewport, but was {}",
+        rect.offset_x
+    );
+    assert!(
+        rect.offset_y.abs() < 0.001,
+        "offset_y should be 0 when content fills viewport, but was {}",
+        rect.offset_y
+    );
+    assert!((rect.start_x).abs() < 0.001, "start_x should be 0, but was {}", rect.start_x);
+    assert!((rect.start_y).abs() < 0.001, "start_y should be 0, but was {}", rect.start_y);
+    assert!((rect.width_n - 1.0).abs() < 0.001, "width_n should be 1.0, but was {}", rect.width_n);
+    assert!((rect.height_n - 1.0).abs() < 0.001, "height_n should be 1.0, but was {}", rect.height_n);
 }
 
 /// Reproduce the exact bug: 80x25 document at 100% zoom in a large window
@@ -306,8 +314,7 @@ fn centering_80x25_document_at_100_percent_zoom() {
     assert_eq!(visible_h, 400.0, "visible_height should be clamped to document resolution");
 
     // Now run the centering logic
-    let (start_x, start_y, _width_n, height_n, offset_x, offset_y) =
-        compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
+    let rect = icy_engine_gui::compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, use_integer_scaling);
 
     // At 100% zoom with 640x400 visible content in 1200x700 viewport:
     // term_w = 640, term_h = 400
@@ -320,16 +327,16 @@ fn centering_80x25_document_at_100_percent_zoom() {
     let expected_offset_y = (viewport_h - visible_h * zoom) / 2.0; // (700-400)/2 = 150
 
     assert!(
-        (offset_x - expected_offset_x).abs() < 0.001,
+        (rect.offset_x - expected_offset_x).abs() < 0.001,
         "80x25 at 100%: offset_x should be {} but was {} (content not centered horizontally)",
         expected_offset_x,
-        offset_x
+        rect.offset_x
     );
     assert!(
-        (offset_y - expected_offset_y).abs() < 0.001,
+        (rect.offset_y - expected_offset_y).abs() < 0.001,
         "80x25 at 100%: offset_y should be {} but was {} (content should be centered, not stuck at top!)",
         expected_offset_y,
-        offset_y
+        rect.offset_y
     );
 
     // Verify normalized coordinates
@@ -337,21 +344,21 @@ fn centering_80x25_document_at_100_percent_zoom() {
     let expected_start_y = expected_offset_y / viewport_h; // 150/700 ≈ 0.214
 
     assert!(
-        (start_x - expected_start_x).abs() < 0.001,
+        (rect.start_x - expected_start_x).abs() < 0.001,
         "start_x should be {} but was {}",
         expected_start_x,
-        start_x
+        rect.start_x
     );
     assert!(
-        (start_y - expected_start_y).abs() < 0.001,
+        (rect.start_y - expected_start_y).abs() < 0.001,
         "start_y should be {} but was {} (terminal_rect.y not set correctly for centering)",
         expected_start_y,
-        start_y
+        rect.start_y
     );
 
     // Verify centering symmetry
-    let margin_top = start_y;
-    let margin_bottom = 1.0 - (start_y + height_n);
+    let margin_top = rect.start_y;
+    let margin_bottom = 1.0 - (rect.start_y + rect.height_n);
     assert!(
         (margin_top - margin_bottom).abs() < 0.001,
         "Vertical margins should be equal: top={}, bottom={} (content stuck at top means top margin is wrong)",
@@ -393,39 +400,39 @@ fn bug_fit_terminal_height_inflates_visible_height() {
     let visible_h = (viewport_h / zoom).min(buggy_res_h); // 848
 
     let scaling_mode = ScalingMode::Manual(zoom);
-    let (_, start_y, _, _, _, offset_y) = compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, false);
+    let buggy_rect = icy_engine_gui::compute_terminal_rect(visible_w, visible_h, viewport_w, viewport_h, &scaling_mode, false);
 
     // With the bug, offset_y is tiny (almost no centering)
     assert!(
-        offset_y < 10.0,
+        buggy_rect.offset_y < 10.0,
         "Bug demonstration: with inflated height, offset_y={} should be very small (no centering)",
-        offset_y
+        buggy_rect.offset_y
     );
 
     // Correct behavior: visible_height should be clamped to actual document height (400)
     let correct_doc_res_h = 25.0 * 16.0; // 400
     let correct_visible_h = (viewport_h / zoom).min(correct_doc_res_h); // 400
 
-    let (_, correct_start_y, _, _, _, correct_offset_y) = compute_terminal_rect(visible_w, correct_visible_h, viewport_w, viewport_h, &scaling_mode, false);
+    let correct_rect = icy_engine_gui::compute_terminal_rect(visible_w, correct_visible_h, viewport_w, viewport_h, &scaling_mode, false);
 
     // With correct behavior, content should be nicely centered
-    let expected_offset_y = (viewport_h - correct_doc_res_h) / 2.0; // (855-400)/2 = 227.5
+    let expected_offset_y = ((viewport_h - correct_doc_res_h) / 2.0).floor(); // (855-400)/2 = 227.5 -> 227 (pixel snapping)
     assert!(
-        (correct_offset_y - expected_offset_y).abs() < 0.001,
+        (correct_rect.offset_y - expected_offset_y).abs() < 0.001,
         "Correct behavior: offset_y should be {} for centering, got {}",
         expected_offset_y,
-        correct_offset_y
+        correct_rect.offset_y
     );
 
     // Verify that the correct start_y gives proper centering
     let expected_start_y = expected_offset_y / viewport_h; // ≈ 0.266
     assert!(
-        (correct_start_y - expected_start_y).abs() < 0.001,
+        (correct_rect.start_y - expected_start_y).abs() < 0.001,
         "Correct start_y should be {} but was {}",
         expected_start_y,
-        correct_start_y
+        correct_rect.start_y
     );
 
     // Suppress unused variable warning
-    let _ = start_y;
+    let _ = buggy_rect.start_y;
 }

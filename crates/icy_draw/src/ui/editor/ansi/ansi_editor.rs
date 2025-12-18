@@ -552,7 +552,7 @@ impl AnsiEditorCore {
 
         // Current tool is provided by the wrapper (which owns the registry).
 
-        let editor = Self {
+        let mut editor = Self {
             screen,
             current_tool,
             top_toolbar,
@@ -584,6 +584,12 @@ impl AnsiEditorCore {
 
             pending_tool_switch: None,
         };
+
+        // Initialize marker-dependent uniforms (especially `layer_bounds`) so the selection
+        // rendering is correct immediately after opening a file, without requiring a manual
+        // layer selection click.
+        editor.update_markers();
+        editor.update_layer_bounds();
 
         (editor, palette, format_mode)
     }

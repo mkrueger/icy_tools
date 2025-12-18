@@ -323,8 +323,143 @@ fn mask_cell_selected(cell_x: f32, cell_y: f32) -> bool {
         return false;
     }
 
-    let uv = vec2<f32>((cell_x + 0.5) / mask_w, (cell_y + 0.5) / mask_h);
-    return textureSample(t_selection_mask, terminal_sampler, uv).r > 0.5;
+    // IMPORTANT: Sample the selection mask with integer addressing.
+    // Using `textureSample` would route through the terminal sampler which can be Linear
+    // (bilinear filtering), causing blurred/shifted edges and apparent scaling issues.
+    // `textureLoad` is exact and independent of the sampler.
+    let px = i32(cell_x);
+    let py = i32(cell_y);
+    return textureLoad(t_selection_mask, vec2<i32>(px, py), 0).r > 0.5;
+}
+
+// =============================================================================
+// Selection helpers (shared by inside/outside rendering)
+// =============================================================================
+
+struct SelectionCellInfo {
+    rect_valid: bool,
+    in_layer: bool,
+
+    rect_cell: bool,
+    mask_cell: bool,
+    mask_only: bool,
+    union_cell: bool,
+    adjacent: bool,
+
+    on_border: bool,
+    on_left_or_right: bool,
+    edge_pos: f32,
+};
+
+fn pos_mod(x: f32, m: f32) -> f32 {
+    // Positive modulo for float coordinates (keeps result in [0, m)).
+    // Needed because WGSL's `%` keeps the sign of the dividend.
+    return ((x % m) + m) % m;
+}
+
+fn doc_pixels_per_screen_pixel() -> vec2<f32> {
+    // Approximate conversion from 1 screen pixel to document pixels.
+    // Uses the *linear* mapping defined by visible_{width,height} and terminal_rect.
+    // This is intentionally constant across the screen to avoid thickness changes
+    // from curvature/distortion (which would vary derivatives across fragments).
+    let term_px_w = max(1.0, uniforms.terminal_rect.z * uniforms.resolution.x);
+    let term_px_h = max(1.0, uniforms.terminal_rect.w * uniforms.resolution.y);
+    return vec2<f32>(uniforms.visible_width / term_px_w, uniforms.visible_height / term_px_h);
+}
+
+fn rect_cell_selected(
+    rect_valid: bool,
+    cx: f32,
+    cy: f32,
+    fw: f32,
+    fh: f32,
+    sel_left: f32,
+    sel_top: f32,
+    sel_right: f32,
+    sel_bottom: f32,
+) -> bool {
+    return rect_valid &&
+        ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
+        ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom;
+}
+
+fn union_cell_selected(
+    rect_valid: bool,
+    cx: f32,
+    cy: f32,
+    fw: f32,
+    fh: f32,
+    sel_left: f32,
+    sel_top: f32,
+    sel_right: f32,
+    sel_bottom: f32,
+) -> bool {
+    let rect_cell = rect_cell_selected(rect_valid, cx, cy, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+    let mask_cell = mask_cell_selected(cx, cy);
+    return rect_cell || mask_cell;
+}
+
+fn selection_cell_info(doc_pixel: vec2<f32>) -> SelectionCellInfo {
+    let sel_left = uniforms.selection_rect.x;
+    let sel_top = uniforms.selection_rect.y;
+    let sel_right = uniforms.selection_rect.z;
+    let sel_bottom = uniforms.selection_rect.w;
+    let rect_valid = (sel_right > sel_left) && (sel_bottom > sel_top);
+
+    // If no valid layer bounds are provided, treat everything as inside.
+    let layer_left = uniforms.layer_rect.x;
+    let layer_top = uniforms.layer_rect.y;
+    let layer_right = uniforms.layer_rect.z;
+    let layer_bottom = uniforms.layer_rect.w;
+    let layer_valid = (layer_right > layer_left) && (layer_bottom > layer_top);
+    let in_layer = select(
+        true,
+        doc_pixel.x >= layer_left && doc_pixel.x < layer_right &&
+        doc_pixel.y >= layer_top && doc_pixel.y < layer_bottom,
+        layer_valid
+    );
+
+    let fw = max(uniforms.font_width, 1.0);
+    let fh = max(uniforms.font_height, 1.0);
+    let cx = floor(doc_pixel.x / fw);
+    let cy = floor(doc_pixel.y / fh);
+    let local_x = doc_pixel.x - cx * fw;
+    let local_y = doc_pixel.y - cy * fh;
+
+    let rect_cell = rect_cell_selected(rect_valid, cx, cy, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+    let mask_cell = mask_cell_selected(cx, cy);
+    let mask_only = mask_cell && !rect_cell;
+    let union_cell = rect_cell || mask_cell;
+
+    let union_left = union_cell_selected(rect_valid, cx - 1.0, cy, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+    let union_right = union_cell_selected(rect_valid, cx + 1.0, cy, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+    let union_up = union_cell_selected(rect_valid, cx, cy - 1.0, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+    let union_down = union_cell_selected(rect_valid, cx, cy + 1.0, fw, fh, sel_left, sel_top, sel_right, sel_bottom);
+
+    let adjacent = !union_cell && (union_left || union_right || union_up || union_down);
+
+    // Border: 1px along the edges where union changes.
+    let on_left = union_cell && !union_left && local_x < 1.0;
+    let on_right = union_cell && !union_right && local_x >= (fw - 1.0);
+    let on_top = union_cell && !union_up && local_y < 1.0;
+    let on_bottom = union_cell && !union_down && local_y >= (fh - 1.0);
+    let on_border = on_left || on_right || on_top || on_bottom;
+    let on_left_or_right = on_left || on_right;
+
+    let edge_pos = select(doc_pixel.x, doc_pixel.y, on_left_or_right);
+
+    return SelectionCellInfo(
+        rect_valid,
+        in_layer,
+        rect_cell,
+        mask_cell,
+        mask_only,
+        union_cell,
+        adjacent,
+        on_border,
+        on_left_or_right,
+        edge_pos,
+    );
 }
 
 fn sample_tool_overlay(doc_pixel: vec2<f32>) -> vec4<f32> {
@@ -493,80 +628,14 @@ fn render_outside_terminal(doc_pixel: vec2<f32>, viewport_uv: vec2<f32>) -> vec4
     // Outside the terminal we still want the selection border to look identical to the inside
     // path: union(selection_rect, selection_mask) with a crisp 1px border.
     if (uniforms.selection_enabled > 0.5) {
-        let sel_left = uniforms.selection_rect.x;
-        let sel_top = uniforms.selection_rect.y;
-        let sel_right = uniforms.selection_rect.z;
-        let sel_bottom = uniforms.selection_rect.w;
-        let rect_valid = (sel_right > sel_left) && (sel_bottom > sel_top);
-
-        // Layer bounds decide whether border animates (in-layer) or is solid (out-of-layer)
-        let layer_left = uniforms.layer_rect.x;
-        let layer_top = uniforms.layer_rect.y;
-        let layer_right = uniforms.layer_rect.z;
-        let layer_bottom = uniforms.layer_rect.w;
-        let layer_valid = (layer_right > layer_left) && (layer_bottom > layer_top);
-        let in_layer = select(
-            true,
-            doc_pixel.x >= layer_left && doc_pixel.x < layer_right &&
-            doc_pixel.y >= layer_top && doc_pixel.y < layer_bottom,
-            layer_valid
-        );
-
-        let fw = max(uniforms.font_width, 1.0);
-        let fh = max(uniforms.font_height, 1.0);
-        let cell_x = floor(doc_pixel.x / fw);
-        let cell_y = floor(doc_pixel.y / fh);
-        let local_x = doc_pixel.x - cell_x * fw;
-        let local_y = doc_pixel.y - cell_y * fh;
-
-        let cx = cell_x;
-        let cy = cell_y;
-
-        let rect_cell = rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom;
-
-        let mask_cell = mask_cell_selected(cx, cy);
-        let union_cell = rect_cell || mask_cell;
-
-        let union_left = (rect_valid &&
-            ((cx - 1.0 + 0.5) * fw) >= sel_left && ((cx - 1.0 + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx - 1.0, cy);
-        let union_right = (rect_valid &&
-            ((cx + 1.0 + 0.5) * fw) >= sel_left && ((cx + 1.0 + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx + 1.0, cy);
-        let union_up = (rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy - 1.0 + 0.5) * fh) >= sel_top && ((cy - 1.0 + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx, cy - 1.0);
-        let union_down = (rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy + 1.0 + 0.5) * fh) >= sel_top && ((cy + 1.0 + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx, cy + 1.0);
-
-        // Draw 1px border along cell edges where selection changes.
-        let on_left = union_cell && !union_left && local_x < 1.0;
-        let on_right = union_cell && !union_right && local_x >= (fw - 1.0);
-        let on_top = union_cell && !union_up && local_y < 1.0;
-        let on_bottom = union_cell && !union_down && local_y >= (fh - 1.0);
-        let on_border = on_left || on_right || on_top || on_bottom;
-
-        if (on_border) {
-            if (!in_layer) {
+        let sel = selection_cell_info(doc_pixel);
+        if (sel.on_border) {
+            if (!sel.in_layer) {
                 color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
             } else {
-                var edge_pos = 0.0;
-                if (on_left || on_right) {
-                    edge_pos = doc_pixel.y;
-                } else {
-                    edge_pos = doc_pixel.x;
-                }
-
                 // Mask-only regions get a longer pattern to distinguish them.
-                let dash_length = select(4.0, 6.0, mask_cell && !rect_cell);
-                let dash_phase = floor((edge_pos + uniforms.time * 8.0) / dash_length);
+                let dash_length = select(4.0, 6.0, sel.mask_only);
+                let dash_phase = floor((sel.edge_pos + uniforms.time * 8.0) / dash_length);
                 let is_white = (dash_phase % 2.0) == 0.0;
                 if (is_white) {
                     color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
@@ -721,25 +790,71 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (uniforms.raster_enabled > 0.5) {
         let raster_w = uniforms.raster_spacing.x;
         let raster_h = uniforms.raster_spacing.y;
+        let doc_w = uniforms.texture_width;
+        let doc_h = uniforms.total_image_height;
+        let in_doc_bounds = doc_pixel.x >= 0.0 && doc_pixel.y >= 0.0 && doc_pixel.x < doc_w && doc_pixel.y < doc_h;
         
-        if (raster_w > 0.0 && raster_h > 0.0) {
-            // Use doc_pixel calculated at the beginning of fs_main
+        if (raster_w > 0.0 && raster_h > 0.0 && in_doc_bounds) {
+            // Baseline: 1px at 1:1.
+            // Only zoom/DPI should affect thickness: we compute local derivatives.
+            // local_dpps = doc pixels per screen pixel (includes curvature distortion).
+            let local_dpps = max(vec2<f32>(1e-4), fwidth(doc_pixel));
+            let zoom_x = 1.0 / local_dpps.x;
+            let zoom_y = 1.0 / local_dpps.y;
+
+            // Desired thickness in screen pixels: 1px at 1:1, grows with zoom-in.
+            // (Zoom-out would make it thinner; we clamp to 1px minimum.)
+            let thickness_px_x = max(1.0, zoom_x);
+            let thickness_px_y = max(1.0, zoom_y);
+
+            // Position within grid cell in doc pixels.
+            let cell_x = pos_mod(doc_pixel.x, raster_w);
+            let cell_y = pos_mod(doc_pixel.y, raster_h);
+
+            // Distance to nearest grid line (either edge of cell) in doc pixels.
+            let dist_doc_x = min(cell_x, raster_w - cell_x);
+            let dist_doc_y = min(cell_y, raster_h - cell_y);
+
+            // Convert distance to screen pixels.
+            let dist_px_x = dist_doc_x / local_dpps.x;
+            let dist_px_y = dist_doc_y / local_dpps.y;
             
-            // Check if we're on a grid line
-            // Use modulo to find position within grid cell
-            let cell_x = doc_pixel.x % raster_w;
-            let cell_y = doc_pixel.y % raster_h;
-            
-            // Create dotted/short-dash pattern like Moebius (2 pixels on, 2 pixels off)
-            let dash_length = 2.0;
-            let dash_pattern_x = (doc_pixel.y % (dash_length * 2.0)) < dash_length;
-            let dash_pattern_y = (doc_pixel.x % (dash_length * 2.0)) < dash_length;
-            
-            // Draw line if at grid edge (1 pixel thick)
-            let line_thickness = 1.0;
-            let on_vertical_line = cell_x < line_thickness && dash_pattern_x;
-            let on_horizontal_line = cell_y < line_thickness && dash_pattern_y;
-            
+            // Create dotted/short-dash pattern like Moebius (2 pixels on, 2 pixels off).
+            // IMPORTANT: Use screen-space pixels for the dash pattern so it stays stable
+            // under zoom/scroll and doesn't turn into blocky artifacts when zoomed out.
+            let term_origin_px = uniforms.terminal_rect.xy * uniforms.resolution;
+            let frag_px = in.position.xy - term_origin_px;
+            // Let dash pattern scale with zoom-in (so it looks zoomed), but never smaller
+            // than the original 2px when zoomed out.
+            let dash_length_px_x = max(2.0, 2.0 * zoom_x);
+            let dash_length_px_y = max(2.0, 2.0 * zoom_y);
+            // Factor scrolling into the dash phase so the pattern moves with the document.
+            // scroll_offset_* are in document pixels -> convert to screen pixels via local_dpps.
+            let scroll_px_x = uniforms.scroll_offset_x / local_dpps.x;
+            let scroll_px_y = uniforms.scroll_offset_y / local_dpps.y;
+            let dash_pattern_x = ((frag_px.y + scroll_px_y) % (dash_length_px_y * 2.0)) < dash_length_px_y;
+            let dash_pattern_y = ((frag_px.x + scroll_px_x) % (dash_length_px_x * 2.0)) < dash_length_px_x;
+
+            // Line check in screen space.
+            // Add a tiny epsilon so we don't miss the line at specific zoom steps.
+            let hit_px_x = (0.5 * thickness_px_x) + 1e-3;
+            let hit_px_y = (0.5 * thickness_px_y) + 1e-3;
+            let on_vertical_line_raw = dist_px_x <= hit_px_x && dash_pattern_x;
+            let on_horizontal_line_raw = dist_px_y <= hit_px_y && dash_pattern_y;
+
+            // Suppress ONLY the raster lines exactly on the document origin edges (x=0, y=0).
+            // Do not create a growing margin at extreme zoom-out.
+            let dist_left = cell_x;
+            let dist_right = raster_w - cell_x;
+            let dist_top = cell_y;
+            let dist_bottom = raster_h - cell_y;
+            let nearest_v_line_doc_x = select(doc_pixel.x + dist_right, doc_pixel.x - dist_left, dist_left <= dist_right);
+            let nearest_h_line_doc_y = select(doc_pixel.y + dist_bottom, doc_pixel.y - dist_top, dist_top <= dist_bottom);
+            let suppress_left_edge = abs(nearest_v_line_doc_x) <= (hit_px_x * local_dpps.x);
+            let suppress_top_edge = abs(nearest_h_line_doc_y) <= (hit_px_y * local_dpps.y);
+            let on_vertical_line = on_vertical_line_raw && !suppress_left_edge;
+            let on_horizontal_line = on_horizontal_line_raw && !suppress_top_edge;
+
             if (on_vertical_line || on_horizontal_line) {
                 // Use "difference" blending: invert pixels so lines are always visible
                 // On dark background -> bright line, on bright background -> dark line
@@ -754,26 +869,40 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (uniforms.guide_enabled > 0.5) {
         let guide_w = uniforms.guide_pos.x;
         let guide_h = uniforms.guide_pos.y;
+        let doc_w = uniforms.texture_width;
+        let doc_h = uniforms.total_image_height;
+        let in_doc_bounds = doc_pixel.x >= 0.0 && doc_pixel.y >= 0.0 && doc_pixel.x < doc_w && doc_pixel.y < doc_h;
         
-        if (guide_w > 0.0 && guide_h > 0.0) {
-            // Use doc_pixel calculated at the beginning of fs_main
-            
-            // Create dashed pattern (4 pixels on, 4 pixels off)
-            let dash_length = 4.0;
-            let dash_pattern_x = (doc_pixel.y % (dash_length * 2.0)) < dash_length;
-            let dash_pattern_y = (doc_pixel.x % (dash_length * 2.0)) < dash_length;
+        if (guide_w > 0.0 && guide_h > 0.0 && in_doc_bounds) {
+            let local_dpps = max(vec2<f32>(1e-4), fwidth(doc_pixel));
+            let zoom_x = 1.0 / local_dpps.x;
+            let zoom_y = 1.0 / local_dpps.y;
+            let thickness_px_x = max(1.0, zoom_x);
+            let thickness_px_y = max(1.0, zoom_y);
+
+            // Create dashed pattern (4 pixels on, 4 pixels off) in screen space.
+            let term_origin_px = uniforms.terminal_rect.xy * uniforms.resolution;
+            let frag_px = in.position.xy - term_origin_px;
+            let dash_length_px_x = max(4.0, 4.0 * zoom_x);
+            let dash_length_px_y = max(4.0, 4.0 * zoom_y);
+            // Factor scrolling into the dash phase so the pattern moves with the document.
+            // scroll_offset_* are in document pixels -> convert to screen pixels via local_dpps.
+            let scroll_px_x = uniforms.scroll_offset_x / local_dpps.x;
+            let scroll_px_y = uniforms.scroll_offset_y / local_dpps.y;
+            let dash_pattern_x = ((frag_px.y + scroll_px_y) % (dash_length_px_y * 2.0)) < dash_length_px_y;
+            let dash_pattern_y = ((frag_px.x + scroll_px_x) % (dash_length_px_x * 2.0)) < dash_length_px_x;
             
             // Draw vertical line at guide_w (right edge of guide area)
-            let line_thickness = 1.0;
-            let on_right_border = abs(doc_pixel.x - guide_w) < line_thickness && 
-                                  doc_pixel.y >= 0.0 && doc_pixel.y <= guide_h &&
-                                  dash_pattern_x;
-            
-            // Draw horizontal line at guide_h (bottom edge of guide area)
-            let on_bottom_border = abs(doc_pixel.y - guide_h) < line_thickness && 
-                                   doc_pixel.x >= 0.0 && doc_pixel.x <= guide_w &&
-                                   dash_pattern_y;
-            
+            let in_y = doc_pixel.y >= 0.0 && doc_pixel.y <= guide_h;
+            let in_x = doc_pixel.x >= 0.0 && doc_pixel.x <= guide_w;
+
+            let dist_px_right = abs(doc_pixel.x - guide_w) / local_dpps.x;
+            let dist_px_bottom = abs(doc_pixel.y - guide_h) / local_dpps.y;
+            let hit_px_x = (0.5 * thickness_px_x) + 1e-3;
+            let hit_px_y = (0.5 * thickness_px_y) + 1e-3;
+            let on_right_border = dist_px_right <= hit_px_x && in_y && dash_pattern_x;
+            let on_bottom_border = dist_px_bottom <= hit_px_y && in_x && dash_pattern_y;
+
             if (on_right_border || on_bottom_border) {
                 // Use "difference" blending: invert pixels so lines are always visible
                 // On dark background -> bright line, on bright background -> dark line
@@ -868,79 +997,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Both selection_rect and selection_mask are cell-aligned, so we operate at cell granularity
     // and draw a crisp 1px border along cell edges.
     if (uniforms.selection_enabled > 0.5) {
-        let sel_left = uniforms.selection_rect.x;
-        let sel_top = uniforms.selection_rect.y;
-        let sel_right = uniforms.selection_rect.z;
-        let sel_bottom = uniforms.selection_rect.w;
-        let rect_valid = (sel_right > sel_left) && (sel_bottom > sel_top);
+        let sel = selection_cell_info(doc_pixel);
 
-        // Check if inside the current layer bounds (for animated vs solid border).
-        // If no valid layer bounds are provided, treat everything as inside.
-        let layer_valid = (layer_right > layer_left) && (layer_bottom > layer_top);
-        let in_layer = select(
-            true,
-            doc_pixel.x >= layer_left && doc_pixel.x < layer_right &&
-            doc_pixel.y >= layer_top && doc_pixel.y < layer_bottom,
-            layer_valid
-        );
-
-        let fw = max(uniforms.font_width, 1.0);
-        let fh = max(uniforms.font_height, 1.0);
-        let cx = floor(doc_pixel.x / fw);
-        let cy = floor(doc_pixel.y / fh);
-        let local_x = doc_pixel.x - cx * fw;
-        let local_y = doc_pixel.y - cy * fh;
-
-        // Cell-selected by current rectangle selection
-        let rect_cell = rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom;
-
-        // Cell-selected by selection mask
-        let mask_cell = mask_cell_selected(cx, cy);
-
-        let union_cell = rect_cell || mask_cell;
-        let union_left = (rect_valid &&
-            ((cx - 1.0 + 0.5) * fw) >= sel_left && ((cx - 1.0 + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx - 1.0, cy);
-        let union_right = (rect_valid &&
-            ((cx + 1.0 + 0.5) * fw) >= sel_left && ((cx + 1.0 + 0.5) * fw) < sel_right &&
-            ((cy + 0.5) * fh) >= sel_top && ((cy + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx + 1.0, cy);
-        let union_up = (rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy - 1.0 + 0.5) * fh) >= sel_top && ((cy - 1.0 + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx, cy - 1.0);
-        let union_down = (rect_valid &&
-            ((cx + 0.5) * fw) >= sel_left && ((cx + 0.5) * fw) < sel_right &&
-            ((cy + 1.0 + 0.5) * fh) >= sel_top && ((cy + 1.0 + 0.5) * fh) < sel_bottom) ||
-            mask_cell_selected(cx, cy + 1.0);
-
-        let adjacent = !union_cell && (union_left || union_right || union_up || union_down);
-
-        // Border: 1px along the edges where union changes.
-        let on_left = union_cell && !union_left && local_x < 1.0;
-        let on_right = union_cell && !union_right && local_x >= (fw - 1.0);
-        let on_top = union_cell && !union_up && local_y < 1.0;
-        let on_bottom = union_cell && !union_down && local_y >= (fh - 1.0);
-        let on_border = on_left || on_right || on_top || on_bottom;
-
-        if (on_border) {
+        if (sel.on_border) {
             on_selection_border = true;
-            if (!in_layer) {
+            if (!sel.in_layer) {
                 color = uniforms.selection_color.rgb;
             } else {
-                var edge_pos = 0.0;
-                if (on_left || on_right) {
-                    edge_pos = doc_pixel.y;
-                } else {
-                    edge_pos = doc_pixel.x;
-                }
-
                 // Mask-only regions get a longer pattern to distinguish them.
-                let dash_length = select(4.0, 6.0, mask_cell && !rect_cell);
-                let dash_phase = floor((edge_pos + uniforms.time * 8.0) / dash_length);
+                let dash_length = select(4.0, 6.0, sel.mask_only);
+                let dash_phase = floor((sel.edge_pos + uniforms.time * 8.0) / dash_length);
                 let is_white = (dash_phase % 2.0) == 0.0;
                 if (is_white) {
                     color = uniforms.selection_color.rgb;
@@ -948,12 +1014,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                     color = vec3<f32>(0.0, 0.0, 0.0);
                 }
             }
-        } else if (union_cell) {
-            // Interior of selection: slightly dim
+        } else if (uniforms.selection_mask_enabled > 0.5 && sel.union_cell) {
+            // For rectangle-only selections, the marching-ants border is sufficient.
+            // Keep a subtle fill only for mask selections (optional visual aid).
             color = color * 0.9;
-        } else if (adjacent) {
-            // Adjacent to selection: dim
-            color = color * 0.6;
         }
     }
 

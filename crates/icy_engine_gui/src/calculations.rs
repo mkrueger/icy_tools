@@ -64,8 +64,10 @@ pub fn compute_terminal_rect(
     let scaled_w = (term_w * scale).min(avail_w);
     let scaled_h = (term_h * scale).min(avail_h);
 
-    let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
-    let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
+    // Snap to pixel grid so the terminal's top-left is never at sub-pixel coordinates.
+    // This avoids blurry/unstable positioning when the centering delta is odd.
+    let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0).floor();
+    let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0).floor();
     let start_x = offset_x / avail_w;
     let start_y = offset_y / avail_h;
     let width_n = scaled_w / avail_w;

@@ -21,7 +21,7 @@ impl EditState {
     //
     pub fn remove_layer(&mut self, layer: usize) -> Result<()> {
         if layer >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         let op = undo_operations::RemoveLayer::new(layer);
         self.push_undo_action(Box::new(op))
@@ -29,7 +29,7 @@ impl EditState {
 
     pub fn raise_layer(&mut self, layer: usize) -> Result<()> {
         if layer + 1 >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         let op = undo_operations::RaiseLayer::new(layer);
         self.push_undo_action(Box::new(op))?;
@@ -42,7 +42,7 @@ impl EditState {
             return Ok(());
         }
         if layer >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
 
         let op = undo_operations::LowerLayer::new(layer);
@@ -53,7 +53,7 @@ impl EditState {
 
     pub fn duplicate_layer(&mut self, layer: usize) -> Result<()> {
         if layer >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         let mut new_layer = self.screen.buffer.layers[layer].clone();
         new_layer.properties.title = fl!(crate::LANGUAGE_LOADER, "layer-duplicate-name", name = new_layer.properties.title);
@@ -65,11 +65,13 @@ impl EditState {
 
     pub fn clear_layer(&mut self, layer: usize) -> Result<()> {
         if layer >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         let op = undo_operations::ClearLayer::new(layer);
         self.push_undo_action(Box::new(op))?;
-        self.screen.current_layer = layer + 1;
+        // Keep the cleared layer selected.
+        self.screen.current_layer = layer;
+        self.clamp_current_layer();
         Ok(())
     }
 
@@ -134,7 +136,7 @@ impl EditState {
             return Err(crate::EngineError::Generic("Cannot merge down base layer".to_string()));
         }
         if layer >= self.screen.buffer.layers.len() {
-            return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
+            return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         let Some(cur_layer) = self.get_cur_layer() else {
             return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));

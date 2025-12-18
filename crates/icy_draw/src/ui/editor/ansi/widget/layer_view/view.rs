@@ -312,6 +312,15 @@ impl LayerView {
         button(icon).on_press(message).padding(4).style(button::text).into()
     }
 
+    fn icon_button_opt<'a>(icon_data: &'static [u8], message: Option<LayerMessage>) -> Element<'a, LayerMessage> {
+        let icon = svg(svg::Handle::from_memory(icon_data)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
+        let mut b = button(icon).padding(4).style(button::text);
+        if let Some(msg) = message {
+            b = b.on_press(msg);
+        }
+        b.into()
+    }
+
     fn update_viewport_content_size(&self, row_count: usize) {
         let total_height = row_count as f32 * LAYER_ROW_HEIGHT;
         let mut viewport = self.viewport.borrow_mut();
@@ -616,9 +625,9 @@ impl LayerView {
             let mut screen_guard = screen.lock();
             let state: &mut EditState = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
             let buffer = state.get_buffer();
-
-            let current = state.get_current_layer().unwrap_or(0);
             let layer_count = buffer.layers.len();
+
+            let current = if layer_count > 0 { state.get_current_layer().unwrap_or(0) } else { 0 };
             let buffer_version = buffer.version();
 
             let rows: Vec<LayerRowInfo> = buffer
@@ -720,9 +729,10 @@ impl LayerView {
 
         // Button bar
         let add_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::Add);
-        let move_up_btn = Self::icon_button(MOVE_UP_SVG, LayerMessage::MoveUp(current_layer));
-        let move_down_btn = Self::icon_button(MOVE_DOWN_SVG, LayerMessage::MoveDown(current_layer));
-        let delete_btn = Self::icon_button(DELETE_SVG, LayerMessage::Remove(current_layer));
+        let has_layers = layer_count > 0;
+        let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
+        let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
+        let delete_btn = Self::icon_button_opt(DELETE_SVG, has_layers.then(|| LayerMessage::Remove(current_layer)));
 
         let button_bar = container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
             .padding([2, 0])
@@ -738,7 +748,11 @@ impl LayerView {
         let content = column![list_container, button_bar];
 
         // Wrap with context menu (for current selection)
-        ContextMenu::new(content, move || Self::build_context_menu(current_layer, layer_count)).into()
+        if layer_count > 0 {
+            ContextMenu::new(content, move || Self::build_context_menu(current_layer, layer_count)).into()
+        } else {
+            content.into()
+        }
     }
 }
 
