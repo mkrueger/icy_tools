@@ -31,6 +31,7 @@ use iced::{
 use iced_aw::ContextMenu;
 use icy_engine::{BitFont, Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
+use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::DoubleClickDetector;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::{Viewport, wrap_with_scrollbars};
@@ -708,6 +709,7 @@ impl LayerView {
             preview_border_width: 1.0,
             preview_radius: 2.0,
             preview_atlas: self.preview_atlas.clone(),
+            checkerboard_colors: CheckerboardColors::default(),
         })
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1270,6 +1272,12 @@ struct LayerListBackgroundUniforms {
     preview_style: [f32; 4],
 
     bg_color: [f32; 4],
+
+    // Checkerboard colors for transparency (from icy_engine_gui::CheckerboardColors)
+    checker_color1: [f32; 4],
+    checker_color2: [f32; 4],
+    // x=cell_size, y=enabled, z=unused, w=unused
+    checker_params: [f32; 4],
 }
 
 unsafe impl bytemuck::Pod for LayerListBackgroundUniforms {}
@@ -1288,6 +1296,7 @@ struct LayerListBackgroundProgram {
     preview_border_width: f32,
     preview_radius: f32,
     preview_atlas: Arc<Mutex<PreviewAtlasState>>,
+    checkerboard_colors: CheckerboardColors,
 }
 
 impl iced::widget::shader::Program<LayerMessage> for LayerListBackgroundProgram {
@@ -1309,6 +1318,7 @@ impl iced::widget::shader::Program<LayerMessage> for LayerListBackgroundProgram 
             preview_radius: self.preview_radius,
             uniform_offset_bytes: Arc::new(AtomicU32::new(0)),
             preview_atlas: self.preview_atlas.clone(),
+            checkerboard_colors: self.checkerboard_colors.clone(),
         }
     }
 
@@ -1341,6 +1351,7 @@ struct LayerListBackgroundPrimitive {
     preview_radius: f32,
     uniform_offset_bytes: Arc<AtomicU32>,
     preview_atlas: Arc<Mutex<PreviewAtlasState>>,
+    checkerboard_colors: CheckerboardColors,
 }
 
 impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
@@ -1426,6 +1437,9 @@ impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
             ],
             preview_style: [self.preview_border_width * scale, self.preview_radius * scale, 0.0, 0.0],
             bg_color: [self.bg_color.r, self.bg_color.g, self.bg_color.b, self.bg_color.a],
+            checker_color1: self.checkerboard_colors.color1_rgba(),
+            checker_color2: self.checkerboard_colors.color2_rgba(),
+            checker_params: [self.checkerboard_colors.cell_size / 2.0, 1.0, 0.0, 0.0],
         };
 
         let slot = pipeline.next_uniform.fetch_add(1, Ordering::Relaxed) % pipeline.uniform_capacity;

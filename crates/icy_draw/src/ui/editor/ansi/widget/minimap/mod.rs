@@ -8,7 +8,7 @@ use iced::widget::shader;
 use iced::{Element, Length, Size, Task};
 use icy_engine::Screen;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
-use icy_engine_gui::{SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
+use icy_engine_gui::{CheckerboardColors, SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use parking_lot::Mutex;
 
 use minimap_shader::MinimapProgram;
@@ -72,6 +72,8 @@ pub struct MinimapView {
     shared_state: Arc<Mutex<SharedMinimapState>>,
     /// Current scroll position (0.0 = top, 1.0 = fully scrolled down)
     scroll_position: RefCell<f32>,
+    /// Checkerboard colors for transparency
+    checkerboard_colors: CheckerboardColors,
 }
 
 impl Default for MinimapView {
@@ -86,7 +88,13 @@ impl MinimapView {
             instance_id: generate_minimap_id(),
             shared_state: Arc::new(Mutex::new(SharedMinimapState::default())),
             scroll_position: RefCell::new(0.0),
+            checkerboard_colors: CheckerboardColors::default(),
         }
+    }
+
+    /// Set the checkerboard colors for transparency rendering
+    pub fn set_checkerboard_colors(&mut self, colors: CheckerboardColors) {
+        self.checkerboard_colors = colors;
     }
 
     pub fn available_size(&self) -> (f32, f32) {
@@ -429,6 +437,7 @@ impl MinimapView {
             full_content_height: 1.0,
             first_slice_start_y: 0.0,
             shared_state: Arc::clone(&self.shared_state),
+            checkerboard_colors: self.checkerboard_colors.clone(),
         };
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()
@@ -460,6 +469,7 @@ impl MinimapView {
             full_content_height: full_content_size.1 as f32,
             first_slice_start_y,
             shared_state: Arc::clone(&self.shared_state),
+            checkerboard_colors: self.checkerboard_colors.clone(),
         };
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()

@@ -5,11 +5,10 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData, get_scale_factor, is_alt_pressed,
-    is_ctrl_pressed, is_shift_pressed,
+    CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData, compute_viewport_auto,
+    compute_viewport_manual, get_scale_factor, is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
     tile_cache::MAX_TEXTURE_SLICES,
-    compute_viewport_auto, compute_viewport_manual,
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse, window};
@@ -222,8 +221,16 @@ impl<'a> CRTShaderProgram<'a> {
             if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VIEWPORT").is_ok() && viewport_changed {
                 let max_scroll_x = (content_width - visible_width).max(0.0);
                 let max_scroll_y = (content_height - visible_height).max(0.0);
-                let ratio_x = if max_scroll_x > 0.0 { (scroll_offset_x / max_scroll_x).clamp(0.0, 1.0) } else { 0.0 };
-                let ratio_y = if max_scroll_y > 0.0 { (scroll_offset_y / max_scroll_y).clamp(0.0, 1.0) } else { 0.0 };
+                let ratio_x = if max_scroll_x > 0.0 {
+                    (scroll_offset_x / max_scroll_x).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let ratio_y = if max_scroll_y > 0.0 {
+                    (scroll_offset_y / max_scroll_y).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 eprintln!(
                     "[viewport] bounds=({:.1},{:.1}) res=({:.1},{:.1}) orig_res_h={:.1} vp_visible=({:.1},{:.1}) vp_zoom_before={:.3} -> zoom_eff={:.3} vis=({:.1},{:.1}) content=({:.1},{:.1}) scroll_req=({:.1},{:.1}) scroll_px=({:.1},{:.1}) max_scroll=({:.1},{:.1}) ratio=({:.3},{:.3}) vp_sb_before=({:.3},{:.3}) mode={:?} int_scale={} ",
                     bounds.width,
@@ -317,32 +324,33 @@ impl<'a> CRTShaderProgram<'a> {
 
                 if should_draw && font_w > 0 && font_h > 0 {
                     let caret_cell_pos = caret.position();
-                    let scroll_x = scroll_offset_x as i32;
-                    let scroll_y_px = scroll_offset_y as i32;
+                    let scan_mult = if scan_lines { 2.0 } else { 1.0 };
 
                     // Convert cell position to pixel position (viewport-relative)
+                    // IMPORTANT: Use f32 for scroll offsets to avoid truncation errors
+                    // that cause the caret to drift when scrolled with fractional offsets.
                     let (px_x, px_y) = if caret.use_pixel_positioning {
-                        let scan_mult = if scan_lines { 2 } else { 1 };
-                        (caret_cell_pos.x - scroll_x, caret_cell_pos.y * scan_mult - scroll_y_px)
+                        (caret_cell_pos.x as f32 - scroll_offset_x, caret_cell_pos.y as f32 * scan_mult - scroll_offset_y)
                     } else {
-                        let scan_mult = if scan_lines { 2 } else { 1 };
                         (
-                            caret_cell_pos.x * font_w as i32 - scroll_x,
-                            caret_cell_pos.y * font_h as i32 * scan_mult - scroll_y_px,
+                            caret_cell_pos.x as f32 * font_w as f32 - scroll_offset_x,
+                            caret_cell_pos.y as f32 * font_h as f32 * scan_mult - scroll_offset_y,
                         )
                     };
 
-                    let actual_font_h = if scan_lines { font_h * 2 } else { font_h };
+                    let actual_font_h = font_h as f32 * scan_mult;
 
                     // Only draw if caret is in visible area
                     // Convert to normalized UV coordinates (0-1) so it works with any zoom level
-                    let tex_w = texture_width as f32;
+                    // IMPORTANT: Normalize by visible_width/height, NOT texture_width!
+                    // The shader UV space maps 0-1 over the visible area, not the full texture.
+                    let vis_w = visible_width;
                     let vis_h = visible_height;
 
-                    if px_x >= 0 && px_y >= 0 && (px_x as f32) < tex_w && (px_y as f32) < vis_h {
+                    if px_x >= 0.0 && px_y >= 0.0 && px_x < vis_w && px_y < vis_h {
                         // Normalize to 0-1 UV coordinates
-                        caret_pos = [px_x as f32 / tex_w, px_y as f32 / vis_h];
-                        caret_size = [font_w as f32 / tex_w, actual_font_h as f32 / vis_h];
+                        caret_pos = [px_x / vis_w, px_y / vis_h];
+                        caret_size = [font_w as f32 / vis_w, actual_font_h / vis_h];
                         caret_visible = true;
                         caret_mode = match caret.shape {
                             CaretShape::Bar => 0,

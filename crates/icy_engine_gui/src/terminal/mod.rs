@@ -144,8 +144,16 @@ impl Terminal {
         vp.sync_scrollbar_position();
 
         if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VIEWPORT").is_ok() {
-            let ratio_x = if max_scroll_x > 0.0 { (vp.scroll_x / max_scroll_x).clamp(0.0, 1.0) } else { 0.0 };
-            let ratio_y = if max_scroll_y > 0.0 { (vp.scroll_y / max_scroll_y).clamp(0.0, 1.0) } else { 0.0 };
+            let ratio_x = if max_scroll_x > 0.0 {
+                (vp.scroll_x / max_scroll_x).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let ratio_y = if max_scroll_y > 0.0 {
+                (vp.scroll_y / max_scroll_y).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             eprintln!(
                 "[scrollbar_sync] scroll=({:.1},{:.1}) target=({:.1},{:.1}) max=({:.1},{:.1}) ratio=({:.3},{:.3}) vp_sb=({:.3},{:.3}) term_sb=({:.3},{:.3}) zoom={:.3} visible=({:.1},{:.1}) content=({:.1},{:.1})",
                 vp.scroll_x,

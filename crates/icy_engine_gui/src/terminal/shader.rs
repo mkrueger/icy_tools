@@ -175,6 +175,14 @@ struct CRTUniforms {
     // Terminal area within the full viewport (for rendering selection outside document bounds)
     /// Terminal rect in normalized UV coordinates (start_x, start_y, width, height)
     terminal_rect: [f32; 4],
+
+    // Checkerboard background for transparency
+    /// First checkerboard color (RGBA)
+    checker_color1: [f32; 4],
+    /// Second checkerboard color (RGBA)
+    checker_color2: [f32; 4],
+    /// Checkerboard cell size and enabled flag (cell_size, enabled, 0, 0)
+    checker_params: [f32; 4],
 }
 
 #[cfg(test)]
@@ -185,7 +193,7 @@ mod tests {
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
-        assert_eq!(std::mem::size_of::<CRTUniforms>(), 560);
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 608); // 560 + 48 (3 new vec4s for checkerboard)
     }
 }
 
@@ -1489,6 +1497,11 @@ impl shader::Primitive for TerminalShader {
             },
 
             terminal_rect,
+
+            // Checkerboard background for transparency
+            checker_color1: self.monitor_settings.checkerboard_colors.color1_rgba(),
+            checker_color2: self.monitor_settings.checkerboard_colors.color2_rgba(),
+            checker_params: [self.monitor_settings.checkerboard_colors.cell_size, 1.0, 0.0, 0.0],
         };
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniform_data as *const CRTUniforms as *const u8, std::mem::size_of::<CRTUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);

@@ -117,6 +117,11 @@ struct Uniforms {
 
     // Terminal area within the full viewport (for rendering selection outside document bounds)
     terminal_rect: vec4<f32>,    // (start_x, start_y, width, height) in normalized UV coordinates
+
+    // Checkerboard background for transparency
+    checker_color1: vec4<f32>,   // First checkerboard color (RGBA)
+    checker_color2: vec4<f32>,   // Second checkerboard color (RGBA)
+    checker_params: vec4<f32>,   // (cell_size, enabled, 0, 0)
 }
 
 struct MonitorColor {
@@ -181,6 +186,32 @@ fn get_first_slice_start_y() -> f32 {
     return uniforms.slice_heights[0][3];
 }
 
+// Get background color - either solid or checkerboard pattern
+// Takes UV coordinates (0-1) over the visible viewport
+fn get_background_color_uv(uv: vec2<f32>) -> vec4<f32> {
+    if uniforms.checker_params.y > 0.5 {
+        // Convert UV to screen pixels for checkerboard
+        let screen_x = uv.x * uniforms.visible_width;
+        let screen_y = uv.y * uniforms.visible_height;
+        let cell_size = uniforms.checker_params.x;
+        let cx = u32(floor(screen_x / cell_size));
+        let cy = u32(floor(screen_y / cell_size));
+        if ((cx + cy) & 1u) == 0u {
+            return uniforms.checker_color1;
+        } else {
+            return uniforms.checker_color2;
+        }
+    } else {
+        return uniforms.background_color;
+    }
+}
+
+fn get_canvas_background() -> vec4<f32> {
+    // Outside the terminal (letterboxing, curved corners, unrendered areas)
+    // we always use the solid background color.
+    return uniforms.background_color;
+}
+
 fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
     if index == 0 { return textureSample(t_slice0, terminal_sampler, uv); }
     else if index == 1 { return textureSample(t_slice1, terminal_sampler, uv); }
@@ -221,7 +252,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     
     // Check if we're outside the texture in X
     if tex_uv_x < 0.0 || tex_uv_x > 1.0 {
-        return uniforms.background_color;
+        return get_canvas_background();
     }
     
     // Y-axis: uv.y goes 0-1 over the visible viewport
@@ -240,7 +271,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     
     // Check if we're outside the document
     if doc_pixel_y < 0.0 || doc_pixel_y >= total_height {
-        return uniforms.background_color;
+        return get_canvas_background();
     }
     
     // first_slice_start_y tells us where our sliding window starts in document space
@@ -251,7 +282,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     
     // If outside our rendered window, show background
     if window_y < 0.0 {
-        return uniforms.background_color;
+        return get_canvas_background();
     }
     
     // Find which slice contains this Y coordinate
@@ -274,7 +305,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     }
     
     // Fallback - outside rendered area
-    return uniforms.background_color;
+    return get_canvas_background();
 }
 
 // Sample for bloom - needs to handle slicing too
@@ -621,7 +652,7 @@ fn apply_bloom(uv: vec2<f32>) -> vec3<f32> {
 // Render pixels outside the terminal area (but inside the widget)
 // Only draws selection rectangle borders - no terminal content
 fn render_outside_terminal(doc_pixel: vec2<f32>, viewport_uv: vec2<f32>) -> vec4<f32> {
-    var color = uniforms.background_color;
+    var color = get_canvas_background();
     
     _ = viewport_uv;
 
@@ -703,7 +734,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // If UV is outside 0-1 range after curvature (outside curved screen)
     if (distorted_uv.x < 0.0 || distorted_uv.y < 0.0 || distorted_uv.x > 1.0 || distorted_uv.y > 1.0) {
-        return uniforms.background_color;
+        return get_canvas_background();
     }
 
     // Calculate document pixel position for INSIDE terminal (using distorted_uv)
@@ -713,7 +744,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample from sliced textures with scroll offset handling
     let tex_color = sample_sliced_texture(distorted_uv);
-    var color = adjust_color(tex_color.rgb);
+    
+    // Blend texture with checkerboard background for transparency
+    let bg_color = get_background_color_uv(distorted_uv);
+    let blended_rgb = mix(bg_color.rgb, tex_color.rgb, tex_color.a);
+    var color = adjust_color(blended_rgb);
 
     // Blend reference image (if enabled)
     // Uses doc_pixel calculated at the beginning of fs_main
@@ -1069,11 +1104,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Final clamp before monitor type conversion
     color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
 
+    // IMPORTANT: We always output opaque alpha here.
+    // The terminal texture may contain transparent pixels (tex_color.a = 0) which we
+    // blend against a checkerboard background in RGB. If we were to output
+    // alpha=tex_color.a, the checkerboard would be fully transparent too and disappear
+    // due to the pipeline's ALPHA_BLENDING.
     if (uniforms.monitor_type < 0.5) {
-        return vec4<f32>(color, tex_color.a);
+        return vec4<f32>(color, 1.0);
     } else if (uniforms.monitor_type < 1.5) {
         let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
-        return vec4<f32>(vec3<f32>(gray), tex_color.a);
+        return vec4<f32>(vec3<f32>(gray), 1.0);
     } else {
         let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
         let tint = monitor_color.color.rgb;
@@ -1082,6 +1122,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         var mono = gray * norm_tint * 1.5;
         mono = mono + norm_tint * 0.05;
         mono = mono / (mono + vec3<f32>(1.0)) * 2.0;
-        return vec4<f32>(clamp(mono, vec3<f32>(0.0), vec3<f32>(1.0)), tex_color.a);
+        return vec4<f32>(clamp(mono, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
     }
 }

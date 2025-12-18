@@ -310,7 +310,9 @@ pub struct MonitorSettings {
     pub gamma: f32,
     pub saturation: f32,
 
-    pub background_effect: BackgroundEffect,
+    /// Colors for the transparency checkerboard pattern
+    #[serde(default)]
+    pub checkerboard_colors: CheckerboardColors,
 
     /// Use integer scaling (1x, 2x, 3x) for sharp bitmap fonts
     #[serde(alias = "use_pixel_perfect_scaling")]
@@ -634,10 +636,46 @@ impl EditorMarkers {
     }
 }
 
+/// Configurable colors for the transparency checkerboard pattern.
+/// Used in Terminal, Minimap, and LayerView for rendering transparent areas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum BackgroundEffect {
-    None,
-    Checkers,
+pub struct CheckerboardColors {
+    /// First color of the checkerboard (typically lighter)
+    pub color1: Color,
+    /// Second color of the checkerboard (typically darker)
+    pub color2: Color,
+    /// Size of each checker cell in pixels
+    pub cell_size: f32,
+}
+
+impl Default for CheckerboardColors {
+    fn default() -> Self {
+        // Classic Photoshop-style gray checkerboard
+        Self {
+            color1: Color::new(0x80, 0x80, 0x80), // Light gray
+            color2: Color::new(0x60, 0x60, 0x60), // Dark gray
+            cell_size: 8.0,
+        }
+    }
+}
+
+impl CheckerboardColors {
+    /// Create a new checkerboard with custom colors
+    pub fn new(color1: Color, color2: Color, cell_size: f32) -> Self {
+        Self { color1, color2, cell_size }
+    }
+
+    /// Convert color1 to RGBA float array for shaders
+    pub fn color1_rgba(&self) -> [f32; 4] {
+        let (r, g, b) = self.color1.rgb();
+        [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+    }
+
+    /// Convert color2 to RGBA float array for shaders
+    pub fn color2_rgba(&self) -> [f32; 4] {
+        let (r, g, b) = self.color2.rgb();
+        [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+    }
 }
 
 unsafe impl Send for MonitorSettings {}
@@ -665,7 +703,7 @@ impl MonitorSettings {
             saturation: 100.0, // 100% = 1.0 multiplier (full saturation)
 
             // Effects
-            background_effect: BackgroundEffect::None,
+            checkerboard_colors: CheckerboardColors::default(),
 
             // Scaling - auto-fit with integer scaling for sharp fonts
             use_integer_scaling: true,

@@ -41,6 +41,12 @@ struct Uniforms {
 
     // Background color from theme
     bg_color: vec4<f32>,
+
+    // Checkerboard colors for transparency (from icy_engine_gui::CheckerboardColors)
+    checker_color1: vec4<f32>,
+    checker_color2: vec4<f32>,
+    // x=cell_size, y=enabled, z=unused, w=unused
+    checker_params: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -212,13 +218,35 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let inner_mask = smoothstep(0.6, -0.6, inner_sdf);
         let border_mask = clamp(outer_mask - inner_mask, 0.0, 1.0);
 
-        // Draw preview background inside rounded rect
-        let base = uniforms.preview_bg_color.rgb;
-        let alt = base * 0.85;
-        let check_size = 8.0;
-        let cx = u32(floor((pixel.x - px0) / check_size));
-        let cy = u32(floor((pixel.y - py0) / check_size));
-        let checker = select(base, alt, ((cx + cy) & 1u) == 1u);
+        // Draw preview background inside rounded rect with checkerboard pattern
+        // Use central checkerboard colors from MonitorSettings if enabled
+        // The preview is typically scaled down; scale the checker cell size accordingly
+        // so it doesn't look overly large compared to the minimap/terminal.
+        let atlas_tile_w = max(uniforms.atlas_size.z, 1.0);
+        let atlas_tile_h = max(uniforms.atlas_size.w, 1.0);
+        let preview_scale = min(pw / atlas_tile_w, ph / atlas_tile_h);
+        let scaled_cell = max(1.0, uniforms.checker_params.x * preview_scale);
+
+        var checker: vec3<f32>;
+        if uniforms.checker_params.y > 0.5 {
+            // Checkerboard enabled - use central colors
+            let check_size = scaled_cell;
+            let cx = u32(floor((pixel.x - px0) / check_size));
+            let cy = u32(floor((pixel.y - py0) / check_size));
+            if ((cx + cy) & 1u) == 1u {
+                checker = uniforms.checker_color2.rgb;
+            } else {
+                checker = uniforms.checker_color1.rgb;
+            }
+        } else {
+            // Fallback to old behavior with preview_bg_color
+            let base = uniforms.preview_bg_color.rgb;
+            let alt = base * 0.85;
+            let check_size = max(1.0, 8.0 * preview_scale);
+            let cx = u32(floor((pixel.x - px0) / check_size));
+            let cy = u32(floor((pixel.y - py0) / check_size));
+            checker = select(base, alt, ((cx + cy) & 1u) == 1u);
+        }
         rgb = mix(rgb, checker, inner_mask * uniforms.preview_bg_color.a);
         // Draw border
         rgb = mix(rgb, uniforms.preview_border_color.rgb, border_mask * uniforms.preview_border_color.a);

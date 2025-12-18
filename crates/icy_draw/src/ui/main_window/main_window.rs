@@ -1336,6 +1336,21 @@ impl MainWindow {
         }
     }
 
+    /// Check if this window needs animation updates
+    pub fn needs_animation(&self) -> bool {
+        // Check dialogs first
+        if self.dialogs.needs_animation() {
+            return true;
+        }
+        // Then check editor modes
+        match &self.mode_state {
+            ModeState::Ansi(editor) => editor.needs_animation(),
+            ModeState::BitFont(editor) => editor.needs_animation(),
+            ModeState::CharFont(editor) => editor.needs_animation(),
+            ModeState::Animation(editor) => editor.needs_animation(),
+        }
+    }
+
     pub fn view(&self) -> Element<'_, Message> {
         // Build the UI based on current mode
         let options = self.options.clone();

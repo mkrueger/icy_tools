@@ -40,8 +40,6 @@ pub enum MonitorSettingsMessage {
     NoiseLevelChanged(f32),
     SyncWobbleChanged(f32),
 
-    BackgroundEffectChanged(crate::BackgroundEffect),
-
     Noop,
 }
 
@@ -82,7 +80,6 @@ pub fn update_monitor_settings(settings: &mut MonitorSettings, message: MonitorS
         MonitorSettingsMessage::NoiseLevelChanged(v) => settings.noise_level = v,
         MonitorSettingsMessage::SyncWobbleChanged(v) => settings.sync_wobble = v,
 
-        MonitorSettingsMessage::BackgroundEffectChanged(be) => settings.background_effect = be,
         MonitorSettingsMessage::Noop => { /* Do nothing */ }
     }
 }

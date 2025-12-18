@@ -115,10 +115,7 @@ fn viewport_80x25_at_400_percent_zoom_has_correct_visible_width_and_max_scroll()
     let visible_w = 1000.0;
     let visible_h = 600.0;
 
-    let mut vp = Viewport::new(
-        Size::new(visible_w as i32, visible_h as i32),
-        Size::new(res_w as i32, res_h as i32),
-    );
+    let mut vp = Viewport::new(Size::new(visible_w as i32, visible_h as i32), Size::new(res_w as i32, res_h as i32));
     vp.zoom = 4.0;
 
     // At 400%, we see a quarter of the content pixels per axis.

@@ -10,6 +10,7 @@ use iced::mouse;
 use iced::widget::shader;
 use parking_lot::Mutex;
 
+use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
 
 use super::{MinimapMessage, SharedMinimapState, TextureSliceData};
@@ -36,6 +37,12 @@ struct MinimapUniforms {
     total_image_height: f32,
     /// Heights of each slice in pixels (packed as 3 vec4s = 12 floats for 10 slices + 2 padding)
     slice_heights: [[f32; 4]; 3],
+    /// First checkerboard color (RGBA)
+    checker_color1: [f32; 4],
+    /// Second checkerboard color (RGBA)
+    checker_color2: [f32; 4],
+    /// Checkerboard params: x=cell_size, y=enabled, z=unused, w=unused
+    checker_params: [f32; 4],
 }
 
 /// Viewport information for the minimap overlay
@@ -195,6 +202,8 @@ pub struct MinimapProgram {
     pub first_slice_start_y: f32,
     /// Shared state for communicating bounds back to MinimapView
     pub shared_state: Arc<Mutex<SharedMinimapState>>,
+    /// Checkerboard colors for transparency (from MonitorSettings)
+    pub checkerboard_colors: CheckerboardColors,
 }
 
 /// State for tracking mouse dragging in the minimap
@@ -257,10 +266,18 @@ fn normalized_position_from_minimap(
 
     // Pointer can be outside when drag-out autoscroll is active; clamp to edge.
     let local_x = relative_x.clamp(0.0, bounds_w);
-    let local_y = relative_y.clamp(0.0, bounds_h);
 
-    // Position in screen space (0-1 of visible area)
-    let screen_y = local_y / bounds_h;
+    // IMPORTANT: When the scaled content height is smaller than the available height,
+    // the minimap shader letterboxes (unused area below content). Click mapping must
+    // normalize Y over the *content* height, not the full bounds height.
+    // This matches the WGSL logic:
+    //   used_height_ratio = min(scaled_h / bounds_h, 1)
+    //   content_uv_y = screen_uv.y / used_height_ratio
+    let content_h = scaled_h.min(bounds_h).max(1.0);
+    let local_y = relative_y.clamp(0.0, bounds_h).clamp(0.0, content_h);
+
+    // Position in screen space (0-1 of visible content area)
+    let screen_y = local_y / content_h;
 
     // Convert to texture UV space by mapping through visible range
     // texture_uv is 0-1 over the rendered window texture
@@ -272,6 +289,74 @@ fn normalized_position_from_minimap(
     let norm_x = (local_x / bounds_w).clamp(0.0, 1.0);
 
     Some((norm_x, norm_y))
+}
+
+#[cfg(test)]
+mod click_viewport_mapping_tests {
+    use super::normalized_position_from_minimap;
+
+    fn assert_approx(a: f32, b: f32) {
+        let eps = 1e-6;
+        assert!((a - b).abs() <= eps, "{a} != {b}");
+    }
+
+    #[test]
+    fn click_y_maps_over_content_height_when_letterboxed() {
+        // scaled_h < bounds_h (content is letterboxed vertically)
+        // bounds: 100px high, content renders to 50px high -> bottom of content is at y=50.
+        let bounds_w = 100.0;
+        let bounds_h = 100.0;
+        let texture_w = 200.0; // scale = 0.5
+        let window_h = 100.0;
+        let first_slice_start_y = 0.0;
+        let full_h = 100.0;
+        let local_scroll_offset = 0.0;
+
+        // Mid content: y=25 => 0.5
+        let (_x, y_mid) = normalized_position_from_minimap(
+            50.0,
+            25.0,
+            bounds_w,
+            bounds_h,
+            texture_w,
+            window_h,
+            local_scroll_offset,
+            first_slice_start_y,
+            full_h,
+        )
+        .unwrap();
+        assert_approx(y_mid, 0.5);
+
+        // Bottom of content: y=50 => 1.0 (not 0.5)
+        let (_x, y_bottom_of_content) = normalized_position_from_minimap(
+            50.0,
+            50.0,
+            bounds_w,
+            bounds_h,
+            texture_w,
+            window_h,
+            local_scroll_offset,
+            first_slice_start_y,
+            full_h,
+        )
+        .unwrap();
+        assert_approx(y_bottom_of_content, 1.0);
+
+        // Click in letterbox area clamps to bottom of content
+        let (_x, y_letterbox) = normalized_position_from_minimap(
+            50.0,
+            90.0,
+            bounds_w,
+            bounds_h,
+            texture_w,
+            window_h,
+            local_scroll_offset,
+            first_slice_start_y,
+            full_h,
+        )
+        .unwrap();
+        assert_approx(y_letterbox, 1.0);
+    }
 }
 
 impl shader::Program<MinimapMessage> for MinimapProgram {
@@ -297,6 +382,7 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             available_height: bounds.height,
             full_content_height: self.full_content_height,
             first_slice_start_y: self.first_slice_start_y,
+            checkerboard_colors: self.checkerboard_colors.clone(),
         }
     }
 
@@ -377,6 +463,8 @@ pub struct MinimapPrimitive {
     pub full_content_height: f32,
     /// Where the first slice starts in document Y coordinates
     pub first_slice_start_y: f32,
+    /// Checkerboard colors for transparency (from MonitorSettings)
+    pub checkerboard_colors: CheckerboardColors,
 }
 
 impl MinimapPrimitive {
@@ -767,6 +855,9 @@ impl shader::Primitive for MinimapPrimitive {
             num_slices: num_slices as f32,
             total_image_height: tex_h as f32,
             slice_heights: packed_heights,
+            checker_color1: self.checkerboard_colors.color1_rgba(),
+            checker_color2: self.checkerboard_colors.color2_rgba(),
+            checker_params: [self.checkerboard_colors.cell_size, 1.0, 0.0, 0.0],
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniforms as *const MinimapUniforms as *const u8, std::mem::size_of::<MinimapUniforms>()) };
