@@ -38,6 +38,10 @@ fn clamp_scroll_limits_scroll_and_targets() {
     assert_approx(vp.scroll_y, vp.max_scroll_y(), 1e-6);
     assert_approx(vp.target_scroll_x, vp.max_scroll_x(), 1e-6);
     assert_approx(vp.target_scroll_y, 0.0, 1e-6);
+
+    // clamp_scroll keeps viewport scrollbar ratios in sync.
+    assert_approx(vp.scrollbar.scroll_position_x, 0.0, 1e-6);
+    assert_approx(vp.scrollbar.scroll_position, 1.0, 1e-6);
 }
 
 #[test]
@@ -96,4 +100,32 @@ fn visible_region_uses_ceil_for_fractional_visible_content() {
     assert_eq!(r.top(), 20);
     assert_eq!(r.size.width, 67);
     assert_eq!(r.size.height, 67);
+}
+
+#[test]
+fn viewport_80x25_at_400_percent_zoom_has_correct_visible_width_and_max_scroll() {
+    // Regression: At very high zoom (400%), the horizontal scrollbar/thumb must reflect
+    // the *effective* visible area in content pixels.
+    //
+    // This test uses a representative 80x25 terminal resolution expressed in pixels.
+    let res_w = 80.0 * 10.0;
+    let res_h = 25.0 * 20.0;
+
+    // Visible widget area (e.g. canvas region in the UI)
+    let visible_w = 1000.0;
+    let visible_h = 600.0;
+
+    let mut vp = Viewport::new(
+        Size::new(visible_w as i32, visible_h as i32),
+        Size::new(res_w as i32, res_h as i32),
+    );
+    vp.zoom = 4.0;
+
+    // At 400%, we see a quarter of the content pixels per axis.
+    assert_approx(vp.visible_content_width(), visible_w / 4.0, 1e-6);
+    assert_approx(vp.visible_content_height(), visible_h / 4.0, 1e-6);
+
+    // Horizontal scroll range should be content_width - visible_content_width.
+    assert_approx(vp.max_scroll_x(), res_w - (visible_w / 4.0), 1e-6);
+    assert!(vp.is_scrollable_x());
 }

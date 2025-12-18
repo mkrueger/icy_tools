@@ -160,6 +160,9 @@ impl Viewport {
         self.scroll_y = self.scroll_y.clamp(0.0, self.max_scroll_y());
         self.target_scroll_x = self.target_scroll_x.clamp(0.0, self.max_scroll_x());
         self.target_scroll_y = self.target_scroll_y.clamp(0.0, self.max_scroll_y());
+
+        // Keep scrollbar thumb positions consistent with scroll values.
+        self.sync_scrollbar_position();
     }
 
     /// Clamp scroll values with explicit visible size (in screen pixels)

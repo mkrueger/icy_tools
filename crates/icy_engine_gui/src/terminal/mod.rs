@@ -138,6 +138,36 @@ impl Terminal {
         vp.target_scroll_x = vp.target_scroll_x.clamp(0.0, max_scroll_x);
         vp.target_scroll_y = vp.target_scroll_y.clamp(0.0, max_scroll_y);
 
+        // IMPORTANT: The scrollbar overlays read `vp.scrollbar.*` (the Viewport-owned
+        // scrollbar state). If we clamp scroll positions here, we must also sync
+        // the viewport scrollbar ratios so the thumb ends up at the correct position.
+        vp.sync_scrollbar_position();
+
+        if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VIEWPORT").is_ok() {
+            let ratio_x = if max_scroll_x > 0.0 { (vp.scroll_x / max_scroll_x).clamp(0.0, 1.0) } else { 0.0 };
+            let ratio_y = if max_scroll_y > 0.0 { (vp.scroll_y / max_scroll_y).clamp(0.0, 1.0) } else { 0.0 };
+            eprintln!(
+                "[scrollbar_sync] scroll=({:.1},{:.1}) target=({:.1},{:.1}) max=({:.1},{:.1}) ratio=({:.3},{:.3}) vp_sb=({:.3},{:.3}) term_sb=({:.3},{:.3}) zoom={:.3} visible=({:.1},{:.1}) content=({:.1},{:.1})",
+                vp.scroll_x,
+                vp.scroll_y,
+                vp.target_scroll_x,
+                vp.target_scroll_y,
+                max_scroll_x,
+                max_scroll_y,
+                ratio_x,
+                ratio_y,
+                vp.scrollbar.scroll_position_x,
+                vp.scrollbar.scroll_position,
+                self.scrollbar.scroll_position_x,
+                self.scrollbar.scroll_position,
+                vp.zoom,
+                vp.visible_width,
+                vp.visible_height,
+                vp.content_width,
+                vp.content_height
+            );
+        }
+
         // Vertical scrollbar
         if max_scroll_y > 0.0 {
             let scroll_ratio = vp.scroll_y / max_scroll_y;

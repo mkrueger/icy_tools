@@ -9,6 +9,7 @@ use crate::{
     is_ctrl_pressed, is_shift_pressed,
     shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
     tile_cache::MAX_TEXTURE_SLICES,
+    compute_viewport_auto, compute_viewport_manual,
 };
 use iced::widget::shader;
 use iced::{Rectangle, mouse, window};
@@ -89,6 +90,7 @@ impl<'a> CRTShaderProgram<'a> {
         let texture_width: u32;
         let blink_on: bool;
         let char_blink_supported: bool;
+        let zoom: f32;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -131,8 +133,33 @@ impl<'a> CRTShaderProgram<'a> {
             char_blink_supported = screen.ice_mode().has_blink();
             blink_on = if char_blink_supported { state.character_blink.is_on() } else { false };
 
-            // Get viewport info
-            let vp = self.term.viewport.read();
+            // Snapshot viewport inputs (keep lock scopes small and borrow-check friendly).
+            let (
+                content_width,
+                content_height,
+                requested_scroll_x,
+                requested_scroll_y,
+                vp_visible_w,
+                vp_visible_h,
+                vp_zoom_before,
+                vp_sb_x,
+                vp_sb_y,
+                viewport_changed,
+            ) = {
+                let vp = self.term.viewport.read();
+                (
+                    vp.content_width,
+                    vp.content_height,
+                    vp.scroll_x,
+                    vp.scroll_y,
+                    vp.visible_width,
+                    vp.visible_height,
+                    vp.zoom,
+                    vp.scrollbar.scroll_position_x,
+                    vp.scrollbar.scroll_position,
+                    vp.changed.load(std::sync::atomic::Ordering::Acquire),
+                )
+            };
 
             // The visible region must maintain the content's aspect ratio.
             // We use resolution() for the visible aspect ratio (terminal size × font),
@@ -151,28 +178,34 @@ impl<'a> CRTShaderProgram<'a> {
             // For Manual scaling: show a portion based on zoom level
             if self.monitor_settings.scaling_mode.is_auto() {
                 // Auto mode: entire resolution is visible, shader will center it
-                visible_width = res_w;
-                visible_height = res_h;
-                // Keep the current scroll position (e.g. scrollback mode).
-                // Forcing (0,0) can show an empty region when content isn't at top-left.
-                let max_scroll_y = (vp.content_height - visible_height).max(0.0);
-                scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
+                let params = compute_viewport_auto(res_w, res_h, content_width, content_height, requested_scroll_x, requested_scroll_y);
+                visible_width = params.visible_width;
+                visible_height = params.visible_height;
+                scroll_offset_y = params.scroll_offset_y;
+                scroll_offset_x = params.scroll_offset_x;
 
-                let max_scroll_x = (vp.content_width - visible_width).max(0.0);
-                scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+                zoom = params.zoom;
             } else {
                 // Manual zoom: calculate visible portion based on zoom
                 // IMPORTANT: Use original_res_h for centering calculation, not the inflated res_h
                 // from fit_terminal_height_to_bounds. This ensures small documents are centered
                 // properly in the viewport instead of "sticking to the top".
-                let zoom = self
-                    .monitor_settings
-                    .scaling_mode
-                    .compute_zoom(res_w, original_res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
-                    .max(0.001);
+                let params = compute_viewport_manual(
+                    res_w,
+                    original_res_h,
+                    bounds.width,
+                    bounds.height,
+                    content_width,
+                    content_height,
+                    requested_scroll_x,
+                    requested_scroll_y,
+                    &self.monitor_settings.scaling_mode,
+                    self.monitor_settings.use_integer_scaling,
+                );
 
-                visible_width = (bounds.width / zoom).min(res_w);
-                visible_height = (bounds.height / zoom).min(original_res_h);
+                zoom = params.zoom;
+                visible_width = params.visible_width;
+                visible_height = params.visible_height;
 
                 // Debug output for centering issue
                 if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VISIBLE").is_ok() {
@@ -182,19 +215,70 @@ impl<'a> CRTShaderProgram<'a> {
                     );
                 }
 
-                let max_scroll_y = (vp.content_height - visible_height).max(0.0);
-                scroll_offset_y = vp.scroll_y.clamp(0.0, max_scroll_y);
-
-                let max_scroll_x = (vp.content_width - visible_width).max(0.0);
-                scroll_offset_x = vp.scroll_x.clamp(0.0, max_scroll_x);
+                scroll_offset_y = params.scroll_offset_y;
+                scroll_offset_x = params.scroll_offset_x;
             }
 
-            full_content_height = vp.content_height;
+            if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VIEWPORT").is_ok() && viewport_changed {
+                let max_scroll_x = (content_width - visible_width).max(0.0);
+                let max_scroll_y = (content_height - visible_height).max(0.0);
+                let ratio_x = if max_scroll_x > 0.0 { (scroll_offset_x / max_scroll_x).clamp(0.0, 1.0) } else { 0.0 };
+                let ratio_y = if max_scroll_y > 0.0 { (scroll_offset_y / max_scroll_y).clamp(0.0, 1.0) } else { 0.0 };
+                eprintln!(
+                    "[viewport] bounds=({:.1},{:.1}) res=({:.1},{:.1}) orig_res_h={:.1} vp_visible=({:.1},{:.1}) vp_zoom_before={:.3} -> zoom_eff={:.3} vis=({:.1},{:.1}) content=({:.1},{:.1}) scroll_req=({:.1},{:.1}) scroll_px=({:.1},{:.1}) max_scroll=({:.1},{:.1}) ratio=({:.3},{:.3}) vp_sb_before=({:.3},{:.3}) mode={:?} int_scale={} ",
+                    bounds.width,
+                    bounds.height,
+                    res_w,
+                    res_h,
+                    original_res_h,
+                    vp_visible_w,
+                    vp_visible_h,
+                    vp_zoom_before,
+                    zoom,
+                    visible_width,
+                    visible_height,
+                    content_width,
+                    content_height,
+                    requested_scroll_x,
+                    requested_scroll_y,
+                    scroll_offset_x,
+                    scroll_offset_y,
+                    max_scroll_x,
+                    max_scroll_y,
+                    ratio_x,
+                    ratio_y,
+                    vp_sb_x,
+                    vp_sb_y,
+                    self.monitor_settings.scaling_mode,
+                    self.monitor_settings.use_integer_scaling
+                );
+            }
+
+            full_content_height = content_height;
             texture_width = resolution.width as u32;
 
-            // Clear viewport changed flag
-            if vp.changed.load(std::sync::atomic::Ordering::Acquire) {
-                vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+            // Keep Viewport zoom in sync with effective zoom used for rendering.
+            // This fixes scrollbar/minimap sizing at high zoom levels (e.g. 400%).
+            {
+                let mut vp = self.term.viewport.write();
+                // The Viewport visible size must be the widget bounds (screen pixels).
+                // `visible_content_*()` derives from this via division by `zoom`.
+                vp.visible_width = bounds.width.max(1.0);
+                vp.visible_height = bounds.height.max(1.0);
+
+                vp.zoom = zoom;
+
+                // Publish the same clamped scroll offsets that the shader uses.
+                // This keeps minimap and scrollbars in sync even if other code directly
+                // mutates vp.scroll_x/y without calling the helpers.
+                vp.scroll_x = scroll_offset_x;
+                vp.scroll_y = scroll_offset_y;
+
+                // Clamp targets using the new visible size/zoom and sync thumb positions.
+                vp.clamp_scroll();
+                if viewport_changed {
+                    vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
+                }
             }
 
             // Check for content changes that require full cache invalidation
@@ -233,7 +317,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                 if should_draw && font_w > 0 && font_h > 0 {
                     let caret_cell_pos = caret.position();
-                    let scroll_x = vp.scroll_x as i32;
+                    let scroll_x = scroll_offset_x as i32;
                     let scroll_y_px = scroll_offset_y as i32;
 
                     // Convert cell position to pixel position (viewport-relative)
@@ -381,8 +465,6 @@ impl<'a> CRTShaderProgram<'a> {
             slice_heights.push(1);
             first_slice_start_y = 0.0;
         }
-
-        let zoom = self.term.viewport.read().zoom;
 
         // Read marker settings from terminal
         let mut markers = self.term.markers.write();
@@ -695,6 +777,48 @@ impl<'a> CRTShaderProgram<'a> {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
+                        if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
+                            let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
+                            let (term_x_u, term_y_u_raw) = render_info.screen_to_terminal_pixels_unclamped(position.x, position.y);
+                            let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
+                            let font_w = render_info.font_width.max(1.0);
+                            let font_h = render_info.font_height.max(1.0);
+                            let abs_px_x = term_x_u + viewport.scroll_x;
+                            let abs_px_y = term_y_u + viewport.scroll_y;
+                            let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
+                            let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
+
+                            eprintln!(
+                                "[mouse_map][press {:?}] pos=({:.3},{:.3}) cell={:?} term_clamped={:?} term_u=({:.3},{:.3}) abs_px=({:.3},{:.3}) dbg_cell=({},{}); vp(scroll=({:.3},{:.3}) vis=({:.3},{:.3}) zoom={:.3}); ri(scale={:.3} vp=({:.3},{:.3},{:.3},{:.3}) term=({:.3},{:.3}) font=({:.3},{:.3}) scanlines={})",
+                                button,
+                                position.x,
+                                position.y,
+                                cell_pos,
+                                clamped_term,
+                                term_x_u,
+                                term_y_u,
+                                abs_px_x,
+                                abs_px_y,
+                                dbg_cell_x,
+                                dbg_cell_y,
+                                viewport.scroll_x,
+                                viewport.scroll_y,
+                                viewport.visible_width,
+                                viewport.visible_height,
+                                viewport.zoom,
+                                render_info.display_scale,
+                                render_info.viewport_x,
+                                render_info.viewport_y,
+                                render_info.viewport_width,
+                                render_info.viewport_height,
+                                render_info.terminal_width,
+                                render_info.terminal_height,
+                                render_info.font_width,
+                                render_info.font_height,
+                                render_info.scan_lines
+                            );
+                        }
+
                         let mouse_button = match button {
                             mouse::Button::Left => MouseButton::Left,
                             mouse::Button::Middle => MouseButton::Middle,
@@ -721,6 +845,48 @@ impl<'a> CRTShaderProgram<'a> {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
+                            if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
+                                let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
+                                let (term_x_u, term_y_u_raw) = render_info.screen_to_terminal_pixels_unclamped(position.x, position.y);
+                                let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
+                                let font_w = render_info.font_width.max(1.0);
+                                let font_h = render_info.font_height.max(1.0);
+                                let abs_px_x = term_x_u + viewport.scroll_x;
+                                let abs_px_y = term_y_u + viewport.scroll_y;
+                                let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
+                                let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
+
+                                eprintln!(
+                                    "[mouse_map][release {:?}] pos=({:.3},{:.3}) cell={:?} term_clamped={:?} term_u=({:.3},{:.3}) abs_px=({:.3},{:.3}) dbg_cell=({},{}); vp(scroll=({:.3},{:.3}) vis=({:.3},{:.3}) zoom={:.3}); ri(scale={:.3} vp=({:.3},{:.3},{:.3},{:.3}) term=({:.3},{:.3}) font=({:.3},{:.3}) scanlines={})",
+                                    button,
+                                    position.x,
+                                    position.y,
+                                    cell_pos,
+                                    clamped_term,
+                                    term_x_u,
+                                    term_y_u,
+                                    abs_px_x,
+                                    abs_px_y,
+                                    dbg_cell_x,
+                                    dbg_cell_y,
+                                    viewport.scroll_x,
+                                    viewport.scroll_y,
+                                    viewport.visible_width,
+                                    viewport.visible_height,
+                                    viewport.zoom,
+                                    render_info.display_scale,
+                                    render_info.viewport_x,
+                                    render_info.viewport_y,
+                                    render_info.viewport_width,
+                                    render_info.viewport_height,
+                                    render_info.terminal_width,
+                                    render_info.terminal_height,
+                                    render_info.font_width,
+                                    render_info.font_height,
+                                    render_info.scan_lines
+                                );
+                            }
+
                             let mouse_button = match button {
                                 mouse::Button::Middle => MouseButton::Middle,
                                 mouse::Button::Right => MouseButton::Right,
@@ -736,6 +902,48 @@ impl<'a> CRTShaderProgram<'a> {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+
+                            if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
+                                let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
+                                let (term_x_u, term_y_u_raw) = render_info.screen_to_terminal_pixels_unclamped(position.x, position.y);
+                                let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
+                                let font_w = render_info.font_width.max(1.0);
+                                let font_h = render_info.font_height.max(1.0);
+                                let abs_px_x = term_x_u + viewport.scroll_x;
+                                let abs_px_y = term_y_u + viewport.scroll_y;
+                                let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
+                                let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
+
+                                eprintln!(
+                                    "[mouse_map][release {:?}] pos=({:.3},{:.3}) cell={:?} term_clamped={:?} term_u=({:.3},{:.3}) abs_px=({:.3},{:.3}) dbg_cell=({},{}); vp(scroll=({:.3},{:.3}) vis=({:.3},{:.3}) zoom={:.3}); ri(scale={:.3} vp=({:.3},{:.3},{:.3},{:.3}) term=({:.3},{:.3}) font=({:.3},{:.3}) scanlines={})",
+                                    button,
+                                    position.x,
+                                    position.y,
+                                    cell_pos,
+                                    clamped_term,
+                                    term_x_u,
+                                    term_y_u,
+                                    abs_px_x,
+                                    abs_px_y,
+                                    dbg_cell_x,
+                                    dbg_cell_y,
+                                    viewport.scroll_x,
+                                    viewport.scroll_y,
+                                    viewport.visible_width,
+                                    viewport.visible_height,
+                                    viewport.zoom,
+                                    render_info.display_scale,
+                                    render_info.viewport_x,
+                                    render_info.viewport_y,
+                                    render_info.viewport_width,
+                                    render_info.viewport_height,
+                                    render_info.terminal_width,
+                                    render_info.terminal_height,
+                                    render_info.font_width,
+                                    render_info.font_height,
+                                    render_info.scan_lines
+                                );
+                            }
 
                             state.dragging = false;
                             state.drag_anchor = None;

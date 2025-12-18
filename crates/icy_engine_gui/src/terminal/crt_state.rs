@@ -229,22 +229,16 @@ impl CRTShaderState {
             render_info.font_height
         };
 
-        let cx = (term_x / render_info.font_width).floor() as i32;
-        let visible_cy = (term_y / effective_font_height).floor() as i32;
+        // IMPORTANT: scroll_x/scroll_y can be fractional (smooth scrolling).
+        // Computing floor(term/font) + floor(scroll/font) is WRONG due to carry.
+        // Correct: floor((term + scroll) / font).
+        let abs_px_x = term_x + viewport.scroll_x;
+        let abs_px_y = (term_y) + viewport.scroll_y;
 
-        // scroll_x is in content coordinates - convert to columns
-        let scroll_offset_cols = (viewport.scroll_x / render_info.font_width).floor() as i32;
+        let abs_cx = (abs_px_x / render_info.font_width).floor() as i32;
+        let abs_cy = (abs_px_y / effective_font_height).floor() as i32;
 
-        // scroll_y is in content coordinates - convert to lines
-        let scroll_offset_lines = (viewport.scroll_y / render_info.font_height).floor() as i32;
-
-        // Add scroll offset to get absolute document row
-        let cy = visible_cy + scroll_offset_lines;
-
-        // Add scroll offset to get absolute document column
-        let abs_cx = cx + scroll_offset_cols;
-
-        Some(Position::new(abs_cx, cy))
+        Some(Position::new(abs_cx, abs_cy))
     }
 
     /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
@@ -279,22 +273,15 @@ impl CRTShaderState {
         let font_width = render_info.font_width.max(1.0);
         let font_height = effective_font_height.max(1.0);
 
-        let cx = (term_x / font_width).floor() as i32;
-        let visible_cy = (term_y / font_height).floor() as i32;
+        // IMPORTANT: scroll_x/scroll_y can be fractional (smooth scrolling).
+        // Use combined pixel coordinates to avoid carry bugs.
+        let abs_px_x = term_x + viewport.scroll_x;
+        let abs_px_y = term_y + viewport.scroll_y;
 
-        // scroll_x is in content coordinates - convert to columns
-        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+        let abs_cx = (abs_px_x / font_width).floor() as i32;
+        let abs_cy = (abs_px_y / font_height).floor() as i32;
 
-        // scroll_y is in content coordinates - convert to lines
-        let scroll_offset_lines = (viewport.scroll_y / font_height).floor() as i32;
-
-        // Add scroll offset to get absolute document row
-        let cy = visible_cy + scroll_offset_lines;
-
-        // Add scroll offset to get absolute document column
-        let abs_cx = cx + scroll_offset_cols;
-
-        Position::new(abs_cx, cy)
+        Position::new(abs_cx, abs_cy)
     }
 }
 
