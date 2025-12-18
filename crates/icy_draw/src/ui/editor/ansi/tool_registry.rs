@@ -146,6 +146,11 @@ impl ToolRegistry {
         self.slots.len()
     }
 
+    /// Check if this registry uses the outline click tool
+    pub fn uses_outline_click(&self) -> bool {
+        self.use_outline_click
+    }
+
     /// Get the display tool for a slot given the current tool
     pub fn get_slot_display_tool(&self, slot: usize, current_tool: Tool) -> Tool {
         if slot >= self.slots.len() {

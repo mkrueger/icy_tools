@@ -13,6 +13,8 @@ menu-9px-font=9px Font
 menu-aspect-ratio=Klassisches Seitenverhältnis
 menu-set-canvas-size=Leinwandgröße ändern…
 menu-file-settings=File Settings…
+menu-import-fonts=Schriften importieren…
+menu-export-font=Schrift exportieren…
 
 file-settings-dialog-title=Datei-Einstellungen
 file-settings-canvas-size=Zeichenfläche
@@ -600,6 +602,12 @@ tdf-editor-clear_char_button=Zeichen Löschen
 tdf-editor-cheat_sheet_key=Taste
 tdf-editor-cheat_sheet_code=Code
 tdf-editor-cheat_sheet_res=Res
+
+tdf-dialog-add-font-title=Font hinzufügen
+tdf-dialog-edit-settings-title=Font-Einstellungen
+tdf-dialog-font-type=Font-Typ:
+tdf-dialog-font-name=Name:
+tdf-dialog-spacing=Abstand:
 
 settings-heading=Einstellungen
 settings-reset_button=Reset

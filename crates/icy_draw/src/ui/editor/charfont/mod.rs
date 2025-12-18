@@ -7,10 +7,12 @@
 //! - Color switcher and ANSI toolbar for editing
 
 mod charset_canvas;
+mod font_dialogs;
 pub mod menu_bar;
 mod outline_style_preview;
 
 pub use charset_canvas::*;
+pub use font_dialogs::*;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -30,9 +32,9 @@ use icy_engine_edit::UndoState;
 use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, TdfFontType, load_tdf_fonts};
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::ui::DialogStack;
+use icy_engine_gui::ui::{DialogStack, add_icon, arrow_downward_icon, arrow_upward_icon, content_copy_icon, delete_icon, edit_icon};
 use parking_lot::{Mutex, RwLock};
-use retrofont::{RenderOptions, transform_outline};
+use retrofont::{Glyph, GlyphPart, RenderOptions, transform_outline};
 
 use crate::SharedFontLibrary;
 use crate::ui::Options;
@@ -54,7 +56,7 @@ pub enum ArrowDirection {
 }
 
 /// Messages for the CharFont editor
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum CharFontEditorMessage {
     /// Color switcher messages
     ColorSwitcher(ColorSwitcherMessage),
@@ -72,6 +74,14 @@ pub enum CharFontEditorMessage {
     CloneFont,
     /// Delete the current font
     DeleteFont,
+    /// Move font up in the list
+    MoveFontUp,
+    /// Move font down in the list
+    MoveFontDown,
+    /// Open add font dialog
+    OpenAddFontDialog,
+    /// Open edit font settings dialog
+    OpenEditSettingsDialog,
     /// Clear the current character
     ClearChar,
     /// Font name changed
@@ -135,6 +145,85 @@ pub enum CharFontEditorMessage {
 
     /// Outline preview canvas messages (right-side preview for outline fonts)
     OutlinePreviewCanvas(TerminalMessage),
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Font Dialogs
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Add font dialog messages
+    AddFontDialog(AddFontDialogMessage),
+    /// Apply the add font dialog result
+    AddFontApply(TdfFontType, String, i32),
+    /// Edit font settings dialog messages
+    EditFontSettingsDialog(EditFontSettingsDialogMessage),
+    /// Apply the edit font settings dialog result
+    EditFontSettingsApply(String, i32),
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Import/Export
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Import fonts from a TDF file (add to current file)
+    ImportFonts,
+    /// Import fonts completed (number of fonts added)
+    ImportFontsComplete(usize),
+    /// Import fonts with the loaded file data (raw bytes)
+    ImportFontsData(Vec<u8>),
+    /// Export current font as single TDF file
+    ExportFont,
+    /// No-op message
+    Nop,
+}
+
+impl std::fmt::Debug for CharFontEditorMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ImportFontsData(data) => f.debug_tuple("ImportFontsData").field(&data.len()).finish(),
+            Self::ColorSwitcher(_) => f.write_str("ColorSwitcher(..)"),
+            Self::PaletteGrid(_) => f.write_str("PaletteGrid(..)"),
+            Self::ToolPanel(_) => f.write_str("ToolPanel(..)"),
+            Self::SelectFont(i) => f.debug_tuple("SelectFont").field(i).finish(),
+            Self::SelectChar(c) => f.debug_tuple("SelectChar").field(c).finish(),
+            Self::SelectCharAt(c, x, y) => f.debug_tuple("SelectCharAt").field(c).field(x).field(y).finish(),
+            Self::CloneFont => f.write_str("CloneFont"),
+            Self::DeleteFont => f.write_str("DeleteFont"),
+            Self::MoveFontUp => f.write_str("MoveFontUp"),
+            Self::MoveFontDown => f.write_str("MoveFontDown"),
+            Self::OpenAddFontDialog => f.write_str("OpenAddFontDialog"),
+            Self::OpenEditSettingsDialog => f.write_str("OpenEditSettingsDialog"),
+            Self::ClearChar => f.write_str("ClearChar"),
+            Self::FontNameChanged(_) => f.write_str("FontNameChanged(..)"),
+            Self::SpacingChanged(s) => f.debug_tuple("SpacingChanged").field(s).finish(),
+            Self::Tick(_) => f.write_str("Tick(..)"),
+            Self::MoveCharsetCursor(x, y) => f.debug_tuple("MoveCharsetCursor").field(x).field(y).finish(),
+            Self::SetCharsetCursor(x, y) => f.debug_tuple("SetCharsetCursor").field(x).field(y).finish(),
+            Self::ExtendCharsetSelection(x, y, r) => f.debug_tuple("ExtendCharsetSelection").field(x).field(y).field(r).finish(),
+            Self::SetCharsetSelectionLead(x, y, r) => f.debug_tuple("SetCharsetSelectionLead").field(x).field(y).field(r).finish(),
+            Self::ClearCharsetSelection => f.write_str("ClearCharsetSelection"),
+            Self::SelectCharAtCursor => f.write_str("SelectCharAtCursor"),
+            Self::FocusNextPanel => f.write_str("FocusNextPanel"),
+            Self::SetFocusedPanel(p) => f.debug_tuple("SetFocusedPanel").field(p).finish(),
+            Self::HandleArrow(d, _) => f.debug_tuple("HandleArrow").field(d).finish(),
+            Self::HandleHome => f.write_str("HandleHome"),
+            Self::HandleEnd => f.write_str("HandleEnd"),
+            Self::HandlePageUp => f.write_str("HandlePageUp"),
+            Self::HandlePageDown => f.write_str("HandlePageDown"),
+            Self::HandleConfirm => f.write_str("HandleConfirm"),
+            Self::HandleCancel => f.write_str("HandleCancel"),
+            Self::HandleDelete => f.write_str("HandleDelete"),
+            Self::OpenTdfFontSelector => f.write_str("OpenTdfFontSelector"),
+            Self::TdfFontSelector(_) => f.write_str("TdfFontSelector(..)"),
+            Self::AnsiEditor(_) => f.write_str("AnsiEditor(..)"),
+            Self::SelectOutlineStyle(s) => f.debug_tuple("SelectOutlineStyle").field(s).finish(),
+            Self::OutlinePreviewCanvas(_) => f.write_str("OutlinePreviewCanvas(..)"),
+            Self::AddFontDialog(_) => f.write_str("AddFontDialog(..)"),
+            Self::AddFontApply(t, n, s) => f.debug_tuple("AddFontApply").field(t).field(n).field(s).finish(),
+            Self::EditFontSettingsDialog(_) => f.write_str("EditFontSettingsDialog(..)"),
+            Self::EditFontSettingsApply(n, s) => f.debug_tuple("EditFontSettingsApply").field(n).field(s).finish(),
+            Self::ImportFonts => f.write_str("ImportFonts"),
+            Self::ImportFontsComplete(c) => f.debug_tuple("ImportFontsComplete").field(c).finish(),
+            Self::ExportFont => f.write_str("ExportFont"),
+            Self::Nop => f.write_str("Nop"),
+        }
+    }
 }
 
 /// The CharFont (TDF) editor component
@@ -159,6 +248,8 @@ pub struct CharFontEditor {
     last_update_preview: usize,
     /// Currently selected outline style (0-18) for outline font preview
     selected_outline_style: usize,
+    /// Last character loaded into the edit buffer (for save_old_selected_char)
+    last_edited_char: Option<char>,
 
     /// Separate preview screen + canvas for outline fonts (egui-like preview buffer)
     outline_preview_screen: Arc<Mutex<Box<dyn Screen>>>,
@@ -254,10 +345,13 @@ impl CharFontEditor {
             undostack_len: 0,
             last_update_preview: 0,
             selected_outline_style: 0,
+            last_edited_char: None,
             outline_preview_screen,
             outline_preview_canvas,
         };
 
+        // Initialize focus state - CharSet starts focused by default
+        editor.sync_canvas_focus();
         editor.update_selected_char();
         editor
     }
@@ -274,6 +368,11 @@ impl CharFontEditor {
         let selected_char = self.charset_state.selected_char();
         let style = self.selected_outline_style.min(outline_style_preview::OUTLINE_STYLE_COUNT.saturating_sub(1));
 
+        // Convert the current editor buffer to a glyph - this is the source of truth
+        let glyph = self
+            .ansi_core
+            .with_edit_state(|state| buffer_to_glyph(state.get_buffer(), TdfFontType::Outline));
+
         let mut guard = self.outline_preview_screen.lock();
         let Some(state) = guard.as_any_mut().downcast_mut::<EditState>() else {
             return;
@@ -283,8 +382,8 @@ impl CharFontEditor {
         state.with_buffer_mut_no_undo(|buffer| {
             set_up_buffer(buffer);
 
-            if let Some(ch) = selected_char {
-                if let Some(glyph) = font.glyph(ch) {
+            if selected_char.is_some() {
+                if let Some(glyph) = &glyph {
                     let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
                     let options = RenderOptions::default();
                     let _ = glyph.render(&mut renderer, &options);
@@ -404,8 +503,13 @@ impl CharFontEditor {
         };
 
         // Check if we need to change the registry
-        let current_slots_len = self.tool_registry.borrow().num_slots();
-        if current_slots_len == needed_slots.len() {
+        // Compare both slot count AND outline mode (different click tool implementation)
+        let (current_slots_len, current_uses_outline) = {
+            let reg = self.tool_registry.borrow();
+            (reg.num_slots(), reg.uses_outline_click())
+        };
+
+        if current_slots_len == needed_slots.len() && current_uses_outline == is_outline {
             return; // Same configuration, no change needed
         }
 
@@ -419,10 +523,11 @@ impl CharFontEditor {
             Rc::new(RefCell::new(tool_registry::ToolRegistry::new(needed_slots, self.font_library.clone())))
         };
 
-        // Switch to click tool from the new registry
+        // Switch to click tool from the new registry (force because tool ID might be same but implementation differs)
         {
             let mut reg = new_registry.borrow_mut();
-            self.ansi_core.change_tool(&mut *reg, tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
+            self.ansi_core
+                .force_change_tool(&mut *reg, tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
         }
 
         // Create new tool panel with the new registry
@@ -435,18 +540,35 @@ impl CharFontEditor {
     }
 
     /// Save the currently edited character back to the font
-    /// TODO: Implement conversion from TextBuffer back to retrofont::Glyph
+    /// Converts the TextBuffer back to a retrofont::Glyph based on font type
     fn save_old_selected_char(&mut self) {
         let undo_len = self.ansi_core.undo_stack_len();
         if undo_len == 0 {
             return;
         }
 
-        self.undostack_len += 1;
+        // Get the character that was loaded into the buffer (not the currently selected one)
+        let Some(edited_char) = self.last_edited_char else {
+            return;
+        };
 
-        // TODO: Convert edited buffer back to retrofont::Glyph
-        // This requires implementing buffer -> GlyphPart conversion
-        // For now, editing is view-only until this is implemented
+        let Some(font) = self.charset_state.selected_font() else {
+            return;
+        };
+
+        let font_type = font.font_type;
+
+        // Convert the buffer back to a Glyph
+        let glyph = self.ansi_core.with_edit_state(|state| buffer_to_glyph(state.get_buffer(), font_type));
+
+        if let Some(glyph) = glyph {
+            self.charset_state.set_glyph(edited_char, glyph);
+        } else {
+            // Empty glyph - remove it from the font
+            self.charset_state.clear_glyph(edited_char);
+        }
+
+        self.undostack_len += 1;
     }
 
     /// Update the edit buffer with the selected character
@@ -471,7 +593,10 @@ impl CharFontEditor {
                 if let Some(glyph) = font.glyph(ch) {
                     state.with_buffer_mut_no_undo(|buffer| {
                         let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
-                        let options = RenderOptions::default();
+                        let options = RenderOptions {
+                            render_mode: retrofont::RenderMode::Edit,
+                            outline_style: 0,
+                        };
                         let _ = glyph.render(&mut renderer, &options);
                     });
                 }
@@ -489,6 +614,9 @@ impl CharFontEditor {
             state.mark_buffer_dirty();
             state.get_undo_stack().lock().unwrap().clear();
         });
+
+        // Remember which character we loaded into the buffer for save_old_selected_char
+        self.last_edited_char = selected_char;
 
         self.update_outline_preview();
     }
@@ -624,11 +752,17 @@ impl CharFontEditor {
             CharFontEditorMessage::SelectChar(ch) => {
                 self.charset_state.select_char(ch);
                 self.update_selected_char();
+                // Set focus to CharSet when selecting a char
+                self.charset_state.set_focused_panel(CharSetFocusedPanel::CharSet);
+                self.sync_canvas_focus();
                 Task::none()
             }
             CharFontEditorMessage::SelectCharAt(_ch, col, row) => {
                 self.charset_state.select_char_at(col, row);
                 self.update_selected_char();
+                // Set focus to CharSet when clicking on charset grid
+                self.charset_state.set_focused_panel(CharSetFocusedPanel::CharSet);
+                self.sync_canvas_focus();
                 Task::none()
             }
             CharFontEditorMessage::CloneFont => {
@@ -643,6 +777,106 @@ impl CharFontEditor {
                 self.undostack_len += 1;
                 Task::none()
             }
+            CharFontEditorMessage::MoveFontUp => {
+                self.charset_state.move_font_up();
+                self.undostack_len += 1;
+                Task::none()
+            }
+            CharFontEditorMessage::MoveFontDown => {
+                self.charset_state.move_font_down();
+                self.undostack_len += 1;
+                Task::none()
+            }
+            CharFontEditorMessage::OpenAddFontDialog => {
+                dialogs.push(AddFontDialog::new());
+                Task::none()
+            }
+            CharFontEditorMessage::OpenEditSettingsDialog => {
+                if let Some(font) = self.charset_state.selected_font() {
+                    dialogs.push(EditFontSettingsDialog::new(font.name.clone(), font.spacing));
+                }
+                Task::none()
+            }
+            CharFontEditorMessage::AddFontDialog(_) => {
+                // Handled by DialogStack
+                Task::none()
+            }
+            CharFontEditorMessage::AddFontApply(font_type, name, spacing) => {
+                self.charset_state.add_font(font_type, name, spacing);
+                self.update_selected_char();
+                self.undostack_len += 1;
+                Task::none()
+            }
+            CharFontEditorMessage::EditFontSettingsDialog(_) => {
+                // Handled by DialogStack
+                Task::none()
+            }
+            CharFontEditorMessage::EditFontSettingsApply(name, spacing) => {
+                self.charset_state.set_font_name(name);
+                self.charset_state.set_font_spacing(spacing);
+                self.undostack_len += 1;
+                Task::none()
+            }
+            CharFontEditorMessage::ImportFonts => Task::perform(
+                async move {
+                    if let Some(handle) = rfd::AsyncFileDialog::new().add_filter("TDF Font", &["tdf"]).pick_file().await {
+                        handle.read().await
+                    } else {
+                        Vec::new()
+                    }
+                },
+                |data| {
+                    if data.is_empty() {
+                        CharFontEditorMessage::Nop
+                    } else {
+                        CharFontEditorMessage::ImportFontsData(data)
+                    }
+                },
+            ),
+            CharFontEditorMessage::ImportFontsData(data) => {
+                if let Ok(fonts) = icy_engine_edit::charset::load_tdf_fonts(&data) {
+                    let count = fonts.len();
+                    for font in fonts {
+                        self.charset_state.fonts_mut().push(font);
+                    }
+                    self.undostack_len += 1;
+                    self.update_selected_char();
+                    Task::done(CharFontEditorMessage::ImportFontsComplete(count))
+                } else {
+                    Task::none()
+                }
+            }
+            CharFontEditorMessage::ImportFontsComplete(_count) => {
+                // Import completed successfully - nothing else to do
+                Task::none()
+            }
+            CharFontEditorMessage::ExportFont => {
+                if let Some(font) = self.charset_state.selected_font() {
+                    let font_clone = font.clone();
+                    let default_name = format!("{}.tdf", font.name);
+                    Task::perform(
+                        async move {
+                            rfd::AsyncFileDialog::new()
+                                .set_file_name(&default_name)
+                                .add_filter("TDF Font", &["tdf"])
+                                .save_file()
+                                .await
+                                .map(|h| h.path().to_path_buf())
+                        },
+                        move |path| {
+                            if let Some(path) = path {
+                                if let Ok(data) = font_clone.to_bytes() {
+                                    let _ = std::fs::write(&path, data);
+                                }
+                            }
+                            CharFontEditorMessage::Nop
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+            CharFontEditorMessage::Nop => Task::none(),
             CharFontEditorMessage::ClearChar => {
                 self.charset_state.clear_selected_char();
                 self.update_selected_char();
@@ -699,10 +933,12 @@ impl CharFontEditor {
             }
             CharFontEditorMessage::FocusNextPanel => {
                 self.charset_state.focus_next_panel();
+                self.sync_canvas_focus();
                 Task::none()
             }
             CharFontEditorMessage::SetFocusedPanel(panel) => {
                 self.charset_state.set_focused_panel(panel);
+                self.sync_canvas_focus();
                 Task::none()
             }
             CharFontEditorMessage::HandleArrow(direction, modifiers) => {
@@ -805,6 +1041,12 @@ impl CharFontEditor {
             // in CharFont mode
             // ═══════════════════════════════════════════════════════════════
             CharFontEditorMessage::AnsiEditor(msg) => {
+                // Any interaction with the ANSI editor sets focus to Edit panel
+                if self.charset_state.focused_panel() != CharSetFocusedPanel::Edit {
+                    self.charset_state.set_focused_panel(CharSetFocusedPanel::Edit);
+                    self.sync_canvas_focus();
+                }
+
                 // ToggleColor needs special handling for color switcher animation
                 if let AnsiEditorCoreMessage::ToggleColor = &msg {
                     self.toggle_color();
@@ -831,11 +1073,32 @@ impl CharFontEditor {
         task
     }
 
+    /// Sync the canvas focus state with the current focused panel
+    fn sync_canvas_focus(&mut self) {
+        let has_edit_focus = self.charset_state.focused_panel() == CharSetFocusedPanel::Edit;
+        self.ansi_core.canvas.set_has_focus(has_edit_focus);
+    }
+
     /// Handle top-level window/input events that must reach the editor.
-    /// Forwards to AnsiEditorCore for tool and keyboard handling.
+    /// Tab switches focus between Edit and CharSet panels.
+    /// Other events are forwarded to AnsiEditorCore only when the Edit panel has focus.
     /// Returns `true` if the event was handled.
     pub fn handle_event(&mut self, event: &iced::Event) -> bool {
-        self.ansi_core.handle_event(event)
+        // Handle Tab key to switch focus between panels
+        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+            if *key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) && !modifiers.command() {
+                self.charset_state.focus_next_panel();
+                self.sync_canvas_focus();
+                return true;
+            }
+        }
+
+        // Only forward events to AnsiEditorCore when the Edit panel has focus
+        if self.charset_state.focused_panel() == CharSetFocusedPanel::Edit {
+            self.ansi_core.handle_event(event)
+        } else {
+            false
+        }
     }
 
     /// Render the editor view
@@ -856,16 +1119,38 @@ impl CharFontEditor {
 
         let font_list = scrollable(column(font_list_content).spacing(2).width(Length::Fill)).height(Length::Fill);
 
-        // Font actions
-        let font_actions = row![
-            button(text("🗑").size(14)).on_press_maybe(if self.charset_state.font_count() > 1 {
-                Some(CharFontEditorMessage::DeleteFont)
-            } else {
-                None
-            }),
-            button(text(crate::fl!("tdf-editor-clone_button")).size(12)).on_press(CharFontEditorMessage::CloneFont),
+        // Icon size for buttons
+        let icon_size = 16.0;
+        let selected_idx = self.charset_state.selected_font_index();
+        let font_count = self.charset_state.font_count();
+
+        // Font actions - first row: delete, clone, add, settings
+        let font_actions_row1 = row![
+            button(delete_icon(icon_size))
+                .on_press_maybe(if font_count > 1 { Some(CharFontEditorMessage::DeleteFont) } else { None })
+                .padding(4),
+            button(content_copy_icon(icon_size)).on_press(CharFontEditorMessage::CloneFont).padding(4),
+            button(add_icon(icon_size)).on_press(CharFontEditorMessage::OpenAddFontDialog).padding(4),
+            button(edit_icon(icon_size)).on_press(CharFontEditorMessage::OpenEditSettingsDialog).padding(4),
         ]
-        .spacing(4);
+        .spacing(2);
+
+        // Font actions - second row: move up, move down
+        let font_actions_row2 = row![
+            button(arrow_upward_icon(icon_size))
+                .on_press_maybe(if selected_idx > 0 { Some(CharFontEditorMessage::MoveFontUp) } else { None })
+                .padding(4),
+            button(arrow_downward_icon(icon_size))
+                .on_press_maybe(if selected_idx + 1 < font_count {
+                    Some(CharFontEditorMessage::MoveFontDown)
+                } else {
+                    None
+                })
+                .padding(4),
+        ]
+        .spacing(2);
+
+        let font_actions = column![font_actions_row1, font_actions_row2].spacing(2);
 
         let right_panel = column![text(crate::fl!("tdf-editor-font_name_label")).size(14), font_list, font_actions,]
             .spacing(4)
@@ -974,12 +1259,15 @@ impl CharFontEditor {
             .charset_selection()
             .map(|(a, l, r)| (iced::Point::new(a.x, a.y), iced::Point::new(l.x, l.y), r));
 
+        let charset_is_focused = self.charset_state.focused_panel() == CharSetFocusedPanel::CharSet;
+        let edit_is_focused = self.charset_state.focused_panel() == CharSetFocusedPanel::Edit;
+
         let charset_canvas = canvas::Canvas::new(CharSetCanvas {
             font: font_ref,
             selected_char: self.charset_state.selected_char(),
             cursor_col,
             cursor_row,
-            is_focused: self.charset_state.focused_panel() == CharSetFocusedPanel::CharSet,
+            is_focused: charset_is_focused,
             selection,
             cell_width,
             cell_height,
@@ -988,12 +1276,49 @@ impl CharFontEditor {
         .width(Length::Fixed(canvas_width))
         .height(Length::Fixed(canvas_height));
 
-        let charset_section: container::Container<'_, CharFontEditorMessage> = container(charset_canvas).style(container::bordered_box).center_x(Length::Fill);
+        // Focused container style with highlight border
+        let charset_container_style = move |theme: &iced::Theme| {
+            let palette = theme.extended_palette();
+            let border_color = if charset_is_focused {
+                palette.primary.base.color
+            } else {
+                palette.background.strong.color
+            };
+            container::Style {
+                border: iced::Border {
+                    color: border_color,
+                    width: if charset_is_focused { 2.0 } else { 1.0 },
+                    radius: 4.0.into(),
+                },
+                ..container::bordered_box(theme)
+            }
+        };
+
+        let charset_section: container::Container<'_, CharFontEditorMessage> = container(charset_canvas).style(charset_container_style).center_x(Length::Fill);
 
         // === CENTER AREA: Editor canvas + optional style preview on right ===
+        // Focused container style for ANSI editor
+        let ansi_container_style = move |theme: &iced::Theme| {
+            let palette = theme.extended_palette();
+            let border_color = if edit_is_focused {
+                palette.primary.base.color
+            } else {
+                palette.background.strong.color
+            };
+            container::Style {
+                border: iced::Border {
+                    color: border_color,
+                    width: if edit_is_focused { 2.0 } else { 1.0 },
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }
+        };
+
         // Create the ansi editor view (fill available width so no dead space remains after the preview)
         let ansi_editor_view: Element<'_, CharFontEditorMessage> = container(self.ansi_core.view().map(CharFontEditorMessage::AnsiEditor))
             .width(Length::Fill)
+            .style(ansi_container_style)
             .into();
 
         // For outline fonts, place the preview panel to the right of the editor
@@ -1080,6 +1405,175 @@ fn set_up_buffer(buffer: &mut TextBuffer) {
         }
     }
     buffer.layers.push(layer);
+}
+
+/// Convert a TextBuffer back to a retrofont::Glyph
+///
+/// This function extracts the glyph content from the edit buffer and converts it
+/// back to the appropriate GlyphPart representation based on the font type:
+///
+/// - **Color**: Each cell becomes `GlyphPart::AnsiChar { ch, fg, bg, blink }`
+/// - **Block**: Each cell becomes `GlyphPart::Char(ch)` or `GlyphPart::HardBlank` for 0xFF
+/// - **Outline**: Cells are converted back to outline markers (A-R, @, O) or `GlyphPart::Char`
+fn buffer_to_glyph(buffer: &TextBuffer, font_type: TdfFontType) -> Option<Glyph> {
+    if buffer.layers.is_empty() {
+        return None;
+    }
+
+    let layer = &buffer.layers[0];
+    let size = layer.size();
+
+    // First, determine the actual bounding box of the content
+    // (skip trailing empty rows and columns)
+    let mut max_x: i32 = 0;
+    let mut max_y: i32 = 0;
+
+    for y in 0..size.height {
+        for x in 0..size.width {
+            let cell = layer.char_at(icy_engine::Position::new(x, y));
+            if !is_empty_cell(cell.ch) {
+                max_x = max_x.max(x + 1);
+                max_y = max_y.max(y + 1);
+            }
+        }
+    }
+
+    // Empty glyph - return None to remove it
+    if max_x == 0 || max_y == 0 {
+        return None;
+    }
+
+    let width = max_x as usize;
+    let height = max_y as usize;
+
+    let mut parts = Vec::new();
+
+    for y in 0..height as i32 {
+        // Skip trailing empty cells on each line for efficiency
+        let mut line_width = 0i32;
+        for x in (0..width as i32).rev() {
+            let cell = layer.char_at(icy_engine::Position::new(x, y));
+            if !is_empty_cell(cell.ch) {
+                line_width = x + 1;
+                break;
+            }
+        }
+
+        for x in 0..line_width {
+            let cell = layer.char_at(icy_engine::Position::new(x, y));
+            let part = convert_cell_to_glyph_part(cell, font_type);
+            parts.push(part);
+        }
+
+        // Add NewLine between lines (but not after the last line)
+        if y < height as i32 - 1 {
+            parts.push(GlyphPart::NewLine);
+        }
+    }
+
+    Some(Glyph { width, height, parts })
+}
+
+/// Check if a cell is effectively empty (space or null)
+fn is_empty_cell(ch: char) -> bool {
+    ch == ' ' || ch == '\0'
+}
+
+/// Convert a single AttributedChar cell to the appropriate GlyphPart based on font type
+fn convert_cell_to_glyph_part(cell: AttributedChar, font_type: TdfFontType) -> GlyphPart {
+    let ch = cell.ch;
+    let attr = cell.attribute;
+
+    match font_type {
+        TdfFontType::Color => {
+            // Color fonts use AnsiChar with full color information
+            let fg = attr.foreground() as u8;
+            let bg = attr.background() as u8;
+            let blink = attr.is_blinking();
+
+            // Handle hard blank (0xFF in CP437 = NBSP in Unicode)
+            if ch == '\u{00A0}' || ch as u32 == 0xFF {
+                GlyphPart::HardBlank
+            } else {
+                // Convert from CP437 display char back to Unicode for storage
+                let unicode_ch = cp437_to_unicode(ch);
+                GlyphPart::AnsiChar { ch: unicode_ch, fg, bg, blink }
+            }
+        }
+        TdfFontType::Block => {
+            // Block fonts use simple Char without color
+            // Handle hard blank (0xFF in CP437 = NBSP in Unicode)
+            if ch == '\u{00A0}' || ch as u32 == 0xFF {
+                GlyphPart::HardBlank
+            } else {
+                let unicode_ch = cp437_to_unicode(ch);
+                GlyphPart::Char(unicode_ch)
+            }
+        }
+        TdfFontType::Outline => {
+            // Outline fonts use special markers for outline characters
+            // The editor shows the raw placeholder characters (A-R, @, O)
+            // We need to recognize and convert them back
+            convert_outline_cell_to_part(ch)
+        }
+    }
+}
+
+/// Convert an outline font cell back to the appropriate GlyphPart
+///
+/// In edit mode, outline fonts show:
+/// - 'A' through 'R' (or 'Q') as placeholder letters
+/// - '@' as fill marker
+/// - 'O' as outline hole
+/// - Space as regular space
+fn convert_outline_cell_to_part(ch: char) -> GlyphPart {
+    let code = ch as u8;
+
+    // Check for outline placeholder letters (A-R)
+    if (b'A'..=b'R').contains(&code) {
+        return GlyphPart::OutlinePlaceholder(code);
+    }
+
+    // Fill marker
+    if code == b'@' {
+        return GlyphPart::FillMarker;
+    }
+
+    // Outline hole
+    if code == b'O' {
+        // Note: 'O' could be a regular 'O' character or the outline hole marker
+        // In outline fonts, 'O' at position is typically the hole marker
+        return GlyphPart::OutlineHole;
+    }
+
+    // End marker
+    if code == b'&' {
+        return GlyphPart::EndMarker;
+    }
+
+    // Hard blank
+    if ch == '\u{00A0}' || code == 0xFF {
+        return GlyphPart::HardBlank;
+    }
+
+    // Regular character (including space)
+    let unicode_ch = cp437_to_unicode(ch);
+    GlyphPart::Char(unicode_ch)
+}
+
+/// Convert a CP437 character to Unicode
+/// The buffer stores characters in CP437 format, we need to convert back to Unicode
+fn cp437_to_unicode(ch: char) -> char {
+    // The buffer uses a custom font and may store chars directly or in CP437
+    // For characters < 256, use the mapping table
+    let code = ch as u32;
+    if code < 256 {
+        // Use the codepages table for accurate conversion
+        if let Some(&unicode) = codepages::tables::CP437_TO_UNICODE.get(code as usize) {
+            return unicode;
+        }
+    }
+    ch
 }
 
 /// Apply a text attribute to all visible characters in a layer.

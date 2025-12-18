@@ -31,7 +31,10 @@
 use std::path::PathBuf;
 
 use icy_engine::Position;
-use retrofont::{Glyph, tdf::TdfFont};
+use retrofont::{
+    Glyph,
+    tdf::{TdfFont, TdfFontType},
+};
 
 use super::{CharSetUndoOperation, CharSetUndoStack, load_tdf_fonts_from_file};
 
@@ -377,6 +380,23 @@ impl CharSetEditState {
     // Font Operations
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// Add a new font with the given type, name, and spacing
+    pub fn add_font(&mut self, font_type: TdfFontType, name: String, spacing: i32) {
+        let new_font = TdfFont::new(name, font_type, spacing);
+        let new_index = self.fonts.len();
+
+        self.undo_stack.push(CharSetUndoOperation::FontAdded {
+            font_index: new_index,
+            font: new_font.clone(),
+        });
+
+        self.fonts.push(new_font);
+        self.selected_font = new_index;
+        self.selected_char = None;
+        self.old_selected_char = None;
+        self.is_dirty = true;
+    }
+
     /// Clone the current font
     pub fn clone_font(&mut self) {
         if self.selected_font < self.fonts.len() {
@@ -409,6 +429,24 @@ impl CharSetEditState {
             self.selected_font = 0;
             self.selected_char = None;
             self.old_selected_char = None;
+            self.is_dirty = true;
+        }
+    }
+
+    /// Move the current font up in the list
+    pub fn move_font_up(&mut self) {
+        if self.selected_font > 0 && self.selected_font < self.fonts.len() {
+            self.fonts.swap(self.selected_font, self.selected_font - 1);
+            self.selected_font -= 1;
+            self.is_dirty = true;
+        }
+    }
+
+    /// Move the current font down in the list
+    pub fn move_font_down(&mut self) {
+        if self.selected_font + 1 < self.fonts.len() {
+            self.fonts.swap(self.selected_font, self.selected_font + 1);
+            self.selected_font += 1;
             self.is_dirty = true;
         }
     }
@@ -570,6 +608,26 @@ impl CharSetEditState {
             });
 
             self.fonts[self.selected_font].add_glyph(ch, glyph);
+            self.is_dirty = true;
+        }
+    }
+
+    /// Clear/remove a glyph for a specific character
+    pub fn clear_glyph(&mut self, ch: char) {
+        if self.selected_font < self.fonts.len() {
+            let old_glyph = self.fonts[self.selected_font].glyph(ch).cloned();
+            if old_glyph.is_none() {
+                return; // Nothing to clear
+            }
+
+            self.undo_stack.push(CharSetUndoOperation::GlyphModified {
+                font_index: self.selected_font,
+                char_code: ch,
+                old_glyph,
+                new_glyph: None,
+            });
+
+            self.fonts[self.selected_font].remove_glyph(ch);
             self.is_dirty = true;
         }
     }

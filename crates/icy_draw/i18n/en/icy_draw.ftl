@@ -15,6 +15,8 @@ menu-9px-font=9px Font
 menu-aspect-ratio=Legacy Aspect Ratio
 menu-set-canvas-size=Set Canvas Size…
 menu-file-settings=File Settings…
+menu-import-fonts=Import Fonts…
+menu-export-font=Export Font…
 
 file-settings-dialog-title=File Settings
 file-settings-canvas-size=Canvas Size
@@ -720,6 +722,12 @@ tdf-editor-cheat_sheet_key=Key
 tdf-editor-cheat_sheet_code=Code
 tdf-editor-cheat_sheet_res=Res
 tdf-editor-outline_style_label=Style
+
+tdf-dialog-add-font-title=Add Font
+tdf-dialog-edit-settings-title=Edit Font Settings
+tdf-dialog-font-type=Font Type:
+tdf-dialog-font-name=Name:
+tdf-dialog-spacing=Spacing:
 
 settings-heading=Settings
 settings-reset_button=Reset

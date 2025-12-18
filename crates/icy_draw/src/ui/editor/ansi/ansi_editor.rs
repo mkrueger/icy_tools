@@ -2336,6 +2336,15 @@ impl AnsiEditorCore {
     }
 
     pub(crate) fn change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
+        self.change_tool_internal(tool_registry, tool, false)
+    }
+
+    /// Force change tool even if the tool ID is the same (used when switching registries)
+    pub(crate) fn force_change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
+        self.change_tool_internal(tool_registry, tool, true)
+    }
+
+    fn change_tool_internal(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId, force: bool) {
         // Block tool changes during paste mode - must anchor or cancel first
         if self.is_paste_mode() {
             return;
@@ -2353,7 +2362,7 @@ impl AnsiEditorCore {
             return;
         }
 
-        if self.current_tool.id() == tool {
+        if !force && self.current_tool.id() == tool {
             return;
         }
 

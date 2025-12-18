@@ -32,6 +32,9 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
                 (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                 (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
                 (separator()),
+                (menu_item_simple(fl!("menu-import-fonts"), "", Message::CharFontEditor(super::CharFontEditorMessage::ImportFonts))),
+                (menu_item_simple(fl!("menu-export-font"), "", Message::CharFontEditor(super::CharFontEditorMessage::ExportFont))),
+                (separator()),
                 (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                 (separator()),
                 (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))

@@ -8,6 +8,12 @@ const INFO_SVG: &[u8] = include_bytes!("icons/info.svg");
 
 // UI icons
 const SETTINGS_SVG: &[u8] = include_bytes!("icons/settings.svg");
+const DELETE_SVG: &[u8] = include_bytes!("icons/delete.svg");
+const CONTENT_COPY_SVG: &[u8] = include_bytes!("icons/content_copy.svg");
+const ARROW_UPWARD_SVG: &[u8] = include_bytes!("icons/arrow_upward.svg");
+const ARROW_DOWNWARD_SVG: &[u8] = include_bytes!("icons/arrow_downward.svg");
+const ADD_SVG: &[u8] = include_bytes!("icons/add.svg");
+const EDIT_SVG: &[u8] = include_bytes!("icons/edit.svg");
 
 // File type icons
 const FILE_TEXT_SVG: &[u8] = include_bytes!("icons/files/file_text.svg");
@@ -47,6 +53,36 @@ pub fn settings_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(SETTINGS_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
+}
+
+pub fn delete_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+pub fn content_copy_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(CONTENT_COPY_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+}
+
+pub fn arrow_upward_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(ARROW_UPWARD_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+}
+
+pub fn arrow_downward_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(ARROW_DOWNWARD_SVG))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+}
+
+pub fn add_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(ADD_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
+}
+
+pub fn edit_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
+    svg(svg::Handle::from_memory(EDIT_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
 
 // File type icons
