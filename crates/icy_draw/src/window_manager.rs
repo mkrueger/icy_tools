@@ -758,6 +758,14 @@ impl WindowManager {
             subs.push(iced::time::every(Duration::from_millis(50)).map(|_| WindowManagerMessage::SessionSaveTick));
         }
 
+        // Add collaboration subscriptions from all windows
+        for (&window_id, window) in &self.windows {
+            let collab_sub = window.subscription()
+                .with(window_id)
+                .map(|(wid, msg)| WindowManagerMessage::WindowMessage(wid, msg));
+            subs.push(collab_sub);
+        }
+
         Subscription::batch(subs)
     }
 }

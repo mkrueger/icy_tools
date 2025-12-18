@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
-use super::compression::compress_blocks;
+use super::compression::compress_moebius_data;
 use super::protocol::*;
 use super::session::{Session, SessionEvent, SharedSession, UserId};
 
@@ -112,7 +112,7 @@ impl ServerState {
     }
 
     /// Get the compressed document data.
-    pub async fn get_compressed_document(&self) -> String {
+    pub async fn get_compressed_document(&self) -> MoebiusDoc {
         let doc = self.document.read().await;
         let (columns, rows) = self.session.get_dimensions();
 
@@ -127,7 +127,23 @@ impl ServerState {
                 }
             }
         }
-        compress_blocks(&blocks)
+        let compressed = compress_moebius_data(&blocks);
+        MoebiusDoc {
+            columns,
+            rows,
+            data: None,
+            compressed_data: Some(compressed),
+            title: String::new(),
+            author: String::new(),
+            group: String::new(),
+            date: String::new(),
+            palette: serde_json::Value::Array(Vec::new()),
+            font_name: self.session.font(),
+            ice_colors: self.session.get_ice_colors(),
+            use_9px_font: self.session.get_use_9px(),
+            comments: String::new(),
+            c64_background: None,
+        }
     }
 
     /// Set a character in the document.
@@ -237,8 +253,8 @@ impl ServerState {
         // Check password
         if !self.session.check_password(&password) {
             let response = RefusedResponse {
-                action: ActionCode::Refused as u8,
-                reason: "Invalid password".to_string(),
+                msg_type: ActionCode::Refused as u8,
+                data: serde_json::json!({"reason": "Invalid password"}),
             };
             return Err(serde_json::to_string(&response).unwrap());
         }
@@ -246,8 +262,8 @@ impl ServerState {
         // Check max users
         if self.config.max_users > 0 && self.session.get_users().len() >= self.config.max_users {
             let response = RefusedResponse {
-                action: ActionCode::Refused as u8,
-                reason: "Server is full".to_string(),
+                msg_type: ActionCode::Refused as u8,
+                data: serde_json::json!({"reason": "Server is full"}),
             };
             return Err(serde_json::to_string(&response).unwrap());
         }
@@ -256,24 +272,15 @@ impl ServerState {
         let user_id = self.session.add_user(nick);
 
         // Build connected response
-        let (columns, rows) = self.session.get_dimensions();
         let response = ConnectedResponse {
-            action: ActionCode::Connected as u8,
-            id: user_id,
-            doc: self.get_compressed_document().await,
-            users: self.session.get_users(),
-            chat_history: self.session.get_chat_history(),
-            status: self.session.get_status(),
-            protocol_version: if self.config.enable_extended_protocol {
-                Some(ProtocolVersion::V2)
-            } else {
-                None
+            msg_type: ActionCode::Connected as u8,
+            data: ConnectedData {
+                id: user_id,
+                doc: self.get_compressed_document().await,
+                users: self.session.get_users(),
+                chat_history: self.session.get_chat_history(),
+                status: 0, // Default status
             },
-            columns,
-            rows,
-            use_9px: self.session.get_use_9px(),
-            ice_colors: self.session.get_ice_colors(),
-            font: self.session.font(),
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -283,7 +290,7 @@ impl ServerState {
     /// Handle a draw message.
     pub async fn handle_draw(&self, user_id: UserId, msg: DrawMessage) {
         // Update document
-        self.set_char(msg.col, msg.row, msg.block.clone()).await;
+        self.set_char(msg.data.x, msg.data.y, msg.data.block.clone()).await;
 
         // Broadcast to other clients
         let broadcast_msg = serde_json::to_string(&msg).unwrap();
@@ -291,10 +298,10 @@ impl ServerState {
 
         // Emit event
         self.emit_event(SessionEvent::Draw {
-            col: msg.col,
-            row: msg.row,
-            block: msg.block,
-            layer: msg.layer,
+            col: msg.data.x,
+            row: msg.data.y,
+            block: msg.data.block,
+            layer: msg.data.layer,
         });
     }
 
@@ -328,13 +335,18 @@ impl ServerState {
         let user = self.session.get_user(user_id);
         let nick = user.map(|u| u.nick).unwrap_or_else(|| "Unknown".to_string());
 
-        self.session.add_chat_message(nick.clone(), text.clone());
+        self.session.add_chat_message(user_id, nick.clone(), text.clone());
 
         // Broadcast chat message
         let msg = ChatBroadcastMessage {
-            action: ActionCode::Chat as u8,
-            nick: nick.clone(),
-            text: text.clone(),
+            msg_type: ActionCode::Chat as u8,
+            data: ChatMessage {
+                id: user_id,
+                nick: nick.clone(),
+                text: text.clone(),
+                group: String::new(),
+                time: 0,
+            },
         };
         let json = serde_json::to_string(&msg).unwrap();
         self.broadcast_all(&json).await;

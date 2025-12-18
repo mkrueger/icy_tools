@@ -1,197 +1,146 @@
-//! Moebius-compatible RLE compression for document transfer.
+//! Moebius-compatible document compression.
 //!
-//! The compression format encodes character blocks (code, fg, bg) using
-//! run-length encoding to reduce the size of document transfers.
+//! Moebius transfers documents as JSON using `libtextmode.compress(doc)`.
+//! That format contains `compressed_data` with three RLE streams: `code`, `fg`, `bg`.
+//! Each stream is an array of `[value, repeat]` pairs, where `repeat` is the number
+//! of *additional* repeats (so the run length is `repeat + 1`).
 //!
-//! # Format
-//!
-//! Each block is encoded as 3 bytes: [code, fg, bg]
-//! Runs of identical blocks are encoded with a count prefix.
-//!
-//! The compressed data is then base64 encoded for JSON transport.
+//! This module implements compatible (de)compression helpers.
 
 use super::Block;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use std::io::Read;
+use serde::{Deserialize, Serialize};
 
-/// Marker byte indicating a run-length encoded sequence.
-const RLE_MARKER: u8 = 0xFF;
-
-/// Maximum run length that can be encoded.
-const MAX_RUN_LENGTH: usize = 255;
-
-/// Encode a sequence of blocks using RLE compression.
-///
-/// Returns base64-encoded compressed data.
-pub fn compress_blocks(blocks: &[Block]) -> String {
-    let compressed = rle_encode(blocks);
-    base64_encode(&compressed)
+/// Moebius `compressed_data` payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoebiusCompressedData {
+    pub code: Vec<[u32; 2]>,
+    pub fg: Vec<[u32; 2]>,
+    pub bg: Vec<[u32; 2]>,
 }
 
-/// Decode RLE-compressed blocks from base64-encoded data.
+/// Decompress a Moebius `compressed_data` payload into a row-major flat block array.
 ///
-/// Returns the decompressed blocks.
-pub fn decompress_blocks(data: &str) -> Result<Vec<Block>, CompressionError> {
-    let bytes = base64_decode(data)?;
-    rle_decode(&bytes)
-}
+/// Row-major means index is `y * columns + x` (same as Moebius).
+pub fn uncompress_moebius_data(
+    columns: u32,
+    rows: u32,
+    compressed: &MoebiusCompressedData,
+) -> Result<Vec<Block>, CompressionError> {
+    let expected_len = (columns as usize)
+        .checked_mul(rows as usize)
+        .ok_or_else(|| CompressionError::InvalidData("columns*rows overflow".to_string()))?;
 
-/// Compress a 2D document (column-major order as used by Moebius).
-pub fn compress_document(blocks: &[Vec<Block>], columns: u32, rows: u32) -> String {
-    // Flatten to column-major order (Moebius format)
-    let mut flat = Vec::with_capacity((columns * rows) as usize);
-    for row in 0..rows as usize {
-        for col in 0..columns as usize {
-            if col < blocks.len() && row < blocks[col].len() {
-                flat.push(blocks[col][row].clone());
-            } else {
-                flat.push(Block::default());
-            }
-        }
+    let codes = expand_rle_stream(&compressed.code)?;
+    let fgs = expand_rle_stream(&compressed.fg)?;
+    let bgs = expand_rle_stream(&compressed.bg)?;
+
+    if codes.len() != fgs.len() || codes.len() != bgs.len() {
+        return Err(CompressionError::InvalidData(
+            "compressed_data streams have different lengths".to_string(),
+        ));
     }
-    compress_blocks(&flat)
+
+    if codes.len() != expected_len {
+        return Err(CompressionError::InvalidData(format!(
+            "decompressed length mismatch: got {}, expected {}",
+            codes.len(),
+            expected_len
+        )));
+    }
+
+    let mut blocks = Vec::with_capacity(expected_len);
+    for i in 0..expected_len {
+        blocks.push(Block {
+            code: codes[i],
+            fg: (fgs[i] & 0xFF) as u8,
+            bg: (bgs[i] & 0xFF) as u8,
+        });
+    }
+
+    Ok(blocks)
 }
 
-/// Decompress a document into 2D structure.
-pub fn decompress_document(data: &str, columns: u32, rows: u32) -> Result<Vec<Vec<Block>>, CompressionError> {
-    let flat = decompress_blocks(data)?;
+/// Compress a row-major flat block array into Moebius `compressed_data`.
+pub fn compress_moebius_data(blocks: &[Block]) -> MoebiusCompressedData {
+    let mut codes = Vec::with_capacity(blocks.len().saturating_div(2));
+    let mut fgs = Vec::with_capacity(blocks.len().saturating_div(2));
+    let mut bgs = Vec::with_capacity(blocks.len().saturating_div(2));
 
-    // Convert from row-major flat to column-major 2D
+    compress_stream_u32(blocks.iter().map(|b| b.code), &mut codes);
+    compress_stream_u32(blocks.iter().map(|b| b.fg as u32), &mut fgs);
+    compress_stream_u32(blocks.iter().map(|b| b.bg as u32), &mut bgs);
+
+    MoebiusCompressedData {
+        code: codes,
+        fg: fgs,
+        bg: bgs,
+    }
+}
+
+/// Convert row-major flat blocks into the column-major 2D layout used internally.
+pub fn flat_to_columns(blocks: &[Block], columns: u32, rows: u32) -> Vec<Vec<Block>> {
     let mut result = Vec::with_capacity(columns as usize);
     for col in 0..columns as usize {
         let mut column = Vec::with_capacity(rows as usize);
         for row in 0..rows as usize {
             let idx = row * columns as usize + col;
-            if idx < flat.len() {
-                column.push(flat[idx].clone());
-            } else {
-                column.push(Block::default());
-            }
+            column.push(blocks.get(idx).cloned().unwrap_or_default());
         }
         result.push(column);
     }
-    Ok(result)
+    result
 }
 
 /// Error type for compression operations.
 #[derive(Debug, Clone)]
 pub enum CompressionError {
-    /// Invalid base64 encoding
-    Base64Error(String),
-    /// Corrupted RLE data
-    InvalidRleData(String),
-    /// Unexpected end of data
-    UnexpectedEof,
+    /// Corrupt or inconsistent data
+    InvalidData(String),
 }
 
 impl std::fmt::Display for CompressionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompressionError::Base64Error(msg) => write!(f, "Base64 error: {}", msg),
-            CompressionError::InvalidRleData(msg) => write!(f, "Invalid RLE data: {}", msg),
-            CompressionError::UnexpectedEof => write!(f, "Unexpected end of compressed data"),
+            CompressionError::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
         }
     }
 }
 
 impl std::error::Error for CompressionError {}
 
-/// RLE encode blocks to bytes.
-fn rle_encode(blocks: &[Block]) -> Vec<u8> {
-    let mut result = Vec::new();
-    let mut i = 0;
+fn expand_rle_stream(pairs: &[[u32; 2]]) -> Result<Vec<u32>, CompressionError> {
+    let mut out: Vec<u32> = Vec::new();
+    for pair in pairs {
+        let value = pair[0];
+        let repeat = pair[1] as usize;
+        let run_len = repeat
+            .checked_add(1)
+            .ok_or_else(|| CompressionError::InvalidData("repeat overflow".to_string()))?;
 
-    while i < blocks.len() {
-        let current = &blocks[i];
-        let mut run_length = 1;
-
-        // Count consecutive identical blocks
-        while i + run_length < blocks.len()
-            && run_length < MAX_RUN_LENGTH
-            && blocks[i + run_length].code == current.code
-            && blocks[i + run_length].fg == current.fg
-            && blocks[i + run_length].bg == current.bg
-        {
-            run_length += 1;
-        }
-
-        // Encode the block
-        let code_byte = (current.code & 0xFF) as u8;
-
-        if run_length > 3 || code_byte == RLE_MARKER {
-            // Use RLE encoding: [MARKER, count, code, fg, bg]
-            result.push(RLE_MARKER);
-            result.push(run_length as u8);
-            result.push(code_byte);
-            result.push(current.fg);
-            result.push(current.bg);
-        } else {
-            // Write blocks individually: [code, fg, bg] for each
-            for _ in 0..run_length {
-                result.push(code_byte);
-                result.push(current.fg);
-                result.push(current.bg);
-            }
-        }
-
-        i += run_length;
-    }
-
-    result
-}
-
-/// RLE decode bytes to blocks.
-fn rle_decode(data: &[u8]) -> Result<Vec<Block>, CompressionError> {
-    let mut result = Vec::new();
-    let mut reader = std::io::Cursor::new(data);
-
-    loop {
-        let mut byte = [0u8; 1];
-        match reader.read_exact(&mut byte) {
-            Ok(()) => {}
-            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(CompressionError::InvalidRleData(e.to_string())),
-        }
-
-        if byte[0] == RLE_MARKER {
-            // RLE encoded sequence
-            let mut header = [0u8; 4];
-            reader.read_exact(&mut header).map_err(|_| CompressionError::UnexpectedEof)?;
-
-            let count = header[0] as usize;
-            let block = Block {
-                code: header[1] as u32,
-                fg: header[2],
-                bg: header[3],
-            };
-
-            for _ in 0..count {
-                result.push(block.clone());
-            }
-        } else {
-            // Single block
-            let mut rest = [0u8; 2];
-            reader.read_exact(&mut rest).map_err(|_| CompressionError::UnexpectedEof)?;
-
-            result.push(Block {
-                code: byte[0] as u32,
-                fg: rest[0],
-                bg: rest[1],
-            });
+        out.reserve(run_len);
+        for _ in 0..run_len {
+            out.push(value);
         }
     }
-
-    Ok(result)
+    Ok(out)
 }
 
-/// Base64 encode bytes using the standard alphabet.
-fn base64_encode(data: &[u8]) -> String {
-    BASE64.encode(data)
-}
+fn compress_stream_u32<I: Iterator<Item = u32>>(mut iter: I, out: &mut Vec<[u32; 2]>) {
+    let Some(mut current) = iter.next() else {
+        return;
+    };
+    let mut repeat: u32 = 0;
 
-/// Base64 decode string to bytes.
-fn base64_decode(data: &str) -> Result<Vec<u8>, CompressionError> {
-    BASE64.decode(data).map_err(|e| CompressionError::Base64Error(e.to_string()))
+    for value in iter {
+        if value == current {
+            repeat = repeat.saturating_add(1);
+        } else {
+            out.push([current, repeat]);
+            current = value;
+            repeat = 0;
+        }
+    }
+    out.push([current, repeat]);
 }
 
 #[cfg(test)]
@@ -199,10 +148,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_compress_decompress_single() {
+    fn test_moebius_compress_uncompress_single() {
         let blocks = vec![Block { code: 65, fg: 7, bg: 0 }];
-        let compressed = compress_blocks(&blocks);
-        let decompressed = decompress_blocks(&compressed).unwrap();
+        let compressed = compress_moebius_data(&blocks);
+        let decompressed = uncompress_moebius_data(1, 1, &compressed).unwrap();
         assert_eq!(blocks.len(), decompressed.len());
         assert_eq!(blocks[0].code, decompressed[0].code);
         assert_eq!(blocks[0].fg, decompressed[0].fg);
@@ -210,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn test_compress_decompress_run() {
+    fn test_moebius_compress_uncompress_run() {
         let block = Block { code: 32, fg: 7, bg: 0 };
         let blocks: Vec<Block> = std::iter::repeat(block.clone()).take(100).collect();
-        let compressed = compress_blocks(&blocks);
-        let decompressed = decompress_blocks(&compressed).unwrap();
+        let compressed = compress_moebius_data(&blocks);
+        let decompressed = uncompress_moebius_data(100, 1, &compressed).unwrap();
         assert_eq!(blocks.len(), decompressed.len());
         for (orig, dec) in blocks.iter().zip(decompressed.iter()) {
             assert_eq!(orig.code, dec.code);
@@ -224,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compress_decompress_mixed() {
+    fn test_moebius_compress_uncompress_mixed() {
         let blocks = vec![
             Block { code: 65, fg: 1, bg: 0 },
             Block { code: 66, fg: 2, bg: 0 },
@@ -236,8 +185,8 @@ mod tests {
             Block { code: 32, fg: 7, bg: 0 },
             Block { code: 68, fg: 4, bg: 1 },
         ];
-        let compressed = compress_blocks(&blocks);
-        let decompressed = decompress_blocks(&compressed).unwrap();
+        let compressed = compress_moebius_data(&blocks);
+        let decompressed = uncompress_moebius_data(blocks.len() as u32, 1, &compressed).unwrap();
         assert_eq!(blocks.len(), decompressed.len());
         for (i, (orig, dec)) in blocks.iter().zip(decompressed.iter()).enumerate() {
             assert_eq!(orig.code, dec.code, "Mismatch at index {}", i);
@@ -247,18 +196,11 @@ mod tests {
     }
 
     #[test]
-    fn test_base64_roundtrip() {
-        let data = b"Hello, World! This is a test.";
-        let encoded = base64_encode(data);
-        let decoded = base64_decode(&encoded).unwrap();
-        assert_eq!(data.as_slice(), decoded.as_slice());
-    }
-
-    #[test]
     fn test_empty() {
         let blocks: Vec<Block> = vec![];
-        let compressed = compress_blocks(&blocks);
-        let decompressed = decompress_blocks(&compressed).unwrap();
-        assert!(decompressed.is_empty());
+        let compressed = compress_moebius_data(&blocks);
+        assert!(compressed.code.is_empty());
+        assert!(compressed.fg.is_empty());
+        assert!(compressed.bg.is_empty());
     }
 }

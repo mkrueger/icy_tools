@@ -121,13 +121,7 @@ impl CollaborationConnector {
             .into_iter()
             .map(|(col, row, code, fg, bg)| {
                 let block = Block { code, fg, bg };
-                DrawMessage {
-                    action: 8, // Draw
-                    col,
-                    row,
-                    block,
-                    layer: self.config.active_layer,
-                }
+                DrawMessage::with_layer(0, col, row, block, self.config.active_layer.unwrap_or(0))
             })
             .collect();
 
@@ -201,7 +195,7 @@ pub fn apply_remote_draw(buffer: &mut crate::TextBuffer, col: i32, row: i32, blo
 /// Apply multiple remote draw events.
 pub fn apply_remote_draws(buffer: &mut crate::TextBuffer, draws: &[DrawMessage]) {
     for draw in draws {
-        apply_remote_draw(buffer, draw.col, draw.row, &draw.block, draw.layer);
+        apply_remote_draw(buffer, draw.data.x, draw.data.y, &draw.data.block, draw.data.layer);
     }
 }
 

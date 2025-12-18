@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 
 use crate::{SharedFontLibrary, fl};
 use iced::{
-    Alignment, Element, Event, Length, Task, Theme,
+    Alignment, Element, Event, Length, Subscription, Task, Theme,
     widget::{Space, column, container, mouse_area, row, rule, text},
 };
 use icy_engine::TextPane;
@@ -27,6 +27,7 @@ use super::commands::create_draw_commands;
 use super::menu::{MenuBarState, UndoInfo};
 use crate::Plugin;
 use crate::Settings;
+use crate::ui::collaboration::CollaborationState;
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
@@ -341,6 +342,22 @@ pub enum Message {
     // Toast notifications
     ShowToast(Toast),
     CloseToast(usize),
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Collaboration
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Show connect to server dialog
+    ShowConnectDialog,
+    /// Toggle chat panel visibility
+    ToggleChatPanel,
+    /// Connect dialog messages
+    ConnectDialog(crate::ui::dialog::ConnectDialogMessage),
+    /// Connect to server with result from dialog
+    ConnectToServer(crate::ui::dialog::ConnectDialogResult),
+    /// Chat panel messages
+    ChatPanel(crate::ui::collaboration::ChatPanelMessage),
+    /// Collaboration subscription message
+    Collaboration(crate::ui::collaboration::CollaborationMessage),
 }
 
 /// Status bar information that can be provided by any editor mode
@@ -464,6 +481,9 @@ pub struct MainWindow {
 
     /// Toast notifications for user feedback
     toasts: Vec<Toast>,
+
+    /// Collaboration state for real-time editing
+    pub(super) collaboration_state: CollaborationState,
 }
 
 impl MainWindow {
@@ -549,6 +569,7 @@ impl MainWindow {
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
+            collaboration_state: CollaborationState::new(),
         };
         window.update_title();
         window
@@ -752,6 +773,7 @@ impl MainWindow {
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
+            collaboration_state: CollaborationState::new(),
         };
         window.update_title();
         window
@@ -1154,6 +1176,55 @@ impl MainWindow {
                 }
             }
             Message::AnsiEditor(msg) => {
+                // Intercept CollaborationDraw messages - send to server before forwarding
+                if let AnsiEditorMessage::CollaborationDraw(col, row, code, fg, bg) = &msg {
+                    if self.collaboration_state.is_connected() {
+                        use icy_engine_edit::collaboration::Block;
+                        if let Some(task) = self
+                            .collaboration_state
+                            .send_draw(*col, *row, Block { code: *code, fg: *fg, bg: *bg })
+                        {
+                            return task.discard();
+                        }
+                    }
+                    // Don't forward this message further - it's been handled
+                    return Task::none();
+                }
+
+                // Intercept collaboration caret/selection messages
+                if let AnsiEditorMessage::CollaborationCursor(col, row) = &msg {
+                    if self.collaboration_state.is_connected() {
+                        if let Some(task) = self.collaboration_state.send_cursor(*col, *row) {
+                            return task.discard();
+                        }
+                    }
+                    return Task::none();
+                }
+
+                if let AnsiEditorMessage::CollaborationSelection(selecting, col, row) = &msg {
+                    if self.collaboration_state.is_connected() {
+                        if let Some(task) = self.collaboration_state.send_selection(*selecting, *col, *row) {
+                            return task.discard();
+                        }
+                    }
+                    return Task::none();
+                }
+
+                // Intercept hide cursor message (tool switched to non-cursor tool)
+                if let AnsiEditorMessage::CollaborationHideCursor = &msg {
+                    if self.collaboration_state.is_connected() {
+                        if let Some(task) = self.collaboration_state.send_hide_cursor() {
+                            return task.discard();
+                        }
+                    }
+                    return Task::none();
+                }
+
+                // Intercept ChatPanel messages and handle them at MainWindow level
+                if let AnsiEditorMessage::ChatPanel(chat_msg) = msg {
+                    return self.update(Message::ChatPanel(chat_msg));
+                }
+
                 // Handle AnsiEditorMessage::Core for CharFont editor by forwarding to CharFontEditor
                 if let ModeState::CharFont(editor) = &mut self.mode_state {
                     if let AnsiEditorMessage::Core(core_msg) = msg {
@@ -1401,7 +1472,205 @@ impl MainWindow {
                 }
                 Task::none()
             }
+
+            // ═══════════════════════════════════════════════════════════════════════════
+            // Collaboration
+            // ═══════════════════════════════════════════════════════════════════════════
+            Message::ShowConnectDialog => {
+                // Show connection dialog
+                use crate::ui::dialog::ConnectDialog;
+                self.dialogs.push(ConnectDialog::new());
+                Task::none()
+            }
+            Message::ConnectDialog(_) => {
+                // Route to dialog stack
+                if let Some(task) = self.dialogs.update(&message) {
+                    return task;
+                }
+                Task::none()
+            }
+            Message::ConnectToServer(ref result) => {
+                // Start collaboration connection
+                log::info!("Connecting to server: {} as {}", result.url, result.nick);
+                
+                // Store connection info and start connecting
+                // The subscription will pick this up and establish the connection
+                self.collaboration_state.start_connecting(
+                    result.url.clone(), 
+                    result.nick.clone(),
+                    result.password.clone(),
+                );
+                
+                let toast = Toast::info(format!("Connecting to {}...", result.url));
+                Task::done(Message::ShowToast(toast))
+            }
+            Message::ToggleChatPanel => {
+                // Toggle chat panel visibility
+                self.collaboration_state.toggle_chat();
+                Task::none()
+            }
+            Message::ChatPanel(ref msg) => {
+                use crate::ui::collaboration::ChatPanelMessage;
+                match msg {
+                    ChatPanelMessage::InputChanged(text) => {
+                        self.collaboration_state.chat_input = text.clone();
+                    }
+                    ChatPanelMessage::SendMessage => {
+                        if !self.collaboration_state.chat_input.trim().is_empty() {
+                            let text = std::mem::take(&mut self.collaboration_state.chat_input);
+                            if let Some(task) = self.collaboration_state.send_chat(text) {
+                                return task.discard();
+                            }
+                        }
+                    }
+                    ChatPanelMessage::GotoUser(user_id) => {
+                        // Move camera to user's cursor position
+                        if let Some(user) = self.collaboration_state.get_user(*user_id) {
+                            if let Some((col, row)) = user.cursor {
+                                log::info!("Goto user {} at ({}, {})", user.user.nick, col, row);
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.scroll_to_position(col, row);
+                                }
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::Collaboration(ref collab_msg) => {
+                use crate::ui::collaboration::CollaborationMessage;
+                use icy_engine_edit::collaboration::CollaborationEvent;
+                
+                match collab_msg {
+                    CollaborationMessage::Ready(client) => {
+                        log::info!("Collaboration connected!");
+                        self.collaboration_state.on_connected(client.clone());
+                        let toast = Toast::success("Connected to collaboration server".to_string());
+                        return Task::done(Message::ShowToast(toast));
+                    }
+                    CollaborationMessage::Event(event) => {
+                        match event {
+                            CollaborationEvent::Connected(doc) => {
+                                self.collaboration_state.start_session(
+                                    doc.user_id, doc.columns, doc.rows, doc.use_9px, doc.ice_colors, doc.font.clone()
+                                );
+
+                                // Apply initial document snapshot from server
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_document(&doc.document, doc.columns, doc.rows);
+                                    editor.sync_ui();
+                                }
+
+                                // Seed initial user list (Moebius sends existing users only)
+                                for user in doc.users.iter() {
+                                    self.collaboration_state.add_user(user.clone());
+                                }
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::UserJoined(user) => {
+                                log::info!("User joined: {}", user.nick);
+                                self.collaboration_state.add_user(user.clone());
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::UserLeft { user_id, nick } => {
+                                log::info!("User {} left", nick);
+                                self.collaboration_state.remove_user(*user_id);
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::CursorMoved { user_id, col, row } => {
+                                self.collaboration_state.update_cursor(*user_id, *col, *row);
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::SelectionChanged { user_id, selecting, col, row } => {
+                                self.collaboration_state.update_selection(*user_id, *selecting, *col, *row);
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::OperationStarted { user_id, col, row } => {
+                                self.collaboration_state.update_operation(*user_id, *col, *row);
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::CursorHidden { user_id } => {
+                                self.collaboration_state.hide_user_cursor(*user_id);
+                                self.sync_remote_cursors_to_editor();
+                            }
+                            CollaborationEvent::StatusChanged(status) => {
+                                self.collaboration_state.update_user_status(status.id, status.status);
+                            }
+                            CollaborationEvent::SauceChanged(sauce) => {
+                                // Apply remote SAUCE metadata update
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_sauce(
+                                        sauce.title.clone(),
+                                        sauce.author.clone(),
+                                        sauce.group.clone(),
+                                        sauce.comments.clone(),
+                                    );
+                                }
+                                // Show chat notification
+                                if let Some(user) = self.collaboration_state.remote_users.get(&sauce.id) {
+                                    let nick = user.user.nick.clone();
+                                    self.collaboration_state.add_system_message(&format!("{} changed the SAUCE record", nick));
+                                }
+                            }
+                            CollaborationEvent::Draw { col, row, block } => {
+                                // Apply remote draw to our buffer
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_draw(*col, *row, block.code, block.fg, block.bg);
+                                }
+                            }
+                            CollaborationEvent::CanvasResized { columns, rows } => {
+                                self.collaboration_state.update_canvas_size(*columns, *rows);
+
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_canvas_resize(*columns, *rows);
+                                    editor.sync_ui();
+                                }
+                            }
+                            CollaborationEvent::Chat(msg) => {
+                                self.collaboration_state.add_chat_message(msg.clone());
+                            }
+                            CollaborationEvent::Disconnected => {
+                                log::info!("Disconnected from collaboration server");
+                                self.collaboration_state.end_session();
+                                let toast = Toast::info("Disconnected from collaboration server".to_string());
+                                return Task::done(Message::ShowToast(toast));
+                            }
+                            CollaborationEvent::Error(e) => {
+                                log::error!("Collaboration error: {}", e);
+                                self.collaboration_state.end_session();
+                                let toast = Toast::error(format!("Connection error: {}", e));
+                                return Task::done(Message::ShowToast(toast));
+                            }
+                            _ => {
+                                // Handle other events as needed
+                                log::debug!("Unhandled collaboration event: {:?}", event);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
         }
+    }
+
+    /// Get the collaboration subscription if connecting or connected
+    pub fn subscription(&self) -> Subscription<Message> {
+        use iced::Subscription;
+        
+        if self.collaboration_state.connecting || self.collaboration_state.active {
+            if let (Some(url), Some(nick)) = (&self.collaboration_state.server_url, &self.collaboration_state.nick) {
+                let password = self.collaboration_state.password.clone().unwrap_or_default();
+                let config = icy_engine_edit::collaboration::ClientConfig {
+                    url: url.clone(),
+                    nick: nick.clone(),
+                    password,
+                    ping_interval_secs: 30,
+                };
+                return crate::ui::collaboration::connect(config).map(Message::Collaboration);
+            }
+        }
+        
+        Subscription::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -1426,11 +1695,33 @@ impl MainWindow {
         let menu_bar = self
             .menu_state
             .view(&self.mode_state.mode(), options, &undo_info, &marker_state, self.plugins.clone(), mirror_mode);
+
+        // Build chat panel if collaboration is active and visible
+        let chat_panel: Option<Element<'_, Message>> = if self.collaboration_state.chat_visible && self.collaboration_state.active {
+            Some(crate::ui::collaboration::view_chat_panel(
+                &self.collaboration_state,
+                &self.collaboration_state.chat_input,
+            ))
+        } else {
+            None
+        };
+
+        // Pass chat panel to editors - they manage the layout themselves (Moebius-style)
         let content: Element<'_, Message> = match &self.mode_state {
-            ModeState::Ansi(editor) => editor.view().map(Message::AnsiEditor),
-            ModeState::BitFont(editor) => editor.view().map(Message::BitFontEditor),
-            ModeState::CharFont(editor) => editor.view().map(Message::CharFontEditor),
-            ModeState::Animation(editor) => editor.view().map(Message::AnimationEditor),
+            ModeState::Ansi(editor) => {
+                let chat = chat_panel.map(|c| c.map(|m| {
+                    // Convert Message back to AnsiEditorMessage for chat interactions
+                    // Chat messages bubble back up through the normal message flow
+                    match m {
+                        Message::ChatPanel(msg) => crate::ui::editor::ansi::AnsiEditorMessage::ChatPanel(msg),
+                        _ => crate::ui::editor::ansi::AnsiEditorMessage::Noop,
+                    }
+                }));
+                editor.view(chat).map(Message::AnsiEditor)
+            },
+            ModeState::BitFont(editor) => editor.view(None).map(Message::BitFontEditor),
+            ModeState::CharFont(editor) => editor.view(None).map(Message::CharFontEditor),
+            ModeState::Animation(editor) => editor.view(None).map(Message::AnimationEditor),
         };
 
         // Status bar
@@ -1443,6 +1734,62 @@ impl MainWindow {
 
         // Wrap with toast manager
         ToastManager::new(with_dialogs, &self.toasts, Message::CloseToast).into()
+    }
+
+    /// Sync remote cursor positions from collaboration state to the ANSI editor
+    fn sync_remote_cursors_to_editor(&mut self) {
+        use crate::ui::editor::ansi::widget::remote_cursors::{RemoteCursor, RemoteCursorMode};
+        use crate::ui::collaboration::state::CursorMode;
+        
+        let cursors: Vec<RemoteCursor> = self
+            .collaboration_state
+            .remote_users
+            .values()
+            .filter_map(|user| {
+                // Skip hidden cursors
+                if user.cursor_mode == CursorMode::Hidden {
+                    return None;
+                }
+                
+                // Convert mode
+                let mode = match user.cursor_mode {
+                    CursorMode::Hidden => RemoteCursorMode::Hidden,
+                    CursorMode::Editing => RemoteCursorMode::Editing,
+                    CursorMode::Selection => {
+                        // Use cursor position as start, selection position as current
+                        if let Some((start_col, start_row)) = user.cursor {
+                            RemoteCursorMode::Selection { start_col, start_row }
+                        } else {
+                            RemoteCursorMode::Editing
+                        }
+                    },
+                    CursorMode::Operation => RemoteCursorMode::Operation,
+                };
+                
+                // Determine which position to use
+                let (col, row) = match user.cursor_mode {
+                    CursorMode::Selection => {
+                        user.selection.as_ref().map(|s| (s.col, s.row)).or(user.cursor)?
+                    },
+                    CursorMode::Operation => {
+                        user.operation.as_ref().map(|o| (o.col, o.row)).or(user.cursor)?
+                    },
+                    _ => user.cursor?,
+                };
+                
+                Some(RemoteCursor {
+                    nick: user.user.nick.clone(),
+                    col,
+                    row,
+                    user_id: user.user.id,
+                    mode,
+                })
+            })
+            .collect();
+        
+        if let ModeState::Ansi(editor) = &mut self.mode_state {
+            editor.set_remote_cursors(cursors);
+        }
     }
 
     fn view_status_bar(&self) -> Element<'_, Message> {
@@ -1597,6 +1944,29 @@ impl MainWindow {
 
     /// Handle events passed from the window manager
     pub fn handle_event(&mut self, event: &Event) -> (Option<Message>, Task<Message>) {
+        // When chat panel is open, do NOT forward normal typing events to the editor.
+        // Iced widgets will still receive them, but the editor (and command handler)
+        // would otherwise also interpret them, causing text to be drawn while typing chat.
+        if self.collaboration_state.active && self.collaboration_state.chat_visible {
+            if let Event::Keyboard(key_event) = event {
+                // Allow shortcuts (Ctrl/Alt/Logo) to still work.
+                // Block plain typing (and navigation keys) from reaching editor/commands.
+                match key_event {
+                    iced::keyboard::Event::KeyPressed { modifiers, .. }
+                        if !modifiers.control() && !modifiers.alt() && !modifiers.logo() =>
+                    {
+                        return (None, Task::none());
+                    }
+                    iced::keyboard::Event::KeyReleased { modifiers, .. }
+                        if !modifiers.control() && !modifiers.alt() && !modifiers.logo() =>
+                    {
+                        return (None, Task::none());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Try the command handler first for both keyboard and mouse events
         if let Some(msg) = self.commands.handle(event) {
             return (Some(msg), Task::none());

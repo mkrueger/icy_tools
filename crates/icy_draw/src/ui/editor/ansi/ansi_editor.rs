@@ -85,6 +85,9 @@ pub(crate) struct AnsiEditorCore {
 
     /// Tool switch requested by a tool result; executed by the wrapper.
     pending_tool_switch: Option<tools::ToolId>,
+
+    /// Remote cursors from collaboration (updated externally)
+    remote_cursors: Vec<widget::remote_cursors::RemoteCursor>,
 }
 
 impl AnsiEditorCore {
@@ -227,6 +230,21 @@ impl AnsiEditorCore {
                 scroll_y,
             );
             center_layers.push(line_numbers_overlay);
+        }
+
+        // Add remote cursors overlay if there are any
+        if !self.remote_cursors.is_empty() {
+            let remote_cursors_overlay = widget::remote_cursors::remote_cursors_overlay(
+                self.canvas.terminal.render_info.clone(),
+                self.remote_cursors.clone(),
+                font_width,
+                font_height,
+                scroll_x,
+                scroll_y,
+                buffer_width,
+                buffer_height as usize,
+            );
+            center_layers.push(remote_cursors_overlay);
         }
 
         // Add tag context menu overlay if active.
@@ -528,6 +546,7 @@ impl AnsiEditorCore {
             ToolResult::Redraw => ToolResult::Redraw,
             ToolResult::Commit(msg) => {
                 self.is_modified = true;
+                // Char changes are now collected directly in EditState during push_undo_action
                 ToolResult::Commit(msg)
             }
             ToolResult::Status(msg) => ToolResult::Status(msg),
@@ -662,6 +681,8 @@ impl AnsiEditorCore {
             tool_set_cursor_icon: false,
 
             pending_tool_switch: None,
+            
+            remote_cursors: Vec::new(),
         };
 
         // Initialize marker-dependent uniforms (especially `layer_bounds`) so the selection
@@ -673,6 +694,11 @@ impl AnsiEditorCore {
         *editor.canvas.terminal.cursor_icon.write() = Some(editor.current_tool.cursor());
 
         (editor, palette, format_mode)
+    }
+
+    /// Update remote cursors from collaboration state
+    pub fn set_remote_cursors(&mut self, cursors: Vec<widget::remote_cursors::RemoteCursor>) {
+        self.remote_cursors = cursors;
     }
 
     pub(super) fn clear_tool_overlay(&mut self) {
@@ -1109,6 +1135,22 @@ impl AnsiEditorCore {
             cache.scroll_offset_x,
             cache.scroll_offset_y,
         )
+    }
+
+    /// Scroll the canvas to show a character position (col, row)
+    pub fn scroll_to_position(&mut self, col: i32, row: i32) {
+        let (buf_width, buf_height) = {
+            let mut screen_guard = self.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let buffer = state.get_buffer();
+            (buffer.width().max(1) as f32, buffer.height().max(1) as f32)
+        };
+        let norm_x: f32 = (col as f32 + 0.5) / buf_width;
+        let norm_y: f32 = (row as f32 + 0.5) / buf_height;
+        self.scroll_canvas_to_normalized(norm_x.clamp(0.0, 1.0), norm_y.clamp(0.0, 1.0));
     }
 
     /// Scroll the canvas to a normalized position (0.0-1.0)
@@ -1906,6 +1948,13 @@ impl AnsiEditorCore {
         self.pending_tool_switch.take()
     }
 
+    /// Take pending character changes for collaboration
+    /// Returns (col, row, code, fg, bg) tuples to send to the server
+    /// Now delegates to EditState where changes are collected during undo/redo operations
+    pub fn take_pending_char_changes(&mut self) -> Vec<(i32, i32, u32, u8, u8)> {
+        self.with_edit_state(|state| state.take_pending_char_changes())
+    }
+
     /// Update the canvas markers based on current guide/raster settings
     fn update_markers(&mut self) {
         // Get font dimensions from screen for pixel conversion
@@ -2587,6 +2636,17 @@ impl AnsiEditorCore {
         match self.current_tool.id() {
             tools::ToolId::Tool(t) => t,
             tools::ToolId::Paste => Tool::Click,
+        }
+    }
+
+    /// Check if the current tool shows cursor position for collaboration
+    ///
+    /// Tools like Click and Select show cursor to other users.
+    /// Drawing tools hide cursor since the user is focused on drawing.
+    pub fn current_tool_shows_cursor(&self) -> bool {
+        match self.current_tool.id() {
+            tools::ToolId::Tool(t) => t.shows_cursor_for_collaboration(),
+            tools::ToolId::Paste => false, // Paste mode hides cursor
         }
     }
 

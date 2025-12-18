@@ -45,6 +45,9 @@ pub struct AnsiEditorMainArea {
     slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
     /// Paste controls widget
     paste_controls: PasteControls,
+
+    last_sent_cursor: Option<(i32, i32)>,
+    last_sent_selection: Option<(bool, i32, i32)>,
 }
 
 impl AnsiEditorMainArea {
@@ -80,6 +83,8 @@ impl AnsiEditorMainArea {
             right_panel: RightPanel::new(),
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             paste_controls: PasteControls::new(),
+            last_sent_cursor: None,
+            last_sent_selection: None,
         }
     }
 
@@ -178,6 +183,133 @@ impl AnsiEditorMainArea {
 
     pub fn set_zoom(&mut self, zoom: f32) {
         self.core.canvas.set_zoom(zoom);
+    }
+
+    /// Apply a remote draw operation from collaboration
+    pub fn apply_remote_draw(&mut self, x: i32, y: i32, code: u32, fg: u8, bg: u8) {
+        use icy_engine::TextPane;
+        self.core.with_edit_state(|state| {
+            state.with_buffer_mut_no_undo(|buffer| {
+                let pos = (x, y);
+                let ch = buffer.layers[0].char_at(pos.into());
+                let mut new_ch = ch;
+                new_ch.ch = char::from_u32(code).unwrap_or(' ');
+                new_ch.attribute.set_foreground(fg as u32);
+                new_ch.attribute.set_background(bg as u32);
+                buffer.layers[0].set_char(pos, new_ch);
+
+                // `with_buffer_mut_no_undo` bypasses normal edit ops/undo tracking,
+                // so we must explicitly invalidate render caches.
+                buffer.mark_dirty();
+            });
+        });
+    }
+
+    /// Apply a full remote document snapshot from collaboration.
+    ///
+    /// `document` is column-major: `document[col][row]`.
+    pub fn apply_remote_document(&mut self, document: &[Vec<icy_engine_edit::collaboration::Block>], columns: u32, rows: u32) {
+        use icy_engine::{AttributedChar, Position};
+
+        let cols_i32 = columns as i32;
+        let rows_i32 = rows as i32;
+
+        self.core.with_edit_state(|state| {
+            state.with_buffer_mut_no_undo(|buffer| {
+                buffer.set_size((cols_i32, rows_i32));
+
+                if buffer.layers.is_empty() {
+                    return;
+                }
+
+                // Resize and preallocate layer 0 for fast bulk writes.
+                let layer = &mut buffer.layers[0];
+                layer.preallocate_lines(cols_i32, rows_i32);
+
+                for col in 0..(columns as usize) {
+                    for row in 0..(rows as usize) {
+                        let block = document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
+
+                        let mut ch = AttributedChar::default();
+                        ch.ch = char::from_u32(block.code).unwrap_or(' ');
+                        ch.attribute.set_foreground(block.fg as u32);
+                        ch.attribute.set_background(block.bg as u32);
+
+                        layer.set_char_unchecked(Position::new(col as i32, row as i32), ch);
+                    }
+                }
+
+                // Bulk-load path bypasses normal edit ops/undo tracking.
+                buffer.mark_dirty();
+            });
+        });
+    }
+
+    /// Apply a canvas size change (Moebius `SET_CANVAS_SIZE`).
+    ///
+    /// Preserves existing characters in the overlapping region and crops/extends
+    /// as required.
+    pub fn apply_remote_canvas_resize(&mut self, columns: u32, rows: u32) {
+        use icy_engine::{AttributedChar, Line, Size};
+
+        let new_w = columns as i32;
+        let new_h = rows as i32;
+
+        self.core.with_edit_state(|state| {
+            state.with_buffer_mut_no_undo(|buffer| {
+                let old_w = buffer.width();
+                let old_h = buffer.height();
+
+                buffer.set_size(Size::new(new_w, new_h));
+
+                for layer in buffer.layers.iter_mut() {
+                    layer.set_size(Size::new(new_w, new_h));
+
+                    // Ensure we have a full line vector to work with.
+                    if layer.lines.len() < old_h.max(0) as usize {
+                        layer.lines.resize(old_h.max(0) as usize, Line::create(old_w));
+                    }
+
+                    // Resize height (crop/extend)
+                    layer.lines.truncate(new_h.max(0) as usize);
+                    while layer.lines.len() < new_h.max(0) as usize {
+                        layer.lines.push(Line::create(new_w));
+                    }
+
+                    // Resize width for each line (preserve prefix)
+                    for line in layer.lines.iter_mut() {
+                        if line.chars.len() > new_w.max(0) as usize {
+                            line.chars.truncate(new_w.max(0) as usize);
+                        } else if line.chars.len() < new_w.max(0) as usize {
+                            line.chars.resize(new_w.max(0) as usize, AttributedChar::invisible());
+                        }
+                    }
+                }
+
+                buffer.mark_dirty();
+            });
+        });
+    }
+
+    /// Apply SAUCE metadata change from remote user.
+    pub fn apply_remote_sauce(&mut self, title: String, author: String, group: String, comments: String) {
+        self.core.with_edit_state(|state| {
+            let sauce = state.get_sauce_meta_mut();
+            sauce.title = title.into();
+            sauce.author = author.into();
+            sauce.group = group.into();
+            sauce.comments = comments.lines().map(|line| line.to_string().into()).collect();
+        });
+    }
+
+    /// Update remote cursors from collaboration state
+    pub fn set_remote_cursors(&mut self, cursors: Vec<super::widget::remote_cursors::RemoteCursor>) {
+        self.core.set_remote_cursors(cursors);
+    }
+
+    /// Scroll the canvas to show the given character position (used for goto user)
+    pub fn scroll_to_position(&mut self, col: i32, row: i32) {
+        self.core.scroll_to_position(col, row);
     }
 
     pub fn zoom_info_string(&self) -> String {
@@ -445,9 +577,22 @@ impl AnsiEditorMainArea {
             // Tool and panel messages
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorMessage::SwitchTool(tool) => {
+                // Check if old tool showed cursor
+                let old_shows_cursor = self.core.current_tool_shows_cursor();
+
                 let reg = &mut self.tool_panel.registry;
                 self.core.change_tool(reg, tool);
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
+
+                // Check if new tool shows cursor
+                let new_shows_cursor = self.core.current_tool_shows_cursor();
+
+                // Send hide cursor if switched from cursor-showing to non-cursor tool
+                if old_shows_cursor && !new_shows_cursor {
+                    return Task::done(AnsiEditorMessage::CollaborationHideCursor);
+                }
+                // If switched to cursor-showing tool, the cursor position will be sent on next caret move
+
                 Task::none()
             }
             AnsiEditorMessage::ToolPanel(msg) => {
@@ -455,6 +600,9 @@ impl AnsiEditorMainArea {
                 let _ = self.tool_panel.update(msg.clone());
 
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
+                    // Check if old tool showed cursor
+                    let old_shows_cursor = self.core.current_tool_shows_cursor();
+
                     let current_tool = self.core.current_tool_for_panel();
                     let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                     {
@@ -463,11 +611,22 @@ impl AnsiEditorMainArea {
                     }
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.core.current_tool_for_panel());
+
+                    // Check if new tool shows cursor
+                    let new_shows_cursor = self.core.current_tool_shows_cursor();
+
+                    // Send hide cursor if switched from cursor-showing to non-cursor tool
+                    if old_shows_cursor && !new_shows_cursor {
+                        return Task::done(AnsiEditorMessage::CollaborationHideCursor);
+                    }
                 }
 
                 Task::none()
             }
             AnsiEditorMessage::SelectTool(slot) => {
+                // Check if old tool showed cursor
+                let old_shows_cursor = self.core.current_tool_shows_cursor();
+
                 let current_tool = self.core.current_tool_for_panel();
                 let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                 {
@@ -475,6 +634,15 @@ impl AnsiEditorMainArea {
                     self.core.change_tool(reg, tools::ToolId::Tool(new_tool));
                 }
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
+
+                // Check if new tool shows cursor
+                let new_shows_cursor = self.core.current_tool_shows_cursor();
+
+                // Send hide cursor if switched from cursor-showing to non-cursor tool
+                if old_shows_cursor && !new_shows_cursor {
+                    return Task::done(AnsiEditorMessage::CollaborationHideCursor);
+                }
+
                 Task::none()
             }
             AnsiEditorMessage::PaletteGrid(msg) => {
@@ -582,20 +750,78 @@ impl AnsiEditorMainArea {
                     return Task::batch(vec![task.map(AnsiEditorMessage::Core), Task::done(AnsiEditorMessage::SwitchTool(tool_id))]);
                 }
 
+                // Check for pending char changes from core (for collaboration)
+                let char_changes = self.core.take_pending_char_changes();
+                let collab_tasks: Vec<Task<AnsiEditorMessage>> = char_changes
+                    .into_iter()
+                    .map(|(col, row, code, fg, bg)| Task::done(AnsiEditorMessage::CollaborationDraw(col, row, code, fg, bg)))
+                    .collect();
+
+                // Check for caret/selection changes (for collaboration)
+                let (caret_col, caret_row, selecting) = {
+                    let mut screen_guard = self.core.screen.lock();
+                    let state = screen_guard
+                        .as_any_mut()
+                        .downcast_mut::<EditState>()
+                        .expect("AnsiEditor screen should always be EditState");
+                    let caret = state.get_caret();
+                    let selecting = state.selection().is_some();
+                    (caret.x as i32, caret.y as i32, selecting)
+                };
+
+                let mut caret_tasks: Vec<Task<AnsiEditorMessage>> = Vec::new();
+
+                if self.last_sent_cursor != Some((caret_col, caret_row)) {
+                    self.last_sent_cursor = Some((caret_col, caret_row));
+                    caret_tasks.push(Task::done(AnsiEditorMessage::CollaborationCursor(caret_col, caret_row)));
+                }
+
+                if self.last_sent_selection != Some((selecting, caret_col, caret_row)) {
+                    self.last_sent_selection = Some((selecting, caret_col, caret_row));
+                    caret_tasks.push(Task::done(AnsiEditorMessage::CollaborationSelection(selecting, caret_col, caret_row)));
+                }
+
                 // Keep chrome widgets in sync with core state
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
 
-                task.map(AnsiEditorMessage::Core)
+                if collab_tasks.is_empty() && caret_tasks.is_empty() {
+                    task.map(AnsiEditorMessage::Core)
+                } else {
+                    let mut all_tasks = vec![task.map(AnsiEditorMessage::Core)];
+                    all_tasks.extend(collab_tasks);
+                    all_tasks.extend(caret_tasks);
+                    Task::batch(all_tasks)
+                }
             }
+
+            // Collaboration draw - bubbles up to MainWindow
+            AnsiEditorMessage::CollaborationDraw(_, _, _, _, _) => {
+                // This is handled by MainWindow, just pass it through
+                Task::done(message)
+            }
+
+            // Collaboration cursor/selection - bubbles up to MainWindow
+            AnsiEditorMessage::CollaborationCursor(_, _) | AnsiEditorMessage::CollaborationSelection(_, _, _) | AnsiEditorMessage::CollaborationHideCursor => {
+                Task::done(message)
+            }
+
+            // Chat panel message - bubbles up to MainWindow
+            AnsiEditorMessage::ChatPanel(_) => Task::done(message),
+
+            // No-op - do nothing
+            AnsiEditorMessage::Noop => Task::none(),
         }
     }
 
     /// Render the editor view with Moebius-style layout:
     /// - Left sidebar: Palette (vertical) + Tool icons
     /// - Top toolbar: Color switcher + Tool-specific options
-    /// - Center: Canvas
+    /// - Center: Canvas (with optional chat panel below when connected)
     /// - Right panel: Minimap, Layers, Channels
-    pub fn view<'a>(&'a self) -> Element<'a, AnsiEditorMessage> {
+    ///
+    /// If `chat_panel` is provided, the editor shows a vertical split with
+    /// the canvas on top and chat on bottom (like Moebius).
+    pub fn view<'a>(&'a self, chat_panel: Option<Element<'a, AnsiEditorMessage>>) -> Element<'a, AnsiEditorMessage> {
         let editor = &self.core;
         // === LEFT SIDEBAR ===
         // Fixed sidebar width - palette and tool panel adapt to this
@@ -726,20 +952,34 @@ impl AnsiEditorMainArea {
         // Pass the terminal's render cache to the minimap for shared texture access
         let render_cache = &editor.canvas.terminal.render_cache;
         let paste_mode = editor.is_paste_mode();
+        let network_mode = chat_panel.is_some();
         let right_panel = self
             .right_panel
-            .view(&editor.screen, &viewport_info, Some(render_cache), paste_mode)
+            .view(&editor.screen, &viewport_info, Some(render_cache), paste_mode, network_mode)
             .map(AnsiEditorMessage::RightPanel);
 
         // Main layout:
-        // Left column: toolbar on top, then left sidebar + canvas
+        // Left column: toolbar on top, then left sidebar + canvas (with optional chat below)
         // Right: right panel spanning full height
+
+        // Build the center content - either just canvas, or vertical split with canvas+chat
+        let center_content: Element<'_, AnsiEditorMessage> = if let Some(chat) = chat_panel {
+            // Vertical column: canvas on top (fills available space), chat on bottom (fixed height)
+            column![
+                container(center_area).height(Length::FillPortion(3)),
+                container(chat).height(Length::FillPortion(1)).width(Length::Fill),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            center_area
+        };
 
         let left_content_row = row![
             // Left sidebar - dynamic width based on palette size
             container(left_sidebar).width(Length::Fixed(sidebar_width)),
-            // Center - canvas with optional line numbers
-            center_area,
+            // Center - canvas with optional chat below
+            center_content,
         ];
 
         let left_column = column![

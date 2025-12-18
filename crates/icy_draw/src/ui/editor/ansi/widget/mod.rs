@@ -10,6 +10,7 @@ pub mod line_numbers;
 pub mod minimap;
 pub mod outline_selector;
 pub mod palette_grid;
+pub mod remote_cursors;
 pub mod right_panel;
 pub mod segmented_control;
 pub mod toolbar;

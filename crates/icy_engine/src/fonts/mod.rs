@@ -459,7 +459,6 @@ impl BitFont {
     /// Convert this 8px wide font to a 9px wide font for VGA letter spacing mode.
     /// For box-drawing characters (CP437 0xC0-0xDF), the 8th pixel is extended to the 9th.
     /// For all other characters, the 9th pixel remains empty (background color).
-    /// This matches the VGA hardware behavior and Moebius implementation.
     pub fn to_9px_font(&self) -> Self {
         use libyaff::Bitmap;
 

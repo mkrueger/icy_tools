@@ -4,13 +4,18 @@
 //! both Moebius servers and icy_draw servers.
 
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
 
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+use tokio::sync::{RwLock, mpsc};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+use super::compression::{flat_to_columns, uncompress_moebius_data};
 use super::protocol::*;
-use super::session::{SessionEvent, UserId};
+use super::session::UserId;
 
 /// Error type for client operations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClientError {
     /// Connection failed
     ConnectionFailed(String),
@@ -63,8 +68,6 @@ pub struct ClientConfig {
     pub nick: String,
     /// Session password
     pub password: String,
-    /// Use extended protocol (V2) if supported
-    pub use_extended_protocol: bool,
     /// Ping interval in seconds (0 to disable)
     pub ping_interval_secs: u64,
 }
@@ -75,7 +78,6 @@ impl Default for ClientConfig {
             url: String::new(),
             nick: "Anonymous".to_string(),
             password: String::new(),
-            use_extended_protocol: true,
             ping_interval_secs: 30,
         }
     }
@@ -90,8 +92,12 @@ pub enum ClientCommand {
     Cursor { col: i32, row: i32 },
     /// Send selection update
     Selection { selecting: bool, col: i32, row: i32 },
+    /// Send operation mode (floating selection) position
+    Operation { col: i32, row: i32 },
+    /// Hide cursor (when switching to non-editing tools)
+    HideCursor,
     /// Draw a character
-    Draw { col: i32, row: i32, block: Block, layer: Option<usize> },
+    Draw { col: i32, row: i32, block: Block },
     /// Draw preview (temporary)
     DrawPreview { col: i32, row: i32, block: Block },
     /// Send chat message
@@ -100,23 +106,75 @@ pub enum ClientCommand {
     ResizeColumns { columns: u32 },
     /// Resize rows
     ResizeRows { rows: u32 },
-    /// Paste data
-    Paste {
-        data: String,
-        col: i32,
-        row: i32,
-        columns: u32,
-        rows: u32,
-        layer: Option<usize>,
-    },
     /// Set 9px mode
     SetUse9px { value: bool },
     /// Set ice colors
     SetIceColors { value: bool },
     /// Set font
     SetFont { font: String },
+    /// Set user status (Active=0, Idle=1, Away=2, Web=3)
+    SetStatus { status: u8 },
+    /// Set SAUCE metadata
+    SetSauce {
+        title: String,
+        author: String,
+        group: String,
+        comments: String,
+    },
     /// Ping
     Ping,
+}
+
+/// Events received from the server.
+#[derive(Debug, Clone)]
+pub enum CollaborationEvent {
+    /// Successfully connected to server
+    Connected(Box<ConnectedDocument>),
+    /// Connection refused (wrong password)
+    Refused { reason: String },
+    /// A user joined
+    UserJoined(User),
+    /// A user left
+    UserLeft { user_id: UserId, nick: String },
+    /// Cursor position updated
+    CursorMoved { user_id: UserId, col: i32, row: i32 },
+    /// Selection updated
+    SelectionChanged {
+        user_id: UserId,
+        selecting: bool,
+        col: i32,
+        row: i32,
+    },
+    /// Operation mode started (floating selection)
+    OperationStarted {
+        user_id: UserId,
+        col: i32,
+        row: i32,
+    },
+    /// Cursor hidden (user switched to non-editing tool)
+    CursorHidden { user_id: UserId },
+    /// Character drawn
+    Draw { col: i32, row: i32, block: Block },
+    /// Preview character drawn
+    DrawPreview { col: i32, row: i32, block: Block },
+    /// Chat message received
+    Chat(ChatMessage),
+    /// Server status updated
+    StatusChanged(ServerStatus),
+    /// SAUCE metadata changed
+    SauceChanged(SauceData),
+    /// Canvas resized
+    CanvasResized { columns: u32, rows: u32 },
+    /// 9px mode changed
+    Use9pxChanged(bool),
+    /// Ice colors changed
+    IceColorsChanged(bool),
+    /// Font changed
+    FontChanged(String),
+    /// Connection lost
+    Disconnected,
+    /// Error occurred
+    Error(ClientError),
 }
 
 /// Handle for interacting with the collaboration client.
@@ -127,7 +185,7 @@ pub struct ClientHandle {
     command_tx: mpsc::Sender<ClientCommand>,
     state: Arc<RwLock<ConnectionState>>,
     user_id: Arc<RwLock<Option<UserId>>>,
-    protocol_version: Arc<RwLock<ProtocolVersion>>,
+    nick: String,
 }
 
 impl ClientHandle {
@@ -146,9 +204,9 @@ impl ClientHandle {
         *self.user_id.read().await
     }
 
-    /// Get the negotiated protocol version.
-    pub async fn protocol_version(&self) -> ProtocolVersion {
-        *self.protocol_version.read().await
+    /// Get the nickname.
+    pub fn nick(&self) -> &str {
+        &self.nick
     }
 
     /// Disconnect from the server.
@@ -175,23 +233,53 @@ impl ClientHandle {
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
 
-    /// Draw a character at the given position.
-    pub async fn draw(&self, col: i32, row: i32, block: Block) -> Result<(), ClientError> {
+    /// Send operation mode position (floating selection).
+    pub async fn send_operation(&self, col: i32, row: i32) -> Result<(), ClientError> {
         self.command_tx
-            .send(ClientCommand::Draw { col, row, block, layer: None })
+            .send(ClientCommand::Operation { col, row })
             .await
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
 
-    /// Draw a character at the given position on a specific layer (V2 only).
-    pub async fn draw_on_layer(&self, col: i32, row: i32, block: Block, layer: usize) -> Result<(), ClientError> {
+    /// Hide cursor (when switching to non-editing tools).
+    pub async fn send_hide_cursor(&self) -> Result<(), ClientError> {
         self.command_tx
-            .send(ClientCommand::Draw {
-                col,
-                row,
-                block,
-                layer: Some(layer),
+            .send(ClientCommand::HideCursor)
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Set user status (Active=0, Idle=1, Away=2, Web=3).
+    pub async fn send_status(&self, status: u8) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::SetStatus { status })
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Set SAUCE metadata.
+    pub async fn send_sauce(
+        &self,
+        title: String,
+        author: String,
+        group: String,
+        comments: String,
+    ) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::SetSauce {
+                title,
+                author,
+                group,
+                comments,
             })
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Draw a character at the given position.
+    pub async fn draw(&self, col: i32, row: i32, block: Block) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::Draw { col, row, block })
             .await
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
@@ -251,124 +339,431 @@ impl ClientHandle {
             .await
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
+
+    /// Send ping (keepalive).
+    pub async fn ping(&self) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::Ping)
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
 }
 
-/// Builder for creating collaboration clients.
-pub struct ClientBuilder {
+/// Start the collaboration client and connect to a server.
+///
+/// Returns a handle for sending commands and a receiver for events.
+pub async fn connect(
     config: ClientConfig,
+) -> Result<(ClientHandle, mpsc::Receiver<CollaborationEvent>), ClientError> {
+    let (command_tx, command_rx) = mpsc::channel(256);
+    let (event_tx, event_rx) = mpsc::channel(256);
+
+    let state = Arc::new(RwLock::new(ConnectionState::Connecting));
+    let user_id = Arc::new(RwLock::new(None));
+
+    let handle = ClientHandle {
+        command_tx,
+        state: state.clone(),
+        user_id: user_id.clone(),
+        nick: config.nick.clone(),
+    };
+
+    // Spawn the client task
+    tokio::spawn(run_client(config, command_rx, event_tx, state, user_id));
+
+    Ok((handle, event_rx))
 }
 
-impl ClientBuilder {
-    /// Create a new client builder.
-    pub fn new() -> Self {
-        Self {
-            config: ClientConfig::default(),
+/// Main client task that handles WebSocket communication.
+async fn run_client(
+    config: ClientConfig,
+    mut command_rx: mpsc::Receiver<ClientCommand>,
+    event_tx: mpsc::Sender<CollaborationEvent>,
+    state: Arc<RwLock<ConnectionState>>,
+    user_id_storage: Arc<RwLock<Option<UserId>>>,
+) {
+    let nick = config.nick.clone();
+    let group = String::new();
+    let password = config.password.clone();
+
+    // Parse URL - Moebius format: host:port/path or just host:port
+    // Default port is 8000 (Moebius standard)
+    let url = if config.url.starts_with("ws://") || config.url.starts_with("wss://") {
+        config.url.clone()
+    } else {
+        // Check if port is specified
+        let has_port = config.url.split('/').next().map_or(false, |host_part| {
+            host_part.contains(':') && host_part.split(':').last().map_or(false, |p| p.parse::<u16>().is_ok())
+        });
+        if has_port {
+            format!("ws://{}", config.url)
+        } else {
+            // Insert default port 8000 before any path
+            if let Some(slash_pos) = config.url.find('/') {
+                format!("ws://{}:8000{}", &config.url[..slash_pos], &config.url[slash_pos..])
+            } else {
+                format!("ws://{}:8000", config.url)
+            }
+        }
+    };
+
+    log::info!("Connecting to collaboration server: {}", url);
+
+    // Connect to WebSocket
+    let ws_stream = match connect_async(&url).await {
+        Ok((stream, _)) => stream,
+        Err(e) => {
+            let error = ClientError::ConnectionFailed(e.to_string());
+            *state.write().await = ConnectionState::Failed(e.to_string());
+            let _ = event_tx.send(CollaborationEvent::Error(error)).await;
+            return;
+        }
+    };
+
+    let (mut write, mut read) = ws_stream.split();
+
+    // Send connect message with password
+    // Moebius protocol: Client sends CONNECTED (0) to initiate, server responds with CONNECTED (0)
+    let connect_msg = json!({
+        "type": ActionCode::Connected as u8,
+        "data": {
+            "nick": nick.clone(),
+            "group": group.clone(),
+            "pass": password.clone(),
+        }
+    });
+
+    if let Err(e) = write.send(Message::Text(connect_msg.to_string().into())).await {
+        let error = ClientError::WebSocketError(e.to_string());
+        *state.write().await = ConnectionState::Failed(e.to_string());
+        let _ = event_tx.send(CollaborationEvent::Error(error)).await;
+        return;
+    }
+
+    let mut assigned_user_id: Option<UserId> = None;
+
+    // Main event loop
+    loop {
+        tokio::select! {
+            // Handle incoming WebSocket messages
+            msg = read.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                            if let Some(event) = parse_server_message(&parsed, &nick, &mut assigned_user_id).await {
+                                // Update state on connected
+                                if let CollaborationEvent::Connected(ref doc) = event {
+                                    *state.write().await = ConnectionState::Connected;
+                                    *user_id_storage.write().await = Some(doc.user_id);
+                                }
+                                if matches!(&event, CollaborationEvent::Refused { .. }) {
+                                    *state.write().await = ConnectionState::Failed("Authentication failed".to_string());
+                                }
+                                let _ = event_tx.send(event).await;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        *state.write().await = ConnectionState::Disconnected;
+                        let _ = event_tx.send(CollaborationEvent::Disconnected).await;
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        let error = ClientError::WebSocketError(e.to_string());
+                        *state.write().await = ConnectionState::Failed(e.to_string());
+                        let _ = event_tx.send(CollaborationEvent::Error(error)).await;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Handle commands from the application
+            cmd = command_rx.recv() => {
+                match cmd {
+                    Some(ClientCommand::Disconnect) => {
+                        let _ = write.close().await;
+                        *state.write().await = ConnectionState::Disconnected;
+                        let _ = event_tx.send(CollaborationEvent::Disconnected).await;
+                        break;
+                    }
+                    Some(cmd) => {
+                        if let Some(msg) = command_to_message(cmd, assigned_user_id, &nick, &group) {
+                            if let Err(e) = write.send(Message::Text(msg.into())).await {
+                                log::error!("Failed to send message: {}", e);
+                            }
+                        }
+                    }
+                    None => break,
+                }
+            }
         }
     }
+}
 
-    /// Set the server URL.
-    pub fn url(mut self, url: impl Into<String>) -> Self {
-        self.config.url = url.into();
-        self
-    }
+/// Parse a server message and convert to CollaborationEvent.
+#[doc(hidden)]
+pub async fn parse_server_message(
+    msg: &Value,
+    _nick: &str,
+    assigned_id: &mut Option<UserId>,
+) -> Option<CollaborationEvent> {
+    let msg_type = msg.get("type")?.as_u64()? as u8;
 
-    /// Set the user nickname.
-    pub fn nick(mut self, nick: impl Into<String>) -> Self {
-        self.config.nick = nick.into();
-        self
-    }
+    let data = msg.get("data");
 
-    /// Set the session password.
-    pub fn password(mut self, password: impl Into<String>) -> Self {
-        self.config.password = password.into();
-        self
-    }
+    match msg_type {
+        0 => {
+            // CONNECTED
+            let resp: ConnectedResponse = serde_json::from_value(msg.clone()).ok()?;
+            let user_id = resp.data.id as UserId;
+            *assigned_id = Some(user_id);
 
-    /// Enable or disable extended protocol.
-    pub fn use_extended_protocol(mut self, enable: bool) -> Self {
-        self.config.use_extended_protocol = enable;
-        self
-    }
+            let doc = &resp.data.doc;
+            let columns = doc.columns;
+            let rows: u32 = doc.rows;
 
-    /// Set ping interval in seconds (0 to disable).
-    pub fn ping_interval(mut self, seconds: u64) -> Self {
-        self.config.ping_interval_secs = seconds;
-        self
-    }
+            let flat_blocks: Vec<Block> = if let Some(compressed) = &doc.compressed_data {                uncompress_moebius_data(columns, rows, compressed).ok()?
+            } else {
+                doc.data.clone().unwrap_or_default()
+            };
+            let document = flat_to_columns(&flat_blocks, columns, rows);
 
-    /// Get the configuration.
-    pub fn config(&self) -> &ClientConfig {
-        &self.config
-    }
+            let users = resp.data.users;
+            let use_9px = doc.use_9px_font;
+            let ice_colors = doc.ice_colors;
+            let font = doc.font_name.clone();
 
-    /// Build the client (does not connect yet).
-    ///
-    /// Returns a handle for controlling the client and a receiver for events.
-    /// The actual connection is established when you call `connect()` on the handle.
-    pub fn build(self) -> (ClientHandle, mpsc::Receiver<SessionEvent>) {
-        let (command_tx, _command_rx) = mpsc::channel(256);
-        let (_event_tx, event_rx) = mpsc::channel(256);
-
-        let state = Arc::new(RwLock::new(ConnectionState::Disconnected));
-        let user_id = Arc::new(RwLock::new(None));
-        let protocol_version = Arc::new(RwLock::new(ProtocolVersion::V1));
-
-        let handle = ClientHandle {
-            command_tx,
-            state,
-            user_id,
-            protocol_version,
-        };
-
-        // Note: Actual connection logic will be implemented when tokio-tungstenite
-        // is added as a dependency. For now, we just return the handle structure.
-
-        (handle, event_rx)
+            Some(CollaborationEvent::Connected(Box::new(ConnectedDocument {
+                user_id,
+                document,
+                columns,
+                rows,
+                users,
+                use_9px,
+                ice_colors,
+                font,
+            })))
+        }
+        1 => {
+            // REFUSED
+            Some(CollaborationEvent::Refused {
+                reason: "Wrong password".to_string(),
+            })
+        }
+        2 => {
+            // JOIN
+            let data = data?;
+            let user = serde_json::from_value(data.clone()).ok()?;
+            Some(CollaborationEvent::UserJoined(user))
+        }
+        3 => {
+            // LEAVE
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            Some(CollaborationEvent::UserLeft {
+                user_id,
+                nick: String::new(),
+            })
+        }
+        4 => {
+            // CURSOR
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            let col = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let row = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            Some(CollaborationEvent::CursorMoved { user_id, col, row })
+        }
+        5 => {
+            // SELECTION
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            let col = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let row = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            Some(CollaborationEvent::SelectionChanged {
+                user_id,
+                selecting: true,
+                col,
+                row,
+            })
+        }
+        7 => {
+            // OPERATION
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            let col = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let row = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            Some(CollaborationEvent::OperationStarted { user_id, col, row })
+        }
+        8 => {
+            // HIDE_CURSOR
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            Some(CollaborationEvent::CursorHidden { user_id })
+        }
+        9 => {
+            // DRAW
+            let data = data?;
+            let col = data.get("x")?.as_i64()? as i32;
+            let row = data.get("y")?.as_i64()? as i32;
+            let block_data = data.get("block")?;
+            let block = Block {
+                code: block_data.get("code").and_then(|v| v.as_u64()).unwrap_or(32) as u32,
+                fg: block_data.get("fg").and_then(|v| v.as_u64()).unwrap_or(7) as u8,
+                bg: block_data.get("bg").and_then(|v| v.as_u64()).unwrap_or(0) as u8,
+            };
+            Some(CollaborationEvent::Draw { col, row, block })
+        }
+        10 => {
+            // CHAT
+            let data = data?;
+            let id = data.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let chat_nick = data
+                .get("nick")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let text = data
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let group = data
+                .get("group")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let time = data.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
+            Some(CollaborationEvent::Chat(ChatMessage {
+                id,
+                nick: chat_nick,
+                text,
+                group,
+                time,
+            }))
+        }
+        11 => {
+            // STATUS
+            let data = data?;
+            let status: ServerStatus = serde_json::from_value(data.clone()).ok()?;
+            Some(CollaborationEvent::StatusChanged(status))
+        }
+        12 => {
+            // SAUCE
+            let data = data?;
+            let sauce: SauceData = serde_json::from_value(data.clone()).ok()?;
+            Some(CollaborationEvent::SauceChanged(sauce))
+        }
+        13 => {
+            // ICE_COLORS
+            let data = data?;
+            let value = data.get("value")?.as_bool()?;
+            Some(CollaborationEvent::IceColorsChanged(value))
+        }
+        14 => {
+            // USE_9PX_FONT
+            let data = data?;
+            let value = data.get("value")?.as_bool()?;
+            Some(CollaborationEvent::Use9pxChanged(value))
+        }
+        15 => {
+            // CHANGE_FONT
+            let data = data?;
+            let font = data.get("font_name")?.as_str()?.to_string();
+            Some(CollaborationEvent::FontChanged(font))
+        }
+        16 => {
+            // SET_CANVAS_SIZE
+            let data = data?;
+            let columns = data.get("columns")?.as_u64()? as u32;
+            let rows = data.get("rows")?.as_u64()? as u32;
+            Some(CollaborationEvent::CanvasResized { columns, rows })
+        }
+        _ => None,
     }
 }
 
-impl Default for ClientBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Convert a ClientCommand to a JSON message string.
+/// Uses Moebius-compatible action codes.
+#[doc(hidden)]
+pub fn command_to_message(cmd: ClientCommand, user_id: Option<UserId>, nick: &str, group: &str) -> Option<String> {
+    let id = user_id?;
+
+    let msg = match cmd {
+        ClientCommand::Cursor { col, row } => json!({
+            "type": ActionCode::Cursor as u8,
+            "data": { "id": id, "x": col, "y": row }
+        }),
+        ClientCommand::Selection { selecting, col, row } => {
+            if selecting {
+                json!({
+                    "type": ActionCode::Selection as u8,
+                    "data": { "id": id, "x": col, "y": row }
+                })
+            } else {
+                json!({
+                    "type": ActionCode::Cursor as u8,
+                    "data": { "id": id, "x": col, "y": row }
+                })
+            }
+        }
+        ClientCommand::Operation { col, row } => json!({
+            "type": ActionCode::Operation as u8,
+            "data": { "id": id, "x": col, "y": row }
+        }),
+        ClientCommand::HideCursor => json!({
+            "type": ActionCode::HideCursor as u8,
+            "data": { "id": id }
+        }),
+        ClientCommand::Draw { col, row, block } => json!({
+            "type": ActionCode::Draw as u8,  // Moebius DRAW = 9
+            "data": {
+                "id": id,
+                "x": col,
+                "y": row,
+                "block": { "code": block.code, "fg": block.fg, "bg": block.bg }
+            }
+        }),
+        // DrawPreview is not part of Moebius; do not send over the network.
+        ClientCommand::DrawPreview { .. } => return None,
+        ClientCommand::Chat { text } => json!({
+            "type": ActionCode::Chat as u8,
+            "data": { "id": id, "nick": nick, "group": group, "text": text }
+        }),
+        // Moebius SET_CANVAS_SIZE = 16 requires both columns and rows
+        // For now, we don't support partial resize - skip these
+        ClientCommand::ResizeColumns { columns: _ } => return None,
+        ClientCommand::ResizeRows { rows: _ } => return None,
+        ClientCommand::SetUse9px { value } => json!({
+            "type": ActionCode::Use9pxFont as u8,  // Moebius USE_9PX_FONT = 14
+            "data": { "id": id, "value": value }
+        }),
+        ClientCommand::SetIceColors { value } => json!({
+            "type": ActionCode::IceColors as u8,  // Moebius ICE_COLORS = 13
+            "data": { "id": id, "value": value }
+        }),
+        ClientCommand::SetFont { font } => json!({
+            "type": ActionCode::ChangeFont as u8,  // Moebius CHANGE_FONT = 15
+            "data": { "id": id, "font_name": font }
+        }),
+        ClientCommand::SetStatus { status } => json!({
+            "type": ActionCode::Status as u8,  // Moebius STATUS = 11
+            "data": { "id": id, "status": status }
+        }),
+        ClientCommand::SetSauce {
+            title,
+            author,
+            group,
+            comments,
+        } => json!({
+            "type": ActionCode::Sauce as u8,  // Moebius SAUCE = 12
+            "data": { "id": id, "title": title, "author": author, "group": group, "comments": comments }
+        }),
+        // Ping not in Moebius protocol - skip
+        ClientCommand::Ping => return None,
+        ClientCommand::Disconnect => return None,
+    };
+
+    Some(msg.to_string())
 }
 
-/// Connect to a collaboration server.
-///
-/// This is a convenience function that creates a client and connects to the server.
-///
-/// # Arguments
-///
-/// * `url` - WebSocket URL of the server
-/// * `nick` - User nickname
-/// * `password` - Session password (empty string for no password)
-///
-/// # Returns
-///
-/// A tuple of (ClientHandle, event receiver)
-pub fn connect(url: impl Into<String>, nick: impl Into<String>, password: impl Into<String>) -> (ClientHandle, mpsc::Receiver<SessionEvent>) {
-    ClientBuilder::new().url(url).nick(nick).password(password).build()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_client_builder() {
-        let (handle, _events) = ClientBuilder::new().url("ws://localhost:8080").nick("TestUser").password("secret").build();
-
-        assert!(!handle.is_connected().await);
-        assert_eq!(handle.user_id().await, None);
-    }
-
-    #[test]
-    fn test_client_config_default() {
-        let config = ClientConfig::default();
-        assert!(config.url.is_empty());
-        assert_eq!(config.nick, "Anonymous");
-        assert!(config.password.is_empty());
-        assert!(config.use_extended_protocol);
-        assert_eq!(config.ping_interval_secs, 30);
-    }
-}

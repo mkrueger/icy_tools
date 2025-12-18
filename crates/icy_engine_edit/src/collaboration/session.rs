@@ -77,6 +77,8 @@ impl Session {
         let user = User {
             id,
             nick,
+            group: String::new(),
+            status: 0,
             col: 0,
             row: 0,
             selecting: false,
@@ -121,16 +123,16 @@ impl Session {
     }
 
     /// Add a chat message to the history.
-    pub fn add_chat_message(&self, nick: String, text: String) {
+    pub fn add_chat_message(&self, id: UserId, nick: String, text: String) {
         let msg = ChatMessage {
+            id,
             nick,
             text,
-            time: Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            ),
+            group: String::new(),
+            time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
         self.chat_history.write().push(msg);
     }
@@ -140,9 +142,11 @@ impl Session {
         self.chat_history.read().clone()
     }
 
-    /// Set the server status message.
-    pub fn set_status(&self, text: String) {
-        self.status.write().text = text;
+    /// Set the server status.
+    pub fn set_status(&self, id: u32, status: u8) {
+        let mut s = self.status.write();
+        s.id = id;
+        s.status = status;
     }
 
     /// Get the current server status.
@@ -283,8 +287,8 @@ mod tests {
     fn test_chat_history() {
         let session = Session::new(String::new());
 
-        session.add_chat_message("Alice".to_string(), "Hello!".to_string());
-        session.add_chat_message("Bob".to_string(), "Hi there!".to_string());
+        session.add_chat_message(1, "Alice".to_string(), "Hello!".to_string());
+        session.add_chat_message(2, "Bob".to_string(), "Hi there!".to_string());
 
         let history = session.get_chat_history();
         assert_eq!(history.len(), 2);

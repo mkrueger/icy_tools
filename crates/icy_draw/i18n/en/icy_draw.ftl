@@ -36,6 +36,20 @@ file-settings-comments-title=SAUCE Comments
 file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Close
 menu-save-as=Save As…
+menu-connect-to-server=Connect to Server…
+menu-toggle-chat=Toggle Chat Panel
+
+# Connection dialog
+connect-dialog-title=Connect to Server
+connect-server-url=Server URL
+connect-server-url-placeholder=host:port or ws://host:port
+connect-nickname=Nickname
+connect-nickname-placeholder=Your name
+connect-password=Password
+connect-password-placeholder=Optional
+connect-help-text=Connect to a Moebius-compatible collaboration server
+connect-button=Connect
+button-cancel=Cancel
 
 # File dialogs
 file-dialog-save-as-title=Save File As

@@ -669,7 +669,10 @@ impl AnimationEditor {
     }
 
     /// Render the animation editor view
-    pub fn view(&self) -> Element<'_, AnimationEditorMessage> {
+    /// 
+    /// The optional `chat_panel` parameter is accepted for API consistency but
+    /// currently ignored since animation editor doesn't support collaboration.
+    pub fn view(&self, _chat_panel: Option<Element<'_, AnimationEditorMessage>>) -> Element<'_, AnimationEditorMessage> {
         // Use pane_grid for resizable split view
         pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized| {
             let content: Element<'_, AnimationEditorMessage> = match pane {

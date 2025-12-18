@@ -1,6 +1,5 @@
 //! Terminal input handling for text editors
 //!
-//! This module provides Moebius-compatible text input functionality with proper undo support.
 //! All operations are atomic and integrate with the undo system.
 //!
 //! # Features

@@ -296,7 +296,7 @@ impl DrawContext {
         // Find current shade level (-1 = empty/space, 0-3 = shade gradient)
         let mut level = SHADE_GRADIENT.iter().position(|&c| c == current_ch).map(|i| i as i32).unwrap_or(-1); // -1 represents empty/space
 
-        // Adjust shade level (Moebius behavior)
+        // Adjust shade level
         if up {
             // Shade up: -1 (empty) -> 0 -> 1 -> 2 -> 3 (full block)
             level = (level + 1).min(SHADE_GRADIENT.len() as i32 - 1);

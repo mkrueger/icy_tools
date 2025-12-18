@@ -148,6 +148,15 @@ impl Tool {
         }
     }
 
+    /// Check if this tool should show cursor position for collaboration
+    ///
+    /// Tools like Click and Select show the cursor position to other users.
+    /// Drawing tools (Pencil, Line, etc.) hide the cursor since the user
+    /// is focused on drawing rather than editing at a specific position.
+    pub fn shows_cursor_for_collaboration(&self) -> bool {
+        matches!(self, Tool::Click | Tool::Select)
+    }
+
     /// Get the keyboard shortcut
     pub fn shortcut(&self) -> Option<char> {
         match self {

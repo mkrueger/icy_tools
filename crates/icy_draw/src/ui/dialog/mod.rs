@@ -6,9 +6,13 @@
 //! - `about` - About dialog
 //! - `font_export` - Font export dialog
 //! - `font_import` - Font import dialog
+//! - `connect` - Server connection dialog
 
 pub mod about;
+pub mod connect;
 pub mod font_export;
 pub mod font_import;
 pub mod new_file;
 pub mod settings;
+
+pub use connect::{ConnectDialog, ConnectDialogMessage, ConnectDialogResult};

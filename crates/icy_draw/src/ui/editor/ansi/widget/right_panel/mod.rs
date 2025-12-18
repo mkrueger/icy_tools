@@ -82,12 +82,14 @@ impl RightPanel {
     /// Render the right panel
     /// The panel has a fixed width of RIGHT_PANEL_BASE_WIDTH (320pt at 100% scale)
     /// `paste_mode` indicates whether we're in paste mode (affects layer view behavior)
+    /// `network_mode` indicates collaboration mode (hides layers - not compatible with Moebius)
     pub fn view<'a>(
         &'a self,
         screen: &'a Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&'a SharedRenderCacheHandle>,
         paste_mode: bool,
+        network_mode: bool,
     ) -> Element<'a, RightPanelMessage> {
         // Determine current font page for consistent glyph rendering.
         let current_font_page: Option<usize> = {
@@ -100,6 +102,11 @@ impl RightPanel {
         };
 
         // Use pane_grid for resizable split view (minimap + layers)
+        // In network mode, only show minimap (layers not compatible with Moebius)
+        if network_mode {
+            let minimap = self.minimap.view(screen, viewport_info, render_cache).map(RightPanelMessage::Minimap);
+            return container(minimap).width(Length::Fill).height(Length::Fill).into();
+        }
 
         let pane_grid: Element<'a, RightPanelMessage> = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized| {
             let content: Element<'a, RightPanelMessage> = match pane {

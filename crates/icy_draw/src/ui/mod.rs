@@ -9,13 +9,16 @@
 //! - `dialog/` - Global dialogs (new_file, settings, about, font_export/import)
 //! - `widget/` - Shared widgets (tool_panel)
 //! - `settings/` - Application settings, F-keys, recent files
+//! - `collaboration/` - Real-time collaboration
 
+pub mod collaboration;
 pub mod dialog;
 pub mod editor;
 pub mod main_window;
 pub mod settings;
 pub mod widget;
 
+// Note: Collaboration types are used internally by main_window
 pub use editor::ansi::*;
 pub use main_window::{EditMode, MainWindow, Message};
 pub use settings::FKeySets;

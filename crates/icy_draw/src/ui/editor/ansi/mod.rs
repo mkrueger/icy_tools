@@ -234,6 +234,28 @@ pub enum AnsiEditorMessage {
 
     // --- Export ---
     ExportFile,
+
+    // --- Collaboration ---
+    /// Character changed (for sending to collaboration server)
+    /// (col, row, code, fg, bg)
+    CollaborationDraw(i32, i32, u32, u8, u8),
+
+    /// Local caret moved (for sending to collaboration server)
+    /// (col, row)
+    CollaborationCursor(i32, i32),
+
+    /// Local selection state changed (for sending to collaboration server)
+    /// (selecting, col, row)
+    CollaborationSelection(bool, i32, i32),
+
+    /// Hide cursor (tool switched to non-cursor tool like Draw/Brush)
+    CollaborationHideCursor,
+
+    /// Chat panel message (forwarded from embedded chat panel)
+    ChatPanel(crate::ui::collaboration::ChatPanelMessage),
+
+    /// No-op message (used for message mapping when no action needed)
+    Noop,
 }
 
 // CanvasMouseEvent removed - use TerminalMessage directly from icy_engine_gui

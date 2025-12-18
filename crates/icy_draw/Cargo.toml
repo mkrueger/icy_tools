@@ -35,9 +35,13 @@ github_release_check = "0.2.1"
 
 # Core icy_* crates
 icy_engine = { workspace = true }
-icy_engine_edit = { workspace = true }
+icy_engine_edit = { workspace = true, features = ["collaboration"] }
 icy_engine_gui = { workspace = true }
 icy_engine_scripting = { workspace = true }
+
+# WebSocket for collaboration
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 # Lua scripting for plugins
 mlua = { workspace = true }

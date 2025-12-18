@@ -76,7 +76,7 @@ impl Default for PersistedOptions {
 pub struct Settings {
     /// Most recently used files
     pub recent_files: MostRecentlyUsedFiles,
-    /// Moebius-style F-key character sets
+    /// F-key character sets
     pub fkeys: FKeySets,
 
     /// Shared monitor/CRT settings (persisted)

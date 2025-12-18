@@ -6,8 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::compression::MoebiusCompressedData;
+
 /// Action codes matching Moebius protocol.
 /// These are the message types exchanged between client and server.
+/// IMPORTANT: These values MUST match the Moebius protocol exactly!
+/// Reference: moebius/app/server.js line 3
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ActionCode {
@@ -23,38 +27,70 @@ pub enum ActionCode {
     Cursor = 4,
     /// Selection update
     Selection = 5,
-    /// Resize canvas columns
-    ResizeColumns = 6,
-    /// Resize canvas rows
-    ResizeRows = 7,
+    /// Resize selection (Moebius internal)
+    ResizeSelection = 6,
+    /// Operation (Moebius internal)
+    Operation = 7,
+    /// Hide cursor
+    HideCursor = 8,
     /// Draw a single character cell
-    Draw = 8,
-    /// Preview of a character cell (temporary, not saved)
-    DrawPreview = 9,
+    Draw = 9,
     /// Chat message
     Chat = 10,
     /// Server status update
     Status = 11,
-    /// Undo action
-    Undo = 12,
-    /// Redo action
-    Redo = 13,
-    /// Paste image (reference data)
-    PasteImage = 14,
-    /// Paste block of cells
-    Paste = 15,
-    /// Connection request from client
-    Connect = 16,
-    /// Ping/keepalive
-    Ping = 17,
-    /// Set use9px (9-pixel font mode)
-    SetUse9px = 18,
+    /// SAUCE metadata update
+    Sauce = 12,
     /// Set ice colors mode
-    SetIceColors = 19,
-    /// Set font
-    SetFont = 20,
+    IceColors = 13,
+    /// Set use9px (9-pixel font mode / letter spacing)
+    Use9pxFont = 14,
+    /// Change font
+    ChangeFont = 15,
+    /// Set canvas size (columns AND rows together)
+    SetCanvasSize = 16,
+    /// Paste as selection
+    PasteAsSelection = 17,
+    /// Rotate
+    Rotate = 18,
+    /// Flip X
+    FlipX = 19,
+    /// Flip Y
+    FlipY = 20,
     /// Set background color for canvas
     SetBackground = 21,
+}
+
+impl TryFrom<u8> for ActionCode {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ActionCode::Connected),
+            1 => Ok(ActionCode::Refused),
+            2 => Ok(ActionCode::Join),
+            3 => Ok(ActionCode::Leave),
+            4 => Ok(ActionCode::Cursor),
+            5 => Ok(ActionCode::Selection),
+            6 => Ok(ActionCode::ResizeSelection),
+            7 => Ok(ActionCode::Operation),
+            8 => Ok(ActionCode::HideCursor),
+            9 => Ok(ActionCode::Draw),
+            10 => Ok(ActionCode::Chat),
+            11 => Ok(ActionCode::Status),
+            12 => Ok(ActionCode::Sauce),
+            13 => Ok(ActionCode::IceColors),
+            14 => Ok(ActionCode::Use9pxFont),
+            15 => Ok(ActionCode::ChangeFont),
+            16 => Ok(ActionCode::SetCanvasSize),
+            17 => Ok(ActionCode::PasteAsSelection),
+            18 => Ok(ActionCode::Rotate),
+            19 => Ok(ActionCode::FlipX),
+            20 => Ok(ActionCode::FlipY),
+            21 => Ok(ActionCode::SetBackground),
+            _ => Err(value),
+        }
+    }
 }
 
 /// Protocol version for feature negotiation.
@@ -129,41 +165,154 @@ pub struct User {
     /// Unique user ID assigned by server
     pub id: u32,
     /// Display name (nickname)
+    #[serde(default)]
     pub nick: String,
-    /// User's cursor column position
+    /// Group tag (Moebius)
     #[serde(default)]
+    pub group: String,
+    /// Status value (Moebius statuses: ACTIVE=0, IDLE=1, AWAY=2, WEB=3)
+    #[serde(default)]
+    pub status: u8,
+
+    /// Internal cursor column (not part of Moebius wire format)
+    #[serde(default, skip_serializing)]
     pub col: i32,
-    /// User's cursor row position
-    #[serde(default)]
+    /// Internal cursor row (not part of Moebius wire format)
+    #[serde(default, skip_serializing)]
     pub row: i32,
-    /// Whether user is currently selecting
-    #[serde(default)]
+    /// Internal selection mode flag (not part of Moebius wire format)
+    #[serde(default, skip_serializing)]
     pub selecting: bool,
-    /// Selection start column (if selecting)
-    #[serde(default)]
+    /// Internal selection column (not part of Moebius wire format)
+    #[serde(default, skip_serializing)]
     pub selection_col: i32,
-    /// Selection start row (if selecting)
-    #[serde(default)]
+    /// Internal selection row (not part of Moebius wire format)
+    #[serde(default, skip_serializing)]
     pub selection_row: i32,
 }
 
 /// Chat message in session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
+    /// User id (Moebius chat history/broadcast)
+    #[serde(default)]
+    pub id: u32,
     /// User nickname who sent the message
+    #[serde(default)]
     pub nick: String,
     /// Message text content
+    #[serde(default)]
     pub text: String,
+    /// Group/channel name (for Moebius compatibility)
+    #[serde(default)]
+    pub group: String,
     /// Timestamp (optional, server-assigned)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub time: Option<u64>,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub time: u64,
+}
+
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
 }
 
 /// Server status for display.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ServerStatus {
-    /// Status text to display
-    pub text: String,
+    /// User id for which this status applies
+    pub id: u32,
+    /// Status code (Moebius statuses: ACTIVE=0, IDLE=1, AWAY=2, WEB=3)
+    pub status: u8,
+}
+
+/// SAUCE metadata update.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SauceData {
+    /// User id who made the change
+    #[serde(default)]
+    pub id: u32,
+    /// Document title (max 35 chars)
+    #[serde(default)]
+    pub title: String,
+    /// Author name (max 20 chars)
+    #[serde(default)]
+    pub author: String,
+    /// Group name (max 20 chars)
+    #[serde(default)]
+    pub group: String,
+    /// Comments
+    #[serde(default)]
+    pub comments: String,
+}
+
+/// Data received when successfully connected to a collaboration server.
+/// Contains the initial document state and session information.
+#[derive(Debug, Clone)]
+pub struct ConnectedDocument {
+    /// Assigned user ID for this session
+    pub user_id: u32,
+    /// Decoded document blocks (column-major layout)
+    pub document: Vec<Vec<Block>>,
+    /// Document width in columns
+    pub columns: u32,
+    /// Document height in rows
+    pub rows: u32,
+    /// List of users already in the session
+    pub users: Vec<User>,
+    /// Whether 9px font mode is enabled
+    pub use_9px: bool,
+    /// Whether ice colors are enabled
+    pub ice_colors: bool,
+    /// Font name
+    pub font: String,
+}
+
+/// Generic Moebius wire message: `{ "type": <u8>, "data": { ... } }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoebiusMessage<T> {
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: T,
+}
+
+/// Moebius document payload (result of `libtextmode.compress(doc)`).
+///
+/// The payload contains metadata and either `compressed_data` (most common) or
+/// an uncompressed `data` array of blocks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoebiusDoc {
+    pub columns: u32,
+    pub rows: u32,
+
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub group: String,
+    #[serde(default)]
+    pub date: String,
+
+    /// Palette is an array in Moebius; we treat it as opaque JSON.
+    #[serde(default)]
+    pub palette: serde_json::Value,
+
+    #[serde(default)]
+    pub font_name: String,
+    #[serde(default)]
+    pub ice_colors: bool,
+    #[serde(default)]
+    pub use_9px_font: bool,
+    #[serde(default)]
+    pub comments: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub c64_background: Option<u32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compressed_data: Option<MoebiusCompressedData>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<Block>>,
 }
 
 // ============================================================================
@@ -171,35 +320,32 @@ pub struct ServerStatus {
 // ============================================================================
 
 /// Connect request sent by client to join a session.
+/// In Moebius, client sends CONNECTED (0) to initiate connection
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectRequest {
-    /// Action code (always Connect = 16)
-    pub action: u8,
-    /// Session password (can be empty string)
-    pub pass: String,
-    /// User's nickname
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ConnectData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectData {
+    #[serde(default)]
     pub nick: String,
-    /// Protocol version (optional, Moebius ignores this)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_version: Option<ProtocolVersion>,
+    #[serde(default)]
+    pub group: String,
+    pub pass: String,
 }
 
 impl ConnectRequest {
-    pub fn new(nick: String, password: String) -> Self {
+    pub fn moebius_compatible(nick: String, group: String, password: String) -> Self {
         Self {
-            action: ActionCode::Connect as u8,
-            pass: password,
-            nick,
-            protocol_version: Some(ProtocolVersion::V2),
-        }
-    }
-
-    pub fn moebius_compatible(nick: String, password: String) -> Self {
-        Self {
-            action: ActionCode::Connect as u8,
-            pass: password,
-            nick,
-            protocol_version: None,
+            msg_type: ActionCode::Connected as u8,
+            data: ConnectData {
+                nick,
+                group,
+                pass: password,
+            },
         }
     }
 }
@@ -207,17 +353,23 @@ impl ConnectRequest {
 /// Cursor position update from client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorMessage {
-    pub action: u8,
-    pub col: i32,
-    pub row: i32,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: CursorData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CursorData {
+    pub id: u32,
+    pub x: i32,
+    pub y: i32,
 }
 
 impl CursorMessage {
-    pub fn new(col: i32, row: i32) -> Self {
+    pub fn new(id: u32, x: i32, y: i32) -> Self {
         Self {
-            action: ActionCode::Cursor as u8,
-            col,
-            row,
+            msg_type: ActionCode::Cursor as u8,
+            data: CursorData { id, x, y },
         }
     }
 }
@@ -225,19 +377,23 @@ impl CursorMessage {
 /// Selection update from client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionMessage {
-    pub action: u8,
-    pub selecting: bool,
-    pub col: i32,
-    pub row: i32,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: SelectionData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectionData {
+    pub id: u32,
+    pub x: i32,
+    pub y: i32,
 }
 
 impl SelectionMessage {
-    pub fn new(selecting: bool, col: i32, row: i32) -> Self {
+    pub fn new(id: u32, x: i32, y: i32) -> Self {
         Self {
-            action: ActionCode::Selection as u8,
-            selecting,
-            col,
-            row,
+            msg_type: ActionCode::Selection as u8,
+            data: SelectionData { id, x, y },
         }
     }
 }
@@ -245,56 +401,69 @@ impl SelectionMessage {
 /// Draw a single character cell.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrawMessage {
-    pub action: u8,
-    /// Column position (x)
-    pub col: i32,
-    /// Row position (y)
-    pub row: i32,
-    /// The character block to draw
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: DrawData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrawData {
+    pub id: u32,
+    pub x: i32,
+    pub y: i32,
     pub block: Block,
-    /// Layer index (V2 extension, Moebius ignores)
+    /// Optional extension field (not used by Moebius).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layer: Option<usize>,
 }
 
 impl DrawMessage {
-    pub fn new(col: i32, row: i32, block: Block) -> Self {
+    pub fn new(id: u32, x: i32, y: i32, block: Block) -> Self {
         Self {
-            action: ActionCode::Draw as u8,
-            col,
-            row,
-            block,
-            layer: None,
+            msg_type: ActionCode::Draw as u8,
+            data: DrawData {
+                id,
+                x,
+                y,
+                block,
+                layer: None,
+            },
         }
     }
 
-    pub fn with_layer(col: i32, row: i32, block: Block, layer: usize) -> Self {
+    pub fn with_layer(id: u32, x: i32, y: i32, block: Block, layer: usize) -> Self {
         Self {
-            action: ActionCode::Draw as u8,
-            col,
-            row,
-            block,
-            layer: Some(layer),
+            msg_type: ActionCode::Draw as u8,
+            data: DrawData {
+                id,
+                x,
+                y,
+                block,
+                layer: Some(layer),
+            },
         }
     }
 }
 
-/// Preview draw (temporary, not saved).
+/// Preview draw - Moebius doesn't have separate preview, use regular Draw
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrawPreviewMessage {
-    pub action: u8,
-    pub col: i32,
-    pub row: i32,
-    pub block: Block,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: DrawData,
 }
 
 impl DrawPreviewMessage {
-    pub fn new(col: i32, row: i32, block: Block) -> Self {
+    pub fn new(id: u32, x: i32, y: i32, block: Block) -> Self {
         Self {
-            action: ActionCode::DrawPreview as u8,
-            col,
-            row,
-            block,
+            msg_type: ActionCode::Draw as u8,
+            data: DrawData {
+                id,
+                x,
+                y,
+                block,
+                layer: None,
+            },
         }
     }
 }
@@ -302,20 +471,36 @@ impl DrawPreviewMessage {
 /// Chat message from client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSendMessage {
-    pub action: u8,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ChatSendData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSendData {
+    pub id: u32,
+    #[serde(default)]
+    pub nick: String,
+    #[serde(default)]
+    pub group: String,
     pub text: String,
 }
 
 impl ChatSendMessage {
-    pub fn new(text: String) -> Self {
+    pub fn new(id: u32, nick: String, group: String, text: String) -> Self {
         Self {
-            action: ActionCode::Chat as u8,
-            text,
+            msg_type: ActionCode::Chat as u8,
+            data: ChatSendData {
+                id,
+                nick,
+                group,
+                text,
+            },
         }
     }
 }
 
-/// Resize canvas columns.
+/// Resize canvas - Moebius uses SET_CANVAS_SIZE (16) with both columns and rows
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResizeColumnsMessage {
     pub action: u8,
@@ -325,13 +510,13 @@ pub struct ResizeColumnsMessage {
 impl ResizeColumnsMessage {
     pub fn new(columns: u32) -> Self {
         Self {
-            action: ActionCode::ResizeColumns as u8,
+            action: ActionCode::SetCanvasSize as u8,  // Not supported separately in Moebius
             columns,
         }
     }
 }
 
-/// Resize canvas rows.
+/// Resize canvas rows - Moebius uses SET_CANVAS_SIZE (16) with both columns and rows
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResizeRowsMessage {
     pub action: u8,
@@ -341,7 +526,7 @@ pub struct ResizeRowsMessage {
 impl ResizeRowsMessage {
     pub fn new(rows: u32) -> Self {
         Self {
-            action: ActionCode::ResizeRows as u8,
+            action: ActionCode::SetCanvasSize as u8,  // Not supported separately in Moebius
             rows,
         }
     }
@@ -366,7 +551,7 @@ pub struct PasteMessage {
     pub layer: Option<usize>,
 }
 
-/// Ping message for keepalive.
+/// Ping message for keepalive - Not in Moebius protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PingMessage {
     pub action: u8,
@@ -375,55 +560,94 @@ pub struct PingMessage {
 impl Default for PingMessage {
     fn default() -> Self {
         Self {
-            action: ActionCode::Ping as u8,
+            action: ActionCode::Status as u8,  // Use Status as fallback since Ping doesn't exist
         }
     }
 }
 
-/// Set 9-pixel font mode.
+/// Set 9-pixel font mode - Moebius USE_9PX_FONT = 14
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetUse9pxMessage {
-    pub action: u8,
-    pub value: bool,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ToggleValueData,
 }
 
 impl SetUse9pxMessage {
-    pub fn new(value: bool) -> Self {
+    pub fn new(id: u32, value: bool) -> Self {
         Self {
-            action: ActionCode::SetUse9px as u8,
-            value,
+            msg_type: ActionCode::Use9pxFont as u8,
+            data: ToggleValueData { id, value },
         }
     }
 }
 
-/// Set ice colors mode.
+/// Set ice colors mode - Moebius ICE_COLORS = 13
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetIceColorsMessage {
-    pub action: u8,
-    pub value: bool,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ToggleValueData,
 }
 
 impl SetIceColorsMessage {
-    pub fn new(value: bool) -> Self {
+    pub fn new(id: u32, value: bool) -> Self {
         Self {
-            action: ActionCode::SetIceColors as u8,
-            value,
+            msg_type: ActionCode::IceColors as u8,
+            data: ToggleValueData { id, value },
         }
     }
 }
 
-/// Set font.
+/// Set font - Moebius CHANGE_FONT = 15
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetFontMessage {
-    pub action: u8,
-    pub font: String,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: SetFontData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToggleValueData {
+    pub id: u32,
+    pub value: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetFontData {
+    pub id: u32,
+    pub font_name: String,
 }
 
 impl SetFontMessage {
-    pub fn new(font: String) -> Self {
+    pub fn new(id: u32, font_name: String) -> Self {
         Self {
-            action: ActionCode::SetFont as u8,
-            font,
+            msg_type: ActionCode::ChangeFont as u8,
+            data: SetFontData { id, font_name },
+        }
+    }
+}
+
+/// Set canvas size - Moebius SET_CANVAS_SIZE = 16
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetCanvasSizeMessage {
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: SetCanvasSizeData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetCanvasSizeData {
+    pub id: u32,
+    pub columns: u32,
+    pub rows: u32,
+}
+
+impl SetCanvasSizeMessage {
+    pub fn new(id: u32, columns: u32, rows: u32) -> Self {
+        Self {
+            msg_type: ActionCode::SetCanvasSize as u8,
+            data: SetCanvasSizeData { id, columns, rows },
         }
     }
 }
@@ -431,15 +655,22 @@ impl SetFontMessage {
 /// Set background color.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetBackgroundMessage {
-    pub action: u8,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: SetBackgroundData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetBackgroundData {
+    pub id: u32,
     pub value: u32,
 }
 
 impl SetBackgroundMessage {
-    pub fn new(value: u32) -> Self {
+    pub fn new(id: u32, value: u32) -> Self {
         Self {
-            action: ActionCode::SetBackground as u8,
-            value,
+            msg_type: ActionCode::SetBackground as u8,
+            data: SetBackgroundData { id, value },
         }
     }
 }
@@ -451,83 +682,79 @@ impl SetBackgroundMessage {
 /// Connection accepted response with document state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectedResponse {
-    /// Action code (Connected = 0)
-    pub action: u8,
-    /// Assigned user ID
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ConnectedData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedData {
     pub id: u32,
-    /// Compressed document data (RLE format)
-    pub doc: String,
-    /// List of users currently in session
+    pub doc: MoebiusDoc,
+
+    #[serde(default)]
     pub users: Vec<User>,
-    /// Chat history
+    #[serde(default)]
     pub chat_history: Vec<ChatMessage>,
-    /// Current server status
     #[serde(default)]
-    pub status: ServerStatus,
-    /// Protocol version supported by server (V2 extension)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_version: Option<ProtocolVersion>,
-    /// Number of columns in document
-    #[serde(default = "default_columns")]
-    pub columns: u32,
-    /// Number of rows in document
-    #[serde(default = "default_rows")]
-    pub rows: u32,
-    /// Use 9-pixel font
-    #[serde(default)]
-    pub use_9px: bool,
-    /// Ice colors enabled
-    #[serde(default)]
-    pub ice_colors: bool,
-    /// Font name
-    #[serde(default)]
-    pub font: String,
-}
-
-fn default_columns() -> u32 {
-    80
-}
-
-fn default_rows() -> u32 {
-    25
+    pub status: u8,
 }
 
 /// Connection refused response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefusedResponse {
-    pub action: u8,
-    /// Reason for refusal
+    #[serde(rename = "type")]
+    pub msg_type: u8,
     #[serde(default)]
-    pub reason: String,
+    pub data: serde_json::Value,
 }
 
 /// User joined notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinMessage {
-    pub action: u8,
-    pub user: User,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: JoinData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinData {
+    pub id: u32,
+    #[serde(default)]
+    pub nick: String,
+    #[serde(default)]
+    pub group: String,
+    #[serde(default)]
+    pub status: u8,
 }
 
 /// User left notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeaveMessage {
-    pub action: u8,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: LeaveData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaveData {
     pub id: u32,
 }
 
 /// Chat message broadcast from server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatBroadcastMessage {
-    pub action: u8,
-    pub nick: String,
-    pub text: String,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ChatMessage,
 }
 
 /// Status update from server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusMessage {
-    pub action: u8,
-    pub text: String,
+    #[serde(rename = "type")]
+    pub msg_type: u8,
+    pub data: ServerStatus,
 }
 
 // ============================================================================
@@ -538,219 +765,15 @@ pub struct StatusMessage {
 /// Use this for initial parsing to determine the action code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingMessage {
-    pub action: u8,
-    #[serde(flatten)]
+    #[serde(rename = "type")]
+    pub msg_type: u8,
     pub data: serde_json::Value,
 }
 
 impl IncomingMessage {
     /// Get the action code for this message.
+    /// Maps Moebius protocol action codes to our ActionCode enum.
     pub fn action_code(&self) -> Option<ActionCode> {
-        match self.action {
-            0 => Some(ActionCode::Connected),
-            1 => Some(ActionCode::Refused),
-            2 => Some(ActionCode::Join),
-            3 => Some(ActionCode::Leave),
-            4 => Some(ActionCode::Cursor),
-            5 => Some(ActionCode::Selection),
-            6 => Some(ActionCode::ResizeColumns),
-            7 => Some(ActionCode::ResizeRows),
-            8 => Some(ActionCode::Draw),
-            9 => Some(ActionCode::DrawPreview),
-            10 => Some(ActionCode::Chat),
-            11 => Some(ActionCode::Status),
-            12 => Some(ActionCode::Undo),
-            13 => Some(ActionCode::Redo),
-            14 => Some(ActionCode::PasteImage),
-            15 => Some(ActionCode::Paste),
-            16 => Some(ActionCode::Connect),
-            17 => Some(ActionCode::Ping),
-            18 => Some(ActionCode::SetUse9px),
-            19 => Some(ActionCode::SetIceColors),
-            20 => Some(ActionCode::SetFont),
-            21 => Some(ActionCode::SetBackground),
-            _ => None,
-        }
-    }
-}
-
-/// Parsed server message.
-#[derive(Debug, Clone)]
-pub enum ServerMessage {
-    Connected(ConnectedResponse),
-    Refused(RefusedResponse),
-    Join(JoinMessage),
-    Leave(LeaveMessage),
-    Cursor { id: u32, col: i32, row: i32 },
-    Selection { id: u32, selecting: bool, col: i32, row: i32 },
-    ResizeColumns { columns: u32 },
-    ResizeRows { rows: u32 },
-    Draw(DrawMessage),
-    DrawPreview(DrawPreviewMessage),
-    Chat(ChatBroadcastMessage),
-    Status(StatusMessage),
-    Paste(PasteMessage),
-    SetUse9px { value: bool },
-    SetIceColors { value: bool },
-    SetFont { font: String },
-    SetBackground { value: u32 },
-    Ping,
-    Unknown(u8),
-}
-
-/// Parse a JSON string into a ServerMessage.
-pub fn parse_server_message(json: &str) -> Result<ServerMessage, serde_json::Error> {
-    let incoming: IncomingMessage = serde_json::from_str(json)?;
-
-    match incoming.action {
-        0 => {
-            let resp: ConnectedResponse = serde_json::from_str(json)?;
-            Ok(ServerMessage::Connected(resp))
-        }
-        1 => {
-            let resp: RefusedResponse = serde_json::from_str(json)?;
-            Ok(ServerMessage::Refused(resp))
-        }
-        2 => {
-            let msg: JoinMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Join(msg))
-        }
-        3 => {
-            let msg: LeaveMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Leave(msg))
-        }
-        4 => {
-            #[derive(Deserialize)]
-            struct CursorUpdate {
-                id: u32,
-                col: i32,
-                row: i32,
-            }
-            let msg: CursorUpdate = serde_json::from_str(json)?;
-            Ok(ServerMessage::Cursor {
-                id: msg.id,
-                col: msg.col,
-                row: msg.row,
-            })
-        }
-        5 => {
-            #[derive(Deserialize)]
-            struct SelectionUpdate {
-                id: u32,
-                selecting: bool,
-                col: i32,
-                row: i32,
-            }
-            let msg: SelectionUpdate = serde_json::from_str(json)?;
-            Ok(ServerMessage::Selection {
-                id: msg.id,
-                selecting: msg.selecting,
-                col: msg.col,
-                row: msg.row,
-            })
-        }
-        6 => {
-            let msg: ResizeColumnsMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::ResizeColumns { columns: msg.columns })
-        }
-        7 => {
-            let msg: ResizeRowsMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::ResizeRows { rows: msg.rows })
-        }
-        8 => {
-            let msg: DrawMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Draw(msg))
-        }
-        9 => {
-            let msg: DrawPreviewMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::DrawPreview(msg))
-        }
-        10 => {
-            let msg: ChatBroadcastMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Chat(msg))
-        }
-        11 => {
-            let msg: StatusMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Status(msg))
-        }
-        15 => {
-            let msg: PasteMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::Paste(msg))
-        }
-        17 => Ok(ServerMessage::Ping),
-        18 => {
-            let msg: SetUse9pxMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::SetUse9px { value: msg.value })
-        }
-        19 => {
-            let msg: SetIceColorsMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::SetIceColors { value: msg.value })
-        }
-        20 => {
-            let msg: SetFontMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::SetFont { font: msg.font })
-        }
-        21 => {
-            let msg: SetBackgroundMessage = serde_json::from_str(json)?;
-            Ok(ServerMessage::SetBackground { value: msg.value })
-        }
-        other => Ok(ServerMessage::Unknown(other)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_connect_request_serialization() {
-        let req = ConnectRequest::new("TestUser".to_string(), "secret".to_string());
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"action\":16"));
-        assert!(json.contains("\"nick\":\"TestUser\""));
-        assert!(json.contains("\"pass\":\"secret\""));
-    }
-
-    #[test]
-    fn test_draw_message_serialization() {
-        let msg = DrawMessage::new(10, 20, Block { code: 65, fg: 7, bg: 0 });
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"action\":8"));
-        assert!(json.contains("\"col\":10"));
-        assert!(json.contains("\"row\":20"));
-    }
-
-    #[test]
-    fn test_draw_message_with_layer() {
-        let msg = DrawMessage::with_layer(10, 20, Block { code: 65, fg: 7, bg: 0 }, 2);
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"layer\":2"));
-    }
-
-    #[test]
-    fn test_parse_connected_response() {
-        let json = r#"{"action":0,"id":42,"doc":"","users":[],"chat_history":[],"status":{"text":""},"columns":80,"rows":25}"#;
-        let msg = parse_server_message(json).unwrap();
-        match msg {
-            ServerMessage::Connected(resp) => {
-                assert_eq!(resp.id, 42);
-                assert_eq!(resp.columns, 80);
-                assert_eq!(resp.rows, 25);
-            }
-            _ => panic!("Expected Connected message"),
-        }
-    }
-
-    #[test]
-    fn test_protocol_version_compat() {
-        // Moebius-compatible request without version
-        let req = ConnectRequest::moebius_compatible("User".to_string(), "".to_string());
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(!json.contains("protocol_version"));
-
-        // Extended request with version
-        let req = ConnectRequest::new("User".to_string(), "".to_string());
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("protocol_version"));
+        ActionCode::try_from(self.msg_type).ok()
     }
 }

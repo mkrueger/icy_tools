@@ -20,6 +20,19 @@ pub const ANSI_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Tag),
 ];
 
+/// Tool slots for network/collaboration mode (no Tag tool - not compatible with Moebius)
+pub const NETWORK_TOOL_SLOTS: &[ToolPair] = &[
+    ToolPair::single(Tool::Click),
+    ToolPair::single(Tool::Select),
+    ToolPair::single(Tool::Pencil),
+    ToolPair::single(Tool::Line),
+    ToolPair::new(Tool::RectangleOutline, Tool::RectangleFilled),
+    ToolPair::new(Tool::EllipseOutline, Tool::EllipseFilled),
+    ToolPair::single(Tool::Fill),
+    ToolPair::single(Tool::Pipette),
+    ToolPair::single(Tool::Font),
+];
+
 /// Tool slots for the CharFont editor (no Tag tool)
 pub const CHARFONT_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Click),

@@ -9,13 +9,13 @@ license.workspace = true
 
 [features]
 default = []
-collaboration = ["tokio", "serde_json"]
+collaboration = ["tokio", "tokio-tungstenite", "futures-util", "serde_json"]
 
 [dependencies]
 icy_engine = { workspace = true }
 icy_parser_core = { workspace = true }
-icy_sauce = { workspace = true }
-retrofont = { workspace = true, features = ["serde"] }
+icy_sauce = { workspace = true, features = ["serde"] }
+retrofont = { workspace = true, features = ["serde"]}
 codepages = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
@@ -36,6 +36,8 @@ anyhow = "1.0.100"
 
 # Optional collaboration dependencies
 tokio = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]

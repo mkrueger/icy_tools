@@ -355,6 +355,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
                     (menu_item_simple(fl!("menu-export"), "", Message::ExportFile)),
                     (separator()),
+                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
+                    (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
                     (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))
@@ -487,6 +489,8 @@ pub fn view_ansi(
                     )),
                     (separator()),
                     (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-toggle-chat"), "", Message::ToggleChatPanel)),
                     (separator()),
                     (menu_item_simple(
                         fl!("menu-reference-image"),
@@ -534,6 +538,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
                     (menu_item_simple(fl!("menu-export"), "", Message::ExportFile)),
                     (separator()),
+                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
+                    (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
                     (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))
@@ -666,6 +672,8 @@ pub fn view_ansi(
                     )),
                     (separator()),
                     (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-toggle-chat"), "", Message::ToggleChatPanel)),
                     (separator()),
                     (menu_item_simple(
                         fl!("menu-reference-image"),

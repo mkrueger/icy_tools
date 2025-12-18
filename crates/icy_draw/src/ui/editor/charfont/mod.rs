@@ -1106,7 +1106,10 @@ impl CharFontEditor {
     }
 
     /// Render the editor view
-    pub fn view(&self) -> Element<'_, CharFontEditorMessage> {
+    /// 
+    /// The optional `chat_panel` parameter is accepted for API consistency but
+    /// currently ignored since charfont editor doesn't support collaboration.
+    pub fn view(&self, _chat_panel: Option<Element<'_, CharFontEditorMessage>>) -> Element<'_, CharFontEditorMessage> {
         // Apply current caret colors for Block/Outline fonts before rendering
         self.apply_font_type_colors();
 

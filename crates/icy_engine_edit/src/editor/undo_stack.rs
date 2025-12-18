@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
+use super::undo_operation::EditorUndoOp;
 use super::EditState;
 
 pub trait UndoState {
@@ -60,8 +61,6 @@ pub trait UndoOperation: Send + Sync {
         None
     }
 }
-
-use super::undo_operation::EditorUndoOp;
 
 /// Serializable undo stack for editor operations
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
