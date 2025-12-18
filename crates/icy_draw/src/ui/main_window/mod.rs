@@ -11,6 +11,7 @@
 
 pub mod commands;
 mod main_window;
+mod main_window_file_handling;
 pub mod menu;
 mod options;
 mod recent_files;

@@ -551,16 +551,16 @@ impl WindowManager {
                     return window::close(id);
                 }
 
-                // Check if this is a save message - clear autosave after successful save
-                let is_save = matches!(msg, super::main_window::Message::SaveFile | super::main_window::Message::SaveFileAs);
+                // Check if this is a confirmed save success message - clear autosave only then
+                let is_save_success = matches!(msg, super::main_window::Message::SaveSucceeded(_));
                 // Check if this is a file open message - save session after opening
                 let is_file_open = matches!(msg, super::main_window::Message::FileOpened(_) | super::main_window::Message::OpenRecentFile(_));
 
                 if let Some(window) = self.windows.get_mut(&id) {
                     let task = window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));
 
-                    // After save, remove autosave
-                    if is_save {
+                    // After a successful save, remove autosave
+                    if is_save_success {
                         if let Some(path) = window.file_path() {
                             let autosave_path = self.session_manager.get_autosave_path(path);
                             self.session_manager.remove_autosave(&autosave_path);

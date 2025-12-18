@@ -32,6 +32,14 @@ file-settings-comments-title=SAUCE Comments
 file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Schließen
 menu-save-as=Speichern unter…
+
+# Dateidialoge
+file-dialog-save-as-title=Speichern unter
+file-dialog-filter-all-files=Alle Dateien
+file-dialog-filter-icydraw-files=IcyDraw-Dateien
+file-dialog-filter-font-files=Font-Dateien
+file-dialog-filter-tdf-files=TDF-Dateien
+file-dialog-filter-animation-files=Animationsdateien
 menu-export=Exportieren…
 menu-edit-font-outline=Font Outline…
 menu-show_settings=Einstellungen…

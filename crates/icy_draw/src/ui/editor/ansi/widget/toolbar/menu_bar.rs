@@ -177,38 +177,40 @@ fn build_zoom_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
 
 /// Build the area operations submenu
 fn build_area_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
+    use crate::ui::editor::ansi::AnsiEditorMessage;
+    
     let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
 
     // Line justify operations
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_LEFT, Message::JustifyLineLeft)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_CENTER, Message::JustifyLineCenter)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_RIGHT, Message::JustifyLineRight)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_LEFT, Message::AnsiEditor(AnsiEditorMessage::JustifyLineLeft))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_CENTER, Message::AnsiEditor(AnsiEditorMessage::JustifyLineCenter))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::JUSTIFY_LINE_RIGHT, Message::AnsiEditor(AnsiEditorMessage::JustifyLineRight))));
     items.push(iced_aw::menu::Item::new(separator()));
 
     // Row/column insert/delete
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_ROW, Message::InsertRow)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_ROW, Message::DeleteRow)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_COLUMN, Message::InsertColumn)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_COLUMN, Message::DeleteColumn)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_ROW, Message::AnsiEditor(AnsiEditorMessage::InsertRow))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_ROW, Message::AnsiEditor(AnsiEditorMessage::DeleteRow))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::INSERT_COLUMN, Message::AnsiEditor(AnsiEditorMessage::InsertColumn))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::DELETE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::DeleteColumn))));
     items.push(iced_aw::menu::Item::new(separator()));
 
     // Erase operations
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW, Message::EraseRow)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_START, Message::EraseRowToStart)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_END, Message::EraseRowToEnd)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN, Message::EraseColumn)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW, Message::AnsiEditor(AnsiEditorMessage::EraseRow))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_START, Message::AnsiEditor(AnsiEditorMessage::EraseRowToStart))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_ROW_TO_END, Message::AnsiEditor(AnsiEditorMessage::EraseRowToEnd))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::EraseColumn))));
     items.push(iced_aw::menu::Item::new(menu_item(
         &area_cmd::ERASE_COLUMN_TO_START,
-        Message::EraseColumnToStart,
+        Message::AnsiEditor(AnsiEditorMessage::EraseColumnToStart),
     )));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN_TO_END, Message::EraseColumnToEnd)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::ERASE_COLUMN_TO_END, Message::AnsiEditor(AnsiEditorMessage::EraseColumnToEnd))));
     items.push(iced_aw::menu::Item::new(separator()));
 
     // Scroll operations
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_UP, Message::ScrollAreaUp)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_DOWN, Message::ScrollAreaDown)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_LEFT, Message::ScrollAreaLeft)));
-    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_RIGHT, Message::ScrollAreaRight)));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_UP, Message::AnsiEditor(AnsiEditorMessage::ScrollAreaUp))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_DOWN, Message::AnsiEditor(AnsiEditorMessage::ScrollAreaDown))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_LEFT, Message::AnsiEditor(AnsiEditorMessage::ScrollAreaLeft))));
+    items.push(iced_aw::menu::Item::new(menu_item(&area_cmd::SCROLL_RIGHT, Message::AnsiEditor(AnsiEditorMessage::ScrollAreaRight))));
 
     Menu::new(items).width(250.0).offset(5.0)
 }

@@ -842,8 +842,9 @@ impl AnsiEditor {
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let mut screen = self.screen.lock();
         if let Some(edit_state) = screen.as_any_mut().downcast_ref::<EditState>() {
-            // Determine format from extension
-            let format = FileFormat::from_path(path).ok_or_else(|| "Unknown file format".to_string())?;
+            // Always save ANSI editor as full-fidelity IcyDraw format.
+            // Other formats are handled via Export.
+            let format = FileFormat::IcyDraw;
 
             // Get buffer and save with default options
             let buffer = edit_state.get_buffer();
@@ -1383,6 +1384,129 @@ impl AnsiEditor {
             AnsiEditorMessage::ToggleLayerBorders => {
                 self.show_layer_borders = !self.show_layer_borders;
                 self.task_none_with_layer_bounds_update()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Area operations
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorMessage::JustifyLineCenter => {
+                let result = self.with_edit_state(|state| state.center_line());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::JustifyLineLeft => {
+                let result = self.with_edit_state(|state| state.justify_line_left());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::JustifyLineRight => {
+                let result = self.with_edit_state(|state| state.justify_line_right());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::InsertRow => {
+                let result = self.with_edit_state(|state| state.insert_row());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::DeleteRow => {
+                let result = self.with_edit_state(|state| state.delete_row());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::InsertColumn => {
+                let result = self.with_edit_state(|state| state.insert_column());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::DeleteColumn => {
+                let result = self.with_edit_state(|state| state.delete_column());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseRow => {
+                let result = self.with_edit_state(|state| state.erase_row());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseRowToStart => {
+                let result = self.with_edit_state(|state| state.erase_row_to_start());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseRowToEnd => {
+                let result = self.with_edit_state(|state| state.erase_row_to_end());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseColumn => {
+                let result = self.with_edit_state(|state| state.erase_column());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseColumnToStart => {
+                let result = self.with_edit_state(|state| state.erase_column_to_start());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::EraseColumnToEnd => {
+                let result = self.with_edit_state(|state| state.erase_column_to_end());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::ScrollAreaUp => {
+                let result = self.with_edit_state(|state| state.scroll_area_up());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::ScrollAreaDown => {
+                let result = self.with_edit_state(|state| state.scroll_area_down());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::ScrollAreaLeft => {
+                let result = self.with_edit_state(|state| state.scroll_area_left());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
+            }
+            AnsiEditorMessage::ScrollAreaRight => {
+                let result = self.with_edit_state(|state| state.scroll_area_right());
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                Task::none()
             }
         };
 

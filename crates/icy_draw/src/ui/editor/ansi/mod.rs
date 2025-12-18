@@ -148,6 +148,44 @@ pub enum AnsiEditorMessage {
     OpenTagListDialog,
     /// Tag list dialog messages
     TagListDialog(TagListDialogMessage),
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Area operations (ANSI-editor specific)
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Justify current line left
+    JustifyLineLeft,
+    /// Justify current line right
+    JustifyLineRight,
+    /// Justify current line center
+    JustifyLineCenter,
+    /// Insert a row at cursor position
+    InsertRow,
+    /// Delete row at cursor position
+    DeleteRow,
+    /// Insert a column at cursor position
+    InsertColumn,
+    /// Delete column at cursor position
+    DeleteColumn,
+    /// Erase entire row
+    EraseRow,
+    /// Erase row from start to cursor
+    EraseRowToStart,
+    /// Erase row from cursor to end
+    EraseRowToEnd,
+    /// Erase entire column
+    EraseColumn,
+    /// Erase column from start to cursor
+    EraseColumnToStart,
+    /// Erase column from cursor to end
+    EraseColumnToEnd,
+    /// Scroll area up
+    ScrollAreaUp,
+    /// Scroll area down
+    ScrollAreaDown,
+    /// Scroll area left
+    ScrollAreaLeft,
+    /// Scroll area right
+    ScrollAreaRight,
 }
 
 // CanvasMouseEvent removed - use TerminalMessage directly from icy_engine_gui

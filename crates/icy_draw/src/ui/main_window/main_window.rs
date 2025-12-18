@@ -64,24 +64,24 @@ command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     selection_cmd::SELECT_JUSTIFY_LEFT => Message::JustifyLeft,
     selection_cmd::SELECT_JUSTIFY_CENTER => Message::JustifyCenter,
     selection_cmd::SELECT_JUSTIFY_RIGHT => Message::JustifyRight,
-    // Area operations
-    area_cmd::JUSTIFY_LINE_LEFT => Message::JustifyLineLeft,
-    area_cmd::JUSTIFY_LINE_CENTER => Message::JustifyLineCenter,
-    area_cmd::JUSTIFY_LINE_RIGHT => Message::JustifyLineRight,
-    area_cmd::INSERT_ROW => Message::InsertRow,
-    area_cmd::DELETE_ROW => Message::DeleteRow,
-    area_cmd::INSERT_COLUMN => Message::InsertColumn,
-    area_cmd::DELETE_COLUMN => Message::DeleteColumn,
-    area_cmd::ERASE_ROW => Message::EraseRow,
-    area_cmd::ERASE_ROW_TO_START => Message::EraseRowToStart,
-    area_cmd::ERASE_ROW_TO_END => Message::EraseRowToEnd,
-    area_cmd::ERASE_COLUMN => Message::EraseColumn,
-    area_cmd::ERASE_COLUMN_TO_START => Message::EraseColumnToStart,
-    area_cmd::ERASE_COLUMN_TO_END => Message::EraseColumnToEnd,
-    area_cmd::SCROLL_UP => Message::ScrollAreaUp,
-    area_cmd::SCROLL_DOWN => Message::ScrollAreaDown,
-    area_cmd::SCROLL_LEFT => Message::ScrollAreaLeft,
-    area_cmd::SCROLL_RIGHT => Message::ScrollAreaRight,
+    // Area operations (forwarded to ANSI editor)
+    area_cmd::JUSTIFY_LINE_LEFT => Message::AnsiEditor(AnsiEditorMessage::JustifyLineLeft),
+    area_cmd::JUSTIFY_LINE_CENTER => Message::AnsiEditor(AnsiEditorMessage::JustifyLineCenter),
+    area_cmd::JUSTIFY_LINE_RIGHT => Message::AnsiEditor(AnsiEditorMessage::JustifyLineRight),
+    area_cmd::INSERT_ROW => Message::AnsiEditor(AnsiEditorMessage::InsertRow),
+    area_cmd::DELETE_ROW => Message::AnsiEditor(AnsiEditorMessage::DeleteRow),
+    area_cmd::INSERT_COLUMN => Message::AnsiEditor(AnsiEditorMessage::InsertColumn),
+    area_cmd::DELETE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::DeleteColumn),
+    area_cmd::ERASE_ROW => Message::AnsiEditor(AnsiEditorMessage::EraseRow),
+    area_cmd::ERASE_ROW_TO_START => Message::AnsiEditor(AnsiEditorMessage::EraseRowToStart),
+    area_cmd::ERASE_ROW_TO_END => Message::AnsiEditor(AnsiEditorMessage::EraseRowToEnd),
+    area_cmd::ERASE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::EraseColumn),
+    area_cmd::ERASE_COLUMN_TO_START => Message::AnsiEditor(AnsiEditorMessage::EraseColumnToStart),
+    area_cmd::ERASE_COLUMN_TO_END => Message::AnsiEditor(AnsiEditorMessage::EraseColumnToEnd),
+    area_cmd::SCROLL_UP => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaUp),
+    area_cmd::SCROLL_DOWN => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaDown),
+    area_cmd::SCROLL_LEFT => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaLeft),
+    area_cmd::SCROLL_RIGHT => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaRight),
 });
 
 impl Default for EditMode {
@@ -175,15 +175,29 @@ impl ModeState {
         }
     }
 
-    /// Get the default file extension for this mode
-    pub fn default_extension(&self) -> &'static str {
+    /// Get the standard/native file format for this mode.
+    ///
+    /// Returns `(extension, localized filter label)`.
+    pub fn file_format(&self) -> (&'static str, String) {
         match self {
-            Self::Ansi(_) => "ans",
-            Self::BitFont(_) => "psf",
-            Self::CharFont(_) => "tdf",
-            Self::Animation(_) => "icyanim",
+            Self::Ansi(_) => ("icy", fl!("file-dialog-filter-icydraw-files")),
+            Self::BitFont(_) => ("psf", fl!("file-dialog-filter-font-files")),
+            Self::CharFont(_) => ("tdf", fl!("file-dialog-filter-tdf-files")),
+            Self::Animation(_) => ("icyanim", fl!("file-dialog-filter-animation-files")),
         }
     }
+}
+
+pub(super) fn enforce_extension(mut path: PathBuf, required_ext: &str) -> PathBuf {
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case(required_ext))
+        != Some(true)
+    {
+        path.set_extension(required_ext);
+    }
+    path
 }
 
 /// Message type for MainWindow
@@ -202,6 +216,8 @@ pub enum Message {
     FileLoadError(String, String), // (title, error_message)
     SaveFile,
     SaveFileAs,
+    /// Emitted after a successful save (Save or Save As)
+    SaveSucceeded(PathBuf),
     FileSaved(PathBuf), // Path where file was saved (from SaveAs dialog)
     ExportFile,
     CloseFile,
@@ -246,25 +262,6 @@ pub enum Message {
     Deselect,
     InverseSelection,
     DeleteSelection,
-
-    // Edit - Area operations
-    JustifyLineLeft,
-    JustifyLineRight,
-    JustifyLineCenter,
-    InsertRow,
-    DeleteRow,
-    InsertColumn,
-    DeleteColumn,
-    EraseRow,
-    EraseRowToStart,
-    EraseRowToEnd,
-    EraseColumn,
-    EraseColumnToStart,
-    EraseColumnToEnd,
-    ScrollAreaUp,
-    ScrollAreaDown,
-    ScrollAreaLeft,
-    ScrollAreaRight,
 
     // Edit - Transform
     FlipX,
@@ -491,13 +488,13 @@ pub struct MainWindow {
     pub id: usize,
 
     /// Current editing mode and state
-    mode_state: ModeState,
+    pub(super) mode_state: ModeState,
 
     /// Shared options
-    options: Arc<RwLock<Options>>,
+    pub(super) options: Arc<RwLock<Options>>,
 
     /// Shared font library for TDF/Figlet fonts
-    font_library: SharedFontLibrary,
+    pub(super) font_library: SharedFontLibrary,
 
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
@@ -512,19 +509,19 @@ pub struct MainWindow {
     is_fullscreen: bool,
 
     /// Dialog stack for modal dialogs
-    dialogs: DialogStack<Message>,
+    pub(super) dialogs: DialogStack<Message>,
 
     /// Command set for hotkey handling
     commands: MainWindowCommands,
 
     /// Undo stack length at last save - for dirty tracking
-    last_save: usize,
+    pub(super) last_save: usize,
 
     /// Close the window after a successful save (for SaveAndClose flow)
-    close_after_save: bool,
+    pub(super) close_after_save: bool,
 
     /// Pending file to open after save (None inside = new file, Some(path) = open path)
-    pending_open_path: Option<Option<PathBuf>>,
+    pub(super) pending_open_path: Option<Option<PathBuf>>,
 
     /// Cached title string for Window trait (updated when file changes)
     pub title: String,
@@ -982,194 +979,12 @@ impl MainWindow {
                     self.update(Message::SaveFileAs)
                 }
             }
-            Message::OpenFile => {
-                // Check for unsaved changes first
-                if self.is_modified() {
-                    let filename = self
-                        .file_path()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "Untitled".to_string());
-
-                    // Store that we want to open a file (path TBD from dialog)
-                    self.pending_open_path = Some(Some(PathBuf::new())); // Placeholder
-
-                    self.dialogs.push(confirm_yes_no_cancel(
-                        format!("Save changes to \"{}\"?", filename),
-                        "Your changes will be lost if you don't save them.",
-                        |result| match result {
-                            DialogResult::Yes => Message::SaveFile,           // Will trigger file dialog after save
-                            DialogResult::No => Message::ForceShowOpenDialog, // Show open dialog without dirty check
-                            _ => Message::CloseDialog,
-                        },
-                    ));
-                    Task::none()
-                } else {
-                    self.update(Message::ForceShowOpenDialog)
-                }
-            }
-            Message::ForceShowOpenDialog => {
-                // Close the confirmation dialog first (if any)
-                self.dialogs.pop();
-
-                // Show file picker without dirty check
-                self.pending_open_path = None;
-                let extensions: Vec<&str> = FileFormat::ALL
-                    .iter()
-                    .filter(|f| f.is_supported() || f.is_bitfont())
-                    .flat_map(|f| f.all_extensions())
-                    .copied()
-                    .collect();
-
-                Task::perform(
-                    async move {
-                        rfd::AsyncFileDialog::new()
-                            .add_filter("Supported Files", &extensions)
-                            .add_filter("All Files", &["*"])
-                            .set_title("Open File")
-                            .pick_file()
-                            .await
-                            .map(|f| f.path().to_path_buf())
-                    },
-                    |result| {
-                        if let Some(path) = result {
-                            Message::FileOpened(path)
-                        } else {
-                            Message::Tick // No file selected, do nothing
-                        }
-                    },
-                )
-            }
-            Message::OpenRecentFile(path) => {
-                // Check for unsaved changes first
-                if self.is_modified() {
-                    let filename = self
-                        .file_path()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "Untitled".to_string());
-
-                    let open_path = path.clone();
-                    self.dialogs.push(confirm_yes_no_cancel(
-                        format!("Save changes to \"{}\"?", filename),
-                        "Your changes will be lost if you don't save them.",
-                        move |result| match result {
-                            DialogResult::Yes => Message::SaveAndOpenFile(open_path.clone()),
-                            DialogResult::No => Message::ForceOpenFile(open_path.clone()),
-                            _ => Message::CloseDialog,
-                        },
-                    ));
-                    Task::none()
-                } else {
-                    // No unsaved changes, open directly
-                    self.update(Message::FileOpened(path))
-                }
-            }
-            Message::SaveAndOpenFile(path) => {
-                // Close the confirmation dialog first
-                self.dialogs.pop();
-
-                // Save first, then open the file
-                if let Some(current_path) = self.file_path().cloned() {
-                    match self.mode_state.save(&current_path) {
-                        Ok(()) => {
-                            self.mark_saved();
-                            self.update(Message::FileOpened(path))
-                        }
-                        Err(e) => {
-                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
-                            Task::none()
-                        }
-                    }
-                } else {
-                    // No path - need SaveAs, store pending open path
-                    self.pending_open_path = Some(Some(path));
-                    self.update(Message::SaveFileAs)
-                }
-            }
-            Message::ForceOpenFile(path) => {
-                // Close the confirmation dialog first (if any)
-                self.dialogs.pop();
-
-                // Open file without saving
-                self.update(Message::FileOpened(path))
-            }
-            Message::FileOpened(path) => {
-                // Determine file type using FileFormat
-                let format = FileFormat::from_path(&path);
-
-                match format {
-                    Some(FileFormat::BitFont(_)) => {
-                        // Open in BitFont editor
-                        match BitFontEditor::from_file(path.clone()) {
-                            Ok(editor) => {
-                                self.mode_state = ModeState::BitFont(editor);
-                                self.mark_saved();
-                                self.options.write().recent_files.add_recent_file(&path);
-                            }
-                            Err(e) => {
-                                self.dialogs.push(error_dialog(
-                                    "Error Loading Font",
-                                    format!("Failed to load '{}': {}", path.display(), e),
-                                    |_| Message::CloseDialog,
-                                ));
-                            }
-                        }
-                    }
-                    Some(FileFormat::IcyAnim) => {
-                        // Open in Animation editor
-                        match AnimationEditor::load_file(path.clone()) {
-                            Ok(editor) => {
-                                self.mode_state = ModeState::Animation(editor);
-                                self.mark_saved();
-                                self.options.write().recent_files.add_recent_file(&path);
-                            }
-                            Err(e) => {
-                                self.dialogs.push(error_dialog(
-                                    "Error Loading Animation",
-                                    format!("Failed to load '{}': {}", path.display(), e),
-                                    |_| Message::CloseDialog,
-                                ));
-                            }
-                        }
-                    }
-                    Some(FileFormat::CharacterFont(_)) => {
-                        // Open in CharFont (TDF) editor
-                        match crate::ui::editor::charfont::CharFontEditor::with_file(path.clone(), self.options.clone()) {
-                            Ok(editor) => {
-                                self.mode_state = ModeState::CharFont(editor);
-                                self.mark_saved();
-                                self.options.write().recent_files.add_recent_file(&path);
-                            }
-                            Err(e) => {
-                                self.dialogs.push(error_dialog(
-                                    "Error Loading TDF Font",
-                                    format!("Failed to load '{}': {}", path.display(), e),
-                                    |_| Message::CloseDialog,
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        // Open in ANSI editor (default for all other formats)
-                        match AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
-                            Ok(editor) => {
-                                self.mode_state = ModeState::Ansi(editor);
-                                self.mark_saved();
-                                self.options.write().recent_files.add_recent_file(&path);
-                            }
-                            Err(e) => {
-                                self.dialogs.push(error_dialog(
-                                    "Error Loading File",
-                                    format!("Failed to load '{}': {}", path.display(), e),
-                                    |_| Message::CloseDialog,
-                                ));
-                            }
-                        }
-                    }
-                }
-                Task::none()
-            }
+            Message::OpenFile => self.open_file(),
+            Message::ForceShowOpenDialog => self.show_open_dialog(),
+            Message::OpenRecentFile(path) => self.open_recent_file(path),
+            Message::SaveAndOpenFile(path) => self.save_and_open_file(path),
+            Message::ForceOpenFile(path) => self.force_open_file(path),
+            Message::FileOpened(path) => self.file_opened(path),
             Message::FileLoadError(title, error) => {
                 self.dialogs.push(error_dialog(title, error, |_| Message::CloseDialog));
                 Task::none()
@@ -1180,161 +995,12 @@ impl MainWindow {
                 Task::none()
             }
             Message::PaletteEditor(_) => Task::none(),
-            Message::SaveFile => {
-                // If we have a file path, save directly; otherwise show SaveAs dialog
-                if let Some(path) = self.mode_state.file_path().cloned() {
-                    match self.mode_state.save(&path) {
-                        Ok(()) => {
-                            self.mark_saved();
-
-                            // Check if we should close after save
-                            if self.close_after_save {
-                                self.close_after_save = false;
-                                self.pending_open_path = None;
-                                return Task::done(Message::ForceCloseFile);
-                            }
-
-                            // Check if we have a pending file to open after save
-                            if let Some(pending) = self.pending_open_path.take() {
-                                return match pending {
-                                    None => self.update(Message::ForceNewFile), // New file
-                                    Some(open_path) if open_path.as_os_str().is_empty() => {
-                                        // Empty path means show file picker
-                                        self.update(Message::ForceShowOpenDialog)
-                                    }
-                                    Some(open_path) => self.update(Message::FileOpened(open_path)), // Open specific file
-                                };
-                            }
-                        }
-                        Err(e) => {
-                            self.close_after_save = false;
-                            self.pending_open_path = None;
-                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
-                        }
-                    }
-                    Task::none()
-                } else {
-                    // No file path - trigger SaveAs
-                    self.update(Message::SaveFileAs)
-                }
-            }
-            Message::SaveFileAs => {
-                // Show save dialog
-                let default_ext = self.mode_state.default_extension();
-                let mode = self.mode_state.mode();
-
-                Task::perform(
-                    async move {
-                        let filter_name = match mode {
-                            EditMode::Ansi => "ANSI Files",
-                            EditMode::BitFont => "Font Files",
-                            EditMode::CharFont => "TDF Files",
-                            EditMode::Animation => "Animation Files",
-                        };
-
-                        rfd::AsyncFileDialog::new()
-                            .add_filter(filter_name, &[default_ext])
-                            .add_filter("All Files", &["*"])
-                            .set_title("Save File As")
-                            .save_file()
-                            .await
-                            .map(|f| f.path().to_path_buf())
-                    },
-                    |result| {
-                        if let Some(path) = result {
-                            Message::FileSaved(path)
-                        } else {
-                            Message::Tick // Cancelled
-                        }
-                    },
-                )
-            }
-            Message::FileSaved(path) => {
-                // Save to the selected path
-                match self.mode_state.save(&path) {
-                    Ok(()) => {
-                        // Update file path and mark as saved
-                        self.mode_state.set_file_path(path.clone());
-                        self.mark_saved();
-                        // Add to recent files
-                        self.options.write().recent_files.add_recent_file(&path);
-
-                        // Check if we should close after save
-                        if self.close_after_save {
-                            self.close_after_save = false;
-                            self.pending_open_path = None;
-                            return Task::done(Message::ForceCloseFile);
-                        }
-
-                        // Check if we have a pending file to open after save
-                        if let Some(pending) = self.pending_open_path.take() {
-                            return match pending {
-                                None => self.update(Message::ForceNewFile), // New file
-                                Some(open_path) if open_path.as_os_str().is_empty() => {
-                                    // Empty path means show file picker
-                                    self.update(Message::OpenFile)
-                                }
-                                Some(open_path) => self.update(Message::FileOpened(open_path)), // Open specific file
-                            };
-                        }
-                    }
-                    Err(e) => {
-                        self.close_after_save = false; // Reset flags on error
-                        self.pending_open_path = None;
-                        self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
-                    }
-                }
-                Task::none()
-            }
-            Message::CloseFile => {
-                // Check if document has unsaved changes
-                if self.is_modified() {
-                    // Show save confirmation dialog
-                    let filename = self
-                        .file_path()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "Untitled".to_string());
-
-                    self.dialogs.push(confirm_yes_no_cancel(
-                        format!("Save changes to \"{}\"?", filename),
-                        "Your changes will be lost if you don't save them.",
-                        |result| match result {
-                            DialogResult::Yes => Message::SaveAndCloseFile,
-                            DialogResult::No => Message::ForceCloseFile,
-                            _ => Message::CloseDialog, // Cancel - just close dialog
-                        },
-                    ));
-                    Task::none()
-                } else {
-                    // No unsaved changes, close directly
-                    Task::done(Message::ForceCloseFile)
-                }
-            }
-            Message::SaveAndCloseFile => {
-                // Close the confirmation dialog first
-                self.dialogs.pop();
-
-                // Save first, then close
-                if let Some(path) = self.file_path().cloned() {
-                    // Has a path - save directly then close
-                    match self.mode_state.save(&path) {
-                        Ok(()) => {
-                            self.mark_saved();
-                            Task::done(Message::ForceCloseFile)
-                        }
-                        Err(e) => {
-                            self.dialogs.push(error_dialog("Error Saving File", e, |_| Message::CloseDialog));
-                            Task::none()
-                        }
-                    }
-                } else {
-                    // No path - need SaveAs dialog, then close after
-                    // We'll set a flag to close after save
-                    self.close_after_save = true;
-                    self.update(Message::SaveFileAs)
-                }
-            }
+            Message::SaveFile => self.save_file(),
+            Message::SaveFileAs => self.save_file_as(),
+            Message::FileSaved(path) => self.file_saved(path),
+            Message::SaveSucceeded(_) => Task::none(),
+            Message::CloseFile => self.close_file(),
+            Message::SaveAndCloseFile => self.save_and_close_file(),
             Message::ForceCloseFile => {
                 // Close the confirmation dialog first (if any)
                 self.dialogs.pop();
@@ -1847,163 +1513,6 @@ impl MainWindow {
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Area operations
-            // ═══════════════════════════════════════════════════════════════════
-            Message::JustifyLineCenter => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.center_line());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::JustifyLineLeft => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.justify_line_left());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::JustifyLineRight => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.justify_line_right());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::InsertRow => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.insert_row());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::DeleteRow => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.delete_row());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::InsertColumn => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.insert_column());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::DeleteColumn => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.delete_column());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseRow => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_row());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseRowToStart => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_row_to_start());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseRowToEnd => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_row_to_end());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseColumn => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_column());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseColumnToStart => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_column_to_start());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::EraseColumnToEnd => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.erase_column_to_end());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::ScrollAreaUp => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.scroll_area_up());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::ScrollAreaDown => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.scroll_area_down());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::ScrollAreaLeft => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.scroll_area_left());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::ScrollAreaRight => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.scroll_area_right());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
             // Transform operations
             // ═══════════════════════════════════════════════════════════════════
             Message::FlipX => {
@@ -2459,6 +1968,9 @@ impl MainWindow {
         }
     }
 
+
+    
+    
     /// Check if this window needs animation updates
     pub fn needs_animation(&self) -> bool {
         // Check dialogs first
