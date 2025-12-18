@@ -17,11 +17,11 @@ use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{DialogStack, export_dialog_with_defaults_from_msg};
 use parking_lot::RwLock;
 
+use crate::Plugin;
+use crate::Settings;
 use crate::SharedFontLibrary;
-use crate::ui::Options;
 use crate::ui::editor::palette::PaletteEditorDialog;
 use crate::ui::main_window::Message;
-use crate::ui::widget::plugins::Plugin;
 use crate::ui::{LayerMessage, MinimapMessage};
 
 use super::*;
@@ -46,13 +46,13 @@ pub struct AnsiEditorMainArea {
 }
 
 impl AnsiEditorMainArea {
-    pub fn new(options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    pub fn new(options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let mut buffer = icy_engine::TextBuffer::new((80, 25));
         buffer.terminal_state.is_terminal_buffer = false;
         Self::with_buffer(buffer, None, options, font_library)
     }
 
-    pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let tool_registry = Rc::new(RefCell::new(tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library)));
 
         // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
@@ -81,7 +81,7 @@ impl AnsiEditorMainArea {
         }
     }
 
-    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Result<Self, String> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Result<Self, String> {
         let format = FileFormat::from_path(&path).unwrap_or(FileFormat::Ansi);
         let screen = format.load(&path, Some(LoadData::default())).map_err(|e| e.to_string())?;
         Ok(Self::with_buffer(screen.buffer, Some(path), options, font_library))
@@ -90,7 +90,7 @@ impl AnsiEditorMainArea {
     pub fn load_from_autosave(
         autosave_path: &Path,
         original_path: PathBuf,
-        options: Arc<RwLock<Options>>,
+        options: Arc<RwLock<Settings>>,
         font_library: SharedFontLibrary,
     ) -> Result<Self, String> {
         let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
@@ -234,15 +234,6 @@ impl AnsiEditorMainArea {
             .get_ref::<tools::FontTool>()
             .map(|t| t.font_tool.font_library())
             .expect("FontTool should exist")
-    }
-
-    pub fn font_tool_select_font(&mut self, font_idx: i32) {
-        if let Some(font) = self.core.active_font_tool_mut() {
-            font.select_font(font_idx);
-            return;
-        }
-
-        let _ = self.tool_registry.borrow_mut().with_mut::<tools::FontTool, _>(|t| t.select_font(font_idx));
     }
 
     pub fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {

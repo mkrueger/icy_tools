@@ -11,9 +11,9 @@ use parking_lot::RwLock;
 
 use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
-use super::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
-use super::{MainWindow, Options, commands::create_draw_commands};
-use crate::{SharedFontLibrary, load_window_icon};
+use crate::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
+use crate::ui::{MainWindow, main_window::commands::create_draw_commands};
+use crate::{Settings, SharedFontLibrary, load_window_icon};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::{find_next_window_id, focus_window_by_id};
@@ -58,7 +58,7 @@ pub struct WindowManager {
     windows: BTreeMap<window::Id, MainWindow>,
     /// Cached window geometry (position, size) for session saving
     window_geometry: BTreeMap<window::Id, WindowGeometry>,
-    options: Arc<RwLock<Options>>,
+    options: Arc<RwLock<Settings>>,
     /// Shared font library for TDF/Figlet fonts
     font_library: SharedFontLibrary,
     /// Pending windows to restore (for session restore)
@@ -93,7 +93,7 @@ pub enum WindowManagerMessage {
     WindowMoved(window::Id, Point),
     /// Window was resized - save session with new size  
     WindowResized(window::Id, Size),
-    WindowMessage(window::Id, super::main_window::Message),
+    WindowMessage(window::Id, crate::ui::Message),
     Event(window::Id, iced::Event),
     /// Autosave tick (periodic check)
     AutosaveTick,
@@ -147,7 +147,7 @@ impl WindowManager {
     pub fn new(font_library: SharedFontLibrary) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
         let session_save_tx = start_session_save_worker();
-        let options = Options::load();
+        let options = Settings::load();
         let commands = WindowCommands::new();
 
         // Try to restore session
@@ -167,7 +167,7 @@ impl WindowManager {
         // Clear any existing session when opening via CLI
         session_manager.clear_session();
 
-        let options = Options::load();
+        let options = Settings::load();
         let commands = WindowCommands::new();
 
         Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, Some(path))
@@ -178,7 +178,7 @@ impl WindowManager {
         font_library: SharedFontLibrary,
         session: SessionState,
         session_manager: SessionManager,
-        options: Options,
+        options: Settings,
         commands: WindowCommands,
     ) -> (Self, Task<WindowManagerMessage>) {
         // Convert all window states to restore info
@@ -194,14 +194,14 @@ impl WindowManager {
             window::Settings {
                 size: Size::new(restore.size.0, restore.size.1),
                 position,
-                icon: load_window_icon(include_bytes!("../../../build/linux/256x256.png")).ok(),
+                icon: load_window_icon(include_bytes!("../build/linux/256x256.png")).ok(),
                 exit_on_close_request: false,
                 ..window::Settings::default()
             }
         } else {
             window::Settings {
                 size: DEFAULT_SIZE,
-                icon: load_window_icon(include_bytes!("../../../build/linux/256x256.png")).ok(),
+                icon: load_window_icon(include_bytes!("../build/linux/256x256.png")).ok(),
                 exit_on_close_request: false,
                 ..window::Settings::default()
             }
@@ -238,11 +238,11 @@ impl WindowManager {
         font_library: SharedFontLibrary,
         session_manager: SessionManager,
         session_save_tx: mpsc::Sender<SaveRequest>,
-        options: Options,
+        options: Settings,
         commands: WindowCommands,
         path: Option<PathBuf>,
     ) -> (Self, Task<WindowManagerMessage>) {
-        let window_icon = load_window_icon(include_bytes!("../../../build/linux/256x256.png")).ok();
+        let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
         let settings = window::Settings {
             size: DEFAULT_SIZE,
             icon: window_icon,
@@ -373,7 +373,7 @@ impl WindowManager {
                         let position = last_position.map_or(window::Position::Default, |last_position| {
                             window::Position::Specific(last_position + Vector::new(20.0, 20.0))
                         });
-                        let window_icon = load_window_icon(include_bytes!("../../../build/linux/256x256.png")).ok();
+                        let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
                         let settings = window::Settings {
                             position,
                             icon: window_icon,
@@ -393,7 +393,7 @@ impl WindowManager {
                 if let Some(window) = self.windows.get(&id) {
                     if window.is_modified() {
                         // Send CloseFile message to window - it will show the save dialog
-                        return Task::done(WindowManagerMessage::WindowMessage(id, super::main_window::Message::CloseFile));
+                        return Task::done(WindowManagerMessage::WindowMessage(id, crate::ui::Message::CloseFile));
                     }
                 }
 
@@ -456,7 +456,7 @@ impl WindowManager {
                     let settings = window::Settings {
                         size: Size::new(next.size.0, next.size.1),
                         position,
-                        icon: load_window_icon(include_bytes!("../../../build/linux/256x256.png")).ok(),
+                        icon: load_window_icon(include_bytes!("../build/linux/256x256.png")).ok(),
                         exit_on_close_request: false,
                         ..window::Settings::default()
                     };
@@ -542,7 +542,7 @@ impl WindowManager {
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 // Handle ForceCloseFile by closing the window directly (bypass is_modified check)
-                if matches!(msg, super::main_window::Message::ForceCloseFile) {
+                if matches!(msg, crate::ui::Message::ForceCloseFile) {
                     // If this is the last window, save session first
                     if self.windows.len() == 1 {
                         return self.save_session_and_close(id);
@@ -551,9 +551,9 @@ impl WindowManager {
                 }
 
                 // Check if this is a confirmed save success message - clear autosave only then
-                let is_save_success = matches!(msg, super::main_window::Message::SaveSucceeded(_));
+                let is_save_success = matches!(msg, crate::ui::Message::SaveSucceeded(_));
                 // Check if this is a file open message - save session after opening
-                let is_file_open = matches!(msg, super::main_window::Message::FileOpened(_) | super::main_window::Message::OpenRecentFile(_));
+                let is_file_open = matches!(msg, crate::ui::Message::FileOpened(_) | crate::ui::Message::OpenRecentFile(_));
 
                 if let Some(window) = self.windows.get_mut(&id) {
                     let task = window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));

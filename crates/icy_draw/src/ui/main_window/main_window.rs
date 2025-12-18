@@ -24,14 +24,12 @@ use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm
 use icy_engine_gui::{Toast, ToastManager, command_handler, command_handlers};
 
 use super::commands::create_draw_commands;
-use super::{
-    Options,
-    menu::{MenuBarState, UndoInfo},
-};
+use super::menu::{MenuBarState, UndoInfo};
+use crate::Plugin;
+use crate::Settings;
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
-use crate::ui::widget::plugins::Plugin;
 
 /// The editing mode of a window
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -376,7 +374,7 @@ pub struct MainWindow {
     pub(super) mode_state: ModeState,
 
     /// Shared options
-    pub(super) options: Arc<RwLock<Options>>,
+    pub(super) options: Arc<RwLock<Settings>>,
 
     /// Shared font library for TDF/Figlet fonts
     pub(super) font_library: SharedFontLibrary,
@@ -419,7 +417,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    pub fn new(id: usize, path: Option<PathBuf>, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let (mode_state, initial_error) = if let Some(ref p) = path {
             // Determine mode based on file format
             let format = FileFormat::from_path(p);
@@ -519,7 +517,7 @@ impl MainWindow {
         original_path: Option<PathBuf>,
         load_path: Option<PathBuf>,
         mark_dirty: bool,
-        options: Arc<RwLock<Options>>,
+        options: Arc<RwLock<Settings>>,
         font_library: SharedFontLibrary,
     ) -> Self {
         let (mode_state, initial_error) = match (&load_path, &original_path) {

@@ -1,9 +1,26 @@
 use icy_engine_gui::MonitorSettings;
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, io::Write, path::PathBuf, sync::Arc};
 
-use crate::ui::{FKeySets, MostRecentlyUsedFiles};
+use crate::{MostRecentlyUsedFiles, ui::FKeySets};
+
+// =============================================================================
+// Project directory constants
+// =============================================================================
+
+const PROJECT_QUALIFIER: &str = "com";
+const PROJECT_ORGANIZATION: &str = "GitHub";
+const PROJECT_APPLICATION: &str = "icy_draw";
+
+/// Lazily initialized project directories (computed once on first access)
+pub(crate) static PROJECT_DIRS: Lazy<Option<directories::ProjectDirs>> =
+    Lazy::new(|| directories::ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_ORGANIZATION, PROJECT_APPLICATION));
+
+// =============================================================================
+// TagRenderMode
+// =============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,9 +59,9 @@ impl Default for PersistedOptions {
 
 /// Shared options between all windows.
 ///
-/// Persisted values are stored in `options.toml`.
+/// Persisted values are stored in `settings.toml`.
 /// Some values (MRU, F-keys) are stored separately (see their modules).
-pub struct Options {
+pub struct Settings {
     /// Most recently used files
     pub recent_files: MostRecentlyUsedFiles,
     /// Moebius-style F-key character sets
@@ -60,11 +77,11 @@ pub struct Options {
     pub tag_render_mode: Arc<RwLock<TagRenderMode>>,
 }
 
-impl Options {
-    pub const FILE_NAME: &'static str = "options.toml";
+impl Settings {
+    pub const FILE_NAME: &'static str = "settings.toml";
 
     pub fn load() -> Self {
-        let persistent = Self::load_options_file();
+        let persistent = Self::load_settings_file();
         Self {
             recent_files: MostRecentlyUsedFiles::load(),
             fkeys: FKeySets::load(),
@@ -83,46 +100,73 @@ impl Options {
         Self::store_options_file(&settings);
     }
 
-    fn load_options_file() -> PersistedOptions {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_draw") {
-            if !proj_dirs.config_dir().exists() && fs::create_dir_all(proj_dirs.config_dir()).is_err() {
-                log::error!("Can't create configuration directory {:?}", proj_dirs.config_dir());
+    fn load_settings_file() -> PersistedOptions {
+        let Some(config_dir) = Self::config_dir() else {
+            return PersistedOptions::default();
+        };
+
+        if !config_dir.exists() {
+            if let Err(err) = fs::create_dir_all(&config_dir) {
+                log::error!("Can't create configuration directory {:?}: {}", config_dir, err);
                 return PersistedOptions::default();
             }
+        }
 
-            let options_file = proj_dirs.config_dir().join(Self::FILE_NAME);
-            if options_file.exists() {
-                match fs::read_to_string(options_file) {
-                    Ok(txt) => {
-                        if let Ok(mut result) = toml::from_str::<PersistedOptions>(&txt) {
-                            result.monitor_settings = normalize_monitor_settings(result.monitor_settings);
-                            return result;
-                        }
+        let options_file = config_dir.join(Self::FILE_NAME);
+        if options_file.exists() {
+            match fs::read_to_string(&options_file) {
+                Ok(txt) => {
+                    if let Ok(mut result) = toml::from_str::<PersistedOptions>(&txt) {
+                        result.monitor_settings = normalize_monitor_settings(result.monitor_settings);
+                        return result;
                     }
-                    Err(err) => log::error!("Error reading options file: {}", err),
                 }
+                Err(err) => log::error!("Error reading options file: {}", err),
             }
         }
 
         PersistedOptions::default()
     }
 
+    /// Atomically write settings to file (write to temp, then rename).
+    /// This prevents data loss if the app crashes during write.
     fn store_options_file(options: &PersistedOptions) {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_draw") {
-            let file_name = proj_dirs.config_dir().join(Self::FILE_NAME);
-            match toml::to_string_pretty(options) {
-                Ok(text) => {
-                    if let Err(err) = fs::write(file_name, text) {
-                        log::error!("Error writing options file: {}", err);
-                    }
+        let Some(config_dir) = Self::config_dir() else {
+            log::error!("Cannot determine config directory for saving settings");
+            return;
+        };
+
+        let file_path = config_dir.join(Self::FILE_NAME);
+        let temp_path = config_dir.join(format!(".{}.tmp", Self::FILE_NAME));
+
+        match toml::to_string_pretty(options) {
+            Ok(text) => {
+                // Write to temporary file first
+                let write_result = (|| -> std::io::Result<()> {
+                    let mut file = fs::File::create(&temp_path)?;
+                    file.write_all(text.as_bytes())?;
+                    file.sync_all()?; // Ensure data is flushed to disk
+                    Ok(())
+                })();
+
+                if let Err(err) = write_result {
+                    log::error!("Error writing temp settings file: {}", err);
+                    let _ = fs::remove_file(&temp_path); // Clean up temp file
+                    return;
                 }
-                Err(err) => log::error!("Error serializing options file: {}", err),
+
+                // Atomically rename temp file to final destination
+                if let Err(err) = fs::rename(&temp_path, &file_path) {
+                    log::error!("Error renaming settings file: {}", err);
+                    let _ = fs::remove_file(&temp_path); // Clean up temp file
+                }
             }
+            Err(err) => log::error!("Error serializing options: {}", err),
         }
     }
 
     pub fn config_dir() -> Option<PathBuf> {
-        directories::ProjectDirs::from("com", "GitHub", "icy_draw").map(|p| p.config_dir().to_path_buf())
+        PROJECT_DIRS.as_ref().map(|p| p.config_dir().to_path_buf())
     }
 
     pub fn config_file() -> Option<PathBuf> {

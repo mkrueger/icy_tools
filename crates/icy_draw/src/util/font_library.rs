@@ -19,7 +19,7 @@ use parking_lot::RwLock;
 use retrofont::Font;
 use walkdir::WalkDir;
 
-use crate::ui::Options;
+use crate::Settings;
 
 /// Preview text to render
 const PREVIEW_TEXT: &str = "HALLO";
@@ -86,7 +86,7 @@ impl FontLibrary {
     pub fn reload_async(library: SharedFontLibrary) {
         thread::spawn(move || {
             // Get font directory without holding lock
-            let font_dir = Options::font_dir();
+            let font_dir = Settings::font_dir();
 
             let Some(font_dir) = font_dir else {
                 log::warn!("No font directory configured");
@@ -294,7 +294,7 @@ impl FontLibrary {
     /// Start a file watcher for the font directory
     fn start_watcher(library: SharedFontLibrary) {
         // Get font directory - wait briefly for initial load if needed
-        let font_dir = Options::font_dir();
+        let font_dir = Settings::font_dir();
 
         let Some(font_dir) = font_dir else {
             log::warn!("No font directory configured, file watcher not started");

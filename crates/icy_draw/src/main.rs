@@ -14,13 +14,17 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
-use iced::Settings;
 use lazy_static::lazy_static;
 use semver::Version;
 
+mod session;
 mod ui;
 mod util;
-use ui::WindowManager;
+mod window_manager;
+
+pub use ui::settings::*;
+pub use window_manager::*;
+
 pub use util::*;
 
 lazy_static! {
@@ -80,8 +84,7 @@ pub struct Args {
 }
 
 fn get_log_dir() -> Option<PathBuf> {
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_draw") {
-        let dir = proj_dirs.config_dir().to_path_buf();
+    if let Some(dir) = Settings::config_dir() {
         if !dir.exists() {
             std::fs::create_dir_all(&dir).ok()?;
         }
@@ -120,7 +123,7 @@ fn main() {
         WindowManager::update,
         WindowManager::view,
     )
-    .settings(Settings {
+    .settings(iced::Settings {
         vsync: true,
         antialiasing: true,
         ..Default::default()

@@ -1,4 +1,4 @@
-//! F-key character set mappings (Moebius-compatible)
+//! F-key character set mappings
 //!
 //! Moebius treats F1..F12 as 12 slots within a selectable character set.
 //! Default sets and initial set index are derived from the embedded Moebius defaults.
@@ -7,8 +7,9 @@ use std::fs::{File, create_dir_all};
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+
+use crate::Settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FKeySets {
@@ -20,7 +21,6 @@ pub struct FKeySets {
 
 impl Default for FKeySets {
     fn default() -> Self {
-        // From `moebius/app/prefs.js` default_values.fkeys
         let sets: Vec<[u16; 12]> = vec![
             [218, 191, 192, 217, 196, 179, 195, 180, 193, 194, 32, 32],
             [201, 187, 200, 188, 205, 186, 204, 185, 202, 203, 32, 32],
@@ -90,7 +90,7 @@ impl FKeySets {
     }
 
     fn get_file_path() -> Option<PathBuf> {
-        ProjectDirs::from("com", "GitHub", "icy_draw").map(|dirs| dirs.config_dir().join("fkeys.json"))
+        Settings::config_dir().map(|dirs| dirs.join("fkeys.json"))
     }
 
     pub fn set_count(&self) -> usize {

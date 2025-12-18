@@ -2,7 +2,7 @@ use super::*;
 use super::{tool_registry, tools};
 use tools::ToolHandler;
 
-use crate::ui::Options;
+use crate::Settings;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::Tool;
 use std::path::PathBuf;
@@ -35,7 +35,7 @@ pub(crate) struct AnsiEditorCore {
     /// Canvas view state
     pub canvas: CanvasView,
     /// Shared options
-    pub options: Arc<RwLock<Options>>,
+    pub options: Arc<RwLock<Settings>>,
     /// Whether the document is modified
     pub is_modified: bool,
 
@@ -321,10 +321,6 @@ impl AnsiEditorCore {
         self.current_tool.as_any().downcast_ref::<tools::FontTool>()
     }
 
-    pub(super) fn active_font_tool_mut(&mut self) -> Option<&mut tools::FontTool> {
-        self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>()
-    }
-
     pub(super) fn view_paste_sidebar_controls<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
         self.paste_handler.view_paste_sidebar_controls()
     }
@@ -541,7 +537,7 @@ impl AnsiEditorCore {
     /// palette-dependent UI widgets.
     pub(crate) fn from_buffer_inner(
         buffer: TextBuffer,
-        options: Arc<RwLock<Options>>,
+        options: Arc<RwLock<Settings>>,
         current_tool: Box<dyn tools::ToolHandler>,
     ) -> (Self, icy_engine::Palette, icy_engine_edit::FormatMode) {
         // Clone the palette before moving buffer into EditState
@@ -1069,7 +1065,7 @@ impl AnsiEditorCore {
                     }
                     TopToolbarMessage::OpenFontDirectory => {
                         // Open the font directory in the system file manager
-                        if let Some(font_dir) = Options::font_dir() {
+                        if let Some(font_dir) = Settings::font_dir() {
                             // Create directory if it doesn't exist
                             if !font_dir.exists() {
                                 let _ = std::fs::create_dir_all(&font_dir);

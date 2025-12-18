@@ -13,8 +13,8 @@ use icy_engine_gui::TerminalMessage;
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 
+use crate::Settings;
 use crate::SharedFontLibrary;
-use crate::ui::Options;
 use crate::ui::editor::ansi::widget::font_tool::FontToolState;
 use crate::ui::editor::ansi::widget::outline_selector::OutlineSelectorMessage;
 
@@ -39,7 +39,7 @@ impl FontTool {
         }
     }
 
-    pub fn build_font_panel_info(&self, options: &Options) -> crate::ui::editor::ansi::widget::toolbar::top::FontPanelInfo {
+    pub fn build_font_panel_info(&self, options: &Settings) -> crate::ui::editor::ansi::widget::toolbar::top::FontPanelInfo {
         let font_name = self.font_tool.with_selected_font(|f| f.name().to_string()).unwrap_or_default();
 
         let has_fonts = self.font_tool.has_fonts();
@@ -64,7 +64,7 @@ impl FontTool {
         self.outline_selector_open
     }
 
-    pub fn handle_outline_selector_message(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Options>>, msg: OutlineSelectorMessage) {
+    pub fn handle_outline_selector_message(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Settings>>, msg: OutlineSelectorMessage) {
         match msg {
             OutlineSelectorMessage::SelectOutline(style) => {
                 *options.read().font_outline_style.write() = style;

@@ -136,11 +136,6 @@ impl ToolRegistry {
         }
     }
 
-    /// Get the tool slots for this registry
-    pub fn slots(&self) -> &[ToolPair] {
-        &self.slots
-    }
-
     /// Get the number of tool slots
     pub fn num_slots(&self) -> usize {
         self.slots.len()

@@ -12,8 +12,8 @@ use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
 
+use crate::MostRecentlyUsedFiles;
 use crate::fl;
-use crate::ui::MostRecentlyUsedFiles;
 use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{build_recent_files_menu, menu_button, menu_item_style, menu_item_submenu, separator};
 use icy_engine_gui::commands::{CommandDef, Hotkey, cmd, hotkey_from_iced};

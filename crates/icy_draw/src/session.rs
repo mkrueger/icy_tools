@@ -13,7 +13,7 @@ use std::time::Instant;
 use iced::window;
 use serde::{Deserialize, Serialize};
 
-use super::main_window::EditMode;
+use crate::ui::EditMode;
 
 /// Session state that gets saved/restored
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,7 +286,7 @@ impl Default for SessionManager {
 
 /// Get the session directory path
 fn get_session_dir() -> PathBuf {
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_draw") {
+    if let Some(proj_dirs) = crate::PROJECT_DIRS.as_ref() {
         let dir = proj_dirs.data_local_dir().join("session");
         return dir;
     }

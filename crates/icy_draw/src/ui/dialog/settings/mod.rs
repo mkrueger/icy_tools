@@ -12,7 +12,8 @@ use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use parking_lot::RwLock;
 
 use crate::fl;
-use crate::ui::{FKeySets, Options, TagRenderMode};
+use crate::ui::FKeySets;
+use crate::{Settings, TagRenderMode};
 
 mod charset_picker;
 mod outline_picker;
@@ -75,7 +76,7 @@ pub enum SettingsDialogMessage {
 pub struct SettingsResult;
 
 pub struct SettingsDialog {
-    options: Arc<RwLock<Options>>,
+    options: Arc<RwLock<Settings>>,
 
     current_category: SettingsCategory,
     temp_monitor_settings: MonitorSettings,
@@ -90,7 +91,7 @@ pub struct SettingsDialog {
 }
 
 impl SettingsDialog {
-    pub fn new(options: Arc<RwLock<Options>>, preview_font: Option<BitFont>) -> Self {
+    pub fn new(options: Arc<RwLock<Settings>>, preview_font: Option<BitFont>) -> Self {
         let (monitor_settings, outline_style, fkeys, tag_render_mode) = {
             let guard = options.read();
             (
@@ -204,11 +205,11 @@ impl SettingsDialog {
     }
 
     fn view_paths(&self) -> Element<'_, crate::ui::main_window::Message> {
-        let config_dir = Options::config_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let config_file = Options::config_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let log_file = Options::log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let font_dir = Options::font_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let plugin_dir = Options::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let config_dir = Settings::config_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let config_file = Settings::config_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let log_file = Settings::log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let font_dir = Settings::font_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let plugin_dir = Settings::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
         let tag_overlay_checked = self.temp_tag_render_mode == TagRenderMode::Overlay;
         let tag_render_row = row![
@@ -427,7 +428,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::OpenConfigDir => {
-                if let Some(dir) = Options::config_dir() {
+                if let Some(dir) = Settings::config_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
                         log::error!("Failed to open config dir: {}", err);
@@ -436,7 +437,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::OpenLogFile => {
-                if let Some(log_file) = Options::log_file() {
+                if let Some(log_file) = Settings::log_file() {
                     if log_file.exists() {
                         #[cfg(windows)]
                         {
@@ -457,7 +458,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::OpenFontDir => {
-                if let Some(dir) = Options::font_dir() {
+                if let Some(dir) = Settings::font_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
                         log::error!("Failed to open font dir: {}", err);
@@ -466,7 +467,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::OpenPluginDir => {
-                if let Some(dir) = Options::plugin_dir() {
+                if let Some(dir) = Settings::plugin_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
                         log::error!("Failed to open plugin dir: {}", err);

@@ -70,8 +70,8 @@ use icy_engine_gui::TerminalMessage;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
+use crate::Settings;
 use crate::ui::FKeySets;
-use crate::ui::Options;
 use crate::ui::editor::ansi::FKeyToolbarMessage;
 use crate::ui::editor::ansi::widget::toolbar::top::SelectedTagInfo;
 use crate::ui::editor::ansi::widget::toolbar::top::{BrushPrimaryMode, SelectionMode};
@@ -344,7 +344,7 @@ pub struct ToolContext<'a> {
     pub state: &'a mut EditState,
 
     /// Shared UI/editor options (read-mostly, may be updated by some tools)
-    pub options: Option<&'a Arc<RwLock<Options>>>,
+    pub options: Option<&'a Arc<RwLock<Settings>>>,
     /// Atomic undo guard for multi-step operations
     /// Set by tool during MouseDown, cleared on MouseUp/Commit
     pub undo_guard: &'a mut Option<AtomicUndoGuard>,

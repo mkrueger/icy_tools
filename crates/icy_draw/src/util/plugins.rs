@@ -15,8 +15,7 @@ use std::sync::Arc;
 use walkdir::WalkDir;
 
 use crate::LANGUAGE_LOADER;
-
-use crate::ui::Options;
+use crate::Settings;
 
 /// A Lua plugin that can be run on the buffer
 #[derive(Clone)]
@@ -146,7 +145,7 @@ impl Plugin {
     /// Read all plugins from the plugin directory
     pub fn read_plugin_directory() -> Vec<Self> {
         let mut result = Vec::new();
-        let Some(root) = Options::plugin_dir() else {
+        let Some(root) = Settings::plugin_dir() else {
             log::error!("Can't get plugin directory.");
             return result;
         };
@@ -185,55 +184,43 @@ impl Plugin {
     /// Install default plugins to the plugin directory
     fn install_default_plugins(dir: &Path) {
         let plugins = [
-            ("random-colors.lua", include_bytes!("../../../external/plugins/random-colors.lua").as_slice()),
-            ("matrix_pattern.lua", include_bytes!("../../../external/plugins/matrix_pattern.lua").as_slice()),
-            (
-                "rainbow_gradient.lua",
-                include_bytes!("../../../external/plugins/rainbow_gradient.lua").as_slice(),
-            ),
+            ("random-colors.lua", include_bytes!("../../external/plugins/random-colors.lua").as_slice()),
+            ("matrix_pattern.lua", include_bytes!("../../external/plugins/matrix_pattern.lua").as_slice()),
+            ("rainbow_gradient.lua", include_bytes!("../../external/plugins/rainbow_gradient.lua").as_slice()),
             (
                 "color_transformer.lua",
-                include_bytes!("../../../external/plugins/color_transformer.lua").as_slice(),
+                include_bytes!("../../external/plugins/color_transformer.lua").as_slice(),
             ),
-            (
-                "lower_intensity.lua",
-                include_bytes!("../../../external/plugins/lower_intensity.lua").as_slice(),
-            ),
+            ("lower_intensity.lua", include_bytes!("../../external/plugins/lower_intensity.lua").as_slice()),
             (
                 "vertical_gradient.lua",
-                include_bytes!("../../../external/plugins/vertical_gradient.lua").as_slice(),
+                include_bytes!("../../external/plugins/vertical_gradient.lua").as_slice(),
             ),
-            ("random_mandala.lua", include_bytes!("../../../external/plugins/random_mandala.lua").as_slice()),
+            ("random_mandala.lua", include_bytes!("../../external/plugins/random_mandala.lua").as_slice()),
             (
                 "horizontal_gradient.lua",
-                include_bytes!("../../../external/plugins/horizontal_gradient.lua").as_slice(),
+                include_bytes!("../../external/plugins/horizontal_gradient.lua").as_slice(),
             ),
             (
                 "double_line_frame.lua",
-                include_bytes!("../../../external/plugins/double_line_frame.lua").as_slice(),
+                include_bytes!("../../external/plugins/double_line_frame.lua").as_slice(),
             ),
-            (
-                "radial_gradient.lua",
-                include_bytes!("../../../external/plugins/radial_gradient.lua").as_slice(),
-            ),
+            ("radial_gradient.lua", include_bytes!("../../external/plugins/radial_gradient.lua").as_slice()),
             (
                 "horizontal_stripes.lua",
-                include_bytes!("../../../external/plugins/horizontal_stripes.lua").as_slice(),
+                include_bytes!("../../external/plugins/horizontal_stripes.lua").as_slice(),
             ),
-            ("random_blocks.lua", include_bytes!("../../../external/plugins/random_blocks.lua").as_slice()),
-            ("grid_pattern.lua", include_bytes!("../../../external/plugins/grid_pattern.lua").as_slice()),
-            (
-                "vertical_stripes.lua",
-                include_bytes!("../../../external/plugins/vertical_stripes.lua").as_slice(),
-            ),
-            ("shadow_effect.lua", include_bytes!("../../../external/plugins/shadow_effect.lua").as_slice()),
+            ("random_blocks.lua", include_bytes!("../../external/plugins/random_blocks.lua").as_slice()),
+            ("grid_pattern.lua", include_bytes!("../../external/plugins/grid_pattern.lua").as_slice()),
+            ("vertical_stripes.lua", include_bytes!("../../external/plugins/vertical_stripes.lua").as_slice()),
+            ("shadow_effect.lua", include_bytes!("../../external/plugins/shadow_effect.lua").as_slice()),
             (
                 "grayscale_gradient.lua",
-                include_bytes!("../../../external/plugins/grayscale_gradient.lua").as_slice(),
+                include_bytes!("../../external/plugins/grayscale_gradient.lua").as_slice(),
             ),
             (
                 "increase_intensity.lua",
-                include_bytes!("../../../external/plugins/increase_intensity.lua").as_slice(),
+                include_bytes!("../../external/plugins/increase_intensity.lua").as_slice(),
             ),
         ];
 

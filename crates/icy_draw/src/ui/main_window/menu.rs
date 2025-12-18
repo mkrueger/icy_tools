@@ -15,15 +15,11 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use super::MostRecentlyUsedFiles;
-use super::Options;
 use super::main_window::{EditMode, Message};
+use crate::Settings;
 use crate::{
-    fl,
-    ui::{
-        editor::{animation, ansi, bitfont, charfont},
-        widget::plugins::Plugin,
-    },
+    MostRecentlyUsedFiles, Plugin, fl,
+    ui::editor::{animation, ansi, bitfont, charfont},
 };
 pub use ansi::widget::toolbar::menu_bar::MarkerMenuState;
 use icy_engine_gui::commands::{CommandDef, Hotkey};
@@ -470,7 +466,7 @@ impl MenuBarState {
     pub fn view(
         &self,
         mode: &EditMode,
-        options: std::sync::Arc<parking_lot::RwLock<Options>>,
+        options: std::sync::Arc<parking_lot::RwLock<Settings>>,
         undo_info: &UndoInfo,
         marker_state: &MarkerMenuState,
         plugins: std::sync::Arc<Vec<Plugin>>,

@@ -36,8 +36,8 @@ use icy_engine_gui::ui::{DialogStack, add_icon, arrow_downward_icon, arrow_upwar
 use parking_lot::{Mutex, RwLock};
 use retrofont::{Glyph, GlyphPart, RenderOptions, transform_outline};
 
+use crate::Settings;
 use crate::SharedFontLibrary;
-use crate::ui::Options;
 use crate::ui::editor::ansi::constants;
 use crate::ui::editor::ansi::widget::canvas::CanvasView;
 use crate::ui::editor::ansi::{
@@ -258,19 +258,19 @@ pub struct CharFontEditor {
 
 impl CharFontEditor {
     /// Create a new empty CharFont editor with default Color font
-    pub fn new(options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    pub fn new(options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let charset_state = CharSetEditState::new();
         Self::with_charset_state(charset_state, options, font_library)
     }
 
     /// Create a new empty CharFont editor with the specified font type
-    pub fn new_with_font_type(font_type: TdfFontType, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    pub fn new_with_font_type(font_type: TdfFontType, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let charset_state = CharSetEditState::new_with_font_type(font_type);
         Self::with_charset_state(charset_state, options, font_library)
     }
 
     /// Create a CharFont editor from CharSetEditState
-    fn with_charset_state(charset_state: CharSetEditState, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
+    fn with_charset_state(charset_state: CharSetEditState, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         // Create edit buffer for the character
         let mut buffer = TextBuffer::create((30, 12));
 
@@ -426,7 +426,7 @@ impl CharFontEditor {
     }
 
     /// Create a CharFont editor with a file
-    pub fn with_file(path: PathBuf, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> anyhow::Result<Self> {
+    pub fn with_file(path: PathBuf, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> anyhow::Result<Self> {
         let charset_state = CharSetEditState::load_from_file(path)?;
         Ok(Self::with_charset_state(charset_state, options, font_library))
     }
@@ -461,7 +461,7 @@ impl CharFontEditor {
     pub fn load_from_autosave(
         autosave_path: &std::path::Path,
         original_path: PathBuf,
-        options: Arc<RwLock<Options>>,
+        options: Arc<RwLock<Settings>>,
         font_library: SharedFontLibrary,
     ) -> anyhow::Result<Self> {
         let data = std::fs::read(autosave_path)?;

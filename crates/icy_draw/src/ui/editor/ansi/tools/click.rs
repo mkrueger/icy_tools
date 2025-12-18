@@ -15,7 +15,7 @@ use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
-use crate::ui::Options;
+use crate::Settings;
 use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
 
@@ -81,7 +81,7 @@ impl ClickTool {
         ToolResult::Commit("Type fkey".to_string())
     }
 
-    pub fn set_current_fkey_set(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Options>>, set_idx: usize) {
+    pub fn set_current_fkey_set(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Settings>>, set_idx: usize) {
         let fkeys_to_save = {
             let mut opts = options.write();
             opts.fkeys.clamp_current_set();
@@ -105,7 +105,7 @@ impl ClickTool {
         self.clear_fkey_cache();
     }
 
-    pub fn sync_fkey_set_from_options(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Options>>) {
+    pub fn sync_fkey_set_from_options(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Settings>>) {
         self.current_fkey_set = {
             let opts = options.read();
             opts.fkeys.current_set

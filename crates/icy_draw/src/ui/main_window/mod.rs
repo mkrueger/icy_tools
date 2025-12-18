@@ -13,12 +13,5 @@ pub mod commands;
 mod main_window;
 mod main_window_file_handling;
 pub mod menu;
-mod options;
-mod recent_files;
-mod session;
-mod window_manager;
 
-pub use main_window::*;
-pub use options::*;
-pub use recent_files::*;
-pub use window_manager::*;
+pub use main_window::{EditMode, MainWindow, Message};

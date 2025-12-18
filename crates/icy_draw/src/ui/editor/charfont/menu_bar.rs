@@ -7,8 +7,8 @@ use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
 
+use crate::MostRecentlyUsedFiles;
 use crate::fl;
-use crate::ui::MostRecentlyUsedFiles;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{
