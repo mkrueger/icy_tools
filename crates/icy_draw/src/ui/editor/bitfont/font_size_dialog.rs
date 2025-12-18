@@ -14,9 +14,9 @@ use icy_engine_gui::ui::{
     modal_container, primary_button, secondary_button, separator,
 };
 
+use super::BitFontEditorMessage;
 use crate::fl;
 use crate::ui::Message;
-use super::BitFontEditorMessage;
 
 /// Helper to wrap FontSizeDialogMessage in Message
 fn msg(m: FontSizeDialogMessage) -> Message {
@@ -121,11 +121,7 @@ impl Dialog<Message> for FontSizeDialog {
 
         let buttons = button_row(vec![
             secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSizeDialogMessage::Cancel))).into(),
-            primary_button(
-                format!("{}", ButtonType::Ok),
-                can_apply.then(|| msg(FontSizeDialogMessage::Apply)),
-            )
-            .into(),
+            primary_button(format!("{}", ButtonType::Ok), can_apply.then(|| msg(FontSizeDialogMessage::Apply))).into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());

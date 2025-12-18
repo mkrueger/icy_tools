@@ -1,5 +1,6 @@
 use super::*;
 use super::{tool_registry, tools};
+use tools::ToolHandler;
 
 use crate::ui::Options;
 use icy_engine_edit::EditState;
@@ -18,9 +19,10 @@ use super::widget::outline_selector::{OutlineSelector, outline_selector_width};
 
 /// Core ANSI editor logic/state (tools, dispatching, canvas, etc.).
 ///
-/// This is intentionally not exposed publicly; the public entrypoint is
-/// `AnsiEditorMainArea`, which owns the UI chrome/panels and delegates into this.
-pub struct AnsiEditorCore {
+/// This is the lower-level editor that handles tools, canvas, and buffer operations.
+/// `AnsiEditorMainArea` adds the full UI chrome (panels, palette grid, etc.).
+/// `CharFontEditor` uses this for editing TDF font glyphs.
+pub(crate) struct AnsiEditorCore {
     /// The screen (contains EditState which wraps buffer, caret, undo stack, etc.)
     /// Use screen.lock().as_any_mut().downcast_mut::<EditState>() to access EditState methods
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
@@ -91,6 +93,16 @@ impl AnsiEditorCore {
     /// These modals are owned by Core but need to overlay the full UI, so this method
     /// takes and returns `AnsiEditorMessage` elements while internally using `AnsiEditorCoreMessage`.
     pub(super) fn wrap_with_modals<'a>(&'a self, main_layout: Element<'a, AnsiEditorMessage>) -> Element<'a, AnsiEditorMessage> {
+        self.wrap_with_modals_mapped(main_layout, |msg| AnsiEditorMessage::Core(msg))
+    }
+
+    /// Generic version of `wrap_with_modals` that works with any message type.
+    /// The `map_msg` closure converts `AnsiEditorCoreMessage` to the target message type.
+    pub fn wrap_with_modals_mapped<'a, M: Clone + 'a>(
+        &'a self,
+        main_layout: Element<'a, M>,
+        map_msg: impl Fn(AnsiEditorCoreMessage) -> M + Copy + 'a,
+    ) -> Element<'a, M> {
         // Compute context for modal rendering (fkeys, font, palette, caret colors).
         let (fkeys, current_font, palette, caret_fg, caret_bg) = {
             let opts = self.options.read();
@@ -116,12 +128,16 @@ impl AnsiEditorCore {
 
         if let Some(tag_tool) = self.active_tag_tool() {
             if let Some(tag_dialog) = &tag_tool.state().dialog {
-                let modal_content = tag_dialog.view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagDialog(m)));
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagDialog(TagDialogMessage::Cancel)));
+                let modal_content = tag_dialog.view().map(move |m| map_msg(AnsiEditorCoreMessage::TagDialog(m)));
+                return icy_engine_gui::ui::modal(main_layout, modal_content, map_msg(AnsiEditorCoreMessage::TagDialog(TagDialogMessage::Cancel)));
             }
             if let Some(tag_list_dialog) = &tag_tool.state().list_dialog {
-                let modal_content = tag_list_dialog.view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagListDialog(m)));
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagListDialog(TagListDialogMessage::Close)));
+                let modal_content = tag_list_dialog.view().map(move |m| map_msg(AnsiEditorCoreMessage::TagListDialog(m)));
+                return icy_engine_gui::ui::modal(
+                    main_layout,
+                    modal_content,
+                    map_msg(AnsiEditorCoreMessage::TagListDialog(TagListDialogMessage::Close)),
+                );
             }
         }
 
@@ -133,18 +149,28 @@ impl AnsiEditorCore {
 
             let selector_canvas = CharSelector::new(current_code)
                 .view(current_font, palette.clone(), caret_fg, caret_bg)
-                .map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::CharSelector(m)));
+                .map(move |m| map_msg(AnsiEditorCoreMessage::CharSelector(m)));
 
             let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
-            return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::CharSelector(CharSelectorMessage::Cancel)));
+            return icy_engine_gui::ui::modal(
+                main_layout,
+                modal_content,
+                map_msg(AnsiEditorCoreMessage::CharSelector(CharSelectorMessage::Cancel)),
+            );
         }
 
         if let Some(font) = self.active_font_tool() {
             if font.is_outline_selector_open() {
                 let current_style = *self.options.read().font_outline_style.read();
-                let selector_canvas = OutlineSelector::new(current_style).view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::OutlineSelector(m)));
+                let selector_canvas = OutlineSelector::new(current_style)
+                    .view()
+                    .map(move |m| map_msg(AnsiEditorCoreMessage::OutlineSelector(m)));
                 let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::OutlineSelector(OutlineSelectorMessage::Cancel)));
+                return icy_engine_gui::ui::modal(
+                    main_layout,
+                    modal_content,
+                    map_msg(AnsiEditorCoreMessage::OutlineSelector(OutlineSelectorMessage::Cancel)),
+                );
             }
         }
 
@@ -155,7 +181,8 @@ impl AnsiEditorCore {
     ///
     /// This is intentionally kept in the core editor so the surrounding layout/chrome
     /// can stay in `AnsiEditorMainArea`.
-    pub(super) fn view<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
+    /// Also used by `CharFontEditor` for TDF glyph editing.
+    pub(crate) fn view<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
         let canvas = self.canvas.view().map(AnsiEditorCoreMessage::Canvas);
 
@@ -266,7 +293,18 @@ impl AnsiEditorCore {
     }
 
     /// Helper to access EditState without mutable borrow (uses shared lock internally)
-    pub(super) fn with_edit_state_readonly<R, F: FnOnce(&icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
+    pub(crate) fn with_edit_state_readonly<R, F: FnOnce(&icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
+        let mut screen = self.screen.lock();
+        let edit_state = screen
+            .as_any_mut()
+            .downcast_mut::<icy_engine_edit::EditState>()
+            .expect("screen should be EditState");
+        f(edit_state)
+    }
+
+    /// Helper to access EditState mutably without requiring &mut self (uses shared lock internally)
+    /// This is useful for view functions that need to modify state but can only have &self
+    pub(crate) fn with_edit_state_mut_shared<R, F: FnOnce(&mut icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
         let mut screen = self.screen.lock();
         let edit_state = screen
             .as_any_mut()
@@ -312,7 +350,7 @@ impl AnsiEditorCore {
         self.paste_handler.view_toolbar(view_ctx)
     }
 
-    pub(super) fn view_current_tool_toolbar(&self, view_ctx: &tools::ToolViewContext) -> Element<'_, tools::ToolMessage> {
+    pub(crate) fn view_current_tool_toolbar(&self, view_ctx: &tools::ToolViewContext) -> Element<'_, tools::ToolMessage> {
         self.current_tool.view_toolbar(view_ctx)
     }
 
@@ -517,7 +555,7 @@ impl AnsiEditorCore {
     ///
     /// Returns (editor, palette, format_mode) so the public wrapper can initialize
     /// palette-dependent UI widgets.
-    pub(super) fn from_buffer_inner(
+    pub(crate) fn from_buffer_inner(
         buffer: TextBuffer,
         options: Arc<RwLock<Options>>,
         current_tool: Box<dyn tools::ToolHandler>,
@@ -870,11 +908,6 @@ impl AnsiEditorCore {
         }
     }
 
-    /// Check if this editor needs animation updates (for smooth animations)
-    pub fn needs_animation(&self) -> bool {
-        self.current_tool.id() == tools::ToolId::Tool(Tool::Click) || self.minimap_drag_pointer.is_some()
-    }
-
     /// Get the current marker state for menu display
     pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
         widget::toolbar::menu_bar::MarkerMenuState {
@@ -1101,7 +1134,10 @@ impl AnsiEditorCore {
                         // Let the active tool decide whether it needs to switch variants.
                         let _ = self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::ToggleFilled(v)));
 
-                        let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorCoreMessage::TopToolbar);
+                        let task = self
+                            .top_toolbar
+                            .update(TopToolbarMessage::ToggleFilled(v))
+                            .map(AnsiEditorCoreMessage::TopToolbar);
                         task
                     }
 
@@ -1135,9 +1171,7 @@ impl AnsiEditorCore {
                         Task::none()
                     }
 
-                    _ => {
-                        self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar)
-                    }
+                    _ => self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar),
                 }
             }
             AnsiEditorCoreMessage::ToolMessage(msg) => {
@@ -1510,27 +1544,39 @@ impl AnsiEditorCore {
             // Transform operations
             // ═══════════════════════════════════════════════════════════════════════════
             AnsiEditorCoreMessage::FlipX => {
-                self.with_edit_state(|state| { let _ = state.flip_x(); });
+                self.with_edit_state(|state| {
+                    let _ = state.flip_x();
+                });
                 Task::none()
             }
             AnsiEditorCoreMessage::FlipY => {
-                self.with_edit_state(|state| { let _ = state.flip_y(); });
+                self.with_edit_state(|state| {
+                    let _ = state.flip_y();
+                });
                 Task::none()
             }
             AnsiEditorCoreMessage::Crop => {
-                self.with_edit_state(|state| { let _ = state.crop(); });
+                self.with_edit_state(|state| {
+                    let _ = state.crop();
+                });
                 Task::none()
             }
             AnsiEditorCoreMessage::JustifyCenter => {
-                self.with_edit_state(|state| { let _ = state.center(); });
+                self.with_edit_state(|state| {
+                    let _ = state.center();
+                });
                 Task::none()
             }
             AnsiEditorCoreMessage::JustifyLeft => {
-                self.with_edit_state(|state| { let _ = state.justify_left(); });
+                self.with_edit_state(|state| {
+                    let _ = state.justify_left();
+                });
                 Task::none()
             }
             AnsiEditorCoreMessage::JustifyRight => {
-                self.with_edit_state(|state| { let _ = state.justify_right(); });
+                self.with_edit_state(|state| {
+                    let _ = state.justify_right();
+                });
                 Task::none()
             }
             // ═══════════════════════════════════════════════════════════════════════════
@@ -1947,11 +1993,25 @@ impl AnsiEditorCore {
             iced::Event::Window(iced::window::Event::Unfocused) | iced::Event::Mouse(iced::mouse::Event::CursorLeft) => {
                 let _ = self.cancel_shape_drag();
                 self.minimap_drag_pointer = None;
+                // Also reset mouse capture state in case drag ended outside the widget
+                if self.mouse_capture_tool.is_some() {
+                    self.current_tool.cancel_capture();
+                    self.paste_handler.cancel_capture();
+                }
+                self.is_dragging = false;
+                self.mouse_capture_tool = None;
                 true
             }
             // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
             iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
                 self.minimap_drag_pointer = None;
+                // Reset mouse capture state - the release may have happened outside the terminal widget
+                if self.mouse_capture_tool.is_some() {
+                    self.current_tool.cancel_capture();
+                    self.paste_handler.cancel_capture();
+                }
+                self.is_dragging = false;
+                self.mouse_capture_tool = None;
                 true
             }
             // Forward keyboard events directly into the editor.
@@ -2295,7 +2355,7 @@ impl AnsiEditorCore {
         )
     }
 
-    pub(super) fn change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
+    pub(crate) fn change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
         // Block tool changes during paste mode - must anchor or cancel first
         if self.is_paste_mode() {
             return;

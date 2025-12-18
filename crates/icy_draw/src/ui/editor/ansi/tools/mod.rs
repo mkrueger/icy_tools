@@ -38,6 +38,7 @@
 mod click;
 mod fill;
 mod font;
+mod outline_click;
 mod paint;
 mod paste;
 mod pencil;
@@ -49,6 +50,7 @@ mod tag;
 pub use click::ClickTool;
 pub use fill::{FillSettings, FillTool};
 pub use font::FontTool;
+pub use outline_click::OutlineClickTool;
 pub use paint::BrushSettings;
 pub use paste::{PasteAction, PasteTool};
 pub use pencil::PencilTool;
@@ -388,6 +390,14 @@ pub trait ToolHandler: Send + Sync {
     /// Handle tool-specific UI messages (toolbars/options/status widgets).
     fn handle_message(&mut self, _ctx: &mut ToolContext, _msg: &ToolMessage) -> ToolResult {
         ToolResult::None
+    }
+
+    /// Cancel any active mouse capture/drag operation.
+    ///
+    /// Called when the mouse is released outside the terminal widget, window loses focus,
+    /// or cursor leaves the window. Tools should reset their drag state without committing changes.
+    fn cancel_capture(&mut self) {
+        // Default: no-op
     }
 
     // === UI Rendering ===

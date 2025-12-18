@@ -22,8 +22,8 @@ use icy_engine_gui::{
     },
 };
 
-use crate::{fl, ui::Message};
 use crate::ui::editor::ansi::AnsiEditorMessage;
+use crate::{fl, ui::Message};
 
 /// Helper function to wrap palette editor messages
 fn palette_msg(m: PaletteEditorMessage) -> Message {
@@ -313,7 +313,9 @@ impl PaletteEditorDialog {
                 Some(DialogAction::None)
             }
 
-            PaletteEditorMessage::Apply => Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::PaletteEditorApplied(self.palette.clone())))),
+            PaletteEditorMessage::Apply => Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::PaletteEditorApplied(
+                self.palette.clone(),
+            )))),
             PaletteEditorMessage::Cancel => Some(DialogAction::Close),
         }
     }
@@ -380,9 +382,7 @@ impl PaletteEditorDialog {
                 .into()
         };
 
-        mouse_area(final_swatch)
-            .on_press(palette_msg(PaletteEditorMessage::SelectIndex(idx)))
-            .into()
+        mouse_area(final_swatch).on_press(palette_msg(PaletteEditorMessage::SelectIndex(idx))).into()
     }
 
     fn color_preview(&self) -> Element<'_, Message> {

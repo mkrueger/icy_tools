@@ -373,6 +373,10 @@ impl ToolHandler for PasteTool {
         self
     }
 
+    fn cancel_capture(&mut self) {
+        self.abort();
+    }
+
     fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         if !self.active {
             return ToolResult::None;

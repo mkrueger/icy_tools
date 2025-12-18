@@ -3,14 +3,18 @@
 //! Wraps the shared GenericToolPanel for use with the ANSI editor's Tool enum.
 //! Provides the same interface as the old tool_panel_gpu.rs but uses the shared
 //! GPU rendering backend.
+//!
+//! The ToolPanel now takes a reference to the ToolRegistry and uses it to
+//! determine which tool slots to display and how to handle clicks.
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use iced::{Color, Element};
-use icy_engine_edit::tools::{TOOL_SLOTS, Tool, click_tool_slot, get_slot_display_tool};
+use icy_engine_edit::tools::Tool;
 
+use crate::ui::editor::ansi::tool_registry::ToolRegistry;
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage as SharedToolPanelMessage};
-
-/// Maximum number of tool buttons
-const MAX_BUTTONS: usize = 10;
 
 /// Messages from the tool panel
 #[derive(Clone, Debug)]
@@ -48,28 +52,29 @@ pub struct ToolPanel {
     current_tool: Tool,
     /// Generic tool panel for GPU rendering
     inner: GenericToolPanel,
-}
-
-impl Default for ToolPanel {
-    fn default() -> Self {
-        Self::new()
-    }
+    /// Tool registry reference (used to get slot configuration)
+    registry: Rc<RefCell<ToolRegistry>>,
 }
 
 impl ToolPanel {
-    pub fn new() -> Self {
-        let num_slots = TOOL_SLOTS.len().min(MAX_BUTTONS);
+    /// Create a tool panel with the given tool registry
+    pub fn new(registry: Rc<RefCell<ToolRegistry>>) -> Self {
+        let num_slots = registry.borrow().num_slots();
         let mut inner = GenericToolPanel::new_with_slots(num_slots);
 
         // Initialize each slot with its default tool's atlas index
-        for slot in 0..num_slots {
-            let display_tool = get_slot_display_tool(slot, Tool::Click);
-            inner.set_slot_display(slot, tool_to_index(display_tool));
+        {
+            let reg = registry.borrow();
+            for slot in 0..num_slots {
+                let display_tool = reg.get_slot_display_tool(slot, Tool::Click);
+                inner.set_slot_display(slot, tool_to_index(display_tool));
+            }
         }
 
         Self {
             current_tool: Tool::Click,
             inner,
+            registry,
         }
     }
 
@@ -79,11 +84,6 @@ impl ToolPanel {
         self.update_button_states();
     }
 
-    /// Check if any animation is running
-    pub fn needs_animation(&self) -> bool {
-        self.inner.needs_animation()
-    }
-
     /// Update animation state
     pub fn tick(&mut self, delta: f32) {
         self.inner.tick(delta);
@@ -91,34 +91,25 @@ impl ToolPanel {
 
     /// Update button states based on current tool
     fn update_button_states(&mut self) {
-        let num_slots = TOOL_SLOTS.len().min(MAX_BUTTONS);
+        let reg = self.registry.borrow();
+        let num_slots = reg.num_slots();
+
         for slot in 0..num_slots {
-            let display_tool = get_slot_display_tool(slot, self.current_tool);
+            let display_tool = reg.get_slot_display_tool(slot, self.current_tool);
             self.inner.set_slot_display(slot, tool_to_index(display_tool));
         }
 
         // Update selected slot
-        if let Some(slot) = self.tool_to_slot(self.current_tool) {
+        if let Some(slot) = reg.tool_to_slot(self.current_tool) {
             self.inner.set_selected_slot(slot);
         }
     }
 
-    /// Find which slot contains this tool
-    fn tool_to_slot(&self, tool: Tool) -> Option<usize> {
-        for (slot, tools) in TOOL_SLOTS.iter().enumerate().take(MAX_BUTTONS) {
-            if tools.contains(tool) {
-                return Some(slot);
-            }
-        }
-        None
-    }
-
-    /// Update the tool panel state
+    /// Update the tool panel state (only handles Tick, ClickSlot is handled by the editor)
     pub fn update(&mut self, message: ToolPanelMessage) -> iced::Task<ToolPanelMessage> {
         match message {
-            ToolPanelMessage::ClickSlot(slot) => {
-                self.current_tool = click_tool_slot(slot, self.current_tool);
-                self.update_button_states();
+            ToolPanelMessage::ClickSlot(_) => {
+                // Click handling is done by the editor, not here
             }
             ToolPanelMessage::Tick(delta) => {
                 self.tick(delta);

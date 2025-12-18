@@ -283,6 +283,10 @@ impl ToolHandler for ShapeTool {
         self
     }
 
+    fn cancel_capture(&mut self) {
+        self.cancel_drag();
+    }
+
     fn is_same_handler(&self, other: Tool) -> bool {
         // All shape tools (Line, Rectangle*, Ellipse*) share this handler
         matches!(

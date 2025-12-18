@@ -990,10 +990,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
         // Button row
         let button_row = row![
             Space::new().width(Length::Fill),
-            secondary_button(
-                format!("{}", ButtonType::Cancel),
-                Some(tdf_msg(TdfFontSelectorMessage::Cancel))
-            ),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(tdf_msg(TdfFontSelectorMessage::Cancel))),
             primary_button(
                 format!("{}", ButtonType::Ok),
                 Some(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))
@@ -1056,9 +1053,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
                 }
                 Some(DialogAction::None)
             }
-            TdfFontSelectorMessage::Confirm(_) => Some(DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(
-                self.selected_font,
-            )))),
+            TdfFontSelectorMessage::Confirm(_) => Some(DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))),
             TdfFontSelectorMessage::Cancel => Some(DialogAction::Close),
         }
     }

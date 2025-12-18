@@ -432,11 +432,6 @@ impl BitFontEditor {
         })
     }
 
-    /// Check if this editor needs animation updates (for smooth animations)
-    pub fn needs_animation(&self) -> bool {
-        false
-    }
-
     /// Handle update messages
     pub fn update(&mut self, message: BitFontEditorMessage, dialogs: &mut DialogStack<Message>) -> Task<BitFontEditorMessage> {
         match message {

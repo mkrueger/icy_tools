@@ -188,12 +188,7 @@ impl ModeState {
 }
 
 pub(super) fn enforce_extension(mut path: PathBuf, required_ext: &str) -> PathBuf {
-    if path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case(required_ext))
-        != Some(true)
-    {
+    if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case(required_ext)) != Some(true) {
         path.set_extension(required_ext);
     }
     path
@@ -454,12 +449,15 @@ impl MainWindow {
                 }
                 Some(FileFormat::CharacterFont(_)) => {
                     // TDF character font format
-                    match crate::ui::editor::charfont::CharFontEditor::with_file(p.clone(), options.clone()) {
+                    match crate::ui::editor::charfont::CharFontEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::CharFont(editor), None),
                         Err(e) => {
                             let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
                             log::error!("Error loading TDF Font file '{}': {}", p.display(), error.as_ref().unwrap().1);
-                            (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
+                            (
+                                ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
+                                error,
+                            )
                         }
                     }
                 }
@@ -546,11 +544,14 @@ impl MainWindow {
                         }
                     },
                     Some(FileFormat::CharacterFont(_)) => {
-                        match crate::ui::editor::charfont::CharFontEditor::load_from_autosave(autosave, orig.clone(), options.clone()) {
+                        match crate::ui::editor::charfont::CharFontEditor::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::CharFont(editor), None),
                             Err(e) => {
                                 let error = Some(("Error Loading TDF Font Autosave".to_string(), format!("{}", e)));
-                                (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
+                                (
+                                    ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
+                                    error,
+                                )
                             }
                         }
                     }
@@ -596,18 +597,23 @@ impl MainWindow {
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
                     },
-                    Some(FileFormat::CharacterFont(_)) => match crate::ui::editor::charfont::CharFontEditor::with_file(p.clone(), options.clone()) {
-                        Ok(mut editor) => {
-                            if let Some(ref orig) = original_path {
-                                editor.set_file_path(orig.clone());
+                    Some(FileFormat::CharacterFont(_)) => {
+                        match crate::ui::editor::charfont::CharFontEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
+                            Ok(mut editor) => {
+                                if let Some(ref orig) = original_path {
+                                    editor.set_file_path(orig.clone());
+                                }
+                                (ModeState::CharFont(editor), None)
                             }
-                            (ModeState::CharFont(editor), None)
+                            Err(e) => {
+                                let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                                (
+                                    ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
+                                    error,
+                                )
+                            }
                         }
-                        Err(e) => {
-                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
-                            (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
-                        }
-                    },
+                    }
                     _ => match AnsiEditorMainArea::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(mut editor) => {
                             if let Some(ref orig) = original_path {
@@ -642,13 +648,18 @@ impl MainWindow {
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
                     },
-                    Some(FileFormat::CharacterFont(_)) => match crate::ui::editor::charfont::CharFontEditor::with_file(orig.clone(), options.clone()) {
-                        Ok(editor) => (ModeState::CharFont(editor), None),
-                        Err(e) => {
-                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
-                            (ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone())), error)
+                    Some(FileFormat::CharacterFont(_)) => {
+                        match crate::ui::editor::charfont::CharFontEditor::with_file(orig.clone(), options.clone(), font_library.clone()) {
+                            Ok(editor) => (ModeState::CharFont(editor), None),
+                            Err(e) => {
+                                let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                                (
+                                    ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
+                                    error,
+                                )
+                            }
                         }
-                    },
+                    }
                     _ => match AnsiEditorMainArea::with_file(orig.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::Ansi(editor), None),
                         Err(e) => {
@@ -811,6 +822,7 @@ impl MainWindow {
             }
             Message::NewFileCreated(template, width, height) => {
                 use crate::ui::dialog::new_file::{FileTemplate, create_buffer_for_template};
+                use retrofont::tdf::TdfFontType;
 
                 match template {
                     FileTemplate::Animation => {
@@ -820,8 +832,26 @@ impl MainWindow {
                     FileTemplate::BitFont => {
                         self.mode_state = ModeState::BitFont(BitFontEditor::new());
                     }
-                    FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont => {
-                        self.mode_state = ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(self.options.clone()));
+                    FileTemplate::ColorFont => {
+                        self.mode_state = ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new_with_font_type(
+                            TdfFontType::Color,
+                            self.options.clone(),
+                            self.font_library.clone(),
+                        ));
+                    }
+                    FileTemplate::BlockFont => {
+                        self.mode_state = ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new_with_font_type(
+                            TdfFontType::Block,
+                            self.options.clone(),
+                            self.font_library.clone(),
+                        ));
+                    }
+                    FileTemplate::OutlineFont => {
+                        self.mode_state = ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new_with_font_type(
+                            TdfFontType::Outline,
+                            self.options.clone(),
+                            self.font_library.clone(),
+                        ));
                     }
                     _ => {
                         // Create ANSI editor with buffer from template
@@ -1023,7 +1053,10 @@ impl MainWindow {
                 self.mode_state = match mode {
                     EditMode::Ansi => ModeState::Ansi(AnsiEditorMainArea::new(self.options.clone(), self.font_library.clone())),
                     EditMode::BitFont => ModeState::BitFont(BitFontEditor::new()),
-                    EditMode::CharFont => ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(self.options.clone())),
+                    EditMode::CharFont => ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(
+                        self.options.clone(),
+                        self.font_library.clone(),
+                    )),
                     EditMode::Animation => ModeState::Animation(AnimationEditor::new()),
                 };
                 Task::none()
@@ -1053,37 +1086,18 @@ impl MainWindow {
                 }
             }
             Message::AnsiEditor(msg) => {
-                // Handle color messages for CharFont editor
+                // Handle AnsiEditorMessage::Core for CharFont editor by forwarding to CharFontEditor
                 if let ModeState::CharFont(editor) = &mut self.mode_state {
-                    match msg {
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor) => {
-                            editor.next_fg_color();
-                            return Task::none();
-                        }
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor) => {
-                            editor.prev_fg_color();
-                            return Task::none();
-                        }
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor) => {
-                            editor.next_bg_color();
-                            return Task::none();
-                        }
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor) => {
-                            editor.prev_bg_color();
-                            return Task::none();
-                        }
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor) => {
-                            editor.toggle_color();
-                            return Task::none();
-                        }
-                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor) => {
-                            editor.switch_to_default_color();
-                            return Task::none();
-                        }
-                        _ => {}
+                    if let AnsiEditorMessage::Core(core_msg) = msg {
+                        // Forward all Core messages to CharFontEditor through its AnsiEditor variant
+                        return editor
+                            .update(crate::ui::editor::charfont::CharFontEditorMessage::AnsiEditor(core_msg), &mut self.dialogs)
+                            .map(Message::CharFontEditor);
                     }
+                    // Non-Core AnsiEditorMessage variants are not applicable to CharFont mode
+                    return Task::none();
                 }
-                // Forward all messages to the editor
+                // Forward all messages to the Ansi editor
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.update(msg, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor)
                 } else {
@@ -1128,7 +1142,6 @@ impl MainWindow {
                     ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
                 }
             }*/
-
             // Toast notifications
             Message::ShowToast(toast) => {
                 self.toasts.push(toast);
@@ -1203,7 +1216,9 @@ impl MainWindow {
             }
             Message::ExportFile => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ExportFile, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
+                    return editor
+                        .update(AnsiEditorMessage::ExportFile, &mut self.dialogs, &self.plugins)
+                        .map(Message::AnsiEditor);
                 }
                 Task::none()
             }
@@ -1245,13 +1260,21 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             Message::Deselect => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Deselect), &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
+                    return editor
+                        .update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Deselect), &mut self.dialogs, &self.plugins)
+                        .map(Message::AnsiEditor);
                 }
                 Task::none()
             }
             Message::DeleteSelection => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteSelection), &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
+                    return editor
+                        .update(
+                            AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteSelection),
+                            &mut self.dialogs,
+                            &self.plugins,
+                        )
+                        .map(Message::AnsiEditor);
                 }
                 Task::none()
             }
@@ -1310,24 +1333,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-        }
-    }
-
-
-    
-    
-    /// Check if this window needs animation updates
-    pub fn needs_animation(&self) -> bool {
-        // Check dialogs first
-        if self.dialogs.needs_animation() {
-            return true;
-        }
-        // Then check editor modes
-        match &self.mode_state {
-            ModeState::Ansi(editor) => editor.needs_animation(),
-            ModeState::BitFont(editor) => editor.needs_animation(),
-            ModeState::CharFont(editor) => editor.needs_animation(),
-            ModeState::Animation(editor) => editor.needs_animation(),
         }
     }
 
@@ -1413,11 +1418,11 @@ impl MainWindow {
             let slot0_style = if slots.current_slot == 0 { active_slot_style } else { inactive_slot_style };
             let slot1_style = if slots.current_slot == 1 { active_slot_style } else { inactive_slot_style };
 
-            let slot0_btn =
-                mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6])).on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(0)));
+            let slot0_btn = mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6]))
+                .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(0)));
 
-            let slot1_btn =
-                mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6])).on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
+            let slot1_btn = mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6]))
+                .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
 
             row![text(format!("{}  ", info.right)).size(12), slot0_btn, Space::new().width(4.0), slot1_btn,]
                 .align_y(Alignment::Center)
@@ -1569,7 +1574,11 @@ impl MainWindow {
                     return (Some(Message::BitFontEditor(msg)), Task::none());
                 }
             }
-            ModeState::CharFont(_state) => {}
+            ModeState::CharFont(state) => {
+                if state.handle_event(event) {
+                    return (None, Task::none());
+                }
+            }
             ModeState::Animation(_state) => {}
         }
 
@@ -1607,10 +1616,6 @@ impl icy_engine_gui::Window for MainWindow {
 
     fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         self.handle_event(event)
-    }
-
-    fn needs_animation(&self) -> bool {
-        self.needs_animation()
     }
 }
 

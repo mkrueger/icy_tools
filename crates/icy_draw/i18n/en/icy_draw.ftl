@@ -719,6 +719,7 @@ tdf-editor-clear_char_button=Clear Char
 tdf-editor-cheat_sheet_key=Key
 tdf-editor-cheat_sheet_code=Code
 tdf-editor-cheat_sheet_res=Res
+tdf-editor-outline_style_label=Style
 
 settings-heading=Settings
 settings-reset_button=Reset

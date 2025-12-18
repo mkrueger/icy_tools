@@ -251,11 +251,7 @@ impl MainWindow {
                     .map(|f| f.path().to_path_buf())
             },
             |result| {
-                if let Some(path) = result {
-                    Message::FileOpened(path)
-                } else {
-                    Message::Noop
-                }
+                if let Some(path) = result { Message::FileOpened(path) } else { Message::Noop }
             },
         )
     }
@@ -317,40 +313,36 @@ impl MainWindow {
         let format = FileFormat::from_path(&path);
 
         match format {
-            Some(FileFormat::BitFont(_)) => {
-                match BitFontEditor::from_file(path.clone()) {
-                    Ok(editor) => {
-                        self.mode_state = ModeState::BitFont(editor);
-                        self.mark_saved();
-                        self.options.write().recent_files.add_recent_file(&path);
-                    }
-                    Err(e) => {
-                        self.dialogs.push(error_dialog(
-                            "Error Loading Font",
-                            format!("Failed to load '{}': {}", path.display(), e),
-                            |_| Message::CloseDialog,
-                        ));
-                    }
+            Some(FileFormat::BitFont(_)) => match BitFontEditor::from_file(path.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::BitFont(editor);
+                    self.mark_saved();
+                    self.options.write().recent_files.add_recent_file(&path);
                 }
-            }
-            Some(FileFormat::IcyAnim) => {
-                match AnimationEditor::load_file(path.clone()) {
-                    Ok(editor) => {
-                        self.mode_state = ModeState::Animation(editor);
-                        self.mark_saved();
-                        self.options.write().recent_files.add_recent_file(&path);
-                    }
-                    Err(e) => {
-                        self.dialogs.push(error_dialog(
-                            "Error Loading Animation",
-                            format!("Failed to load '{}': {}", path.display(), e),
-                            |_| Message::CloseDialog,
-                        ));
-                    }
+                Err(e) => {
+                    self.dialogs.push(error_dialog(
+                        "Error Loading Font",
+                        format!("Failed to load '{}': {}", path.display(), e),
+                        |_| Message::CloseDialog,
+                    ));
                 }
-            }
+            },
+            Some(FileFormat::IcyAnim) => match AnimationEditor::load_file(path.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::Animation(editor);
+                    self.mark_saved();
+                    self.options.write().recent_files.add_recent_file(&path);
+                }
+                Err(e) => {
+                    self.dialogs.push(error_dialog(
+                        "Error Loading Animation",
+                        format!("Failed to load '{}': {}", path.display(), e),
+                        |_| Message::CloseDialog,
+                    ));
+                }
+            },
             Some(FileFormat::CharacterFont(_)) => {
-                match crate::ui::editor::charfont::CharFontEditor::with_file(path.clone(), self.options.clone()) {
+                match crate::ui::editor::charfont::CharFontEditor::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
                     Ok(editor) => {
                         self.mode_state = ModeState::CharFont(editor);
                         self.mark_saved();
@@ -365,22 +357,20 @@ impl MainWindow {
                     }
                 }
             }
-            _ => {
-                match crate::ui::editor::ansi::AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
-                    Ok(editor) => {
-                        self.mode_state = ModeState::Ansi(editor);
-                        self.mark_saved();
-                        self.options.write().recent_files.add_recent_file(&path);
-                    }
-                    Err(e) => {
-                        self.dialogs.push(error_dialog(
-                            "Error Loading File",
-                            format!("Failed to load '{}': {}", path.display(), e),
-                            |_| Message::CloseDialog,
-                        ));
-                    }
+            _ => match crate::ui::editor::ansi::AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::Ansi(editor);
+                    self.mark_saved();
+                    self.options.write().recent_files.add_recent_file(&path);
                 }
-            }
+                Err(e) => {
+                    self.dialogs.push(error_dialog(
+                        "Error Loading File",
+                        format!("Failed to load '{}': {}", path.display(), e),
+                        |_| Message::CloseDialog,
+                    ));
+                }
+            },
         }
         Task::none()
     }

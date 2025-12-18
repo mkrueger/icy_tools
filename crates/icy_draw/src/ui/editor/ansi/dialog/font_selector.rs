@@ -22,9 +22,9 @@ use icy_engine_edit::FormatMode;
 use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
 use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
 
+use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
 use crate::ui::Message;
-use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 
 /// Helper to wrap FontSelectorMessage in Message
 fn msg(m: FontSelectorMessage) -> Message {
@@ -668,10 +668,7 @@ impl FontSelectorDialog {
         let button_row = row![
             Space::new().width(Length::Fill),
             secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSelectorMessage::Cancel))),
-            primary_button(
-                format!("{}", ButtonType::Ok),
-                self.selected_font().map(|_| msg(FontSelectorMessage::Apply))
-            ),
+            primary_button(format!("{}", ButtonType::Ok), self.selected_font().map(|_| msg(FontSelectorMessage::Apply))),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
@@ -693,9 +690,7 @@ impl FontSelectorDialog {
         // Canvas-based font list with overlay scrollbar
         let font_list_canvas: Element<'_, Message> = Canvas::new(FontListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport)
-            .view()
-            .map(|_| msg(FontSelectorMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
+        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport).view().map(|_| msg(FontSelectorMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
 
         let list_row = row![font_list_canvas, scrollbar,];
 
@@ -1008,7 +1003,9 @@ impl Dialog<Message> for FontSelectorDialog {
             }
             FontSelectorMessage::Apply => {
                 if let Some(result) = self.create_result() {
-                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSelection(result)))))
+                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                        AnsiEditorCoreMessage::ApplyFontSelection(result),
+                    ))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -1027,7 +1024,9 @@ impl Dialog<Message> for FontSelectorDialog {
                     // Only handle Enter globally for applying the selection
                     Key::Named(Named::Enter) => {
                         if let Some(result) = self.create_result() {
-                            return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSelection(result)))));
+                            return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                                AnsiEditorCoreMessage::ApplyFontSelection(result),
+                            ))));
                         }
                     }
                     _ => {}

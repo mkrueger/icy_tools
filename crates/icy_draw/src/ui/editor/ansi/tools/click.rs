@@ -158,6 +158,21 @@ impl ToolHandler for ClickTool {
         self
     }
 
+    fn cancel_capture(&mut self) {
+        // Reset layer drag state
+        self.layer_drag_active = false;
+        self.drag_start = None;
+        self.drag_current = None;
+        self.layer_drag_undo = None;
+
+        // Reset selection drag state
+        self.selection_drag = SelectionDrag::None;
+        self.hover_drag = SelectionDrag::None;
+        self.selection_start_pos = None;
+        self.selection_cur_pos = None;
+        self.selection_start_rect = None;
+    }
+
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
         self.fkey_toolbar
             .view(ctx.fkeys.clone(), ctx.font.clone(), ctx.palette.clone(), ctx.caret_fg, ctx.caret_bg, &ctx.theme)
@@ -353,6 +368,17 @@ impl ToolHandler for ClickTool {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 use iced::keyboard::key::Named;
 
+                // Shift+Space inserts 0xFF (hard blank) - works for all font types
+                if modifiers.shift() {
+                    if let iced::keyboard::Key::Named(Named::Space) = key {
+                        if let Err(e) = ctx.state.type_key('\u{00FF}') {
+                            log::warn!("Failed to type hard blank: {}", e);
+                            return ToolResult::None;
+                        }
+                        return ToolResult::Commit("Type hard blank".to_string());
+                    }
+                }
+
                 // Character input (ANSI art typing)
                 match key {
                     iced::keyboard::Key::Character(s) => {
@@ -370,13 +396,15 @@ impl ToolHandler for ClickTool {
                         }
                     }
                     iced::keyboard::Key::Named(Named::Space) => {
-                        let buffer_type = ctx.state.get_buffer().buffer_type;
-                        let encoded = buffer_type.convert_from_unicode(' ');
-                        if let Err(e) = ctx.state.type_key(encoded) {
-                            log::warn!("Failed to type space: {}", e);
-                            return ToolResult::None;
+                        if !modifiers.shift() && !modifiers.control() {
+                            let buffer_type = ctx.state.get_buffer().buffer_type;
+                            let encoded = buffer_type.convert_from_unicode(' ');
+                            if let Err(e) = ctx.state.type_key(encoded) {
+                                log::warn!("Failed to type space: {}", e);
+                                return ToolResult::None;
+                            }
+                            return ToolResult::Commit("Type character".to_string());
                         }
-                        return ToolResult::Commit("Type character".to_string());
                     }
                     _ => {}
                 }

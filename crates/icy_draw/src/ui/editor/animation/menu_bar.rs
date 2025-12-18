@@ -184,7 +184,11 @@ impl AnimationMenu {
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-export"), "", Message::AnimationEditor(super::AnimationEditorMessage::ShowExportDialog)),
+                MenuItem::simple(
+                    fl!("menu-export"),
+                    "",
+                    Message::AnimationEditor(super::AnimationEditorMessage::ShowExportDialog),
+                ),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_CLOSE, Message::CloseFile),
             ],

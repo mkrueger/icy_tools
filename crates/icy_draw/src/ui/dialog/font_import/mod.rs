@@ -586,9 +586,7 @@ impl FontImportDialog {
                     text("").size(TEXT_SIZE_SMALL)
                 };
 
-                let dither_checkbox = checkbox(self.use_dithering)
-                    .on_toggle(|b| msg(FontImportMessage::SetDithering(b)))
-                    .size(16);
+                let dither_checkbox = checkbox(self.use_dithering).on_toggle(|b| msg(FontImportMessage::SetDithering(b))).size(16);
 
                 let dither_row = row![dither_checkbox, text(fl!("font-import-dithering")).size(TEXT_SIZE_NORMAL),]
                     .spacing(6)

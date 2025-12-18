@@ -9,10 +9,10 @@ use iced::{
     Alignment, Element, Length, Task, Theme,
     widget::{column, container, row},
 };
-use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::TextPane;
+use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine_edit::EditState;
-use icy_engine_edit::tools::{Tool, click_tool_slot};
+use icy_engine_edit::tools::Tool;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{DialogStack, export_dialog_with_defaults_from_msg};
 use parking_lot::RwLock;
@@ -53,7 +53,7 @@ impl AnsiEditorMainArea {
     }
 
     pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Options>>, font_library: SharedFontLibrary) -> Self {
-        let tool_registry = Rc::new(RefCell::new(tool_registry::ToolRegistry::new(font_library)));
+        let tool_registry = Rc::new(RefCell::new(tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library)));
 
         // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
         let mut current_tool = tool_registry.borrow_mut().take_for(tools::ToolId::Tool(Tool::Click));
@@ -63,7 +63,7 @@ impl AnsiEditorMainArea {
 
         let (core, palette, format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool);
 
-        let mut tool_panel = ToolPanel::new();
+        let mut tool_panel = ToolPanel::new(tool_registry.clone());
         tool_panel.set_tool(core.current_tool_for_panel());
 
         let mut palette_grid = PaletteGrid::new();
@@ -132,10 +132,6 @@ impl AnsiEditorMainArea {
         } else {
             Err("Could not access edit state".to_string())
         }
-    }
-
-    pub fn needs_animation(&self) -> bool {
-        self.core.needs_animation() || self.tool_panel.needs_animation() || self.core.is_minimap_drag_active()
     }
 
     pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
@@ -375,8 +371,8 @@ impl AnsiEditorMainArea {
                 if let Some(plugin) = plugins.get(id) {
                     let plugin = plugin.clone();
                     if let Err(err) = plugin.run_plugin(self.screen()) {
-                        use icy_engine_gui::ui::error_dialog;
                         use crate::fl;
+                        use icy_engine_gui::ui::error_dialog;
                         dialogs.push(error_dialog(fl!("error-plugin-title"), format!("{}", err), |_| Message::CloseDialog));
                     }
                 }
@@ -443,9 +439,11 @@ impl AnsiEditorMainArea {
 
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
                     let current_tool = self.core.current_tool_for_panel();
-                    let new_tool = click_tool_slot(slot, current_tool);
-                    let mut reg = self.tool_registry.borrow_mut();
-                    self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                    let new_tool = self.tool_registry.borrow().click_tool_slot(slot, current_tool);
+                    {
+                        let mut reg = self.tool_registry.borrow_mut();
+                        self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                    }
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.core.current_tool_for_panel());
                 }
@@ -454,9 +452,11 @@ impl AnsiEditorMainArea {
             }
             AnsiEditorMessage::SelectTool(slot) => {
                 let current_tool = self.core.current_tool_for_panel();
-                let new_tool = click_tool_slot(slot, current_tool);
-                let mut reg = self.tool_registry.borrow_mut();
-                self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                let new_tool = self.tool_registry.borrow().click_tool_slot(slot, current_tool);
+                {
+                    let mut reg = self.tool_registry.borrow_mut();
+                    self.core.change_tool(&mut *reg, tools::ToolId::Tool(new_tool));
+                }
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
                 Task::none()
             }
@@ -514,11 +514,11 @@ impl AnsiEditorMainArea {
                                 pointer_x,
                                 pointer_y,
                             } => {
-                               // self.core.set_minimap_drag_pointer(Some((pointer_x, pointer_y)));
+                                // self.core.set_minimap_drag_pointer(Some((pointer_x, pointer_y)));
                                 self.core.scroll_canvas_to_normalized(norm_x, norm_y);
                             }
                             MinimapMessage::DragEnd => {
-                          //      self.core.set_minimap_drag_pointer(None);
+                                //      self.core.set_minimap_drag_pointer(None);
                             }
                             MinimapMessage::Scroll(_dy) => {
                                 // handled internally by the minimap view
@@ -531,7 +531,9 @@ impl AnsiEditorMainArea {
                     RightPanelMessage::Layers(layer_msg) => {
                         return match layer_msg {
                             LayerMessage::Select(idx) => self.core.update(AnsiEditorCoreMessage::SelectLayer(idx)).map(AnsiEditorMessage::Core),
-                            LayerMessage::ToggleVisibility(idx) => self.core.update(AnsiEditorCoreMessage::ToggleLayerVisibility(idx)).map(AnsiEditorMessage::Core),
+                            LayerMessage::ToggleVisibility(idx) => {
+                                self.core.update(AnsiEditorCoreMessage::ToggleLayerVisibility(idx)).map(AnsiEditorMessage::Core)
+                            }
                             LayerMessage::Add => self.core.update(AnsiEditorCoreMessage::AddLayer).map(AnsiEditorMessage::Core),
                             LayerMessage::Remove(idx) => self.core.update(AnsiEditorCoreMessage::RemoveLayer(idx)).map(AnsiEditorMessage::Core),
                             LayerMessage::MoveUp(idx) => self.core.update(AnsiEditorCoreMessage::MoveLayerUp(idx)).map(AnsiEditorMessage::Core),
@@ -571,10 +573,7 @@ impl AnsiEditorMainArea {
 
                 // Check for pending tool switches from core
                 if let Some(tool_id) = self.core.take_pending_tool_switch() {
-                    return Task::batch(vec![
-                        task.map(AnsiEditorMessage::Core),
-                        Task::done(AnsiEditorMessage::SwitchTool(tool_id)),
-                    ]);
+                    return Task::batch(vec![task.map(AnsiEditorMessage::Core), Task::done(AnsiEditorMessage::SwitchTool(tool_id))]);
                 }
 
                 // Keep chrome widgets in sync with core state
@@ -693,9 +692,13 @@ impl AnsiEditorMainArea {
         };
 
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
-            editor.view_paste_toolbar(&view_ctx).map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToolMessage(m)))
+            editor
+                .view_paste_toolbar(&view_ctx)
+                .map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToolMessage(m)))
         } else {
-            editor.view_current_tool_toolbar(&view_ctx).map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToolMessage(m)))
+            editor
+                .view_current_tool_toolbar(&view_ctx)
+                .map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToolMessage(m)))
         };
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;

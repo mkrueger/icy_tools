@@ -53,14 +53,38 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
         (
             menu_button(fl!("menu-colors")),
             menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)))),
-                (menu_item_simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)))),
+                (menu_item_simple(
+                    fl!("menu-next_fg_color"),
+                    "Ctrl+Down",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))
+                )),
+                (menu_item_simple(
+                    fl!("menu-prev_fg_color"),
+                    "Ctrl+Up",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))
+                )),
                 (separator()),
-                (menu_item_simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)))),
-                (menu_item_simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)))),
+                (menu_item_simple(
+                    fl!("menu-next_bg_color"),
+                    "Ctrl+Right",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))
+                )),
+                (menu_item_simple(
+                    fl!("menu-prev_bg_color"),
+                    "Ctrl+Left",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))
+                )),
                 (separator()),
-                (menu_item_simple(fl!("menu-toggle_color"), "Alt+X", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)))),
-                (menu_item_simple(fl!("menu-default_color"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))))
+                (menu_item_simple(
+                    fl!("menu-toggle_color"),
+                    "Alt+X",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))
+                )),
+                (menu_item_simple(
+                    fl!("menu-default_color"),
+                    "",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))
+                ))
             ))
         ),
         // View menu (simplified - zoom and panels only)

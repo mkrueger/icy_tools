@@ -31,7 +31,7 @@ mod shape_points;
 pub mod tool_registry;
 pub mod tools;
 pub mod widget;
-pub use ansi_editor::*;
+pub(crate) use ansi_editor::*;
 
 pub use selection_drag::SelectionDrag;
 

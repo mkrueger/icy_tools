@@ -63,6 +63,17 @@ impl TagToolState {
         Self::default()
     }
 
+    /// Cancel any active drag/capture operation
+    pub fn cancel_capture(&mut self) {
+        self.drag_active = false;
+        self.drag_indices.clear();
+        self.drag_start_positions.clear();
+        self.selection_drag_active = false;
+        self.drag_undo = None;
+        self.add_new_index = None;
+        self.context_menu = None;
+    }
+
     pub fn collect_overlay_data(&self, state: &EditState) -> Vec<(Position, usize, bool)> {
         state
             .get_buffer()
@@ -637,6 +648,10 @@ impl ToolHandler for TagTool {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn cancel_capture(&mut self) {
+        self.state.cancel_capture();
     }
 
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {

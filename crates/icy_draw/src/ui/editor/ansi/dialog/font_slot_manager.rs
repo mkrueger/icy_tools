@@ -21,8 +21,8 @@ use icy_engine::BitFont;
 use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
 use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
 
-use crate::ui::Message;
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
+use crate::ui::Message;
 
 /// Helper to wrap FontSlotManagerMessage in Message
 fn msg(m: FontSlotManagerMessage) -> Message {
@@ -261,10 +261,7 @@ impl FontSlotManagerDialog {
 
         let button_row = row![
             Space::new().width(Length::Fill),
-            secondary_button(
-                format!("{}", ButtonType::Cancel),
-                Some(msg(FontSlotManagerMessage::Cancel))
-            ),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSlotManagerMessage::Cancel))),
             primary_button(format!("{}", ButtonType::Ok), Some(msg(FontSlotManagerMessage::Apply))),
         ]
         .spacing(DIALOG_SPACING)
@@ -283,9 +280,7 @@ impl FontSlotManagerDialog {
         // Canvas-based slot list with overlay scrollbar
         let slot_canvas: Element<'_, Message> = Canvas::new(SlotListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.viewport)
-            .view()
-            .map(|_| msg(FontSlotManagerMessage::Cancel));
+        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.viewport).view().map(|_| msg(FontSlotManagerMessage::Cancel));
 
         let list_row = row![slot_canvas, scrollbar,];
 
@@ -559,16 +554,20 @@ impl Dialog<Message> for FontSlotManagerDialog {
             }
             FontSlotManagerMessage::SetFont => {
                 // Open font selector for active slot (keep dialog open)
-                Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelectorForSlot(self.active_slot))))
+                Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelectorForSlot(
+                    self.active_slot,
+                ))))
             }
             FontSlotManagerMessage::ResetSlot => {
                 if self.can_reset() {
                     let default_font = BitFont::from_ansi_font_page(self.active_slot, self.font_height).cloned();
                     self.slot_fonts.insert(self.active_slot, default_font.clone());
-                    Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::ResetSlot {
-                        slot: self.active_slot,
-                        font: default_font,
-                    })))))
+                    Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(
+                        AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::ResetSlot {
+                            slot: self.active_slot,
+                            font: default_font,
+                        }),
+                    ))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -589,9 +588,9 @@ impl Dialog<Message> for FontSlotManagerDialog {
                         // Update content height
                         self.viewport.borrow_mut().content_height = self.slots.len() as f32 * SLOT_ITEM_HEIGHT;
 
-                        return Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::RemoveSlot {
-                            slot: removed_slot,
-                        })))));
+                        return Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(
+                            AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::RemoveSlot { slot: removed_slot }),
+                        ))));
                     }
                 }
                 Some(DialogAction::None)
@@ -599,13 +598,15 @@ impl Dialog<Message> for FontSlotManagerDialog {
             FontSlotManagerMessage::AddSlot => {
                 let new_slot = self.find_next_custom_slot();
                 // Open font selector for new slot (keep dialog open)
-                Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelectorForSlot(new_slot))))
+                Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelectorForSlot(
+                    new_slot,
+                ))))
             }
             FontSlotManagerMessage::Apply => {
                 // Select this slot as the active font slot
-                Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::SelectSlot {
-                    slot: self.active_slot,
-                })))))
+                Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                    AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::SelectSlot { slot: self.active_slot }),
+                ))))
             }
             FontSlotManagerMessage::Cancel => Some(DialogAction::Close),
         }
@@ -621,6 +622,8 @@ impl Dialog<Message> for FontSlotManagerDialog {
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
         // Confirm = Apply = select this slot
-        DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::SelectSlot { slot: self.active_slot }))))
+        DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSlotChange(
+            FontSlotManagerResult::SelectSlot { slot: self.active_slot },
+        ))))
     }
 }

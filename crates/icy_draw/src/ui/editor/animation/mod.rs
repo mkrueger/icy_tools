@@ -370,20 +370,6 @@ impl AnimationEditor {
         Ok(editor)
     }
 
-    /// Check if the animation needs animation updates (for timer subscription)
-    pub fn needs_animation(&self) -> bool {
-        // Need animation ticks when:
-        // - Animation is playing
-        // - Script needs recompilation (checking debounce)
-        // - Next animator is being computed
-        // - Animator is running (not yet ready) - for initial load
-        // - Preview terminal not yet created but animator is ready
-        let animator_running = !self.is_ready();
-        let needs_preview_update = self.is_ready() && self.preview_terminal.is_none();
-
-        self.playback.is_playing || self.needs_recompile || self.next_animator.is_some() || animator_running || needs_preview_update
-    }
-
     /// Schedule a script recompilation
     fn schedule_recompile(&mut self) {
         self.needs_recompile = true;

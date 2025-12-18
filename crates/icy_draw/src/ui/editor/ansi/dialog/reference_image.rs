@@ -15,9 +15,9 @@ use icy_engine_gui::ui::{
     secondary_button, separator,
 };
 
+use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
 use crate::ui::Message;
-use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 
 // ============================================================================
 // Dialog Messages
@@ -242,11 +242,15 @@ impl Dialog<Message> for ReferenceImageDialog {
             }
             ReferenceImageDialogMessage::Clear => {
                 // Clear the reference image and close the dialog
-                Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ClearReferenceImage))))
+                Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                    AnsiEditorCoreMessage::ClearReferenceImage,
+                ))))
             }
             ReferenceImageDialogMessage::Apply => {
                 if let Some(path) = self.parsed_path() {
-                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyReferenceImage(path, self.alpha)))))
+                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                        AnsiEditorCoreMessage::ApplyReferenceImage(path, self.alpha),
+                    ))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -262,7 +266,9 @@ impl Dialog<Message> for ReferenceImageDialog {
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if self.is_valid() {
             if let Some(path) = self.parsed_path() {
-                return DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyReferenceImage(path, self.alpha))));
+                return DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyReferenceImage(
+                    path, self.alpha,
+                ))));
             }
         }
         DialogAction::None

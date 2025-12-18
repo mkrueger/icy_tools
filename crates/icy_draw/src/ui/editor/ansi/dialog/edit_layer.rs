@@ -322,16 +322,8 @@ impl Dialog<Message> for EditLayerDialog {
         let can_apply = self.is_valid();
 
         let buttons = button_row(vec![
-            secondary_button(
-                format!("{}", ButtonType::Cancel),
-                Some(msg(EditLayerDialogMessage::Cancel)),
-            )
-            .into(),
-            primary_button(
-                format!("{}", ButtonType::Ok),
-                can_apply.then(|| msg(EditLayerDialogMessage::Apply)),
-            )
-            .into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(EditLayerDialogMessage::Cancel))).into(),
+            primary_button(format!("{}", ButtonType::Ok), can_apply.then(|| msg(EditLayerDialogMessage::Apply))).into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());

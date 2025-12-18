@@ -22,9 +22,9 @@ use icy_engine_gui::ui::{
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
+use super::AnimationEditorMessage;
 use crate::fl;
 use crate::ui::Message;
-use super::AnimationEditorMessage;
 
 /// Helper function to wrap export dialog messages
 fn msg(m: AnimationExportMessage) -> Message {
@@ -209,10 +209,7 @@ impl Dialog<Message> for AnimationExportDialog {
 
         // Format selection
         let format_label = left_label_small(fl!("animation-export-format"));
-        let format_picker = pick_list(ExportFormat::all(), Some(self.format), |f| {
-            msg(AnimationExportMessage::SetFormat(f))
-        })
-        .width(Length::Fill);
+        let format_picker = pick_list(ExportFormat::all(), Some(self.format), |f| msg(AnimationExportMessage::SetFormat(f))).width(Length::Fill);
 
         let format_row = row![format_label, format_picker].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 

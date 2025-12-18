@@ -140,11 +140,6 @@ impl GenericToolPanel {
         }
     }
 
-    /// Check if any animation is running
-    pub fn needs_animation(&self) -> bool {
-        self.button_states.iter().any(|s| s.animating)
-    }
-
     /// Update animation state
     pub fn tick(&mut self, delta: f32) {
         self.time += delta;

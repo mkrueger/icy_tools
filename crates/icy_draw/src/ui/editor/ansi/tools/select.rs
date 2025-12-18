@@ -59,6 +59,15 @@ impl SelectTool {
         self.selection_mode = mode;
     }
 
+    fn cancel_drag(&mut self) {
+        self.drag_mode = SelectionDrag::None;
+        self.hover_drag = SelectionDrag::None;
+        self.start_pos = None;
+        self.current_pos = None;
+        self.start_selection = None;
+        self.is_dragging = false;
+    }
+
     fn selection_add_type(&self) -> AddType {
         match self.modifier {
             SelectionModifier::Replace => AddType::Default,
@@ -87,6 +96,10 @@ impl ToolHandler for SelectTool {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn cancel_capture(&mut self) {
+        self.cancel_drag();
     }
 
     fn handle_message(&mut self, ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {

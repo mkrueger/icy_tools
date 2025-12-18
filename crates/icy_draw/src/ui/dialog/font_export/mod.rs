@@ -330,20 +330,14 @@ impl Dialog<Message> for FontExportDialog {
 
         // === FORMAT SELECTION ===
         let format_label = left_label_small(fl!("font-export-format"));
-        let format_picker = pick_list(FontExportFormat::all(), Some(self.format), |f| {
-            msg(FontExportMessage::SetFormat(f))
-        })
-        .width(Length::Fill);
+        let format_picker = pick_list(FontExportFormat::all(), Some(self.format), |f| msg(FontExportMessage::SetFormat(f))).width(Length::Fill);
 
         let format_row = row![format_label, format_picker].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
         // === COM SUBFORMAT (only shown when COM is selected) ===
         let com_format_element: Element<'_, Message> = if self.format == FontExportFormat::Com {
             let com_label = left_label_small(fl!("font-export-com-format"));
-            let com_picker = pick_list(ComExportFormat::all(), Some(self.com_format), |f| {
-                msg(FontExportMessage::SetComFormat(f))
-            })
-            .width(Length::Fill);
+            let com_picker = pick_list(ComExportFormat::all(), Some(self.com_format), |f| msg(FontExportMessage::SetComFormat(f))).width(Length::Fill);
             row![com_label, com_picker].spacing(DIALOG_SPACING).align_y(Alignment::Center).into()
         } else {
             Space::new().height(0).into()

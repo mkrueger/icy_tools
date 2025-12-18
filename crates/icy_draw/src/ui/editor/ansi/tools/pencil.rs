@@ -130,6 +130,10 @@ impl ToolHandler for PencilTool {
         self
     }
 
+    fn cancel_capture(&mut self) {
+        self.cancel_drag();
+    }
+
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext<'_>, msg: &TerminalMessage) -> ToolResult {
         match msg {
             TerminalMessage::Press(evt) => {

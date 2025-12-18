@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use icy_engine::Position;
 use retrofont::{Glyph, tdf::TdfFont};
 
-use super::{CharSetUndoOperation, CharSetUndoStack, TdfFontExt, load_tdf_fonts};
+use super::{CharSetUndoOperation, CharSetUndoStack, load_tdf_fonts_from_file};
 
 /// Which panel currently has focus in the CharSet editor
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -108,10 +108,15 @@ impl CharSetEditState {
     // Constructors
     // ═══════════════════════════════════════════════════════════════════════
 
-    /// Create a new empty CharSet edit state with a default font
+    /// Create a new empty CharSet edit state with a default Color font
     pub fn new() -> Self {
         use retrofont::tdf::TdfFontType;
-        let fonts = vec![TdfFont::new("New Font", TdfFontType::Color, 1)];
+        Self::new_with_font_type(TdfFontType::Color)
+    }
+
+    /// Create a new empty CharSet edit state with the specified font type
+    pub fn new_with_font_type(font_type: retrofont::tdf::TdfFontType) -> Self {
+        let fonts = vec![TdfFont::new("New Font", font_type, 1)];
         Self {
             fonts,
             selected_font: 0,
@@ -151,8 +156,7 @@ impl CharSetEditState {
 
     /// Load from a TDF file
     pub fn load_from_file(path: PathBuf) -> anyhow::Result<Self> {
-        let data = std::fs::read(&path)?;
-        let fonts = load_tdf_fonts(&data)?;
+        let fonts = load_tdf_fonts_from_file(&path)?;
         Ok(Self::with_fonts(fonts, Some(path)))
     }
 
@@ -428,7 +432,7 @@ impl CharSetEditState {
     /// Set font spacing
     pub fn set_font_spacing(&mut self, spacing: i32) {
         if self.selected_font < self.fonts.len() {
-            let old_spacing = self.fonts[self.selected_font].get_spacing();
+            let old_spacing = self.fonts[self.selected_font].spacing;
             if old_spacing != spacing {
                 self.undo_stack.push(CharSetUndoOperation::FontSpacingChanged {
                     font_index: self.selected_font,
