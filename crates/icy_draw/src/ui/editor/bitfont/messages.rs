@@ -133,12 +133,30 @@ pub enum BitFontEditorMessage {
     ShowFontSizeDialog,
     /// Font size dialog message
     FontSizeDialog(super::FontSizeDialogMessage),
+    /// Apply font size change
+    FontSizeApply(i32, i32),
     /// Tool panel message
     ToolPanel(BitFontToolPanelMessage),
     /// Palette grid message
     PaletteGrid(PaletteGridMessage),
     /// Top toolbar message
     TopToolbar(BitFontTopToolbarMessage),
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Font Import/Export
+    // ═══════════════════════════════════════════════════════════════════════
+    /// Show font import dialog
+    ShowImportFontDialog,
+    /// Font import dialog message
+    FontImportDialog(crate::ui::dialog::font_import::FontImportMessage),
+    /// Font was imported
+    FontImported(icy_engine::BitFont),
+    /// Show font export dialog
+    ShowExportFontDialog,
+    /// Font export dialog message
+    FontExportDialog(crate::ui::dialog::font_export::FontExportMessage),
+    /// Font was exported
+    FontExported,
 
     // ═══════════════════════════════════════════════════════════════════════
     // Generic keyboard events (panel-agnostic)

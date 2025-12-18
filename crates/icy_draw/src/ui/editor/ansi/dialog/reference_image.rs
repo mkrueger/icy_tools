@@ -17,6 +17,7 @@ use icy_engine_gui::ui::{
 
 use crate::fl;
 use crate::ui::Message;
+use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 
 // ============================================================================
 // Dialog Messages
@@ -39,6 +40,11 @@ pub enum ReferenceImageDialogMessage {
     Apply,
     /// Cancel dialog
     Cancel,
+}
+
+/// Helper to wrap AnsiEditorMessage in Message
+fn msg(m: AnsiEditorMessage) -> Message {
+    Message::AnsiEditor(m)
 }
 
 // ============================================================================
@@ -99,7 +105,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         // ═══════════════════════════════════════════════════════════════════════
         let path_valid = self.path.is_empty() || self.is_valid();
         let path_input = text_input(&fl!("reference-image-path-placeholder"), &self.path)
-            .on_input(|s| Message::ReferenceImageDialog(ReferenceImageDialogMessage::SetPath(s)))
+            .on_input(|s| msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::SetPath(s))))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill)
             .style(move |theme: &iced::Theme, status| {
@@ -111,7 +117,7 @@ impl Dialog<Message> for ReferenceImageDialog {
             });
 
         let browse_button = button(text(fl!("reference-image-browse")).size(TEXT_SIZE_NORMAL))
-            .on_press(Message::ReferenceImageDialog(ReferenceImageDialogMessage::Browse))
+            .on_press(msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::Browse)))
             .padding([4, 12]);
 
         let path_row = row![
@@ -126,7 +132,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         // Alpha: [Slider] [Value]
         // ═══════════════════════════════════════════════════════════════════════
         let alpha_slider = slider(0.0..=1.0, self.alpha, |v| {
-            Message::ReferenceImageDialog(ReferenceImageDialogMessage::SetAlpha(v))
+            msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::SetAlpha(v)))
         })
         .step(0.01)
         .width(Length::Fixed(200.0));
@@ -164,7 +170,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         let has_path = !self.path.is_empty();
         let clear_button = secondary_button(
             fl!("reference-image-clear"),
-            has_path.then(|| Message::ReferenceImageDialog(ReferenceImageDialogMessage::Clear)),
+            has_path.then(|| msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::Clear))),
         );
 
         // Button row with Clear on left, Cancel/OK on right
@@ -173,11 +179,11 @@ impl Dialog<Message> for ReferenceImageDialog {
             Space::new().width(Length::Fill),
             secondary_button(
                 format!("{}", ButtonType::Cancel),
-                Some(Message::ReferenceImageDialog(ReferenceImageDialogMessage::Cancel)),
+                Some(msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::Cancel))),
             ),
             primary_button(
                 format!("{}", ButtonType::Ok),
-                can_apply.then(|| Message::ReferenceImageDialog(ReferenceImageDialogMessage::Apply)),
+                can_apply.then(|| msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::Apply))),
             ),
         ]
         .spacing(DIALOG_SPACING)
@@ -195,7 +201,7 @@ impl Dialog<Message> for ReferenceImageDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::ReferenceImageDialog(msg) = message else {
+        let Message::AnsiEditor(AnsiEditorMessage::ReferenceImageDialog(msg)) = message else {
             return None;
         };
 
@@ -218,10 +224,10 @@ impl Dialog<Message> for ReferenceImageDialog {
                     },
                     |result| {
                         if let Some(path) = result {
-                            Message::ReferenceImageDialog(ReferenceImageDialogMessage::FileSelected(path))
+                            Message::AnsiEditor(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::FileSelected(path)))
                         } else {
                             // No file selected, just update nothing
-                            Message::ReferenceImageDialog(ReferenceImageDialogMessage::SetPath(String::new()))
+                            Message::AnsiEditor(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::SetPath(String::new())))
                         }
                     },
                 )))
@@ -236,11 +242,11 @@ impl Dialog<Message> for ReferenceImageDialog {
             }
             ReferenceImageDialogMessage::Clear => {
                 // Clear the reference image and close the dialog
-                Some(DialogAction::CloseWith(Message::ClearReferenceImage))
+                Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ClearReferenceImage))))
             }
             ReferenceImageDialogMessage::Apply => {
                 if let Some(path) = self.parsed_path() {
-                    Some(DialogAction::CloseWith(Message::ApplyReferenceImage(path, self.alpha)))
+                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyReferenceImage(path, self.alpha)))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -256,7 +262,7 @@ impl Dialog<Message> for ReferenceImageDialog {
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if self.is_valid() {
             if let Some(path) = self.parsed_path() {
-                return DialogAction::CloseWith(Message::ApplyReferenceImage(path, self.alpha));
+                return DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyReferenceImage(path, self.alpha))));
             }
         }
         DialogAction::None

@@ -254,7 +254,7 @@ impl MainWindow {
                 if let Some(path) = result {
                     Message::FileOpened(path)
                 } else {
-                    Message::Tick
+                    Message::Noop
                 }
             },
         )

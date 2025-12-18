@@ -9,6 +9,7 @@ use iced_aw::{menu_bar, menu_items};
 
 use crate::fl;
 use crate::ui::MostRecentlyUsedFiles;
+use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{
     UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_submenu, menu_item_undo, separator,
@@ -52,14 +53,14 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
         (
             menu_button(fl!("menu-colors")),
             menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::NextFgColor)),
-                (menu_item_simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::PrevFgColor)),
+                (menu_item_simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)))),
+                (menu_item_simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)))),
                 (separator()),
-                (menu_item_simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::NextBgColor)),
-                (menu_item_simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::PrevBgColor)),
+                (menu_item_simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)))),
+                (menu_item_simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)))),
                 (separator()),
-                (menu_item_simple(fl!("menu-toggle_color"), "Alt+X", Message::ToggleColor)),
-                (menu_item_simple(fl!("menu-default_color"), "", Message::SwitchToDefaultColor))
+                (menu_item_simple(fl!("menu-toggle_color"), "Alt+X", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)))),
+                (menu_item_simple(fl!("menu-default_color"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))))
             ))
         ),
         // View menu (simplified - zoom and panels only)
@@ -76,8 +77,6 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
                 (menu_item_simple("1:2 50%".to_string(), "", Message::SetZoom(0.5))),
                 (menu_item_simple("1:4 25%".to_string(), "", Message::SetZoom(0.25))),
                 (separator()),
-                (menu_item_simple(fl!("menu-toggle_left_pane"), "F11", Message::ToggleLeftPanel)),
-                (menu_item_simple(fl!("menu-toggle_right_pane"), "F12", Message::ToggleRightPanel)),
                 (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen))
             ))
         ),

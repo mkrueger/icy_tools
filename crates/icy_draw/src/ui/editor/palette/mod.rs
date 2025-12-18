@@ -23,6 +23,12 @@ use icy_engine_gui::{
 };
 
 use crate::{fl, ui::Message};
+use crate::ui::editor::ansi::AnsiEditorMessage;
+
+/// Helper function to wrap palette editor messages
+fn palette_msg(m: PaletteEditorMessage) -> Message {
+    Message::AnsiEditor(AnsiEditorMessage::PaletteEditorDialog(m))
+}
 
 #[derive(Debug, Clone)]
 pub enum PaletteEditorMessage {
@@ -246,7 +252,7 @@ impl PaletteEditorDialog {
                             .await
                             .map(|h| h.path().to_path_buf())
                     },
-                    |path| Message::PaletteEditor(PaletteEditorMessage::ImportFile(path)),
+                    |path| palette_msg(PaletteEditorMessage::ImportFile(path)),
                 );
                 Some(DialogAction::RunTask(task))
             }
@@ -285,7 +291,7 @@ impl PaletteEditorDialog {
                             .await
                             .map(|h| h.path().to_path_buf())
                     },
-                    |path| Message::PaletteEditor(PaletteEditorMessage::ExportFile(path)),
+                    |path| palette_msg(PaletteEditorMessage::ExportFile(path)),
                 );
                 Some(DialogAction::RunTask(task))
             }
@@ -307,7 +313,7 @@ impl PaletteEditorDialog {
                 Some(DialogAction::None)
             }
 
-            PaletteEditorMessage::Apply => Some(DialogAction::CloseWith(Message::PaletteEditorApplied(self.palette.clone()))),
+            PaletteEditorMessage::Apply => Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::PaletteEditorApplied(self.palette.clone())))),
             PaletteEditorMessage::Cancel => Some(DialogAction::Close),
         }
     }
@@ -375,7 +381,7 @@ impl PaletteEditorDialog {
         };
 
         mouse_area(final_swatch)
-            .on_press(Message::PaletteEditor(PaletteEditorMessage::SelectIndex(idx)))
+            .on_press(palette_msg(PaletteEditorMessage::SelectIndex(idx)))
             .into()
     }
 
@@ -444,9 +450,9 @@ impl Dialog<Message> for PaletteEditorDialog {
         let palette_grid = column![swatches_top, swatches_bottom].spacing(swatch_spacing);
 
         // Import/Export buttons next to the swatches (top right)
-        let import_btn = secondary_button(fl!("palette-editor-import"), Some(Message::PaletteEditor(PaletteEditorMessage::Import)));
+        let import_btn = secondary_button(fl!("palette-editor-import"), Some(palette_msg(PaletteEditorMessage::Import)));
 
-        let export_btn = secondary_button(fl!("palette-editor-export"), Some(Message::PaletteEditor(PaletteEditorMessage::Export)));
+        let export_btn = secondary_button(fl!("palette-editor-export"), Some(palette_msg(PaletteEditorMessage::Export)));
 
         let io_buttons = column![import_btn, export_btn].spacing(DIALOG_SPACING);
 
@@ -457,13 +463,13 @@ impl Dialog<Message> for PaletteEditorDialog {
         // Color editing section: preview + sliders + hex
         let (r, g, b) = self.selected_rgb();
 
-        let r_slider = slider(0.0..=255.0, r as f32, |v| Message::PaletteEditor(PaletteEditorMessage::SetR(v)))
+        let r_slider = slider(0.0..=255.0, r as f32, |v| palette_msg(PaletteEditorMessage::SetR(v)))
             .step(1.0)
             .width(Length::Fill);
-        let g_slider = slider(0.0..=255.0, g as f32, |v| Message::PaletteEditor(PaletteEditorMessage::SetG(v)))
+        let g_slider = slider(0.0..=255.0, g as f32, |v| palette_msg(PaletteEditorMessage::SetG(v)))
             .step(1.0)
             .width(Length::Fill);
-        let b_slider = slider(0.0..=255.0, b as f32, |v| Message::PaletteEditor(PaletteEditorMessage::SetB(v)))
+        let b_slider = slider(0.0..=255.0, b as f32, |v| palette_msg(PaletteEditorMessage::SetB(v)))
             .step(1.0)
             .width(Length::Fill);
 
@@ -495,7 +501,7 @@ impl Dialog<Message> for PaletteEditorDialog {
         let is_hex_valid = self.hex_input.is_empty() || Self::parse_hex(&self.hex_input).is_some();
 
         let hex_input = text_input("#RRGGBB", &self.hex_input)
-            .on_input(|s| Message::PaletteEditor(PaletteEditorMessage::SetHex(s)))
+            .on_input(|s| palette_msg(PaletteEditorMessage::SetHex(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(90.0))
             .style(validated_input_style(is_hex_valid));
@@ -530,13 +536,13 @@ impl Dialog<Message> for PaletteEditorDialog {
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
         // Reset to defaults button (enabled only if palette differs from DOS default)
-        let reset_btn = restore_defaults_button(!self.is_dos_default(), Message::PaletteEditor(PaletteEditorMessage::ResetToDefaults));
+        let reset_btn = restore_defaults_button(!self.is_dos_default(), palette_msg(PaletteEditorMessage::ResetToDefaults));
 
         let buttons = row![
             reset_btn,
             Space::new().width(Length::Fill),
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::PaletteEditor(PaletteEditorMessage::Cancel)),),
-            primary_button(format!("{}", ButtonType::Ok), Some(Message::PaletteEditor(PaletteEditorMessage::Apply)),),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(palette_msg(PaletteEditorMessage::Cancel)),),
+            primary_button(format!("{}", ButtonType::Ok), Some(palette_msg(PaletteEditorMessage::Apply)),),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
@@ -551,8 +557,8 @@ impl Dialog<Message> for PaletteEditorDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        if let Message::PaletteEditor(msg) = message {
-            return self.update_internal(msg);
+        if let Message::AnsiEditor(AnsiEditorMessage::PaletteEditorDialog(inner_msg)) = message {
+            return self.update_internal(inner_msg);
         }
         None
     }
@@ -562,6 +568,6 @@ impl Dialog<Message> for PaletteEditorDialog {
     }
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
-        DialogAction::CloseWith(Message::PaletteEditorApplied(self.palette.clone()))
+        DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::PaletteEditorApplied(self.palette.clone())))
     }
 }

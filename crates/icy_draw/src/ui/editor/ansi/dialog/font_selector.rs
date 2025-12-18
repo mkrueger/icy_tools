@@ -24,6 +24,12 @@ use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
 
 use crate::fl;
 use crate::ui::Message;
+use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
+
+/// Helper to wrap FontSelectorMessage in Message
+fn msg(m: FontSelectorMessage) -> Message {
+    Message::AnsiEditor(AnsiEditorMessage::FontSelector(m))
+}
 
 // ============================================================================
 // Constants
@@ -661,10 +667,10 @@ impl FontSelectorDialog {
 
         let button_row = row![
             Space::new().width(Length::Fill),
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontSelector(FontSelectorMessage::Cancel))),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSelectorMessage::Cancel))),
             primary_button(
                 format!("{}", ButtonType::Ok),
-                self.selected_font().map(|_| Message::FontSelector(FontSelectorMessage::Apply))
+                self.selected_font().map(|_| msg(FontSelectorMessage::Apply))
             ),
         ]
         .spacing(DIALOG_SPACING)
@@ -680,7 +686,7 @@ impl FontSelectorDialog {
 
     fn view_left_panel(&self) -> Element<'_, Message> {
         let search_input = text_input(&fl!("font-selector-filter-placeholder"), &self.filter)
-            .on_input(|s| Message::FontSelector(FontSelectorMessage::SetFilter(s)))
+            .on_input(|s| msg(FontSelectorMessage::SetFilter(s)))
             .width(Length::Fill)
             .padding(8);
 
@@ -689,7 +695,7 @@ impl FontSelectorDialog {
 
         let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport)
             .view()
-            .map(|_| Message::FontSelector(FontSelectorMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
+            .map(|_| msg(FontSelectorMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
 
         let list_row = row![font_list_canvas, scrollbar,];
 
@@ -698,13 +704,13 @@ impl FontSelectorDialog {
             .on_event(|event, _id| {
                 if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
-                        Key::Named(Named::ArrowUp) => Some(Message::FontSelector(FontSelectorMessage::NavigateUp)),
-                        Key::Named(Named::ArrowDown) => Some(Message::FontSelector(FontSelectorMessage::NavigateDown)),
-                        Key::Named(Named::Home) => Some(Message::FontSelector(FontSelectorMessage::NavigateHome)),
-                        Key::Named(Named::End) => Some(Message::FontSelector(FontSelectorMessage::NavigateEnd)),
-                        Key::Named(Named::PageUp) => Some(Message::FontSelector(FontSelectorMessage::NavigatePageUp)),
-                        Key::Named(Named::PageDown) => Some(Message::FontSelector(FontSelectorMessage::NavigatePageDown)),
-                        Key::Named(Named::Enter) => Some(Message::FontSelector(FontSelectorMessage::Apply)),
+                        Key::Named(Named::ArrowUp) => Some(msg(FontSelectorMessage::NavigateUp)),
+                        Key::Named(Named::ArrowDown) => Some(msg(FontSelectorMessage::NavigateDown)),
+                        Key::Named(Named::Home) => Some(msg(FontSelectorMessage::NavigateHome)),
+                        Key::Named(Named::End) => Some(msg(FontSelectorMessage::NavigateEnd)),
+                        Key::Named(Named::PageUp) => Some(msg(FontSelectorMessage::NavigatePageUp)),
+                        Key::Named(Named::PageDown) => Some(msg(FontSelectorMessage::NavigatePageDown)),
+                        Key::Named(Named::Enter) => Some(msg(FontSelectorMessage::Apply)),
                         _ => None,
                     }
                 } else {
@@ -876,10 +882,10 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         if click_y >= current_y && click_y < current_y + height {
                             match item {
                                 ListItem::CategoryHeader { category, .. } => {
-                                    return Some(canvas::Action::publish(Message::FontSelector(FontSelectorMessage::ToggleCategory(*category))));
+                                    return Some(canvas::Action::publish(msg(FontSelectorMessage::ToggleCategory(*category))));
                                 }
                                 ListItem::FontItem { font_idx } => {
-                                    return Some(canvas::Action::publish(Message::FontSelector(FontSelectorMessage::SelectFont(*font_idx))));
+                                    return Some(canvas::Action::publish(msg(FontSelectorMessage::SelectFont(*font_idx))));
                                 }
                             }
                         }
@@ -937,7 +943,7 @@ impl Dialog<Message> for FontSelectorDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::FontSelector(msg) = message else {
+        let Message::AnsiEditor(AnsiEditorMessage::FontSelector(msg)) = message else {
             return None;
         };
 
@@ -1002,7 +1008,7 @@ impl Dialog<Message> for FontSelectorDialog {
             }
             FontSelectorMessage::Apply => {
                 if let Some(result) = self.create_result() {
-                    Some(DialogAction::CloseWith(Message::ApplyFontSelection(result)))
+                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSelection(result)))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -1021,7 +1027,7 @@ impl Dialog<Message> for FontSelectorDialog {
                     // Only handle Enter globally for applying the selection
                     Key::Named(Named::Enter) => {
                         if let Some(result) = self.create_result() {
-                            return Some(DialogAction::CloseWith(Message::ApplyFontSelection(result)));
+                            return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSelection(result)))));
                         }
                     }
                     _ => {}
@@ -1038,7 +1044,7 @@ impl Dialog<Message> for FontSelectorDialog {
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if let Some(result) = self.create_result() {
-            DialogAction::CloseWith(Message::ApplyFontSelection(result))
+            DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ApplyFontSelection(result))))
         } else {
             DialogAction::None
         }

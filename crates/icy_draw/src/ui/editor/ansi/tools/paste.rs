@@ -88,17 +88,17 @@ impl PasteTool {
             .and(ToolResult::Redraw))
     }
 
-    pub fn view_paste_sidebar_controls(&self) -> iced::Element<'_, crate::ui::editor::ansi::AnsiEditorMessage> {
-        use crate::ui::editor::ansi::{AnsiEditorMessage, TopToolbarMessage};
+    pub fn view_paste_sidebar_controls(&self) -> iced::Element<'_, crate::ui::editor::ansi::AnsiEditorCoreMessage> {
+        use crate::ui::editor::ansi::{AnsiEditorCoreMessage, TopToolbarMessage};
         use iced::Length;
         use iced::widget::{Space, button, column, container, text};
         use icy_engine_gui::ui::TEXT_SIZE_SMALL;
 
-        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> iced::Element<'a, AnsiEditorMessage> {
+        fn paste_btn<'a>(label: &'a str, msg: TopToolbarMessage) -> iced::Element<'a, AnsiEditorCoreMessage> {
             button(text(label).size(TEXT_SIZE_SMALL).center())
                 .width(Length::Fill)
                 .padding([6, 8])
-                .on_press(AnsiEditorMessage::TopToolbar(msg))
+                .on_press(AnsiEditorCoreMessage::TopToolbar(msg))
                 .into()
         }
 

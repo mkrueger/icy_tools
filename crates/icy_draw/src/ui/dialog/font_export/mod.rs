@@ -25,8 +25,14 @@ use icy_engine_gui::{ButtonType, settings::effect_box};
 
 use crate::fl;
 use crate::ui::Message;
+use crate::ui::editor::bitfont::BitFontEditorMessage;
 
 use super::font_import::FontPreviewCanvas;
+
+/// Helper to wrap FontExportMessage in Message
+fn msg(m: FontExportMessage) -> Message {
+    Message::BitFontEditor(BitFontEditorMessage::FontExportDialog(m))
+}
 
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,7 +261,7 @@ impl FontExportDialog {
                             .await;
                         handle.map(|h| h.path().to_path_buf())
                     },
-                    |path| Message::FontExport(FontExportMessage::FileSelected(path)),
+                    |path| msg(FontExportMessage::FileSelected(path)),
                 )))
             }
             FontExportMessage::FileSelected(path) => {
@@ -265,7 +271,7 @@ impl FontExportDialog {
                 Some(DialogAction::None)
             }
             FontExportMessage::Export => match self.do_export() {
-                Ok(()) => Some(DialogAction::CloseWith(Message::FontExported)),
+                Ok(()) => Some(DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontExported))),
                 Err(e) => {
                     self.error = Some(e);
                     Some(DialogAction::None)
@@ -325,7 +331,7 @@ impl Dialog<Message> for FontExportDialog {
         // === FORMAT SELECTION ===
         let format_label = left_label_small(fl!("font-export-format"));
         let format_picker = pick_list(FontExportFormat::all(), Some(self.format), |f| {
-            Message::FontExport(FontExportMessage::SetFormat(f))
+            msg(FontExportMessage::SetFormat(f))
         })
         .width(Length::Fill);
 
@@ -335,7 +341,7 @@ impl Dialog<Message> for FontExportDialog {
         let com_format_element: Element<'_, Message> = if self.format == FontExportFormat::Com {
             let com_label = left_label_small(fl!("font-export-com-format"));
             let com_picker = pick_list(ComExportFormat::all(), Some(self.com_format), |f| {
-                Message::FontExport(FontExportMessage::SetComFormat(f))
+                msg(FontExportMessage::SetComFormat(f))
             })
             .width(Length::Fill);
             row![com_label, com_picker].spacing(DIALOG_SPACING).align_y(Alignment::Center).into()
@@ -348,11 +354,11 @@ impl Dialog<Message> for FontExportDialog {
         let path_text = self.export_path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
 
         let path_input = text_input(&fl!("font-export-no-path"), &path_text)
-            .on_input(|s| Message::FontExport(FontExportMessage::SetPath(s)))
+            .on_input(|s| msg(FontExportMessage::SetPath(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let browse_btn = browse_button(Message::FontExport(FontExportMessage::Browse));
+        let browse_btn = browse_button(msg(FontExportMessage::Browse));
 
         let file_row = row![path_label, path_input, browse_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
@@ -403,8 +409,8 @@ impl Dialog<Message> for FontExportDialog {
         // === BUTTONS ===
         let can_export = self.export_path.is_some();
         let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontExport(FontExportMessage::Cancel))).into(),
-            primary_button(fl!("font-export-button"), can_export.then(|| Message::FontExport(FontExportMessage::Export))).into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontExportMessage::Cancel))).into(),
+            primary_button(fl!("font-export-button"), can_export.then(|| msg(FontExportMessage::Export))).into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
@@ -418,7 +424,7 @@ impl Dialog<Message> for FontExportDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::FontExport(msg) = message else {
+        let Message::BitFontEditor(BitFontEditorMessage::FontExportDialog(msg)) = message else {
             return None;
         };
         self.update_internal(msg)
@@ -431,7 +437,7 @@ impl Dialog<Message> for FontExportDialog {
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if self.export_path.is_some() {
             match self.do_export() {
-                Ok(()) => DialogAction::CloseWith(Message::FontExported),
+                Ok(()) => DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontExported)),
                 Err(e) => {
                     self.error = Some(e);
                     DialogAction::None

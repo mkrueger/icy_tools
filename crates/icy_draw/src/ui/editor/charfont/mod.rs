@@ -26,12 +26,14 @@ use icy_engine::{AttributedChar, BitFont, Layer, Screen, Size, TextAttribute, Te
 use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, load_tdf_fonts};
 use icy_engine_edit::{EditState, UndoState};
 use icy_engine_gui::theme::main_area_background;
+use icy_engine_gui::ui::DialogStack;
 use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView};
 use parking_lot::{Mutex, RwLock};
 use retrofont::RenderOptions;
 
 use crate::ui::Options;
-use crate::ui::editor::ansi::{ColorSwitcher, ColorSwitcherMessage, PaletteGrid, PaletteGridMessage, ToolPanel, ToolPanelMessage};
+use crate::ui::editor::ansi::{ColorSwitcher, ColorSwitcherMessage, PaletteGrid, PaletteGridMessage, ToolPanel, ToolPanelMessage, TdfFontSelectorDialog};
+use crate::ui::main_window::Message;
 
 /// Direction for arrow key navigation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +105,14 @@ pub enum CharFontEditorMessage {
     HandleCancel,
     /// Delete selected characters
     HandleDelete,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TDF Font Selector Dialog
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Open TDF font selector dialog
+    OpenTdfFontSelector,
+    /// TDF font selector dialog messages
+    TdfFontSelector(crate::ui::editor::ansi::TdfFontSelectorMessage),
 }
 
 /// The CharFont (TDF) editor component
@@ -333,8 +343,25 @@ impl CharFontEditor {
     }
 
     /// Update the editor state
-    pub fn update(&mut self, message: CharFontEditorMessage) -> Task<CharFontEditorMessage> {
+    pub fn update(&mut self, message: CharFontEditorMessage, dialogs: &mut DialogStack<Message>) -> Task<CharFontEditorMessage> {
         match message {
+            // ═══════════════════════════════════════════════════════════════
+            // Dialog-related messages (moved from MainWindow)
+            // ═══════════════════════════════════════════════════════════════
+            CharFontEditorMessage::OpenTdfFontSelector => {
+                // Open TDF font selector dialog
+                // TODO: Get proper font library from CharFontEditor
+                dialogs.push(TdfFontSelectorDialog::new(Default::default()));
+                Task::none()
+            }
+            CharFontEditorMessage::TdfFontSelector(_) => {
+                // Handled by DialogStack
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // Top bar messages
+            // ═══════════════════════════════════════════════════════════════
             CharFontEditorMessage::TopBar(msg) => {
                 match &msg {
                     TopBarMessage::FontNameChanged(name) => {
@@ -732,6 +759,70 @@ impl CharFontEditor {
             String::new()
         };
         (left, center, right)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Color operations (used by AnsiEditorMessage routing)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Cycle to next foreground color
+    pub fn next_fg_color(&mut self) {
+        let mut state = self.edit_state.lock();
+        let fg = state.get_caret().attribute.foreground();
+        let new_fg = (fg + 1) % 16;
+        state.set_caret_foreground(new_fg);
+        drop(state);
+        self.palette_grid.set_foreground(new_fg);
+    }
+
+    /// Cycle to previous foreground color
+    pub fn prev_fg_color(&mut self) {
+        let mut state = self.edit_state.lock();
+        let fg = state.get_caret().attribute.foreground();
+        let new_fg = if fg == 0 { 15 } else { fg - 1 };
+        state.set_caret_foreground(new_fg);
+        drop(state);
+        self.palette_grid.set_foreground(new_fg);
+    }
+
+    /// Cycle to next background color
+    pub fn next_bg_color(&mut self) {
+        let mut state = self.edit_state.lock();
+        let bg = state.get_caret().attribute.background();
+        let new_bg = (bg + 1) % 16;
+        state.set_caret_background(new_bg);
+        drop(state);
+        self.palette_grid.set_background(new_bg);
+    }
+
+    /// Cycle to previous background color
+    pub fn prev_bg_color(&mut self) {
+        let mut state = self.edit_state.lock();
+        let bg = state.get_caret().attribute.background();
+        let new_bg = if bg == 0 { 15 } else { bg - 1 };
+        state.set_caret_background(new_bg);
+        drop(state);
+        self.palette_grid.set_background(new_bg);
+    }
+
+    /// Toggle (swap) foreground and background colors
+    pub fn toggle_color(&mut self) {
+        self.color_switcher.start_swap_animation();
+        let mut state = self.edit_state.lock();
+        let (fg, bg) = state.swap_caret_colors();
+        drop(state);
+        self.palette_grid.set_foreground(fg);
+        self.palette_grid.set_background(bg);
+        self.color_switcher.confirm_swap();
+    }
+
+    /// Reset to default colors (fg=7, bg=0)
+    pub fn switch_to_default_color(&mut self) {
+        let mut state = self.edit_state.lock();
+        state.reset_caret_colors();
+        drop(state);
+        self.palette_grid.set_foreground(7);
+        self.palette_grid.set_background(0);
     }
 }
 

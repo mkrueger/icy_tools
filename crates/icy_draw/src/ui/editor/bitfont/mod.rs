@@ -43,9 +43,11 @@ use icy_engine_edit::bitfont::{BitFontEditState, BitFontFocusedPanel, BitFontUnd
 use icy_engine_gui::{
     MonitorSettings, Terminal, TerminalView,
     theme::{self, main_area_background},
+    ui::DialogStack,
 };
 use parking_lot::Mutex;
 
+use crate::ui::main_window::Message;
 use crate::ui::{
     editor::ansi::{PaletteGrid, PaletteGridMessage, SWITCHER_SIZE, constants::SIDEBAR_WIDTH},
     editor::bitfont::tile_view::TileViewCanvas,
@@ -436,8 +438,53 @@ impl BitFontEditor {
     }
 
     /// Handle update messages
-    pub fn update(&mut self, message: BitFontEditorMessage) -> Task<BitFontEditorMessage> {
+    pub fn update(&mut self, message: BitFontEditorMessage, dialogs: &mut DialogStack<Message>) -> Task<BitFontEditorMessage> {
         match message {
+            // ═══════════════════════════════════════════════════════════════
+            // Dialog-related messages (moved from MainWindow)
+            // ═══════════════════════════════════════════════════════════════
+            BitFontEditorMessage::ShowFontSizeDialog => {
+                let (width, height) = self.font_size();
+                dialogs.push(FontSizeDialog::new(width, height));
+                return Task::none();
+            }
+            BitFontEditorMessage::FontSizeDialog(_) => {
+                // Handled by DialogStack
+                return Task::none();
+            }
+            BitFontEditorMessage::FontSizeApply(width, height) => {
+                let _ = self.resize_font(width, height);
+                self.invalidate_caches();
+                return Task::none();
+            }
+            BitFontEditorMessage::ShowImportFontDialog => {
+                dialogs.push(crate::ui::dialog::font_import::FontImportDialog::new());
+                return Task::none();
+            }
+            BitFontEditorMessage::FontImportDialog(_) => {
+                // Handled by DialogStack
+                return Task::none();
+            }
+            BitFontEditorMessage::FontImported(_) => {
+                // This is handled specially by MainWindow to switch mode
+                return Task::none();
+            }
+            BitFontEditorMessage::ShowExportFontDialog => {
+                let font = self.state.build_font();
+                dialogs.push(crate::ui::dialog::font_export::FontExportDialog::new(font));
+                return Task::none();
+            }
+            BitFontEditorMessage::FontExportDialog(_) => {
+                // Handled by DialogStack
+                return Task::none();
+            }
+            BitFontEditorMessage::FontExported => {
+                return Task::none();
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // Character selection
+            // ═══════════════════════════════════════════════════════════════
             BitFontEditorMessage::SelectGlyph(ch) => {
                 self.set_selected_char(ch);
                 self.edit_cache.clear();
@@ -697,10 +744,22 @@ impl BitFontEditor {
                 // Handle direct navigation first
                 match msg {
                     BitFontTopToolbarMessage::NextChar => {
-                        return self.update(BitFontEditorMessage::NextChar);
+                        // NextChar logic inline
+                        let current = self.selected_char();
+                        let next = ((current as u32) + 1).min(255);
+                        let new_char = char::from_u32(next).unwrap_or(current);
+                        self.set_selected_char(new_char);
+                        self.edit_cache.clear();
+                        return Task::none();
                     }
                     BitFontTopToolbarMessage::PrevChar => {
-                        return self.update(BitFontEditorMessage::PrevChar);
+                        // PrevChar logic inline
+                        let current = self.selected_char();
+                        let prev = (current as u32).saturating_sub(1);
+                        let new_char = char::from_u32(prev).unwrap_or(current);
+                        self.set_selected_char(new_char);
+                        self.edit_cache.clear();
+                        return Task::none();
                     }
                     _ => {}
                 }
@@ -732,9 +791,6 @@ impl BitFontEditor {
                 self.show_preview = false;
             }
             BitFontEditorMessage::PreviewTerminal(_msg) => {}
-            // ShowFontSizeDialog and FontSizeDialog are now handled by MainWindow's DialogStack
-            BitFontEditorMessage::ShowFontSizeDialog => {}
-            BitFontEditorMessage::FontSizeDialog(_) => {}
 
             // ═══════════════════════════════════════════════════════════════
             // Generic keyboard event handling (panel-agnostic)

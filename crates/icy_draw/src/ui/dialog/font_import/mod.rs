@@ -28,6 +28,12 @@ use icy_engine_gui::{ButtonType, settings::effect_box};
 
 use crate::fl;
 use crate::ui::Message;
+use crate::ui::editor::bitfont::BitFontEditorMessage;
+
+/// Helper to wrap FontImportMessage in Message
+fn msg(m: FontImportMessage) -> Message {
+    Message::BitFontEditor(BitFontEditorMessage::FontImportDialog(m))
+}
 
 /// Type of font source being imported
 #[derive(Debug, Clone, PartialEq)]
@@ -344,7 +350,7 @@ impl FontImportDialog {
                             .await;
                         file.map(|f| f.path().to_path_buf())
                     },
-                    |path| Message::FontImport(FontImportMessage::FileSelected(path)),
+                    |path| msg(FontImportMessage::FileSelected(path)),
                 )))
             }
             FontImportMessage::FileSelected(path) => {
@@ -378,7 +384,7 @@ impl FontImportDialog {
             }
             FontImportMessage::Import => {
                 if let Some(font) = self.preview_font.take() {
-                    Some(DialogAction::CloseWith(Message::FontImported(font)))
+                    Some(DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontImported(font))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -395,11 +401,11 @@ impl Dialog<Message> for FontImportDialog {
         // === FILE PATH ROW ===
         let placeholder = fl!("font-import-file-placeholder");
         let file_input = text_input(&placeholder, &self.file_path)
-            .on_input(|s| Message::FontImport(FontImportMessage::SetFilePath(s)))
+            .on_input(|s| msg(FontImportMessage::SetFilePath(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let browse_btn = browse_button(Message::FontImport(FontImportMessage::Browse));
+        let browse_btn = browse_button(msg(FontImportMessage::Browse));
 
         let file_row = row![left_label_small(fl!("font-import-file")), file_input, browse_btn,]
             .spacing(DIALOG_SPACING)
@@ -436,8 +442,8 @@ impl Dialog<Message> for FontImportDialog {
         // === BUTTONS ===
         let can_import = self.can_import();
         let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontImport(FontImportMessage::Cancel))).into(),
-            primary_button(fl!("font-import-button"), can_import.then(|| Message::FontImport(FontImportMessage::Import))).into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontImportMessage::Cancel))).into(),
+            primary_button(fl!("font-import-button"), can_import.then(|| msg(FontImportMessage::Import))).into(),
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
@@ -451,7 +457,7 @@ impl Dialog<Message> for FontImportDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::FontImport(msg) = message else {
+        let Message::BitFontEditor(BitFontEditorMessage::FontImportDialog(msg)) = message else {
             return None;
         };
         self.update_internal(msg)
@@ -463,7 +469,7 @@ impl Dialog<Message> for FontImportDialog {
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if let Some(font) = self.preview_font.take() {
-            DialogAction::CloseWith(Message::FontImported(font))
+            DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontImported(font)))
         } else {
             DialogAction::None
         }
@@ -536,7 +542,7 @@ impl FontImportDialog {
 
                 let picker = pick_list(options, selected, |s: String| {
                     let index = if s == fl!("font-import-xb-font-2") { 1 } else { 0 };
-                    Message::FontImport(FontImportMessage::SelectXBFont(index))
+                    msg(FontImportMessage::SelectXBFont(index))
                 })
                 .width(Length::Fill);
 
@@ -555,12 +561,12 @@ impl FontImportDialog {
                 let height_valid = self.parsed_font_height().is_some();
 
                 let width_input = text_input("8", &self.image_width)
-                    .on_input(|s| Message::FontImport(FontImportMessage::SetFontWidth(s)))
+                    .on_input(|s| msg(FontImportMessage::SetFontWidth(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 
                 let height_input = text_input("16", &self.image_height)
-                    .on_input(|s| Message::FontImport(FontImportMessage::SetFontHeight(s)))
+                    .on_input(|s| msg(FontImportMessage::SetFontHeight(s)))
                     .size(TEXT_SIZE_NORMAL)
                     .width(Length::Fixed(60.0));
 
@@ -581,7 +587,7 @@ impl FontImportDialog {
                 };
 
                 let dither_checkbox = checkbox(self.use_dithering)
-                    .on_toggle(|b| Message::FontImport(FontImportMessage::SetDithering(b)))
+                    .on_toggle(|b| msg(FontImportMessage::SetDithering(b)))
                     .size(16);
 
                 let dither_row = row![dither_checkbox, text(fl!("font-import-dithering")).size(TEXT_SIZE_NORMAL),]

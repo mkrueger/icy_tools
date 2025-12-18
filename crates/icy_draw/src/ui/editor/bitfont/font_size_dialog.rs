@@ -16,6 +16,12 @@ use icy_engine_gui::ui::{
 
 use crate::fl;
 use crate::ui::Message;
+use super::BitFontEditorMessage;
+
+/// Helper to wrap FontSizeDialogMessage in Message
+fn msg(m: FontSizeDialogMessage) -> Message {
+    Message::BitFontEditor(BitFontEditorMessage::FontSizeDialog(m))
+}
 
 /// Messages for the Font Size dialog
 #[derive(Debug, Clone)]
@@ -71,7 +77,7 @@ impl Dialog<Message> for FontSizeDialog {
         // Width input
         let width_valid = self.parsed_width().is_some();
         let width_input = text_input("1-8", &self.width)
-            .on_input(|s| Message::FontSizeDialog(FontSizeDialogMessage::SetWidth(s)))
+            .on_input(|s| msg(FontSizeDialogMessage::SetWidth(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -90,7 +96,7 @@ impl Dialog<Message> for FontSizeDialog {
         // Height input
         let height_valid = self.parsed_height().is_some();
         let height_input = text_input("1-32", &self.height)
-            .on_input(|s| Message::FontSizeDialog(FontSizeDialogMessage::SetHeight(s)))
+            .on_input(|s| msg(FontSizeDialogMessage::SetHeight(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -114,10 +120,10 @@ impl Dialog<Message> for FontSizeDialog {
         let can_apply = self.is_valid();
 
         let buttons = button_row(vec![
-            secondary_button(format!("{}", ButtonType::Cancel), Some(Message::FontSizeDialog(FontSizeDialogMessage::Cancel))).into(),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSizeDialogMessage::Cancel))).into(),
             primary_button(
                 format!("{}", ButtonType::Ok),
-                can_apply.then(|| Message::FontSizeDialog(FontSizeDialogMessage::Apply)),
+                can_apply.then(|| msg(FontSizeDialogMessage::Apply)),
             )
             .into(),
         ]);
@@ -134,7 +140,7 @@ impl Dialog<Message> for FontSizeDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::FontSizeDialog(msg) = message else {
+        let Message::BitFontEditor(BitFontEditorMessage::FontSizeDialog(msg)) = message else {
             return None;
         };
         match msg {
@@ -148,7 +154,7 @@ impl Dialog<Message> for FontSizeDialog {
             }
             FontSizeDialogMessage::Apply => {
                 if let (Some(w), Some(h)) = (self.parsed_width(), self.parsed_height()) {
-                    Some(DialogAction::CloseWith(Message::FontSizeApply(w, h)))
+                    Some(DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontSizeApply(w, h))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -163,7 +169,7 @@ impl Dialog<Message> for FontSizeDialog {
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if let (Some(w), Some(h)) = (self.parsed_width(), self.parsed_height()) {
-            DialogAction::CloseWith(Message::FontSizeApply(w, h))
+            DialogAction::CloseWith(Message::BitFontEditor(BitFontEditorMessage::FontSizeApply(w, h)))
         } else {
             DialogAction::None
         }

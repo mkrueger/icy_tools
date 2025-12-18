@@ -16,7 +16,7 @@ use super::{MainWindow, Options, commands::create_draw_commands};
 use crate::{SharedFontLibrary, load_window_icon};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
-use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id};
+use icy_engine_gui::{find_next_window_id, focus_window_by_id};
 
 // Generate the WindowCommands struct with handle() method
 command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id => WindowManagerMessage {
@@ -95,7 +95,6 @@ pub enum WindowManagerMessage {
     WindowResized(window::Id, Size),
     WindowMessage(window::Id, super::main_window::Message),
     Event(window::Id, iced::Event),
-    AnimationTick,
     /// Autosave tick (periodic check)
     AutosaveTick,
     /// Debounced session-save tick
@@ -606,21 +605,6 @@ impl WindowManager {
 
             WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
 
-            WindowManagerMessage::AnimationTick => {
-                // Send tick to all windows that need animation
-                let tasks: Vec<_> = self
-                    .windows
-                    .iter_mut()
-                    .filter(|(_, w)| w.needs_animation())
-                    .map(|(id, w)| {
-                        let id = *id;
-                        w.update(super::main_window::Message::AnimationTick)
-                            .map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
-                    })
-                    .collect();
-                Task::batch(tasks)
-            }
-
             WindowManagerMessage::AutosaveTick => {
                 // Increment session save counter
                 self.session_save_counter += 1;
@@ -744,11 +728,6 @@ impl WindowManager {
         // Debounced session-save tick (only when something scheduled)
         if self.session_save_deadline.is_some() {
             subs.push(iced::time::every(Duration::from_millis(50)).map(|_| WindowManagerMessage::SessionSaveTick));
-        }
-
-        // Add animation tick subscription when any window needs animation
-        if any_window_needs_animation(&self.windows) {
-            subs.push(iced::time::every(std::time::Duration::from_millis(ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         Subscription::batch(subs)

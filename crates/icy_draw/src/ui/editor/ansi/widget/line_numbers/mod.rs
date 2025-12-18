@@ -4,7 +4,7 @@
 //! Uses display_scale from RenderInfo for correct zoom (works with Auto and Manual modes).
 //! Draws as an overlay on top of the terminal widget.
 
-use crate::ui::editor::ansi::AnsiEditorMessage;
+use crate::ui::editor::ansi::AnsiEditorCoreMessage;
 use iced::{Color, Element, Length, Renderer, Theme, widget::canvas};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
@@ -22,7 +22,7 @@ pub fn line_numbers_overlay(
     caret_col: usize,
     scroll_x: f32,
     scroll_y: f32,
-) -> Element<'static, AnsiEditorMessage> {
+) -> Element<'static, AnsiEditorCoreMessage> {
     let state = LineNumbersOverlayState {
         render_info,
         buffer_width,

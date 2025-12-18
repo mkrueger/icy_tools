@@ -25,11 +25,12 @@ use iced::{
     Background, Border, Element, Length, Task, Theme, highlighter,
     widget::{Space, column, container, pane_grid, row, rule, scrollable, stack, text, text_editor},
 };
-use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, theme::main_area_background};
+use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, theme::main_area_background, ui::DialogStack};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
 use crate::fl;
+use crate::ui::main_window::Message;
 
 /// Default animation speed in milliseconds
 #[allow(dead_code)]
@@ -496,8 +497,25 @@ impl AnimationEditor {
     }
 
     /// Handle messages
-    pub fn update(&mut self, message: AnimationEditorMessage) -> Task<AnimationEditorMessage> {
+    pub fn update(&mut self, message: AnimationEditorMessage, dialogs: &mut DialogStack<Message>) -> Task<AnimationEditorMessage> {
         match message {
+            // ═══════════════════════════════════════════════════════════════
+            // Dialog-related messages (moved from MainWindow)
+            // ═══════════════════════════════════════════════════════════════
+            AnimationEditorMessage::ShowExportDialog => {
+                let animator = self.animator.clone();
+                let source_path = self.file_path().cloned();
+                dialogs.push(AnimationExportDialog::new(animator, source_path.as_ref()));
+                Task::none()
+            }
+            AnimationEditorMessage::ExportDialog(_) => {
+                // Handled by DialogStack
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // Script editing
+            // ═══════════════════════════════════════════════════════════════
             AnimationEditorMessage::ScriptAction(action) => {
                 let is_edit = action.is_edit();
                 if is_edit {

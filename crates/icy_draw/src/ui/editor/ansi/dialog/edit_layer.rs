@@ -17,6 +17,12 @@ use icy_engine_gui::ui::{
 
 use crate::fl;
 use crate::ui::Message;
+use crate::ui::editor::ansi::AnsiEditorMessage;
+
+/// Helper function to wrap edit layer dialog messages
+fn msg(m: EditLayerDialogMessage) -> Message {
+    Message::AnsiEditor(AnsiEditorMessage::EditLayerDialog(m))
+}
 
 /// Wrapper type for Mode to implement Display (orphan rule workaround)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,7 +169,7 @@ impl Dialog<Message> for EditLayerDialog {
 
         // Name input
         let name_input = text_input("", &self.properties.title)
-            .on_input(|s| Message::EditLayerDialog(EditLayerDialogMessage::SetName(s)))
+            .on_input(|s| msg(EditLayerDialogMessage::SetName(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
@@ -174,7 +180,7 @@ impl Dialog<Message> for EditLayerDialog {
         // Size section - separate rows for width and height
         let width_valid = self.parsed_width().is_some();
         let width_input = text_input("", &self.width)
-            .on_input(|s| Message::EditLayerDialog(EditLayerDialogMessage::SetWidth(s)))
+            .on_input(|s| msg(EditLayerDialogMessage::SetWidth(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -192,7 +198,7 @@ impl Dialog<Message> for EditLayerDialog {
 
         let height_valid = self.parsed_height().is_some();
         let height_input = text_input("", &self.height)
-            .on_input(|s| Message::EditLayerDialog(EditLayerDialogMessage::SetHeight(s)))
+            .on_input(|s| msg(EditLayerDialogMessage::SetHeight(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -210,7 +216,7 @@ impl Dialog<Message> for EditLayerDialog {
 
         // Offset section - separate rows for X and Y
         let offset_x_input = text_input("", &self.offset_x)
-            .on_input(|s| Message::EditLayerDialog(EditLayerDialogMessage::SetOffsetX(s)))
+            .on_input(|s| msg(EditLayerDialogMessage::SetOffsetX(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -219,7 +225,7 @@ impl Dialog<Message> for EditLayerDialog {
             .align_y(Alignment::Center);
 
         let offset_y_input = text_input("", &self.offset_y)
-            .on_input(|s| Message::EditLayerDialog(EditLayerDialogMessage::SetOffsetY(s)))
+            .on_input(|s| msg(EditLayerDialogMessage::SetOffsetY(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fixed(80.0));
 
@@ -231,7 +237,7 @@ impl Dialog<Message> for EditLayerDialog {
         let visible_checkbox = row![
             left_label_small(fl!("edit-layer-dialog-is-visible-checkbox")),
             checkbox(self.properties.is_visible)
-                .on_toggle(|v| Message::EditLayerDialog(EditLayerDialogMessage::SetVisible(v)))
+                .on_toggle(|v| msg(EditLayerDialogMessage::SetVisible(v)))
                 .size(16)
         ]
         .spacing(DIALOG_SPACING)
@@ -240,7 +246,7 @@ impl Dialog<Message> for EditLayerDialog {
         let locked_checkbox = row![
             left_label_small(fl!("edit-layer-dialog-is-edit-locked-checkbox")),
             checkbox(self.properties.is_locked)
-                .on_toggle(|v| Message::EditLayerDialog(EditLayerDialogMessage::SetLocked(v)))
+                .on_toggle(|v| msg(EditLayerDialogMessage::SetLocked(v)))
                 .size(16)
         ]
         .spacing(DIALOG_SPACING)
@@ -249,7 +255,7 @@ impl Dialog<Message> for EditLayerDialog {
         let pos_locked_checkbox = row![
             left_label_small(fl!("edit-layer-dialog-is-position-locked-checkbox")),
             checkbox(self.properties.is_position_locked)
-                .on_toggle(|v| Message::EditLayerDialog(EditLayerDialogMessage::SetPositionLocked(v)))
+                .on_toggle(|v| msg(EditLayerDialogMessage::SetPositionLocked(v)))
                 .size(16)
         ]
         .spacing(DIALOG_SPACING)
@@ -258,7 +264,7 @@ impl Dialog<Message> for EditLayerDialog {
         let alpha_checkbox = row![
             left_label_small(fl!("edit-layer-dialog-has-alpha-checkbox")),
             checkbox(self.properties.has_alpha_channel)
-                .on_toggle(|v| Message::EditLayerDialog(EditLayerDialogMessage::SetHasAlpha(v)))
+                .on_toggle(|v| msg(EditLayerDialogMessage::SetHasAlpha(v)))
                 .size(16)
         ]
         .spacing(DIALOG_SPACING)
@@ -267,7 +273,7 @@ impl Dialog<Message> for EditLayerDialog {
         let alpha_locked_checkbox = row![
             left_label_small(fl!("edit-layer-dialog-is-alpha-locked-checkbox")),
             checkbox(self.properties.is_alpha_channel_locked)
-                .on_toggle(|v| Message::EditLayerDialog(EditLayerDialogMessage::SetAlphaLocked(v)))
+                .on_toggle(|v| msg(EditLayerDialogMessage::SetAlphaLocked(v)))
                 .size(16)
         ]
         .spacing(DIALOG_SPACING)
@@ -276,7 +282,7 @@ impl Dialog<Message> for EditLayerDialog {
         // Mode picker with wrapper type
         let mode_options = vec![ModeOption(Mode::Normal), ModeOption(Mode::Chars), ModeOption(Mode::Attributes)];
         let mode_picker = pick_list(mode_options, Some(ModeOption(self.properties.mode)), |m| {
-            Message::EditLayerDialog(EditLayerDialogMessage::SetMode(m.0))
+            msg(EditLayerDialogMessage::SetMode(m.0))
         })
         .width(Length::Fixed(150.0));
 
@@ -318,12 +324,12 @@ impl Dialog<Message> for EditLayerDialog {
         let buttons = button_row(vec![
             secondary_button(
                 format!("{}", ButtonType::Cancel),
-                Some(Message::EditLayerDialog(EditLayerDialogMessage::Cancel)),
+                Some(msg(EditLayerDialogMessage::Cancel)),
             )
             .into(),
             primary_button(
                 format!("{}", ButtonType::Ok),
-                can_apply.then(|| Message::EditLayerDialog(EditLayerDialogMessage::Apply)),
+                can_apply.then(|| msg(EditLayerDialogMessage::Apply)),
             )
             .into(),
         ]);
@@ -340,10 +346,10 @@ impl Dialog<Message> for EditLayerDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::EditLayerDialog(msg) = message else {
+        let Message::AnsiEditor(AnsiEditorMessage::EditLayerDialog(dialog_msg)) = message else {
             return None;
         };
-        match msg {
+        match dialog_msg {
             EditLayerDialogMessage::SetName(name) => {
                 self.properties.title = name.clone();
                 Some(DialogAction::None)
@@ -394,7 +400,7 @@ impl Dialog<Message> for EditLayerDialog {
             }
             EditLayerDialogMessage::Apply => {
                 if let Some(result) = self.result() {
-                    Some(DialogAction::CloseWith(Message::ApplyEditLayer(result)))
+                    Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::ApplyEditLayer(result))))
                 } else {
                     Some(DialogAction::None)
                 }
@@ -410,7 +416,7 @@ impl Dialog<Message> for EditLayerDialog {
     fn request_confirm(&mut self) -> DialogAction<Message> {
         if self.is_valid() {
             if let Some(result) = self.result() {
-                return DialogAction::CloseWith(Message::ApplyEditLayer(result));
+                return DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::ApplyEditLayer(result)));
             }
         }
         DialogAction::None

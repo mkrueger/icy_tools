@@ -36,6 +36,12 @@ use icy_engine_gui::{
 
 use crate::SharedFontLibrary;
 use crate::ui::Message;
+use crate::ui::editor::ansi::AnsiEditorMessage;
+
+/// Helper function to wrap TdfFontSelectorMessage in the full Message path
+fn tdf_msg(m: TdfFontSelectorMessage) -> Message {
+    Message::AnsiEditor(AnsiEditorMessage::TdfFontSelector(m))
+}
 
 // ============================================================================
 // Constants
@@ -619,7 +625,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
                     let list_idx = (clicked_y / FONT_ITEM_HEIGHT) as usize;
                     if list_idx < self.filtered_fonts.len() {
                         let font_idx = self.filtered_fonts[list_idx];
-                        shell.publish(Message::TdfFontSelector(TdfFontSelectorMessage::SelectFont(font_idx)));
+                        shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
                     }
                 }
             }
@@ -934,16 +940,16 @@ impl Dialog<Message> for TdfFontSelectorDialog {
 
         // Search bar
         let search_input = text_input("Search fonts...", &self.filter)
-            .on_input(|s| Message::TdfFontSelector(TdfFontSelectorMessage::FilterChanged(s)))
+            .on_input(|s| tdf_msg(TdfFontSelectorMessage::FilterChanged(s)))
             .width(Length::Fixed(200.0))
             .padding(DIALOG_SPACING as u16)
             .size(TEXT_SIZE_NORMAL);
 
         // Filter buttons
-        let outline_btn = filter_toggle_button("Outline", self.show_outline, Message::TdfFontSelector(TdfFontSelectorMessage::ToggleOutline));
-        let block_btn = filter_toggle_button("Block", self.show_block, Message::TdfFontSelector(TdfFontSelectorMessage::ToggleBlock));
-        let color_btn = filter_toggle_button("Color", self.show_color, Message::TdfFontSelector(TdfFontSelectorMessage::ToggleColor));
-        let figlet_btn = filter_toggle_button("Figlet", self.show_figlet, Message::TdfFontSelector(TdfFontSelectorMessage::ToggleFiglet));
+        let outline_btn = filter_toggle_button("Outline", self.show_outline, tdf_msg(TdfFontSelectorMessage::ToggleOutline));
+        let block_btn = filter_toggle_button("Block", self.show_block, tdf_msg(TdfFontSelectorMessage::ToggleBlock));
+        let color_btn = filter_toggle_button("Color", self.show_color, tdf_msg(TdfFontSelectorMessage::ToggleColor));
+        let figlet_btn = filter_toggle_button("Figlet", self.show_figlet, tdf_msg(TdfFontSelectorMessage::ToggleFiglet));
 
         let filter_row = row![search_input, Space::new().width(DIALOG_SPACING), outline_btn, block_btn, color_btn, figlet_btn,]
             .spacing(DIALOG_SPACING / 2.0)
@@ -986,11 +992,11 @@ impl Dialog<Message> for TdfFontSelectorDialog {
             Space::new().width(Length::Fill),
             secondary_button(
                 format!("{}", ButtonType::Cancel),
-                Some(Message::TdfFontSelector(TdfFontSelectorMessage::Cancel))
+                Some(tdf_msg(TdfFontSelectorMessage::Cancel))
             ),
             primary_button(
                 format!("{}", ButtonType::Ok),
-                Some(Message::TdfFontSelector(TdfFontSelectorMessage::Confirm(self.selected_font)))
+                Some(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))
             ),
         ]
         .spacing(DIALOG_SPACING)
@@ -1005,7 +1011,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::TdfFontSelector(msg) = message else {
+        let Message::AnsiEditor(AnsiEditorMessage::TdfFontSelector(msg)) = message else {
             return None;
         };
 
@@ -1050,7 +1056,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
                 }
                 Some(DialogAction::None)
             }
-            TdfFontSelectorMessage::Confirm(_) => Some(DialogAction::CloseWith(Message::TdfFontSelector(TdfFontSelectorMessage::Confirm(
+            TdfFontSelectorMessage::Confirm(_) => Some(DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(
                 self.selected_font,
             )))),
             TdfFontSelectorMessage::Cancel => Some(DialogAction::Close),
@@ -1062,7 +1068,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
     }
 
     fn request_confirm(&mut self) -> DialogAction<Message> {
-        DialogAction::CloseWith(Message::TdfFontSelector(TdfFontSelectorMessage::Confirm(self.selected_font)))
+        DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))
     }
 
     fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {

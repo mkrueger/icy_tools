@@ -68,18 +68,18 @@ pub enum CharSelectorTarget {
     BrushChar,
 }
 
-/// Messages for the ANSI editor
 use widget::outline_selector::OutlineSelectorMessage;
 
+/// Core editing messages handled by `AnsiEditorCore`
+///
+/// These messages deal with buffer operations, tools, and canvas interaction.
+/// They don't involve UI dialogs or panel management.
 #[derive(Clone, Debug)]
-pub enum AnsiEditorMessage {
-    /// Tool panel messages
-    ToolPanel(ToolPanelMessage),
-    /// Canvas view messages  
+pub enum AnsiEditorCoreMessage {
+    // --- Tool/Canvas Interaction ---
+    /// Canvas view messages
     Canvas(TerminalMessage),
-    /// Right panel messages (minimap, layers, etc.)
-    RightPanel(RightPanelMessage),
-    /// Top toolbar messages
+    /// Top toolbar messages (tool-specific options)
     TopToolbar(TopToolbarMessage),
     /// Tool-owned toolbar/options/status messages
     ToolMessage(tools::ToolMessage),
@@ -87,17 +87,14 @@ pub enum AnsiEditorMessage {
     CharSelector(CharSelectorMessage),
     /// Outline selector popup messages (font tool outline style)
     OutlineSelector(OutlineSelectorMessage),
-    /// Color switcher messages
-    ColorSwitcher(ColorSwitcherMessage),
-    /// Palette grid messages
-    PaletteGrid(PaletteGridMessage),
-    /// Periodic tick while minimap drag is active (drives drag-out autoscroll).
-    MinimapAutoscrollTick(f32),
-    /// Tool selection changed
-    SelectTool(usize),
+    /// Tag config dialog messages
+    TagDialog(TagDialogMessage),
+    /// Open the tag list dialog
+    OpenTagListDialog,
+    /// Tag list dialog messages
+    TagListDialog(TagListDialogMessage),
 
-    /// Tool switch requested by a tool result; handled by AnsiEditorMainArea.
-    SwitchTool(tools::ToolId),
+    // --- Layer Operations ---
     /// Layer selection changed
     SelectLayer(usize),
     /// Toggle layer visibility
@@ -110,8 +107,6 @@ pub enum AnsiEditorMessage {
     MoveLayerUp(usize),
     /// Move layer down
     MoveLayerDown(usize),
-    /// Open layer properties dialog
-    EditLayer(usize),
     /// Duplicate a layer
     DuplicateLayer(usize),
     /// Merge layer down
@@ -121,71 +116,124 @@ pub enum AnsiEditorMessage {
     /// Scroll viewport
     ScrollViewport(f32, f32),
 
-    // === Marker/Guide Messages ===
-    /// Set guide position (in characters, e.g. 80x25)
-    /// Use (0, 0) or negative values to clear
+    // --- Marker/Guide Messages ---
     SetGuide(i32, i32),
-    /// Clear guide
     ClearGuide,
-    /// Set raster/grid spacing (in characters, e.g. 8x8)
-    /// Use (0, 0) or negative values to clear
     SetRaster(i32, i32),
-    /// Clear raster/grid
     ClearRaster,
-    /// Toggle guide visibility
     ToggleGuide,
-    /// Toggle raster/grid visibility
     ToggleRaster,
-    /// Toggle line numbers display
     ToggleLineNumbers,
-    /// Toggle layer borders display
     ToggleLayerBorders,
+    ToggleMirrorMode,
 
-    /// Tag config dialog messages
-    TagDialog(TagDialogMessage),
-
-    /// Open the tag list dialog
-    OpenTagListDialog,
-    /// Tag list dialog messages
-    TagListDialog(TagListDialogMessage),
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Area operations (ANSI-editor specific)
-    // ═══════════════════════════════════════════════════════════════════════════
-    /// Justify current line left
+    // --- Area Operations ---
     JustifyLineLeft,
-    /// Justify current line right
     JustifyLineRight,
-    /// Justify current line center
     JustifyLineCenter,
-    /// Insert a row at cursor position
     InsertRow,
-    /// Delete row at cursor position
     DeleteRow,
-    /// Insert a column at cursor position
     InsertColumn,
-    /// Delete column at cursor position
     DeleteColumn,
-    /// Erase entire row
     EraseRow,
-    /// Erase row from start to cursor
     EraseRowToStart,
-    /// Erase row from cursor to end
     EraseRowToEnd,
-    /// Erase entire column
     EraseColumn,
-    /// Erase column from start to cursor
     EraseColumnToStart,
-    /// Erase column from cursor to end
     EraseColumnToEnd,
-    /// Scroll area up
     ScrollAreaUp,
-    /// Scroll area down
     ScrollAreaDown,
-    /// Scroll area left
     ScrollAreaLeft,
-    /// Scroll area right
     ScrollAreaRight,
+
+    // --- Reference Image ---
+    ApplyReferenceImage(std::path::PathBuf, f32),
+    ClearReferenceImage,
+    ToggleReferenceImage,
+
+    // --- Transform Operations ---
+    FlipX,
+    FlipY,
+    Crop,
+    JustifyCenter,
+    JustifyLeft,
+    JustifyRight,
+
+    // --- Color Operations ---
+    NextFgColor,
+    PrevFgColor,
+    NextBgColor,
+    PrevBgColor,
+    PickAttributeUnderCaret,
+    ToggleColor,
+    SwitchToDefaultColor,
+
+    // --- Font Apply Operations ---
+    ApplyFontSelection(FontSelectorResult),
+    ApplyFontSlotChange(FontSlotManagerResult),
+
+    // --- Selection Operations ---
+    Deselect,
+    DeleteSelection,
+}
+
+/// UI messages handled by `AnsiEditorMainArea`
+///
+/// These messages deal with panels, dialogs, tool switching, and layout.
+#[derive(Clone, Debug)]
+pub enum AnsiEditorMessage {
+    /// Forward a core message to AnsiEditorCore
+    Core(AnsiEditorCoreMessage),
+
+    // --- Panel Widgets ---
+    /// Tool panel messages
+    ToolPanel(ToolPanelMessage),
+    /// Right panel messages (minimap, layers, etc.)
+    RightPanel(RightPanelMessage),
+    /// Color switcher messages
+    ColorSwitcher(ColorSwitcherMessage),
+    /// Palette grid messages
+    PaletteGrid(PaletteGridMessage),
+    /// Periodic tick while minimap drag is active
+    MinimapAutoscrollTick(f32),
+
+    // --- Tool Switching ---
+    SelectTool(usize),
+    SwitchTool(tools::ToolId),
+
+    // --- Layer Dialog ---
+    EditLayer(usize),
+    ShowEditLayerDialog(usize),
+    EditLayerDialog(EditLayerDialogMessage),
+    ApplyEditLayer(EditLayerResult),
+
+    // --- Palette Dialog ---
+    EditPalette,
+    PaletteEditorDialog(crate::ui::editor::palette::PaletteEditorMessage),
+    PaletteEditorApplied(icy_engine::Palette),
+
+    // --- Reference Image Dialog ---
+    ShowReferenceImageDialog,
+    ReferenceImageDialog(ReferenceImageDialogMessage),
+
+    // --- Font Dialogs ---
+    SwitchFontSlot(usize),
+    OpenFontSelector,
+    OpenFontSelectorForSlot(usize),
+    FontSelector(FontSelectorMessage),
+    OpenFontSlotManager,
+    FontSlotManager(FontSlotManagerMessage),
+    TdfFontSelector(TdfFontSelectorMessage),
+
+    // --- Plugins ---
+    RunPlugin(usize),
+
+    // --- Selection with UI ---
+    InverseSelection,
+    PasteAsNewImage,
+
+    // --- Export ---
+    ExportFile,
 }
 
 // CanvasMouseEvent removed - use TerminalMessage directly from icy_engine_gui

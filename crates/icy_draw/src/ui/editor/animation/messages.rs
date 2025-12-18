@@ -54,4 +54,10 @@ pub enum AnimationEditorMessage {
     Undo,
     /// Redo last undone edit
     Redo,
+
+    // === Export ===
+    /// Show export dialog
+    ShowExportDialog,
+    /// Export dialog messages
+    ExportDialog(super::AnimationExportMessage),
 }

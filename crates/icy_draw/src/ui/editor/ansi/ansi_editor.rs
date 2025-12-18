@@ -20,7 +20,7 @@ use super::widget::outline_selector::{OutlineSelector, outline_selector_width};
 ///
 /// This is intentionally not exposed publicly; the public entrypoint is
 /// `AnsiEditorMainArea`, which owns the UI chrome/panels and delegates into this.
-pub struct AnsiEditor {
+pub struct AnsiEditorCore {
     /// The screen (contains EditState which wraps buffer, caret, undo stack, etc.)
     /// Use screen.lock().as_any_mut().downcast_mut::<EditState>() to access EditState methods
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
@@ -85,7 +85,11 @@ pub struct AnsiEditor {
     pending_tool_switch: Option<tools::ToolId>,
 }
 
-impl AnsiEditor {
+impl AnsiEditorCore {
+    /// Wraps the main layout with tool-specific modal overlays (char selector, tag dialog, etc.)
+    ///
+    /// These modals are owned by Core but need to overlay the full UI, so this method
+    /// takes and returns `AnsiEditorMessage` elements while internally using `AnsiEditorCoreMessage`.
     pub(super) fn wrap_with_modals<'a>(&'a self, main_layout: Element<'a, AnsiEditorMessage>) -> Element<'a, AnsiEditorMessage> {
         // Compute context for modal rendering (fkeys, font, palette, caret colors).
         let (fkeys, current_font, palette, caret_fg, caret_bg) = {
@@ -112,12 +116,12 @@ impl AnsiEditor {
 
         if let Some(tag_tool) = self.active_tag_tool() {
             if let Some(tag_dialog) = &tag_tool.state().dialog {
-                let modal_content = tag_dialog.view().map(AnsiEditorMessage::TagDialog);
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagDialog(TagDialogMessage::Cancel));
+                let modal_content = tag_dialog.view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagDialog(m)));
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagDialog(TagDialogMessage::Cancel)));
             }
             if let Some(tag_list_dialog) = &tag_tool.state().list_dialog {
-                let modal_content = tag_list_dialog.view().map(AnsiEditorMessage::TagListDialog);
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::TagListDialog(TagListDialogMessage::Close));
+                let modal_content = tag_list_dialog.view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagListDialog(m)));
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::TagListDialog(TagListDialogMessage::Close)));
             }
         }
 
@@ -129,18 +133,18 @@ impl AnsiEditor {
 
             let selector_canvas = CharSelector::new(current_code)
                 .view(current_font, palette.clone(), caret_fg, caret_bg)
-                .map(AnsiEditorMessage::CharSelector);
+                .map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::CharSelector(m)));
 
             let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, CHAR_SELECTOR_WIDTH);
-            return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::CharSelector(CharSelectorMessage::Cancel));
+            return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::CharSelector(CharSelectorMessage::Cancel)));
         }
 
         if let Some(font) = self.active_font_tool() {
             if font.is_outline_selector_open() {
                 let current_style = *self.options.read().font_outline_style.read();
-                let selector_canvas = OutlineSelector::new(current_style).view().map(AnsiEditorMessage::OutlineSelector);
+                let selector_canvas = OutlineSelector::new(current_style).view().map(|m| AnsiEditorMessage::Core(AnsiEditorCoreMessage::OutlineSelector(m)));
                 let modal_content = icy_engine_gui::ui::modal_container(selector_canvas, outline_selector_width());
-                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::OutlineSelector(OutlineSelectorMessage::Cancel));
+                return icy_engine_gui::ui::modal(main_layout, modal_content, AnsiEditorMessage::Core(AnsiEditorCoreMessage::OutlineSelector(OutlineSelectorMessage::Cancel)));
             }
         }
 
@@ -151,9 +155,9 @@ impl AnsiEditor {
     ///
     /// This is intentionally kept in the core editor so the surrounding layout/chrome
     /// can stay in `AnsiEditorMainArea`.
-    pub(super) fn view<'a>(&'a self) -> Element<'a, AnsiEditorMessage> {
+    pub(super) fn view<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
-        let canvas = self.canvas.view().map(AnsiEditorMessage::Canvas);
+        let canvas = self.canvas.view().map(AnsiEditorCoreMessage::Canvas);
 
         // Get scroll position from viewport for overlay positioning.
         let (scroll_x, scroll_y) = {
@@ -181,7 +185,7 @@ impl AnsiEditor {
         };
 
         // Build the center area with optional line numbers overlay and tag context menu.
-        let mut center_layers: Vec<Element<'_, AnsiEditorMessage>> = vec![iced::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
+        let mut center_layers: Vec<Element<'_, AnsiEditorCoreMessage>> = vec![iced::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
 
         if self.show_line_numbers {
             let line_numbers_overlay = widget::line_numbers::line_numbers_overlay(
@@ -206,7 +210,7 @@ impl AnsiEditor {
                     .state()
                     .view_context_menu_overlay(font_width, font_height, scroll_x, scroll_y, display_scale)
                 {
-                    center_layers.push(context_menu.map(AnsiEditorMessage::ToolMessage));
+                    center_layers.push(context_menu.map(AnsiEditorCoreMessage::ToolMessage));
                 }
             }
         }
@@ -299,7 +303,7 @@ impl AnsiEditor {
         self.minimap_drag_pointer = pointer;
     }
 
-    pub(super) fn view_paste_sidebar_controls<'a>(&'a self) -> Element<'a, AnsiEditorMessage> {
+    pub(super) fn view_paste_sidebar_controls<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
         self.paste_handler.view_paste_sidebar_controls()
     }
 
@@ -489,7 +493,7 @@ impl AnsiEditor {
                         self.char_selector_target = Some(CharSelectorTarget::BrushChar);
                         ToolResult::Redraw
                     }
-                    // Handled in `AnsiEditorMessage::ToolMessage` because opening those dialogs
+                    // Handled in `AnsiEditorCoreMessage::ToolMessage` because opening those dialogs
                     // needs returning a `Task` (bubbling into TopToolbar / MainWindow).
                     tools::UiAction::OpenTdfFontSelector | tools::UiAction::OpenFontDirectory => ToolResult::None,
                 }
@@ -588,12 +592,12 @@ impl AnsiEditor {
         self.canvas.set_tool_overlay_mask(None, None);
     }
 
-    fn task_none_with_markers_update(&mut self) -> Task<AnsiEditorMessage> {
+    fn task_none_with_markers_update(&mut self) -> Task<AnsiEditorCoreMessage> {
         self.update_markers();
         Task::none()
     }
 
-    fn task_none_with_layer_bounds_update(&mut self) -> Task<AnsiEditorMessage> {
+    fn task_none_with_layer_bounds_update(&mut self) -> Task<AnsiEditorCoreMessage> {
         self.update_layer_bounds();
         Task::none()
     }
@@ -939,14 +943,14 @@ impl AnsiEditor {
         self.canvas.scroll_to(target_x, target_y);
     }
 
-    /// Update the editor state
-    pub fn update(&mut self, message: AnsiEditorMessage) -> Task<AnsiEditorMessage> {
-        let mut task = match message {
-            AnsiEditorMessage::OpenTagListDialog => {
+    /// Update the editor state with a core message
+    pub fn update(&mut self, message: AnsiEditorCoreMessage) -> Task<AnsiEditorCoreMessage> {
+        let task = match message {
+            AnsiEditorCoreMessage::OpenTagListDialog => {
                 // Route to the Tag tool (TagTool owns the list dialog state).
-                self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagOpenList))
+                self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::TagOpenList))
             }
-            AnsiEditorMessage::TagListDialog(msg) => {
+            AnsiEditorCoreMessage::TagListDialog(msg) => {
                 let screen = Arc::clone(&self.screen);
                 let result = {
                     let mut screen_guard = screen.lock();
@@ -973,7 +977,7 @@ impl AnsiEditor {
 
                 Task::none()
             }
-            AnsiEditorMessage::TagDialog(msg) => {
+            AnsiEditorCoreMessage::TagDialog(msg) => {
                 let screen = Arc::clone(&self.screen);
                 let result = {
                     let mut screen_guard = screen.lock();
@@ -1000,22 +1004,12 @@ impl AnsiEditor {
 
                 Task::none()
             }
-            AnsiEditorMessage::ToolPanel(msg) => {
-                // Handled by AnsiEditorMainArea.
-                let _ = msg;
-                Task::none()
-            }
-            AnsiEditorMessage::Canvas(msg) => {
+            AnsiEditorCoreMessage::Canvas(msg) => {
                 // Forward terminal mouse events directly to tool handling
                 self.handle_terminal_mouse_event(&msg);
-                self.canvas.update(msg).map(AnsiEditorMessage::Canvas)
+                self.canvas.update(msg).map(AnsiEditorCoreMessage::Canvas)
             }
-            AnsiEditorMessage::RightPanel(msg) => {
-                // Handled by AnsiEditorMainArea.
-                let _ = msg;
-                Task::none()
-            }
-            AnsiEditorMessage::TopToolbar(msg) => {
+            AnsiEditorCoreMessage::TopToolbar(msg) => {
                 // Intercept brush char-table requests here (keeps the dialog local to the editor)
                 match msg {
                     TopToolbarMessage::OpenBrushCharTable => {
@@ -1025,7 +1019,7 @@ impl AnsiEditor {
                     TopToolbarMessage::SetBrushChar(_) => {
                         // Selecting a character implicitly closes the overlay.
                         self.char_selector_target = None;
-                        let task = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
+                        let task = self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar);
                         task
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
@@ -1089,19 +1083,19 @@ impl AnsiEditor {
                     }
                     TopToolbarMessage::OpenTagList => {
                         // Route to tag tool
-                        self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagOpenList))
+                        self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::TagOpenList))
                     }
                     TopToolbarMessage::StartAddTag => {
                         // Toggle add-tag mode
-                        self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagStartAdd))
+                        self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::TagStartAdd))
                     }
-                    TopToolbarMessage::EditSelectedTag => self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagEditSelected)),
-                    TopToolbarMessage::DeleteSelectedTags => self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::TagDeleteSelected)),
+                    TopToolbarMessage::EditSelectedTag => self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::TagEditSelected)),
+                    TopToolbarMessage::DeleteSelectedTags => self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::TagDeleteSelected)),
                     TopToolbarMessage::ToggleFilled(v) => {
                         // Let the active tool decide whether it needs to switch variants.
-                        let _ = self.update(AnsiEditorMessage::ToolMessage(tools::ToolMessage::ToggleFilled(v)));
+                        let _ = self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::ToggleFilled(v)));
 
-                        let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorMessage::TopToolbar);
+                        let task = self.top_toolbar.update(TopToolbarMessage::ToggleFilled(v)).map(AnsiEditorCoreMessage::TopToolbar);
                         task
                     }
 
@@ -1136,12 +1130,11 @@ impl AnsiEditor {
                     }
 
                     _ => {
-                        let task: Task<AnsiEditorMessage> = self.top_toolbar.update(msg).map(AnsiEditorMessage::TopToolbar);
-                        task
+                        self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar)
                     }
                 }
             }
-            AnsiEditorMessage::ToolMessage(msg) => {
+            AnsiEditorCoreMessage::ToolMessage(msg) => {
                 use tools::ToolHandler;
 
                 let paste_mode = self.is_paste_mode();
@@ -1172,10 +1165,10 @@ impl AnsiEditor {
                     // Font tool opens dialogs via UiAction, but needs a Task to bubble up.
                     let pending_task = match &result {
                         tools::ToolResult::Ui(tools::UiAction::OpenTdfFontSelector) => {
-                            Some(Task::done(AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontSelector)))
+                            Some(Task::done(AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::OpenFontSelector)))
                         }
                         tools::ToolResult::Ui(tools::UiAction::OpenFontDirectory) => {
-                            Some(Task::done(AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontDirectory)))
+                            Some(Task::done(AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::OpenFontDirectory)))
                         }
                         _ => None,
                     };
@@ -1199,7 +1192,7 @@ impl AnsiEditor {
 
                 Task::none()
             }
-            AnsiEditorMessage::CharSelector(msg) => {
+            AnsiEditorCoreMessage::CharSelector(msg) => {
                 match msg {
                     CharSelectorMessage::SelectChar(code) => {
                         match self.char_selector_target {
@@ -1223,7 +1216,7 @@ impl AnsiEditor {
                                 let ch = char::from_u32(code as u32).unwrap_or(' ');
                                 // Route brush char selection back to the active tool.
                                 let msg = tools::ToolMessage::SetBrushChar(ch);
-                                let _ = self.update(AnsiEditorMessage::ToolMessage(msg));
+                                let _ = self.update(AnsiEditorCoreMessage::ToolMessage(msg));
                             }
                             None => {}
                         }
@@ -1235,40 +1228,28 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::OutlineSelector(msg) => {
+            AnsiEditorCoreMessage::OutlineSelector(msg) => {
                 if let Some(font) = self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>() {
                     font.handle_outline_selector_message(&self.options, msg);
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ColorSwitcher(_) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                Task::none()
-            }
-            AnsiEditorMessage::PaletteGrid(_) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                Task::none()
-            }
-            AnsiEditorMessage::SelectTool(_) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                Task::none()
-            }
-            AnsiEditorMessage::SwitchTool(_) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                Task::none()
-            }
-            AnsiEditorMessage::SelectLayer(idx) => {
+
+            // ═══════════════════════════════════════════════════════════════════
+            // CORE MESSAGES - Layer Operations
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::SelectLayer(idx) => {
                 self.with_edit_state(|state| state.set_current_layer(idx));
                 self.task_none_with_layer_bounds_update()
             }
-            AnsiEditorMessage::ToggleLayerVisibility(idx) => {
+            AnsiEditorCoreMessage::ToggleLayerVisibility(idx) => {
                 let result = self.with_edit_state(move |state| state.toggle_layer_visibility(idx));
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::AddLayer => {
+            AnsiEditorCoreMessage::AddLayer => {
                 let current_layer = self.with_edit_state(|state| state.get_current_layer().unwrap_or(0));
                 let result = self.with_edit_state(|state| state.add_new_layer(current_layer));
                 if result.is_ok() {
@@ -1277,7 +1258,7 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::RemoveLayer(idx) => {
+            AnsiEditorCoreMessage::RemoveLayer(idx) => {
                 // Don't allow removing the last layer
                 let layer_count = self.with_edit_state(|state| state.get_buffer().layers.len());
                 if layer_count > 1 {
@@ -1289,7 +1270,7 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::MoveLayerUp(idx) => {
+            AnsiEditorCoreMessage::MoveLayerUp(idx) => {
                 let result = self.with_edit_state(|state| state.raise_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
@@ -1297,7 +1278,7 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::MoveLayerDown(idx) => {
+            AnsiEditorCoreMessage::MoveLayerDown(idx) => {
                 let result = self.with_edit_state(|state| state.lower_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
@@ -1305,7 +1286,7 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::DuplicateLayer(idx) => {
+            AnsiEditorCoreMessage::DuplicateLayer(idx) => {
                 let result = self.with_edit_state(|state| state.duplicate_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
@@ -1313,7 +1294,7 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::MergeLayerDown(idx) => {
+            AnsiEditorCoreMessage::MergeLayerDown(idx) => {
                 let result = self.with_edit_state(|state| state.merge_layer_down(idx));
                 if result.is_ok() {
                     self.is_modified = true;
@@ -1321,29 +1302,20 @@ impl AnsiEditor {
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ClearLayer(idx) => {
+            AnsiEditorCoreMessage::ClearLayer(idx) => {
                 let result = self.with_edit_state(|state| state.clear_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ScrollViewport(dx, dy) => {
+            AnsiEditorCoreMessage::ScrollViewport(dx, dy) => {
                 self.canvas.scroll_by(dx, dy);
-                Task::none()
-            }
-            AnsiEditorMessage::MinimapAutoscrollTick(_) => {
-                // handled by wrapper (AnsiEditorMainArea)
-                Task::none()
-            }
-            AnsiEditorMessage::EditLayer(_layer_index) => {
-                // This message is handled by main_window to show the dialog
-                // It's emitted from here and intercepted at a higher level
                 Task::none()
             }
 
             // === Marker/Guide Messages ===
-            AnsiEditorMessage::SetGuide(x, y) => {
+            AnsiEditorCoreMessage::SetGuide(x, y) => {
                 if x <= 0 && y <= 0 {
                     self.guide = None;
                 } else {
@@ -1352,11 +1324,11 @@ impl AnsiEditor {
                 }
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::ClearGuide => {
+            AnsiEditorCoreMessage::ClearGuide => {
                 self.guide = None;
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::SetRaster(x, y) => {
+            AnsiEditorCoreMessage::SetRaster(x, y) => {
                 if x <= 0 && y <= 0 {
                     self.raster = None;
                 } else {
@@ -1365,156 +1337,341 @@ impl AnsiEditor {
                 }
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::ClearRaster => {
+            AnsiEditorCoreMessage::ClearRaster => {
                 self.raster = None;
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::ToggleGuide => {
+            AnsiEditorCoreMessage::ToggleGuide => {
                 self.show_guide = !self.show_guide;
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::ToggleRaster => {
+            AnsiEditorCoreMessage::ToggleRaster => {
                 self.show_raster = !self.show_raster;
                 self.task_none_with_markers_update()
             }
-            AnsiEditorMessage::ToggleLineNumbers => {
+            AnsiEditorCoreMessage::ToggleLineNumbers => {
                 self.show_line_numbers = !self.show_line_numbers;
                 Task::none()
             }
-            AnsiEditorMessage::ToggleLayerBorders => {
+            AnsiEditorCoreMessage::ToggleLayerBorders => {
                 self.show_layer_borders = !self.show_layer_borders;
                 self.task_none_with_layer_bounds_update()
+            }
+            AnsiEditorCoreMessage::ToggleMirrorMode => {
+                self.toggle_mirror_mode();
+                Task::none()
             }
 
             // ═══════════════════════════════════════════════════════════════════
             // Area operations
             // ═══════════════════════════════════════════════════════════════════
-            AnsiEditorMessage::JustifyLineCenter => {
+            AnsiEditorCoreMessage::JustifyLineCenter => {
                 let result = self.with_edit_state(|state| state.center_line());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::JustifyLineLeft => {
+            AnsiEditorCoreMessage::JustifyLineLeft => {
                 let result = self.with_edit_state(|state| state.justify_line_left());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::JustifyLineRight => {
+            AnsiEditorCoreMessage::JustifyLineRight => {
                 let result = self.with_edit_state(|state| state.justify_line_right());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::InsertRow => {
+            AnsiEditorCoreMessage::InsertRow => {
                 let result = self.with_edit_state(|state| state.insert_row());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::DeleteRow => {
+            AnsiEditorCoreMessage::DeleteRow => {
                 let result = self.with_edit_state(|state| state.delete_row());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::InsertColumn => {
+            AnsiEditorCoreMessage::InsertColumn => {
                 let result = self.with_edit_state(|state| state.insert_column());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::DeleteColumn => {
+            AnsiEditorCoreMessage::DeleteColumn => {
                 let result = self.with_edit_state(|state| state.delete_column());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseRow => {
+            AnsiEditorCoreMessage::EraseRow => {
                 let result = self.with_edit_state(|state| state.erase_row());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseRowToStart => {
+            AnsiEditorCoreMessage::EraseRowToStart => {
                 let result = self.with_edit_state(|state| state.erase_row_to_start());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseRowToEnd => {
+            AnsiEditorCoreMessage::EraseRowToEnd => {
                 let result = self.with_edit_state(|state| state.erase_row_to_end());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseColumn => {
+            AnsiEditorCoreMessage::EraseColumn => {
                 let result = self.with_edit_state(|state| state.erase_column());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseColumnToStart => {
+            AnsiEditorCoreMessage::EraseColumnToStart => {
                 let result = self.with_edit_state(|state| state.erase_column_to_start());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::EraseColumnToEnd => {
+            AnsiEditorCoreMessage::EraseColumnToEnd => {
                 let result = self.with_edit_state(|state| state.erase_column_to_end());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ScrollAreaUp => {
+            AnsiEditorCoreMessage::ScrollAreaUp => {
                 let result = self.with_edit_state(|state| state.scroll_area_up());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ScrollAreaDown => {
+            AnsiEditorCoreMessage::ScrollAreaDown => {
                 let result = self.with_edit_state(|state| state.scroll_area_down());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ScrollAreaLeft => {
+            AnsiEditorCoreMessage::ScrollAreaLeft => {
                 let result = self.with_edit_state(|state| state.scroll_area_left());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
-            AnsiEditorMessage::ScrollAreaRight => {
+            AnsiEditorCoreMessage::ScrollAreaRight => {
                 let result = self.with_edit_state(|state| state.scroll_area_right());
                 if result.is_ok() {
                     self.is_modified = true;
                 }
                 Task::none()
             }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Reference Image - Core actions
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::ApplyReferenceImage(path, alpha) => {
+                self.set_reference_image(Some(path), alpha);
+                Task::none()
+            }
+            AnsiEditorCoreMessage::ClearReferenceImage => {
+                self.set_reference_image(None, 0.0);
+                Task::none()
+            }
+            AnsiEditorCoreMessage::ToggleReferenceImage => {
+                self.toggle_reference_image();
+                Task::none()
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // Transform operations
+            // ═══════════════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::FlipX => {
+                self.with_edit_state(|state| { let _ = state.flip_x(); });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::FlipY => {
+                self.with_edit_state(|state| { let _ = state.flip_y(); });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::Crop => {
+                self.with_edit_state(|state| { let _ = state.crop(); });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::JustifyCenter => {
+                self.with_edit_state(|state| { let _ = state.center(); });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::JustifyLeft => {
+                self.with_edit_state(|state| { let _ = state.justify_left(); });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::JustifyRight => {
+                self.with_edit_state(|state| { let _ = state.justify_right(); });
+                Task::none()
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // Color operations
+            // ═══════════════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::NextFgColor => {
+                self.with_edit_state(|state| {
+                    let fg = state.get_caret().attribute.foreground();
+                    let pal_len = state.get_buffer().palette.len();
+                    let new_fg = (fg as usize + 1) % pal_len;
+                    state.set_caret_foreground(new_fg as u32);
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::PrevFgColor => {
+                self.with_edit_state(|state| {
+                    let fg = state.get_caret().attribute.foreground();
+                    let pal_len = state.get_buffer().palette.len();
+                    let new_fg = if fg == 0 { pal_len - 1 } else { fg as usize - 1 };
+                    state.set_caret_foreground(new_fg as u32);
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::NextBgColor => {
+                self.with_edit_state(|state| {
+                    let bg = state.get_caret().attribute.background();
+                    let pal_len = state.get_buffer().palette.len();
+                    let new_bg = (bg as usize + 1) % pal_len;
+                    state.set_caret_background(new_bg as u32);
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::PrevBgColor => {
+                self.with_edit_state(|state| {
+                    let bg = state.get_caret().attribute.background();
+                    let pal_len = state.get_buffer().palette.len();
+                    let new_bg = if bg == 0 { pal_len - 1 } else { bg as usize - 1 };
+                    state.set_caret_background(new_bg as u32);
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::PickAttributeUnderCaret => {
+                self.with_edit_state(|state| {
+                    let pos = state.get_caret().position();
+                    let attr = if let Some(layer) = state.get_cur_layer() {
+                        layer.char_at(pos + layer.offset()).attribute
+                    } else {
+                        state.get_buffer().char_at(pos).attribute
+                    };
+                    state.set_caret_foreground(attr.foreground());
+                    state.set_caret_background(attr.background());
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::ToggleColor => {
+                self.with_edit_state(|state| {
+                    state.swap_caret_colors();
+                });
+                self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::SwitchToDefaultColor => {
+                self.with_edit_state(|state| state.reset_caret_colors());
+                self.sync_ui();
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // CORE MESSAGES - Font Apply Operations
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::ApplyFontSelection(result) => {
+                self.with_edit_state(|state| {
+                    use super::FontSelectorResult;
+                    match result {
+                        FontSelectorResult::SingleFont(font) => {
+                            let slot = state.get_caret().font_page();
+                            let _ = state.set_font_in_slot(slot, font);
+                        }
+                        FontSelectorResult::FontForSlot { slot, font } => {
+                            state.set_caret_font_page(slot);
+                            let _ = state.set_font_in_slot(slot, font);
+                        }
+                    }
+                });
+                Task::none()
+            }
+            AnsiEditorCoreMessage::ApplyFontSlotChange(result) => {
+                self.with_edit_state(|state| {
+                    use super::FontSlotManagerResult;
+                    match result {
+                        FontSlotManagerResult::SelectSlot { slot } => {
+                            state.set_caret_font_page(slot);
+                        }
+                        FontSlotManagerResult::ResetSlot { slot, font } => {
+                            if let Some(f) = font {
+                                let _ = state.set_font_in_slot(slot, f);
+                            }
+                        }
+                        FontSlotManagerResult::RemoveSlot { slot } => {
+                            state.with_buffer_mut_no_undo(|buf| buf.remove_font(slot));
+                        }
+                        FontSlotManagerResult::OpenFontSelector { .. } => {
+                            // Handled by MainWindow intercept
+                        }
+                        FontSlotManagerResult::AddSlot { slot, font } => {
+                            let _ = state.set_font_in_slot(slot, font);
+                        }
+                    }
+                });
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // CORE MESSAGES - Selection Operations
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::Deselect => {
+                let _ = self.with_edit_state(|state| state.clear_selection());
+                self.refresh_selection_display();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::DeleteSelection => {
+                let result = self.with_edit_state(|state| {
+                    if state.is_something_selected() {
+                        state.erase_selection()
+                    } else {
+                        state.delete_key()
+                    }
+                });
+                if result.is_ok() {
+                    self.is_modified = true;
+                }
+                self.refresh_selection_display();
+                Task::none()
+            }
         };
 
-        if let Some(tool) = self.pending_tool_switch.take() {
-            task = Task::batch(vec![task, Task::done(AnsiEditorMessage::SwitchTool(tool))]);
-        }
-
         task
+    }
+
+    /// Check if there's a pending tool switch request
+    pub fn take_pending_tool_switch(&mut self) -> Option<tools::ToolId> {
+        self.pending_tool_switch.take()
     }
 
     /// Update the canvas markers based on current guide/raster settings

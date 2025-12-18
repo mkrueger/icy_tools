@@ -20,7 +20,7 @@ use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
-use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog, export_dialog_with_defaults_from_msg};
+use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog};
 use icy_engine_gui::{Toast, ToastManager, command_handler, command_handlers};
 
 use super::commands::create_draw_commands;
@@ -29,9 +29,8 @@ use super::{
     menu::{MenuBarState, UndoInfo},
 };
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
-use crate::ui::editor::ansi::{AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo, ReferenceImageDialogMessage, TopToolbarMessage};
+use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
-use crate::ui::editor::palette::{PaletteEditorDialog, PaletteEditorMessage};
 use crate::ui::widget::plugins::Plugin;
 
 /// The editing mode of a window
@@ -56,32 +55,32 @@ command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     cmd::HELP_ABOUT => Message::ShowAbout,
     // Selection
     selection_cmd::SELECT_NONE => Message::Deselect,
-    selection_cmd::SELECT_INVERSE => Message::InverseSelection,
+    selection_cmd::SELECT_INVERSE => Message::AnsiEditor(AnsiEditorMessage::InverseSelection),
     selection_cmd::SELECT_ERASE => Message::DeleteSelection,
-    selection_cmd::SELECT_FLIP_X => Message::FlipX,
-    selection_cmd::SELECT_FLIP_Y => Message::FlipY,
-    selection_cmd::SELECT_CROP => Message::Crop,
-    selection_cmd::SELECT_JUSTIFY_LEFT => Message::JustifyLeft,
-    selection_cmd::SELECT_JUSTIFY_CENTER => Message::JustifyCenter,
-    selection_cmd::SELECT_JUSTIFY_RIGHT => Message::JustifyRight,
+    selection_cmd::SELECT_FLIP_X => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)),
+    selection_cmd::SELECT_FLIP_Y => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)),
+    selection_cmd::SELECT_CROP => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)),
+    selection_cmd::SELECT_JUSTIFY_LEFT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLeft)),
+    selection_cmd::SELECT_JUSTIFY_CENTER => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter)),
+    selection_cmd::SELECT_JUSTIFY_RIGHT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight)),
     // Area operations (forwarded to ANSI editor)
-    area_cmd::JUSTIFY_LINE_LEFT => Message::AnsiEditor(AnsiEditorMessage::JustifyLineLeft),
-    area_cmd::JUSTIFY_LINE_CENTER => Message::AnsiEditor(AnsiEditorMessage::JustifyLineCenter),
-    area_cmd::JUSTIFY_LINE_RIGHT => Message::AnsiEditor(AnsiEditorMessage::JustifyLineRight),
-    area_cmd::INSERT_ROW => Message::AnsiEditor(AnsiEditorMessage::InsertRow),
-    area_cmd::DELETE_ROW => Message::AnsiEditor(AnsiEditorMessage::DeleteRow),
-    area_cmd::INSERT_COLUMN => Message::AnsiEditor(AnsiEditorMessage::InsertColumn),
-    area_cmd::DELETE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::DeleteColumn),
-    area_cmd::ERASE_ROW => Message::AnsiEditor(AnsiEditorMessage::EraseRow),
-    area_cmd::ERASE_ROW_TO_START => Message::AnsiEditor(AnsiEditorMessage::EraseRowToStart),
-    area_cmd::ERASE_ROW_TO_END => Message::AnsiEditor(AnsiEditorMessage::EraseRowToEnd),
-    area_cmd::ERASE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::EraseColumn),
-    area_cmd::ERASE_COLUMN_TO_START => Message::AnsiEditor(AnsiEditorMessage::EraseColumnToStart),
-    area_cmd::ERASE_COLUMN_TO_END => Message::AnsiEditor(AnsiEditorMessage::EraseColumnToEnd),
-    area_cmd::SCROLL_UP => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaUp),
-    area_cmd::SCROLL_DOWN => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaDown),
-    area_cmd::SCROLL_LEFT => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaLeft),
-    area_cmd::SCROLL_RIGHT => Message::AnsiEditor(AnsiEditorMessage::ScrollAreaRight),
+    area_cmd::JUSTIFY_LINE_LEFT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineLeft)),
+    area_cmd::JUSTIFY_LINE_CENTER => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineCenter)),
+    area_cmd::JUSTIFY_LINE_RIGHT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineRight)),
+    area_cmd::INSERT_ROW => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertRow)),
+    area_cmd::DELETE_ROW => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteRow)),
+    area_cmd::INSERT_COLUMN => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertColumn)),
+    area_cmd::DELETE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteColumn)),
+    area_cmd::ERASE_ROW => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRow)),
+    area_cmd::ERASE_ROW_TO_START => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToStart)),
+    area_cmd::ERASE_ROW_TO_END => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToEnd)),
+    area_cmd::ERASE_COLUMN => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumn)),
+    area_cmd::ERASE_COLUMN_TO_START => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToStart)),
+    area_cmd::ERASE_COLUMN_TO_END => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToEnd)),
+    area_cmd::SCROLL_UP => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaUp)),
+    area_cmd::SCROLL_DOWN => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaDown)),
+    area_cmd::SCROLL_LEFT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaLeft)),
+    area_cmd::SCROLL_RIGHT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight)),
 });
 
 impl Default for EditMode {
@@ -256,61 +255,9 @@ pub enum Message {
     Cut,
     Copy,
     Paste,
-    PasteAsNewImage,
-    PasteAsBrush,
     SelectAll,
     Deselect,
-    InverseSelection,
     DeleteSelection,
-
-    // Edit - Transform
-    FlipX,
-    FlipY,
-    Crop,
-    JustifyCenter,
-    JustifyLeft,
-    JustifyRight,
-
-    // Edit - Document
-    ToggleMirrorMode,
-    ToggleLGAFont,
-    ToggleAspectRatio,
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Selection
-    // ═══════════════════════════════════════════════════════════════════════════
-    // (handled by SelectAll, Deselect, InverseSelection above)
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Colors
-    // ═══════════════════════════════════════════════════════════════════════════
-    SwitchIceMode(icy_engine::IceMode),
-    EditPalette,
-    NextFgColor,
-    PrevFgColor,
-    NextBgColor,
-    PrevBgColor,
-    PickAttributeUnderCaret,
-    ToggleColor,
-    SwitchToDefaultColor,
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Fonts
-    // ═══════════════════════════════════════════════════════════════════════════
-    SwitchFontSlot(usize),
-    OpenFontSelector,
-    OpenFontSelectorForSlot(usize),
-    FontSelector(crate::ui::editor::ansi::FontSelectorMessage),
-    ApplyFontSelection(crate::ui::editor::ansi::FontSelectorResult),
-    OpenFontSlotManager,
-    FontSlotManager(crate::ui::editor::ansi::FontSlotManagerMessage),
-    ApplyFontSlotChange(crate::ui::editor::ansi::FontSlotManagerResult),
-    /// TDF/Figlet font selector for font tool
-    OpenTdfFontSelector,
-    TdfFontSelector(crate::ui::editor::ansi::TdfFontSelectorMessage),
-    AddFonts,
-    OpenFontManager,
-    OpenFontDirectory,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // View operations
@@ -319,41 +266,11 @@ pub enum Message {
     ZoomOut,
     ZoomReset,
     SetZoom(f32),
-    ToggleFitWidth,
-    SetGuide(i32, i32),
-    ClearGuide,
-    ToggleGuides,
-    SetRaster(i32, i32),
-    ClearRaster,
-    ToggleRaster,
-    ToggleLayerBorders,
-    ToggleLineNumbers,
-    ToggleLeftPanel,
-    ToggleRightPanel,
     ToggleFullscreen,
-    /// Show the reference image dialog
-    ShowReferenceImageDialog,
-    /// Apply reference image settings from dialog
-    ApplyReferenceImage(std::path::PathBuf, f32), // (path, alpha)
-    /// Clear the reference image
-    ClearReferenceImage,
-    /// Toggle reference image visibility
-    ToggleReferenceImage,
-    /// Reference image dialog messages
-    ReferenceImageDialog(ReferenceImageDialogMessage),
-
-    // Palette Editor Dialog
-    PaletteEditor(PaletteEditorMessage),
-    PaletteEditorApplied(icy_engine::Palette),
 
     // New File Dialog
     NewFileDialog(crate::ui::dialog::new_file::NewFileMessage),
     NewFileCreated(crate::ui::dialog::new_file::FileTemplate, i32, i32),
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Plugins
-    // ═══════════════════════════════════════════════════════════════════════════
-    RunPlugin(usize),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Help
@@ -380,37 +297,10 @@ pub enum Message {
     // Animation Editor messages
     AnimationEditor(AnimationEditorMessage),
 
-    // Font Size Dialog (used by BitFont Editor)
-    FontSizeDialog(crate::ui::editor::bitfont::FontSizeDialogMessage),
-    FontSizeApply(i32, i32),
-
-    // Font Import Dialog
-    ShowImportFontDialog,
-    FontImport(crate::ui::dialog::font_import::FontImportMessage),
-    FontImported(icy_engine::BitFont),
-
-    // Font Export Dialog
-    ShowExportFontDialog,
-    FontExport(crate::ui::dialog::font_export::FontExportMessage),
-    FontExported,
-
-    // Animation Export Dialog
-    ShowAnimationExportDialog,
-    AnimationExport(crate::ui::editor::animation::AnimationExportMessage),
-
-    // Edit Layer Dialog
-    ShowEditLayerDialog(usize),
-    EditLayerDialog(crate::ui::editor::ansi::EditLayerDialogMessage),
-    ApplyEditLayer(crate::ui::editor::ansi::EditLayerResult),
-
     // File Settings Dialog
     ShowFileSettingsDialog,
     FileSettingsDialog(crate::ui::editor::ansi::FileSettingsDialogMessage),
     ApplyFileSettings(crate::ui::editor::ansi::FileSettingsResult),
-
-    // Internal
-    Tick,
-    AnimationTick,
 
     // Toast notifications
     ShowToast(Toast),
@@ -499,12 +389,6 @@ pub struct MainWindow {
     /// Menu bar state (tracks expanded menus)
     menu_state: MenuBarState,
 
-    /// Show left panel (tools, colors)
-    show_left_panel: bool,
-
-    /// Show right panel (layers, minimap)
-    show_right_panel: bool,
-
     /// Fullscreen mode toggle
     is_fullscreen: bool,
 
@@ -525,9 +409,6 @@ pub struct MainWindow {
 
     /// Cached title string for Window trait (updated when file changes)
     pub title: String,
-
-    /// Double-click detector for font slot buttons in status bar
-    slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
 
     /// Bumps on every UI update (used to cache expensive view-derived data)
     ui_revision: Cell<u64>,
@@ -611,8 +492,6 @@ impl MainWindow {
             options,
             font_library,
             menu_state: MenuBarState::new(),
-            show_left_panel: true,
-            show_right_panel: true,
             is_fullscreen: false,
             dialogs,
             commands: MainWindowCommands::new(),
@@ -620,7 +499,6 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
-            slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             ui_revision: Cell::new(0),
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
@@ -804,8 +682,6 @@ impl MainWindow {
             options,
             font_library,
             menu_state: MenuBarState::new(),
-            show_left_panel: true,
-            show_right_panel: true,
             is_fullscreen: false,
             dialogs,
             commands: MainWindowCommands::new(),
@@ -813,7 +689,6 @@ impl MainWindow {
             close_after_save: false,
             pending_open_path: None,
             title: String::new(),
-            slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             ui_revision: Cell::new(0),
             status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
@@ -994,7 +869,6 @@ impl MainWindow {
                 self.dialogs.pop();
                 Task::none()
             }
-            Message::PaletteEditor(_) => Task::none(),
             Message::SaveFile => self.save_file(),
             Message::SaveFileAs => self.save_file_as(),
             Message::FileSaved(path) => self.file_saved(path),
@@ -1145,10 +1019,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::ToggleRightPanel => {
-                self.show_right_panel = !self.show_right_panel;
-                Task::none()
-            }
             Message::SwitchMode(mode) => {
                 self.mode_state = match mode {
                     EditMode::Ansi => ModeState::Ansi(AnsiEditorMainArea::new(self.options.clone(), self.font_library.clone())),
@@ -1159,59 +1029,75 @@ impl MainWindow {
                 Task::none()
             }
             Message::BitFontEditor(msg) => {
-                // Intercept ShowFontSizeDialog to push onto dialog stack
-                if matches!(msg, BitFontEditorMessage::ShowFontSizeDialog) {
-                    if let ModeState::BitFont(editor) = &self.mode_state {
-                        let (width, height) = editor.font_size();
-                        self.dialogs.push(crate::ui::editor::bitfont::FontSizeDialog::new(width, height));
-                    }
+                // FontImported is handled specially to switch to BitFont editor
+                if let BitFontEditorMessage::FontImported(font) = msg {
+                    let mut editor = BitFontEditor::new();
+                    editor.state = icy_engine_edit::bitfont::BitFontEditState::from_font(font);
+                    editor.invalidate_caches();
+                    self.mode_state = ModeState::BitFont(editor);
+                    self.mark_saved();
                     return Task::none();
                 }
 
                 if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    editor.update(msg).map(Message::BitFontEditor)
+                    editor.update(msg, &mut self.dialogs).map(Message::BitFontEditor)
                 } else {
                     Task::none()
                 }
             }
-            // Font Size Dialog messages are routed through DialogStack::update above
-            Message::FontSizeDialog(_) => Task::none(),
-            Message::FontSizeApply(width, height) => {
-                if let ModeState::BitFont(editor) = &mut self.mode_state {
-                    let _ = editor.resize_font(width, height);
-                    editor.invalidate_caches();
-                }
-                Task::none()
-            }
             Message::CharFontEditor(msg) => {
                 if let ModeState::CharFont(editor) = &mut self.mode_state {
-                    editor.update(msg).map(Message::CharFontEditor)
+                    editor.update(msg, &mut self.dialogs).map(Message::CharFontEditor)
                 } else {
                     Task::none()
                 }
             }
             Message::AnsiEditor(msg) => {
-                // Intercept EditLayer to show the dialog
-                if let AnsiEditorMessage::EditLayer(layer_index) = msg {
-                    return self.update(Message::ShowEditLayerDialog(layer_index));
+                // Handle color messages for CharFont editor
+                if let ModeState::CharFont(editor) = &mut self.mode_state {
+                    match msg {
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor) => {
+                            editor.next_fg_color();
+                            return Task::none();
+                        }
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor) => {
+                            editor.prev_fg_color();
+                            return Task::none();
+                        }
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor) => {
+                            editor.next_bg_color();
+                            return Task::none();
+                        }
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor) => {
+                            editor.prev_bg_color();
+                            return Task::none();
+                        }
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor) => {
+                            editor.toggle_color();
+                            return Task::none();
+                        }
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor) => {
+                            editor.switch_to_default_color();
+                            return Task::none();
+                        }
+                        _ => {}
+                    }
                 }
-                // Intercept OpenFontSelector from TopToolbar to open TDF font dialog
-                if let AnsiEditorMessage::TopToolbar(TopToolbarMessage::OpenFontSelector) = msg {
-                    return self.update(Message::OpenTdfFontSelector);
-                }
+                // Forward all messages to the editor
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.update(msg).map(Message::AnsiEditor)
+                    editor.update(msg, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor)
                 } else {
                     Task::none()
                 }
             }
             Message::AnimationEditor(msg) => {
                 if let ModeState::Animation(editor) = &mut self.mode_state {
-                    editor.update(msg).map(Message::AnimationEditor)
+                    editor.update(msg, &mut self.dialogs).map(Message::AnimationEditor)
                 } else {
                     Task::none()
                 }
             }
+            /*
             Message::Tick => {
                 self.update_title();
                 Task::none()
@@ -1241,7 +1127,7 @@ impl MainWindow {
                     }
                     ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Tick).map(Message::AnimationEditor),
                 }
-            }
+            }*/
 
             // Toast notifications
             Message::ShowToast(toast) => {
@@ -1251,92 +1137,6 @@ impl MainWindow {
             Message::CloseToast(index) => {
                 if index < self.toasts.len() {
                     self.toasts.remove(index);
-                }
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Font Import Dialog
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ShowImportFontDialog => {
-                self.dialogs.push(crate::ui::dialog::font_import::FontImportDialog::new());
-                Task::none()
-            }
-            // FontImport messages are routed through DialogStack::update above
-            Message::FontImport(_) => Task::none(),
-            Message::FontImported(font) => {
-                // Switch to BitFont editor with the imported font
-                let mut editor = BitFontEditor::new();
-                editor.state = icy_engine_edit::bitfont::BitFontEditState::from_font(font);
-                editor.invalidate_caches();
-                self.mode_state = ModeState::BitFont(editor);
-                self.mark_saved();
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Font Export Dialog
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ShowExportFontDialog => {
-                if let ModeState::BitFont(editor) = &self.mode_state {
-                    let font = editor.state.build_font();
-                    self.dialogs.push(crate::ui::dialog::font_export::FontExportDialog::new(font));
-                }
-                Task::none()
-            }
-            // FontExport messages are routed through DialogStack::update above
-            Message::FontExport(_) => Task::none(),
-            Message::FontExported => {
-                // Font was successfully exported - nothing special to do
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Animation Export Dialog
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ShowAnimationExportDialog => {
-                if let ModeState::Animation(editor) = &self.mode_state {
-                    let animator = editor.animator.clone();
-                    let source_path = editor.file_path().cloned();
-                    self.dialogs
-                        .push(crate::ui::editor::animation::AnimationExportDialog::new(animator, source_path.as_ref()));
-                }
-                Task::none()
-            }
-            // AnimationExport messages are routed through DialogStack::update above
-            Message::AnimationExport(_) => Task::none(),
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Edit Layer Dialog
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ShowEditLayerDialog(layer_index) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let data = editor.with_edit_state_readonly(|state| {
-                        let buffer = state.get_buffer();
-                        buffer.layers.get(layer_index).map(|layer| (layer.properties.clone(), layer.size()))
-                    });
-                    if let Some((properties, size)) = data {
-                        self.dialogs.push(crate::ui::editor::ansi::EditLayerDialog::new(layer_index, properties, size));
-                    }
-                }
-                Task::none()
-            }
-            // EditLayerDialog messages are routed through DialogStack::update above
-            Message::EditLayerDialog(_) => Task::none(),
-            Message::ApplyEditLayer(result) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        // Update properties
-                        if let Err(e) = state.update_layer_properties(result.layer_index, result.properties) {
-                            log::error!("Failed to update layer properties: {}", e);
-                        }
-                        // Update size if changed
-                        if let Some(new_size) = result.new_size {
-                            if let Err(e) = state.set_layer_size(result.layer_index, (new_size.width, new_size.height)) {
-                                log::error!("Failed to resize layer: {}", e);
-                            }
-                        }
-                    });
                 }
                 Task::none()
             }
@@ -1403,39 +1203,7 @@ impl MainWindow {
             }
             Message::ExportFile => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    // Get buffer type and screen
-                    let buffer_type = editor.with_edit_state(|state| state.get_buffer().buffer_type);
-                    let screen = editor.screen().clone();
-
-                    // Get export path from file path or default
-                    let export_path = self
-                        .file_path()
-                        .and_then(|p| p.file_stem())
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("export")
-                        .to_string();
-
-                    // Get export directory from file path or documents
-                    let export_dir = self
-                        .file_path()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-                    self.dialogs.push(
-                        export_dialog_with_defaults_from_msg(
-                            export_path,
-                            buffer_type,
-                            screen,
-                            move || export_dir.clone(),
-                            (Message::ExportDialog, |msg: &Message| match msg {
-                                Message::ExportDialog(inner) => Some(inner),
-                                _ => None,
-                            }),
-                        )
-                        .on_confirm(Message::ExportComplete)
-                        .on_cancel(|| Message::CloseDialog),
-                    );
+                    return editor.update(AnsiEditorMessage::ExportFile, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
                 }
                 Task::none()
             }
@@ -1473,402 +1241,28 @@ impl MainWindow {
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Edit operations (TODO: implement)
-            // ═══════════════════════════════════════════════════════════════════
-            Message::PasteAsNewImage => Task::none(),
-            Message::PasteAsBrush => Task::none(),
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Selection operations (TODO: implement)
+            // Selection operations (delegated to AnsiEditor)
             // ═══════════════════════════════════════════════════════════════════
             Message::Deselect => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let _ = editor.with_edit_state(|state| state.clear_selection());
-                    editor.refresh_selection_display();
-                }
-                Task::none()
-            }
-            Message::InverseSelection => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let _ = editor.with_edit_state(|state| state.inverse_selection());
-                    editor.refresh_selection_display();
+                    return editor.update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Deselect), &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
                 }
                 Task::none()
             }
             Message::DeleteSelection => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| {
-                        if state.is_something_selected() {
-                            state.erase_selection()
-                        } else {
-                            state.delete_key()
-                        }
-                    });
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                    editor.refresh_selection_display();
+                    return editor.update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteSelection), &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
                 }
                 Task::none()
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // Transform operations
-            // ═══════════════════════════════════════════════════════════════════
-            Message::FlipX => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.flip_x());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::FlipY => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.flip_y());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::Crop => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.crop());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::JustifyCenter => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.center());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::JustifyLeft => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.justify_left());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-            Message::JustifyRight => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let result = editor.with_edit_state(|state| state.justify_right());
-                    if result.is_ok() {
-                        editor.mark_modified();
-                    }
-                }
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Document settings (TODO: implement)
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ToggleMirrorMode => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.toggle_mirror_mode();
-                }
-                Task::none()
-            }
-            Message::ToggleLGAFont => Task::none(),
-            Message::ToggleAspectRatio => Task::none(),
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Color operations (TODO: implement)
-            // ═══════════════════════════════════════════════════════════════════
-            Message::SwitchIceMode(_mode) => Task::none(),
-            Message::EditPalette => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let pal = editor.with_edit_state(|state| state.get_buffer().palette.clone());
-                    self.dialogs.push(PaletteEditorDialog::new(pal));
-                }
-                Task::none()
-            }
-            Message::NextFgColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let palette_len = state.get_buffer().palette.len() as u32;
-                        let fg = state.get_caret().attribute.foreground();
-                        state.set_caret_foreground((fg + 1) % palette_len);
-                    });
-                }
-                Task::none()
-            }
-            Message::PrevFgColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let palette_len = state.get_buffer().palette.len() as u32;
-                        let fg = state.get_caret().attribute.foreground();
-                        state.set_caret_foreground((fg + palette_len - 1) % palette_len);
-                    });
-                }
-                Task::none()
-            }
-            Message::NextBgColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let palette_len = state.get_buffer().palette.len() as u32;
-                        let bg = state.get_caret().attribute.background();
-                        state.set_caret_background((bg + 1) % palette_len);
-                    });
-                }
-                Task::none()
-            }
-            Message::PrevBgColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let palette_len = state.get_buffer().palette.len() as u32;
-                        let bg = state.get_caret().attribute.background();
-                        state.set_caret_background((bg + palette_len - 1) % palette_len);
-                    });
-                }
-                Task::none()
-            }
-            Message::PickAttributeUnderCaret => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let pos = state.get_caret().position();
-                        let attr = if let Some(layer) = state.get_cur_layer() {
-                            layer.char_at(pos + layer.offset()).attribute
-                        } else {
-                            state.get_buffer().char_at(pos).attribute
-                        };
-                        state.set_caret_foreground(attr.foreground());
-                        state.set_caret_background(attr.background());
-                    });
-                }
-                Task::none()
-            }
-            Message::ToggleColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        state.swap_caret_colors();
-                    });
-                }
-                Task::none()
-            }
-            Message::SwitchToDefaultColor => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        state.reset_caret_colors();
-                    });
-                }
-                Task::none()
-            }
-
-            Message::PaletteEditorApplied(pal) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let res = editor.with_edit_state(|state| state.switch_to_palette(pal.clone()));
-                    if res.is_ok() {
-                        editor.mark_modified();
-                        editor.sync_ui();
-                    }
-                }
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Font operations
-            // ═══════════════════════════════════════════════════════════════════
-            Message::SwitchFontSlot(slot) => {
-                // Check for double-click - if so, switch slot AND open font selector
-                let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
-
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let dialog = editor.with_edit_state(|state| {
-                        // Always switch to the clicked slot
-                        state.set_caret_font_page(slot);
-
-                        // On double-click, also open the font selector
-                        is_double_click.then(|| crate::ui::editor::ansi::FontSelectorDialog::new(state))
-                    });
-                    if let Some(dialog) = dialog {
-                        self.dialogs.push(dialog);
-                    }
-                }
-                Task::none()
-            }
-            Message::OpenFontSelector => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    // In Unrestricted mode, open the Font Slot Manager instead.
-                    let is_unrestricted = editor.with_edit_state_readonly(|state| state.get_format_mode() == icy_engine_edit::FormatMode::Unrestricted);
-
-                    if is_unrestricted {
-                        let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSlotManagerDialog::new);
-                        self.dialogs.push(dialog);
-                    } else {
-                        let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSelectorDialog::new);
-                        self.dialogs.push(dialog);
-                    }
-                }
-                Task::none()
-            }
-            Message::OpenFontSelectorForSlot(slot) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let dialog = editor.with_edit_state(|state| {
-                        // Set caret to the target slot before opening font selector
-                        state.set_caret_font_page(slot);
-                        crate::ui::editor::ansi::FontSelectorDialog::new(state)
-                    });
-                    self.dialogs.push(dialog);
-                }
-                Task::none()
-            }
-            // FontSelector messages are routed through DialogStack::update above
-            Message::FontSelector(_) => Task::none(),
-            Message::ApplyFontSelection(result) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        // Use EditState methods for proper undo support!
-                        // DO NOT use buffer.set_font() directly - it bypasses undo.
-                        match result {
-                            crate::ui::editor::ansi::FontSelectorResult::SingleFont(font) => {
-                                // For single font mode, set the font in slot 0
-                                if let Err(e) = state.set_font_in_slot(0, font) {
-                                    log::error!("Failed to set font: {}", e);
-                                }
-                            }
-                            crate::ui::editor::ansi::FontSelectorResult::FontForSlot { slot, font } => {
-                                // Set font in the specified slot
-                                if let Err(e) = state.set_font_in_slot(slot, font) {
-                                    log::error!("Failed to set font in slot {}: {}", slot, e);
-                                }
-                            }
-                        }
-                    });
-                }
-                Task::none()
-            }
-            Message::OpenFontSlotManager => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let dialog = editor.with_edit_state_readonly(crate::ui::editor::ansi::FontSlotManagerDialog::new);
-                    self.dialogs.push(dialog);
-                }
-                Task::none()
-            }
-            // FontSlotManager messages are routed through DialogStack::update above
-            Message::FontSlotManager(_) => Task::none(),
-            Message::ApplyFontSlotChange(result) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| match result {
-                        crate::ui::editor::ansi::FontSlotManagerResult::SelectSlot { slot } => {
-                            // Set the selected slot as the active font page
-                            state.set_caret_font_page(slot);
-                        }
-                        crate::ui::editor::ansi::FontSlotManagerResult::ResetSlot { slot, font } => {
-                            if let Some(font) = font {
-                                if let Err(e) = state.set_font_in_slot(slot, font) {
-                                    log::error!("Failed to reset font in slot {}: {}", slot, e);
-                                }
-                            }
-                        }
-                        crate::ui::editor::ansi::FontSlotManagerResult::RemoveSlot { slot } => {
-                            if let Err(e) = state.remove_font(slot) {
-                                log::error!("Failed to remove font slot {}: {}", slot, e);
-                            }
-                        }
-                        crate::ui::editor::ansi::FontSlotManagerResult::OpenFontSelector { slot: _ } => {
-                            // This should not happen - OpenFontSelectorForSlot is used instead
-                        }
-                        crate::ui::editor::ansi::FontSlotManagerResult::AddSlot { slot, font } => {
-                            if let Err(e) = state.set_font_in_slot(slot, font) {
-                                log::error!("Failed to add font slot {}: {}", slot, e);
-                            }
-                        }
-                    });
-                }
-                Task::none()
-            }
-            Message::AddFonts => Task::none(),
-            Message::OpenFontManager => Task::none(),
-            Message::OpenFontDirectory => Task::none(),
-            Message::OpenTdfFontSelector => {
-                // Open the TDF font selector dialog
-                if let ModeState::Ansi(editor) = &self.mode_state {
-                    let dialog = crate::ui::editor::ansi::TdfFontSelectorDialog::new(editor.font_tool_library());
-                    self.dialogs.push(dialog);
-                }
-                Task::none()
-            }
-            Message::TdfFontSelector(msg) => {
-                // Handle confirm message to apply selected font
-                if let crate::ui::editor::ansi::TdfFontSelectorMessage::Confirm(font_idx) = msg {
-                    if let ModeState::Ansi(editor) = &mut self.mode_state {
-                        editor.font_tool_select_font(font_idx);
-                    }
-                }
-                // Other messages (filter, select, generate preview, etc.) are handled by the dialog
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // View operations (TODO: implement for some)
+            // View operations
             // ═══════════════════════════════════════════════════════════════════
             Message::SetZoom(zoom) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.set_zoom(zoom);
                 }
-                Task::none()
-            }
-            Message::SetGuide(x, y) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::SetGuide(x, y)).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ClearGuide => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ClearGuide).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::SetRaster(x, y) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::SetRaster(x, y)).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ClearRaster => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ClearRaster).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ToggleGuides => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ToggleGuide).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ToggleRaster => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ToggleRaster).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ToggleLayerBorders => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ToggleLayerBorders).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ToggleLineNumbers => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor.update(AnsiEditorMessage::ToggleLineNumbers).map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
-            Message::ToggleLeftPanel => {
-                self.show_left_panel = !self.show_left_panel;
                 Task::none()
             }
             Message::ToggleFullscreen => {
@@ -1879,50 +1273,6 @@ impl MainWindow {
                     iced::window::Mode::Windowed
                 };
                 iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Reference Image
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ShowReferenceImageDialog => {
-                use crate::ui::editor::ansi::ReferenceImageDialog;
-                self.dialogs.push(ReferenceImageDialog::new());
-                Task::none()
-            }
-            Message::ReferenceImageDialog(msg) => self.dialogs.update(&Message::ReferenceImageDialog(msg.clone())).unwrap_or_else(Task::none),
-            Message::ApplyReferenceImage(path, alpha) => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.set_reference_image(Some(path.clone()), alpha);
-                }
-                Task::none()
-            }
-            Message::ClearReferenceImage => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.set_reference_image(None, 0.0);
-                }
-                Task::none()
-            }
-            Message::ToggleReferenceImage => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.toggle_reference_image();
-                }
-                Task::none()
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Plugin operations
-            // ═══════════════════════════════════════════════════════════════════
-            Message::RunPlugin(id) => {
-                if let Some(plugin) = self.plugins.get(id) {
-                    if let ModeState::Ansi(editor) = &mut self.mode_state {
-                        let plugin = plugin.clone();
-                        if let Err(err) = plugin.run_plugin(editor.screen()) {
-                            self.dialogs
-                                .push(error_dialog(fl!("error-plugin-title"), format!("{}", err), |_| Message::CloseDialog));
-                        }
-                    }
-                }
-                Task::none()
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -1960,11 +1310,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // Other view operations
-            // ═══════════════════════════════════════════════════════════════════
-            Message::ToggleFitWidth => Task::none(),
         }
     }
 
@@ -2069,10 +1414,10 @@ impl MainWindow {
             let slot1_style = if slots.current_slot == 1 { active_slot_style } else { inactive_slot_style };
 
             let slot0_btn =
-                mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6])).on_press(Message::SwitchFontSlot(0));
+                mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6])).on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(0)));
 
             let slot1_btn =
-                mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6])).on_press(Message::SwitchFontSlot(1));
+                mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6])).on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
 
             row![text(format!("{}  ", info.right)).size(12), slot0_btn, Space::new().width(4.0), slot1_btn,]
                 .align_y(Alignment::Center)
@@ -2093,7 +1438,7 @@ impl MainWindow {
                     })
                     .padding([2, 6]),
             )
-            .on_press(Message::OpenFontSelector);
+            .on_press(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector));
 
             row![text(format!("{}  ", info.right)).size(12), font_display,]
                 .align_y(Alignment::Center)

@@ -24,6 +24,12 @@ use parking_lot::Mutex;
 
 use crate::fl;
 use crate::ui::Message;
+use super::AnimationEditorMessage;
+
+/// Helper function to wrap export dialog messages
+fn msg(m: AnimationExportMessage) -> Message {
+    Message::AnimationEditor(AnimationEditorMessage::ExportDialog(m))
+}
 
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,7 +198,7 @@ impl AnimationExportDialog {
                 // Use tokio sleep which doesn't block the UI thread
                 tokio::time::sleep(Duration::from_millis(50)).await;
             },
-            |_| Message::AnimationExport(AnimationExportMessage::Tick),
+            |_| msg(AnimationExportMessage::Tick),
         )
     }
 }
@@ -204,7 +210,7 @@ impl Dialog<Message> for AnimationExportDialog {
         // Format selection
         let format_label = left_label_small(fl!("animation-export-format"));
         let format_picker = pick_list(ExportFormat::all(), Some(self.format), |f| {
-            Message::AnimationExport(AnimationExportMessage::SetFormat(f))
+            msg(AnimationExportMessage::SetFormat(f))
         })
         .width(Length::Fill);
 
@@ -215,11 +221,11 @@ impl Dialog<Message> for AnimationExportDialog {
         let path_text = self.export_path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
 
         let path_input = text_input(&fl!("animation-export-no-path"), &path_text)
-            .on_input(|s| Message::AnimationExport(AnimationExportMessage::SetPath(s)))
+            .on_input(|s| msg(AnimationExportMessage::SetPath(s)))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill);
 
-        let browse_btn = browse_button(Message::AnimationExport(AnimationExportMessage::Browse));
+        let browse_btn = browse_button(msg(AnimationExportMessage::Browse));
 
         let file_row = row![path_label, path_input, browse_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
@@ -266,13 +272,13 @@ impl Dialog<Message> for AnimationExportDialog {
         let buttons = if is_exporting {
             // Show cancel button during export
             button_row(vec![
-                secondary_button(format!("{}", ButtonType::Cancel), Some(Message::AnimationExport(AnimationExportMessage::Close))).into(),
+                secondary_button(format!("{}", ButtonType::Cancel), Some(msg(AnimationExportMessage::Close))).into(),
             ])
         } else {
             let can_export = self.export_path.is_some() && frame_count > 0;
             button_row(vec![
-                secondary_button(format!("{}", ButtonType::Cancel), Some(Message::AnimationExport(AnimationExportMessage::Close))).into(),
-                primary_button(fl!("menu-export"), can_export.then(|| Message::AnimationExport(AnimationExportMessage::Export))).into(),
+                secondary_button(format!("{}", ButtonType::Cancel), Some(msg(AnimationExportMessage::Close))).into(),
+                primary_button(fl!("menu-export"), can_export.then(|| msg(AnimationExportMessage::Export))).into(),
             ])
         };
 
@@ -287,8 +293,8 @@ impl Dialog<Message> for AnimationExportDialog {
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        if let Message::AnimationExport(msg) = message {
-            match msg {
+        if let Message::AnimationEditor(AnimationEditorMessage::ExportDialog(dialog_msg)) = message {
+            match dialog_msg {
                 AnimationExportMessage::SetFormat(format) => {
                     if !self.is_exporting() {
                         self.format = *format;
@@ -333,7 +339,7 @@ impl Dialog<Message> for AnimationExportDialog {
 
                             dialog.save_file().await.map(|f| f.path().to_path_buf())
                         },
-                        |result| Message::AnimationExport(AnimationExportMessage::PathSelected(result)),
+                        |result| msg(AnimationExportMessage::PathSelected(result)),
                     );
 
                     Some(DialogAction::RunTask(task))
