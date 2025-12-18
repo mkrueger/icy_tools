@@ -211,6 +211,10 @@ pub struct MinimapProgram {
 pub struct MinimapState {
     /// Whether the left mouse button is currently pressed
     is_dragging: bool,
+    /// Last redraw timestamp for tracking animation frames
+    last_redraw: Option<std::time::Instant>,
+    /// Last pointer position (absolute) for continuous scroll during drag
+    last_pointer_position: Option<iced::Point>,
 }
 
 impl MinimapProgram {
@@ -388,20 +392,31 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
 
     fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<MinimapMessage>> {
         match event {
+            // Handle redraw requests for continuous drag scrolling
+            iced::Event::Window(iced::window::Event::RedrawRequested(now)) => {
+                if state.is_dragging {
+                    state.last_redraw = Some(*now);
+                    // Re-send scroll position based on last known pointer position
+                    if let Some(last_pos) = state.last_pointer_position {
+                        if let Some((norm_x, norm_y)) = self.calculate_normalized_position(last_pos, bounds) {
+                            return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
+                        }
+                    }
+                } else {
+                    state.last_redraw = None;
+                }
+            }
+
             // Handle mouse button press - start dragging
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 // Use position_in for initial click - must be inside bounds
                 if let Some(pos) = cursor.position_in(bounds) {
                     state.is_dragging = true;
-                    // Convert to absolute position for the helper
+                    state.last_redraw = None;
                     let absolute_pos = iced::Point::new(pos.x + bounds.x, pos.y + bounds.y);
+                    state.last_pointer_position = Some(absolute_pos);
                     if let Some((norm_x, norm_y)) = self.calculate_normalized_position(absolute_pos, bounds) {
-                        return Some(iced::widget::Action::publish(MinimapMessage::Click {
-                            norm_x,
-                            norm_y,
-                            pointer_x: pos.x,
-                            pointer_y: pos.y,
-                        }));
+                        return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                     }
                 }
             }
@@ -410,7 +425,8 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 if state.is_dragging {
                     state.is_dragging = false;
-                    return Some(iced::widget::Action::publish(MinimapMessage::DragEnd));
+                    state.last_redraw = None;
+                    state.last_pointer_position = None;
                 }
             }
 
@@ -419,15 +435,9 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
                 if state.is_dragging {
                     // Use cursor.position() for mouse capture effect - works even outside bounds
                     if let Some(pos) = cursor.position() {
-                        let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y;
+                        state.last_pointer_position = Some(pos);
                         if let Some((norm_x, norm_y)) = self.calculate_normalized_position(pos, bounds) {
-                            return Some(iced::widget::Action::publish(MinimapMessage::Drag {
-                                norm_x,
-                                norm_y,
-                                pointer_x: rel_x,
-                                pointer_y: rel_y,
-                            }));
+                            return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                         }
                     }
                 }

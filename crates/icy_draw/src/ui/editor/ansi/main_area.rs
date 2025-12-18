@@ -505,20 +505,8 @@ impl AnsiEditorMainArea {
                 match msg {
                     RightPanelMessage::Minimap(minimap_msg) => {
                         match minimap_msg {
-                            MinimapMessage::Click { norm_x, norm_y, .. } => {
+                            MinimapMessage::ScrollTo { norm_x, norm_y } => {
                                 self.core.scroll_canvas_to_normalized(norm_x, norm_y);
-                            }
-                            MinimapMessage::Drag {
-                                norm_x,
-                                norm_y,
-                                pointer_x,
-                                pointer_y,
-                            } => {
-                                // self.core.set_minimap_drag_pointer(Some((pointer_x, pointer_y)));
-                                self.core.scroll_canvas_to_normalized(norm_x, norm_y);
-                            }
-                            MinimapMessage::DragEnd => {
-                                //      self.core.set_minimap_drag_pointer(None);
                             }
                             MinimapMessage::Scroll(_dy) => {
                                 // handled internally by the minimap view
@@ -549,22 +537,6 @@ impl AnsiEditorMainArea {
                 }
 
                 task
-            }
-            AnsiEditorMessage::MinimapAutoscrollTick(_delta) => {
-                let Some((pointer_x, pointer_y)) = self.core.minimap_drag_pointer() else {
-                    return Task::none();
-                };
-
-                let render_cache = &self.core.canvas.terminal.render_cache;
-                if let Some((norm_x, norm_y)) =
-                    self.right_panel
-                        .minimap
-                        .handle_click(iced::Size::new(0.0, 0.0), iced::Point::new(pointer_x, pointer_y), Some(render_cache))
-                {
-                    self.core.scroll_canvas_to_normalized(norm_x, norm_y);
-                }
-
-                Task::none()
             }
 
             // Core messages - forward to AnsiEditorCore

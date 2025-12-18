@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use iced::widget::shader;
-use iced::{Element, Length, Size, Task};
+use iced::{Element, Length, Task};
 use icy_engine::Screen;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
 use icy_engine_gui::{CheckerboardColors, SharedCachedTile, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
@@ -43,18 +43,9 @@ pub struct TextureSliceData {
 /// Messages for the minimap view
 #[derive(Clone, Debug)]
 pub enum MinimapMessage {
-    /// Click on minimap to scroll to position (normalized 0.0-1.0 in texture space)
-    ///
-    /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds.
-    Click { norm_x: f32, norm_y: f32, pointer_x: f32, pointer_y: f32 },
-    /// Drag on minimap to scroll (normalized 0.0-1.0 in texture space)
-    ///
-    /// `pointer_x/pointer_y` are pointer coordinates relative to the minimap bounds and may be
-    /// outside (negative / beyond width/height) to support drag-out autoscroll.
-    Drag { norm_x: f32, norm_y: f32, pointer_x: f32, pointer_y: f32 },
-    /// Drag ended (mouse released).
-    DragEnd,
-    /// Scroll the minimap vertically
+    /// Scroll to normalized position (0.0-1.0) - sent during click and drag
+    ScrollTo { norm_x: f32, norm_y: f32 },
+    /// Scroll the minimap itself vertically (mouse wheel)
     Scroll(f32),
     /// Ensure viewport is visible in minimap (auto-scroll to follow terminal)
     EnsureViewportVisible(f32, f32),
@@ -90,11 +81,6 @@ impl MinimapView {
             scroll_position: RefCell::new(0.0),
             checkerboard_colors: CheckerboardColors::default(),
         }
-    }
-
-    /// Set the checkerboard colors for transparency rendering
-    pub fn set_checkerboard_colors(&mut self, colors: CheckerboardColors) {
-        self.checkerboard_colors = colors;
     }
 
     pub fn available_size(&self) -> (f32, f32) {
@@ -176,15 +162,10 @@ impl MinimapView {
     /// Update the minimap view state
     pub fn update(&mut self, message: MinimapMessage) -> Task<MinimapMessage> {
         match message {
-            MinimapMessage::Click { .. } => {
+            MinimapMessage::ScrollTo { .. } => {
                 // Parent handles the actual scrolling
                 Task::none()
             }
-            MinimapMessage::Drag { .. } => {
-                // Parent handles the actual scrolling
-                Task::none()
-            }
-            MinimapMessage::DragEnd => Task::none(),
             MinimapMessage::Scroll(delta) => {
                 let mut pos = self.scroll_position.borrow_mut();
                 *pos = (*pos + delta).clamp(0.0, 1.0);
@@ -473,67 +454,5 @@ impl MinimapView {
         };
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()
-    }
-
-    /// Handle mouse press for click-to-navigate functionality
-    /// Returns the normalized position (0.0-1.0) in full buffer space
-    /// This position represents where the CENTER of the viewport should be
-    pub fn handle_click(&self, _bounds: Size, position: iced::Point, render_cache: Option<&SharedRenderCacheHandle>) -> Option<(f32, f32)> {
-        // Get tile info from shared cache
-        let (render_width, total_rendered_height, full_w, full_h) = if let Some(cache_handle) = render_cache {
-            let shared_cache = cache_handle.read();
-            if shared_cache.tile_count() == 0 || shared_cache.content_width == 0 {
-                return None;
-            }
-            (
-                shared_cache.content_width,
-                shared_cache.content_height as u32,
-                shared_cache.content_width,
-                shared_cache.content_height as u32,
-            )
-        } else {
-            return None;
-        };
-
-        if render_width == 0 || total_rendered_height == 0 || full_h == 0 || full_w == 0 {
-            return None;
-        }
-
-        let shared = self.shared_state.lock();
-        let avail_width = shared.available_width;
-        let avail_height = shared.available_height;
-        drop(shared);
-
-        if avail_width <= 0.0 || avail_height <= 0.0 {
-            return None;
-        }
-
-        // Scale factor (minimap fills available width)
-        let scale = avail_width / full_w as f32;
-        let scaled_content_height = total_rendered_height as f32 * scale;
-
-        // Calculate visible UV range (same logic as in shader prepare())
-        let visible_uv_height = (avail_height / scaled_content_height).min(1.0);
-        let max_scroll_uv = (1.0 - visible_uv_height).max(0.0);
-        let scroll_uv = *self.scroll_position.borrow() * max_scroll_uv;
-
-        // Pointer can be outside when drag-out autoscroll is active; clamp to edge.
-        let local_x = position.x.clamp(0.0, avail_width);
-        let local_y = position.y.clamp(0.0, avail_height);
-
-        // Convert screen position to texture UV
-        // screen_uv_y is 0-1 in the visible area
-        let screen_uv_y = local_y / avail_height;
-        // texture_uv_y is the absolute position in the rendered texture (0-1)
-        let texture_uv_y = scroll_uv + screen_uv_y * visible_uv_height;
-
-        // Convert texture UV to full buffer coordinates
-        let render_ratio = total_rendered_height as f32 / full_h as f32;
-        let buffer_y = texture_uv_y / render_ratio;
-
-        let norm_x = local_x / avail_width;
-        let norm_y = buffer_y.clamp(0.0, 1.0);
-
-        Some((norm_x, norm_y))
     }
 }

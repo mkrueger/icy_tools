@@ -194,8 +194,6 @@ pub enum AnsiEditorMessage {
     ColorSwitcher(ColorSwitcherMessage),
     /// Palette grid messages
     PaletteGrid(PaletteGridMessage),
-    /// Periodic tick while minimap drag is active
-    MinimapAutoscrollTick(f32),
 
     // --- Tool Switching ---
     SelectTool(usize),

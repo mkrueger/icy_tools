@@ -39,10 +39,6 @@ pub(crate) struct AnsiEditorCore {
     /// Whether the document is modified
     pub is_modified: bool,
 
-    /// While Some, the minimap is being dragged. Stores last pointer position relative to minimap
-    /// bounds (may be outside) to simulate egui-style continuous drag updates.
-    minimap_drag_pointer: Option<(f32, f32)>,
-
     // === Selection/Drag State ===
     /// Whether mouse is currently dragging
     pub is_dragging: bool,
@@ -329,18 +325,6 @@ impl AnsiEditorCore {
         self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>()
     }
 
-    pub(super) fn is_minimap_drag_active(&self) -> bool {
-        self.minimap_drag_pointer.is_some()
-    }
-
-    pub(super) fn minimap_drag_pointer(&self) -> Option<(f32, f32)> {
-        self.minimap_drag_pointer
-    }
-
-    pub(super) fn set_minimap_drag_pointer(&mut self, pointer: Option<(f32, f32)>) {
-        self.minimap_drag_pointer = pointer;
-    }
-
     pub(super) fn view_paste_sidebar_controls<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
         self.paste_handler.view_paste_sidebar_controls()
     }
@@ -599,7 +583,6 @@ impl AnsiEditorCore {
             options,
             is_modified: false,
 
-            minimap_drag_pointer: None,
             // Selection/drag state
             is_dragging: false,
             mouse_capture_tool: None,
@@ -1992,7 +1975,6 @@ impl AnsiEditorCore {
             // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
             iced::Event::Window(iced::window::Event::Unfocused) | iced::Event::Mouse(iced::mouse::Event::CursorLeft) => {
                 let _ = self.cancel_shape_drag();
-                self.minimap_drag_pointer = None;
                 // Also reset mouse capture state in case drag ended outside the widget
                 if self.mouse_capture_tool.is_some() {
                     self.current_tool.cancel_capture();
@@ -2002,10 +1984,8 @@ impl AnsiEditorCore {
                 self.mouse_capture_tool = None;
                 true
             }
-            // Ensure minimap drag/autoscroll stops even if the release happens outside the minimap widget.
+            // Reset mouse capture state - the release may have happened outside the terminal widget
             iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
-                self.minimap_drag_pointer = None;
-                // Reset mouse capture state - the release may have happened outside the terminal widget
                 if self.mouse_capture_tool.is_some() {
                     self.current_tool.cancel_capture();
                     self.paste_handler.cancel_capture();
