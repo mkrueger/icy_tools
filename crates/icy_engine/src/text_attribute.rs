@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::IceMode;
 
 /// Attribute flags for text styling (bold, italic, blink, etc.)
@@ -25,7 +27,7 @@ pub mod attribute {
 /// Color representation for text foreground/background.
 /// Each color can be a palette index, extended (xterm 256) index, RGB, or fully transparent.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttributeColor {
     /// Standard palette index (0-15 typically, but can be higher for custom palettes)
     Palette(u8),
@@ -105,7 +107,7 @@ impl AttributeColor {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct TextAttribute {
     font_page: u8,
     foreground_color: AttributeColor,

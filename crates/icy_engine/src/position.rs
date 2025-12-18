@@ -4,7 +4,9 @@ use std::{
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
-#[derive(Copy, Clone, Debug, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Copy, Clone, Debug, Eq, Serialize, Deserialize)]
 pub struct Position {
     pub x: i32,
     pub y: i32,

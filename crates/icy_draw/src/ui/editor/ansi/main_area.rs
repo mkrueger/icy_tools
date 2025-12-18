@@ -116,6 +116,26 @@ impl AnsiEditorMainArea {
         self.core.undo_stack_len()
     }
 
+    /// Get a clone of the undo stack for serialization
+    pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
+        self.core.get_undo_stack()
+    }
+
+    /// Restore undo stack from serialization
+    pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
+        self.core.set_undo_stack(stack);
+    }
+
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<icy_engine_edit::AnsiEditorSessionState> {
+        self.core.get_session_data()
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, state: icy_engine_edit::AnsiEditorSessionState) {
+        self.core.set_session_data(state);
+    }
+
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
         self.core.save(path)
     }

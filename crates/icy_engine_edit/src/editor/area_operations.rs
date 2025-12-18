@@ -9,7 +9,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
-use super::EditState;
+use super::{EditState, undo_operation::EditorUndoOp};
 
 fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
     if let Some(selection) = sel {
@@ -50,8 +50,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -90,8 +95,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -128,8 +138,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -163,8 +178,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -198,8 +218,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -241,8 +266,12 @@ impl EditState {
             }
             self.get_buffer_mut().layers.push(new_layer);
         }
-        let op = super::undo_operations::Crop::new(old_size, rect.size(), old_layers);
-        self.push_plain_undo(Box::new(op))
+        let op = EditorUndoOp::Crop {
+            orig_size: old_size,
+            size: rect.size(),
+            layers: old_layers,
+        };
+        self.push_plain_undo(op)
     }
 
     /// Returns the delete selection of this [`EditState`].
@@ -271,8 +300,13 @@ impl EditState {
             }
         }
         let new_layer = self.screen.buffer.layers.get_mut(layer_idx).unwrap().clone();
-        let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-        let _ = self.push_plain_undo(Box::new(op));
+        let op = EditorUndoOp::LayerChange {
+            layer: self.get_current_layer()?,
+            pos: area.start,
+            old_chars: old_layer,
+            new_chars: new_layer,
+        };
+        let _ = self.push_plain_undo(op);
         self.clear_selection()
     }
 
@@ -285,8 +319,10 @@ impl EditState {
                 return Ok(());
             }
             if area.width() >= layer.width() {
-                let op = super::undo_operations::UndoScrollWholeLayerUp::new(self.get_current_layer()?);
-                return self.push_undo_action(Box::new(op));
+                let op = EditorUndoOp::ScrollWholeLayerUp {
+                    layer: self.get_current_layer()?,
+                };
+                return self.push_undo_action(op);
             }
 
             let old_layer = crate::layer_from_area(layer, area);
@@ -310,8 +346,13 @@ impl EditState {
                 line_above.chars.splice(area.left() as usize..area.left() as usize, chars);
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -326,8 +367,10 @@ impl EditState {
                 return Ok(());
             }
             if area.width() >= layer.width() {
-                let op = super::undo_operations::UndoScrollWholeLayerDown::new(self.get_current_layer()?);
-                return self.push_undo_action(Box::new(op));
+                let op = EditorUndoOp::ScrollWholeLayerDown {
+                    layer: self.get_current_layer()?,
+                };
+                return self.push_undo_action(op);
             }
             let old_layer = crate::layer_from_area(layer, area);
 
@@ -350,8 +393,13 @@ impl EditState {
                 line_below.chars.splice(area.left() as usize..area.left() as usize, chars);
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -375,8 +423,13 @@ impl EditState {
                 line.chars.insert(area.right() as usize - 1, ch);
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -400,8 +453,13 @@ impl EditState {
                 line.chars.insert(area.left() as usize, ch);
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(self.get_current_layer()?, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: self.get_current_layer()?,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }

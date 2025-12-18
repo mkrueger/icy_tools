@@ -12,7 +12,8 @@
 pub mod brushes;
 mod clipboard;
 mod edit_state;
-mod undo_operations;
+pub mod session_state;
+mod undo_operation;
 mod undo_stack;
 
 /// Maximum allowed font height (rows per glyph)
@@ -29,5 +30,6 @@ pub const MIN_FONT_WIDTH: i32 = 1;
 
 pub use clipboard::*;
 pub use edit_state::*;
-pub use undo_operations::*;
-pub use undo_stack::*;
+pub use session_state::{BitFontFocusedPanelState, BitFontSessionState};
+pub use undo_operation::{BitFontOperationType, BitFontUndoOp};
+pub use undo_stack::{BitFontUndoStack, BitFontUndoState};

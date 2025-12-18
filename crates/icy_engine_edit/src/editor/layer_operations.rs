@@ -5,7 +5,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, Layer, Position, Properties, Result, Role, Size, TextPane};
 
-use super::{EditState, undo_operations};
+use super::{EditState, undo_operation::EditorUndoOp};
 
 impl EditState {
     pub fn add_new_layer(&mut self, layer: usize) -> Result<()> {
@@ -13,8 +13,11 @@ impl EditState {
         let mut new_layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-name"), size);
         new_layer.properties.has_alpha_channel = true;
         let idx = (layer + 1).clamp(0, self.screen.buffer.layers.len());
-        let op = undo_operations::AddLayer::new(idx, new_layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::AddLayer {
+            index: idx,
+            layer: Some(new_layer),
+        };
+        self.push_undo_action(op)?;
         self.screen.current_layer = idx;
         Ok(())
     }
@@ -23,16 +26,19 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
-        let op = undo_operations::RemoveLayer::new(layer);
-        self.push_undo_action(Box::new(op))
+        let op = EditorUndoOp::RemoveLayer {
+            layer_index: layer,
+            layer: None,
+        };
+        self.push_undo_action(op)
     }
 
     pub fn raise_layer(&mut self, layer: usize) -> Result<()> {
         if layer + 1 >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
-        let op = undo_operations::RaiseLayer::new(layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::RaiseLayer { layer_index: layer };
+        self.push_undo_action(op)?;
         self.screen.current_layer = layer + 1;
         Ok(())
     }
@@ -45,8 +51,8 @@ impl EditState {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
 
-        let op = undo_operations::LowerLayer::new(layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::LowerLayer { layer_index: layer };
+        self.push_undo_action(op)?;
         self.screen.current_layer = layer - 1;
         Ok(())
     }
@@ -57,8 +63,11 @@ impl EditState {
         }
         let mut new_layer = self.screen.buffer.layers[layer].clone();
         new_layer.properties.title = fl!(crate::LANGUAGE_LOADER, "layer-duplicate-name", name = new_layer.properties.title);
-        let op = undo_operations::AddLayer::new(layer + 1, new_layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::AddLayer {
+            index: layer + 1,
+            layer: Some(new_layer),
+        };
+        self.push_undo_action(op)?;
         self.screen.current_layer = layer + 1;
         Ok(())
     }
@@ -67,8 +76,11 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
-        let op = undo_operations::ClearLayer::new(layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::ClearLayer {
+            layer_index: layer,
+            layer: Vec::new(),
+        };
+        self.push_undo_action(op)?;
         // Keep the cleared layer selected.
         self.screen.current_layer = layer;
         self.clamp_current_layer();
@@ -118,8 +130,10 @@ impl EditState {
     }
 
     pub fn add_floating_layer(&mut self) -> Result<()> {
-        let op = undo_operations::AddFloatingLayer::new(self.get_current_layer()?);
-        self.push_undo_action(Box::new(op))
+        let op = EditorUndoOp::AddFloatingLayer {
+            current_layer: self.get_current_layer()?,
+        };
+        self.push_undo_action(op)
     }
 
     /// .
@@ -191,8 +205,12 @@ impl EditState {
             }
         }
 
-        let op = undo_operations::MergeLayerDown::new(layer, merge_layer);
-        self.push_undo_action(Box::new(op))?;
+        let op = EditorUndoOp::MergeLayerDown {
+            index: layer,
+            merged_layer: Some(merge_layer),
+            orig_layers: None,
+        };
+        self.push_undo_action(op)?;
         self.clamp_current_layer();
         Ok(())
     }
@@ -201,8 +219,8 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
         }
-        let op = undo_operations::ToggleLayerVisibility::new(layer);
-        self.push_undo_action(Box::new(op))
+        let op = EditorUndoOp::ToggleLayerVisibility { index: layer };
+        self.push_undo_action(op)
     }
 
     pub fn move_layer(&mut self, to: Position) -> Result<()> {
@@ -211,8 +229,12 @@ impl EditState {
             return Ok(());
         };
         cur_layer.set_preview_offset(None);
-        let op = undo_operations::MoveLayer::new(i, cur_layer.offset(), to);
-        self.push_undo_action(Box::new(op))
+        let op = EditorUndoOp::MoveLayer {
+            index: i,
+            from: cur_layer.offset(),
+            to,
+        };
+        self.push_undo_action(op)
     }
 
     /// Set preview offset on the current layer (for drag preview without undo)
@@ -226,8 +248,13 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
         }
-        let op = undo_operations::SetLayerSize::new(layer, size.into());
-        self.push_undo_action(Box::new(op))
+        let new_size = size.into();
+        let op = EditorUndoOp::SetLayerSize {
+            index: layer,
+            from: new_size,
+            to: new_size,
+        };
+        self.push_undo_action(op)
     }
 
     /// Returns the stamp layer down of this [`EditState`].
@@ -266,8 +293,13 @@ impl EditState {
         }
 
         let new_layer = crate::layer_from_area(base_layer, area);
-        let op = super::undo_operations::UndoLayerChange::new(layer_idx - 1, area.start, old_layer, new_layer);
-        self.push_plain_undo(Box::new(op))
+        let op = EditorUndoOp::LayerChange {
+            layer: layer_idx - 1,
+            pos: area.start,
+            old_chars: old_layer,
+            new_chars: new_layer,
+        };
+        self.push_plain_undo(op)
     }
 
     pub fn rotate_layer(&mut self) -> Result<()> {
@@ -282,8 +314,12 @@ impl EditState {
                     new_layer.set_char((x, y), ch);
                 }
             }
-            let op = super::undo_operations::RotateLayer::new(current_layer, layer.lines.clone(), new_layer.lines.clone());
-            self.push_undo_action(Box::new(op))
+            let op = EditorUndoOp::RotateLayer {
+                layer: current_layer,
+                old_lines: layer.lines.clone(),
+                new_lines: new_layer.lines.clone(),
+            };
+            self.push_undo_action(op)
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", current_layer)))
         }
@@ -318,8 +354,13 @@ impl EditState {
                 }
             }
             let new_layer = crate::layer_from_area(layer, area);
-            let op = super::undo_operations::UndoLayerChange::new(layer_idx, area.start, old_layer, new_layer);
-            self.push_plain_undo(Box::new(op))
+            let op = EditorUndoOp::LayerChange {
+                layer: layer_idx,
+                pos: area.start,
+                old_chars: old_layer,
+                new_chars: new_layer,
+            };
+            self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -335,8 +376,12 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn update_layer_properties(&mut self, layer: usize, new_properties: Properties) -> Result<()> {
-        let op = undo_operations::UpdateLayerProperties::new(layer, self.screen.buffer.layers[layer].properties.clone(), new_properties);
-        self.push_undo_action(Box::new(op))
+        let op = EditorUndoOp::UpdateLayerProperties {
+            index: layer,
+            old_properties: self.screen.buffer.layers[layer].properties.clone(),
+            new_properties,
+        };
+        self.push_undo_action(op)
     }
 }
 

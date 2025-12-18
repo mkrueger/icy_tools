@@ -26,7 +26,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, Position, Result, TextPane};
 
-use super::{EditState, undo_operations::UndoSetChar};
+use super::{EditState, EditorUndoOp};
 
 impl EditState {
     /// Type a single character at the caret position.
@@ -75,12 +75,12 @@ impl EditState {
                 let old = chars_to_shift[i];
                 let new = chars_to_shift[i - 1];
 
-                self.push_undo_action(Box::new(UndoSetChar {
+                self.push_undo_action(EditorUndoOp::SetChar {
                     pos: cur_pos,
                     layer: layer_idx,
                     old,
                     new,
-                }))?;
+                })?;
             }
         }
 
@@ -88,12 +88,12 @@ impl EditState {
         let new_char = AttributedChar::new(char_code, caret_attr.clone());
 
         // Set the character
-        self.push_undo_action(Box::new(UndoSetChar {
+        self.push_undo_action(EditorUndoOp::SetChar {
             pos,
             layer: layer_idx,
             old: old_char,
             new: new_char,
-        }))?;
+        })?;
 
         // Handle mirror mode: set same character at mirrored position
         if mirror_mode {
@@ -104,12 +104,12 @@ impl EditState {
                 let mirror_old = self.get_cur_layer().map(|l| l.char_at(mirror_pos)).unwrap_or_default();
                 // For now, use the same character (no flip_code_x)
                 // TODO: Implement character mirroring table for box drawing chars
-                self.push_undo_action(Box::new(UndoSetChar {
+                self.push_undo_action(EditorUndoOp::SetChar {
                     pos: mirror_pos,
                     layer: layer_idx,
                     old: mirror_old,
                     new: new_char,
-                }))?;
+                })?;
             }
         }
 
@@ -169,33 +169,33 @@ impl EditState {
                 let old = chars_to_shift[i];
                 let new = chars_to_shift[i + 1];
 
-                self.push_undo_action(Box::new(UndoSetChar {
+                self.push_undo_action(EditorUndoOp::SetChar {
                     pos: cur_pos,
                     layer: layer_idx,
                     old,
                     new,
-                }))?;
+                })?;
             }
 
             // Clear the last character
             let last_pos = Position::new(layer_width - 1, pos.y);
             let last_char = chars_to_shift[chars_to_shift.len() - 1];
             let empty_char = AttributedChar::new(' ', caret_attr);
-            self.push_undo_action(Box::new(UndoSetChar {
+            self.push_undo_action(EditorUndoOp::SetChar {
                 pos: last_pos,
                 layer: layer_idx,
                 old: last_char,
                 new: empty_char,
-            }))?;
+            })?;
         } else {
             // Overwrite mode: just clear the character
             let empty_char = AttributedChar::new(' ', caret_attr);
-            self.push_undo_action(Box::new(UndoSetChar {
+            self.push_undo_action(EditorUndoOp::SetChar {
                 pos: Position::new(new_x, pos.y),
                 layer: layer_idx,
                 old: delete_pos_char,
                 new: empty_char,
-            }))?;
+            })?;
         }
 
         Ok(())
@@ -236,24 +236,24 @@ impl EditState {
             let old = chars_to_shift[i];
             let new = chars_to_shift[i + 1];
 
-            self.push_undo_action(Box::new(UndoSetChar {
+            self.push_undo_action(EditorUndoOp::SetChar {
                 pos: cur_pos,
                 layer: layer_idx,
                 old,
                 new,
-            }))?;
+            })?;
         }
 
         // Clear the last character
         let last_pos = Position::new(layer_width - 1, pos.y);
         let last_char = chars_to_shift[chars_to_shift.len() - 1];
         let empty_char = AttributedChar::new(' ', caret_attr);
-        self.push_undo_action(Box::new(UndoSetChar {
+        self.push_undo_action(EditorUndoOp::SetChar {
             pos: last_pos,
             layer: layer_idx,
             old: last_char,
             new: empty_char,
-        }))?;
+        })?;
 
         Ok(())
     }

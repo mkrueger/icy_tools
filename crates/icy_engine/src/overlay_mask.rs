@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{Position, Rectangle, Size};
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OverlayMask {
     size: Size,
     lines: Vec<Vec<bool>>,

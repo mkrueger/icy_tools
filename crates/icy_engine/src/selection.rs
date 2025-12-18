@@ -1,19 +1,21 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{Position, Rectangle, Size};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Shape {
     Rectangle,
     Lines,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AddType {
     Default,
     Add,
     Subtract,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Selection {
     pub anchor: Position,
     pub lead: Position,

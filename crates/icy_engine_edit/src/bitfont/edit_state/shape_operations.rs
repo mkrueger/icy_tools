@@ -6,7 +6,7 @@
 //! - Flood fill
 
 use crate::Result;
-use crate::bitfont::{EditGlyph, brushes};
+use crate::bitfont::{BitFontUndoOp, brushes};
 
 use super::BitFontEditState;
 
@@ -35,7 +35,7 @@ impl BitFontEditState {
             }
         }
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 
@@ -64,7 +64,7 @@ impl BitFontEditState {
             }
         }
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 
@@ -113,7 +113,7 @@ impl BitFontEditState {
             }
         }
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 }

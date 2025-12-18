@@ -13,7 +13,7 @@
 
 use icy_engine::{Position, Selection, Shape};
 
-use crate::bitfont::SelectionChange;
+use crate::bitfont::BitFontUndoOp;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -70,16 +70,16 @@ impl BitFontEditState {
         self.charset_selection = None;
 
         // Push undo operation
-        let op = Box::new(SelectionChange::new(
-            old_edit,
-            self.edit_selection,
-            old_charset,
-            None,
-            old_cursor,
-            self.cursor_pos,
+        let op = BitFontUndoOp::SelectionChange {
+            old_edit_selection: old_edit,
+            new_edit_selection: self.edit_selection,
+            old_charset_selection: old_charset,
+            new_charset_selection: None,
+            old_cursor_pos: old_cursor,
+            new_cursor_pos: self.cursor_pos,
             old_charset_cursor,
-            self.charset_cursor,
-        ));
+            new_charset_cursor: self.charset_cursor,
+        };
         let _ = self.push_plain_undo(op);
     }
 
@@ -93,16 +93,16 @@ impl BitFontEditState {
 
             // Only push undo if selection actually changed
             if old_edit.map(|s| s.lead) != self.edit_selection.map(|s| s.lead) {
-                let op = Box::new(SelectionChange::new(
-                    old_edit,
-                    self.edit_selection,
-                    self.charset_selection,
-                    self.charset_selection,
-                    self.cursor_pos,
-                    self.cursor_pos,
-                    self.charset_cursor,
-                    self.charset_cursor,
-                ));
+                let op = BitFontUndoOp::SelectionChange {
+                    old_edit_selection: old_edit,
+                    new_edit_selection: self.edit_selection,
+                    old_charset_selection: self.charset_selection,
+                    new_charset_selection: self.charset_selection,
+                    old_cursor_pos: self.cursor_pos,
+                    new_cursor_pos: self.cursor_pos,
+                    old_charset_cursor: self.charset_cursor,
+                    new_charset_cursor: self.charset_cursor,
+                };
                 let _ = self.push_plain_undo(op);
             }
         }
@@ -138,16 +138,16 @@ impl BitFontEditState {
         self.edit_selection = Some(new_sel);
 
         // Push single undo operation for cursor move + selection extend
-        let op = Box::new(SelectionChange::new(
-            old_edit,
-            self.edit_selection,
-            self.charset_selection,
-            self.charset_selection,
-            old_cursor,
-            self.cursor_pos,
-            self.charset_cursor,
-            self.charset_cursor,
-        ));
+        let op = BitFontUndoOp::SelectionChange {
+            old_edit_selection: old_edit,
+            new_edit_selection: self.edit_selection,
+            old_charset_selection: self.charset_selection,
+            new_charset_selection: self.charset_selection,
+            old_cursor_pos: old_cursor,
+            new_cursor_pos: self.cursor_pos,
+            old_charset_cursor: self.charset_cursor,
+            new_charset_cursor: self.charset_cursor,
+        };
         let _ = self.push_plain_undo(op);
     }
 
@@ -158,16 +158,16 @@ impl BitFontEditState {
 
             self.edit_selection = None;
 
-            let op = Box::new(SelectionChange::new(
-                old_edit,
-                None,
-                self.charset_selection,
-                self.charset_selection,
-                self.cursor_pos,
-                self.cursor_pos,
-                self.charset_cursor,
-                self.charset_cursor,
-            ));
+            let op = BitFontUndoOp::SelectionChange {
+                old_edit_selection: old_edit,
+                new_edit_selection: None,
+                old_charset_selection: self.charset_selection,
+                new_charset_selection: self.charset_selection,
+                old_cursor_pos: self.cursor_pos,
+                new_cursor_pos: self.cursor_pos,
+                old_charset_cursor: self.charset_cursor,
+                new_charset_cursor: self.charset_cursor,
+            };
             let _ = self.push_plain_undo(op);
         }
     }
@@ -211,16 +211,16 @@ impl BitFontEditState {
         self.edit_selection = None;
 
         // Push undo operation
-        let op = Box::new(SelectionChange::new(
-            old_edit,
-            None,
-            old_charset,
-            new_charset,
-            old_cursor,
-            self.cursor_pos,
+        let op = BitFontUndoOp::SelectionChange {
+            old_edit_selection: old_edit,
+            new_edit_selection: None,
+            old_charset_selection: old_charset,
+            new_charset_selection: new_charset,
+            old_cursor_pos: old_cursor,
+            new_cursor_pos: self.cursor_pos,
             old_charset_cursor,
-            self.charset_cursor,
-        ));
+            new_charset_cursor: self.charset_cursor,
+        };
         let _ = self.push_plain_undo(op);
     }
 
@@ -243,16 +243,16 @@ impl BitFontEditState {
 
             // Only push undo if selection actually changed
             if old_lead != lead {
-                let op = Box::new(SelectionChange::new(
-                    self.edit_selection,
-                    self.edit_selection,
-                    old_charset,
-                    new_charset,
-                    self.cursor_pos,
-                    self.cursor_pos,
+                let op = BitFontUndoOp::SelectionChange {
+                    old_edit_selection: self.edit_selection,
+                    new_edit_selection: self.edit_selection,
+                    old_charset_selection: old_charset,
+                    new_charset_selection: new_charset,
+                    old_cursor_pos: self.cursor_pos,
+                    new_cursor_pos: self.cursor_pos,
                     old_charset_cursor,
-                    self.charset_cursor,
-                ));
+                    new_charset_cursor: self.charset_cursor,
+                };
                 let _ = self.push_plain_undo(op);
             }
         }
@@ -293,16 +293,16 @@ impl BitFontEditState {
         self.charset_selection = Some((anchor, lead, is_rectangle));
 
         // Push undo operation WITHOUT executing redo (state already changed)
-        let op = Box::new(SelectionChange::new(
-            self.edit_selection,
-            self.edit_selection,
-            old_charset,
-            self.charset_selection,
-            self.cursor_pos,
-            self.cursor_pos,
+        let op = BitFontUndoOp::SelectionChange {
+            old_edit_selection: self.edit_selection,
+            new_edit_selection: self.edit_selection,
+            old_charset_selection: old_charset,
+            new_charset_selection: self.charset_selection,
+            old_cursor_pos: self.cursor_pos,
+            new_cursor_pos: self.cursor_pos,
             old_charset_cursor,
-            self.charset_cursor,
-        ));
+            new_charset_cursor: self.charset_cursor,
+        };
         let _result = self.push_plain_undo(op);
     }
 
@@ -313,16 +313,16 @@ impl BitFontEditState {
 
             self.charset_selection = None;
 
-            let op = Box::new(SelectionChange::new(
-                self.edit_selection,
-                self.edit_selection,
-                old_charset,
-                None,
-                self.cursor_pos,
-                self.cursor_pos,
-                self.charset_cursor,
-                self.charset_cursor,
-            ));
+            let op = BitFontUndoOp::SelectionChange {
+                old_edit_selection: self.edit_selection,
+                new_edit_selection: self.edit_selection,
+                old_charset_selection: old_charset,
+                new_charset_selection: None,
+                old_cursor_pos: self.cursor_pos,
+                new_cursor_pos: self.cursor_pos,
+                old_charset_cursor: self.charset_cursor,
+                new_charset_cursor: self.charset_cursor,
+            };
             let _ = self.push_plain_undo(op);
         }
     }

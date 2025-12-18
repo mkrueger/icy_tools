@@ -137,15 +137,18 @@ impl From<Color> for [f32; 3] {
 
 use crate::{FileFormat, formats::PaletteFormat};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
     pub title: String,
     pub description: String,
     pub author: String,
     colors: Vec<Color>,
 
+    #[serde(skip)]
     old_checksum: usize,
+    #[serde(skip)]
     checksum: u32,
+    #[serde(skip)]
     palette_cache_rgba: Vec<u32>,
 }
 

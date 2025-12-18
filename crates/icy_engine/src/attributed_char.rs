@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::AttributeColor;
 
 use super::TextAttribute;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct AttributedChar {
     pub ch: char,
     pub attribute: TextAttribute,

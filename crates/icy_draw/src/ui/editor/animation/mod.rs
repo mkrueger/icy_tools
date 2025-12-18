@@ -357,6 +357,25 @@ impl AnimationEditor {
         self.undo_stack.len()
     }
 
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<crate::session::AnimationSessionState> {
+        Some(crate::session::AnimationSessionState {
+            version: 1,
+            undo_stack: self.undo_stack.clone(),
+            current_frame: self.playback.current_frame,
+            playback_position: 0.0, // TODO: track actual playback position
+            is_playing: self.playback.is_playing,
+            script_scroll_offset: 0.0, // TODO: track scroll position
+        })
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, state: crate::session::AnimationSessionState) {
+        self.undo_stack = state.undo_stack;
+        self.playback.current_frame = state.current_frame;
+        self.playback.is_playing = state.is_playing;
+    }
+
     /// Get bytes for autosave (returns the Lua script as bytes)
     pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
         Ok(self.get_script().into_bytes())

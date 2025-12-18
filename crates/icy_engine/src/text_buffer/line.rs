@@ -1,5 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use super::AttributedChar;
-#[derive(Clone, Debug, Default, PartialEq)]
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     pub chars: Vec<AttributedChar>,
 }

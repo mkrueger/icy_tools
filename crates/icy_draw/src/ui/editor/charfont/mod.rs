@@ -441,6 +441,26 @@ impl CharFontEditor {
         self.undostack_len
     }
 
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<crate::session::CharFontSessionState> {
+        let ansi_state = self.ansi_core.get_session_data()?;
+        Some(crate::session::CharFontSessionState {
+            version: 1,
+            ansi_state,
+            selected_slot: self.charset_state.selected_char().map(|c| c as usize).unwrap_or(0),
+            preview_text: String::new(), // TODO: Implement preview text retrieval
+        })
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, state: crate::session::CharFontSessionState) {
+        self.ansi_core.set_session_data(state.ansi_state);
+        if let Some(ch) = char::from_u32(state.selected_slot as u32) {
+            self.charset_state.select_char(ch);
+        }
+        // Note: preview_text is not easily settable without more refactoring
+    }
+
     /// Save the document to the given path
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         self.save_old_selected_char();

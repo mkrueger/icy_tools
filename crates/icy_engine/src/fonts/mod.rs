@@ -2,6 +2,7 @@ use base64::{Engine, engine::general_purpose};
 #[allow(unused_imports)]
 use lazy_static::lazy_static;
 use libyaff::{GlyphDefinition, YaffFont};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{EngineError, FontError};
 use parking_lot::Mutex;
@@ -22,7 +23,7 @@ pub use sauce::{SAUCE_FONT_MAP, get_sauce_font_names, load_sauce_font};
 // Re-export byte data with short names for screen_modes compatibility
 pub use skypix::get_amiga_font_by_name;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum BitFontType {
     BuiltIn,
     Library,
@@ -38,6 +39,48 @@ pub struct BitFont {
     glyph_lookup: Arc<[Option<GlyphDefinition>; 256]>,
     pub path_opt: Option<PathBuf>,
     font_type: BitFontType,
+}
+
+/// Serializable representation of BitFont for serde
+#[derive(Serialize, Deserialize)]
+struct BitFontSerde {
+    name: String,
+    width: u8,
+    height: u8,
+    data: Vec<u8>,
+    font_type: BitFontType,
+    path: Option<PathBuf>,
+}
+
+impl Serialize for BitFont {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let size = self.size();
+        BitFontSerde {
+            name: self.name().to_string(),
+            width: size.width as u8,
+            height: size.height as u8,
+            data: self.convert_to_u8_data(),
+            font_type: self.font_type,
+            path: self.path_opt.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BitFont {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let serde_font = BitFontSerde::deserialize(deserializer)?;
+        let mut font = BitFont::create_8(&serde_font.name, serde_font.width, serde_font.height, &serde_font.data);
+        font.font_type = serde_font.font_type;
+        font.path_opt = serde_font.path;
+        Ok(font)
+    }
 }
 
 impl PartialEq for BitFont {

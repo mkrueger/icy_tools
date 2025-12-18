@@ -258,6 +258,7 @@ impl WindowManager {
                 mark_dirty: false,
                 position: None,
                 size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                session_data_path: None,
             }]
         } else {
             vec![]
@@ -320,6 +321,22 @@ impl WindowManager {
                 None
             };
 
+            // Get session data path for this window and save it
+            let session_data_path = if let Some(ref path) = file_path {
+                Some(self.session_manager.get_session_data_path(path))
+            } else {
+                Some(self.session_manager.get_untitled_session_data_path(window.id))
+            };
+
+            // Save session data to disk (bincode serialization)
+            if let Some(ref session_path) = session_data_path {
+                if let Some(session_data) = window.get_session_data() {
+                    if let Err(e) = self.session_manager.save_session_data(session_path, &session_data) {
+                        log::warn!("Failed to save session data for window {}: {}", window.id, e);
+                    }
+                }
+            }
+
             let geom = self.window_geometry.get(window_id).cloned().unwrap_or_default();
 
             window_states.push(WindowState {
@@ -329,6 +346,7 @@ impl WindowManager {
                 edit_mode: edit_mode_to_string(&window.mode()),
                 has_unsaved_changes: has_unsaved,
                 autosave_path,
+                session_data_path,
             });
         }
 
@@ -420,14 +438,24 @@ impl WindowManager {
                     );
 
                     // Create window with restore info (handles autosave + original path)
-                    MainWindow::new_restored(
+                    let mut w = MainWindow::new_restored(
                         find_next_window_id(&self.windows),
                         restore.original_path.clone(),
                         restore.load_path.clone(),
                         restore.mark_dirty,
                         self.options.clone(),
                         self.font_library.clone(),
-                    )
+                    );
+
+                    // Restore session data if available
+                    if let Some(ref session_path) = restore.session_data_path {
+                        if let Some(session_data) = self.session_manager.load_session_data(session_path) {
+                            w.set_session_data(session_data);
+                            log::debug!("Restored session data from {:?}", session_path);
+                        }
+                    }
+
+                    w
                 } else {
                     // Initialize with default geometry
                     self.window_geometry.insert(

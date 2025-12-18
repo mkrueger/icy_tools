@@ -1,9 +1,10 @@
 //! Undo operations for CharSet (TDF) editor
 
 use retrofont::{Glyph, tdf::TdfFont};
+use serde::{Deserialize, Serialize};
 
 /// Undo operation types for the CharSet editor
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum CharSetUndoOperation {
     /// Glyph was modified
     GlyphModified {

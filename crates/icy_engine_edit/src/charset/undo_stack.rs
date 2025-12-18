@@ -1,15 +1,18 @@
 //! Undo stack for CharSet (TDF) editor
 
+use serde::{Deserialize, Serialize};
+
 use super::CharSetUndoOperation;
 
 /// Undo stack for the CharSet editor
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct CharSetUndoStack {
     /// Undo operations
     undo_stack: Vec<CharSetUndoOperation>,
     /// Redo operations
     redo_stack: Vec<CharSetUndoOperation>,
     /// Whether currently in an atomic operation
+    #[serde(skip)]
     in_atomic: bool,
 }
 

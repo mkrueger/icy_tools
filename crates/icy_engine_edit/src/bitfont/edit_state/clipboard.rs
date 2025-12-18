@@ -5,7 +5,7 @@
 //! Clipboard format is custom BitFont data that preserves pixel data dimensions.
 
 use crate::Result;
-use crate::bitfont::EditGlyph;
+use crate::bitfont::BitFontUndoOp;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -110,13 +110,14 @@ impl BitFontEditState {
 
         if self.focused_panel == BitFontFocusedPanel::CharSet {
             // In CharSet mode: paste to all target chars at top-left (0, 0)
-            let mut guard = self.begin_atomic_undo("Paste");
+            let guard = self.begin_atomic_undo("Paste");
+            let base_count = guard.base_count();
 
             for ch in target_chars {
                 self.paste_data_at(ch, 0, 0, &clipboard_data.pixels)?;
             }
 
-            guard.end();
+            self.end_atomic_undo(base_count, "Paste".to_string(), crate::bitfont::BitFontOperationType::Unknown);
             Ok(())
         } else {
             // In EditGrid mode: paste at cursor position
@@ -164,7 +165,7 @@ impl BitFontEditState {
             }
         }
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 

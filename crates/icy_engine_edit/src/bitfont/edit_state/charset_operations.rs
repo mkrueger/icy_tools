@@ -10,7 +10,7 @@
 //! - Inverse (toggle all pixels)
 
 use crate::Result;
-use crate::bitfont::{FillSelection, InverseGlyph, InverseSelection};
+use crate::bitfont::BitFontUndoOp;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -30,10 +30,19 @@ impl BitFontEditState {
             let mut guard = self.begin_atomic_undo("Fill characters");
             for ch in target_chars {
                 let old_data = self.get_glyph_pixels(ch).clone();
-                let op = Box::new(FillSelection::new(ch, old_data, 0, 0, self.font_width - 1, self.font_height - 1, true));
+                let op = BitFontUndoOp::FillSelection {
+                    ch,
+                    old_data,
+                    x1: 0,
+                    y1: 0,
+                    x2: self.font_width - 1,
+                    y2: self.font_height - 1,
+                    value: true,
+                };
                 self.push_undo_action(op)?;
             }
-            guard.end();
+            self.end_atomic_undo(guard.base_count(), guard.description().to_string(), guard.operation_type());
+            guard.mark_ended();
             Ok(())
         } else {
             // In EditGrid mode, fill pixel selection for current char
@@ -42,7 +51,15 @@ impl BitFontEditState {
             let old_data = self.get_glyph_pixels(ch).clone();
             let (x1, y1) = (sel.anchor.x, sel.anchor.y);
             let (x2, y2) = (sel.lead.x, sel.lead.y);
-            let op = Box::new(FillSelection::new(ch, old_data, x1, y1, x2, y2, true));
+            let op = BitFontUndoOp::FillSelection {
+                ch,
+                old_data,
+                x1,
+                y1,
+                x2,
+                y2,
+                value: true,
+            };
             self.push_undo_action(op)
         }
     }
@@ -62,10 +79,19 @@ impl BitFontEditState {
             let mut guard = self.begin_atomic_undo("Erase characters");
             for ch in target_chars {
                 let old_data = self.get_glyph_pixels(ch).clone();
-                let op = Box::new(FillSelection::new(ch, old_data, 0, 0, self.font_width - 1, self.font_height - 1, false));
+                let op = BitFontUndoOp::FillSelection {
+                    ch,
+                    old_data,
+                    x1: 0,
+                    y1: 0,
+                    x2: self.font_width - 1,
+                    y2: self.font_height - 1,
+                    value: false,
+                };
                 self.push_undo_action(op)?;
             }
-            guard.end();
+            self.end_atomic_undo(guard.base_count(), guard.description().to_string(), guard.operation_type());
+            guard.mark_ended();
             Ok(())
         } else {
             // In EditGrid mode, erase pixel selection for current char
@@ -74,7 +100,15 @@ impl BitFontEditState {
             let old_data = self.get_glyph_pixels(ch).clone();
             let (x1, y1) = (sel.anchor.x, sel.anchor.y);
             let (x2, y2) = (sel.lead.x, sel.lead.y);
-            let op = Box::new(FillSelection::new(ch, old_data, x1, y1, x2, y2, false));
+            let op = BitFontUndoOp::FillSelection {
+                ch,
+                old_data,
+                x1,
+                y1,
+                x2,
+                y2,
+                value: false,
+            };
             self.push_undo_action(op)
         }
     }
@@ -93,10 +127,11 @@ impl BitFontEditState {
             // In CharSet mode, inverse entire glyphs for all target chars
             let mut guard = self.begin_atomic_undo("Inverse characters");
             for ch in target_chars {
-                let op = Box::new(InverseGlyph::new(ch));
+                let op = BitFontUndoOp::InverseGlyph { ch };
                 self.push_undo_action(op)?;
             }
-            guard.end();
+            self.end_atomic_undo(guard.base_count(), guard.description().to_string(), guard.operation_type());
+            guard.mark_ended();
             Ok(())
         } else {
             // In EditGrid mode, inverse pixel selection for current char
@@ -105,7 +140,7 @@ impl BitFontEditState {
             let old_data = self.get_glyph_pixels(ch).clone();
             let (x1, y1) = (sel.anchor.x, sel.anchor.y);
             let (x2, y2) = (sel.lead.x, sel.lead.y);
-            let op = Box::new(InverseSelection::new(ch, old_data, x1, y1, x2, y2));
+            let op = BitFontUndoOp::InverseSelection { ch, old_data, x1, y1, x2, y2 };
             self.push_undo_action(op)
         }
     }

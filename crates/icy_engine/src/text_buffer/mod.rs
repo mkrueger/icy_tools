@@ -2,6 +2,8 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Alignment;
 
+use serde::{Deserialize, Serialize};
+
 pub mod buffers_rendering;
 
 pub mod line;
@@ -21,7 +23,7 @@ use crate::{Color, HalfBlock, Position, Rectangle, TerminalState, TextAttribute,
 use super::{AttributedChar, BitFont, Palette, Size};
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum IceMode {
     Blink = 0,
     Ice = 1,
@@ -53,7 +55,7 @@ impl IceMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PaletteMode {
     RGB,
     Fixed16,
@@ -62,19 +64,19 @@ pub enum PaletteMode {
     Free16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TagPlacement {
     InText,
     WithGotoXY,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TagRole {
     Displaycode,
     Hyperlink,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tag {
     pub is_enabled: bool,
     pub preview: String,
@@ -82,11 +84,43 @@ pub struct Tag {
 
     pub position: Position,
     pub length: usize,
+    #[serde(with = "alignment_serde")]
     pub alignment: Alignment,
     pub tag_placement: TagPlacement,
     pub tag_role: TagRole,
 
     pub attribute: TextAttribute,
+}
+
+/// Custom serde implementation for std::fmt::Alignment
+mod alignment_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt::Alignment;
+
+    pub fn serialize<S>(alignment: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = match alignment {
+            Alignment::Left => "left",
+            Alignment::Right => "right",
+            Alignment::Center => "center",
+        };
+        s.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Alignment, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "left" => Ok(Alignment::Left),
+            "right" => Ok(Alignment::Right),
+            "center" => Ok(Alignment::Center),
+            _ => Ok(Alignment::Left),
+        }
+    }
 }
 
 impl Tag {

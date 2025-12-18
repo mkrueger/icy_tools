@@ -13,7 +13,7 @@
 use icy_engine::Selection;
 
 use crate::Result;
-use crate::bitfont::{ClearGlyph, EditGlyph, FlipGlyph, InverseGlyph, MoveGlyph};
+use crate::bitfont::BitFontUndoOp;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -32,7 +32,7 @@ impl BitFontEditState {
         let mut new_data = old_data.clone();
         new_data[y as usize][x as usize] = value;
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 
@@ -47,14 +47,14 @@ impl BitFontEditState {
         let mut new_data = old_data.clone();
         new_data[y as usize][x as usize] = !current;
 
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 
     /// Set glyph pixels (with undo)
     pub fn set_glyph_pixels(&mut self, ch: char, new_data: Vec<Vec<bool>>) -> Result<()> {
         let old_data = self.get_glyph_pixels(ch).clone();
-        let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+        let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
         self.push_undo_action(op)
     }
 
@@ -68,7 +68,7 @@ impl BitFontEditState {
     /// For context-sensitive clearing (respecting selection and focus), use `erase_selection()`.
     pub fn clear_glyph(&mut self, ch: char) -> Result<()> {
         let old_data = self.get_glyph_pixels(ch).clone();
-        let op = Box::new(ClearGlyph::new(ch, old_data));
+        let op = BitFontUndoOp::ClearGlyph { ch, old_data };
         self.push_undo_action(op)
     }
 
@@ -88,7 +88,14 @@ impl BitFontEditState {
         let (x1, y1) = (selection.anchor.x, selection.anchor.y);
         let (x2, y2) = (selection.lead.x, selection.lead.y);
 
-        let op = Box::new(FlipGlyph::new(ch, true, x1, y1, x2, y2));
+        let op = BitFontUndoOp::FlipGlyph {
+            ch,
+            horizontal: true,
+            x1,
+            y1,
+            x2,
+            y2,
+        };
         self.push_undo_action(op)
     }
 
@@ -104,7 +111,14 @@ impl BitFontEditState {
         let (x1, y1) = (selection.anchor.x, selection.anchor.y);
         let (x2, y2) = (selection.lead.x, selection.lead.y);
 
-        let op = Box::new(FlipGlyph::new(ch, false, x1, y1, x2, y2));
+        let op = BitFontUndoOp::FlipGlyph {
+            ch,
+            horizontal: false,
+            x1,
+            y1,
+            x2,
+            y2,
+        };
         self.push_undo_action(op)
     }
 
@@ -116,7 +130,7 @@ impl BitFontEditState {
     ///
     /// Low-level operation. For context-sensitive inverse, use `inverse_edit_selection()`.
     pub fn inverse_glyph(&mut self, ch: char) -> Result<()> {
-        let op = Box::new(InverseGlyph::new(ch));
+        let op = BitFontUndoOp::InverseGlyph { ch };
         self.push_undo_action(op)
     }
 
@@ -131,7 +145,7 @@ impl BitFontEditState {
     /// which wraps pixels around.
     pub fn move_glyph(&mut self, ch: char, dx: i32, dy: i32) -> Result<()> {
         let old_data = self.get_glyph_pixels(ch).clone();
-        let op = Box::new(MoveGlyph::new(ch, dx, dy, old_data));
+        let op = BitFontUndoOp::MoveGlyph { ch, dx, dy, old_data };
         self.push_undo_action(op)
     }
 
@@ -171,11 +185,12 @@ impl BitFontEditState {
             for ch in target_chars {
                 let old_data = self.get_glyph_pixels(ch).clone();
                 let new_data = self.slide_pixels_single(&old_data, &selection, dx, dy);
-                let op = Box::new(EditGlyph::new(ch, old_data, new_data));
+                let op = BitFontUndoOp::EditGlyph { ch, old_data, new_data };
                 self.push_undo_action(op)?;
             }
 
-            guard.end();
+            self.end_atomic_undo(guard.base_count(), guard.description().to_string(), guard.operation_type());
+            guard.mark_ended();
             Ok(())
         }
     }
@@ -278,11 +293,16 @@ impl BitFontEditState {
         let mut guard = self.begin_atomic_undo(description);
 
         for (i, &ch) in chars.iter().enumerate() {
-            let op = Box::new(EditGlyph::new(ch, old_data[i].clone(), new_data[i].clone()));
+            let op = BitFontUndoOp::EditGlyph {
+                ch,
+                old_data: old_data[i].clone(),
+                new_data: new_data[i].clone(),
+            };
             self.push_undo_action(op)?;
         }
 
-        guard.end();
+        self.end_atomic_undo(guard.base_count(), guard.description().to_string(), guard.operation_type());
+        guard.mark_ended();
         Ok(())
     }
 

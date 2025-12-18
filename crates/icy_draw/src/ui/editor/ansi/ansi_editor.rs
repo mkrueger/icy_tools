@@ -737,6 +737,101 @@ impl AnsiEditorCore {
         }
     }
 
+    /// Get a clone of the undo stack for serialization
+    pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            let stack = edit_state.get_undo_stack();
+            let locked = stack.lock().unwrap();
+            Some((*locked).clone())
+        } else {
+            None
+        }
+    }
+
+    /// Restore undo stack from serialization
+    pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            let undo_stack = edit_state.get_undo_stack();
+            let mut locked = undo_stack.lock().unwrap();
+            *locked = stack;
+        }
+    }
+
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<icy_engine_edit::AnsiEditorSessionState> {
+        let mut screen = self.screen.lock();
+        let edit_state = screen.as_any_mut().downcast_mut::<EditState>()?;
+
+        let undo_stack = {
+            let stack = edit_state.get_undo_stack();
+            let locked = stack.lock().unwrap();
+            (*locked).clone()
+        };
+
+        let buffer = edit_state.get_buffer();
+        let caret = edit_state.get_caret().clone();
+
+        // Get layer visibility
+        let layer_visibility: Vec<bool> = buffer.layers.iter().map(|l| l.is_visible()).collect();
+
+        Some(icy_engine_edit::AnsiEditorSessionState {
+            version: 1,
+            undo_stack,
+            caret_position: caret.position(),
+            caret_attribute: caret.attribute,
+            scroll_offset: (0.0, 0.0),    // TODO: Get from canvas
+            zoom_level: 1.0,              // TODO: Get from canvas
+            auto_zoom: true,              // TODO: Get from canvas
+            selected_tool: String::new(), // TODO: Get from tool panel
+            outline_style: edit_state.get_outline_style(),
+            mirror_mode: edit_state.get_mirror_mode(),
+            current_tag: edit_state.get_current_tag().unwrap_or(0),
+            layer_visibility,
+            selected_layer: edit_state.get_current_layer().unwrap_or(0),
+            sauce_meta: icy_engine_edit::undo_operation::SauceMetaDataSerde::from(edit_state.get_sauce_meta()),
+            reference_image_path: None, // TODO: Get reference image path
+            reference_image_opacity: 0.5,
+        })
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, state: icy_engine_edit::AnsiEditorSessionState) {
+        // Restore undo stack and all edit state properties
+        let mut screen = self.screen.lock();
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            // Restore undo stack
+            let undo_stack = edit_state.get_undo_stack();
+            let mut locked = undo_stack.lock().unwrap();
+            *locked = state.undo_stack;
+            drop(locked);
+
+            // Restore edit state properties
+            edit_state.set_outline_style(state.outline_style);
+            edit_state.set_mirror_mode(state.mirror_mode);
+            edit_state.set_current_tag(state.current_tag);
+
+            // Restore caret position and attribute
+            edit_state.set_caret_position(state.caret_position);
+            edit_state.set_caret_attribute(state.caret_attribute);
+
+            // Restore selected layer
+            edit_state.set_current_layer(state.selected_layer);
+
+            // Restore layer visibility using with_buffer_mut_no_undo
+            edit_state.with_buffer_mut_no_undo(|buffer| {
+                for (i, visible) in state.layer_visibility.iter().enumerate() {
+                    if i < buffer.layers.len() {
+                        buffer.layers[i].set_is_visible(*visible);
+                    }
+                }
+            });
+        }
+
+        // TODO: Restore scroll and zoom from canvas
+    }
+
     // ========================================================================
     // Clipboard operations
     // ========================================================================

@@ -4,6 +4,9 @@
 //! - Saves session state (open windows, positions, files) on exit
 //! - Restores session on startup (unless CLI args specify a file)
 //! - Autosaves unsaved changes to prevent data loss on crash
+//!
+//! Each editor type has its own session state that includes the undo stack
+//! plus editor-specific data (caret position, selected glyph, zoom level, etc.)
 
 use std::collections::HashMap;
 use std::fs;
@@ -14,6 +17,78 @@ use iced::window;
 use serde::{Deserialize, Serialize};
 
 use crate::ui::EditMode;
+
+// Re-export the editor-specific session states
+pub use icy_engine_edit::AnsiEditorSessionState;
+pub use icy_engine_edit::bitfont::BitFontSessionState;
+
+/// Session state for the CharFont (TDF) editor
+/// Uses the same undo system as AnsiEditor since it's based on AnsiEditorCore
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CharFontSessionState {
+    /// Version for future compatibility
+    #[serde(default = "default_version")]
+    pub version: u32,
+
+    /// The underlying ansi editor session state
+    pub ansi_state: AnsiEditorSessionState,
+
+    /// Currently selected character slot
+    #[serde(default)]
+    pub selected_slot: usize,
+
+    /// Preview text
+    #[serde(default)]
+    pub preview_text: String,
+}
+
+fn default_version() -> u32 {
+    1
+}
+
+/// Session state for the Animation editor
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AnimationSessionState {
+    /// Version for future compatibility
+    #[serde(default = "default_version")]
+    pub version: u32,
+
+    /// Undo stack (simple text snapshots)
+    #[serde(default)]
+    pub undo_stack: Vec<String>,
+
+    /// Current frame index
+    #[serde(default)]
+    pub current_frame: usize,
+
+    /// Playback position in seconds
+    #[serde(default)]
+    pub playback_position: f64,
+
+    /// Whether currently playing
+    #[serde(default)]
+    pub is_playing: bool,
+
+    /// Scroll position in script editor
+    #[serde(default)]
+    pub script_scroll_offset: f32,
+}
+
+/// Combined editor session state enum
+/// Each variant contains the full state needed to restore that editor type
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum EditorSessionData {
+    Ansi(AnsiEditorSessionState),
+    BitFont(BitFontSessionState),
+    CharFont(CharFontSessionState),
+    Animation(AnimationSessionState),
+}
+
+impl Default for EditorSessionData {
+    fn default() -> Self {
+        Self::Ansi(AnsiEditorSessionState::default())
+    }
+}
 
 /// Session state that gets saved/restored
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +126,9 @@ pub struct WindowState {
     pub has_unsaved_changes: bool,
     /// Autosave file path (if unsaved changes exist)
     pub autosave_path: Option<PathBuf>,
+    /// Path to the editor session data file (bincode serialized)
+    #[serde(default)]
+    pub session_data_path: Option<PathBuf>,
 }
 
 /// Information needed to restore a window
@@ -66,6 +144,8 @@ pub struct WindowRestoreInfo {
     pub position: Option<(f32, f32)>,
     /// Window size
     pub size: (f32, f32),
+    /// Path to the serialized editor session data (bincode)
+    pub session_data_path: Option<PathBuf>,
 }
 
 impl WindowState {
@@ -79,6 +159,7 @@ impl WindowState {
                 mark_dirty: true,
                 position: self.position,
                 size: self.size,
+                session_data_path: self.session_data_path.clone(),
             }
         } else {
             // Clean state - load from original file
@@ -88,6 +169,7 @@ impl WindowState {
                 mark_dirty: false,
                 position: self.position,
                 size: self.size,
+                session_data_path: self.session_data_path.clone(),
             }
         }
     }
@@ -274,6 +356,62 @@ impl SessionManager {
             status.should_autosave(current_undo_len, self.autosave_delay_secs)
         } else {
             false
+        }
+    }
+
+    /// Get session data file path for a given file
+    pub fn get_session_data_path(&self, original_path: &PathBuf) -> PathBuf {
+        let hash = crc32fast::hash(original_path.to_string_lossy().as_bytes());
+        self.session_dir.join(format!("{:08x}.session", hash))
+    }
+
+    /// Get session data path for an untitled document
+    pub fn get_untitled_session_data_path(&self, untitled_index: usize) -> PathBuf {
+        self.session_dir.join(format!("untitled_{}.session", untitled_index))
+    }
+
+    /// Save editor session data using bincode
+    pub fn save_session_data(&self, path: &PathBuf, data: &EditorSessionData) -> Result<(), String> {
+        let bytes = bincode::serialize(data).map_err(|e| format!("Failed to serialize session data: {}", e))?;
+
+        // Atomic write
+        let temp_path = path.with_extension("tmp");
+        fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write session data: {}", e))?;
+        fs::rename(&temp_path, path).map_err(|e| format!("Failed to rename session data: {}", e))?;
+
+        log::debug!("Session data saved to {:?} ({} bytes)", path, bytes.len());
+        Ok(())
+    }
+
+    /// Load editor session data using bincode
+    pub fn load_session_data(&self, path: &PathBuf) -> Option<EditorSessionData> {
+        if !path.exists() {
+            return None;
+        }
+
+        match fs::read(path) {
+            Ok(bytes) => match bincode::deserialize(&bytes) {
+                Ok(data) => {
+                    log::debug!("Session data loaded from {:?}", path);
+                    Some(data)
+                }
+                Err(e) => {
+                    log::warn!("Failed to deserialize session data from {:?}: {}", path, e);
+                    None
+                }
+            },
+            Err(e) => {
+                log::warn!("Failed to read session data from {:?}: {}", path, e);
+                None
+            }
+        }
+    }
+
+    /// Remove session data file
+    pub fn remove_session_data(&self, path: &PathBuf) {
+        if path.exists() {
+            let _ = fs::remove_file(path);
+            log::debug!("Session data removed: {:?}", path);
         }
     }
 }

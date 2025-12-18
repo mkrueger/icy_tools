@@ -75,12 +75,11 @@
 //! - `internal.rs` - Internal setters for undo operations
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use icy_engine::{BitFont, Position, Selection};
 
 use crate::Result;
-use crate::bitfont::BitFontUndoOperation;
+use crate::bitfont::undo_stack::BitFontUndoStack;
 
 use super::BitFontFocusedPanel;
 
@@ -162,11 +161,8 @@ pub struct BitFontEditState {
     // ═══════════════════════════════════════════════════════════════════════
     // Undo System
     // ═══════════════════════════════════════════════════════════════════════
-    /// Undo stack
-    pub(crate) undo_stack: Arc<Mutex<Vec<Box<dyn BitFontUndoOperation>>>>,
-
-    /// Redo stack
-    pub(crate) redo_stack: Vec<Box<dyn BitFontUndoOperation>>,
+    /// Undo stack (serializable)
+    pub(crate) undo_stack: BitFontUndoStack,
 }
 
 impl Default for BitFontEditState {
@@ -206,8 +202,7 @@ impl BitFontEditState {
             file_path: None,
             is_dirty: false,
             use_letter_spacing: false,
-            undo_stack: Arc::new(Mutex::new(Vec::new())),
-            redo_stack: Vec::new(),
+            undo_stack: BitFontUndoStack::new(),
         }
     }
 

@@ -5,13 +5,10 @@ use std::mem;
 use i18n_embed_fl::fl;
 
 use crate::{
-    AnsiParser, AttributedChar, EditableScreen, Layer, Palette, Position, Rectangle, Result, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
+    AnsiParser, AttributedChar, EditableScreen, Layer, Line, Palette, Position, Rectangle, Result, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
 };
 
-use super::{
-    EditState, OperationType, UndoOperation,
-    undo_operations::{Paste, ReverseCaretPosition, ReversedUndo, UndoSetChar, UndoSwapChar},
-};
+use super::{EditState, EditorUndoOp};
 
 impl EditState {
     pub fn set_char(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
@@ -24,20 +21,20 @@ impl EditState {
             if self.mirror_mode {
                 let mirror_pos = Position::new(layer.width() - pos.x - 1, pos.y);
                 let mirror_old = layer.char_at(mirror_pos);
-                self.push_undo_action(Box::new(UndoSetChar {
+                self.push_undo_action(EditorUndoOp::SetChar {
                     pos: mirror_pos,
                     layer: self.get_current_layer()?,
                     old: mirror_old,
                     new: attributed_char,
-                }))?;
+                })?;
             }
 
-            self.push_undo_action(Box::new(UndoSetChar {
+            self.push_undo_action(EditorUndoOp::SetChar {
                 pos,
                 layer: self.get_current_layer()?,
                 old,
                 new: attributed_char,
-            }))
+            })
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -55,20 +52,20 @@ impl EditState {
             if self.mirror_mode {
                 let mirror_pos = Position::new(layer.width() - pos.x - 1, pos.y);
                 let mirror_old = layer.char_at(mirror_pos);
-                self.push_undo_action(Box::new(UndoSetChar {
+                self.push_undo_action(EditorUndoOp::SetChar {
                     pos: mirror_pos,
                     layer: self.get_current_layer()?,
                     old: mirror_old,
                     new: attributed_char,
-                }))?;
+                })?;
             }
 
-            self.push_undo_action(Box::new(UndoSetChar {
+            self.push_undo_action(EditorUndoOp::SetChar {
                 pos,
                 layer: self.get_current_layer()?,
                 old,
                 new: attributed_char,
-            }))
+            })
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
@@ -78,8 +75,7 @@ impl EditState {
         let pos1 = pos1.into();
         let pos2 = pos2.into();
         let layer = self.get_current_layer()?;
-        let op = UndoSwapChar { layer, pos1, pos2 };
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::SwapChar { layer, pos1, pos2 })
     }
 
     /// .
@@ -99,8 +95,10 @@ impl EditState {
                 layer.size().height,
                 layer.offset()
             );
-            let op = Paste::new(self.get_current_layer()?, layer);
-            self.push_undo_action(Box::new(op))?;
+            self.push_undo_action(EditorUndoOp::Paste {
+                current_layer: self.get_current_layer()?,
+                layer: Some(layer),
+            })?;
         } else {
             log::warn!("paste_clipboard_data: from_clipboard_data returned None");
         }
@@ -125,8 +123,10 @@ impl EditState {
         // Position the pasted layer at the current caret position
         layer.set_offset((caret_pos.x, caret_pos.y));
 
-        let op = Paste::new(self.get_current_layer()?, layer);
-        self.push_undo_action(Box::new(op))?;
+        self.push_undo_action(EditorUndoOp::Paste {
+            current_layer: self.get_current_layer()?,
+            layer: Some(layer),
+        })?;
         self.selection_opt = None;
         Ok(())
     }
@@ -152,8 +152,10 @@ impl EditState {
         layer.role = Role::PastePreview;
         layer.set_offset((x, y));
 
-        let op = Paste::new(self.get_current_layer()?, layer);
-        self.push_undo_action(Box::new(op))?;
+        self.push_undo_action(EditorUndoOp::Paste {
+            current_layer: self.get_current_layer()?,
+            layer: Some(layer),
+        })?;
         self.selection_opt = None;
         Ok(())
     }
@@ -201,13 +203,17 @@ impl EditState {
                 self.get_buffer_mut().layers[0].set_size(size);
             }
 
-            let op = super::undo_operations::Crop::new(old_size, rect.size(), old_layers);
-
-            return self.push_plain_undo(Box::new(op));
+            return self.push_plain_undo(EditorUndoOp::Crop {
+                orig_size: old_size,
+                size: rect.size(),
+                layers: old_layers,
+            });
         }
 
-        let op = super::undo_operations::ResizeBuffer::new(self.get_buffer().size(), size);
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::ResizeBuffer {
+            orig_size: self.get_buffer().size(),
+            size: size.into(),
+        })
     }
 
     pub fn center_line(&mut self) -> Result<()> {
@@ -246,29 +252,37 @@ impl EditState {
     pub fn delete_row(&mut self) -> Result<()> {
         let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
-        let op = super::undo_operations::DeleteRow::new(layer, y);
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::DeleteRow {
+            layer,
+            line: y,
+            deleted_row: Line::new(),
+        })
     }
 
     pub fn insert_row(&mut self) -> Result<()> {
         let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
-        let op = super::undo_operations::InsertRow::new(layer, y);
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::InsertRow {
+            layer,
+            line: y,
+            inserted_row: Line::new(),
+        })
     }
 
     pub fn insert_column(&mut self) -> Result<()> {
         let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
-        let op = super::undo_operations::InsertColumn::new(layer, x);
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::InsertColumn { layer, column: x })
     }
 
     pub fn delete_column(&mut self) -> Result<()> {
         let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
-        let op = super::undo_operations::DeleteColumn::new(layer, x);
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::DeleteColumn {
+            layer,
+            column: x,
+            deleted_chars: Vec::new(),
+        })
     }
 
     pub fn erase_row(&mut self) -> Result<()> {
@@ -348,19 +362,6 @@ impl EditState {
         self.erase_selection()
     }
 
-    /// .
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn push_reverse_undo(&mut self, description: impl Into<String>, op: Box<dyn UndoOperation>, operation_type: OperationType) -> Result<()> {
-        self.push_undo_action(Box::new(ReversedUndo::new(description.into(), op, operation_type)))
-    }
-
     /// Returns the undo caret position of this [`EditState`].
     ///
     /// # Panics
@@ -371,20 +372,43 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn undo_caret_position(&mut self) -> Result<()> {
-        let op = ReverseCaretPosition::new(self.screen.caret.position());
-        self.redo_stack.clear();
-        self.undo_stack.lock().unwrap().push(Box::new(op));
+        let pos = self.screen.caret.position();
+        self.undo_stack.lock().unwrap().clear_redo();
+        self.undo_stack
+            .lock()
+            .unwrap()
+            .push_undo(EditorUndoOp::ReverseCaretPosition { pos, old_pos: pos });
         Ok(())
     }
 
     pub fn switch_to_palette(&mut self, pal: Palette) -> Result<()> {
-        let op = super::undo_operations::SwitchPalettte::new(pal);
-        self.push_undo_action(Box::new(op))
+        let old_mode = self.get_buffer().palette_mode;
+        let old_palette = self.get_buffer().palette.clone();
+        let old_layers = self.get_buffer().layers.clone();
+        self.push_undo_action(EditorUndoOp::SwitchPalette {
+            old_mode,
+            old_palette,
+            old_layers,
+            new_mode: old_mode, // Use same mode, just change palette
+            new_palette: pal,
+            new_layers: Vec::new(), // Will be populated on redo
+        })
     }
 
     /// Update SAUCE metadata with undo support
     pub fn update_sauce_data(&mut self, sauce: crate::SauceMetaData) -> Result<()> {
-        let op = super::undo_operations::SetSauceData::new(sauce, self.sauce_meta.clone());
-        self.push_undo_action(Box::new(op))
+        self.push_undo_action(EditorUndoOp::SetSauceData {
+            new: super::undo_operation::SauceMetaDataSerde::from(&sauce),
+            old: super::undo_operation::SauceMetaDataSerde::from(&self.sauce_meta),
+        })
+    }
+
+    /// Push a reverse undo operation (for special cases like font backspace)
+    pub fn push_reverse_undo(&mut self, description: impl Into<String>, op: EditorUndoOp, operation_type: super::OperationType) -> Result<()> {
+        self.push_undo_action(EditorUndoOp::Reversed {
+            description: description.into(),
+            op: Box::new(op),
+            operation_type,
+        })
     }
 }

@@ -392,6 +392,37 @@ impl BitFontEditor {
         self.state.undo_stack_len()
     }
 
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<icy_engine_edit::bitfont::BitFontSessionState> {
+        Some(icy_engine_edit::bitfont::BitFontSessionState {
+            version: 1,
+            undo_stack: self.state.undo_stack().clone(),
+            selected_glyph: self.state.selected_char() as usize,
+            cursor_position: self.state.cursor_pos(),
+            edit_zoom: 1.0, // TODO: store actual zoom
+            selector_zoom: 1.0,
+            focused_panel: match self.state.focused_panel() {
+                icy_engine_edit::bitfont::BitFontFocusedPanel::EditGrid => icy_engine_edit::bitfont::BitFontFocusedPanelState::EditGrid,
+                icy_engine_edit::bitfont::BitFontFocusedPanel::CharSet => icy_engine_edit::bitfont::BitFontFocusedPanelState::CharSet,
+            },
+            show_grid: true,
+            selected_tool: String::new(),
+        })
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, state: icy_engine_edit::bitfont::BitFontSessionState) {
+        *self.state.undo_stack_mut() = state.undo_stack;
+        self.state.set_selected_char(char::from_u32(state.selected_glyph as u32).unwrap_or('\0'));
+        self.state.set_cursor_pos(state.cursor_position.0, state.cursor_position.1);
+        let panel = match state.focused_panel {
+            icy_engine_edit::bitfont::BitFontFocusedPanelState::EditGrid => icy_engine_edit::bitfont::BitFontFocusedPanel::EditGrid,
+            icy_engine_edit::bitfont::BitFontFocusedPanelState::CharSet => icy_engine_edit::bitfont::BitFontFocusedPanel::CharSet,
+        };
+        self.state.set_focused_panel(panel);
+        self.invalidate_caches();
+    }
+
     /// Get bytes for autosave (saves in PSF2 format)
     pub fn get_autosave_bytes(&self) -> Result<Vec<u8>, String> {
         let font = self.state.build_font();

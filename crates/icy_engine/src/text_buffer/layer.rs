@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{BufferType, Color, Line, Position, Rectangle, Sixel, Size, TextPane};
 
 use super::AttributedChar;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     #[default]
     Normal,
@@ -10,7 +12,7 @@ pub enum Mode {
     Attributes,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     #[default]
     Normal,
@@ -25,7 +27,7 @@ impl Role {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Properties {
     pub title: String,
     pub color: Option<Color>,
@@ -38,7 +40,7 @@ pub struct Properties {
     pub offset: Position,
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub role: Role,
     pub transparency: u8,
@@ -52,6 +54,7 @@ pub struct Layer {
     size: Size,
     pub lines: Vec<Line>,
 
+    #[serde(skip)]
     pub sixels: Vec<Sixel>,
     pub hyperlinks: Vec<HyperLink>,
 }
@@ -72,7 +75,7 @@ impl std::fmt::Display for Layer {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperLink {
     pub url: Option<String>,
     pub position: Position,

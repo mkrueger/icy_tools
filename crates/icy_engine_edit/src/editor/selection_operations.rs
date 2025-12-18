@@ -1,7 +1,7 @@
 #![allow(clippy::missing_errors_doc)]
 use i18n_embed_fl::fl;
 
-use super::{EditState, undo_operations};
+use super::{EditState, undo_operation::EditorUndoOp};
 use crate::{AddType, AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
 impl EditState {
@@ -15,7 +15,10 @@ impl EditState {
         if self.selection_opt == selection {
             Ok(())
         } else {
-            self.push_undo_action(Box::new(undo_operations::SetSelection::new(self.selection_opt, selection)))
+            self.push_undo_action(EditorUndoOp::SetSelection {
+                old: self.selection_opt,
+                new: selection,
+            })
         }
     }
 
@@ -23,7 +26,7 @@ impl EditState {
         if self.is_something_selected() {
             let sel = self.selection_opt.take();
             let mask = self.selection_mask.clone();
-            self.push_undo_action(Box::new(undo_operations::SelectNothing::new(sel, mask)))
+            self.push_undo_action(EditorUndoOp::SelectNothing { sel, mask })
         } else {
             Ok(())
         }
@@ -38,16 +41,16 @@ impl EditState {
         let mut new = old.clone();
         new.clear();
 
-        self.push_undo_action(Box::new(undo_operations::SetSelectionMask::new(
-            fl!(crate::LANGUAGE_LOADER, "undo-select-nothing"),
+        self.push_undo_action(EditorUndoOp::SetSelectionMask {
+            description: fl!(crate::LANGUAGE_LOADER, "undo-select-nothing"),
             old,
             new,
-        )))
+        })
     }
 
     pub fn deselect(&mut self) -> Result<()> {
         if let Some(sel) = self.selection_opt.take() {
-            self.push_undo_action(Box::new(undo_operations::Deselect::new(sel)))
+            self.push_undo_action(EditorUndoOp::Deselect { sel })
         } else {
             Ok(())
         }
@@ -76,7 +79,10 @@ impl EditState {
 
     pub fn add_selection_to_mask(&mut self) -> Result<()> {
         if let Some(selection) = self.selection_opt {
-            self.push_undo_action(Box::new(undo_operations::AddSelectionToMask::new(self.selection_mask.clone(), selection)))
+            self.push_undo_action(EditorUndoOp::AddSelectionToMask {
+                old: self.selection_mask.clone(),
+                selection,
+            })
         } else {
             Ok(())
         }
@@ -116,9 +122,13 @@ impl EditState {
                 self.selection_mask.set_is_selected(pos, !is_selected);
             }
         }
-        let op = undo_operations::InverseSelection::new(old_selection, old_mask, self.selection_mask.clone());
+        let op = EditorUndoOp::InverseSelection {
+            sel: old_selection,
+            old: old_mask,
+            new: self.selection_mask.clone(),
+        };
         self.mark_dirty();
-        self.push_plain_undo(Box::new(op))
+        self.push_plain_undo(op)
     }
 
     /// .
@@ -150,8 +160,12 @@ impl EditState {
         }
 
         if old_mask != self.selection_mask {
-            let op = undo_operations::SetSelectionMask::new(fl!(crate::LANGUAGE_LOADER, "undo-set_selection"), old_mask, self.selection_mask.clone());
-            let _ = self.push_plain_undo(Box::new(op));
+            let op = EditorUndoOp::SetSelectionMask {
+                description: fl!(crate::LANGUAGE_LOADER, "undo-set_selection"),
+                old: old_mask,
+                new: self.selection_mask.clone(),
+            };
+            let _ = self.push_plain_undo(op);
         }
 
         self.mark_dirty();

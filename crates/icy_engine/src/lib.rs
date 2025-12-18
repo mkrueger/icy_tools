@@ -107,7 +107,9 @@ pub use palette_screen_buffer::bgi::MouseField;
 mod screen_modes;
 pub use screen_modes::*;
 
-#[derive(Copy, Clone, Debug, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Size {
     pub width: i32,
     pub height: i32,
@@ -183,7 +185,7 @@ impl From<Position> for Size {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Rectangle {
     pub start: Position,
     pub size: Size,

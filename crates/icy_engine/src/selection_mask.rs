@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{AddType, Position, Rectangle, Selection, Size, overlay_mask::OverlayMask};
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SelectionMask {
     overlay_mask: OverlayMask,
 }

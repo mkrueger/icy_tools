@@ -8,7 +8,7 @@
 //! - Swap characters
 
 use crate::Result;
-use crate::bitfont::{DeleteColumn, DeleteLine, DuplicateLine, InsertColumn, InsertLine, ResizeFont, SwapChars};
+use crate::bitfont::BitFontUndoOp;
 
 use super::BitFontEditState;
 
@@ -29,7 +29,13 @@ impl BitFontEditState {
         // Collect all glyph data before resize
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(ResizeFont::new(self.font_width, self.font_height, new_width, new_height, old_glyph_data));
+        let op = BitFontUndoOp::ResizeFont {
+            old_width: self.font_width,
+            old_height: self.font_height,
+            new_width,
+            new_height,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -50,7 +56,11 @@ impl BitFontEditState {
         let y_pos = self.cursor_pos.1 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(InsertLine::new(y_pos, self.font_height, old_glyph_data));
+        let op = BitFontUndoOp::InsertLine {
+            y_pos,
+            old_height: self.font_height,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -66,7 +76,11 @@ impl BitFontEditState {
         let y_pos = self.cursor_pos.1 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(DeleteLine::new(y_pos, self.font_height, old_glyph_data));
+        let op = BitFontUndoOp::DeleteLine {
+            y_pos,
+            old_height: self.font_height,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -83,7 +97,11 @@ impl BitFontEditState {
         let y_pos = self.cursor_pos.1 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(DuplicateLine::new(y_pos, self.font_height, old_glyph_data));
+        let op = BitFontUndoOp::DuplicateLine {
+            y_pos,
+            old_height: self.font_height,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -104,7 +122,11 @@ impl BitFontEditState {
         let x_pos = self.cursor_pos.0 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(InsertColumn::new(x_pos, self.font_width, old_glyph_data));
+        let op = BitFontUndoOp::InsertColumn {
+            x_pos,
+            old_width: self.font_width,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -121,7 +143,11 @@ impl BitFontEditState {
         let x_pos = self.cursor_pos.0 as usize;
         let old_glyph_data: Vec<Vec<Vec<bool>>> = self.glyph_data.clone();
 
-        let op = Box::new(DeleteColumn::new(x_pos, self.font_width, old_glyph_data));
+        let op = BitFontUndoOp::DeleteColumn {
+            x_pos,
+            old_width: self.font_width,
+            old_glyph_data,
+        };
         self.push_undo_action(op)
     }
 
@@ -141,7 +167,7 @@ impl BitFontEditState {
         let data1 = self.get_glyph_pixels(char1).clone();
         let data2 = self.get_glyph_pixels(char2).clone();
 
-        let op = Box::new(SwapChars::new(char1, char2, data1, data2));
+        let op = BitFontUndoOp::SwapChars { char1, char2, data1, data2 };
         self.push_undo_action(op)
     }
 }

@@ -132,6 +132,49 @@ impl ModeState {
         }
     }
 
+    /// Get a clone of the undo stack for serialization (Ansi editor only for now)
+    pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
+        match self {
+            Self::Ansi(editor) => editor.get_undo_stack(),
+            // BitFont and CharFont use different undo stack types - future work
+            Self::BitFont(_) => None,
+            Self::CharFont(_) => None,
+            Self::Animation(_) => None,
+        }
+    }
+
+    /// Restore undo stack from serialization (Ansi editor only for now)
+    pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
+        match self {
+            Self::Ansi(editor) => editor.set_undo_stack(stack),
+            // BitFont and CharFont use different undo stack types - future work
+            Self::BitFont(_) => {}
+            Self::CharFont(_) => {}
+            Self::Animation(_) => {}
+        }
+    }
+
+    /// Get session data for serialization
+    pub fn get_session_data(&self) -> Option<crate::session::EditorSessionData> {
+        match self {
+            Self::Ansi(editor) => editor.get_session_data().map(crate::session::EditorSessionData::Ansi),
+            Self::BitFont(editor) => editor.get_session_data().map(crate::session::EditorSessionData::BitFont),
+            Self::CharFont(editor) => editor.get_session_data().map(crate::session::EditorSessionData::CharFont),
+            Self::Animation(editor) => editor.get_session_data().map(crate::session::EditorSessionData::Animation),
+        }
+    }
+
+    /// Restore session data from serialization
+    pub fn set_session_data(&mut self, data: crate::session::EditorSessionData) {
+        match (self, data) {
+            (Self::Ansi(editor), crate::session::EditorSessionData::Ansi(state)) => editor.set_session_data(state),
+            (Self::BitFont(editor), crate::session::EditorSessionData::BitFont(state)) => editor.set_session_data(state),
+            (Self::CharFont(editor), crate::session::EditorSessionData::CharFont(state)) => editor.set_session_data(state),
+            (Self::Animation(editor), crate::session::EditorSessionData::Animation(state)) => editor.set_session_data(state),
+            _ => log::warn!("Session data type mismatch"),
+        }
+    }
+
     /// Get the file path if any
     pub fn file_path(&self) -> Option<&PathBuf> {
         match self {
@@ -770,6 +813,26 @@ impl MainWindow {
     /// Get current undo stack length (for autosave tracking)
     pub fn undo_stack_len(&self) -> usize {
         self.mode_state.undo_stack_len()
+    }
+
+    /// Get a clone of the undo stack for session serialization
+    pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
+        self.mode_state.get_undo_stack()
+    }
+
+    /// Restore undo stack from session
+    pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
+        self.mode_state.set_undo_stack(stack);
+    }
+
+    /// Get session data for serialization (includes undo stack + editor state)
+    pub fn get_session_data(&self) -> Option<crate::session::EditorSessionData> {
+        self.mode_state.get_session_data()
+    }
+
+    /// Restore session data
+    pub fn set_session_data(&mut self, data: crate::session::EditorSessionData) {
+        self.mode_state.set_session_data(data);
     }
 
     /// Get bytes for autosave

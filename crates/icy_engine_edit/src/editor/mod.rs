@@ -3,7 +3,12 @@ use std::sync::{Arc, Mutex};
 
 pub use undo_stack::*;
 
-mod undo_operations;
+pub mod undo_operation;
+pub use undo_operation::EditorUndoOp;
+pub use undo_operation::SauceMetaDataSerde;
+
+pub mod session_state;
+pub use session_state::AnsiEditorSessionState;
 
 mod editor_error;
 pub use editor_error::*;
@@ -147,16 +152,16 @@ pub struct EditState {
     tool_overlay_mask: OverlayMask,
 
     /// Selection state
-    selection_opt: Option<Selection>,
-    selection_mask: SelectionMask,
+    pub(crate) selection_opt: Option<Selection>,
+    pub(crate) selection_mask: SelectionMask,
 
     current_tag: usize,
 
     outline_style: usize,
     mirror_mode: bool,
 
-    undo_stack: Arc<Mutex<Vec<Box<dyn UndoOperation>>>>,
-    redo_stack: Vec<Box<dyn UndoOperation>>,
+    /// Serializable undo stack (wrapped in Arc<Mutex> for atomic operations)
+    undo_stack: Arc<Mutex<EditorUndoStack>>,
 
     pub is_palette_dirty: bool,
 
@@ -164,46 +169,67 @@ pub struct EditState {
     sauce_meta: SauceMetaData,
 }
 
+/// Guard for atomic undo operations
+/// When dropped, collects all operations pushed since creation into an Atomic operation
 pub struct AtomicUndoGuard {
     base_count: usize,
     description: String,
     operation_type: OperationType,
-
-    undo_stack: Arc<Mutex<Vec<Box<dyn UndoOperation>>>>,
+    undo_stack: Arc<Mutex<EditorUndoStack>>,
+    ended: bool,
 }
 
 impl AtomicUndoGuard {
-    fn new(description: String, undo_stack: Arc<Mutex<Vec<Box<dyn UndoOperation>>>>, operation_type: OperationType) -> Self {
-        let base_count = undo_stack.lock().unwrap().len();
+    fn new(description: String, undo_stack: Arc<Mutex<EditorUndoStack>>, operation_type: OperationType) -> Self {
+        let base_count = undo_stack.lock().unwrap().undo_len();
         Self {
             base_count,
             description,
             operation_type,
             undo_stack,
+            ended: false,
         }
     }
 
     pub fn end(&mut self) {
+        if self.ended {
+            return;
+        }
         self.end_action();
     }
 
     fn end_action(&mut self) {
-        let stack = self.undo_stack.lock().unwrap().drain(self.base_count..).collect();
-        let stack = Arc::new(Mutex::new(stack));
-        self.undo_stack
-            .lock()
-            .unwrap()
-            .push(Box::new(undo_operations::AtomicUndo::new(self.description.clone(), stack, self.operation_type)));
-        self.base_count = usize::MAX;
+        if self.ended {
+            return;
+        }
+        let mut stack = self.undo_stack.lock().unwrap();
+        let current_len = stack.undo_len();
+        if current_len <= self.base_count {
+            self.ended = true;
+            return;
+        }
+
+        // Collect all operations pushed since base_count
+        let mut operations = Vec::new();
+        while stack.undo_len() > self.base_count {
+            if let Some(op) = stack.pop_undo() {
+                operations.push(op);
+            }
+        }
+        operations.reverse(); // Restore original order
+
+        // Push as a single Atomic operation
+        stack.push_undo(EditorUndoOp::Atomic {
+            description: self.description.clone(),
+            operations,
+            operation_type: self.operation_type,
+        });
+        self.ended = true;
     }
 }
 
 impl Drop for AtomicUndoGuard {
     fn drop(&mut self) {
-        let count = self.undo_stack.lock().unwrap().len();
-        if self.base_count >= count {
-            return;
-        }
         self.end_action();
     }
 }
@@ -221,8 +247,7 @@ impl Default for EditState {
             screen,
             selection_opt: None,
             selection_mask,
-            undo_stack: Arc::new(Mutex::new(Vec::new())),
-            redo_stack: Vec::new(),
+            undo_stack: Arc::new(Mutex::new(EditorUndoStack::new())),
             current_tag: 0,
             outline_style: 0,
             mirror_mode: false,
@@ -380,6 +405,11 @@ impl EditState {
         self.screen.caret.set_font_page(page);
     }
 
+    /// Set the caret's text attribute
+    pub fn set_caret_attribute(&mut self, attr: icy_engine::TextAttribute) {
+        self.screen.caret.attribute = attr;
+    }
+
     /// Move caret up by given amount (clamped to 0)
     pub fn move_caret_up(&mut self, amount: i32) {
         self.screen.caret.y = (self.screen.caret.y - amount).max(0);
@@ -506,7 +536,7 @@ impl EditState {
 
     #[must_use]
     pub fn begin_typed_atomic_undo(&mut self, description: impl Into<String>, operation_type: OperationType) -> AtomicUndoGuard {
-        self.redo_stack.clear();
+        self.undo_stack.lock().unwrap().clear_redo();
         AtomicUndoGuard::new(description.into(), self.undo_stack.clone(), operation_type)
     }
 
@@ -514,37 +544,29 @@ impl EditState {
         self.screen.current_layer = self.screen.current_layer.clamp(0, self.screen.buffer.layers.len().saturating_sub(1));
     }
 
-    fn push_undo_action(&mut self, mut op: Box<dyn UndoOperation>) -> Result<()> {
+    /// Push and execute an undo operation
+    pub(crate) fn push_undo_action(&mut self, mut op: EditorUndoOp) -> Result<()> {
         op.redo(self)?;
         self.push_plain_undo(op)
     }
 
-    fn push_plain_undo(&mut self, op: Box<dyn UndoOperation>) -> Result<()> {
+    /// Push an undo operation without executing it
+    pub(crate) fn push_plain_undo(&mut self, op: EditorUndoOp) -> Result<()> {
         if op.changes_data() {
             self.mark_dirty();
-        }
-        let Ok(mut stack) = self.undo_stack.lock() else {
-            return Err(crate::EngineError::Generic("Failed to lock undo stack".to_string()));
-        };
-        if op.changes_data() {
             self.screen.mark_dirty();
         }
-
-        stack.push(op);
-        self.redo_stack.clear();
+        self.undo_stack.lock().unwrap().push(op);
         Ok(())
     }
 
     /// Returns the undo stack len of this [`EditState`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
     pub fn undo_stack_len(&self) -> usize {
-        self.undo_stack.lock().unwrap().len()
+        self.undo_stack.lock().unwrap().undo_len()
     }
 
-    pub fn get_undo_stack(&self) -> Arc<Mutex<Vec<Box<dyn UndoOperation>>>> {
+    /// Get clone of the undo stack (for serialization)
+    pub fn get_undo_stack(&self) -> Arc<Mutex<EditorUndoStack>> {
         self.undo_stack.clone()
     }
 
@@ -581,15 +603,15 @@ impl EditState {
 
 impl UndoState for EditState {
     fn undo_description(&self) -> Option<String> {
-        self.undo_stack.lock().unwrap().last().map(|op| op.get_description())
+        self.undo_stack.lock().unwrap().undo_description()
     }
 
     fn can_undo(&self) -> bool {
-        !self.undo_stack.lock().unwrap().is_empty()
+        self.undo_stack.lock().unwrap().can_undo()
     }
 
     fn undo(&mut self) -> Result<()> {
-        let Some(mut op) = self.undo_stack.lock().unwrap().pop() else {
+        let Some(mut op) = self.undo_stack.lock().unwrap().pop_undo() else {
             return Ok(());
         };
         if op.changes_data() {
@@ -597,28 +619,28 @@ impl UndoState for EditState {
         }
 
         let res = op.undo(self);
-        self.redo_stack.push(op);
+        self.undo_stack.lock().unwrap().push_redo(op);
         res
     }
 
     fn redo_description(&self) -> Option<String> {
-        self.redo_stack.last().map(|op| op.get_description())
+        self.undo_stack.lock().unwrap().redo_description()
     }
 
     fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
+        self.undo_stack.lock().unwrap().can_redo()
     }
 
     fn redo(&mut self) -> Result<()> {
-        if let Some(mut op) = self.redo_stack.pop() {
-            if op.changes_data() {
-                self.mark_dirty();
-            }
-            let res = op.redo(self);
-            self.undo_stack.lock().unwrap().push(op);
-            return res;
+        let Some(mut op) = self.undo_stack.lock().unwrap().pop_redo() else {
+            return Ok(());
+        };
+        if op.changes_data() {
+            self.mark_dirty();
         }
-        Ok(())
+        let res = op.redo(self);
+        self.undo_stack.lock().unwrap().push_undo(op);
+        res
     }
 }
 

@@ -6,7 +6,7 @@
 //! - Atomic groups are undone/redone as a single unit
 
 use crate::Result;
-use crate::bitfont::{BitFontOperationType, BitFontUndoOperation, BitFontUndoState};
+use crate::bitfont::{BitFontOperationType, BitFontUndoOp, BitFontUndoState};
 
 use super::{BitFontAtomicUndoGuard, BitFontEditState};
 
@@ -14,7 +14,7 @@ impl BitFontEditState {
     /// Begin an atomic undo group
     ///
     /// All operations pushed while the guard is active will be undone/redone together.
-    /// Call `guard.end()` to close the group.
+    /// Call `end_atomic_undo(base_count, description, op_type)` to close the group.
     #[must_use]
     pub fn begin_atomic_undo(&mut self, description: impl Into<String>) -> BitFontAtomicUndoGuard {
         self.begin_typed_atomic_undo(description, BitFontOperationType::Unknown)
@@ -25,34 +25,58 @@ impl BitFontEditState {
     /// Same as `begin_atomic_undo` but with an operation type for categorization.
     #[must_use]
     pub fn begin_typed_atomic_undo(&mut self, description: impl Into<String>, operation_type: BitFontOperationType) -> BitFontAtomicUndoGuard {
-        self.redo_stack.clear();
-        BitFontAtomicUndoGuard::new(description.into(), self.undo_stack.clone(), operation_type)
+        let base_count = self.undo_stack.undo_len();
+        BitFontAtomicUndoGuard::new(description.into(), base_count, operation_type)
     }
 
     /// Push an undo operation and execute it (redo)
-    pub(crate) fn push_undo_action(&mut self, mut op: Box<dyn BitFontUndoOperation>) -> Result<()> {
+    pub(crate) fn push_undo_action(&mut self, op: BitFontUndoOp) -> Result<()> {
         op.redo(self)?;
         self.push_plain_undo(op)
     }
 
     /// Push an undo operation without executing it
-    pub(crate) fn push_plain_undo(&mut self, op: Box<dyn BitFontUndoOperation>) -> Result<()> {
+    pub(crate) fn push_plain_undo(&mut self, op: BitFontUndoOp) -> Result<()> {
         if op.changes_data() {
             self.is_dirty = true;
         }
-        self.undo_stack.lock().unwrap().push(op);
-        self.redo_stack.clear();
+        self.undo_stack.push(op);
         Ok(())
+    }
+
+    /// End an atomic undo group
+    pub(crate) fn end_atomic_undo(&mut self, base_count: usize, description: String, operation_type: BitFontOperationType) {
+        if base_count >= self.undo_stack.undo_len() {
+            return;
+        }
+        let operations = self.undo_stack.drain_from(base_count);
+        self.undo_stack.create_atomic(description, operations, operation_type);
     }
 
     /// Get undo stack length
     pub fn undo_stack_len(&self) -> usize {
-        self.undo_stack.lock().unwrap().len()
+        self.undo_stack.undo_len()
     }
 
     /// Get redo stack length
     pub fn redo_stack_len(&self) -> usize {
-        self.redo_stack.len()
+        self.undo_stack.redo_len()
+    }
+
+    /// Mark as saved (clears dirty flag and marks save point in undo stack)
+    pub fn mark_saved(&mut self) {
+        self.is_dirty = false;
+        self.undo_stack.mark_saved();
+    }
+
+    /// Get access to the undo stack for serialization
+    pub fn undo_stack(&self) -> &crate::bitfont::undo_stack::BitFontUndoStack {
+        &self.undo_stack
+    }
+
+    /// Get mutable access to the undo stack
+    pub fn undo_stack_mut(&mut self) -> &mut crate::bitfont::undo_stack::BitFontUndoStack {
+        &mut self.undo_stack
     }
 }
 
@@ -62,15 +86,15 @@ impl BitFontEditState {
 
 impl BitFontUndoState for BitFontEditState {
     fn undo_description(&self) -> Option<String> {
-        self.undo_stack.lock().unwrap().last().map(|op| op.get_description())
+        self.undo_stack.undo_description()
     }
 
     fn can_undo(&self) -> bool {
-        !self.undo_stack.lock().unwrap().is_empty()
+        self.undo_stack.can_undo()
     }
 
     fn undo(&mut self) -> Result<()> {
-        let Some(mut op) = self.undo_stack.lock().unwrap().pop() else {
+        let Some(op) = self.undo_stack.pop_undo() else {
             return Ok(());
         };
 
@@ -79,20 +103,20 @@ impl BitFontUndoState for BitFontEditState {
         }
 
         let result = op.undo(self);
-        self.redo_stack.push(op);
+        self.undo_stack.push_redo(op);
         result
     }
 
     fn redo_description(&self) -> Option<String> {
-        self.redo_stack.last().map(|op| op.get_description())
+        self.undo_stack.redo_description()
     }
 
     fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
+        self.undo_stack.can_redo()
     }
 
     fn redo(&mut self) -> Result<()> {
-        let Some(mut op) = self.redo_stack.pop() else {
+        let Some(op) = self.undo_stack.pop_redo() else {
             return Ok(());
         };
 
@@ -101,7 +125,7 @@ impl BitFontUndoState for BitFontEditState {
         }
 
         let result = op.redo(self);
-        self.undo_stack.lock().unwrap().push(op);
+        self.undo_stack.push(op);
         result
     }
 }
