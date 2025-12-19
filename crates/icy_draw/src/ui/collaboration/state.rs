@@ -6,7 +6,8 @@
 //! - Chat history
 //! - Document synchronization
 
-use icy_engine_edit::collaboration::{ChatMessage, ConnectedDocument, ServerStatus, User};
+use icy_engine_edit::EditorUndoStack;
+use icy_engine_edit::collaboration::{ChatMessage, ClientCommand, ConnectedDocument, ServerStatus, User};
 use std::collections::HashMap;
 
 use super::subscription::CollaborationClient;
@@ -109,6 +110,15 @@ pub struct CollaborationState {
     pub font: String,
     /// Whether we are currently connecting
     pub connecting: bool,
+
+    /// Sync pointer into undo stack - tracks which operations have been synced
+    /// This points to the undo_stack length at last sync
+    sync_pointer: usize,
+
+    /// Last sent cursor position (to avoid sending duplicates)
+    last_cursor: Option<(i32, i32)>,
+    /// Last sent selection state (to avoid sending duplicates)
+    last_selection: Option<(bool, i32, i32)>,
 }
 
 impl CollaborationState {
@@ -400,5 +410,98 @@ impl CollaborationState {
         };
 
         (((r + m) * 255.0_f32) as u8, ((g + m) * 255.0_f32) as u8, ((b + m) * 255.0_f32) as u8)
+    }
+
+    /// Synchronize with the undo stack and send pending operations to the server.
+    ///
+    /// This method tracks a sync_pointer into the undo stack. When called:
+    /// - If undo_stack.len() > sync_pointer: new operations were pushed (redo direction)
+    ///   -> collect redo_client_commands for ops [sync_pointer..len]
+    /// - If undo_stack.len() < sync_pointer: operations were undone
+    ///   -> collect undo_client_commands for ops that moved to redo stack
+    ///
+    /// Also syncs cursor position and selection state.
+    ///
+    /// Returns a Task that sends all collected commands to the server.
+    pub fn sync_from_undo_stack(&mut self, undo_stack: &EditorUndoStack, caret_pos: (i32, i32), selecting: bool) -> Option<iced::Task<()>> {
+        // Skip if not connected
+        let client = self.client.as_ref()?;
+        let handle = client.handle().clone();
+
+        let current_len = undo_stack.undo_stack().len();
+        let mut commands: Vec<ClientCommand> = Vec::new();
+
+        if current_len > self.sync_pointer {
+            // Forward direction: new operations were pushed
+            // Collect redo commands for operations [sync_pointer..current_len]
+            for op in &undo_stack.undo_stack()[self.sync_pointer..current_len] {
+                if let Some(cmds) = op.redo_client_commands() {
+                    commands.extend(cmds);
+                }
+            }
+        } else if current_len < self.sync_pointer {
+            // Backward direction: operations were undone (moved to redo stack)
+            // The difference tells us how many ops were undone
+            let undone_count = self.sync_pointer - current_len;
+            // Those ops are now at the top of the redo stack
+            let redo_stack = undo_stack.redo_stack();
+            let redo_len = redo_stack.len();
+            if undone_count <= redo_len {
+                // Get undo commands for the most recently undone operations
+                // They're at the end of the redo stack
+                for op in redo_stack.iter().rev().take(undone_count) {
+                    if let Some(cmds) = op.undo_client_commands() {
+                        commands.extend(cmds);
+                    }
+                }
+            }
+        }
+
+        // Update sync pointer
+        self.sync_pointer = current_len;
+
+        // Check cursor changes
+        if self.last_cursor != Some(caret_pos) {
+            self.last_cursor = Some(caret_pos);
+            commands.push(ClientCommand::Cursor {
+                col: caret_pos.0,
+                row: caret_pos.1,
+            });
+        }
+
+        // Check selection changes
+        let sel_state = (selecting, caret_pos.0, caret_pos.1);
+        if self.last_selection != Some(sel_state) {
+            self.last_selection = Some(sel_state);
+            commands.push(ClientCommand::Selection {
+                selecting,
+                col: caret_pos.0,
+                row: caret_pos.1,
+            });
+        }
+
+        if commands.is_empty() {
+            return None;
+        }
+
+        // Send all commands
+        Some(iced::Task::future(async move {
+            for cmd in commands {
+                // Use the send_command method which handles all command types
+                let _ = handle.send_command(cmd).await;
+            }
+        }))
+    }
+
+    /// Reset sync pointer (call when loading a new document or disconnecting)
+    pub fn reset_sync_pointer(&mut self) {
+        self.sync_pointer = 0;
+        self.last_cursor = None;
+        self.last_selection = None;
+    }
+
+    /// Set sync pointer to current undo stack length (call after initial sync)
+    pub fn set_sync_pointer(&mut self, len: usize) {
+        self.sync_pointer = len;
     }
 }

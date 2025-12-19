@@ -113,6 +113,15 @@ pub enum EditorUndoOp {
     /// Rotate layer
     RotateLayer { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
 
+    /// Flip layer horizontally (X-axis)
+    FlipLayerX { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+
+    /// Flip layer vertically (Y-axis)
+    FlipLayerY { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+
+    /// Set background color
+    SetBackground { old_value: u32, new_value: u32 },
+
     /// Reversed undo (wraps another operation)
     Reversed {
         description: String,
@@ -263,6 +272,9 @@ impl EditorUndoOp {
             EditorUndoOp::ScrollWholeLayerUp { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_up"),
             EditorUndoOp::ScrollWholeLayerDown { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_down"),
             EditorUndoOp::RotateLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer"),
+            EditorUndoOp::FlipLayerX { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_x"),
+            EditorUndoOp::FlipLayerY { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_y"),
+            EditorUndoOp::SetBackground { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_background"),
             EditorUndoOp::Reversed { description, .. } => description.clone(),
             EditorUndoOp::ReverseCaretPosition { .. } => "Reverse caret position".into(),
             EditorUndoOp::ClearLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-clear_layer"),
@@ -494,6 +506,24 @@ impl EditorUndoOp {
             EditorUndoOp::RotateLayer { layer, old_lines, new_lines } => {
                 std::mem::swap(old_lines, new_lines);
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                Ok(())
+            }
+            EditorUndoOp::FlipLayerX { layer, old_lines, new_lines } => {
+                std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                Ok(())
+            }
+            EditorUndoOp::FlipLayerY { layer, old_lines, new_lines } => {
+                std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                Ok(())
+            }
+            EditorUndoOp::SetBackground { old_value, .. } => {
+                // For now, just set ice_mode based on whether background is non-zero
+                // This is a simplification - actual background color handling may need more work
+                if *old_value > 0 {
+                    edit_state.get_buffer_mut().ice_mode = icy_engine::IceMode::Ice;
+                }
                 Ok(())
             }
             EditorUndoOp::Reversed { op, .. } => op.redo(edit_state),
@@ -842,6 +872,24 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
                 Ok(())
             }
+            EditorUndoOp::FlipLayerX { layer, old_lines, new_lines } => {
+                std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                Ok(())
+            }
+            EditorUndoOp::FlipLayerY { layer, old_lines, new_lines } => {
+                std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                Ok(())
+            }
+            EditorUndoOp::SetBackground { new_value, .. } => {
+                // For now, just set ice_mode based on whether background is non-zero
+                // This is a simplification - actual background color handling may need more work
+                if *new_value > 0 {
+                    edit_state.get_buffer_mut().ice_mode = icy_engine::IceMode::Ice;
+                }
+                Ok(())
+            }
             EditorUndoOp::Reversed { op, .. } => op.undo(edit_state),
             EditorUndoOp::ReverseCaretPosition { pos, .. } => {
                 edit_state.get_caret_mut().set_position(*pos);
@@ -1011,6 +1059,218 @@ impl EditorUndoOp {
             EditorUndoOp::ShowTags { show } => {
                 *show = !*show;
                 Ok(())
+            }
+        }
+    }
+}
+
+// Collaboration support - mapping UndoOps to ClientCommands
+#[cfg(feature = "collaboration")]
+mod collab_mapping {
+    use super::EditorUndoOp;
+    use crate::collaboration::{Block, ClientCommand};
+
+    impl EditorUndoOp {
+        /// Get ClientCommands to send when this operation is redone (forward direction).
+        /// Returns None for operations that don't need network sync.
+        pub fn redo_client_commands(&self) -> Option<Vec<ClientCommand>> {
+            match self {
+                EditorUndoOp::Atomic { operations, .. } => {
+                    let mut cmds = Vec::new();
+                    for op in operations {
+                        if let Some(sub_cmds) = op.redo_client_commands() {
+                            cmds.extend(sub_cmds);
+                        }
+                    }
+                    if cmds.is_empty() { None } else { Some(cmds) }
+                }
+
+                EditorUndoOp::SetChar { pos, layer: _, new, .. } => Some(vec![ClientCommand::Draw {
+                    col: pos.x,
+                    row: pos.y,
+                    block: Block {
+                        code: new.ch as u32,
+                        fg: new.attribute.foreground() as u8,
+                        bg: new.attribute.background() as u8,
+                    },
+                }]),
+
+                EditorUndoOp::SwapChar { .. } => None, // Complex, skip for now
+
+                EditorUndoOp::LayerChange { pos, new_chars, .. } => {
+                    let mut cmds = Vec::new();
+                    for (y, line) in new_chars.lines.iter().enumerate() {
+                        for (x, ch) in line.chars.iter().enumerate() {
+                            cmds.push(ClientCommand::Draw {
+                                col: pos.x + x as i32,
+                                row: pos.y + y as i32,
+                                block: Block {
+                                    code: ch.ch as u32,
+                                    fg: ch.attribute.foreground() as u8,
+                                    bg: ch.attribute.background() as u8,
+                                },
+                            });
+                        }
+                    }
+                    if cmds.is_empty() { None } else { Some(cmds) }
+                }
+
+                EditorUndoOp::ResizeBuffer { size, .. } => Some(vec![ClientCommand::SetCanvasSize {
+                    columns: size.width as u32,
+                    rows: size.height as u32,
+                }]),
+
+                EditorUndoOp::SetSauceData { new, .. } => Some(vec![ClientCommand::SetSauce {
+                    title: new.title.to_string(),
+                    author: new.author.to_string(),
+                    group: new.group.to_string(),
+                    comments: new.comments.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("\n"),
+                }]),
+
+                EditorUndoOp::SetIceMode { new_mode, .. } => {
+                    let value = match new_mode {
+                        crate::IceMode::Unlimited | crate::IceMode::Ice => true,
+                        crate::IceMode::Blink => false,
+                    };
+                    Some(vec![ClientCommand::SetIceColors { value }])
+                }
+
+                EditorUndoOp::SetUseLetterSpacing { new_ls } => Some(vec![ClientCommand::SetUse9px { value: *new_ls }]),
+
+                EditorUndoOp::RotateLayer { .. } => Some(vec![ClientCommand::Rotate]),
+
+                EditorUndoOp::FlipLayerX { .. } => Some(vec![ClientCommand::FlipX]),
+
+                EditorUndoOp::FlipLayerY { .. } => Some(vec![ClientCommand::FlipY]),
+
+                EditorUndoOp::SetBackground { new_value, .. } => Some(vec![ClientCommand::SetBackground { value: *new_value }]),
+
+                // Operations that don't map to collaboration commands
+                EditorUndoOp::AddLayer { .. }
+                | EditorUndoOp::RemoveLayer { .. }
+                | EditorUndoOp::RaiseLayer { .. }
+                | EditorUndoOp::LowerLayer { .. }
+                | EditorUndoOp::MergeLayerDown { .. }
+                | EditorUndoOp::ToggleLayerVisibility { .. }
+                | EditorUndoOp::MoveLayer { .. }
+                | EditorUndoOp::SetLayerSize { .. }
+                | EditorUndoOp::Paste { .. }
+                | EditorUndoOp::AddFloatingLayer { .. }
+                | EditorUndoOp::Crop { .. }
+                | EditorUndoOp::DeleteRow { .. }
+                | EditorUndoOp::InsertRow { .. }
+                | EditorUndoOp::DeleteColumn { .. }
+                | EditorUndoOp::InsertColumn { .. }
+                | EditorUndoOp::ScrollWholeLayerUp { .. }
+                | EditorUndoOp::ScrollWholeLayerDown { .. }
+                | EditorUndoOp::Reversed { .. }
+                | EditorUndoOp::ReverseCaretPosition { .. }
+                | EditorUndoOp::ClearLayer { .. }
+                | EditorUndoOp::Deselect { .. }
+                | EditorUndoOp::SelectNothing { .. }
+                | EditorUndoOp::SetSelection { .. }
+                | EditorUndoOp::SetSelectionMask { .. }
+                | EditorUndoOp::AddSelectionToMask { .. }
+                | EditorUndoOp::InverseSelection { .. }
+                | EditorUndoOp::SwitchPalettte { .. }
+                | EditorUndoOp::SwitchToFontPage { .. }
+                | EditorUndoOp::SetFont { .. }
+                | EditorUndoOp::AddFont { .. }
+                | EditorUndoOp::SwitchPalette { .. }
+                | EditorUndoOp::ReplaceFontUsage { .. }
+                | EditorUndoOp::RemoveFont { .. }
+                | EditorUndoOp::ChangeFontSlot { .. }
+                | EditorUndoOp::UpdateLayerProperties { .. }
+                | EditorUndoOp::SetUseAspectRatio { .. }
+                | EditorUndoOp::SetFontDimensions { .. }
+                | EditorUndoOp::AddTag { .. }
+                | EditorUndoOp::EditTag { .. }
+                | EditorUndoOp::MoveTag { .. }
+                | EditorUndoOp::RemoveTag { .. }
+                | EditorUndoOp::ShowTags { .. } => None,
+            }
+        }
+
+        /// Get ClientCommands to send when this operation is undone (backward direction).
+        /// Returns None for operations that don't need network sync.
+        pub fn undo_client_commands(&self) -> Option<Vec<ClientCommand>> {
+            match self {
+                EditorUndoOp::Atomic { operations, .. } => {
+                    let mut cmds = Vec::new();
+                    // Reverse order for undo
+                    for op in operations.iter().rev() {
+                        if let Some(sub_cmds) = op.undo_client_commands() {
+                            cmds.extend(sub_cmds);
+                        }
+                    }
+                    if cmds.is_empty() { None } else { Some(cmds) }
+                }
+
+                EditorUndoOp::SetChar { pos, layer: _, old, .. } => Some(vec![ClientCommand::Draw {
+                    col: pos.x,
+                    row: pos.y,
+                    block: Block {
+                        code: old.ch as u32,
+                        fg: old.attribute.foreground() as u8,
+                        bg: old.attribute.background() as u8,
+                    },
+                }]),
+
+                EditorUndoOp::SwapChar { .. } => None,
+
+                EditorUndoOp::LayerChange { pos, old_chars, .. } => {
+                    let mut cmds = Vec::new();
+                    for (y, line) in old_chars.lines.iter().enumerate() {
+                        for (x, ch) in line.chars.iter().enumerate() {
+                            cmds.push(ClientCommand::Draw {
+                                col: pos.x + x as i32,
+                                row: pos.y + y as i32,
+                                block: Block {
+                                    code: ch.ch as u32,
+                                    fg: ch.attribute.foreground() as u8,
+                                    bg: ch.attribute.background() as u8,
+                                },
+                            });
+                        }
+                    }
+                    if cmds.is_empty() { None } else { Some(cmds) }
+                }
+
+                EditorUndoOp::ResizeBuffer { orig_size, .. } => Some(vec![ClientCommand::SetCanvasSize {
+                    columns: orig_size.width as u32,
+                    rows: orig_size.height as u32,
+                }]),
+
+                EditorUndoOp::SetSauceData { old, .. } => Some(vec![ClientCommand::SetSauce {
+                    title: old.title.to_string(),
+                    author: old.author.to_string(),
+                    group: old.group.to_string(),
+                    comments: old.comments.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("\n"),
+                }]),
+
+                EditorUndoOp::SetIceMode { old_mode, .. } => {
+                    let value = match old_mode {
+                        crate::IceMode::Unlimited | crate::IceMode::Ice => true,
+                        crate::IceMode::Blink => false,
+                    };
+                    Some(vec![ClientCommand::SetIceColors { value }])
+                }
+
+                EditorUndoOp::SetUseLetterSpacing { new_ls } => {
+                    // Undo means reverse the value
+                    Some(vec![ClientCommand::SetUse9px { value: !*new_ls }])
+                }
+
+                // For rotate/flip, we'd need to send the opposite operation
+                // but the protocol doesn't have "undo rotate", so we skip
+                EditorUndoOp::RotateLayer { .. } => None,
+                EditorUndoOp::FlipLayerX { .. } => None,
+                EditorUndoOp::FlipLayerY { .. } => None,
+
+                EditorUndoOp::SetBackground { old_value, .. } => Some(vec![ClientCommand::SetBackground { value: *old_value }]),
+
+                // Operations that don't map to collaboration commands
+                _ => None,
             }
         }
     }

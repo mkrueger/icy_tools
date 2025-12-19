@@ -45,9 +45,6 @@ pub struct AnsiEditorMainArea {
     slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
     /// Paste controls widget
     paste_controls: PasteControls,
-
-    last_sent_cursor: Option<(i32, i32)>,
-    last_sent_selection: Option<(bool, i32, i32)>,
 }
 
 impl AnsiEditorMainArea {
@@ -83,8 +80,6 @@ impl AnsiEditorMainArea {
             right_panel: RightPanel::new(),
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             paste_controls: PasteControls::new(),
-            last_sent_cursor: None,
-            last_sent_selection: None,
         }
     }
 
@@ -129,6 +124,20 @@ impl AnsiEditorMainArea {
     /// Restore undo stack from serialization
     pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
         self.core.set_undo_stack(stack);
+    }
+
+    /// Get collaboration sync info: (undo_stack_arc, caret_pos, has_selection)
+    /// Returns None if not in EditState mode
+    pub fn get_collab_sync_info(&self) -> Option<(std::sync::Arc<std::sync::Mutex<icy_engine_edit::EditorUndoStack>>, (i32, i32), bool)> {
+        let mut screen = self.core.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
+            let undo_stack = state.get_undo_stack();
+            let caret = state.get_caret();
+            let selecting = state.selection().is_some();
+            Some((undo_stack, (caret.x, caret.y), selecting))
+        } else {
+            None
+        }
     }
 
     /// Get session data for serialization
@@ -603,10 +612,7 @@ impl AnsiEditorMainArea {
                 let new_shows_cursor = self.core.current_tool_shows_cursor();
 
                 // Send hide cursor if switched from cursor-showing to non-cursor tool
-                if old_shows_cursor && !new_shows_cursor {
-                    return Task::done(AnsiEditorMessage::CollaborationHideCursor);
-                }
-                // If switched to cursor-showing tool, the cursor position will be sent on next caret move
+                // (Collaboration sync now handled via undo stack)
 
                 Task::none()
             }
@@ -630,10 +636,8 @@ impl AnsiEditorMainArea {
                     // Check if new tool shows cursor
                     let new_shows_cursor = self.core.current_tool_shows_cursor();
 
-                    // Send hide cursor if switched from cursor-showing to non-cursor tool
-                    if old_shows_cursor && !new_shows_cursor {
-                        return Task::done(AnsiEditorMessage::CollaborationHideCursor);
-                    }
+                    // (Collaboration sync now handled via undo stack)
+                    let _ = (old_shows_cursor, new_shows_cursor);
                 }
 
                 Task::none()
@@ -653,10 +657,8 @@ impl AnsiEditorMainArea {
                 // Check if new tool shows cursor
                 let new_shows_cursor = self.core.current_tool_shows_cursor();
 
-                // Send hide cursor if switched from cursor-showing to non-cursor tool
-                if old_shows_cursor && !new_shows_cursor {
-                    return Task::done(AnsiEditorMessage::CollaborationHideCursor);
-                }
+                // (Collaboration sync now handled via undo stack)
+                let _ = (old_shows_cursor, new_shows_cursor);
 
                 Task::none()
             }
@@ -765,59 +767,10 @@ impl AnsiEditorMainArea {
                     return Task::batch(vec![task.map(AnsiEditorMessage::Core), Task::done(AnsiEditorMessage::SwitchTool(tool_id))]);
                 }
 
-                // Check for pending char changes from core (for collaboration)
-                let char_changes = self.core.take_pending_char_changes();
-                let collab_tasks: Vec<Task<AnsiEditorMessage>> = char_changes
-                    .into_iter()
-                    .map(|(col, row, code, fg, bg)| Task::done(AnsiEditorMessage::CollaborationDraw(col, row, code, fg, bg)))
-                    .collect();
-
-                // Check for caret/selection changes (for collaboration)
-                let (caret_col, caret_row, selecting) = {
-                    let mut screen_guard = self.core.screen.lock();
-                    let state: &mut EditState = screen_guard
-                        .as_any_mut()
-                        .downcast_mut::<EditState>()
-                        .expect("AnsiEditor screen should always be EditState");
-                    let caret = state.get_caret();
-                    let selecting = state.selection().is_some();
-                    (caret.x as i32, caret.y as i32, selecting)
-                };
-
-                let mut caret_tasks: Vec<Task<AnsiEditorMessage>> = Vec::new();
-
-                if self.last_sent_cursor != Some((caret_col, caret_row)) {
-                    self.last_sent_cursor = Some((caret_col, caret_row));
-                    caret_tasks.push(Task::done(AnsiEditorMessage::CollaborationCursor(caret_col, caret_row)));
-                }
-
-                if self.last_sent_selection != Some((selecting, caret_col, caret_row)) {
-                    self.last_sent_selection = Some((selecting, caret_col, caret_row));
-                    caret_tasks.push(Task::done(AnsiEditorMessage::CollaborationSelection(selecting, caret_col, caret_row)));
-                }
-
                 // Keep chrome widgets in sync with core state
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
 
-                if collab_tasks.is_empty() && caret_tasks.is_empty() {
-                    task.map(AnsiEditorMessage::Core)
-                } else {
-                    let mut all_tasks = vec![task.map(AnsiEditorMessage::Core)];
-                    all_tasks.extend(collab_tasks);
-                    all_tasks.extend(caret_tasks);
-                    Task::batch(all_tasks)
-                }
-            }
-
-            // Collaboration draw - bubbles up to MainWindow
-            AnsiEditorMessage::CollaborationDraw(_, _, _, _, _) => {
-                // This is handled by MainWindow, just pass it through
-                Task::done(message)
-            }
-
-            // Collaboration cursor/selection - bubbles up to MainWindow
-            AnsiEditorMessage::CollaborationCursor(_, _) | AnsiEditorMessage::CollaborationSelection(_, _, _) | AnsiEditorMessage::CollaborationHideCursor => {
-                Task::done(message)
+                task.map(AnsiEditorMessage::Core)
             }
 
             // Chat panel message - bubbles up to MainWindow

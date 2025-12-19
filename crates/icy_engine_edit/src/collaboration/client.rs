@@ -83,7 +83,7 @@ impl Default for ClientConfig {
 }
 
 /// Commands that can be sent to the client task.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClientCommand {
     /// Disconnect from server
     Disconnect,
@@ -105,6 +105,8 @@ pub enum ClientCommand {
     ResizeColumns { columns: u32 },
     /// Resize rows
     ResizeRows { rows: u32 },
+    /// Set canvas size (columns and rows together)
+    SetCanvasSize { columns: u32, rows: u32 },
     /// Set 9px mode
     SetUse9px { value: bool },
     /// Set ice colors
@@ -120,6 +122,14 @@ pub enum ClientCommand {
         group: String,
         comments: String,
     },
+    /// Set background color
+    SetBackground { value: u32 },
+    /// Rotate layer/selection
+    Rotate,
+    /// Flip horizontally
+    FlipX,
+    /// Flip vertically
+    FlipY,
     /// Ping
     Ping,
 }
@@ -324,12 +334,58 @@ impl ClientHandle {
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
 
+    /// Set canvas size (columns and rows).
+    pub async fn set_canvas_size(&self, columns: u32, rows: u32) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::SetCanvasSize { columns, rows })
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Set background color.
+    pub async fn set_background(&self, value: u32) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::SetBackground { value })
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Rotate layer/selection.
+    pub async fn rotate(&self) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::Rotate)
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Flip horizontally.
+    pub async fn flip_x(&self) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::FlipX)
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Flip vertically.
+    pub async fn flip_y(&self) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::FlipY)
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
     /// Send ping (keepalive).
     pub async fn ping(&self) -> Result<(), ClientError> {
         self.command_tx
             .send(ClientCommand::Ping)
             .await
             .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
+    /// Send a generic command.
+    /// This is useful for sending commands collected from UndoOp mappings.
+    pub async fn send_command(&self, cmd: ClientCommand) -> Result<(), ClientError> {
+        self.command_tx.send(cmd).await.map_err(|e| ClientError::SendFailed(e.to_string()))
     }
 }
 
@@ -699,6 +755,26 @@ pub fn command_to_message(cmd: ClientCommand, user_id: Option<UserId>, nick: &st
         } => json!({
             "type": ActionCode::Sauce as u8,  // Moebius SAUCE = 12
             "data": { "id": id, "title": title, "author": author, "group": group, "comments": comments }
+        }),
+        ClientCommand::SetCanvasSize { columns, rows } => json!({
+            "type": ActionCode::SetCanvasSize as u8,  // Moebius SET_CANVAS_SIZE = 16
+            "data": { "id": id, "columns": columns, "rows": rows }
+        }),
+        ClientCommand::SetBackground { value } => json!({
+            "type": ActionCode::SetBackground as u8,  // Moebius SET_BG = 21
+            "data": { "id": id, "value": value }
+        }),
+        ClientCommand::Rotate => json!({
+            "type": ActionCode::Rotate as u8,  // Moebius ROTATE = 18
+            "data": { "id": id }
+        }),
+        ClientCommand::FlipX => json!({
+            "type": ActionCode::FlipX as u8,  // Moebius FLIP_X = 19
+            "data": { "id": id }
+        }),
+        ClientCommand::FlipY => json!({
+            "type": ActionCode::FlipY as u8,  // Moebius FLIP_Y = 20
+            "data": { "id": id }
         }),
         // Ping not in Moebius protocol - skip
         ClientCommand::Ping => return None,

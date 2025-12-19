@@ -166,10 +166,6 @@ pub struct EditState {
 
     /// SAUCE metadata for the file (title, author, group, comments)
     sauce_meta: SauceMetaData,
-
-    /// Pending character changes for collaboration (col, row, code, fg, bg)
-    /// Accumulated during edits, undo, redo operations
-    pending_char_changes: Vec<(i32, i32, u32, u8, u8)>,
 }
 
 /// Guard for atomic undo operations
@@ -350,7 +346,6 @@ impl Default for EditState {
             tool_overlay_mask,
             is_palette_dirty: false,
             sauce_meta: SauceMetaData::default(),
-            pending_char_changes: Vec::new(),
         }
     }
 }
@@ -605,8 +600,6 @@ impl EditState {
 
     /// Push and execute an undo operation
     pub(crate) fn push_undo_action(&mut self, mut op: EditorUndoOp) -> Result<()> {
-        // Collect char changes for collaboration (use 'new' values for redo/push)
-        self.collect_char_changes_from_op(&op, true);
         op.redo(self)?;
         self.push_plain_undo(op)
     }
@@ -629,35 +622,6 @@ impl EditState {
     /// Get clone of the undo stack (for serialization)
     pub fn get_undo_stack(&self) -> Arc<Mutex<EditorUndoStack>> {
         self.undo_stack.clone()
-    }
-
-    /// Take pending character changes for collaboration.
-    /// Returns and clears the accumulated (col, row, code, fg, bg) tuples.
-    /// These changes are collected from all edit operations including undo/redo.
-    pub fn take_pending_char_changes(&mut self) -> Vec<(i32, i32, u32, u8, u8)> {
-        std::mem::take(&mut self.pending_char_changes)
-    }
-
-    /// Check if there are pending character changes
-    pub fn has_pending_char_changes(&self) -> bool {
-        !self.pending_char_changes.is_empty()
-    }
-
-    /// Collect SetChar operations from an undo operation into pending_char_changes
-    fn collect_char_changes_from_op(&mut self, op: &EditorUndoOp, use_new: bool) {
-        match op {
-            EditorUndoOp::SetChar { pos, new, old, .. } => {
-                let ch = if use_new { new } else { old };
-                self.pending_char_changes
-                    .push((pos.x, pos.y, ch.ch as u32, ch.attribute.foreground() as u8, ch.attribute.background() as u8));
-            }
-            EditorUndoOp::Atomic { operations, .. } => {
-                for sub_op in operations {
-                    self.collect_char_changes_from_op(sub_op, use_new);
-                }
-            }
-            _ => {}
-        }
     }
 
     pub fn has_floating_layer(&self) -> bool {
@@ -708,9 +672,6 @@ impl UndoState for EditState {
             self.mark_dirty();
         }
 
-        // Collect char changes for collaboration (use 'old' values for undo)
-        self.collect_char_changes_from_op(&op, false);
-
         let res = op.undo(self);
         self.undo_stack.lock().unwrap().push_redo(op);
         res
@@ -731,9 +692,6 @@ impl UndoState for EditState {
         if op.changes_data() {
             self.mark_dirty();
         }
-
-        // Collect char changes for collaboration (use 'new' values for redo)
-        self.collect_char_changes_from_op(&op, true);
 
         let res = op.redo(self);
         self.undo_stack.lock().unwrap().push_undo(op);

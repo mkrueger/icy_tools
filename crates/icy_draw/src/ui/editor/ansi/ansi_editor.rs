@@ -1947,13 +1947,6 @@ impl AnsiEditorCore {
         self.pending_tool_switch.take()
     }
 
-    /// Take pending character changes for collaboration
-    /// Returns (col, row, code, fg, bg) tuples to send to the server
-    /// Now delegates to EditState where changes are collected during undo/redo operations
-    pub fn take_pending_char_changes(&mut self) -> Vec<(i32, i32, u32, u8, u8)> {
-        self.with_edit_state(|state: &mut EditState| state.take_pending_char_changes())
-    }
-
     /// Update the canvas markers based on current guide/raster settings
     fn update_markers(&mut self) {
         // Get font dimensions from screen for pixel conversion

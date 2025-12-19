@@ -1176,47 +1176,6 @@ impl MainWindow {
                 }
             }
             Message::AnsiEditor(msg) => {
-                // Intercept CollaborationDraw messages - send to server before forwarding
-                if let AnsiEditorMessage::CollaborationDraw(col, row, code, fg, bg) = &msg {
-                    if self.collaboration_state.is_connected() {
-                        use icy_engine_edit::collaboration::Block;
-                        if let Some(task) = self.collaboration_state.send_draw(*col, *row, Block { code: *code, fg: *fg, bg: *bg }) {
-                            return task.discard();
-                        }
-                    }
-                    // Don't forward this message further - it's been handled
-                    return Task::none();
-                }
-
-                // Intercept collaboration caret/selection messages
-                if let AnsiEditorMessage::CollaborationCursor(col, row) = &msg {
-                    if self.collaboration_state.is_connected() {
-                        if let Some(task) = self.collaboration_state.send_cursor(*col, *row) {
-                            return task.discard();
-                        }
-                    }
-                    return Task::none();
-                }
-
-                if let AnsiEditorMessage::CollaborationSelection(selecting, col, row) = &msg {
-                    if self.collaboration_state.is_connected() {
-                        if let Some(task) = self.collaboration_state.send_selection(*selecting, *col, *row) {
-                            return task.discard();
-                        }
-                    }
-                    return Task::none();
-                }
-
-                // Intercept hide cursor message (tool switched to non-cursor tool)
-                if let AnsiEditorMessage::CollaborationHideCursor = &msg {
-                    if self.collaboration_state.is_connected() {
-                        if let Some(task) = self.collaboration_state.send_hide_cursor() {
-                            return task.discard();
-                        }
-                    }
-                    return Task::none();
-                }
-
                 // Intercept ChatPanel messages and handle them at MainWindow level
                 if let AnsiEditorMessage::ChatPanel(chat_msg) = msg {
                     return self.update(Message::ChatPanel(chat_msg));
@@ -1235,7 +1194,18 @@ impl MainWindow {
                 }
                 // Forward all messages to the Ansi editor
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.update(msg, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor)
+                    let editor_task = editor.update(msg, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
+
+                    // Sync collaboration state from undo stack after editor updates
+                    if self.collaboration_state.is_connected() {
+                        if let Some((undo_stack_arc, caret_pos, selecting)) = editor.get_collab_sync_info() {
+                            let undo_stack = undo_stack_arc.lock().unwrap();
+                            if let Some(collab_task) = self.collaboration_state.sync_from_undo_stack(&undo_stack, caret_pos, selecting) {
+                                return Task::batch([editor_task, collab_task.map(|_| Message::Noop)]);
+                            }
+                        }
+                    }
+                    editor_task
                 } else {
                     Task::none()
                 }

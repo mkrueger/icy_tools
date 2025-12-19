@@ -185,6 +185,16 @@ impl EditorUndoStack {
         }
     }
 
+    /// Get direct read access to the undo stack for collaboration sync
+    pub fn undo_stack(&self) -> &[EditorUndoOp] {
+        &self.undo_stack
+    }
+
+    /// Get direct read access to the redo stack for collaboration sync
+    pub fn redo_stack(&self) -> &[EditorUndoOp] {
+        &self.redo_stack
+    }
+
     /// Clear all operations
     pub fn clear(&mut self) {
         self.undo_stack.clear();
