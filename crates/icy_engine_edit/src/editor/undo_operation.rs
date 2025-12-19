@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Result, Role, SauceMetaData, Selection,
-    SelectionMask, Size, Tag, TextPane,
+    SelectionMask, Size, Tag, TextPane, stamp_layer,
 };
 
 use super::EditState;
@@ -413,10 +413,18 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::LayerChange {
-                layer, old_chars, new_chars, ..
+                layer,
+                pos,
+                old_chars,
+                new_chars: _,
             } => {
-                std::mem::swap(old_chars, new_chars);
-                edit_state.get_buffer_mut().layers[*layer] = new_chars.clone();
+                if let Some(target_layer) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if target_layer.size() == old_chars.size() {
+                        target_layer.lines = old_chars.lines.clone();
+                    } else {
+                        stamp_layer(target_layer, *pos, old_chars);
+                    }
+                }
                 Ok(())
             }
             EditorUndoOp::Crop { orig_size, layers, .. } => {
@@ -492,20 +500,18 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SelectNothing { sel, mask } => {
-                edit_state.selection_opt = sel.take();
+                edit_state.selection_opt = sel.clone();
                 edit_state.set_selection_mask(mask.clone());
                 edit_state.mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::SetSelection { old, new } => {
-                std::mem::swap(old, new);
-                edit_state.selection_opt = new.take();
+            EditorUndoOp::SetSelection { old, .. } => {
+                edit_state.selection_opt = old.clone();
                 edit_state.mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::SetSelectionMask { old, new, .. } => {
-                std::mem::swap(old, new);
-                edit_state.set_selection_mask(new.clone());
+            EditorUndoOp::SetSelectionMask { old, .. } => {
+                edit_state.set_selection_mask(old.clone());
                 Ok(())
             }
             EditorUndoOp::AddSelectionToMask { old, .. } => {
@@ -513,7 +519,7 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
-                edit_state.selection_opt = sel.take();
+                edit_state.selection_opt = sel.clone();
                 std::mem::swap(old, new);
                 edit_state.set_selection_mask(new.clone());
                 edit_state.mark_dirty();
@@ -744,10 +750,18 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::LayerChange {
-                layer, old_chars, new_chars, ..
+                layer,
+                pos,
+                old_chars: _,
+                new_chars,
             } => {
-                std::mem::swap(old_chars, new_chars);
-                edit_state.get_buffer_mut().layers[*layer] = new_chars.clone();
+                if let Some(target_layer) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if target_layer.size() == new_chars.size() {
+                        target_layer.lines = new_chars.lines.clone();
+                    } else {
+                        stamp_layer(target_layer, *pos, new_chars);
+                    }
+                }
                 Ok(())
             }
             EditorUndoOp::Crop { size, layers, .. } => {
@@ -825,22 +839,20 @@ impl EditorUndoOp {
                 edit_state.mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::SelectNothing { sel, mask } => {
-                *sel = edit_state.selection_opt.clone();
-                *mask = edit_state.selection_mask.clone();
+            EditorUndoOp::SelectNothing { .. } => {
+                // sel and mask are already set when the operation is created
+                // redo just needs to clear selection and mask
                 edit_state.selection_opt = None;
                 edit_state.selection_mask.clear();
                 edit_state.mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::SetSelection { old, new } => {
-                std::mem::swap(old, new);
-                edit_state.selection_opt = new.take();
+            EditorUndoOp::SetSelection { new, .. } => {
+                edit_state.selection_opt = new.clone();
                 edit_state.mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::SetSelectionMask { old, new, .. } => {
-                std::mem::swap(old, new);
+            EditorUndoOp::SetSelectionMask { new, .. } => {
                 edit_state.set_selection_mask(new.clone());
                 Ok(())
             }

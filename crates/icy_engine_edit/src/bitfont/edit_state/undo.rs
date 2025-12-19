@@ -45,7 +45,7 @@ impl BitFontEditState {
     }
 
     /// End an atomic undo group
-    pub(crate) fn end_atomic_undo(&mut self, base_count: usize, description: String, operation_type: BitFontOperationType) {
+    pub fn end_atomic_undo(&mut self, base_count: usize, description: String, operation_type: BitFontOperationType) {
         if base_count >= self.undo_stack.undo_len() {
             return;
         }
