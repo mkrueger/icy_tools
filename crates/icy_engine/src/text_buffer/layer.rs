@@ -46,10 +46,6 @@ pub struct Layer {
     pub transparency: u8,
     pub properties: Properties,
 
-    // Font page "default" chars are generated with
-    // (needed for font mapping)
-    pub default_font_page: usize,
-
     preview_offset: Option<Position>,
     size: Size,
     pub lines: Vec<Line>,
@@ -95,7 +91,7 @@ impl HyperLink {
 impl TextPane for Layer {
     fn char_at(&self, pos: Position) -> AttributedChar {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.width() || pos.y >= self.height() {
-            return AttributedChar::invisible().with_font_page(self.default_font_page);
+            return AttributedChar::invisible();
         }
         let y = pos.y;
         if y < self.lines.len() as i32 {
@@ -104,7 +100,7 @@ impl TextPane for Layer {
                 return cur_line.chars[pos.x as usize];
             }
         }
-        AttributedChar::invisible().with_font_page(self.default_font_page)
+        AttributedChar::invisible()
     }
 
     fn line_count(&self) -> i32 {

@@ -215,15 +215,11 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
             "layer {layer} has_alpha_channel differs"
         );
 
-        assert_eq!(
-            buf_old.layers[layer].default_font_page, buf_new.layers[layer].default_font_page,
-            "layer {layer} default_font_page differs"
-        );
-
         for line in 0..buf_old.layers[layer].lines.len() {
             for i in 0..buf_old.layers[layer].width() as usize {
-                let mut ch = buf_old.layers[layer].char_at((line, i).into());
-                let mut ch2 = buf_new.layers[layer].char_at((line, i).into());
+                // char_at expects (x, y), so i is x (column) and line is y (row)
+                let mut ch = buf_old.layers[layer].char_at((i, line).into());
+                let mut ch2 = buf_new.layers[layer].char_at((i, line).into());
                 if compare_options.ignore_invisible_chars && (!ch.is_visible() || !ch2.is_visible()) {
                     continue;
                 }

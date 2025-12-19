@@ -526,9 +526,9 @@ fn process_icy_draw_v0_decoded_chunk(
             let height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
             o += 4;
             layer.set_size((width, height));
-            let default_font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
+            // default_font_page was removed - skip 2 bytes for compatibility with old files
+            let _default_font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
             o += 2;
-            layer.default_font_page = default_font_page as usize;
 
             if bytes.len() < o + 8 {
                 return Err(crate::EngineError::OutOfBounds { offset: o + 8 });

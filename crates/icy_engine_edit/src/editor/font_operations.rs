@@ -315,9 +315,6 @@ impl EditState {
             self.get_caret_mut().set_font_page(to);
         }
         for layer in &mut self.get_buffer_mut().layers {
-            if layer.default_font_page == from {
-                layer.default_font_page = to;
-            }
             for y in 0..layer.height() {
                 for x in 0..layer.width() {
                     let mut ch = layer.char_at((x, y).into());

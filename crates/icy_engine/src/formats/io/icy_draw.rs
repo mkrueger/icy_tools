@@ -644,9 +644,6 @@ fn process_icy_draw_decoded_chunk(
             let height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
             o += 4;
             layer.set_size((width, height));
-            let default_font_page = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-            o += 2;
-            layer.default_font_page = default_font_page as usize;
 
             if bytes.len() < o + 8 {
                 return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
@@ -686,12 +683,16 @@ fn process_icy_draw_decoded_chunk(
                 if bytes.len() < o + length {
                     return Err(crate::EngineError::OutOfBounds { offset: o + length });
                 }
+                let char_data_end = o + length;
                 let mut y = 0;
                 while y < height {
-                    if o >= bytes.len() {
+                    if o >= char_data_end {
                         break;
                     }
                     for x in 0..width {
+                        if o >= char_data_end {
+                            break;
+                        }
                         if bytes.len() < o + 2 {
                             return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
                         }
@@ -894,7 +895,6 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
 
         layer_data.extend(i32::to_le_bytes(layer.width()));
         layer_data.extend(i32::to_le_bytes(layer.height()));
-        layer_data.extend(u16::to_le_bytes(layer.default_font_page as u16));
 
         if matches!(layer.role, crate::Role::Image) {
             let sixel = &layer.sixels[0];
