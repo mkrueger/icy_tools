@@ -770,13 +770,8 @@ impl AnsiEditorCore {
         // Get font dimensions and foreground color from caret
         let (font_width, font_height, paint_color) = {
             let screen = self.screen.lock();
-            let font = screen.font(0);
-            let (fw, fh) = if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0)
-            };
+            let size = screen.font_dimensions();
+            let (fw, fh) = (size.width as f32, size.height as f32);
 
             // Get the foreground color from the caret attribute
             let caret_fg = screen.caret().attribute.foreground();
@@ -1969,13 +1964,8 @@ impl AnsiEditorCore {
         // Get font dimensions from screen for pixel conversion
         let (font_width, font_height) = {
             let screen = self.screen.lock();
-            let font = screen.font(0);
-            if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0) // Default fallback
-            }
+            let size = screen.font_dimensions();
+            (size.width as f32, size.height as f32)
         };
 
         // Update raster grid in pixel coordinates
@@ -2028,7 +2018,6 @@ impl AnsiEditorCore {
             markers.tool_overlay_mask_data = term_markers.tool_overlay_mask_data.clone();
             markers.tool_overlay_rect = term_markers.tool_overlay_rect;
             markers.tool_overlay_cell_height_scale = term_markers.tool_overlay_cell_height_scale;
-            markers.font_dimensions = term_markers.font_dimensions;
             markers.brush_preview_rect = term_markers.brush_preview_rect;
         }
 
@@ -2044,13 +2033,8 @@ impl AnsiEditorCore {
         let mut screen = self.screen.lock();
 
         // Get font dimensions for pixel conversion
-        let font = screen.font(0);
-        let (font_width, font_height) = if let Some(f) = font {
-            let size = f.size();
-            (size.width as f32, size.height as f32)
-        } else {
-            (8.0, 16.0) // Default fallback
-        };
+        let size = screen.font_dimensions();
+        let (font_width, font_height) = (size.width as f32, size.height as f32);
 
         // Access the EditState to get buffer and current layer
         if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
@@ -2111,13 +2095,8 @@ impl AnsiEditorCore {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
-            let font = screen.font(0);
-            let (fw, fh) = if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0) // Default fallback
-            };
+            let size = screen.font_dimensions();
+            let (fw, fh) = (size.width as f32, size.height as f32);
 
             // Access EditState to get tags and update overlay mask
             let tags = if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
@@ -2148,7 +2127,7 @@ impl AnsiEditorCore {
         use icy_engine_gui::selection_colors;
 
         // Get selection from EditState and convert to pixel coordinates
-        let (selection_rect, selection_color, selection_mask_data, font_dimensions) = {
+        let (selection_rect, selection_color, selection_mask_data) = {
             let mut screen = self.screen.lock();
 
             // Get font dimensions for pixel conversion
@@ -2214,12 +2193,7 @@ impl AnsiEditorCore {
                         (x, y, w, h)
                     });
 
-                    (
-                        selection_rect,
-                        selection_color,
-                        Some((rgba_data, width, height)),
-                        Some((font_width, font_height)),
-                    )
+                    (selection_rect, selection_color, Some((rgba_data, width, height)))
                 } else if let Some(sel) = selection {
                     // No mask, but have selection rectangle
                     let rect = sel.as_rectangle();
@@ -2228,18 +2202,18 @@ impl AnsiEditorCore {
                     let w = (rect.width() + 1) as f32 * font_width;
                     let h = (rect.height() + 1) as f32 * font_height;
 
-                    (Some((x, y, w, h)), selection_color, None, Some((font_width, font_height)))
+                    (Some((x, y, w, h)), selection_color, None)
                 } else {
-                    (None, selection_colors::DEFAULT, None, None)
+                    (None, selection_colors::DEFAULT, None)
                 }
             } else {
-                (None, selection_colors::DEFAULT, None, None)
+                (None, selection_colors::DEFAULT, None)
             }
         };
 
         self.canvas.set_selection(selection_rect);
         self.canvas.set_selection_color(selection_color);
-        self.canvas.set_selection_mask(selection_mask_data, font_dimensions);
+        self.canvas.set_selection_mask(selection_mask_data);
     }
 
     /// Set or update the reference image
@@ -2450,13 +2424,8 @@ impl AnsiEditorCore {
                                     if tag_tool.state().selection_drag_active {
                                         let (font_width, font_height) = {
                                             let screen = self.screen.lock();
-                                            let font = screen.font(0);
-                                            if let Some(f) = font {
-                                                let size = f.size();
-                                                (size.width as f32, size.height as f32)
-                                            } else {
-                                                (8.0, 16.0)
-                                            }
+                                            let size = screen.font_dimensions();
+                                            (size.width as f32, size.height as f32)
                                         };
 
                                         let (mask, rect) = tools::TagTool::overlay_mask_for_selection_drag(

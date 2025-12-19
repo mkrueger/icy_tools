@@ -591,7 +591,6 @@ impl<'a> CRTShaderProgram<'a> {
         let selection_rect = markers.and_then(|m| m.selection_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let selection_color = markers.map_or(crate::selection_colors::DEFAULT, |m| m.selection_color);
         let selection_mask_data = markers.and_then(|m| m.selection_mask_data.clone());
-        let font_dimensions = markers.and_then(|m| m.font_dimensions);
         let tool_overlay_mask_data = markers.and_then(|m| m.tool_overlay_mask_data.clone());
         let tool_overlay_rect = markers.and_then(|m| m.tool_overlay_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
         let tool_overlay_cell_height_scale = markers.map_or(1.0, |m| m.tool_overlay_cell_height_scale);
@@ -646,7 +645,6 @@ impl<'a> CRTShaderProgram<'a> {
             selection_rect,
             selection_color,
             selection_mask_data,
-            font_dimensions,
 
             // Tool overlay (Moebius-style alpha preview)
             tool_overlay_mask_data,

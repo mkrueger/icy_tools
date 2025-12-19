@@ -200,13 +200,18 @@ pub fn load_sauce_font(sauce_name: &str) -> crate::Result<BitFont> {
 fn try_load_sauce_font(sauce_name: &str) -> Option<BitFont> {
     for mapping in SAUCE_FONT_MAP {
         if mapping.sauce_name.eq_ignore_ascii_case(sauce_name) {
-            return match &mapping.source {
+            let mut font = match &mapping.source {
                 SauceFontSource::AnsiSlot(slot) => {
                     // Load ANSI font but rename it to the SAUCE name
                     get_ansi_font(*slot, 16).cloned()
                 }
                 SauceFontSource::Dedicated(data) => BitFont::from_bytes(mapping.sauce_name, *data).ok(),
             };
+            if let Some(font) = font.as_mut() {
+                font.set_name(mapping.sauce_name);
+            }
+
+            return font;
         }
     }
     None

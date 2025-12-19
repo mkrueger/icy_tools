@@ -162,11 +162,9 @@ impl CanvasView {
 
     /// Set the selection mask for complex (non-rectangular) selections
     /// mask_data: (RGBA texture data, width in cells, height in cells)
-    /// font_dimensions: (font_width, font_height) in pixels
-    pub fn set_selection_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, font_dimensions: Option<(f32, f32)>) {
+    pub fn set_selection_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>) {
         let mut markers = self.terminal.markers.write();
         markers.selection_mask_data = mask_data;
-        markers.font_dimensions = font_dimensions;
     }
 
     /// Set the tool overlay for Moebius-style translucent tool previews.

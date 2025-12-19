@@ -131,6 +131,25 @@ fn test_screen_get_font_dimensions() {
 }
 
 #[test]
+fn test_screen_get_font_dimensions_9px_mode() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let base = screen.font_dimensions();
+    assert!(base.width > 0);
+    assert!(base.height > 0);
+
+    screen.buffer.set_use_letter_spacing(true);
+    let dims = screen.font_dimensions();
+
+    if base.width == 8 {
+        assert_eq!(dims.width, 9);
+        assert_eq!(dims.height, base.height);
+    } else {
+        // Für Nicht-8px-Grundfonts soll sich die Zellgröße nicht ändern.
+        assert_eq!(dims, base);
+    }
+}
+
+#[test]
 fn test_screen_get_resolution() {
     let screen = TextScreen::new(Size::new(80, 25));
     let resolution = screen.resolution();

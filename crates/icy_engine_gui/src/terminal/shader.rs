@@ -299,8 +299,6 @@ pub struct TerminalShader {
     /// Selection mask texture data (RGBA bytes), None = no mask
     /// Each pixel represents one character cell: white = selected, black = not selected
     pub selection_mask_data: Option<(Vec<u8>, u32, u32)>, // (data, width_in_cells, height_in_cells)
-    /// Font dimensions for selection mask sampling (font_width, font_height in pixels)
-    pub font_dimensions: Option<(f32, f32)>,
 
     // Tool overlay mask rendering (Moebius-like alpha preview)
     /// Tool overlay mask texture data (RGBA bytes), None = no overlay
@@ -1343,7 +1341,8 @@ impl shader::Primitive for TerminalShader {
             }
         };
 
-        let (mask_font_w, mask_font_h) = self.font_dimensions.unwrap_or((self.font_width.max(1.0), self.font_height.max(1.0)));
+        let mask_font_w = self.font_width.max(1.0);
+        let mask_font_h = self.font_height.max(1.0);
         let effective_mask_font_h = if self.scan_lines { mask_font_h * 2.0 } else { mask_font_h };
 
         let uniform_data = CRTUniforms {

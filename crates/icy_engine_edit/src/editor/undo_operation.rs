@@ -868,18 +868,21 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::RotateLayer { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
+                // Set lines first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
             EditorUndoOp::FlipLayerX { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
+                // Set lines first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
             EditorUndoOp::FlipLayerY { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
+                // Set lines first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
             EditorUndoOp::SetBackground { new_value, .. } => {
@@ -942,18 +945,21 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SetSauceData { old, new } => {
-                std::mem::swap(old, new);
+                // Set value first, then swap for undo symmetry
                 edit_state.set_sauce_meta(new.clone().into());
+                std::mem::swap(old, new);
                 Ok(())
             }
             EditorUndoOp::SwitchToFontPage { old, new } => {
-                std::mem::swap(old, new);
+                // Set value first, then swap for undo symmetry
                 edit_state.get_caret_mut().set_font_page(*new);
+                std::mem::swap(old, new);
                 Ok(())
             }
             EditorUndoOp::SetFont { font_page, old, new } => {
-                std::mem::swap(old, new);
+                // Set font first, then swap for undo symmetry
                 edit_state.get_buffer_mut().set_font(*font_page, new.clone());
+                std::mem::swap(old, new);
                 Ok(())
             }
             EditorUndoOp::AddFont { new_font_page, font, .. } => {
@@ -969,12 +975,13 @@ impl EditorUndoOp {
                 new_palette,
                 new_layers,
             } => {
-                std::mem::swap(old_mode, new_mode);
-                std::mem::swap(old_palette, new_palette);
-                std::mem::swap(old_layers, new_layers);
+                // Set values first, then swap for undo symmetry
                 edit_state.get_buffer_mut().palette_mode = *new_mode;
                 edit_state.get_buffer_mut().palette = new_palette.clone();
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                std::mem::swap(old_mode, new_mode);
+                std::mem::swap(old_palette, new_palette);
+                std::mem::swap(old_layers, new_layers);
                 Ok(())
             }
             EditorUndoOp::SetIceMode {
@@ -983,10 +990,11 @@ impl EditorUndoOp {
                 new_mode,
                 new_layers,
             } => {
-                std::mem::swap(old_mode, new_mode);
-                std::mem::swap(old_layers, new_layers);
+                // Set values first, then swap for undo symmetry
                 edit_state.get_buffer_mut().ice_mode = *new_mode;
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                std::mem::swap(old_mode, new_mode);
+                std::mem::swap(old_layers, new_layers);
                 Ok(())
             }
             EditorUndoOp::ReplaceFontUsage {
@@ -995,10 +1003,11 @@ impl EditorUndoOp {
                 new_caret_page,
                 new_layers,
             } => {
-                std::mem::swap(old_caret_page, new_caret_page);
-                std::mem::swap(old_layers, new_layers);
+                // Set values first, then swap for undo symmetry
                 edit_state.get_caret_mut().set_font_page(*new_caret_page);
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                std::mem::swap(old_caret_page, new_caret_page);
+                std::mem::swap(old_layers, new_layers);
                 Ok(())
             }
             EditorUndoOp::RemoveFont { font_slot, font } => {
@@ -1006,10 +1015,11 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::ChangeFontSlot { from, to } => {
-                std::mem::swap(from, to);
+                // Move font first, then swap for undo symmetry
                 if let Some(font) = edit_state.get_buffer_mut().remove_font(*from) {
                     edit_state.get_buffer_mut().set_font(*to, font);
                 }
+                std::mem::swap(from, to);
                 Ok(())
             }
             EditorUndoOp::UpdateLayerProperties {
@@ -1017,8 +1027,9 @@ impl EditorUndoOp {
                 old_properties,
                 new_properties,
             } => {
-                std::mem::swap(old_properties, new_properties);
+                // Set properties first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*index].properties = new_properties.clone();
+                std::mem::swap(old_properties, new_properties);
                 Ok(())
             }
             EditorUndoOp::SetUseLetterSpacing { new_ls } => {
@@ -1034,8 +1045,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SetFontDimensions { old_size, new_size } => {
-                std::mem::swap(old_size, new_size);
+                // Set dimensions first, then swap for undo symmetry
                 edit_state.get_buffer_mut().set_font_dimensions(*new_size);
+                std::mem::swap(old_size, new_size);
                 Ok(())
             }
             EditorUndoOp::AddTag { new_tag, .. } => {
@@ -1043,13 +1055,15 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::EditTag { tag_index, old_tag, new_tag } => {
-                std::mem::swap(old_tag, new_tag);
+                // Set tag first, then swap for undo symmetry
                 edit_state.get_buffer_mut().tags[*tag_index] = new_tag.clone();
+                std::mem::swap(old_tag, new_tag);
                 Ok(())
             }
             EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
-                std::mem::swap(old_pos, new_pos);
+                // Move tag first, then swap for undo symmetry
                 edit_state.get_buffer_mut().tags[*tag].position = *new_pos;
+                std::mem::swap(old_pos, new_pos);
                 Ok(())
             }
             EditorUndoOp::RemoveTag { tag_index, .. } => {

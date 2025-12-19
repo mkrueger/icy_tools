@@ -570,9 +570,6 @@ pub struct EditorMarkers {
     /// Kept for compatibility; no longer used by the shader.
     pub tool_overlay_cell_height_scale: f32,
 
-    /// Font dimensions for selection mask rendering (font_width, font_height in pixels)
-    pub font_dimensions: Option<(f32, f32)>,
-
     /// Brush/Pencil preview rectangle in pixels (x, y, width, height) in document space
     /// None = no brush preview
     pub brush_preview_rect: Option<(f32, f32, f32, f32)>,
@@ -601,7 +598,6 @@ impl Default for EditorMarkers {
             tool_overlay_mask_data: None,
             tool_overlay_rect: None,
             tool_overlay_cell_height_scale: 1.0,
-            font_dimensions: None,
             brush_preview_rect: None,
 
             caret_origin_px: (0.0, 0.0),

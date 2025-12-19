@@ -136,7 +136,12 @@ impl Screen for TextScreen {
     }
 
     fn font_dimensions(&self) -> Size {
-        self.buffer.font_dimensions()
+        let dims = self.buffer.font_dimensions();
+        if self.use_letter_spacing() && dims.width == 8 {
+            Size::new(9, dims.height)
+        } else {
+            dims
+        }
     }
 
     fn selection(&self) -> Option<Selection> {
