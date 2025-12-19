@@ -9,7 +9,7 @@ license.workspace = true
 
 [features]
 default = []
-collaboration = ["tokio", "tokio-tungstenite", "futures-util", "serde_json"]
+collaboration = ["tokio", "tokio-tungstenite", "futures-util", "serde_json", "anstream"]
 
 [dependencies]
 icy_engine = { workspace = true }
@@ -39,6 +39,7 @@ tokio = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+anstream = { workspace = true, optional = true }
 
 [dev-dependencies]
 png = "0.18.0"

@@ -7,6 +7,12 @@ use iced::{Alignment, Background, Border, Element, Length, Theme};
 
 pub const CHECKBOX_SIZE: f32 = 18.0;
 pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSettingsMessage> {
+    show_monitor_settings_with_options(s, true)
+}
+
+/// Show monitor settings panel with optional scaling controls.
+/// Set `show_scaling_options` to `false` to hide the "Auto" scaling mode and "Integer Scaling" checkboxes.
+pub fn show_monitor_settings_with_options(s: MonitorSettings, show_scaling_options: bool) -> Element<'static, MonitorSettingsMessage> {
     let monitor_type_options = vec![
         MonitorType::Color,
         MonitorType::Grayscale,
@@ -64,30 +70,42 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
         ]
         .spacing(ROW_SPACING)
         .align_y(Alignment::Center),
-        row![
-            left_label(fl!(LANGUAGE_LOADER, "settings-scaling-mode-label")),
-            checkbox(s.scaling_mode.is_auto())
-                .on_toggle(|is_auto| {
-                    if is_auto {
-                        MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Auto)
-                    } else {
-                        MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Manual(1.0))
-                    }
-                })
-                .size(CHECKBOX_SIZE)
-                .text_size(TEXT_SIZE_NORMAL)
-        ]
-        .spacing(ROW_SPACING)
-        .align_y(Alignment::Center),
-        row![
-            left_label(fl!(LANGUAGE_LOADER, "settings-integer-scaling-label")),
-            checkbox(s.use_integer_scaling)
-                .on_toggle(MonitorSettingsMessage::IntegerScalingChanged)
-                .size(CHECKBOX_SIZE)
-                .text_size(TEXT_SIZE_NORMAL)
-        ]
-        .spacing(ROW_SPACING)
-        .align_y(Alignment::Center),
+    ]
+    .spacing(ROW_SPACING);
+
+    // Scaling options (hidden in some applications like icy_draw)
+    if show_scaling_options {
+        appearance_content = appearance_content.push(
+            row![
+                left_label(fl!(LANGUAGE_LOADER, "settings-scaling-mode-label")),
+                checkbox(s.scaling_mode.is_auto())
+                    .on_toggle(|is_auto| {
+                        if is_auto {
+                            MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Auto)
+                        } else {
+                            MonitorSettingsMessage::ScalingModeChanged(crate::ScalingMode::Manual(1.0))
+                        }
+                    })
+                    .size(CHECKBOX_SIZE)
+                    .text_size(TEXT_SIZE_NORMAL)
+            ]
+            .spacing(ROW_SPACING)
+            .align_y(Alignment::Center),
+        );
+        appearance_content = appearance_content.push(
+            row![
+                left_label(fl!(LANGUAGE_LOADER, "settings-integer-scaling-label")),
+                checkbox(s.use_integer_scaling)
+                    .on_toggle(MonitorSettingsMessage::IntegerScalingChanged)
+                    .size(CHECKBOX_SIZE)
+                    .text_size(TEXT_SIZE_NORMAL)
+            ]
+            .spacing(ROW_SPACING)
+            .align_y(Alignment::Center),
+        );
+    }
+
+    appearance_content = appearance_content.push(
         row![
             left_label(fl!(LANGUAGE_LOADER, "settings-bilinear-filtering-label")),
             checkbox(s.use_bilinear_filtering)
@@ -97,8 +115,7 @@ pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSett
         ]
         .spacing(ROW_SPACING)
         .align_y(Alignment::Center),
-    ]
-    .spacing(ROW_SPACING);
+    );
 
     // Custom monochrome color
     if s.monitor_type == MonitorType::CustomMonochrome {

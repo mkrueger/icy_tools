@@ -23,6 +23,7 @@ mod connector;
 mod protocol;
 mod server;
 mod session;
+mod state;
 
 pub use client::*;
 pub use compression::*;
@@ -30,3 +31,4 @@ pub use connector::*;
 pub use protocol::*;
 pub use server::*;
 pub use session::*;
+pub use state::*;

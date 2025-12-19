@@ -3,10 +3,13 @@
 //! This module provides a Tokio-based WebSocket server that hosts collaboration
 //! sessions compatible with both Moebius clients and icy_draw clients.
 
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio_tungstenite::tungstenite::Message;
 
 use super::compression::compress_moebius_data;
 use super::protocol::*;
@@ -482,6 +485,511 @@ impl Default for ServerBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Run the collaboration server.
+///
+/// This function starts the WebSocket server and handles incoming connections.
+/// It will run until the shutdown signal is received or an error occurs.
+pub async fn run_server(config: ServerConfig) -> Result<(), ServerError> {
+    let state = ServerState::new(config.clone());
+
+    let listener = TcpListener::bind(&config.bind_addr).await.map_err(|e| ServerError::BindFailed(e.to_string()))?;
+
+    // Print server info
+    let local_addr = listener.local_addr().map_err(|e| ServerError::ServerError(e.to_string()))?;
+
+    use anstream::println;
+
+    println!("\x1b[1;36m╔═══════════════════════════════════════════════════════════════╗\x1b[0m");
+    println!("\x1b[1;36m║\x1b[0m  \x1b[1;33micy_draw Collaboration Server\x1b[0m                              \x1b[1;36m║\x1b[0m");
+    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
+    println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mBind Address:\x1b[0m  {:<44} \x1b[1;36m║\x1b[0m", local_addr);
+
+    if !config.password.is_empty() {
+        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mPassword:\x1b[0m      {:<44} \x1b[1;36m║\x1b[0m", "********");
+    } else {
+        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mPassword:\x1b[0m      {:<44} \x1b[1;36m║\x1b[0m", "(none)");
+    }
+
+    println!(
+        "\x1b[1;36m║\x1b[0m  \x1b[1;32mDocument:\x1b[0m      {}x{} {:<34} \x1b[1;36m║\x1b[0m",
+        config.columns, config.rows, ""
+    );
+
+    if config.max_users > 0 {
+        println!(
+            "\x1b[1;36m║\x1b[0m  \x1b[1;32mMax Users:\x1b[0m     {:<44} \x1b[1;36m║\x1b[0m",
+            config.max_users
+        );
+    } else {
+        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mMax Users:\x1b[0m     {:<44} \x1b[1;36m║\x1b[0m", "unlimited");
+    }
+
+    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
+    println!("\x1b[1;36m║\x1b[0m  \x1b[1;37mConnect with:\x1b[0m  ws://{:<39} \x1b[1;36m║\x1b[0m", local_addr);
+    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
+    println!("\x1b[1;36m║\x1b[0m  \x1b[1;90mPress Ctrl+C to stop the server\x1b[0m                            \x1b[1;36m║\x1b[0m");
+    println!("\x1b[1;36m╚═══════════════════════════════════════════════════════════════╝\x1b[0m");
+    println!();
+
+    log::info!("Server listening on {}", local_addr);
+
+    loop {
+        let (stream, addr) = listener.accept().await.map_err(|e| ServerError::ServerError(e.to_string()))?;
+
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_connection(state, stream, addr).await {
+                log::error!("[{}] Connection error: {}", addr, e);
+            }
+        });
+    }
+}
+
+/// Handle a single WebSocket connection.
+async fn handle_connection(state: Arc<ServerState>, stream: TcpStream, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use anstream::println;
+
+    println!("\x1b[1;34m[{}]\x1b[0m New connection", addr);
+
+    let ws_stream = tokio_tungstenite::accept_async(stream).await?;
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+
+    // Channel for outgoing messages
+    let (tx, mut rx) = mpsc::channel::<String>(256);
+
+    // User ID will be assigned on CONNECT message
+    let mut user_id: Option<UserId> = None;
+    let mut user_nick = String::new();
+
+    // Spawn task to forward messages from channel to WebSocket
+    let sender_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_sender.send(Message::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Handle incoming messages
+    while let Some(msg_result) = ws_receiver.next().await {
+        let msg = match msg_result {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("[{}] WebSocket error: {}", addr, e);
+                break;
+            }
+        };
+
+        match msg {
+            Message::Text(text) => {
+                let text_str: &str = text.as_ref();
+                if let Err(e) = handle_message(&state, &tx, &mut user_id, &mut user_nick, text_str, addr).await {
+                    log::warn!("[{}] Message handling error: {}", addr, e);
+                }
+            }
+            Message::Close(_) => {
+                println!("\x1b[1;33m[{}]\x1b[0m Client requested close", addr);
+                break;
+            }
+            Message::Ping(_data) => {
+                // Pong is handled automatically by tungstenite
+            }
+            _ => {}
+        }
+    }
+
+    // Cleanup on disconnect
+    if let Some(id) = user_id {
+        state.unregister_client(id).await;
+
+        // Broadcast leave message
+        let leave_msg = LeaveMessage {
+            msg_type: ActionCode::Leave as u8,
+            data: LeaveData { id },
+        };
+        if let Ok(json) = serde_json::to_string(&leave_msg) {
+            state.broadcast(&json, Some(id)).await;
+        }
+
+        println!(
+            "\x1b[1;31m[{}]\x1b[0m \x1b[1m{}\x1b[0m left (users: {})",
+            addr,
+            user_nick,
+            state.client_count().await
+        );
+
+        state.emit_event(SessionEvent::UserLeft(id));
+    } else {
+        println!("\x1b[1;31m[{}]\x1b[0m Disconnected (no login)", addr);
+    }
+
+    sender_task.abort();
+    Ok(())
+}
+
+/// Handle a single JSON message from a client.
+async fn handle_message(
+    state: &Arc<ServerState>,
+    tx: &mpsc::Sender<String>,
+    user_id: &mut Option<UserId>,
+    user_nick: &mut String,
+    text: &str,
+    addr: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use anstream::println;
+
+    let json: serde_json::Value = serde_json::from_str(text)?;
+
+    // Determine action from either "type" (Moebius) or "action" field
+    let action_code = json.get("type").or_else(|| json.get("action")).and_then(|v| v.as_u64()).map(|v| v as u8);
+
+    let data = json.get("data").cloned().unwrap_or(serde_json::Value::Null);
+
+    match action_code {
+        Some(0) => {
+            // CONNECT request (client wants to join)
+            // Extract nick and password from data
+            let nick = data.get("nick").and_then(|v| v.as_str()).unwrap_or("Guest").to_string();
+            let password = data.get("pass").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            match state.handle_connect(nick.clone(), password).await {
+                Ok((id, response)) => {
+                    *user_id = Some(id);
+                    *user_nick = nick.clone();
+
+                    state.register_client(id, tx.clone()).await;
+
+                    // Send CONNECTED response
+                    let _ = tx.send(response).await;
+
+                    // Broadcast JOIN to other clients
+                    let user = state.session.get_user(id);
+                    let join_msg = JoinMessage {
+                        msg_type: ActionCode::Join as u8,
+                        data: JoinData {
+                            id,
+                            nick: user.as_ref().map(|u| u.nick.clone()).unwrap_or_default(),
+                            group: user.as_ref().map(|u| u.group.clone()).unwrap_or_default(),
+                            status: user.as_ref().map(|u| u.status).unwrap_or(0),
+                        },
+                    };
+                    if let Ok(json) = serde_json::to_string(&join_msg) {
+                        state.broadcast(&json, Some(id)).await;
+                    }
+
+                    println!(
+                        "\x1b[1;32m[{}]\x1b[0m \x1b[1m{}\x1b[0m joined (users: {})",
+                        addr,
+                        nick,
+                        state.client_count().await
+                    );
+
+                    state.emit_event(SessionEvent::UserJoined(user.unwrap_or(User {
+                        id,
+                        nick: nick.clone(),
+                        group: String::new(),
+                        status: 0,
+                        col: 0,
+                        row: 0,
+                        selecting: false,
+                        selection_col: 0,
+                        selection_row: 0,
+                    })));
+                }
+                Err(refuse_json) => {
+                    let _ = tx.send(refuse_json).await;
+                    println!("\x1b[1;31m[{}]\x1b[0m Connection refused", addr);
+                }
+            }
+        }
+
+        Some(4) => {
+            // CURSOR
+            if let Some(id) = *user_id {
+                let col = data.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let row = data.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                state.handle_cursor(id, col, row).await;
+            }
+        }
+
+        Some(5) => {
+            // SELECTION
+            if let Some(id) = *user_id {
+                let selecting = data.get("selecting").and_then(|v| v.as_bool()).unwrap_or(false);
+                let col = data.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let row = data.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let start_col = data.get("start_col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let start_row = data.get("start_row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+
+                state.session.update_selection_with_start(id, selecting, col, row, start_col, start_row);
+
+                // Broadcast to others
+                #[derive(serde::Serialize)]
+                struct SelectionBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: SelectionBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct SelectionBroadcastData {
+                    id: u32,
+                    selecting: bool,
+                    col: i32,
+                    row: i32,
+                    start_col: i32,
+                    start_row: i32,
+                }
+                let msg = SelectionBroadcast {
+                    msg_type: ActionCode::Selection as u8,
+                    data: SelectionBroadcastData {
+                        id,
+                        selecting,
+                        col,
+                        row,
+                        start_col,
+                        start_row,
+                    },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(8) => {
+            // HIDE_CURSOR
+            if let Some(id) = *user_id {
+                #[derive(serde::Serialize)]
+                struct HideCursorBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: HideCursorData,
+                }
+                #[derive(serde::Serialize)]
+                struct HideCursorData {
+                    id: u32,
+                }
+                let msg = HideCursorBroadcast {
+                    msg_type: ActionCode::HideCursor as u8,
+                    data: HideCursorData { id },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(9) => {
+            // DRAW
+            if let Some(id) = *user_id {
+                let x = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let y = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let block_data = data.get("block").cloned().unwrap_or_default();
+                let block: Block = serde_json::from_value(block_data).unwrap_or_default();
+                let layer = data.get("layer").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+                let msg = DrawMessage {
+                    msg_type: ActionCode::Draw as u8,
+                    data: DrawData { id, x, y, block, layer },
+                };
+                state.handle_draw(id, msg).await;
+            }
+        }
+
+        Some(10) => {
+            // CHAT
+            if let Some(id) = *user_id {
+                let chat_text = data.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if !chat_text.is_empty() {
+                    state.handle_chat(id, chat_text.clone()).await;
+                    println!("\x1b[1;35m[{}]\x1b[0m <\x1b[1m{}\x1b[0m> {}", addr, user_nick, chat_text);
+                }
+            }
+        }
+
+        Some(11) => {
+            // STATUS
+            if let Some(id) = *user_id {
+                let status = data.get("status").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+                state.session.update_status(id, status);
+
+                #[derive(serde::Serialize)]
+                struct StatusBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: StatusBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct StatusBroadcastData {
+                    id: u32,
+                    status: u8,
+                }
+                let msg = StatusBroadcast {
+                    msg_type: ActionCode::Status as u8,
+                    data: StatusBroadcastData { id, status },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(12) => {
+            // SAUCE
+            if let Some(id) = *user_id {
+                let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let author = data.get("author").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                state.session.update_sauce(title.clone(), author.clone(), group.clone());
+
+                #[derive(serde::Serialize)]
+                struct SauceBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: SauceBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct SauceBroadcastData {
+                    id: u32,
+                    title: String,
+                    author: String,
+                    group: String,
+                }
+                let msg = SauceBroadcast {
+                    msg_type: ActionCode::Sauce as u8,
+                    data: SauceBroadcastData { id, title, author, group },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(13) => {
+            // ICE_COLORS
+            if let Some(id) = *user_id {
+                let ice_colors = data.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+                state.session.set_ice_colors(ice_colors);
+
+                #[derive(serde::Serialize)]
+                struct IceColorsBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: IceColorsBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct IceColorsBroadcastData {
+                    id: u32,
+                    value: bool,
+                }
+                let msg = IceColorsBroadcast {
+                    msg_type: ActionCode::IceColors as u8,
+                    data: IceColorsBroadcastData { id, value: ice_colors },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(14) => {
+            // USE_9PX_FONT
+            if let Some(id) = *user_id {
+                let use_9px = data.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+                state.session.set_use_9px(use_9px);
+
+                #[derive(serde::Serialize)]
+                struct Use9pxBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: Use9pxBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct Use9pxBroadcastData {
+                    id: u32,
+                    value: bool,
+                }
+                let msg = Use9pxBroadcast {
+                    msg_type: ActionCode::Use9pxFont as u8,
+                    data: Use9pxBroadcastData { id, value: use_9px },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(15) => {
+            // CHANGE_FONT
+            if let Some(id) = *user_id {
+                let font_name = data.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                state.session.set_font(font_name.clone());
+
+                #[derive(serde::Serialize)]
+                struct ChangeFontBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: ChangeFontBroadcastData,
+                }
+                #[derive(serde::Serialize)]
+                struct ChangeFontBroadcastData {
+                    id: u32,
+                    value: String,
+                }
+                let msg = ChangeFontBroadcast {
+                    msg_type: ActionCode::ChangeFont as u8,
+                    data: ChangeFontBroadcastData { id, value: font_name },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast(&json, Some(id)).await;
+                }
+            }
+        }
+
+        Some(16) => {
+            // SET_CANVAS_SIZE
+            if let Some(_id) = *user_id {
+                let columns = data.get("columns").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
+                let rows = data.get("rows").and_then(|v| v.as_u64()).unwrap_or(25) as u32;
+
+                state.resize(columns, rows).await;
+
+                // Broadcast to all (including sender for confirmation)
+                #[derive(serde::Serialize)]
+                struct CanvasSizeBroadcast {
+                    #[serde(rename = "type")]
+                    msg_type: u8,
+                    data: CanvasSizeData,
+                }
+                #[derive(serde::Serialize)]
+                struct CanvasSizeData {
+                    columns: u32,
+                    rows: u32,
+                }
+                let msg = CanvasSizeBroadcast {
+                    msg_type: ActionCode::SetCanvasSize as u8,
+                    data: CanvasSizeData { columns, rows },
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    state.broadcast_all(&json).await;
+                }
+
+                println!("\x1b[1;33m[{}]\x1b[0m Canvas resized to {}x{}", addr, columns, rows);
+            }
+        }
+
+        _ => {
+            // Unknown or unhandled action - log but don't fail
+            if let Some(code) = action_code {
+                log::debug!("[{}] Unhandled action code: {}", addr, code);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

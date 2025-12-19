@@ -6,7 +6,7 @@ use std::{
 
 use iced::{
     Alignment, Element, Length, Task, Theme,
-    widget::{column, container, row},
+    widget::{column, container, pane_grid, row},
 };
 use icy_engine::TextPane;
 use icy_engine::formats::{FileFormat, LoadData};
@@ -41,10 +41,19 @@ pub struct AnsiEditorMainArea {
     palette_grid: PaletteGrid,
     /// Right panel state (minimap, layers)
     right_panel: RightPanel,
+
+    /// Center split state (canvas + chat)
+    center_panes: pane_grid::State<CenterPane>,
     /// Double-click detector for font slot buttons
     slot_double_click: RefCell<icy_engine_gui::DoubleClickDetector<usize>>,
     /// Paste controls widget
     paste_controls: PasteControls,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CenterPane {
+    Canvas,
+    Chat,
 }
 
 impl AnsiEditorMainArea {
@@ -78,6 +87,11 @@ impl AnsiEditorMainArea {
             tool_panel,
             palette_grid,
             right_panel: RightPanel::new(),
+            center_panes: {
+                let (mut panes, canvas_pane) = pane_grid::State::new(CenterPane::Canvas);
+                let _ = panes.split(pane_grid::Axis::Horizontal, canvas_pane, CenterPane::Chat);
+                panes
+            },
             slot_double_click: RefCell::new(icy_engine_gui::DoubleClickDetector::new()),
             paste_controls: PasteControls::new(),
         }
@@ -126,18 +140,50 @@ impl AnsiEditorMainArea {
         self.core.set_undo_stack(stack);
     }
 
-    /// Get collaboration sync info: (undo_stack_arc, caret_pos, has_selection)
+    /// Get collaboration sync info: (undo_stack_arc, position, has_selection)
     /// Returns None if not in EditState mode
+    /// When selecting, returns the selection lead position; otherwise returns caret position
     pub fn get_collab_sync_info(&self) -> Option<(std::sync::Arc<std::sync::Mutex<icy_engine_edit::EditorUndoStack>>, (i32, i32), bool)> {
         let mut screen = self.core.screen.lock();
         if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
             let undo_stack = state.get_undo_stack();
-            let caret = state.get_caret();
-            let selecting = state.selection().is_some();
-            Some((undo_stack, (caret.x, caret.y), selecting))
+            // If we have a selection, use the selection lead position (for Selection events)
+            // Otherwise use the caret position (for Cursor events)
+            let (pos, selecting) = if let Some(sel) = state.selection() {
+                ((sel.lead.x, sel.lead.y), true)
+            } else {
+                let caret = state.get_caret();
+                ((caret.x, caret.y), false)
+            };
+            Some((undo_stack, pos, selecting))
         } else {
             None
         }
+    }
+
+    /// Get floating layer blocks for collaboration PasteAsSelection
+    pub fn get_floating_layer_blocks(&self) -> Option<icy_engine_edit::collaboration::Blocks> {
+        let mut screen = self.core.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
+            state.get_floating_layer_blocks()
+        } else {
+            None
+        }
+    }
+
+    /// Get floating layer position for collaboration Operation events
+    pub fn get_floating_layer_position(&self) -> Option<(i32, i32)> {
+        let mut screen = self.core.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
+            state.get_floating_layer_position()
+        } else {
+            None
+        }
+    }
+
+    /// Take pending collaboration events from the editor (clears the queue)
+    pub fn take_pending_collab_events(&mut self) -> Vec<super::CollabToolEvent> {
+        self.core.take_pending_collab_events()
     }
 
     /// Get session data for serialization
@@ -148,6 +194,18 @@ impl AnsiEditorMainArea {
     /// Restore session data from serialization
     pub fn set_session_data(&mut self, state: icy_engine_edit::AnsiEditorSessionState) {
         self.core.set_session_data(state);
+    }
+
+    /// Get the current buffer dimensions (columns, rows)
+    pub fn get_buffer_dimensions(&self) -> (u32, u32) {
+        use icy_engine::TextPane;
+        let mut screen = self.core.screen.lock();
+        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
+            let buffer = state.get_buffer();
+            (buffer.width() as u32, buffer.height() as u32)
+        } else {
+            (80, 25)
+        }
     }
 
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
@@ -219,8 +277,24 @@ impl AnsiEditorMainArea {
         let cols_i32 = doc.columns as i32;
         let rows_i32 = doc.rows as i32;
 
+        log::info!(
+            "[COLLAB] apply_remote_document: received doc with columns={}, rows={}, document.len()={}",
+            doc.columns,
+            doc.rows,
+            doc.document.len()
+        );
+
         self.core.with_edit_state(|state| {
             let buffer = state.get_buffer_mut();
+            let before_w = buffer.width();
+            let before_h = buffer.height();
+            let before_lines = buffer.layers.first().map(|l| l.lines.len()).unwrap_or(0);
+            log::info!(
+                "[COLLAB] apply_remote_document: buffer BEFORE set_size: width={}, height={}, layer0.lines.len()={}",
+                before_w,
+                before_h,
+                before_lines
+            );
 
             // Set document size
             buffer.set_size((cols_i32, rows_i32));
@@ -240,8 +314,7 @@ impl AnsiEditorMainArea {
             }
 
             // Resize and preallocate layer 0 for fast bulk writes.
-            let layer = &mut buffer.layers[0];
-            layer.preallocate_lines(cols_i32, rows_i32);
+            buffer.layers[0].preallocate_lines(cols_i32, rows_i32);
 
             for col in 0..(doc.columns as usize) {
                 for row in 0..(doc.rows as usize) {
@@ -252,11 +325,21 @@ impl AnsiEditorMainArea {
                     ch.attribute.set_foreground(block.fg as u32);
                     ch.attribute.set_background(block.bg as u32);
 
-                    layer.set_char_unchecked(Position::new(col as i32, row as i32), ch);
+                    buffer.layers[0].set_char_unchecked(Position::new(col as i32, row as i32), ch);
                 }
             }
 
             buffer.mark_dirty();
+
+            let after_w = buffer.width();
+            let after_h = buffer.height();
+            let after_lines = buffer.layers.first().map(|l| l.lines.len()).unwrap_or(0);
+            log::info!(
+                "[COLLAB] apply_remote_document: buffer AFTER fill: width={}, height={}, layer0.lines.len()={}",
+                after_w,
+                after_h,
+                after_lines
+            );
 
             // Set SAUCE metadata (stored on EditState, not buffer)
             let mut sauce = icy_engine_edit::SauceMetaData::default();
@@ -266,6 +349,9 @@ impl AnsiEditorMainArea {
             sauce.comments = doc.comments.lines().map(|line| line.to_string().into()).collect();
             state.set_sauce_meta(sauce);
         });
+
+        // Update viewport size after document size changed
+        self.core.update_viewport_size();
     }
 
     /// Apply a canvas size change (Moebius `SET_CANVAS_SIZE`).
@@ -311,6 +397,9 @@ impl AnsiEditorMainArea {
 
             buffer.mark_dirty();
         });
+
+        // Update viewport size after document size changed
+        self.core.update_viewport_size();
     }
 
     /// Apply SAUCE metadata change from remote user.
@@ -776,6 +865,11 @@ impl AnsiEditorMainArea {
             // Chat panel message - bubbles up to MainWindow
             AnsiEditorMessage::ChatPanel(_) => Task::done(message),
 
+            AnsiEditorMessage::CenterPaneResized(pane_grid::ResizeEvent { split, ratio }) => {
+                self.center_panes.resize(split, ratio);
+                Task::none()
+            }
+
             // No-op - do nothing
             AnsiEditorMessage::Noop => Task::none(),
         }
@@ -787,9 +881,9 @@ impl AnsiEditorMainArea {
     /// - Center: Canvas (with optional chat panel below when connected)
     /// - Right panel: Minimap, Layers, Channels
     ///
-    /// If `chat_panel` is provided, the editor shows a vertical split with
-    /// the canvas on top and chat on bottom (like Moebius).
-    pub fn view<'a>(&'a self, chat_panel: Option<Element<'a, AnsiEditorMessage>>) -> Element<'a, AnsiEditorMessage> {
+    /// In collaboration mode (`collaboration` is Some), the editor can show a Moebius-style
+    /// bottom chat pane with a draggable splitter.
+    pub fn view<'a>(&'a self, collaboration: Option<&'a crate::ui::collaboration::state::CollaborationState>) -> Element<'a, AnsiEditorMessage> {
         let editor = &self.core;
         // === LEFT SIDEBAR ===
         // Fixed sidebar width - palette and tool panel adapt to this
@@ -907,9 +1001,33 @@ impl AnsiEditorMainArea {
 
         let top_toolbar = row![color_switcher, top_toolbar_content].spacing(4).align_y(Alignment::Start);
 
-        // === CENTER: Canvas ===
-        // Canvas is created FIRST so Terminal's shader renders and populates the shared cache
-        let center_area = self.core.view().map(AnsiEditorMessage::Core);
+        // === CENTER: Canvas (+ optional chat) ===
+        // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
+        // If chat is visible, we use a PaneGrid splitter (like the right panel).
+
+        let center_content: Element<'_, AnsiEditorMessage> = if let Some(collab) = collaboration {
+            if collab.chat_visible {
+                let pane_grid: Element<'_, AnsiEditorMessage> = pane_grid::PaneGrid::new(&self.center_panes, |_id, pane, _is_maximized| {
+                    let content: Element<'_, AnsiEditorMessage> = match pane {
+                        CenterPane::Canvas => self.core.view().map(AnsiEditorMessage::Core),
+                        CenterPane::Chat => crate::ui::collaboration::view_chat_panel(collab, &collab.chat_input).map(|m| match m {
+                            Message::ChatPanel(msg) => AnsiEditorMessage::ChatPanel(msg),
+                            _ => AnsiEditorMessage::Noop,
+                        }),
+                    };
+                    pane_grid::Content::new(content)
+                })
+                .on_resize(10, AnsiEditorMessage::CenterPaneResized)
+                .spacing(crate::ui::editor::ansi::widget::right_panel::RIGHT_PANEL_PANE_SPACING)
+                .into();
+
+                container(pane_grid).width(Length::Fill).height(Length::Fill).into()
+            } else {
+                self.core.view().map(AnsiEditorMessage::Core)
+            }
+        } else {
+            self.core.view().map(AnsiEditorMessage::Core)
+        };
 
         // === RIGHT PANEL ===
         // Right panel created AFTER canvas because minimap uses Terminal's render cache
@@ -920,7 +1038,7 @@ impl AnsiEditorMainArea {
         // Pass the terminal's render cache to the minimap for shared texture access
         let render_cache = &editor.canvas.terminal.render_cache;
         let paste_mode = editor.is_paste_mode();
-        let network_mode = chat_panel.is_some();
+        let network_mode = collaboration.is_some();
         let right_panel = self
             .right_panel
             .view(&editor.screen, &viewport_info, Some(render_cache), paste_mode, network_mode)
@@ -929,19 +1047,6 @@ impl AnsiEditorMainArea {
         // Main layout:
         // Left column: toolbar on top, then left sidebar + canvas (with optional chat below)
         // Right: right panel spanning full height
-
-        // Build the center content - either just canvas, or vertical split with canvas+chat
-        let center_content: Element<'_, AnsiEditorMessage> = if let Some(chat) = chat_panel {
-            // Vertical column: canvas on top (fills available space), chat on bottom (fixed height)
-            column![
-                container(center_area).height(Length::FillPortion(3)),
-                container(chat).height(Length::FillPortion(1)).width(Length::Fill),
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            center_area
-        };
 
         let left_content_row = row![
             // Left sidebar - dynamic width based on palette size

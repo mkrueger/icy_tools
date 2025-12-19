@@ -166,6 +166,10 @@ pub enum ToolResult {
     Ui(UiAction),
     /// Multiple results (processed in order)
     Multi(Vec<ToolResult>),
+    /// Send paste-as-selection to collaboration (floating layer blocks)
+    CollabPasteAsSelection,
+    /// Send operation position update to collaboration (x, y)
+    CollabOperation(i32, i32),
 }
 
 impl ToolResult {

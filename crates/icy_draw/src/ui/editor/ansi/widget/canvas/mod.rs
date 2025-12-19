@@ -149,6 +149,12 @@ impl CanvasView {
         markers.caret_origin_px = origin;
     }
 
+    /// Update viewport size after document size changes.
+    /// Call this after operations that change the buffer dimensions (e.g., apply_remote_document).
+    pub fn update_viewport_size(&mut self) {
+        self.terminal.update_viewport_size();
+    }
+
     pub fn set_show_layer_borders(&mut self, show: bool) {
         let mut markers: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, icy_engine_gui::EditorMarkers> = self.terminal.markers.write();
         markers.show_layer_bounds = show;

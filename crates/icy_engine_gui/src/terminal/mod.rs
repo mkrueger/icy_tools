@@ -68,9 +68,9 @@ impl Terminal {
     pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
         // Initialize viewport with screen size
         let viewport = {
-            let scr = screen.lock();
+            let scr: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = screen.lock();
             let virtual_size = scr.virtual_size();
-            let resolution = scr.resolution();
+            let resolution: icy_engine::Size = scr.resolution();
             Arc::new(RwLock::new(Viewport::new(resolution, virtual_size)))
         };
 

@@ -85,6 +85,7 @@ impl PasteTool {
         self.begin_paste(previous_tool);
         Ok(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
             .and(ToolResult::UpdateLayerBounds)
+            .and(ToolResult::CollabPasteAsSelection)
             .and(ToolResult::Redraw))
     }
 
@@ -117,7 +118,9 @@ impl PasteTool {
                 if let Err(e) = state.move_layer(new_pos) {
                     log::warn!("Failed to move layer: {}", e);
                 }
-                ToolResult::UpdateLayerBounds.and(ToolResult::Redraw)
+                ToolResult::UpdateLayerBounds
+                    .and(ToolResult::CollabOperation(new_pos.x, new_pos.y))
+                    .and(ToolResult::Redraw)
             }
 
             PasteAction::Stamp => {
@@ -474,6 +477,7 @@ impl ToolHandler for PasteTool {
                         ctx.state.set_layer_preview_offset(Some(new_offset));
                         return ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing))
                             .and(ToolResult::UpdateLayerBounds)
+                            .and(ToolResult::CollabOperation(new_offset.x, new_offset.y))
                             .and(ToolResult::Redraw);
                     }
                 }
@@ -499,6 +503,7 @@ impl ToolHandler for PasteTool {
                         ToolResult::EndCapture,
                         ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab)),
                         ToolResult::UpdateLayerBounds,
+                        ToolResult::CollabOperation(final_offset.x, final_offset.y),
                         ToolResult::Commit("Move pasted layer".to_string()),
                     ])
                 } else {

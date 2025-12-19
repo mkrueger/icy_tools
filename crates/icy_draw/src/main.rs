@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use lazy_static::lazy_static;
 use semver::Version;
@@ -81,6 +81,35 @@ pub struct Args {
     /// Path to file to open
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Start a collaboration server
+    Serve {
+        /// Port to listen on (default: 6464)
+        #[arg(short, long, default_value = "6464")]
+        port: u16,
+
+        /// Bind address (default: 0.0.0.0)
+        #[arg(short, long, default_value = "0.0.0.0")]
+        bind: String,
+
+        /// Session password (optional)
+        #[arg(long)]
+        password: Option<String>,
+
+        /// Maximum number of users (0 = unlimited)
+        #[arg(long, default_value = "0")]
+        max_users: usize,
+
+        /// File to host (optional, creates empty 80x25 canvas if not specified)
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+    },
 }
 
 fn get_log_dir() -> Option<PathBuf> {
@@ -93,8 +122,64 @@ fn get_log_dir() -> Option<PathBuf> {
     None
 }
 
+/// Run the collaboration server in headless mode.
+fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>) {
+    use icy_engine_edit::collaboration::{ServerConfig, run_server as run_collab_server};
+
+    // Determine document dimensions (default 80x25)
+    // TODO: Load document from file to get actual dimensions and content
+    let (columns, rows) = if let Some(ref path) = file {
+        println!("Note: File loading not yet implemented, starting with 80x25 canvas");
+        println!("File: {}", path.display());
+        (80, 25)
+    } else {
+        (80, 25)
+    };
+
+    let bind_addr = format!("{}:{}", bind, port);
+    let bind_addr: std::net::SocketAddr = match bind_addr.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            eprintln!("Error: Invalid bind address '{}': {}", bind_addr, e);
+            std::process::exit(1);
+        }
+    };
+
+    let config = ServerConfig {
+        bind_addr,
+        password: password.unwrap_or_default(),
+        max_users,
+        columns,
+        rows,
+        enable_extended_protocol: true,
+        status_message: String::new(),
+    };
+
+    // Create tokio runtime and run the server
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    rt.block_on(async {
+        if let Err(e) = run_collab_server(config).await {
+            eprintln!("Server error: {}", e);
+            std::process::exit(1);
+        }
+    });
+}
+
 fn main() {
     let args = Args::parse();
+
+    // Check if we're running the server subcommand
+    if let Some(Command::Serve {
+        port,
+        bind,
+        password,
+        max_users,
+        file,
+    }) = args.command
+    {
+        run_server(bind, port, password, max_users, file);
+        return;
+    }
 
     if let Some(log_dir) = get_log_dir() {
         let _logger = Logger::try_with_env_or_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error")

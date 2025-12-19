@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::protocol::{Block, ChatMessage, ServerStatus, User};
+use super::protocol::{Block, ChatMessage, SauceData, ServerStatus, User};
 
 /// Unique identifier for a user in the session.
 pub type UserId = u32;
@@ -25,6 +25,8 @@ pub struct Session {
     chat_history: RwLock<Vec<ChatMessage>>,
     /// Current server status message
     status: RwLock<ServerStatus>,
+    /// SAUCE metadata
+    sauce: RwLock<SauceData>,
     /// Document dimensions
     columns: RwLock<u32>,
     rows: RwLock<u32>,
@@ -45,6 +47,7 @@ impl Session {
             next_user_id: RwLock::new(1),
             chat_history: RwLock::new(Vec::new()),
             status: RwLock::new(ServerStatus::default()),
+            sauce: RwLock::new(SauceData::default()),
             columns: RwLock::new(80),
             rows: RwLock::new(25),
             use_9px: RwLock::new(false),
@@ -120,6 +123,28 @@ impl Session {
             user.selection_col = col;
             user.selection_row = row;
         }
+    }
+
+    /// Update a user's selection state with start position.
+    pub fn update_selection_with_start(&self, id: UserId, selecting: bool, col: i32, row: i32, _start_col: i32, _start_row: i32) {
+        // For now, we only track the current selection position
+        // Start position could be added to User struct if needed
+        self.update_selection(id, selecting, col, row);
+    }
+
+    /// Update a user's status (ACTIVE=0, IDLE=1, AWAY=2, WEB=3).
+    pub fn update_status(&self, id: UserId, status: u8) {
+        if let Some(user) = self.users.write().get_mut(&id) {
+            user.status = status;
+        }
+    }
+
+    /// Update SAUCE metadata.
+    pub fn update_sauce(&self, title: String, author: String, group: String) {
+        let mut sauce = self.sauce.write();
+        sauce.title = title;
+        sauce.author = author;
+        sauce.group = group;
     }
 
     /// Add a chat message to the history.

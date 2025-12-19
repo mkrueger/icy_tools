@@ -75,6 +75,7 @@ directories = "6.0.0"
 tokio = { version = "1.48.0", features = ["full"] }
 tokio-tungstenite = "0.27"
 futures-util = "0.3"
+anstream = "0.6.21"
 rodio = { version = "0.21.1" }
 anyhow = "1.0.100"
 webbrowser = "1.0.6"

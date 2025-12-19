@@ -6,7 +6,7 @@ use iced::{
     widget::{Space, button, checkbox, column, container, row, scrollable, text, text_input},
 };
 use icy_engine::BitFont;
-use icy_engine_gui::settings::{MonitorSettingsMessage, effect_box, left_label, show_monitor_settings, update_monitor_settings};
+use icy_engine_gui::settings::{MonitorSettingsMessage, effect_box, left_label, show_monitor_settings_with_options, update_monitor_settings};
 use icy_engine_gui::ui::*;
 use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use parking_lot::RwLock;
@@ -175,7 +175,8 @@ impl SettingsDialog {
     }
 
     fn view_monitor(&self) -> Element<'_, crate::ui::main_window::Message> {
-        let content = show_monitor_settings(self.temp_monitor_settings.clone())
+        // In icy_draw we hide scaling options (Auto, Integer Scaling) - they are only relevant for terminal viewers
+        let content = show_monitor_settings_with_options(self.temp_monitor_settings.clone(), false)
             .map(|msg| crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::MonitorSettings(msg)));
         content
     }

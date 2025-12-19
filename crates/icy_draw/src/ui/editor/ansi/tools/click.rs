@@ -388,6 +388,7 @@ impl ToolHandler for ClickTool {
                 // Character input (ANSI art typing)
                 match key {
                     iced::keyboard::Key::Character(s) => {
+                        println!("Key character input: '{}' modifiers: {:?}", s, modifiers);
                         if !modifiers.control() && !modifiers.alt() {
                             if let Some(ch) = s.chars().next() {
                                 // Convert Unicode -> buffer encoding (CP437 etc.)

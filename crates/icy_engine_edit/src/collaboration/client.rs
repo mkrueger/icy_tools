@@ -8,10 +8,18 @@ use std::sync::Arc;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
+use tokio::time::MissedTickBehavior;
+use tokio::time::{Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use super::protocol::*;
 use super::session::UserId;
+use super::user_status;
+
+fn collab_dbg(prefix: &str, color_ansi: &str, payload: &str) {
+    // `anstream` translates ANSI sequences on Windows when needed.
+    anstream::eprintln!("{color}{prefix}\x1b[0m {payload}", color = color_ansi, prefix = prefix, payload = payload);
+}
 
 /// Error type for client operations.
 #[derive(Debug, Clone)]
@@ -65,6 +73,8 @@ pub struct ClientConfig {
     pub url: String,
     /// User nickname
     pub nick: String,
+    /// User group (optional, for display in chat)
+    pub group: String,
     /// Session password
     pub password: String,
     /// Ping interval in seconds (0 to disable)
@@ -76,6 +86,7 @@ impl Default for ClientConfig {
         Self {
             url: String::new(),
             nick: "Anonymous".to_string(),
+            group: String::new(),
             password: String::new(),
             ping_interval_secs: 30,
         }
@@ -83,7 +94,7 @@ impl Default for ClientConfig {
 }
 
 /// Commands that can be sent to the client task.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientCommand {
     /// Disconnect from server
     Disconnect,
@@ -130,6 +141,8 @@ pub enum ClientCommand {
     FlipX,
     /// Flip vertically
     FlipY,
+    /// Paste a block rectangle as a floating selection (Moebius PASTE_AS_SELECTION=17)
+    PasteAsSelection { blocks: Blocks },
     /// Ping
     Ping,
 }
@@ -171,6 +184,16 @@ pub enum CollaborationEvent {
     IceColorsChanged(bool),
     /// Font changed
     FontChanged(String),
+    /// Paste-as-selection received (Moebius PASTE_AS_SELECTION=17)
+    PasteAsSelection { user_id: UserId, blocks: Blocks },
+    /// Rotate received (Moebius ROTATE=18)
+    Rotate { user_id: UserId },
+    /// Flip X received (Moebius FLIP_X=19)
+    FlipX { user_id: UserId },
+    /// Flip Y received (Moebius FLIP_Y=20)
+    FlipY { user_id: UserId },
+    /// Background color changed (Moebius SET_BG=21)
+    BackgroundChanged { user_id: UserId, value: u32 },
     /// Connection lost
     Disconnected,
     /// Error occurred
@@ -374,6 +397,14 @@ impl ClientHandle {
             .map_err(|e| ClientError::SendFailed(e.to_string()))
     }
 
+    /// Paste blocks as a floating selection (Moebius PASTE_AS_SELECTION=17).
+    pub async fn paste_as_selection(&self, blocks: Blocks) -> Result<(), ClientError> {
+        self.command_tx
+            .send(ClientCommand::PasteAsSelection { blocks })
+            .await
+            .map_err(|e| ClientError::SendFailed(e.to_string()))
+    }
+
     /// Send ping (keepalive).
     pub async fn ping(&self) -> Result<(), ClientError> {
         self.command_tx
@@ -421,7 +452,7 @@ async fn run_client(
     user_id_storage: Arc<RwLock<Option<UserId>>>,
 ) {
     let nick = config.nick.clone();
-    let group = String::new();
+    let group = config.group.clone();
     let password = config.password.clone();
 
     // Parse URL - Moebius format: host:port/path or just host:port
@@ -480,14 +511,71 @@ async fn run_client(
 
     let mut assigned_user_id: Option<UserId> = None;
 
+    // Moebius-like away timers: ACTIVE immediately on activity, then IDLE after 60s, AWAY after 5min.
+    // Important: sending STATUS itself must NOT count as activity, otherwise we'd bounce ACTIVE<->IDLE.
+    let mut last_activity: Option<Instant> = None;
+    let mut current_status: Option<u8> = None;
+    let mut status_tick = tokio::time::interval(Duration::from_secs(1));
+    status_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    // Check if debug logging is enabled via environment variable
+    let debug_messages = std::env::var("ICY_COLLAB_DEBUG").is_ok();
+
     // Main event loop
     loop {
         tokio::select! {
+            // Presence timer handling
+            _ = status_tick.tick() => {
+                const IDLE_AFTER_SECS: u64 = 60;
+                const AWAY_AFTER_SECS: u64 = 5 * 60;
+
+                let Some(last) = last_activity else { continue; };
+                let elapsed = last.elapsed();
+                let desired_status = if elapsed >= Duration::from_secs(AWAY_AFTER_SECS) {
+                    user_status::AWAY
+                } else if elapsed >= Duration::from_secs(IDLE_AFTER_SECS) {
+                    user_status::IDLE
+                } else {
+                    user_status::ACTIVE
+                };
+
+                if current_status != Some(desired_status) {
+                    if let Some(msg) = command_to_message(ClientCommand::SetStatus { status: desired_status }, assigned_user_id, &nick, &group) {
+                        if debug_messages {
+                            if let Ok(parsed) = serde_json::from_str::<Value>(&msg) {
+                                if let Ok(formatted) = serde_json::to_string_pretty(&parsed) {
+                                    collab_dbg("[COLLAB TX]", "\x1b[36m", &formatted);
+                                } else {
+                                    collab_dbg("[COLLAB TX]", "\x1b[36m", &msg);
+                                }
+                            } else {
+                                collab_dbg("[COLLAB TX]", "\x1b[36m", &msg);
+                            }
+                        }
+
+                        if let Err(e) = write.send(Message::Text(msg.into())).await {
+                            log::error!("Failed to send status message: {}", e);
+                        } else {
+                            current_status = Some(desired_status);
+                        }
+                    }
+                }
+            }
+
             // Handle incoming WebSocket messages
             msg = read.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                            // Log raw JSON if debug mode is enabled
+                            if debug_messages {
+                                if let Ok(formatted) = serde_json::to_string_pretty(&parsed) {
+                                    collab_dbg("[COLLAB RX]", "\x1b[32m", &formatted);
+                                } else {
+                                    collab_dbg("[COLLAB RX]", "\x1b[32m", &text);
+                                }
+                            }
+
                             if let Some(event) = parse_server_message(&parsed, &nick, &mut assigned_user_id).await {
                                 // Update state on connected
                                 if let CollaborationEvent::Connected(ref doc) = event {
@@ -526,9 +614,63 @@ async fn run_client(
                         break;
                     }
                     Some(cmd) => {
+                        // Track activity like Moebius: any user action (except CONNECTED/STATUS/PING) resets timers.
+                        let is_activity = !matches!(
+                            cmd,
+                            ClientCommand::Disconnect | ClientCommand::Ping | ClientCommand::SetStatus { .. }
+                        );
+
+                        // If user explicitly sets status, track it as current (but don't treat as activity).
+                        if let ClientCommand::SetStatus { status } = cmd {
+                            current_status = Some(status);
+                        }
+
                         if let Some(msg) = command_to_message(cmd, assigned_user_id, &nick, &group) {
+                            // Log outgoing message if debug mode is enabled
+                            if debug_messages {
+                                if let Ok(parsed) = serde_json::from_str::<Value>(&msg) {
+                                    if let Ok(formatted) = serde_json::to_string_pretty(&parsed) {
+                                        collab_dbg("[COLLAB TX]", "\x1b[36m", &formatted);
+                                    } else {
+                                        collab_dbg("[COLLAB TX]", "\x1b[36m", &msg);
+                                    }
+                                } else {
+                                    collab_dbg("[COLLAB TX]", "\x1b[36m", &msg);
+                                }
+                            }
+
                             if let Err(e) = write.send(Message::Text(msg.into())).await {
                                 log::error!("Failed to send message: {}", e);
+                            } else if is_activity {
+                                last_activity = Some(Instant::now());
+
+                                // Immediately set ACTIVE on activity (Moebius behavior)
+                                if current_status != Some(user_status::ACTIVE) {
+                                    if let Some(status_msg) = command_to_message(
+                                        ClientCommand::SetStatus { status: user_status::ACTIVE },
+                                        assigned_user_id,
+                                        &nick,
+                                        &group,
+                                    ) {
+                                        if debug_messages {
+                                            if let Ok(parsed) = serde_json::from_str::<Value>(&status_msg) {
+                                                if let Ok(formatted) = serde_json::to_string_pretty(&parsed) {
+                                                    collab_dbg("[COLLAB TX]", "\x1b[36m", &formatted);
+                                                } else {
+                                                    collab_dbg("[COLLAB TX]", "\x1b[36m", &status_msg);
+                                                }
+                                            } else {
+                                                collab_dbg("[COLLAB TX]", "\x1b[36m", &status_msg);
+                                            }
+                                        }
+
+                                        if let Err(e) = write.send(Message::Text(status_msg.into())).await {
+                                            log::error!("Failed to send active status: {}", e);
+                                        } else {
+                                            current_status = Some(user_status::ACTIVE);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -553,7 +695,8 @@ pub async fn parse_server_message(msg: &Value, _nick: &str, assigned_id: &mut Op
             let user_id = resp.data.id as UserId;
             *assigned_id = Some(user_id);
 
-            let connected = resp.data.doc.into_connected_document(user_id, resp.data.users).ok()?;
+            let mut connected = resp.data.doc.into_connected_document(user_id, resp.data.users).ok()?;
+            connected.chat_history = resp.data.chat_history;
 
             Some(CollaborationEvent::Connected(Box::new(connected)))
         }
@@ -630,7 +773,13 @@ pub async fn parse_server_message(msg: &Value, _nick: &str, assigned_id: &mut Op
             let chat_nick = data.get("nick").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let text = data.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let time = data.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
+            // Use server timestamp if available, otherwise use current time
+            let time = data.get("time").and_then(|v| v.as_u64()).filter(|&t| t > 0).unwrap_or_else(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0)
+            });
             Some(CollaborationEvent::Chat(ChatMessage {
                 id,
                 nick: chat_nick,
@@ -676,7 +825,254 @@ pub async fn parse_server_message(msg: &Value, _nick: &str, assigned_id: &mut Op
             let rows = data.get("rows")?.as_u64()? as u32;
             Some(CollaborationEvent::CanvasResized { columns, rows })
         }
+        17 => {
+            // PASTE_AS_SELECTION
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            let blocks_val = data.get("blocks")?;
+            let blocks: Blocks = serde_json::from_value(blocks_val.clone()).ok()?;
+            Some(CollaborationEvent::PasteAsSelection { user_id, blocks })
+        }
+        18 => {
+            // ROTATE
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            Some(CollaborationEvent::Rotate { user_id })
+        }
+        19 => {
+            // FLIP_X
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            Some(CollaborationEvent::FlipX { user_id })
+        }
+        20 => {
+            // FLIP_Y
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            Some(CollaborationEvent::FlipY { user_id })
+        }
+        21 => {
+            // SET_BG
+            let data = data?;
+            let user_id = data.get("id")?.as_u64()? as UserId;
+            let value = data.get("value")?.as_u64()? as u32;
+            Some(CollaborationEvent::BackgroundChanged { user_id, value })
+        }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn parse_connected_includes_chat_history_and_users() {
+        let msg = json!({
+            "type": 0,
+            "data": {
+                "chat_history": [
+                    {"group":"","id":8,"nick":"user1","text":"Test1","time":1766111994776u64},
+                    {"group":"","id":8,"nick":"user2","text":"Test3","time":1766111995508u64},
+                    {"group":"","id":16,"nick":"user3","text":"Hallo","time":1766132397192u64},
+                    {"group":"","id":22,"nick":"Anonymous","text":"Hallo","time":1766136724422u64},
+                    {"group":"","id":22,"nick":"Anonymous","text":"Welt","time":1766136726268u64}
+                ],
+                "id": 24,
+                "status": 0,
+                "users": [
+                    {"group":"","id":0,"nick":"User","status":2}
+                ],
+                "doc": {
+                    "columns": 1,
+                    "rows": 1,
+                    "title": "",
+                    "author": "",
+                    "group": "",
+                    "date": "",
+                    "palette": [],
+                    "font_name": "IBM VGA",
+                    "ice_colors": true,
+                    "use_9px_font": false,
+                    "comments": "",
+                    "data": [
+                        {"code": 65, "fg": 7, "bg": 0}
+                    ]
+                }
+            }
+        });
+
+        let mut assigned_id: Option<UserId> = None;
+        let event = parse_server_message(&msg, "", &mut assigned_id).await.expect("expected event");
+
+        assert_eq!(assigned_id, Some(24));
+
+        match event {
+            CollaborationEvent::Connected(doc) => {
+                assert_eq!(doc.user_id, 24);
+                assert_eq!(doc.users.len(), 1);
+                assert_eq!(doc.users[0].id, 0);
+                assert_eq!(doc.users[0].nick, "User");
+
+                assert_eq!(doc.chat_history.len(), 5);
+                assert_eq!(doc.chat_history[0].nick, "user1");
+                assert_eq!(doc.chat_history[0].text, "Test1");
+                assert_eq!(doc.chat_history[4].text, "Welt");
+            }
+            other => panic!("Expected Connected, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_paste_as_selection() {
+        let msg = json!({
+            "type": 17,
+            "data": {
+                "id": 42,
+                "blocks": {
+                    "columns": 2,
+                    "rows": 1,
+                    "data": [
+                        {"code": 65, "fg": 7, "bg": 0},
+                        {"code": 66, "fg": 2, "bg": 1}
+                    ]
+                }
+            }
+        });
+
+        let mut assigned_id: Option<UserId> = None;
+        let event = parse_server_message(&msg, "", &mut assigned_id).await.expect("expected event");
+        assert_eq!(assigned_id, None);
+
+        match event {
+            CollaborationEvent::PasteAsSelection { user_id, blocks } => {
+                assert_eq!(user_id, 42);
+                assert_eq!(blocks.columns, 2);
+                assert_eq!(blocks.rows, 1);
+                assert_eq!(blocks.data.len(), 2);
+                assert_eq!(blocks.data[0].code, 65);
+            }
+            other => panic!("Expected PasteAsSelection, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_rotate_flip_set_bg() {
+        let mut assigned_id: Option<UserId> = None;
+
+        let rotate = json!({"type": 18, "data": {"id": 7}});
+        let flipx = json!({"type": 19, "data": {"id": 7}});
+        let flipy = json!({"type": 20, "data": {"id": 7}});
+        let set_bg = json!({"type": 21, "data": {"id": 7, "value": 3}});
+
+        assert!(matches!(
+            parse_server_message(&rotate, "", &mut assigned_id).await,
+            Some(CollaborationEvent::Rotate { user_id: 7 })
+        ));
+        assert!(matches!(
+            parse_server_message(&flipx, "", &mut assigned_id).await,
+            Some(CollaborationEvent::FlipX { user_id: 7 })
+        ));
+        assert!(matches!(
+            parse_server_message(&flipy, "", &mut assigned_id).await,
+            Some(CollaborationEvent::FlipY { user_id: 7 })
+        ));
+        assert!(matches!(
+            parse_server_message(&set_bg, "", &mut assigned_id).await,
+            Some(CollaborationEvent::BackgroundChanged { user_id: 7, value: 3 })
+        ));
+    }
+
+    #[test]
+    fn serialize_paste_as_selection() {
+        let blocks = Blocks {
+            columns: 1,
+            rows: 1,
+            data: vec![Block { code: 65, fg: 7, bg: 0 }],
+        };
+
+        let msg = command_to_message(ClientCommand::PasteAsSelection { blocks }, Some(9), "n", "").expect("expected message");
+
+        let v: Value = serde_json::from_str(&msg).expect("valid json");
+        assert_eq!(v.get("type").and_then(|x| x.as_u64()), Some(17));
+        let data = v.get("data").expect("data");
+        assert_eq!(data.get("id").and_then(|x| x.as_u64()), Some(9));
+        let blocks = data.get("blocks").expect("blocks");
+        assert_eq!(blocks.get("columns").and_then(|x| x.as_u64()), Some(1));
+        assert_eq!(blocks.get("rows").and_then(|x| x.as_u64()), Some(1));
+    }
+
+    // ========================================================================
+    // Group in Protocol Tests
+    // ========================================================================
+
+    #[test]
+    fn client_config_includes_group() {
+        let config = ClientConfig {
+            url: "ws://localhost:8000".to_string(),
+            nick: "TestUser".to_string(),
+            group: "TestGroup".to_string(),
+            password: "secret".to_string(),
+            ping_interval_secs: 30,
+        };
+
+        assert_eq!(config.nick, "TestUser");
+        assert_eq!(config.group, "TestGroup");
+        assert_eq!(config.password, "secret");
+    }
+
+    #[test]
+    fn client_config_default_has_empty_group() {
+        let config = ClientConfig::default();
+
+        assert_eq!(config.nick, "Anonymous");
+        assert_eq!(config.group, "");
+    }
+
+    #[test]
+    fn chat_message_includes_group() {
+        let msg = command_to_message(
+            ClientCommand::Chat {
+                text: "Hello, world!".to_string(),
+            },
+            Some(42),
+            "TestUser",
+            "TestGroup",
+        )
+        .expect("expected message");
+
+        let v: Value = serde_json::from_str(&msg).expect("valid json");
+        assert_eq!(v.get("type").and_then(|x| x.as_u64()), Some(10)); // CHAT = 10
+        let data = v.get("data").expect("data");
+        assert_eq!(data.get("id").and_then(|x| x.as_u64()), Some(42));
+        assert_eq!(data.get("nick").and_then(|x| x.as_str()), Some("TestUser"));
+        assert_eq!(data.get("group").and_then(|x| x.as_str()), Some("TestGroup"));
+        assert_eq!(data.get("text").and_then(|x| x.as_str()), Some("Hello, world!"));
+    }
+
+    #[test]
+    fn chat_message_includes_empty_group() {
+        let msg = command_to_message(ClientCommand::Chat { text: "Hi".to_string() }, Some(1), "User", "").expect("expected message");
+
+        let v: Value = serde_json::from_str(&msg).expect("valid json");
+        let data = v.get("data").expect("data");
+        assert_eq!(data.get("group").and_then(|x| x.as_str()), Some(""));
+    }
+
+    #[test]
+    fn status_message_does_not_include_group() {
+        // Status messages use only id and status, not nick/group
+        let msg = command_to_message(ClientCommand::SetStatus { status: 1 }, Some(42), "TestUser", "TestGroup").expect("expected message");
+
+        let v: Value = serde_json::from_str(&msg).expect("valid json");
+        assert_eq!(v.get("type").and_then(|x| x.as_u64()), Some(11)); // STATUS = 11
+        let data = v.get("data").expect("data");
+        assert_eq!(data.get("id").and_then(|x| x.as_u64()), Some(42));
+        assert_eq!(data.get("status").and_then(|x| x.as_u64()), Some(1));
+        // Status message should NOT include nick/group per Moebius protocol
+        assert!(data.get("nick").is_none());
+        assert!(data.get("group").is_none());
     }
 }
 
@@ -775,6 +1171,10 @@ pub fn command_to_message(cmd: ClientCommand, user_id: Option<UserId>, nick: &st
         ClientCommand::FlipY => json!({
             "type": ActionCode::FlipY as u8,  // Moebius FLIP_Y = 20
             "data": { "id": id }
+        }),
+        ClientCommand::PasteAsSelection { blocks } => json!({
+            "type": ActionCode::PasteAsSelection as u8, // Moebius PASTE_AS_SELECTION = 17
+            "data": { "id": id, "blocks": blocks }
         }),
         // Ping not in Moebius protocol - skip
         ClientCommand::Ping => return None,

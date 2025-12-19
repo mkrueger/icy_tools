@@ -51,6 +51,22 @@ struct PersistedOptions {
 
     #[serde(default)]
     pub show_line_numbers: bool,
+
+    /// Collaboration nickname
+    #[serde(default = "default_nick")]
+    pub collaboration_nick: String,
+
+    /// Collaboration group (like Moebius)
+    #[serde(default)]
+    pub collaboration_group: String,
+
+    /// Most recently used collaboration servers (last = most recent)
+    #[serde(default)]
+    pub collaboration_servers: Vec<String>,
+}
+
+fn default_nick() -> String {
+    "Anonymous".to_string()
 }
 
 fn default_true() -> bool {
@@ -65,6 +81,9 @@ impl Default for PersistedOptions {
             tag_render_mode: TagRenderMode::default(),
             show_layer_borders: true,
             show_line_numbers: false,
+            collaboration_nick: default_nick(),
+            collaboration_group: String::new(),
+            collaboration_servers: Vec::new(),
         }
     }
 }
@@ -93,6 +112,15 @@ pub struct Settings {
 
     /// Whether line numbers are shown (persisted, default: false)
     pub show_line_numbers: Arc<RwLock<bool>>,
+
+    /// Collaboration nickname (persisted)
+    pub collaboration_nick: Arc<RwLock<String>>,
+
+    /// Collaboration group (persisted)
+    pub collaboration_group: Arc<RwLock<String>>,
+
+    /// Most recently used collaboration servers (persisted, last = most recent)
+    pub collaboration_servers: Arc<RwLock<Vec<String>>>,
 }
 
 impl Settings {
@@ -108,6 +136,9 @@ impl Settings {
             tag_render_mode: Arc::new(RwLock::new(persistent.tag_render_mode)),
             show_layer_borders: Arc::new(RwLock::new(persistent.show_layer_borders)),
             show_line_numbers: Arc::new(RwLock::new(persistent.show_line_numbers)),
+            collaboration_nick: Arc::new(RwLock::new(persistent.collaboration_nick)),
+            collaboration_group: Arc::new(RwLock::new(persistent.collaboration_group)),
+            collaboration_servers: Arc::new(RwLock::new(persistent.collaboration_servers)),
         }
     }
 
@@ -118,6 +149,9 @@ impl Settings {
             tag_render_mode: *self.tag_render_mode.read(),
             show_layer_borders: *self.show_layer_borders.read(),
             show_line_numbers: *self.show_line_numbers.read(),
+            collaboration_nick: self.collaboration_nick.read().clone(),
+            collaboration_group: self.collaboration_group.read().clone(),
+            collaboration_servers: self.collaboration_servers.read().clone(),
         };
         Self::store_options_file(&settings);
     }
@@ -212,6 +246,59 @@ impl Settings {
     pub fn plugin_dir() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join("data/plugins"))
     }
+
+    /// Add a collaboration server to the MRU list and save
+    pub fn add_collaboration_server(&self, url: &str) {
+        const MAX_SERVERS: usize = 10;
+        let url = url.trim().to_string();
+        if url.is_empty() {
+            return;
+        }
+
+        let mut servers = self.collaboration_servers.write();
+        // Remove if exists (to move to end)
+        servers.retain(|s| s != &url);
+        // Add to end (most recent)
+        servers.push(url);
+        // Trim to max
+        while servers.len() > MAX_SERVERS {
+            servers.remove(0);
+        }
+        drop(servers);
+        self.store_persistent();
+    }
+
+    /// Get the most recent collaboration server (last in list)
+    pub fn last_collaboration_server(&self) -> Option<String> {
+        self.collaboration_servers.read().last().cloned()
+    }
+
+    /// Get all collaboration servers (oldest first)
+    pub fn collaboration_servers_list(&self) -> Vec<String> {
+        self.collaboration_servers.read().clone()
+    }
+
+    /// Set and save the collaboration nickname
+    pub fn set_collaboration_nick(&self, nick: &str) {
+        *self.collaboration_nick.write() = nick.to_string();
+        self.store_persistent();
+    }
+
+    /// Get the collaboration nickname
+    pub fn get_collaboration_nick(&self) -> String {
+        self.collaboration_nick.read().clone()
+    }
+
+    /// Set and save the collaboration group
+    pub fn set_collaboration_group(&self, group: &str) {
+        *self.collaboration_group.write() = group.to_string();
+        self.store_persistent();
+    }
+
+    /// Get the collaboration group
+    pub fn get_collaboration_group(&self) -> String {
+        self.collaboration_group.read().clone()
+    }
 }
 
 fn normalize_monitor_settings(mut settings: MonitorSettings) -> MonitorSettings {
@@ -229,6 +316,11 @@ fn normalize_monitor_settings(mut settings: MonitorSettings) -> MonitorSettings 
     settings.contrast = settings.contrast.clamp(0.0, 200.0);
     settings.saturation = settings.saturation.clamp(0.0, 200.0);
     settings.gamma = settings.gamma.clamp(0.0, 4.0);
+
+    // icy_draw does not support scaling modes (Auto/Integer) - these are only for terminal viewers.
+    // Force Manual scaling at 150% and disable integer scaling regardless of config file values.
+    settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(1.5);
+    settings.use_integer_scaling = false;
 
     settings
 }

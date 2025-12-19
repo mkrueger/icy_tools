@@ -53,7 +53,7 @@ impl FormatMode {
         match self {
             FormatMode::LegacyDos => "16 fixed colors, single font, no palette editing",
             FormatMode::XBin => "16 colors from selectable palette, single font",
-            FormatMode::XBinExtended => "8 colors, dual fonts, custom palette",
+            FormatMode::XBinExtended => "8 fg colors, dual fonts, custom palette",
             FormatMode::Unrestricted => "Full RGB colors, unlimited fonts",
         }
     }
@@ -631,6 +631,39 @@ impl EditState {
             }
         }
         false
+    }
+
+    /// Get the floating layer content as collaboration Blocks (for PasteAsSelection)
+    /// Returns None if no floating layer exists
+    #[cfg(feature = "collaboration")]
+    pub fn get_floating_layer_blocks(&self) -> Option<crate::collaboration::Blocks> {
+        use icy_engine::TextPane;
+
+        let layer = self.screen.buffer.layers.iter().find(|l| l.role.is_paste())?;
+
+        let columns = layer.width() as u32;
+        let rows = layer.height() as u32;
+        let mut data = Vec::with_capacity((columns * rows) as usize);
+
+        for y in 0..layer.height() {
+            for x in 0..layer.width() {
+                let ch = layer.char_at((x, y).into());
+                data.push(crate::collaboration::Block {
+                    code: ch.ch as u32,
+                    fg: ch.attribute.foreground() as u8,
+                    bg: ch.attribute.background() as u8,
+                });
+            }
+        }
+
+        Some(crate::collaboration::Blocks { columns, rows, data })
+    }
+
+    /// Get the floating layer position (offset)
+    pub fn get_floating_layer_position(&self) -> Option<(i32, i32)> {
+        let layer = self.screen.buffer.layers.iter().find(|l| l.role.is_paste())?;
+        let offset = layer.offset();
+        Some((offset.x, offset.y))
     }
 
     pub fn get_mirror_mode(&self) -> bool {

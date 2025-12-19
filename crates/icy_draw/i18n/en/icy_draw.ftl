@@ -36,19 +36,22 @@ file-settings-comments-title=SAUCE Comments
 file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Close
 menu-save-as=Save As…
-menu-connect-to-server=Connect to Server…
+menu-collaboration=Collaboration…
 menu-toggle-chat=Toggle Chat Panel
 
-# Connection dialog
-connect-dialog-title=Connect to Server
-connect-server-url=Server URL
-connect-server-url-placeholder=host:port or ws://host:port
-connect-nickname=Nickname
-connect-nickname-placeholder=Your name
-connect-password=Password
-connect-password-placeholder=Optional
-connect-help-text=Connect to a Moebius-compatible collaboration server
-connect-button=Connect
+# Collaboration dialog
+collab-nickname=Nickname
+collab-nickname-placeholder=Your name
+collab-group=Group
+collab-group-placeholder=Optional
+collab-password=Password
+collab-password-placeholder=Optional
+collab-mode-connect=Connect to existing server
+collab-mode-host=Host new session
+collab-server-url=Server URL
+collab-server-url-placeholder=host:port or ws://host:port
+collab-port=Port
+collab-start-button=Start
 button-cancel=Cancel
 
 # File dialogs
