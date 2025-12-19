@@ -609,10 +609,6 @@ impl BitFontEditor {
                 self.invalidate_caches();
                 return Task::none();
             }
-            BitFontEditorMessage::ShowImportFontDialog => {
-                dialogs.push(crate::ui::dialog::font_import::FontImportDialog::new());
-                return Task::none();
-            }
             BitFontEditorMessage::FontImportDialog(_) => {
                 // Handled by DialogStack
                 return Task::none();

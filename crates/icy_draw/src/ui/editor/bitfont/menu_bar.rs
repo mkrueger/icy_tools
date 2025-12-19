@@ -74,7 +74,7 @@ impl BitFontMenu {
             file: vec![
                 MenuItem::cmd(&cmd::FILE_NEW, Message::NewFile),
                 MenuItem::cmd(&cmd::FILE_OPEN, Message::OpenFile),
-                MenuItem::simple(fl!("menu-import-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowImportFontDialog)),
+                MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
                 MenuItem::simple(fl!("menu-export-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowExportFontDialog)),
                 // Recent files submenu handled separately in view
                 MenuItem::dynamic_submenu(fl!("menu-open_recent"), build_recent_files_items),

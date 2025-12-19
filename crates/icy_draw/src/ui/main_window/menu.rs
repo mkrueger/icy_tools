@@ -434,6 +434,7 @@ struct MenuBarCacheKey {
     mirror_mode: bool,
     recent_files_hash: u64,
     plugins_hash: u64,
+    is_connected: bool,
 }
 
 fn hash_recent_files(recent_files: &MostRecentlyUsedFiles) -> u64 {
@@ -471,6 +472,7 @@ impl MenuBarState {
         marker_state: &MarkerMenuState,
         plugins: std::sync::Arc<Vec<Plugin>>,
         mirror_mode: bool,
+        is_connected: bool,
     ) -> Element<'_, Message> {
         let recent_files_hash = {
             let options_guard = options.read();
@@ -499,6 +501,7 @@ impl MenuBarState {
             mirror_mode,
             recent_files_hash,
             plugins_hash,
+            is_connected,
         };
 
         // Cache the whole menu subtree. During resize, this avoids rebuilding all menu widgets and
@@ -522,11 +525,11 @@ impl MenuBarState {
             let recent_files = &options_guard.recent_files;
 
             match key.mode_tag {
-                0 => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode),
+                0 => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
                 1 => bitfont::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
                 2 => charfont::menu_bar::view_charfont(recent_files, &undo_info),
                 3 => animation::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
-                _ => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode),
+                _ => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
             }
         })
         .into()

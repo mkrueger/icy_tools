@@ -272,6 +272,7 @@ pub enum Message {
     /// Show open file dialog without dirty check (user confirmed "Don't Save")
     ForceShowOpenDialog,
     ShowSettings,
+    ShowImportFontDialog,
 
     SettingsDialog(crate::ui::dialog::settings::SettingsDialogMessage),
     SettingsSaved(crate::ui::dialog::settings::SettingsResult),
@@ -1398,6 +1399,10 @@ impl MainWindow {
                     .push(crate::ui::dialog::settings::SettingsDialog::new(self.options.clone(), preview_font));
                 Task::none()
             }
+            Message::ShowImportFontDialog => {
+                self.dialogs.push(crate::ui::dialog::font_import::FontImportDialog::new());
+                Task::none()
+            }
             // SettingsDialog messages are routed through DialogStack::update above
             Message::SettingsDialog(_) => Task::none(),
             Message::SettingsSaved(_) => {
@@ -1804,9 +1809,11 @@ impl MainWindow {
             _ => false,
         };
 
+        let is_connected = self.collaboration_state.active;
+
         let menu_bar = self
             .menu_state
-            .view(&self.mode_state.mode(), options, &undo_info, &marker_state, self.plugins.clone(), mirror_mode);
+            .view(&self.mode_state.mode(), options, &undo_info, &marker_state, self.plugins.clone(), mirror_mode, is_connected);
 
         // Pass collaboration state to the ANSI editor; it builds the chat pane and splitter itself.
         let content: Element<'_, Message> = match &self.mode_state {

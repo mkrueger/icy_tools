@@ -240,7 +240,7 @@ impl ToolHandler for ClickTool {
                     } else {
                         // Start new selection + position caret like the old AnsiEditor behavior
                         let _ = ctx.state.clear_selection();
-                        ctx.state.set_caret_position(pos);
+                        ctx.state.set_caret_from_document_position(pos);
                         self.selection_drag = SelectionDrag::Create;
                         self.selection_start_rect = None;
                     }
@@ -371,7 +371,7 @@ impl ToolHandler for ClickTool {
 
     fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                 use iced::keyboard::key::Named;
 
                 // Shift+Space inserts 0xFF (hard blank) - works for all font types
@@ -385,12 +385,15 @@ impl ToolHandler for ClickTool {
                     }
                 }
 
-                // Character input (ANSI art typing)
-                match key {
-                    iced::keyboard::Key::Character(s) => {
-                        println!("Key character input: '{}' modifiers: {:?}", s, modifiers);
-                        if !modifiers.control() && !modifiers.alt() {
-                            if let Some(ch) = s.chars().next() {
+                // Character input using the translated text (respects keyboard layout)
+                if !modifiers.control() && !modifiers.alt() {
+                    if let Some(input_text) = text {
+                        if let Some(ch) = input_text.chars().next() {
+                            // Skip control characters (0x00-0x1F) and DEL (0x7F) - these should be handled
+                            // by Named key handlers (Backspace, Tab, Enter, Delete, etc.)
+                            if ch < ' ' || ch == '\x7F' {
+                                // Fall through to Named key handling below
+                            } else {
                                 // Convert Unicode -> buffer encoding (CP437 etc.)
                                 let buffer_type = ctx.state.get_buffer().buffer_type;
                                 let encoded = buffer_type.convert_from_unicode(ch);
@@ -402,18 +405,19 @@ impl ToolHandler for ClickTool {
                             }
                         }
                     }
-                    iced::keyboard::Key::Named(Named::Space) => {
-                        if !modifiers.shift() && !modifiers.control() {
-                            let buffer_type = ctx.state.get_buffer().buffer_type;
-                            let encoded = buffer_type.convert_from_unicode(' ');
-                            if let Err(e) = ctx.state.type_key(encoded) {
-                                log::warn!("Failed to type space: {}", e);
-                                return ToolResult::None;
-                            }
-                            return ToolResult::Commit("Type character".to_string());
+                }
+
+                // Handle Space key (text field may not contain it)
+                if let iced::keyboard::Key::Named(Named::Space) = key {
+                    if !modifiers.shift() && !modifiers.control() {
+                        let buffer_type = ctx.state.get_buffer().buffer_type;
+                        let encoded = buffer_type.convert_from_unicode(' ');
+                        if let Err(e) = ctx.state.type_key(encoded) {
+                            log::warn!("Failed to type space: {}", e);
+                            return ToolResult::None;
                         }
+                        return ToolResult::Commit("Type character".to_string());
                     }
-                    _ => {}
                 }
 
                 if let iced::keyboard::Key::Named(named) = key {

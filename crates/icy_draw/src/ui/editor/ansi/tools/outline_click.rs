@@ -159,7 +159,7 @@ impl ToolHandler for OutlineClickTool {
                         self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
                     } else {
                         let _ = ctx.state.clear_selection();
-                        ctx.state.set_caret_position(pos);
+                        ctx.state.set_caret_from_document_position(pos);
                         self.selection_drag = SelectionDrag::Create;
                         self.selection_start_rect = None;
                     }
@@ -249,7 +249,7 @@ impl ToolHandler for OutlineClickTool {
 
     fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                 use iced::keyboard::key::Named;
 
                 // Shift+Control+Space inserts 0xFF (hard blank) - works for all font types
@@ -259,11 +259,15 @@ impl ToolHandler for OutlineClickTool {
                     }
                 }
 
-                // Handle character input - filter for valid outline chars only
-                match key {
-                    iced::keyboard::Key::Character(s) => {
-                        if !modifiers.control() && !modifiers.alt() {
-                            if let Some(ch) = s.chars().next() {
+                // Handle character input using translated text - filter for valid outline chars only
+                if !modifiers.control() && !modifiers.alt() {
+                    if let Some(input_text) = text {
+                        if let Some(ch) = input_text.chars().next() {
+                            // Skip control characters (0x00-0x1F) and DEL (0x7F) - these should be handled
+                            // by Named key handlers (Backspace, Tab, Enter, Delete, etc.)
+                            if ch < ' ' || ch == '\x7F' {
+                                // Fall through to Named key handling below
+                            } else {
                                 let upper = ch.to_ascii_uppercase();
 
                                 // Only accept valid outline characters (A-Q, @, &)
@@ -276,12 +280,13 @@ impl ToolHandler for OutlineClickTool {
                             }
                         }
                     }
-                    iced::keyboard::Key::Named(Named::Space) => {
-                        if !modifiers.shift() && !modifiers.control() {
-                            return self.type_outline_char(ctx, ' ');
-                        }
+                }
+
+                // Handle Space key (text field may not contain it)
+                if let iced::keyboard::Key::Named(Named::Space) = key {
+                    if !modifiers.shift() && !modifiers.control() {
+                        return self.type_outline_char(ctx, ' ');
                     }
-                    _ => {}
                 }
 
                 if let iced::keyboard::Key::Named(named) = key {

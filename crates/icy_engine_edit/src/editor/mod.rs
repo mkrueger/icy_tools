@@ -447,6 +447,36 @@ impl EditState {
     // Public caret manipulation methods (safe API without exposing &mut Caret)
     // =========================================================================
 
+    /// Convert a document position (absolute) to a layer-relative position.
+    ///
+    /// When clicking on the canvas, the position is in document coordinates.
+    /// But the caret position should be relative to the current layer's offset.
+    ///
+    /// # Example
+    /// If the current layer has offset (10, 5) and the user clicks at document
+    /// position (15, 8), the layer-relative position is (5, 3).
+    pub fn document_to_layer_position(&self, doc_pos: Position) -> Position {
+        let layer_offset = self.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+        doc_pos - layer_offset
+    }
+
+    /// Convert a layer-relative position to a document position (absolute).
+    ///
+    /// This is the inverse of `document_to_layer_position`.
+    pub fn layer_to_document_position(&self, layer_pos: Position) -> Position {
+        let layer_offset = self.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+        layer_pos + layer_offset
+    }
+
+    /// Set the caret position from a document (absolute) position.
+    ///
+    /// This converts the document position to layer-relative coordinates
+    /// before setting the caret. Use this when handling mouse clicks on the canvas.
+    pub fn set_caret_from_document_position(&mut self, doc_pos: Position) {
+        let layer_pos = self.document_to_layer_position(doc_pos);
+        self.set_caret_position(layer_pos);
+    }
+
     /// Set the caret position
     pub fn set_caret_position(&mut self, pos: Position) {
         self.screen.caret.set_position(pos);
@@ -1129,5 +1159,104 @@ impl EditableScreen for EditState {
 
     fn set_letter_spacing(&mut self, enabled: bool) {
         self.screen.set_letter_spacing(enabled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_engine::{Size, TextBuffer};
+
+    fn create_test_edit_state() -> EditState {
+        let buffer = TextBuffer::create(Size::new(80, 25));
+        EditState::from_buffer(buffer)
+    }
+
+    fn create_test_edit_state_with_layer_offset(offset: Position) -> EditState {
+        let mut buffer = TextBuffer::create(Size::new(80, 25));
+        if let Some(layer) = buffer.layers.get_mut(0) {
+            layer.set_offset(offset);
+        }
+        EditState::from_buffer(buffer)
+    }
+
+    #[test]
+    fn test_document_to_layer_position_no_offset() {
+        let state = create_test_edit_state();
+        
+        // With no offset, document and layer positions should be the same
+        let doc_pos = Position::new(10, 5);
+        let layer_pos = state.document_to_layer_position(doc_pos);
+        
+        assert_eq!(layer_pos, Position::new(10, 5));
+    }
+
+    #[test]
+    fn test_document_to_layer_position_with_offset() {
+        let state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
+        
+        // Document position (15, 8) with layer offset (10, 5) should give layer position (5, 3)
+        let doc_pos = Position::new(15, 8);
+        let layer_pos = state.document_to_layer_position(doc_pos);
+        
+        assert_eq!(layer_pos, Position::new(5, 3));
+    }
+
+    #[test]
+    fn test_layer_to_document_position_no_offset() {
+        let state = create_test_edit_state();
+        
+        // With no offset, layer and document positions should be the same
+        let layer_pos = Position::new(10, 5);
+        let doc_pos = state.layer_to_document_position(layer_pos);
+        
+        assert_eq!(doc_pos, Position::new(10, 5));
+    }
+
+    #[test]
+    fn test_layer_to_document_position_with_offset() {
+        let state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
+        
+        // Layer position (5, 3) with layer offset (10, 5) should give document position (15, 8)
+        let layer_pos = Position::new(5, 3);
+        let doc_pos = state.layer_to_document_position(layer_pos);
+        
+        assert_eq!(doc_pos, Position::new(15, 8));
+    }
+
+    #[test]
+    fn test_document_layer_position_roundtrip() {
+        let state = create_test_edit_state_with_layer_offset(Position::new(20, 10));
+        
+        // Converting doc->layer->doc should give the original position
+        let original_doc_pos = Position::new(50, 30);
+        let layer_pos = state.document_to_layer_position(original_doc_pos);
+        let roundtrip_doc_pos = state.layer_to_document_position(layer_pos);
+        
+        assert_eq!(roundtrip_doc_pos, original_doc_pos);
+    }
+
+    #[test]
+    fn test_set_caret_from_document_position() {
+        let mut state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
+        
+        // Clicking at document position (15, 8) with layer offset (10, 5)
+        // should set caret to layer position (5, 3)
+        state.set_caret_from_document_position(Position::new(15, 8));
+        
+        let caret_pos = state.get_caret().position();
+        assert_eq!(caret_pos, Position::new(5, 3));
+    }
+
+    #[test]
+    fn test_set_caret_from_document_position_negative_result() {
+        let mut state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
+        
+        // Clicking at document position (5, 2) with layer offset (10, 5)
+        // should set caret to layer position (-5, -3) - this is valid for layers
+        state.set_caret_from_document_position(Position::new(5, 2));
+        
+        let caret_pos = state.get_caret().position();
+        assert_eq!(caret_pos, Position::new(-5, -3));
     }
 }

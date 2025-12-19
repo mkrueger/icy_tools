@@ -145,8 +145,6 @@ pub enum BitFontEditorMessage {
     // ═══════════════════════════════════════════════════════════════════════
     // Font Import/Export
     // ═══════════════════════════════════════════════════════════════════════
-    /// Show font import dialog
-    ShowImportFontDialog,
     /// Font import dialog message
     FontImportDialog(crate::ui::dialog::font_import::FontImportMessage),
     /// Font was imported

@@ -247,8 +247,8 @@ impl ToolHandler for FontTool {
                 let Some(pos) = evt.text_position else {
                     return ToolResult::None;
                 };
-                // Position caret at click location
-                ctx.state.set_caret_position(pos);
+                // Position caret at click location (convert from document to layer coordinates)
+                ctx.state.set_caret_from_document_position(pos);
                 ToolResult::Redraw
             }
             _ => ToolResult::None,

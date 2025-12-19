@@ -112,7 +112,8 @@ impl<'a> CRTShaderProgram<'a> {
 
         // Layer bounds rendering data (computed from screen, rendered in shader)
         let layer_rect: Option<[f32; 4]>;
-        let caret_origin_px: (f32, f32) = (0.0, 0.0);
+        // Caret origin offset from editor_markers (layer offset in pixels)
+        let caret_origin_px: (f32, f32) = self.editor_markers.as_ref().map(|m| m.caret_origin_px).unwrap_or((0.0, 0.0));
 
         {
             let mut screen = self.term.screen.lock();

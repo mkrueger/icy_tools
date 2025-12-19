@@ -177,6 +177,72 @@ fn build_zoom_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
     Menu::new(items).width(200.0).offset(5.0)
 }
 
+/// Build the view menu with conditional chat panel visibility
+fn build_view_menu(
+    marker_state: &MarkerMenuState,
+    guides_submenu: Menu<'static, Message, Theme, iced::Renderer>,
+    raster_submenu: Menu<'static, Message, Theme, iced::Renderer>,
+    is_connected: bool,
+) -> Menu<'static, Message, Theme, iced::Renderer> {
+    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+
+    // Zoom submenu
+    items.push(iced_aw::menu::Item::with_menu(menu_item_submenu(fl!("menu-zoom")), build_zoom_submenu()));
+
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Guide and raster submenus
+    items.push(iced_aw::menu::Item::with_menu(menu_item_submenu(fl!("menu-guides")), guides_submenu));
+    items.push(iced_aw::menu::Item::with_menu(menu_item_submenu(fl!("menu-raster")), raster_submenu));
+
+    // Layer borders checkbox
+    items.push(iced_aw::menu::Item::new(menu_item_checkbox(
+        fl!("menu-show_layer_borders"),
+        "",
+        marker_state.layer_borders_visible,
+        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLayerBorders)),
+    )));
+
+    // Line numbers checkbox
+    items.push(iced_aw::menu::Item::new(menu_item_checkbox(
+        fl!("menu-show_line_numbers"),
+        "",
+        marker_state.line_numbers_visible,
+        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLineNumbers)),
+    )));
+
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Fullscreen
+    items.push(iced_aw::menu::Item::new(menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)));
+
+    // Only show chat panel toggle if connected
+    if is_connected {
+        items.push(iced_aw::menu::Item::new(separator()));
+        items.push(iced_aw::menu::Item::new(menu_item_simple(
+            fl!("menu-toggle-chat"),
+            "",
+            Message::ToggleChatPanel,
+        )));
+    }
+
+    items.push(iced_aw::menu::Item::new(separator()));
+
+    // Reference image
+    items.push(iced_aw::menu::Item::new(menu_item_simple(
+        fl!("menu-reference-image"),
+        "Ctrl+Shift+O",
+        Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog),
+    )));
+    items.push(iced_aw::menu::Item::new(menu_item_simple(
+        fl!("menu-toggle-reference-image"),
+        "Ctrl+Tab",
+        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)),
+    )));
+
+    Menu::new(items).width(300.0).offset(5.0)
+}
+
 /// Build the area operations submenu
 fn build_area_submenu() -> Menu<'static, Message, Theme, iced::Renderer> {
     use crate::ui::editor::ansi::AnsiEditorMessage;
@@ -321,12 +387,9 @@ pub fn view_ansi(
     marker_state: &MarkerMenuState,
     plugins: &[Plugin],
     mirror_mode: bool,
+    is_connected: bool,
 ) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
-
-    // Build submenus with current state
-    let guides_submenu = build_guides_submenu(marker_state);
-    let raster_submenu = build_raster_submenu(marker_state);
 
     let style_fn = |theme: &Theme, status: Status| {
         let palette = theme.extended_palette();
@@ -348,7 +411,7 @@ pub fn view_ansi(
                 menu_template(menu_items!(
                     (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                    (menu_item_simple(fl!("menu-import-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowImportFontDialog))),
+                    (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
@@ -470,39 +533,7 @@ pub fn view_ansi(
             // View menu
             (
                 menu_button(fl!("menu-view")),
-                menu_template(menu_items!(
-                    (menu_item_submenu(fl!("menu-zoom")), build_zoom_submenu()),
-                    (separator()),
-                    (menu_item_submenu(fl!("menu-guides")), guides_submenu),
-                    (menu_item_submenu(fl!("menu-raster")), raster_submenu),
-                    (menu_item_checkbox(
-                        fl!("menu-show_layer_borders"),
-                        "",
-                        marker_state.layer_borders_visible,
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLayerBorders))
-                    )),
-                    (menu_item_checkbox(
-                        fl!("menu-show_line_numbers"),
-                        "",
-                        marker_state.line_numbers_visible,
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLineNumbers))
-                    )),
-                    (separator()),
-                    (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
-                    (separator()),
-                    (menu_item_simple(fl!("menu-toggle-chat"), "", Message::ToggleChatPanel)),
-                    (separator()),
-                    (menu_item_simple(
-                        fl!("menu-reference-image"),
-                        "Ctrl+Shift+O",
-                        Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog)
-                    )),
-                    (menu_item_simple(
-                        fl!("menu-toggle-reference-image"),
-                        "Ctrl+Tab",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage))
-                    ))
-                ))
+                build_view_menu(marker_state, build_guides_submenu(marker_state), build_raster_submenu(marker_state), is_connected)
             ),
             // Help menu
             (
@@ -531,7 +562,7 @@ pub fn view_ansi(
                 menu_template(menu_items!(
                     (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                    (menu_item_simple(fl!("menu-import-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowImportFontDialog))),
+                    (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
@@ -653,39 +684,7 @@ pub fn view_ansi(
             // View menu
             (
                 menu_button(fl!("menu-view")),
-                menu_template(menu_items!(
-                    (menu_item_submenu(fl!("menu-zoom")), build_zoom_submenu()),
-                    (separator()),
-                    (menu_item_submenu(fl!("menu-guides")), guides_submenu),
-                    (menu_item_submenu(fl!("menu-raster")), raster_submenu),
-                    (menu_item_checkbox(
-                        fl!("menu-show_layer_borders"),
-                        "",
-                        marker_state.layer_borders_visible,
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLayerBorders))
-                    )),
-                    (menu_item_checkbox(
-                        fl!("menu-show_line_numbers"),
-                        "",
-                        marker_state.line_numbers_visible,
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLineNumbers))
-                    )),
-                    (separator()),
-                    (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen)),
-                    (separator()),
-                    (menu_item_simple(fl!("menu-toggle-chat"), "", Message::ToggleChatPanel)),
-                    (separator()),
-                    (menu_item_simple(
-                        fl!("menu-reference-image"),
-                        "Ctrl+Shift+O",
-                        Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog)
-                    )),
-                    (menu_item_simple(
-                        fl!("menu-toggle-reference-image"),
-                        "Ctrl+Tab",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage))
-                    ))
-                ))
+                build_view_menu(marker_state, build_guides_submenu(marker_state), build_raster_submenu(marker_state), is_connected)
             ),
             // Plugins menu
             (menu_button(fl!("menu-plugins")), plugins_submenu),

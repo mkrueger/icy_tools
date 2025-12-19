@@ -468,6 +468,12 @@ impl WindowManager {
                     if let Some(ref session_path) = restore.session_data_path {
                         if let Some(session_data) = self.session_manager.load_session_data(session_path) {
                             w.set_session_data(session_data);
+                            // After restoring session data (including undo stack), update last_save
+                            // to match the new undo stack length - unless mark_dirty is set,
+                            // which means we want the document to remain dirty (e.g., from autosave)
+                            if !restore.mark_dirty {
+                                w.mark_saved();
+                            }
                             log::debug!("Restored session data from {:?}", session_path);
                         }
                     }
