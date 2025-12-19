@@ -1166,8 +1166,8 @@ mod tests {
     /// when the document was 50 rows, because layer 0 size was not properly synchronized.
     #[test]
     fn buffer_layer_size_consistency_after_remote_document() {
-        use icy_engine::{TextBuffer, TextPane, Position, AttributedChar};
-        
+        use icy_engine::{AttributedChar, Position, TextBuffer, TextPane};
+
         // Create a "remote" document with 80x50 (50 rows - more than default 25)
         let mut document = Vec::new();
         for _col in 0..80 {
@@ -1181,12 +1181,12 @@ mod tests {
             }
             document.push(column);
         }
-        
+
         let remote_doc = ConnectedDocument {
             user_id: 1,
             document,
             columns: 80,
-            rows: 50,  // 50 rows, not 25!
+            rows: 50, // 50 rows, not 25!
             users: vec![],
             chat_history: vec![],
             use_9px: false,
@@ -1197,57 +1197,57 @@ mod tests {
             group: String::new(),
             comments: String::new(),
         };
-        
+
         // Simulate what icy_draw does: create a buffer with default 80x25
         let mut buffer = TextBuffer::new((80, 25));
         buffer.terminal_state.is_terminal_buffer = false;
-        
+
         // Apply the remote document (mimics apply_remote_document)
         let cols_i32 = remote_doc.columns as i32;
         let rows_i32 = remote_doc.rows as i32;
-        
+
         // Set document size
         buffer.set_size((cols_i32, rows_i32));
         buffer.layers[0].set_size((cols_i32, rows_i32));
-        
+
         // Resize and preallocate layer 0 for fast bulk writes
         let layer = &mut buffer.layers[0];
         layer.preallocate_lines(cols_i32, rows_i32);
-        
+
         for col in 0..(remote_doc.columns as usize) {
             for row in 0..(remote_doc.rows as usize) {
                 let block = remote_doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
-                
+
                 let mut ch = AttributedChar::default();
                 ch.ch = char::from_u32(block.code).unwrap_or(' ');
                 ch.attribute.set_foreground(block.fg as u32);
                 ch.attribute.set_background(block.bg as u32);
-                
+
                 layer.set_char_unchecked(Position::new(col as i32, row as i32), ch);
             }
         }
-        
+
         // Now verify consistency
         assert_eq!(buffer.width(), 80, "Buffer width should be 80");
         assert_eq!(buffer.height(), 50, "Buffer height should be 50");
-        
+
         assert_eq!(buffer.layers[0].size().width, 80, "Layer 0 width should be 80");
         assert_eq!(buffer.layers[0].size().height, 50, "Layer 0 height should be 50");
-        
+
         // Most importantly: the actual line count should match!
         assert_eq!(buffer.layers[0].lines.len(), 50, "Layer 0 should have 50 lines allocated");
-        
+
         // Verify we can access the last row
         let last_char = buffer.char_at(Position::new(0, 49));
         assert_eq!(last_char.ch, 'X', "Should be able to read character at row 49");
     }
-    
+
     /// Test that a Moebius CONNECTED response with 50 rows is correctly parsed.
     /// This tests the full deserialization pipeline.
     #[test]
     fn connected_response_50_rows_parsing() {
         use crate::collaboration::compression::MoebiusCompressedData;
-        
+
         // Simulate compressed data for 80x50 document (4000 blocks)
         // All blocks are the same: code=32 (space), fg=7, bg=0
         let compressed = MoebiusCompressedData {
@@ -1255,10 +1255,10 @@ mod tests {
             fg: vec![[7, 3999]],    // one run of 4000 foreground=7
             bg: vec![[0, 3999]],    // one run of 4000 background=0
         };
-        
+
         let moebius_doc = MoebiusDoc {
             columns: 80,
-            rows: 50,  // 50 rows, not 25!
+            rows: 50, // 50 rows, not 25!
             title: "Test".to_string(),
             author: "Author".to_string(),
             group: "Group".to_string(),
@@ -1272,9 +1272,9 @@ mod tests {
             compressed_data: Some(compressed),
             data: None,
         };
-        
+
         let result = moebius_doc.into_connected_document(1, vec![]).unwrap();
-        
+
         assert_eq!(result.columns, 80, "Document columns should be 80");
         assert_eq!(result.rows, 50, "Document rows should be 50");
         assert_eq!(result.document.len(), 80, "Document should have 80 columns");

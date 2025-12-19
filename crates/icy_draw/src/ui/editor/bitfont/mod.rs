@@ -1510,7 +1510,7 @@ impl BitFontEditor {
     /// Build the preview view - displays font in terminal-like screen
     fn view_preview(&self) -> Element<'_, BitFontEditorMessage> {
         let preview_element: Element<'_, BitFontEditorMessage> = if let Some(terminal) = &self.preview_terminal {
-            TerminalView::show_with_effects(terminal, self.preview_monitor.clone()).map(BitFontEditorMessage::PreviewTerminal)
+            TerminalView::show_with_effects(terminal, self.preview_monitor.clone(), None).map(BitFontEditorMessage::PreviewTerminal)
         } else {
             text("Preparing preview...").size(12).into()
         };

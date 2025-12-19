@@ -60,11 +60,18 @@ pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, boun
 pub struct CRTShaderProgram<'a> {
     pub term: &'a Terminal,
     pub monitor_settings: Arc<MonitorSettings>,
+    /// Editor markers passed from caller (layer bounds, selection, etc.)
+    /// If None, markers are not rendered.
+    pub editor_markers: Option<crate::EditorMarkers>,
 }
 
 impl<'a> CRTShaderProgram<'a> {
-    pub fn new(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>) -> Self {
-        Self { term, monitor_settings }
+    pub fn new(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>, editor_markers: Option<crate::EditorMarkers>) -> Self {
+        Self {
+            term,
+            monitor_settings,
+            editor_markers,
+        }
     }
 
     /// Helper function to get current keyboard modifier state
@@ -102,6 +109,10 @@ impl<'a> CRTShaderProgram<'a> {
         let mut caret_size: [f32; 2] = [0.0, 0.0];
         let mut caret_visible: bool = false;
         let mut caret_mode: u8 = 0;
+
+        // Layer bounds rendering data (computed from screen, rendered in shader)
+        let layer_rect: Option<[f32; 4]>;
+        let caret_origin_px: (f32, f32) = (0.0, 0.0);
 
         {
             let mut screen = self.term.screen.lock();
@@ -316,6 +327,46 @@ impl<'a> CRTShaderProgram<'a> {
                 info.last_bounds_size = (bounds.width, bounds.height);
             }
 
+            // TODO: Compute layer bounds from screen directly in shader
+            // Currently blocked by trait method resolution issues with dyn Screen.
+            // For now, layer bounds are still passed via EditorMarkers.
+            // See: https://github.com/rust-lang/rust/issues/...
+            /*
+            // Compute layer bounds from screen (not from markers overlay)
+            // This ensures layer bounds are always in sync with the buffer state
+            {
+                let font_width = font_w as f32;
+                let font_height = font_h as f32;
+                // Use explicit dereference to access Screen trait methods through MutexGuard<Box<dyn Screen>>
+                let screen_ref: &dyn Screen = &**screen;
+                let current_layer_idx = screen_ref.get_current_layer();
+
+                // Check for floating paste layer first (using object-safe method)
+                let mut target_layer_idx = current_layer_idx;
+                for i in 0..screen_ref.layer_count() {
+                    if screen_ref.is_layer_paste(i) {
+                        target_layer_idx = i;
+                        break;
+                    }
+                }
+
+                // Get layer bounds using object-safe method
+                if let Some((offset, size)) = screen_ref.get_layer_bounds(target_layer_idx) {
+                    let x = offset.x as f32 * font_width;
+                    let y = offset.y as f32 * font_height;
+                    let w = size.width as f32 * font_width;
+                    let h = size.height as f32 * font_height;
+
+                    layer_rect = Some([x, y, x + w, y + h]);
+                }
+
+                // Caret origin is relative to current layer (not paste layer)
+                if let Some((offset, _size)) = screen_ref.get_layer_bounds(current_layer_idx) {
+                    caret_origin_px = (offset.x as f32 * font_width, offset.y as f32 * font_height);
+                }
+            }
+            */
+
             // Compute caret position for shader rendering
             // This must happen AFTER cache invalidation to ensure caret state matches buffer state
             {
@@ -323,10 +374,7 @@ impl<'a> CRTShaderProgram<'a> {
                 let should_draw = caret.visible && (!caret.blinking || state.caret_blink.is_on()) && self.term.has_focus;
 
                 // Caret origin offset in *document pixels* (used to anchor caret to current layer)
-                let (caret_origin_x, caret_origin_y) = {
-                    let markers = self.term.markers.read();
-                    markers.caret_origin_px
-                };
+                let (caret_origin_x, caret_origin_y) = caret_origin_px;
 
                 if should_draw && font_w > 0 && font_h > 0 {
                     let caret_cell_pos = caret.position();
@@ -488,14 +536,16 @@ impl<'a> CRTShaderProgram<'a> {
             first_slice_start_y = 0.0;
         }
 
-        // Read marker settings from terminal
-        let mut markers = self.term.markers.write();
+        // Read marker settings from editor_markers parameter (passed by caller)
+        // This replaces the old approach of reading from term.markers
+        let markers = self.editor_markers.as_ref();
+
         // Raster and guide are stored in pixel coordinates (already converted by the editor)
-        let raster_spacing = markers.raster;
-        let guide_pos = markers.guide;
+        let raster_spacing = markers.and_then(|m| m.raster);
+        let guide_pos = markers.and_then(|m| m.guide);
 
         // Get marker colors from marker_settings if available
-        let (raster_color, raster_alpha, guide_color, guide_alpha) = if let Some(ref settings) = markers.marker_settings {
+        let (raster_color, raster_alpha, guide_color, guide_alpha) = if let Some(settings) = markers.and_then(|m| m.marker_settings.as_ref()) {
             let (rr, rg, rb) = settings.raster_color.rgb();
             let (gr, gg, gb) = settings.guide_color.rgb();
             (
@@ -511,10 +561,10 @@ impl<'a> CRTShaderProgram<'a> {
 
         // Load reference image data from markers
         let (reference_image_data, reference_image_enabled, reference_image_alpha, reference_image_mode, reference_image_offset, reference_image_scale) =
-            if let Some(ref mut ref_img) = markers.reference_image {
+            if let Some(ref ref_img) = markers.and_then(|m| m.reference_image.as_ref()) {
                 if ref_img.visible && !ref_img.path.as_os_str().is_empty() {
-                    // Load and cache the image data
-                    if let Some((data, w, h)) = ref_img.load_and_cache() {
+                    // Use cached image data (caller should have loaded it)
+                    if let Some((data, w, h)) = ref_img.get_cached() {
                         (
                             Some((data.clone(), *w, *h)),
                             true,
@@ -532,22 +582,20 @@ impl<'a> CRTShaderProgram<'a> {
             } else {
                 (None, false, 0.5, 0, [0.0, 0.0], 1.0)
             };
-        drop(markers);
 
-        // Get layer bounds from markers
-        let markers = self.term.markers.read();
-        let layer_rect = markers.layer_bounds.map(|(x, y, w, h)| [x, y, x + w, y + h]);
-        let show_layer_bounds = markers.show_layer_bounds;
-        let paste_mode = markers.paste_mode;
-        let selection_rect = markers.selection_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
-        let selection_color = markers.selection_color;
-        let selection_mask_data = markers.selection_mask_data.clone();
-        let font_dimensions = markers.font_dimensions;
-        let tool_overlay_mask_data = markers.tool_overlay_mask_data.clone();
-        let tool_overlay_rect = markers.tool_overlay_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
-        let tool_overlay_cell_height_scale = markers.tool_overlay_cell_height_scale;
-        let brush_preview_rect = markers.brush_preview_rect.map(|(x, y, w, h)| [x, y, x + w, y + h]);
-        drop(markers);
+        // Get layer display settings from markers
+        let show_layer_bounds = markers.map_or(false, |m| m.show_layer_bounds);
+        let paste_mode = markers.map_or(false, |m| m.paste_mode);
+        // Get layer_rect from markers (set by caller before view)
+        layer_rect = markers.and_then(|m| m.layer_bounds).map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let selection_rect = markers.and_then(|m| m.selection_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let selection_color = markers.map_or(crate::selection_colors::DEFAULT, |m| m.selection_color);
+        let selection_mask_data = markers.and_then(|m| m.selection_mask_data.clone());
+        let font_dimensions = markers.and_then(|m| m.font_dimensions);
+        let tool_overlay_mask_data = markers.and_then(|m| m.tool_overlay_mask_data.clone());
+        let tool_overlay_rect = markers.and_then(|m| m.tool_overlay_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
+        let tool_overlay_cell_height_scale = markers.map_or(1.0, |m| m.tool_overlay_cell_height_scale);
+        let brush_preview_rect = markers.and_then(|m| m.brush_preview_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
 
         TerminalShader {
             slices_blink_off,
@@ -657,16 +705,17 @@ impl<'a> CRTShaderProgram<'a> {
             let needs_char_blink = char_blink_supported && state.character_blink.is_due(now);
 
             // Check if there's an active selection or layer bounds that need marching ants animation
-            let (has_selection, has_layer_bounds) = {
-                let markers = self.term.markers.read();
-                let sel = markers.selection_rect.is_some() || markers.selection_mask_data.is_some();
-                let layer = markers.layer_bounds.is_some() && markers.show_layer_bounds;
-                (sel, layer)
+            let (has_selection, layer_border_animated) = {
+                let markers = self.editor_markers.as_ref();
+                let sel = markers.map_or(false, |m| m.selection_rect.is_some() || m.selection_mask_data.is_some());
+                let animated = markers.map_or(false, |m| m.layer_border_animated);
+                (sel, animated)
             };
 
-            // Layer bounds need animation when both selection and layer are active
-            // (marching ants on layer border inside selection)
-            let needs_marching_ants = has_selection || (has_layer_bounds && has_selection);
+            // Animation needed when:
+            // - Selection is active (marching ants on selection border)
+            // - Layer border is animated (paste mode or explicit flag)
+            let needs_marching_ants = has_selection || layer_border_animated;
 
             // Calculate next redraw time
             let next_blink_time = if needs_caret_blink || needs_char_blink {

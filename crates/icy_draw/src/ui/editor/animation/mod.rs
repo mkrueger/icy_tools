@@ -748,7 +748,7 @@ impl AnimationEditor {
         } else if let Some(terminal) = &self.preview_terminal {
             // Show terminal view with current frame
             // Enable auto-scaling for the preview (like terminal)
-            let view = TerminalView::show_with_effects(terminal, self.preview_monitor.clone()).map(|_| AnimationEditorMessage::Tick);
+            let view = TerminalView::show_with_effects(terminal, self.preview_monitor.clone(), None).map(|_| AnimationEditorMessage::Tick);
             view
         } else {
             // No terminal yet

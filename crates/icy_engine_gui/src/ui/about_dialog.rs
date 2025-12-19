@@ -88,7 +88,7 @@ impl AboutDialogState {
         let screen = self.terminal.screen.clone();
         let terminal = &self.terminal;
         let on_msg = on_message.clone();
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, settings).map(move |terminal_msg| {
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, settings, None).map(move |terminal_msg| {
             match terminal_msg {
                 crate::TerminalMessage::Press(evt) => {
                     // Check if clicking on a hyperlink

@@ -1216,7 +1216,7 @@ impl CharFontEditor {
 
         let outline_panel: Option<Element<'_, CharFontEditorMessage>> = if is_outline_font {
             let preview_canvas: Element<'_, CharFontEditorMessage> =
-                container(self.outline_preview_canvas.view().map(CharFontEditorMessage::OutlinePreviewCanvas))
+                container(self.outline_preview_canvas.view(None).map(CharFontEditorMessage::OutlinePreviewCanvas))
                     .style(container::bordered_box)
                     .width(Length::Fill)
                     .height(Length::Fill)

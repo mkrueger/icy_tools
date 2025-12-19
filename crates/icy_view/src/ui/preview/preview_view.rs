@@ -889,7 +889,7 @@ impl PreviewView {
                 }
             }
             PreviewMode::Terminal => {
-                let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(PreviewMessage::TerminalMessage);
+                let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings, None).map(PreviewMessage::TerminalMessage);
 
                 // Get scrollbar info using shared logic from icy_engine_gui
                 let scrollbar_info = self.terminal.scrollbar_info();

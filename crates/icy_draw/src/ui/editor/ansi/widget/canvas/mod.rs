@@ -18,7 +18,7 @@ use icy_engine::Screen;
 
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
+use icy_engine_gui::{EditorMarkers, HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
 
 /// Canvas view state for the ANSI editor
@@ -134,36 +134,10 @@ impl CanvasView {
         markers.guide = position;
     }
 
-    /// Set layer bounds for the current layer (in pixels)
-    /// bounds: (x, y, width, height) in document pixels
-    /// show: whether to show the layer bounds
-    pub fn set_layer_bounds(&mut self, bounds: Option<(f32, f32, f32, f32)>, _show: bool) {
-        let mut markers = self.terminal.markers.write();
-        markers.layer_bounds = bounds;
-    }
-
-    /// Set caret origin offset (in document pixels).
-    /// This is used to render the caret relative to the current layer.
-    pub fn set_caret_origin_px(&mut self, origin: (f32, f32)) {
-        let mut markers = self.terminal.markers.write();
-        markers.caret_origin_px = origin;
-    }
-
     /// Update viewport size after document size changes.
     /// Call this after operations that change the buffer dimensions (e.g., apply_remote_document).
     pub fn update_viewport_size(&mut self) {
         self.terminal.update_viewport_size();
-    }
-
-    pub fn set_show_layer_borders(&mut self, show: bool) {
-        let mut markers: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, icy_engine_gui::EditorMarkers> = self.terminal.markers.write();
-        markers.show_layer_bounds = show;
-    }
-
-    /// Set paste mode for animated layer border
-    pub fn set_paste_mode(&mut self, paste_mode: bool) {
-        let mut markers = self.terminal.markers.write();
-        markers.paste_mode = paste_mode;
     }
 
     /// Set the selection rectangle for shader rendering (in pixels)
@@ -277,9 +251,13 @@ impl CanvasView {
     }
 
     /// Render the canvas view with scrollbars
-    pub fn view(&self) -> Element<'_, TerminalMessage> {
+    ///
+    /// # Arguments
+    /// * `editor_markers` - Optional editor markers (layer bounds, selection, etc.)
+    ///   The caller should set layer_bounds, selection_rect, etc. before calling view().
+    pub fn view(&self, editor_markers: Option<EditorMarkers>) -> Element<'_, TerminalMessage> {
         // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone()));
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone()), editor_markers);
 
         // Get scrollbar info using shared logic from icy_engine_gui
         let scrollbar_info = self.terminal.scrollbar_info();

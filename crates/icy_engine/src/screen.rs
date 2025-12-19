@@ -318,14 +318,26 @@ pub trait EditableScreen: Screen {
         Ok(()) // Default: no-op (single layer)
     }
 
-    /// Returns a reference to the layer at the given index, if it exists
+    /// Returns a reference to the layer at the given index, if it exists.
     fn get_layer(&self, _layer: usize) -> Option<&Layer> {
         None // Default: no layers
     }
 
-    /// Returns a mutable reference to the layer at the given index, if it exists
+    /// Returns a mutable reference to the layer at the given index, if it exists.
     fn get_layer_mut(&mut self, _layer: usize) -> Option<&mut Layer> {
         None // Default: no layers
+    }
+
+    /// Returns layer bounds (offset and size) for the given layer index.
+    /// This is an object-safe alternative to get_layer() for use with dyn Screen.
+    fn get_layer_bounds(&self, _layer: usize) -> Option<(Position, Size)> {
+        None // Default: no layers - override in implementations
+    }
+
+    /// Returns true if the layer at the given index is a paste layer.
+    /// This is an object-safe alternative to get_layer() for use with dyn Screen.
+    fn is_layer_paste(&self, _layer: usize) -> bool {
+        false // Default: no paste layers - override in implementations
     }
 
     // Line operations

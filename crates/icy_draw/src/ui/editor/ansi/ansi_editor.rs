@@ -198,8 +198,11 @@ impl AnsiEditorCore {
     /// can stay in `AnsiEditorMainArea`.
     /// Also used by `CharFontEditor` for TDF glyph editing.
     pub(crate) fn view<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
+        // Build editor markers with current state (layer bounds, selection, etc.)
+        let editor_markers = self.build_editor_markers();
+
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
-        let canvas = self.canvas.view().map(AnsiEditorCoreMessage::Canvas);
+        let canvas = self.canvas.view(Some(editor_markers)).map(AnsiEditorCoreMessage::Canvas);
 
         // Get scroll position from viewport for overlay positioning.
         let (scroll_x, scroll_y) = {
@@ -382,10 +385,6 @@ impl AnsiEditorCore {
             }
         });
 
-        if changed {
-            self.update_layer_bounds();
-        }
-
         changed
     }
 
@@ -562,10 +561,7 @@ impl AnsiEditorCore {
                 ToolResult::Commit(msg)
             }
             ToolResult::Status(msg) => ToolResult::Status(msg),
-            ToolResult::UpdateLayerBounds => {
-                self.update_layer_bounds();
-                ToolResult::None
-            }
+            ToolResult::UpdateLayerBounds => ToolResult::None,
             ToolResult::SwitchTool(tool) => {
                 self.pending_tool_switch = Some(tool);
                 ToolResult::Redraw
@@ -719,11 +715,9 @@ impl AnsiEditorCore {
             pending_collab_events: Vec::new(),
         };
 
-        // Initialize marker-dependent uniforms (especially `layer_bounds`) so the selection
-        // rendering is correct immediately after opening a file, without requiring a manual
-        // layer selection click.
+        // Initialize marker-dependent uniforms so the selection
+        // rendering is correct immediately after opening a file.
         editor.update_markers();
-        editor.update_layer_bounds();
 
         *editor.canvas.terminal.cursor_icon.write() = Some(editor.current_tool.cursor());
 
@@ -741,11 +735,6 @@ impl AnsiEditorCore {
 
     fn task_none_with_markers_update(&mut self) -> Task<AnsiEditorCoreMessage> {
         self.update_markers();
-        Task::none()
-    }
-
-    fn task_none_with_layer_bounds_update(&mut self) -> Task<AnsiEditorCoreMessage> {
-        self.update_layer_bounds();
         Task::none()
     }
 
@@ -1529,7 +1518,7 @@ impl AnsiEditorCore {
                     let new_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
                     state.set_caret_position(abs_caret - new_offset);
                 });
-                self.task_none_with_layer_bounds_update()
+                Task::none()
             }
             AnsiEditorCoreMessage::ToggleLayerVisibility(idx) => {
                 let result = self.with_edit_state(move |state| state.toggle_layer_visibility(idx));
@@ -1543,7 +1532,6 @@ impl AnsiEditorCore {
                 let result = self.with_edit_state(|state| state.add_new_layer(current_layer));
                 if result.is_ok() {
                     self.is_modified = true;
-                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -1554,7 +1542,6 @@ impl AnsiEditorCore {
                     let result = self.with_edit_state(|state| state.remove_layer(idx));
                     if result.is_ok() {
                         self.is_modified = true;
-                        self.update_layer_bounds();
                     }
                 }
                 Task::none()
@@ -1563,7 +1550,6 @@ impl AnsiEditorCore {
                 let result = self.with_edit_state(|state| state.raise_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
-                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -1571,7 +1557,6 @@ impl AnsiEditorCore {
                 let result = self.with_edit_state(|state| state.lower_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
-                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -1579,7 +1564,6 @@ impl AnsiEditorCore {
                 let result = self.with_edit_state(|state| state.duplicate_layer(idx));
                 if result.is_ok() {
                     self.is_modified = true;
-                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -1587,7 +1571,6 @@ impl AnsiEditorCore {
                 let result = self.with_edit_state(|state| state.merge_layer_down(idx));
                 if result.is_ok() {
                     self.is_modified = true;
-                    self.update_layer_bounds();
                 }
                 Task::none()
             }
@@ -1650,7 +1633,7 @@ impl AnsiEditorCore {
                 // Persist to settings
                 *self.options.read().show_layer_borders.write() = self.show_layer_borders;
                 self.options.read().store_persistent();
-                self.task_none_with_layer_bounds_update()
+                Task::none()
             }
             AnsiEditorCoreMessage::ToggleMirrorMode => {
                 self.toggle_mirror_mode();
@@ -2024,76 +2007,93 @@ impl AnsiEditorCore {
         }
     }
 
-    /// Update the layer bounds display based on current layer selection
-    fn update_layer_bounds(&mut self) {
-        // In paste mode, always show layer borders so the floating layer is visible
+    /// Build EditorMarkers from current editor state.
+    ///
+    /// This collects all marker data (layer bounds, selection, etc.) in one place
+    /// and returns it as an EditorMarkers struct to be passed to the view.
+    pub(crate) fn build_editor_markers(&self) -> icy_engine_gui::EditorMarkers {
+        let mut markers = icy_engine_gui::EditorMarkers::default();
+
+        // Read current marker settings from canvas (which still holds them for now)
+        // TODO: Eventually move all marker state out of canvas.terminal.markers
+        {
+            let term_markers = self.canvas.terminal.markers.read();
+            markers.raster = term_markers.raster;
+            markers.guide = term_markers.guide;
+            markers.reference_image = term_markers.reference_image.clone();
+            markers.marker_settings = term_markers.marker_settings.clone();
+            markers.selection_rect = term_markers.selection_rect;
+            markers.selection_color = term_markers.selection_color;
+            markers.selection_mask_data = term_markers.selection_mask_data.clone();
+            markers.tool_overlay_mask_data = term_markers.tool_overlay_mask_data.clone();
+            markers.tool_overlay_rect = term_markers.tool_overlay_rect;
+            markers.tool_overlay_cell_height_scale = term_markers.tool_overlay_cell_height_scale;
+            markers.font_dimensions = term_markers.font_dimensions;
+            markers.brush_preview_rect = term_markers.brush_preview_rect;
+        }
+
+        // Compute layer bounds and caret origin directly
         let is_paste = self.is_paste_mode();
         let show_borders = self.show_layer_borders || is_paste;
-        self.canvas.set_show_layer_borders(show_borders);
-        self.canvas.set_paste_mode(is_paste);
-        // Get current layer info from EditState
-        let (layer_bounds, caret_origin_px) = {
-            let mut screen = self.screen.lock();
+        markers.show_layer_bounds = show_borders;
+        markers.paste_mode = is_paste;
+        // Animate layer border when in paste mode (marching ants)
+        markers.layer_border_animated = is_paste;
 
-            // Get font dimensions for pixel conversion
-            let font = screen.font(0);
-            let (font_width, font_height) = if let Some(f) = font {
-                let size = f.size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (8.0, 16.0) // Default fallback
-            };
+        // Get layer bounds from screen
+        let mut screen = self.screen.lock();
 
-            // Access the EditState to get buffer and current layer
-            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                let buffer = edit_state.get_buffer();
-
-                // Caret should be rendered relative to the *current* layer.
-                let caret_origin_px = edit_state
-                    .get_current_layer()
-                    .ok()
-                    .and_then(|idx| buffer.layers.get(idx))
-                    .map(|layer| {
-                        let offset = layer.offset();
-                        (offset.x as f32 * font_width, offset.y as f32 * font_height)
-                    })
-                    .unwrap_or((0.0, 0.0));
-
-                // In paste mode, find the floating layer instead of current layer
-                let target_layer = if edit_state.has_floating_layer() {
-                    buffer.layers.iter().enumerate().find(|(_, l)| l.role.is_paste()).map(|(i, _)| i)
-                } else {
-                    edit_state.get_current_layer().ok()
-                };
-
-                if let Some(layer_idx) = target_layer {
-                    if let Some(layer) = buffer.layers.get(layer_idx) {
-                        // Use offset() which respects preview_offset during drag
-                        let offset = layer.offset();
-                        let size = layer.size();
-                        let width = size.width;
-                        let height = size.height;
-
-                        // Convert to pixels
-                        let x = offset.x as f32 * font_width;
-                        let y = offset.y as f32 * font_height;
-                        let w = width as f32 * font_width;
-                        let h = height as f32 * font_height;
-
-                        (Some((x, y, w, h)), caret_origin_px)
-                    } else {
-                        (None, caret_origin_px)
-                    }
-                } else {
-                    (None, caret_origin_px)
-                }
-            } else {
-                (None, (0.0, 0.0))
-            }
+        // Get font dimensions for pixel conversion
+        let font = screen.font(0);
+        let (font_width, font_height) = if let Some(f) = font {
+            let size = f.size();
+            (size.width as f32, size.height as f32)
+        } else {
+            (8.0, 16.0) // Default fallback
         };
 
-        self.canvas.set_layer_bounds(layer_bounds, true);
-        self.canvas.set_caret_origin_px(caret_origin_px);
+        // Access the EditState to get buffer and current layer
+        if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+            let buffer = edit_state.get_buffer();
+
+            // Caret should be rendered relative to the *current* layer.
+            markers.caret_origin_px = edit_state
+                .get_current_layer()
+                .ok()
+                .and_then(|idx| buffer.layers.get(idx))
+                .map(|layer| {
+                    let offset = layer.offset();
+                    (offset.x as f32 * font_width, offset.y as f32 * font_height)
+                })
+                .unwrap_or((0.0, 0.0));
+
+            // In paste mode, find the floating layer instead of current layer
+            let target_layer = if edit_state.has_floating_layer() {
+                buffer.layers.iter().enumerate().find(|(_, l)| l.role.is_paste()).map(|(i, _)| i)
+            } else {
+                edit_state.get_current_layer().ok()
+            };
+
+            if let Some(layer_idx) = target_layer {
+                if let Some(layer) = buffer.layers.get(layer_idx) {
+                    // Use offset() which respects preview_offset during drag
+                    let offset = layer.offset();
+                    let size = layer.size();
+                    let width = size.width;
+                    let height = size.height;
+
+                    // Convert to pixels
+                    let x = offset.x as f32 * font_width;
+                    let y = offset.y as f32 * font_height;
+                    let w = width as f32 * font_width;
+                    let h = height as f32 * font_height;
+
+                    markers.layer_bounds = Some((x, y, w, h));
+                }
+            }
+        }
+
+        markers
     }
 
     /// Update tag rectangle overlays when Tag tool is active
@@ -2591,7 +2591,6 @@ impl AnsiEditorCore {
     /// Call this after operations that change the buffer dimensions (e.g., apply_remote_document).
     pub fn update_viewport_size(&mut self) {
         self.canvas.update_viewport_size();
-        self.update_layer_bounds();
     }
 
     /// Refresh selection + selection-mask overlay data sent to the shader.

@@ -64,7 +64,7 @@ impl TerminalWindow {
         let button_bar = self.create_button_bar();
 
         // Create the main terminal area
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings).map(|terminal_msg| match terminal_msg {
+        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings, None).map(|terminal_msg| match terminal_msg {
             icy_engine_gui::TerminalMessage::Press(evt) => Message::MousePress(evt),
             icy_engine_gui::TerminalMessage::Release(evt) => Message::MouseRelease(evt),
             icy_engine_gui::TerminalMessage::Move(evt) => Message::MouseMove(evt),

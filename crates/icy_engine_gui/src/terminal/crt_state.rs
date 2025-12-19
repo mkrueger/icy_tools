@@ -318,9 +318,13 @@ impl Default for CRTShaderState {
 }
 
 // Helper function to create shader with terminal and monitor settings
-pub fn create_crt_shader<'a>(term: &'a Terminal, monitor_settings: Arc<MonitorSettings>) -> Element<'a, TerminalMessage> {
+pub fn create_crt_shader<'a>(
+    term: &'a Terminal,
+    monitor_settings: Arc<MonitorSettings>,
+    editor_markers: Option<crate::EditorMarkers>,
+) -> Element<'a, TerminalMessage> {
     // Let the parent wrapper decide sizing; shader can just be Fill.
-    shader(CRTShaderProgram::new(term, monitor_settings))
+    shader(CRTShaderProgram::new(term, monitor_settings, editor_markers))
         .width(iced::Length::Fill)
         .height(iced::Length::Fill)
         .into()

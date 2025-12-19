@@ -88,7 +88,16 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>) -> Element<'a, TerminalMessage> {
-        iced::widget::container(create_crt_shader(term, settings)).id(term.id.clone()).into()
+    /// Show terminal with CRT shader effects.
+    ///
+    /// # Arguments
+    /// * `term` - The terminal to render
+    /// * `settings` - Monitor/CRT shader settings
+    /// * `editor_markers` - Optional editor markers (layer bounds, selection, etc.)
+    ///   Pass `Some(markers)` for editor views, `None` for simple terminal/viewer.
+    pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>, editor_markers: Option<crate::EditorMarkers>) -> Element<'a, TerminalMessage> {
+        iced::widget::container(create_crt_shader(term, settings, editor_markers))
+            .id(term.id.clone())
+            .into()
     }
 }
