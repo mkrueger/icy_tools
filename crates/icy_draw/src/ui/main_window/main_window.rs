@@ -1180,10 +1180,7 @@ impl MainWindow {
                 if let AnsiEditorMessage::CollaborationDraw(col, row, code, fg, bg) = &msg {
                     if self.collaboration_state.is_connected() {
                         use icy_engine_edit::collaboration::Block;
-                        if let Some(task) = self
-                            .collaboration_state
-                            .send_draw(*col, *row, Block { code: *code, fg: *fg, bg: *bg })
-                        {
+                        if let Some(task) = self.collaboration_state.send_draw(*col, *row, Block { code: *code, fg: *fg, bg: *bg }) {
                             return task.discard();
                         }
                     }
@@ -1308,16 +1305,16 @@ impl MainWindow {
             Message::ApplyFileSettings(result) => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                     editor.with_edit_state(|state| {
-                        // Apply canvas size
+                        // Apply canvas size with undo support
                         let current_size = state.get_buffer().size();
                         if result.width != current_size.width || result.height != current_size.height {
-                            state.set_buffer_size_no_undo(icy_engine::Size::new(result.width, result.height));
+                            let _ = state.resize_buffer(false, icy_engine::Size::new(result.width, result.height));
                         }
 
-                        // Apply font cell size
-                        state.set_font_dimensions_no_undo(icy_engine::Size::new(result.font_width, result.font_height));
+                        // Apply font cell size with undo support
+                        let _ = state.set_font_dimensions(icy_engine::Size::new(result.font_width, result.font_height));
 
-                        // Apply SAUCE metadata
+                        // Apply SAUCE metadata with undo support
                         let mut sauce_meta = icy_engine_edit::SauceMetaData::default();
                         sauce_meta.title = result.title.as_str().into();
                         sauce_meta.author = result.author.as_str().into();
@@ -1325,22 +1322,22 @@ impl MainWindow {
                         for line in result.comments.lines() {
                             sauce_meta.comments.push(line.into());
                         }
-                        state.set_sauce_meta(sauce_meta);
+                        let _ = state.update_sauce_data(sauce_meta);
 
                         // Apply format mode (sets palette_mode and font_mode)
                         state.set_format_mode(result.format_mode);
 
-                        // Apply ice mode
+                        // Apply ice mode with undo support
                         let ice_mode = if result.ice_colors {
                             icy_engine::IceMode::Ice
                         } else {
                             icy_engine::IceMode::Blink
                         };
-                        state.set_ice_mode_no_undo(ice_mode);
+                        let _ = state.set_ice_mode(ice_mode);
 
-                        // Apply display options
-                        state.set_use_letter_spacing_no_undo(result.use_9px_font);
-                        state.set_use_aspect_ratio_no_undo(result.legacy_aspect);
+                        // Apply display options with undo support
+                        let _ = state.set_use_letter_spacing(result.use_9px_font);
+                        let _ = state.set_use_aspect_ratio(result.legacy_aspect);
                     });
                 }
                 Task::none()
@@ -1492,15 +1489,12 @@ impl MainWindow {
             Message::ConnectToServer(ref result) => {
                 // Start collaboration connection
                 log::info!("Connecting to server: {} as {}", result.url, result.nick);
-                
+
                 // Store connection info and start connecting
                 // The subscription will pick this up and establish the connection
-                self.collaboration_state.start_connecting(
-                    result.url.clone(), 
-                    result.nick.clone(),
-                    result.password.clone(),
-                );
-                
+                self.collaboration_state
+                    .start_connecting(result.url.clone(), result.nick.clone(), result.password.clone());
+
                 let toast = Toast::info(format!("Connecting to {}...", result.url));
                 Task::done(Message::ShowToast(toast))
             }
@@ -1540,7 +1534,7 @@ impl MainWindow {
             Message::Collaboration(ref collab_msg) => {
                 use crate::ui::collaboration::CollaborationMessage;
                 use icy_engine_edit::collaboration::CollaborationEvent;
-                
+
                 match collab_msg {
                     CollaborationMessage::Ready(client) => {
                         log::info!("Collaboration connected!");
@@ -1551,13 +1545,11 @@ impl MainWindow {
                     CollaborationMessage::Event(event) => {
                         match event {
                             CollaborationEvent::Connected(doc) => {
-                                self.collaboration_state.start_session(
-                                    doc.user_id, doc.columns, doc.rows, doc.use_9px, doc.ice_colors, doc.font.clone()
-                                );
+                                self.collaboration_state.start_session(&doc);
 
                                 // Apply initial document snapshot from server
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                                    editor.apply_remote_document(&doc.document, doc.columns, doc.rows);
+                                    editor.apply_remote_document(&doc);
                                     editor.sync_ui();
                                 }
 
@@ -1599,12 +1591,7 @@ impl MainWindow {
                             CollaborationEvent::SauceChanged(sauce) => {
                                 // Apply remote SAUCE metadata update
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                                    editor.apply_remote_sauce(
-                                        sauce.title.clone(),
-                                        sauce.author.clone(),
-                                        sauce.group.clone(),
-                                        sauce.comments.clone(),
-                                    );
+                                    editor.apply_remote_sauce(sauce.title.clone(), sauce.author.clone(), sauce.group.clone(), sauce.comments.clone());
                                 }
                                 // Show chat notification
                                 if let Some(user) = self.collaboration_state.remote_users.get(&sauce.id) {
@@ -1656,7 +1643,7 @@ impl MainWindow {
     /// Get the collaboration subscription if connecting or connected
     pub fn subscription(&self) -> Subscription<Message> {
         use iced::Subscription;
-        
+
         if self.collaboration_state.connecting || self.collaboration_state.active {
             if let (Some(url), Some(nick)) = (&self.collaboration_state.server_url, &self.collaboration_state.nick) {
                 let password = self.collaboration_state.password.clone().unwrap_or_default();
@@ -1669,7 +1656,7 @@ impl MainWindow {
                 return crate::ui::collaboration::connect(config).map(Message::Collaboration);
             }
         }
-        
+
         Subscription::none()
     }
 
@@ -1709,16 +1696,18 @@ impl MainWindow {
         // Pass chat panel to editors - they manage the layout themselves (Moebius-style)
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => {
-                let chat = chat_panel.map(|c| c.map(|m| {
-                    // Convert Message back to AnsiEditorMessage for chat interactions
-                    // Chat messages bubble back up through the normal message flow
-                    match m {
-                        Message::ChatPanel(msg) => crate::ui::editor::ansi::AnsiEditorMessage::ChatPanel(msg),
-                        _ => crate::ui::editor::ansi::AnsiEditorMessage::Noop,
-                    }
-                }));
+                let chat = chat_panel.map(|c| {
+                    c.map(|m| {
+                        // Convert Message back to AnsiEditorMessage for chat interactions
+                        // Chat messages bubble back up through the normal message flow
+                        match m {
+                            Message::ChatPanel(msg) => crate::ui::editor::ansi::AnsiEditorMessage::ChatPanel(msg),
+                            _ => crate::ui::editor::ansi::AnsiEditorMessage::Noop,
+                        }
+                    })
+                });
                 editor.view(chat).map(Message::AnsiEditor)
-            },
+            }
             ModeState::BitFont(editor) => editor.view(None).map(Message::BitFontEditor),
             ModeState::CharFont(editor) => editor.view(None).map(Message::CharFontEditor),
             ModeState::Animation(editor) => editor.view(None).map(Message::AnimationEditor),
@@ -1738,9 +1727,9 @@ impl MainWindow {
 
     /// Sync remote cursor positions from collaboration state to the ANSI editor
     fn sync_remote_cursors_to_editor(&mut self) {
-        use crate::ui::editor::ansi::widget::remote_cursors::{RemoteCursor, RemoteCursorMode};
         use crate::ui::collaboration::state::CursorMode;
-        
+        use crate::ui::editor::ansi::widget::remote_cursors::{RemoteCursor, RemoteCursorMode};
+
         let cursors: Vec<RemoteCursor> = self
             .collaboration_state
             .remote_users
@@ -1750,7 +1739,7 @@ impl MainWindow {
                 if user.cursor_mode == CursorMode::Hidden {
                     return None;
                 }
-                
+
                 // Convert mode
                 let mode = match user.cursor_mode {
                     CursorMode::Hidden => RemoteCursorMode::Hidden,
@@ -1762,21 +1751,17 @@ impl MainWindow {
                         } else {
                             RemoteCursorMode::Editing
                         }
-                    },
+                    }
                     CursorMode::Operation => RemoteCursorMode::Operation,
                 };
-                
+
                 // Determine which position to use
                 let (col, row) = match user.cursor_mode {
-                    CursorMode::Selection => {
-                        user.selection.as_ref().map(|s| (s.col, s.row)).or(user.cursor)?
-                    },
-                    CursorMode::Operation => {
-                        user.operation.as_ref().map(|o| (o.col, o.row)).or(user.cursor)?
-                    },
+                    CursorMode::Selection => user.selection.as_ref().map(|s| (s.col, s.row)).or(user.cursor)?,
+                    CursorMode::Operation => user.operation.as_ref().map(|o| (o.col, o.row)).or(user.cursor)?,
                     _ => user.cursor?,
                 };
-                
+
                 Some(RemoteCursor {
                     nick: user.user.nick.clone(),
                     col,
@@ -1786,7 +1771,7 @@ impl MainWindow {
                 })
             })
             .collect();
-        
+
         if let ModeState::Ansi(editor) = &mut self.mode_state {
             editor.set_remote_cursors(cursors);
         }
@@ -1952,14 +1937,10 @@ impl MainWindow {
                 // Allow shortcuts (Ctrl/Alt/Logo) to still work.
                 // Block plain typing (and navigation keys) from reaching editor/commands.
                 match key_event {
-                    iced::keyboard::Event::KeyPressed { modifiers, .. }
-                        if !modifiers.control() && !modifiers.alt() && !modifiers.logo() =>
-                    {
+                    iced::keyboard::Event::KeyPressed { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
                         return (None, Task::none());
                     }
-                    iced::keyboard::Event::KeyReleased { modifiers, .. }
-                        if !modifiers.control() && !modifiers.alt() && !modifiers.logo() =>
-                    {
+                    iced::keyboard::Event::KeyReleased { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
                         return (None, Task::none());
                     }
                     _ => {}

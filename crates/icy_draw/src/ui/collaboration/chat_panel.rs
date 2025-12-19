@@ -7,7 +7,7 @@
 
 use iced::{
     Border, Color, Element, Length, Theme,
-    widget::{column, container, row, scrollable, text, text_input, Column, Space},
+    widget::{Column, Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_edit::collaboration::ChatMessage;
 
@@ -56,12 +56,7 @@ fn view_user_list(state: &CollaborationState) -> Element<'_, Message> {
     let mut user_column = Column::new().spacing(2).width(Length::Fixed(USER_LIST_WIDTH));
 
     // Header
-    user_column = user_column.push(
-        text("Users")
-            .size(12)
-            .color(Color::from_rgb(0.6, 0.6, 0.6))
-            .width(Length::Fill),
-    );
+    user_column = user_column.push(text("Users").size(12).color(Color::from_rgb(0.6, 0.6, 0.6)).width(Length::Fill));
 
     user_column = user_column.push(Space::new().height(4.0));
 
@@ -74,11 +69,7 @@ fn view_user_list(state: &CollaborationState) -> Element<'_, Message> {
 
     // Show "No users" if empty
     if state.remote_users.is_empty() {
-        user_column = user_column.push(
-            text("No other users")
-                .size(11)
-                .color(Color::from_rgb(0.5, 0.5, 0.5)),
-        );
+        user_column = user_column.push(text("No other users").size(11).color(Color::from_rgb(0.5, 0.5, 0.5)));
     }
 
     container(scrollable(user_column).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
@@ -91,12 +82,11 @@ fn view_user_list(state: &CollaborationState) -> Element<'_, Message> {
 /// View a single user entry
 fn view_user_entry<'a>(remote_user: &'a RemoteUser, state: &'a CollaborationState) -> Element<'a, Message> {
     let color = state.user_color(remote_user.user.id);
-    let color_indicator = container(Space::new().width(8.0).height(8.0))
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(iced::Background::Color(Color::from_rgb8(color.0, color.1, color.2))),
-            border: Border::default().rounded(4.0),
-            ..Default::default()
-        });
+    let color_indicator = container(Space::new().width(8.0).height(8.0)).style(move |_theme: &Theme| container::Style {
+        background: Some(iced::Background::Color(Color::from_rgb8(color.0, color.1, color.2))),
+        border: Border::default().rounded(4.0),
+        ..Default::default()
+    });
 
     let nick = &remote_user.user.nick;
     let display_name = if nick.is_empty() { "Guest" } else { nick };
@@ -117,11 +107,7 @@ fn view_chat_area(messages: &[ChatMessage]) -> Element<'_, Message> {
     let mut message_column = Column::new().spacing(4).width(Length::Fill);
 
     if messages.is_empty() {
-        message_column = message_column.push(
-            text("No messages yet")
-                .size(11)
-                .color(Color::from_rgb(0.5, 0.5, 0.5)),
-        );
+        message_column = message_column.push(text("No messages yet").size(11).color(Color::from_rgb(0.5, 0.5, 0.5)));
     } else {
         for msg in messages.iter().rev().take(100).rev() {
             let msg_view = view_chat_message(msg);
@@ -144,9 +130,7 @@ fn view_chat_area(messages: &[ChatMessage]) -> Element<'_, Message> {
 fn view_chat_message(msg: &ChatMessage) -> Element<'_, Message> {
     let nick = if msg.nick.is_empty() { "Guest" } else { &msg.nick };
 
-    let nick_text = text(format!("{}: ", nick))
-        .size(12)
-        .color(Color::from_rgb(0.3, 0.6, 1.0));
+    let nick_text = text(format!("{}: ", nick)).size(12).color(Color::from_rgb(0.3, 0.6, 1.0));
 
     let message_text = text(&msg.text).size(12);
 
@@ -162,10 +146,7 @@ fn view_input_area(input_text: &str) -> Element<'_, Message> {
         .size(12)
         .width(Length::Fill);
 
-    container(input)
-        .width(Length::Fill)
-        .style(input_area_style)
-        .into()
+    container(input).width(Length::Fill).style(input_area_style).into()
 }
 
 // ============================================================================

@@ -681,7 +681,7 @@ impl AnsiEditorCore {
             tool_set_cursor_icon: false,
 
             pending_tool_switch: None,
-            
+
             remote_cursors: Vec::new(),
         };
 
@@ -884,7 +884,7 @@ impl AnsiEditorCore {
             current_tag: edit_state.get_current_tag().unwrap_or(0),
             layer_visibility,
             selected_layer: edit_state.get_current_layer().unwrap_or(0),
-            sauce_meta: icy_engine_edit::undo_operation::SauceMetaDataSerde::from(edit_state.get_sauce_meta()),
+            sauce_meta: edit_state.get_sauce_meta().clone(),
             reference_image_path: None, // TODO: Get reference image path
             reference_image_opacity: 0.5,
         })
@@ -913,14 +913,13 @@ impl AnsiEditorCore {
             // Restore selected layer
             edit_state.set_current_layer(state.selected_layer);
 
-            // Restore layer visibility using with_buffer_mut_no_undo
-            edit_state.with_buffer_mut_no_undo(|buffer| {
-                for (i, visible) in state.layer_visibility.iter().enumerate() {
-                    if i < buffer.layers.len() {
-                        buffer.layers[i].set_is_visible(*visible);
-                    }
+            // Restore layer visibility
+            let buffer = edit_state.get_buffer_mut();
+            for (i, visible) in state.layer_visibility.iter().enumerate() {
+                if i < buffer.layers.len() {
+                    buffer.layers[i].set_is_visible(*visible);
                 }
-            });
+            }
         }
 
         // TODO: Restore scroll and zoom from canvas
@@ -1903,7 +1902,7 @@ impl AnsiEditorCore {
                             }
                         }
                         FontSlotManagerResult::RemoveSlot { slot } => {
-                            state.with_buffer_mut_no_undo(|buf| buf.remove_font(slot));
+                            state.get_buffer_mut().remove_font(slot);
                         }
                         FontSlotManagerResult::OpenFontSelector { .. } => {
                             // Handled by MainWindow intercept
@@ -1952,7 +1951,7 @@ impl AnsiEditorCore {
     /// Returns (col, row, code, fg, bg) tuples to send to the server
     /// Now delegates to EditState where changes are collected during undo/redo operations
     pub fn take_pending_char_changes(&mut self) -> Vec<(i32, i32, u32, u8, u8)> {
-        self.with_edit_state(|state| state.take_pending_char_changes())
+        self.with_edit_state(|state: &mut EditState| state.take_pending_char_changes())
     }
 
     /// Update the canvas markers based on current guide/raster settings

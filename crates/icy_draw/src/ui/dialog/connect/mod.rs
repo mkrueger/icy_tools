@@ -4,7 +4,7 @@
 
 use iced::{
     Element, Length,
-    widget::{column, container, row, text, text_input, Space},
+    widget::{Space, column, container, row, text, text_input},
 };
 use icy_engine_gui::settings::left_label;
 use icy_engine_gui::ui::*;
@@ -105,14 +105,10 @@ impl Dialog<Message> for ConnectDialog {
             .padding(8)
             .width(Length::Fill);
 
-        let password_row = row![password_label, password_input]
-            .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center);
+        let password_row = row![password_label, password_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center);
 
         // Help text
-        let help_text = text(fl!("connect-help-text"))
-            .size(TEXT_SIZE_SMALL)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5));
+        let help_text = text(fl!("connect-help-text")).size(TEXT_SIZE_SMALL).color(iced::Color::from_rgb(0.5, 0.5, 0.5));
 
         // Form content
         let form = column![url_row, nick_row, password_row, Space::new().height(8.0), help_text,]
@@ -132,14 +128,7 @@ impl Dialog<Message> for ConnectDialog {
         let button_row = button_row(vec![cancel_button.into(), connect_button.into()]);
 
         // Dialog layout
-        let dialog_content = dialog_area(
-            column![
-                section_header(fl!("connect-dialog-title")),
-                Space::new().height(DIALOG_SPACING),
-                form,
-            ]
-            .into(),
-        );
+        let dialog_content = dialog_area(column![section_header(fl!("connect-dialog-title")), Space::new().height(DIALOG_SPACING), form,].into());
 
         let button_area = dialog_area(button_row.into());
 

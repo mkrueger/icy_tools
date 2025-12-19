@@ -396,10 +396,16 @@ impl EditState {
     }
 
     /// Update SAUCE metadata with undo support
+    /// Returns Ok(()) without creating an undo action if there are no changes.
     pub fn update_sauce_data(&mut self, sauce: crate::SauceMetaData) -> Result<()> {
+        // Guard against no changes - don't create undo action if nothing changed
+        let old = &self.sauce_meta;
+        if old.title == sauce.title && old.author == sauce.author && old.group == sauce.group && old.comments == sauce.comments {
+            return Ok(());
+        }
         self.push_undo_action(EditorUndoOp::SetSauceData {
-            new: super::undo_operation::SauceMetaDataSerde::from(&sauce),
-            old: super::undo_operation::SauceMetaDataSerde::from(&self.sauce_meta),
+            new: sauce.clone(),
+            old: self.sauce_meta.clone(),
         })
     }
 

@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use super::compression::{flat_to_columns, uncompress_moebius_data};
 use super::protocol::*;
 use super::session::UserId;
 
@@ -139,18 +138,9 @@ pub enum CollaborationEvent {
     /// Cursor position updated
     CursorMoved { user_id: UserId, col: i32, row: i32 },
     /// Selection updated
-    SelectionChanged {
-        user_id: UserId,
-        selecting: bool,
-        col: i32,
-        row: i32,
-    },
+    SelectionChanged { user_id: UserId, selecting: bool, col: i32, row: i32 },
     /// Operation mode started (floating selection)
-    OperationStarted {
-        user_id: UserId,
-        col: i32,
-        row: i32,
-    },
+    OperationStarted { user_id: UserId, col: i32, row: i32 },
     /// Cursor hidden (user switched to non-editing tool)
     CursorHidden { user_id: UserId },
     /// Character drawn
@@ -258,13 +248,7 @@ impl ClientHandle {
     }
 
     /// Set SAUCE metadata.
-    pub async fn send_sauce(
-        &self,
-        title: String,
-        author: String,
-        group: String,
-        comments: String,
-    ) -> Result<(), ClientError> {
+    pub async fn send_sauce(&self, title: String, author: String, group: String, comments: String) -> Result<(), ClientError> {
         self.command_tx
             .send(ClientCommand::SetSauce {
                 title,
@@ -352,9 +336,7 @@ impl ClientHandle {
 /// Start the collaboration client and connect to a server.
 ///
 /// Returns a handle for sending commands and a receiver for events.
-pub async fn connect(
-    config: ClientConfig,
-) -> Result<(ClientHandle, mpsc::Receiver<CollaborationEvent>), ClientError> {
+pub async fn connect(config: ClientConfig) -> Result<(ClientHandle, mpsc::Receiver<CollaborationEvent>), ClientError> {
     let (command_tx, command_rx) = mpsc::channel(256);
     let (event_tx, event_rx) = mpsc::channel(256);
 
@@ -503,11 +485,7 @@ async fn run_client(
 
 /// Parse a server message and convert to CollaborationEvent.
 #[doc(hidden)]
-pub async fn parse_server_message(
-    msg: &Value,
-    _nick: &str,
-    assigned_id: &mut Option<UserId>,
-) -> Option<CollaborationEvent> {
+pub async fn parse_server_message(msg: &Value, _nick: &str, assigned_id: &mut Option<UserId>) -> Option<CollaborationEvent> {
     let msg_type = msg.get("type")?.as_u64()? as u8;
 
     let data = msg.get("data");
@@ -519,31 +497,9 @@ pub async fn parse_server_message(
             let user_id = resp.data.id as UserId;
             *assigned_id = Some(user_id);
 
-            let doc = &resp.data.doc;
-            let columns = doc.columns;
-            let rows: u32 = doc.rows;
+            let connected = resp.data.doc.into_connected_document(user_id, resp.data.users).ok()?;
 
-            let flat_blocks: Vec<Block> = if let Some(compressed) = &doc.compressed_data {                uncompress_moebius_data(columns, rows, compressed).ok()?
-            } else {
-                doc.data.clone().unwrap_or_default()
-            };
-            let document = flat_to_columns(&flat_blocks, columns, rows);
-
-            let users = resp.data.users;
-            let use_9px = doc.use_9px_font;
-            let ice_colors = doc.ice_colors;
-            let font = doc.font_name.clone();
-
-            Some(CollaborationEvent::Connected(Box::new(ConnectedDocument {
-                user_id,
-                document,
-                columns,
-                rows,
-                users,
-                use_9px,
-                ice_colors,
-                font,
-            })))
+            Some(CollaborationEvent::Connected(Box::new(connected)))
         }
         1 => {
             // REFUSED
@@ -561,10 +517,7 @@ pub async fn parse_server_message(
             // LEAVE
             let data = data?;
             let user_id = data.get("id")?.as_u64()? as UserId;
-            Some(CollaborationEvent::UserLeft {
-                user_id,
-                nick: String::new(),
-            })
+            Some(CollaborationEvent::UserLeft { user_id, nick: String::new() })
         }
         4 => {
             // CURSOR
@@ -618,21 +571,9 @@ pub async fn parse_server_message(
             // CHAT
             let data = data?;
             let id = data.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let chat_nick = data
-                .get("nick")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let text = data
-                .get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let group = data
-                .get("group")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let chat_nick = data.get("nick").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let text = data.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let time = data.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
             Some(CollaborationEvent::Chat(ChatMessage {
                 id,
@@ -766,4 +707,3 @@ pub fn command_to_message(cmd: ClientCommand, user_id: Option<UserId>, nick: &st
 
     Some(msg.to_string())
 }
-

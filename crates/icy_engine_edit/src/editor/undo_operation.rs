@@ -6,46 +6,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Result, Role, Selection, SelectionMask, Size, Tag,
-    TextPane,
+    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Result, Role, SauceMetaData, Selection,
+    SelectionMask, Size, Tag, TextPane,
 };
 
 use super::EditState;
 use super::undo_stack::OperationType;
-
-/// Serializable version of SauceMetaData
-/// Since icy_sauce::MetaData doesn't implement Serialize/Deserialize,
-/// we use this wrapper for serialization.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct SauceMetaDataSerde {
-    pub title: Vec<u8>,
-    pub author: Vec<u8>,
-    pub group: Vec<u8>,
-    pub comments: Vec<Vec<u8>>,
-}
-
-impl From<&crate::SauceMetaData> for SauceMetaDataSerde {
-    fn from(meta: &crate::SauceMetaData) -> Self {
-        Self {
-            title: meta.title.to_vec(),
-            author: meta.author.to_vec(),
-            group: meta.group.to_vec(),
-            comments: meta.comments.iter().map(|c| c.to_vec()).collect(),
-        }
-    }
-}
-
-impl From<SauceMetaDataSerde> for crate::SauceMetaData {
-    fn from(serde: SauceMetaDataSerde) -> Self {
-        use bstr::BString;
-        Self {
-            title: BString::from(serde.title),
-            author: BString::from(serde.author),
-            group: BString::from(serde.group),
-            comments: serde.comments.into_iter().map(BString::from).collect(),
-        }
-    }
-}
 
 /// Serializable editor undo operation enum
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -184,7 +150,7 @@ pub enum EditorUndoOp {
     SwitchPalettte { pal: Palette },
 
     /// Set SAUCE metadata
-    SetSauceData { new: SauceMetaDataSerde, old: SauceMetaDataSerde },
+    SetSauceData { new: SauceMetaData, old: SauceMetaData },
 
     /// Switch to font page
     SwitchToFontPage { old: usize, new: usize },
@@ -243,6 +209,9 @@ pub enum EditorUndoOp {
 
     /// Set use aspect ratio
     SetUseAspectRatio { new_ar: bool },
+
+    /// Set font dimensions
+    SetFontDimensions { old_size: Size, new_size: Size },
 
     /// Add tag
     AddTag { new_tag: Tag, clone: bool },
@@ -310,6 +279,7 @@ impl EditorUndoOp {
             EditorUndoOp::UpdateLayerProperties { .. } => fl!(crate::LANGUAGE_LOADER, "undo-update_layer_properties"),
             EditorUndoOp::SetUseLetterSpacing { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_use_letter_spacing"),
             EditorUndoOp::SetUseAspectRatio { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio"),
+            EditorUndoOp::SetFontDimensions { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_font_dimensions"),
             EditorUndoOp::AddTag { clone, .. } => {
                 if *clone {
                     fl!(crate::LANGUAGE_LOADER, "undo-clone-tag")
@@ -649,6 +619,11 @@ impl EditorUndoOp {
                 *new_ar = old;
                 Ok(())
             }
+            EditorUndoOp::SetFontDimensions { old_size, new_size } => {
+                std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().set_font_dimensions(*new_size);
+                Ok(())
+            }
             EditorUndoOp::AddTag { new_tag, .. } => {
                 edit_state.get_buffer_mut().tags.retain(|t| t != new_tag);
                 Ok(())
@@ -977,6 +952,11 @@ impl EditorUndoOp {
                 let old = edit_state.get_buffer().use_aspect_ratio();
                 edit_state.get_buffer_mut().set_use_aspect_ratio(*new_ar);
                 *new_ar = old;
+                Ok(())
+            }
+            EditorUndoOp::SetFontDimensions { old_size, new_size } => {
+                std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().set_font_dimensions(*new_size);
                 Ok(())
             }
             EditorUndoOp::AddTag { new_tag, .. } => {

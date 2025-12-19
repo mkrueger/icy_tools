@@ -3,10 +3,10 @@
 //! Provides an iced Subscription that wraps the collaboration client
 //! and delivers events to the main application.
 
+use iced::Subscription;
 use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender;
 use iced::stream::channel;
-use iced::Subscription;
 use icy_engine_edit::collaboration::{ClientConfig, ClientHandle, CollaborationEvent};
 use std::sync::OnceLock;
 
@@ -27,9 +27,7 @@ pub struct CollaborationClient {
 
 impl std::fmt::Debug for CollaborationClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CollaborationClient")
-            .field("nick", &self.handle.nick())
-            .finish()
+        f.debug_struct("CollaborationClient").field("nick", &self.handle.nick()).finish()
     }
 }
 
@@ -149,10 +147,7 @@ fn set_pending_config(config: ClientConfig) {
 
 /// Take the pending config
 fn take_pending_config() -> Option<ClientConfig> {
-    PENDING_CONFIG
-        .get()
-        .and_then(|m| m.lock().ok())
-        .and_then(|mut guard| guard.take())
+    PENDING_CONFIG.get().and_then(|m| m.lock().ok()).and_then(|mut guard| guard.take())
 }
 
 /// Create a collaboration subscription that connects to a server
@@ -188,9 +183,7 @@ async fn run_collaboration(config: ClientConfig, mut output: Sender<Collaboratio
         }
         Err(e) => {
             // Send error event
-            let _ = output
-                .send(CollaborationMessage::Event(CollaborationEvent::Error(e)))
-                .await;
+            let _ = output.send(CollaborationMessage::Event(CollaborationEvent::Error(e))).await;
         }
     }
 

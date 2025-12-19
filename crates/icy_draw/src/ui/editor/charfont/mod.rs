@@ -374,48 +374,47 @@ impl CharFontEditor {
         };
 
         state.set_outline_style(style);
-        state.with_buffer_mut_no_undo(|buffer| {
-            set_up_buffer(buffer);
+        let buffer = state.get_buffer_mut();
+        set_up_buffer(buffer);
 
-            if selected_char.is_some() {
-                if let Some(glyph) = &glyph {
-                    let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
-                    let options = RenderOptions::default();
-                    let _ = glyph.render(&mut renderer, &options);
+        if selected_char.is_some() {
+            if let Some(glyph) = &glyph {
+                let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
+                let options = RenderOptions::default();
+                let _ = glyph.render(&mut renderer, &options);
 
-                    // Transform TheDraw outline placeholders into actual display characters.
-                    // This matches the egui behavior (outline style applied in preview).
-                    let size = buffer.layers[0].size();
-                    for y in 0..size.height {
-                        for x in 0..size.width {
-                            let mut cell = buffer.layers[0].char_at(icy_engine::Position::new(x, y));
-                            let code = cell.ch as u8;
+                // Transform TheDraw outline placeholders into actual display characters.
+                // This matches the egui behavior (outline style applied in preview).
+                let size = buffer.layers[0].size();
+                for y in 0..size.height {
+                    for x in 0..size.width {
+                        let mut cell = buffer.layers[0].char_at(icy_engine::Position::new(x, y));
+                        let code = cell.ch as u8;
 
-                            if code == 0xFF {
-                                cell.ch = ' ';
-                                buffer.layers[0].set_char((x, y), cell);
-                                continue;
-                            }
-
-                            let is_placeholder = (b'A'..=b'Q').contains(&code) || code == b'@' || code == b'&';
-                            if !is_placeholder {
-                                continue;
-                            }
-
-                            let unicode_ch = transform_outline(style, code);
-                            let cp437_ch = if let Some(&cp437) = codepages::tables::UNICODE_TO_CP437.get(&unicode_ch) {
-                                char::from(cp437)
-                            } else {
-                                unicode_ch
-                            };
-
-                            cell.ch = cp437_ch;
+                        if code == 0xFF {
+                            cell.ch = ' ';
                             buffer.layers[0].set_char((x, y), cell);
+                            continue;
                         }
+
+                        let is_placeholder = (b'A'..=b'Q').contains(&code) || code == b'@' || code == b'&';
+                        if !is_placeholder {
+                            continue;
+                        }
+
+                        let unicode_ch = transform_outline(style, code);
+                        let cp437_ch = if let Some(&cp437) = codepages::tables::UNICODE_TO_CP437.get(&unicode_ch) {
+                            char::from(cp437)
+                        } else {
+                            unicode_ch
+                        };
+
+                        cell.ch = cp437_ch;
+                        buffer.layers[0].set_char((x, y), cell);
                     }
                 }
             }
-        });
+        }
 
         state.mark_buffer_dirty();
     }
@@ -591,30 +590,27 @@ impl CharFontEditor {
         let font_type = font.font_type;
 
         self.ansi_core.with_edit_state(|state| {
-            state.with_buffer_mut_no_undo(|buffer| set_up_buffer(buffer));
+            set_up_buffer(state.get_buffer_mut());
             state.set_current_layer(0);
             state.set_caret_position(icy_engine::Position::new(0, 0));
 
             if let Some(ch) = selected_char {
                 // Use TdfBufferRenderer to render the glyph
                 if let Some(glyph) = font.glyph(ch) {
-                    state.with_buffer_mut_no_undo(|buffer| {
-                        let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
-                        let options = RenderOptions {
-                            render_mode: retrofont::RenderMode::Edit,
-                            outline_style: 0,
-                        };
-                        let _ = glyph.render(&mut renderer, &options);
-                    });
+                    let buffer = state.get_buffer_mut();
+                    let mut renderer = TdfBufferRenderer::new(buffer, 0, 0);
+                    let options = RenderOptions {
+                        render_mode: retrofont::RenderMode::Edit,
+                        outline_style: 0,
+                    };
+                    let _ = glyph.render(&mut renderer, &options);
                 }
             }
 
             // For Block and Outline fonts, apply the current caret attribute to all visible characters
             if font_type == TdfFontType::Block || font_type == TdfFontType::Outline {
                 let attr = state.get_caret().attribute;
-                state.with_buffer_mut_no_undo(|buffer| {
-                    apply_attribute_to_layer(&mut buffer.layers[0], attr);
-                });
+                apply_attribute_to_layer(&mut state.get_buffer_mut().layers[0], attr);
             }
 
             // Mark buffer as dirty to trigger re-render
@@ -645,11 +641,10 @@ impl CharFontEditor {
 
         self.ansi_core.with_edit_state_mut_shared(|state| {
             let attr = state.get_caret().attribute;
-            state.with_buffer_mut_no_undo(|buffer| {
-                if !buffer.layers.is_empty() {
-                    apply_attribute_to_layer(&mut buffer.layers[0], attr);
-                }
-            });
+            let buffer = state.get_buffer_mut();
+            if !buffer.layers.is_empty() {
+                apply_attribute_to_layer(&mut buffer.layers[0], attr);
+            }
             state.mark_buffer_dirty();
         });
     }
@@ -1106,7 +1101,7 @@ impl CharFontEditor {
     }
 
     /// Render the editor view
-    /// 
+    ///
     /// The optional `chat_panel` parameter is accepted for API consistency but
     /// currently ignored since charfont editor doesn't support collaboration.
     pub fn view(&self, _chat_panel: Option<Element<'_, CharFontEditorMessage>>) -> Element<'_, CharFontEditorMessage> {

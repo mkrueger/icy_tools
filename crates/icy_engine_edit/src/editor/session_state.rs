@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use icy_engine::{Position, TextAttribute};
 
-use super::{EditorUndoStack, undo_operation::SauceMetaDataSerde};
+use super::EditorUndoStack;
+use crate::SauceMetaData;
 
 /// Session state for the Ansi editor
 ///
@@ -73,7 +74,7 @@ pub struct AnsiEditorSessionState {
 
     /// SAUCE metadata
     #[serde(default)]
-    pub sauce_meta: SauceMetaDataSerde,
+    pub sauce_meta: SauceMetaData,
 
     /// Reference image path (if any)
     #[serde(default)]
@@ -113,7 +114,7 @@ impl Default for AnsiEditorSessionState {
             current_tag: 0,
             layer_visibility: Vec::new(),
             selected_layer: 0,
-            sauce_meta: SauceMetaDataSerde::default(),
+            sauce_meta: SauceMetaData::default(),
             reference_image_path: None,
             reference_image_opacity: 0.5,
         }

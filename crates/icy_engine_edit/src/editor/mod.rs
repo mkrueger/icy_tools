@@ -5,7 +5,6 @@ pub use undo_stack::*;
 
 pub mod undo_operation;
 pub use undo_operation::EditorUndoOp;
-pub use undo_operation::SauceMetaDataSerde;
 
 pub mod session_state;
 pub use session_state::AnsiEditorSessionState;
@@ -300,7 +299,7 @@ impl EditState {
         &self.screen.buffer
     }
 
-    pub(crate) fn get_buffer_mut(&mut self) -> &mut TextBuffer {
+    pub fn get_buffer_mut(&mut self) -> &mut TextBuffer {
         &mut self.screen.buffer
     }
 
@@ -317,11 +316,6 @@ impl EditState {
     /// Get a reference to the SAUCE metadata
     pub fn get_sauce_meta(&self) -> &SauceMetaData {
         &self.sauce_meta
-    }
-
-    /// Get a mutable reference to the SAUCE metadata
-    pub fn get_sauce_meta_mut(&mut self) -> &mut SauceMetaData {
-        &mut self.sauce_meta
     }
 
     /// Set the SAUCE metadata
@@ -449,45 +443,9 @@ impl EditState {
         self.screen.buffer.mark_dirty();
     }
 
-    /// Set buffer size (without undo - use for initialization only)
-    pub fn set_buffer_size_no_undo(&mut self, size: icy_engine::Size) {
-        self.screen.buffer.set_size(size);
-    }
-
-    /// Set buffer width (without undo - use for initialization only)
-    pub fn set_buffer_width_no_undo(&mut self, width: i32) {
-        self.screen.buffer.set_width(width);
-    }
-
-    /// Set font dimensions (without undo - use for initialization only)
-    pub fn set_font_dimensions_no_undo(&mut self, size: icy_engine::Size) {
-        self.screen.buffer.set_font_dimensions(size);
-    }
-
-    /// Set letter spacing mode directly (without undo - use for initialization only)
-    pub fn set_use_letter_spacing_no_undo(&mut self, use_spacing: bool) {
-        self.screen.buffer.set_use_letter_spacing(use_spacing);
-    }
-
-    /// Set aspect ratio mode directly (without undo - use for initialization only)
-    pub fn set_use_aspect_ratio_no_undo(&mut self, use_ratio: bool) {
-        self.screen.buffer.set_use_aspect_ratio(use_ratio);
-    }
-
-    /// Set ice mode directly (without undo - use for initialization only)
-    pub fn set_ice_mode_no_undo(&mut self, mode: icy_engine::IceMode) {
-        self.screen.buffer.ice_mode = mode;
-    }
-
     /// Get mutable reference to buffer layers (for rendering into buffer)
     pub fn get_layers_mut(&mut self) -> &mut Vec<Layer> {
         &mut self.screen.buffer.layers
-    }
-
-    /// Execute a callback with mutable buffer access.
-    /// WARNING: This bypasses undo! Use only for initialization or rendering.
-    pub fn with_buffer_mut_no_undo<R, F: FnOnce(&mut TextBuffer) -> R>(&mut self, f: F) -> R {
-        f(&mut self.screen.buffer)
     }
 
     pub fn copy_text(&self) -> Option<String> {
@@ -597,13 +555,8 @@ impl EditState {
         match op {
             EditorUndoOp::SetChar { pos, new, old, .. } => {
                 let ch = if use_new { new } else { old };
-                self.pending_char_changes.push((
-                    pos.x,
-                    pos.y,
-                    ch.ch as u32,
-                    ch.attribute.foreground() as u8,
-                    ch.attribute.background() as u8,
-                ));
+                self.pending_char_changes
+                    .push((pos.x, pos.y, ch.ch as u32, ch.attribute.foreground() as u8, ch.attribute.background() as u8));
             }
             EditorUndoOp::Atomic { operations, .. } => {
                 for sub_op in operations {

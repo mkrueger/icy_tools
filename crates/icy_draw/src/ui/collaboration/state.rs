@@ -6,7 +6,7 @@
 //! - Chat history
 //! - Document synchronization
 
-use icy_engine_edit::collaboration::{ChatMessage, ServerStatus, User};
+use icy_engine_edit::collaboration::{ChatMessage, ConnectedDocument, ServerStatus, User};
 use std::collections::HashMap;
 
 use super::subscription::CollaborationClient;
@@ -134,14 +134,14 @@ impl CollaborationState {
     }
 
     /// Start a new collaboration session (when we receive session info from server)
-    pub fn start_session(&mut self, user_id: UserId, columns: u32, rows: u32, use_9px: bool, ice_colors: bool, font: String) {
+    pub fn start_session(&mut self, doc: &ConnectedDocument) {
         self.active = true;
-        self.our_user_id = Some(user_id);
-        self.columns = columns;
-        self.rows = rows;
-        self.use_9px = use_9px;
-        self.ice_colors = ice_colors;
-        self.font = font;
+        self.our_user_id = Some(doc.user_id);
+        self.columns = doc.columns;
+        self.rows = doc.rows;
+        self.use_9px = doc.use_9px;
+        self.ice_colors = doc.ice_colors;
+        self.font = doc.font.clone();
         self.remote_users.clear();
         self.chat_messages.clear();
         self.server_status = None;
@@ -349,13 +349,7 @@ impl CollaborationState {
     }
 
     /// Send SAUCE metadata update (returns a Task that should be spawned)
-    pub fn send_sauce(
-        &self,
-        title: String,
-        author: String,
-        group: String,
-        comments: String,
-    ) -> Option<iced::Task<()>> {
+    pub fn send_sauce(&self, title: String, author: String, group: String, comments: String) -> Option<iced::Task<()>> {
         if let Some(client) = &self.client {
             let handle = client.handle().clone();
             Some(iced::Task::future(async move {

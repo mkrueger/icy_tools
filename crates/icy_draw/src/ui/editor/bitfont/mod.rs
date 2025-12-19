@@ -1290,7 +1290,7 @@ impl BitFontEditor {
     }
 
     /// Build the editor view
-    /// 
+    ///
     /// The optional `chat_panel` parameter is accepted for API consistency but
     /// currently ignored since bitfont editor doesn't support collaboration.
     pub fn view(&self, _chat_panel: Option<Element<'_, BitFontEditorMessage>>) -> Element<'_, BitFontEditorMessage> {

@@ -16,12 +16,30 @@ impl EditState {
     }
 
     pub fn set_use_letter_spacing(&mut self, ls: bool) -> Result<()> {
+        // Guard against no changes
+        if self.get_buffer().use_letter_spacing() == ls {
+            return Ok(());
+        }
         let op = EditorUndoOp::SetUseLetterSpacing { new_ls: ls };
         self.push_undo_action(op)
     }
 
     pub fn set_use_aspect_ratio(&mut self, ar: bool) -> Result<()> {
+        // Guard against no changes
+        if self.get_buffer().use_aspect_ratio() == ar {
+            return Ok(());
+        }
         let op = EditorUndoOp::SetUseAspectRatio { new_ar: ar };
+        self.push_undo_action(op)
+    }
+
+    pub fn set_font_dimensions(&mut self, size: icy_engine::Size) -> Result<()> {
+        let old_size = self.get_buffer().font_dimensions();
+        // Guard against no changes
+        if old_size == size {
+            return Ok(());
+        }
+        let op = EditorUndoOp::SetFontDimensions { old_size, new_size: size };
         self.push_undo_action(op)
     }
 

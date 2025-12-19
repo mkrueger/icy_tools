@@ -42,16 +42,16 @@ pub struct RemoteCursor {
 
 /// Predefined colors for remote cursors
 const CURSOR_COLORS: &[[f32; 3]] = &[
-    [1.0, 0.4, 0.4],   // Red
-    [0.4, 1.0, 0.4],   // Green
-    [0.4, 0.4, 1.0],   // Blue
-    [1.0, 1.0, 0.4],   // Yellow
-    [1.0, 0.4, 1.0],   // Magenta
-    [0.4, 1.0, 1.0],   // Cyan
-    [1.0, 0.7, 0.4],   // Orange
-    [0.7, 0.4, 1.0],   // Purple
-    [0.4, 1.0, 0.7],   // Mint
-    [1.0, 0.4, 0.7],   // Pink
+    [1.0, 0.4, 0.4], // Red
+    [0.4, 1.0, 0.4], // Green
+    [0.4, 0.4, 1.0], // Blue
+    [1.0, 1.0, 0.4], // Yellow
+    [1.0, 0.4, 1.0], // Magenta
+    [0.4, 1.0, 1.0], // Cyan
+    [1.0, 0.7, 0.4], // Orange
+    [0.7, 0.4, 1.0], // Purple
+    [0.4, 1.0, 0.7], // Mint
+    [1.0, 0.4, 0.7], // Pink
 ];
 
 /// Get a color for a user based on their ID
@@ -100,14 +100,7 @@ struct RemoteCursorsOverlayState {
 impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
     type State = ();
 
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: iced::Rectangle,
-        _cursor: iced::mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: iced::Rectangle, _cursor: iced::mouse::Cursor) -> Vec<canvas::Geometry> {
         if self.cursors.is_empty() {
             return vec![];
         }
@@ -117,11 +110,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
         // Get the effective zoom from RenderInfo
         let zoom = {
             let info = self.render_info.read();
-            if info.display_scale > 0.0 {
-                info.display_scale
-            } else {
-                1.0
-            }
+            if info.display_scale > 0.0 { info.display_scale } else { 1.0 }
         };
 
         // Calculate scaled font dimensions
@@ -158,11 +147,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
             let y = offset_y + (cursor.row as f32 * scaled_font_height) - scroll_y_px;
 
             // Skip if outside bounds
-            if x < -scaled_font_width
-                || x > bounds.width
-                || y < -scaled_font_height
-                || y > bounds.height
-            {
+            if x < -scaled_font_width || x > bounds.width || y < -scaled_font_height || y > bounds.height {
                 continue;
             }
 
@@ -171,50 +156,37 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     // Draw selection rectangle from start to current position
                     let start_x = offset_x + (start_col as f32 * scaled_font_width) - scroll_x_px;
                     let start_y = offset_y + (start_row as f32 * scaled_font_height) - scroll_y_px;
-                    
+
                     let min_x = start_x.min(x);
                     let min_y = start_y.min(y);
                     let max_x = (start_x + scaled_font_width).max(x + scaled_font_width);
                     let max_y = (start_y + scaled_font_height).max(y + scaled_font_height);
-                    
+
                     let sel_rect = iced::Rectangle {
                         x: min_x,
                         y: min_y,
                         width: max_x - min_x,
                         height: max_y - min_y,
                     };
-                    
+
                     // Draw selection fill (light transparent)
                     frame.fill_rectangle(
                         iced::Point::new(sel_rect.x, sel_rect.y),
                         iced::Size::new(sel_rect.width, sel_rect.height),
                         Color { a: 0.15, ..color },
                     );
-                    
+
                     // Draw outer border for selection
-                    let outer_path = canvas::Path::rectangle(
-                        iced::Point::new(sel_rect.x, sel_rect.y),
-                        iced::Size::new(sel_rect.width, sel_rect.height),
-                    );
-                    frame.stroke(
-                        &outer_path,
-                        canvas::Stroke::default()
-                            .with_width(2.0)
-                            .with_color(color),
-                    );
-                    
+                    let outer_path = canvas::Path::rectangle(iced::Point::new(sel_rect.x, sel_rect.y), iced::Size::new(sel_rect.width, sel_rect.height));
+                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(color));
+
                     // Draw inner border for double-line effect (to distinguish from regular cursor)
                     if sel_rect.width > 6.0 && sel_rect.height > 6.0 {
                         let inner_path = canvas::Path::rectangle(
                             iced::Point::new(sel_rect.x + 3.0, sel_rect.y + 3.0),
                             iced::Size::new(sel_rect.width - 6.0, sel_rect.height - 6.0),
                         );
-                        frame.stroke(
-                            &inner_path,
-                            canvas::Stroke::default()
-                                .with_width(1.0)
-                                .with_color(Color { a: 0.6, ..color }),
-                        );
+                        frame.stroke(&inner_path, canvas::Stroke::default().with_width(1.0).with_color(Color { a: 0.6, ..color }));
                     }
                 }
                 RemoteCursorMode::Operation => {
@@ -225,33 +197,27 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                         width: scaled_font_width,
                         height: scaled_font_height,
                     };
-                    
+
                     // Inner fill
                     frame.fill_rectangle(
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
                         Color { a: 0.4, ..color },
                     );
-                    
+
                     // Inner border
                     let inner_path = canvas::Path::rectangle(
                         iced::Point::new(cursor_rect.x + 2.0, cursor_rect.y + 2.0),
                         iced::Size::new(cursor_rect.width - 4.0, cursor_rect.height - 4.0),
                     );
-                    frame.stroke(
-                        &inner_path,
-                        canvas::Stroke::default().with_width(1.0).with_color(color),
-                    );
-                    
+                    frame.stroke(&inner_path, canvas::Stroke::default().with_width(1.0).with_color(color));
+
                     // Outer border
                     let outer_path = canvas::Path::rectangle(
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
                     );
-                    frame.stroke(
-                        &outer_path,
-                        canvas::Stroke::default().with_width(2.0).with_color(color),
-                    );
+                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(color));
                 }
                 RemoteCursorMode::Editing | RemoteCursorMode::Hidden => {
                     // Normal cursor box (outline style like Moebius)
@@ -274,10 +240,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
                     );
-                    frame.stroke(
-                        &border_path,
-                        canvas::Stroke::default().with_width(2.0).with_color(color),
-                    );
+                    frame.stroke(&border_path, canvas::Stroke::default().with_width(2.0).with_color(color));
                 }
             }
 

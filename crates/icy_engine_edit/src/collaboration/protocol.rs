@@ -264,6 +264,14 @@ pub struct ConnectedDocument {
     pub ice_colors: bool,
     /// Font name
     pub font: String,
+    /// SAUCE title
+    pub title: String,
+    /// SAUCE author
+    pub author: String,
+    /// SAUCE group
+    pub group: String,
+    /// SAUCE comments
+    pub comments: String,
 }
 
 /// Generic Moebius wire message: `{ "type": <u8>, "data": { ... } }`.
@@ -315,6 +323,38 @@ pub struct MoebiusDoc {
     pub data: Option<Vec<Block>>,
 }
 
+impl MoebiusDoc {
+    /// Convert wire-format MoebiusDoc into a ConnectedDocument.
+    ///
+    /// Decompresses the document data and maps field names to the internal format.
+    pub fn into_connected_document(self, user_id: u32, users: Vec<User>) -> Result<ConnectedDocument, super::compression::CompressionError> {
+        use super::compression::{flat_to_columns, uncompress_moebius_data};
+
+        let flat_blocks = if let Some(compressed) = &self.compressed_data {
+            uncompress_moebius_data(self.columns, self.rows, compressed)?
+        } else {
+            self.data.clone().unwrap_or_default()
+        };
+
+        let document = flat_to_columns(&flat_blocks, self.columns, self.rows);
+
+        Ok(ConnectedDocument {
+            user_id,
+            document,
+            columns: self.columns,
+            rows: self.rows,
+            users,
+            use_9px: self.use_9px_font,
+            ice_colors: self.ice_colors,
+            font: self.font_name,
+            title: self.title,
+            author: self.author,
+            group: self.group,
+            comments: self.comments,
+        })
+    }
+}
+
 // ============================================================================
 // Client -> Server Messages
 // ============================================================================
@@ -341,11 +381,7 @@ impl ConnectRequest {
     pub fn moebius_compatible(nick: String, group: String, password: String) -> Self {
         Self {
             msg_type: ActionCode::Connected as u8,
-            data: ConnectData {
-                nick,
-                group,
-                pass: password,
-            },
+            data: ConnectData { nick, group, pass: password },
         }
     }
 }
@@ -421,13 +457,7 @@ impl DrawMessage {
     pub fn new(id: u32, x: i32, y: i32, block: Block) -> Self {
         Self {
             msg_type: ActionCode::Draw as u8,
-            data: DrawData {
-                id,
-                x,
-                y,
-                block,
-                layer: None,
-            },
+            data: DrawData { id, x, y, block, layer: None },
         }
     }
 
@@ -457,13 +487,7 @@ impl DrawPreviewMessage {
     pub fn new(id: u32, x: i32, y: i32, block: Block) -> Self {
         Self {
             msg_type: ActionCode::Draw as u8,
-            data: DrawData {
-                id,
-                x,
-                y,
-                block,
-                layer: None,
-            },
+            data: DrawData { id, x, y, block, layer: None },
         }
     }
 }
@@ -490,12 +514,7 @@ impl ChatSendMessage {
     pub fn new(id: u32, nick: String, group: String, text: String) -> Self {
         Self {
             msg_type: ActionCode::Chat as u8,
-            data: ChatSendData {
-                id,
-                nick,
-                group,
-                text,
-            },
+            data: ChatSendData { id, nick, group, text },
         }
     }
 }
@@ -510,7 +529,7 @@ pub struct ResizeColumnsMessage {
 impl ResizeColumnsMessage {
     pub fn new(columns: u32) -> Self {
         Self {
-            action: ActionCode::SetCanvasSize as u8,  // Not supported separately in Moebius
+            action: ActionCode::SetCanvasSize as u8, // Not supported separately in Moebius
             columns,
         }
     }
@@ -526,7 +545,7 @@ pub struct ResizeRowsMessage {
 impl ResizeRowsMessage {
     pub fn new(rows: u32) -> Self {
         Self {
-            action: ActionCode::SetCanvasSize as u8,  // Not supported separately in Moebius
+            action: ActionCode::SetCanvasSize as u8, // Not supported separately in Moebius
             rows,
         }
     }
@@ -560,7 +579,7 @@ pub struct PingMessage {
 impl Default for PingMessage {
     fn default() -> Self {
         Self {
-            action: ActionCode::Status as u8,  // Use Status as fallback since Ping doesn't exist
+            action: ActionCode::Status as u8, // Use Status as fallback since Ping doesn't exist
         }
     }
 }

@@ -301,15 +301,11 @@ impl UserData for LuaBufferView {
     fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("height", |_, this| this.with_edit_state(|state| state.get_buffer().height()));
 
-        fields.add_field_method_set("height", |_, this, val| {
-            this.with_edit_state(|state| state.with_buffer_mut_no_undo(|buf| buf.set_height(val)))
-        });
+        fields.add_field_method_set("height", |_, this, val| this.with_edit_state(|state| state.get_buffer_mut().set_height(val)));
 
         fields.add_field_method_get("width", |_, this| this.with_edit_state(|state| state.get_buffer().width()));
 
-        fields.add_field_method_set("width", |_, this, val| {
-            this.with_edit_state(|state| state.with_buffer_mut_no_undo(|buf| buf.set_width(val)))
-        });
+        fields.add_field_method_set("width", |_, this, val| this.with_edit_state(|state| state.get_buffer_mut().set_width(val)));
 
         fields.add_field_method_get("font_page", |_, this| this.with_edit_state(|state| state.get_caret().font_page()));
 
@@ -353,7 +349,7 @@ impl UserData for LuaBufferView {
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("fg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             this.with_edit_state(|state| {
-                let color = state.with_buffer_mut_no_undo(|buf| buf.palette.insert_color_rgb(r, g, b));
+                let color = state.get_buffer_mut().palette.insert_color_rgb(r, g, b);
                 state.set_caret_foreground(color);
                 color
             })
@@ -361,7 +357,7 @@ impl UserData for LuaBufferView {
 
         methods.add_method_mut("bg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             this.with_edit_state(|state| {
-                let color = state.with_buffer_mut_no_undo(|buf| buf.palette.insert_color_rgb(r, g, b));
+                let color = state.get_buffer_mut().palette.insert_color_rgb(r, g, b);
                 state.set_caret_background(color);
                 color
             })
@@ -556,7 +552,7 @@ impl UserData for LuaBufferView {
             this.with_edit_state(|state| {
                 let layer_len = state.get_buffer().layers.len();
                 if layer < layer_len {
-                    state.with_buffer_mut_no_undo(|buf| buf.layers[layer].set_is_visible(is_visible));
+                    state.get_buffer_mut().layers[layer].set_is_visible(is_visible);
                     Ok(())
                 } else {
                     Err(mlua::Error::SyntaxError {
@@ -582,7 +578,7 @@ impl UserData for LuaBufferView {
 
         methods.add_method_mut("clear", |_, this, ()| {
             this.with_edit_state(|state| {
-                state.with_buffer_mut_no_undo(|buf| buf.reset_terminal());
+                state.get_buffer_mut().reset_terminal();
             })
         });
     }

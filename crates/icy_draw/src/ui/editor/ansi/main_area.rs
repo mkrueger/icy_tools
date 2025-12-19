@@ -189,59 +189,73 @@ impl AnsiEditorMainArea {
     pub fn apply_remote_draw(&mut self, x: i32, y: i32, code: u32, fg: u8, bg: u8) {
         use icy_engine::TextPane;
         self.core.with_edit_state(|state| {
-            state.with_buffer_mut_no_undo(|buffer| {
-                let pos = (x, y);
-                let ch = buffer.layers[0].char_at(pos.into());
-                let mut new_ch = ch;
-                new_ch.ch = char::from_u32(code).unwrap_or(' ');
-                new_ch.attribute.set_foreground(fg as u32);
-                new_ch.attribute.set_background(bg as u32);
-                buffer.layers[0].set_char(pos, new_ch);
-
-                // `with_buffer_mut_no_undo` bypasses normal edit ops/undo tracking,
-                // so we must explicitly invalidate render caches.
-                buffer.mark_dirty();
-            });
+            let buffer = state.get_buffer_mut();
+            let pos = (x, y);
+            let ch = buffer.layers[0].char_at(pos.into());
+            let mut new_ch = ch;
+            new_ch.ch = char::from_u32(code).unwrap_or(' ');
+            new_ch.attribute.set_foreground(fg as u32);
+            new_ch.attribute.set_background(bg as u32);
+            buffer.layers[0].set_char(pos, new_ch);
+            buffer.mark_dirty();
         });
     }
 
     /// Apply a full remote document snapshot from collaboration.
     ///
-    /// `document` is column-major: `document[col][row]`.
-    pub fn apply_remote_document(&mut self, document: &[Vec<icy_engine_edit::collaboration::Block>], columns: u32, rows: u32) {
-        use icy_engine::{AttributedChar, Position};
+    /// Sets all document properties: size, content, ice colors, 9px font, etc.
+    pub fn apply_remote_document(&mut self, doc: &icy_engine_edit::collaboration::ConnectedDocument) {
+        use icy_engine::{AttributedChar, IceMode, Position};
 
-        let cols_i32 = columns as i32;
-        let rows_i32 = rows as i32;
+        let cols_i32 = doc.columns as i32;
+        let rows_i32 = doc.rows as i32;
 
         self.core.with_edit_state(|state| {
-            state.with_buffer_mut_no_undo(|buffer| {
-                buffer.set_size((cols_i32, rows_i32));
+            let buffer = state.get_buffer_mut();
 
-                if buffer.layers.is_empty() {
-                    return;
+            // Set document size
+            buffer.set_size((cols_i32, rows_i32));
+            buffer.layers[0].set_size((cols_i32, rows_i32));
+
+            // Set ice colors mode
+            buffer.ice_mode = if doc.ice_colors { IceMode::Ice } else { IceMode::Blink };
+
+            // Set 9px font (letter spacing)
+            buffer.set_use_letter_spacing(doc.use_9px);
+
+            // TODO: Set font by name when font lookup is available
+            // For now, Moebius uses CP437 fonts so this is usually fine
+
+            if buffer.layers.is_empty() {
+                return;
+            }
+
+            // Resize and preallocate layer 0 for fast bulk writes.
+            let layer = &mut buffer.layers[0];
+            layer.preallocate_lines(cols_i32, rows_i32);
+
+            for col in 0..(doc.columns as usize) {
+                for row in 0..(doc.rows as usize) {
+                    let block = doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
+
+                    let mut ch = AttributedChar::default();
+                    ch.ch = char::from_u32(block.code).unwrap_or(' ');
+                    ch.attribute.set_foreground(block.fg as u32);
+                    ch.attribute.set_background(block.bg as u32);
+
+                    layer.set_char_unchecked(Position::new(col as i32, row as i32), ch);
                 }
+            }
 
-                // Resize and preallocate layer 0 for fast bulk writes.
-                let layer = &mut buffer.layers[0];
-                layer.preallocate_lines(cols_i32, rows_i32);
+            buffer.mark_dirty();
 
-                for col in 0..(columns as usize) {
-                    for row in 0..(rows as usize) {
-                        let block = document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
-
-                        let mut ch = AttributedChar::default();
-                        ch.ch = char::from_u32(block.code).unwrap_or(' ');
-                        ch.attribute.set_foreground(block.fg as u32);
-                        ch.attribute.set_background(block.bg as u32);
-
-                        layer.set_char_unchecked(Position::new(col as i32, row as i32), ch);
-                    }
-                }
-
-                // Bulk-load path bypasses normal edit ops/undo tracking.
-                buffer.mark_dirty();
-            });
+            // Set SAUCE metadata (stored on EditState, not buffer)
+            let mut sauce = icy_engine_edit::SauceMetaData::default();
+            sauce.title = doc.title.clone().into();
+            sauce.author = doc.author.clone().into();
+            sauce.group = doc.group.clone().into();
+            sauce.comments = doc.comments.lines().map(|line| line.to_string().into()).collect();
+            state.set_sauce_meta(sauce);
         });
     }
 
@@ -256,49 +270,50 @@ impl AnsiEditorMainArea {
         let new_h = rows as i32;
 
         self.core.with_edit_state(|state| {
-            state.with_buffer_mut_no_undo(|buffer| {
-                let old_w = buffer.width();
-                let old_h = buffer.height();
+            let buffer = state.get_buffer_mut();
+            let old_w = buffer.width();
+            let old_h = buffer.height();
 
-                buffer.set_size(Size::new(new_w, new_h));
+            buffer.set_size(Size::new(new_w, new_h));
 
-                for layer in buffer.layers.iter_mut() {
-                    layer.set_size(Size::new(new_w, new_h));
+            for layer in buffer.layers.iter_mut() {
+                layer.set_size(Size::new(new_w, new_h));
 
-                    // Ensure we have a full line vector to work with.
-                    if layer.lines.len() < old_h.max(0) as usize {
-                        layer.lines.resize(old_h.max(0) as usize, Line::create(old_w));
-                    }
-
-                    // Resize height (crop/extend)
-                    layer.lines.truncate(new_h.max(0) as usize);
-                    while layer.lines.len() < new_h.max(0) as usize {
-                        layer.lines.push(Line::create(new_w));
-                    }
-
-                    // Resize width for each line (preserve prefix)
-                    for line in layer.lines.iter_mut() {
-                        if line.chars.len() > new_w.max(0) as usize {
-                            line.chars.truncate(new_w.max(0) as usize);
-                        } else if line.chars.len() < new_w.max(0) as usize {
-                            line.chars.resize(new_w.max(0) as usize, AttributedChar::invisible());
-                        }
-                    }
+                // Ensure we have a full line vector to work with.
+                if layer.lines.len() < old_h.max(0) as usize {
+                    layer.lines.resize(old_h.max(0) as usize, Line::create(old_w));
                 }
 
-                buffer.mark_dirty();
-            });
+                // Resize height (crop/extend)
+                layer.lines.truncate(new_h.max(0) as usize);
+                while layer.lines.len() < new_h.max(0) as usize {
+                    layer.lines.push(Line::create(new_w));
+                }
+
+                // Resize width for each line (preserve prefix)
+                for line in layer.lines.iter_mut() {
+                    if line.chars.len() > new_w.max(0) as usize {
+                        line.chars.truncate(new_w.max(0) as usize);
+                    } else if line.chars.len() < new_w.max(0) as usize {
+                        line.chars.resize(new_w.max(0) as usize, AttributedChar::invisible());
+                    }
+                }
+            }
+
+            buffer.mark_dirty();
         });
     }
 
     /// Apply SAUCE metadata change from remote user.
+    /// Note: This uses set_sauce_meta directly without undo, as remote changes should not be undoable.
     pub fn apply_remote_sauce(&mut self, title: String, author: String, group: String, comments: String) {
         self.core.with_edit_state(|state| {
-            let sauce = state.get_sauce_meta_mut();
+            let mut sauce = icy_engine_edit::SauceMetaData::default();
             sauce.title = title.into();
             sauce.author = author.into();
             sauce.group = group.into();
             sauce.comments = comments.lines().map(|line| line.to_string().into()).collect();
+            state.set_sauce_meta(sauce);
         });
     }
 
@@ -760,7 +775,7 @@ impl AnsiEditorMainArea {
                 // Check for caret/selection changes (for collaboration)
                 let (caret_col, caret_row, selecting) = {
                     let mut screen_guard = self.core.screen.lock();
-                    let state = screen_guard
+                    let state: &mut EditState = screen_guard
                         .as_any_mut()
                         .downcast_mut::<EditState>()
                         .expect("AnsiEditor screen should always be EditState");

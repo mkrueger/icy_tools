@@ -46,6 +46,7 @@ undo-change_font_slot=Change Font Slot
 undo-update_layer_properties=Update Layer Properties
 undo-set_use_letter_spacing=Set Use Letter Spacing
 undo-set_use_aspect_ratio=Set Use Aspect Ratio
+undo-set_font_dimensions=Set Font Dimensions
 undo-edit-tag=Edit Tag
 undo-remove-tag=Remove Tag
 undo-add-tag=Add Tag

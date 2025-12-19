@@ -21,11 +21,7 @@ pub struct MoebiusCompressedData {
 /// Decompress a Moebius `compressed_data` payload into a row-major flat block array.
 ///
 /// Row-major means index is `y * columns + x` (same as Moebius).
-pub fn uncompress_moebius_data(
-    columns: u32,
-    rows: u32,
-    compressed: &MoebiusCompressedData,
-) -> Result<Vec<Block>, CompressionError> {
+pub fn uncompress_moebius_data(columns: u32, rows: u32, compressed: &MoebiusCompressedData) -> Result<Vec<Block>, CompressionError> {
     let expected_len = (columns as usize)
         .checked_mul(rows as usize)
         .ok_or_else(|| CompressionError::InvalidData("columns*rows overflow".to_string()))?;
@@ -35,9 +31,7 @@ pub fn uncompress_moebius_data(
     let bgs = expand_rle_stream(&compressed.bg)?;
 
     if codes.len() != fgs.len() || codes.len() != bgs.len() {
-        return Err(CompressionError::InvalidData(
-            "compressed_data streams have different lengths".to_string(),
-        ));
+        return Err(CompressionError::InvalidData("compressed_data streams have different lengths".to_string()));
     }
 
     if codes.len() != expected_len {
@@ -70,11 +64,7 @@ pub fn compress_moebius_data(blocks: &[Block]) -> MoebiusCompressedData {
     compress_stream_u32(blocks.iter().map(|b| b.fg as u32), &mut fgs);
     compress_stream_u32(blocks.iter().map(|b| b.bg as u32), &mut bgs);
 
-    MoebiusCompressedData {
-        code: codes,
-        fg: fgs,
-        bg: bgs,
-    }
+    MoebiusCompressedData { code: codes, fg: fgs, bg: bgs }
 }
 
 /// Convert row-major flat blocks into the column-major 2D layout used internally.
