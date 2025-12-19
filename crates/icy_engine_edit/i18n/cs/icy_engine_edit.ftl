@@ -47,6 +47,7 @@ undo-update_layer_properties=Aktualizovat vlastnosti vrstvy
 undo-set_use_letter_spacing=Nastavit použití mezery mezi písmeny
 undo-set_use_aspect_ratio=Nastavit použití poměru stran
 undo-edit-tag=Upravit štítek
+undo-move-tag=Přesunout štítek
 undo-remove-tag=Odebrat štítek
 undo-show-tags=Zobrazit štítky
 

@@ -66,6 +66,9 @@ impl EditState {
 
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-type_char"));
 
+        // Clear selection if something is selected
+        let _ = self.clear_selection();
+
         // Handle insert mode: shift characters to the right
         if insert_mode && chars_to_shift.len() > 1 {
             // Shift from end to current position (right to left)
@@ -79,6 +82,8 @@ impl EditState {
                     layer: layer_idx,
                     old,
                     new,
+                    undo_caret: None,
+                    redo_caret: None,
                 })?;
             }
         }
@@ -86,12 +91,15 @@ impl EditState {
         // Build the attributed character with caret attributes
         let new_char = AttributedChar::new(char_code, caret_attr.clone());
 
-        // Set the character
+        // Set the character with caret positions for undo/redo
+        let redo_pos = Position::new((pos.x + 1).min(layer_width - 1), pos.y);
         self.push_undo_action(EditorUndoOp::SetChar {
             pos,
             layer: layer_idx,
             old: old_char,
             new: new_char,
+            undo_caret: Some(pos),
+            redo_caret: Some(redo_pos),
         })?;
 
         // Handle mirror mode: set same character at mirrored position
@@ -108,11 +116,14 @@ impl EditState {
                     layer: layer_idx,
                     old: mirror_old,
                     new: new_char,
+                    undo_caret: None,
+                    redo_caret: None,
                 })?;
             }
         }
 
-        // Move caret right
+        // Caret movement is now handled by the SetChar undo/redo
+        // But we still need to move it immediately for the current operation
         let new_x = (pos.x + 1).min(layer_width - 1);
         self.get_caret_mut().x = new_x;
 
@@ -157,8 +168,12 @@ impl EditState {
 
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-backspace"));
 
+        // Store original caret position for undo
+        let original_pos = pos;
+
         // Move caret left first
         let new_x = pos.x - 1;
+        let new_caret_pos = Position::new(new_x, pos.y);
         self.get_caret_mut().x = new_x;
 
         if insert_mode && !chars_to_shift.is_empty() {
@@ -173,10 +188,12 @@ impl EditState {
                     layer: layer_idx,
                     old,
                     new,
+                    undo_caret: None,
+                    redo_caret: None,
                 })?;
             }
 
-            // Clear the last character
+            // Clear the last character - this one gets the caret positions
             let last_pos = Position::new(layer_width - 1, pos.y);
             let last_char = chars_to_shift[chars_to_shift.len() - 1];
             let empty_char = AttributedChar::new(' ', caret_attr);
@@ -185,6 +202,8 @@ impl EditState {
                 layer: layer_idx,
                 old: last_char,
                 new: empty_char,
+                undo_caret: Some(original_pos),
+                redo_caret: Some(new_caret_pos),
             })?;
         } else {
             // Overwrite mode: just clear the character
@@ -194,6 +213,8 @@ impl EditState {
                 layer: layer_idx,
                 old: delete_pos_char,
                 new: empty_char,
+                undo_caret: Some(original_pos),
+                redo_caret: Some(new_caret_pos),
             })?;
         }
 
@@ -240,10 +261,12 @@ impl EditState {
                 layer: layer_idx,
                 old,
                 new,
+                undo_caret: None,
+                redo_caret: None,
             })?;
         }
 
-        // Clear the last character
+        // Clear the last character - this one gets the caret positions
         let last_pos = Position::new(layer_width - 1, pos.y);
         let last_char = chars_to_shift[chars_to_shift.len() - 1];
         let empty_char = AttributedChar::new(' ', caret_attr);
@@ -252,6 +275,8 @@ impl EditState {
             layer: layer_idx,
             old: last_char,
             new: empty_char,
+            undo_caret: Some(pos),
+            redo_caret: Some(pos),
         })?;
 
         Ok(())

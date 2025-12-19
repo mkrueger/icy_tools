@@ -13,6 +13,7 @@ use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewC
 use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::{SelectionMode, SelectionModifier};
+use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::tools::Tool;
 
 /// Select tool state
@@ -32,6 +33,8 @@ pub struct SelectTool {
     is_dragging: bool,
     /// Current modifier (from keyboard)
     modifier: SelectionModifier,
+    /// Atomic undo guard for selection drag operations
+    selection_undo: Option<AtomicUndoGuard>,
 }
 
 impl Default for SelectTool {
@@ -46,6 +49,7 @@ impl Default for SelectTool {
             start_selection: None,
             is_dragging: false,
             modifier: SelectionModifier::default(),
+            selection_undo: None,
         }
     }
 }
@@ -66,6 +70,7 @@ impl SelectTool {
         self.current_pos = None;
         self.start_selection = None;
         self.is_dragging = false;
+        self.selection_undo = None;
     }
 
     fn selection_add_type(&self) -> AddType {
@@ -204,6 +209,7 @@ impl ToolHandler for SelectTool {
                 self.current_pos = Some(pos);
                 self.is_dragging = true;
                 self.hover_drag = SelectionDrag::None;
+                self.selection_undo = Some(ctx.state.begin_atomic_undo("Selection"));
 
                 ToolResult::StartCapture.and(ToolResult::Redraw)
             }
@@ -272,12 +278,13 @@ impl ToolHandler for SelectTool {
                         let _ = ctx.state.deselect();
                     }
 
-                    // Reset state
+                    // Reset state - dropping the guard groups all operations into one undo entry
                     self.drag_mode = SelectionDrag::None;
                     self.start_pos = None;
                     self.current_pos = None;
                     self.start_selection = None;
                     self.hover_drag = SelectionDrag::None;
+                    self.selection_undo = None;
 
                     ToolResult::EndCapture.and(ToolResult::Redraw)
                 } else {

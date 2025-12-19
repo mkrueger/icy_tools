@@ -47,6 +47,7 @@ undo-update_layer_properties=Zaktualizuj właściwości warstwy
 undo-set_use_letter_spacing=Ustaw użycie odstępów między literami
 undo-set_use_aspect_ratio=Ustaw użycie proporcji
 undo-edit-tag=Edytuj tag
+undo-move-tag=Przenieś tag
 undo-remove-tag=Usuń tag
 undo-show-tags=Pokaż tagi
 

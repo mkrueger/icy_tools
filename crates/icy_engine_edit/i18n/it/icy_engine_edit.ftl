@@ -47,6 +47,7 @@ undo-update_layer_properties=Aggiorna proprietà livello
 undo-set_use_letter_spacing=Imposta uso spaziatura lettere
 undo-set_use_aspect_ratio=Imposta uso rapporto d'aspetto
 undo-edit-tag=Modifica tag
+undo-move-tag=Sposta tag
 undo-remove-tag=Rimuovi tag
 undo-show-tags=Mostra tag
 

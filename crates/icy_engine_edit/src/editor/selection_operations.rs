@@ -24,7 +24,7 @@ impl EditState {
 
     pub fn clear_selection(&mut self) -> Result<()> {
         if self.is_something_selected() {
-            let sel = self.selection_opt.take();
+            let sel: Option<Selection> = self.selection_opt.take();
             let mask = self.selection_mask.clone();
             self.push_undo_action(EditorUndoOp::SelectNothing { sel, mask })
         } else {

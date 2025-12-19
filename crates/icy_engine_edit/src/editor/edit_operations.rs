@@ -26,6 +26,8 @@ impl EditState {
                     layer: self.get_current_layer()?,
                     old: mirror_old,
                     new: attributed_char,
+                    undo_caret: None,
+                    redo_caret: None,
                 })?;
             }
 
@@ -34,6 +36,8 @@ impl EditState {
                 layer: self.get_current_layer()?,
                 old,
                 new: attributed_char,
+                undo_caret: None,
+                redo_caret: None,
             })
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
@@ -57,6 +61,8 @@ impl EditState {
                     layer: self.get_current_layer()?,
                     old: mirror_old,
                     new: attributed_char,
+                    undo_caret: None,
+                    redo_caret: None,
                 })?;
             }
 
@@ -65,6 +71,8 @@ impl EditState {
                 layer: self.get_current_layer()?,
                 old,
                 new: attributed_char,
+                undo_caret: None,
+                redo_caret: None,
             })
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))

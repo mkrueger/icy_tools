@@ -47,6 +47,7 @@ undo-update_layer_properties=Ebeneneigenschaften ändern
 undo-set_use_letter_spacing=9 Pixel Modus geändert
 undo-set_use_aspect_ratio=Seitenverhältnis geändert
 undo-edit-tag=Tag bearbeitet
+undo-move-tag=Tag verschieben
 undo-remove-tag=Tag gelöscht
 undo-add-tag=Tag hinzufügen
 undo-clone-tag=Tag dupliziert

@@ -29,6 +29,12 @@ pub enum EditorUndoOp {
         layer: usize,
         old: AttributedChar,
         new: AttributedChar,
+        /// Caret position to restore on undo (None = don't move caret)
+        #[serde(default)]
+        undo_caret: Option<Position>,
+        /// Caret position to restore on redo (None = don't move caret)
+        #[serde(default)]
+        redo_caret: Option<Position>,
     },
 
     /// Swap two characters
@@ -288,7 +294,7 @@ impl EditorUndoOp {
                 }
             }
             EditorUndoOp::EditTag { .. } => fl!(crate::LANGUAGE_LOADER, "undo-edit-tag"),
-            EditorUndoOp::MoveTag { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio"),
+            EditorUndoOp::MoveTag { .. } => fl!(crate::LANGUAGE_LOADER, "undo-move-tag"),
             EditorUndoOp::RemoveTag { .. } => fl!(crate::LANGUAGE_LOADER, "undo-remove-tag"),
             EditorUndoOp::ShowTags { .. } => fl!(crate::LANGUAGE_LOADER, "undo-show-tags"),
         }
@@ -331,8 +337,13 @@ impl EditorUndoOp {
                 }
                 Ok(())
             }
-            EditorUndoOp::SetChar { pos, layer, old, .. } => {
+            EditorUndoOp::SetChar {
+                pos, layer, old, undo_caret, ..
+            } => {
                 edit_state.get_buffer_mut().layers[*layer].set_char(*pos, *old);
+                if let Some(caret_pos) = undo_caret {
+                    edit_state.set_caret_position(*caret_pos);
+                }
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
@@ -512,10 +523,12 @@ impl EditorUndoOp {
             }
             EditorUndoOp::SetSelectionMask { old, .. } => {
                 edit_state.set_selection_mask(old.clone());
+                edit_state.mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddSelectionToMask { old, .. } => {
                 edit_state.set_selection_mask(old.clone());
+                edit_state.mark_dirty();
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
@@ -664,8 +677,13 @@ impl EditorUndoOp {
                 }
                 Ok(())
             }
-            EditorUndoOp::SetChar { pos, layer, new, .. } => {
+            EditorUndoOp::SetChar {
+                pos, layer, new, redo_caret, ..
+            } => {
                 edit_state.get_buffer_mut().layers[*layer].set_char(*pos, *new);
+                if let Some(caret_pos) = redo_caret {
+                    edit_state.set_caret_position(*caret_pos);
+                }
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
@@ -854,6 +872,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::SetSelectionMask { new, .. } => {
                 edit_state.set_selection_mask(new.clone());
+                edit_state.mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddSelectionToMask { old, selection } => {

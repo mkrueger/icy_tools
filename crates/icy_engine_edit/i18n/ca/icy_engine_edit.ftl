@@ -47,6 +47,7 @@ undo-update_layer_properties=Actualitzar propietats de la capa
 undo-set_use_letter_spacing=Definir ús d'espaiat de lletres
 undo-set_use_aspect_ratio=Definir ús de proporció
 undo-edit-tag=Editar etiqueta
+undo-move-tag=Moure etiqueta
 undo-remove-tag=Eliminar etiqueta
 undo-show-tags=Mostrar etiquetes
 

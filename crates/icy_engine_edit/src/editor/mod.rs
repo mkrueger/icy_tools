@@ -221,6 +221,21 @@ impl AtomicUndoGuard {
         }
         operations.reverse(); // Restore original order
 
+        // Small optimizations to reduce undo stack size and serialization cost.
+        operations = coalesce_atomic_operations(operations);
+        if operations.is_empty() {
+            self.ended = true;
+            return;
+        }
+
+        // If optimization collapsed to a single operation, avoid an Atomic wrapper.
+        // Keep Atomic when we need to preserve a non-default operation_type.
+        if operations.len() == 1 && self.operation_type == OperationType::Unknown {
+            stack.push_undo(operations.pop().unwrap());
+            self.ended = true;
+            return;
+        }
+
         // Push as a single Atomic operation
         stack.push_undo(EditorUndoOp::Atomic {
             description: self.description.clone(),
@@ -229,6 +244,84 @@ impl AtomicUndoGuard {
         });
         self.ended = true;
     }
+}
+
+fn coalesce_atomic_operations(operations: Vec<EditorUndoOp>) -> Vec<EditorUndoOp> {
+    let mut out: Vec<EditorUndoOp> = Vec::with_capacity(operations.len());
+    let mut iter = operations.into_iter().peekable();
+
+    while let Some(op) = iter.next() {
+        match op {
+            EditorUndoOp::SetSelection { old, new } => {
+                // Collapse consecutive SetSelection ops (e.g. drag updates) into one:
+                // keep the first 'old' and the last 'new'.
+                let mut last_new = new;
+                while let Some(EditorUndoOp::SetSelection { new, .. }) = iter.peek() {
+                    last_new = *new;
+                    iter.next();
+                }
+                out.push(EditorUndoOp::SetSelection { old, new: last_new });
+            }
+            EditorUndoOp::SetSelectionMask { description, old, new } => {
+                // Collapse consecutive SetSelectionMask ops: keep first old, last new.
+                let mut last_description = description;
+                let mut last_new = new;
+                while let Some(EditorUndoOp::SetSelectionMask { description, new, .. }) = iter.peek() {
+                    last_description = description.clone();
+                    last_new = new.clone();
+                    iter.next();
+                }
+                out.push(EditorUndoOp::SetSelectionMask {
+                    description: last_description,
+                    old,
+                    new: last_new,
+                });
+            }
+            EditorUndoOp::MoveLayer { index, from, to } => {
+                // Collapse consecutive MoveLayer ops for the same layer (drag updates):
+                // keep the first 'from' and the last 'to'.
+                let mut last_to = to;
+                while let Some(EditorUndoOp::MoveLayer {
+                    index: next_index,
+                    to: next_to,
+                    ..
+                }) = iter.peek()
+                {
+                    if *next_index != index {
+                        break;
+                    }
+                    last_to = *next_to;
+                    iter.next();
+                }
+                out.push(EditorUndoOp::MoveLayer { index, from, to: last_to });
+            }
+            EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
+                // Collapse consecutive MoveTag ops for the same tag (drag updates):
+                // keep the first 'old_pos' and the last 'new_pos'.
+                let mut last_new = new_pos;
+                while let Some(EditorUndoOp::MoveTag {
+                    tag: next_tag,
+                    new_pos: next_new,
+                    ..
+                }) = iter.peek()
+                {
+                    if *next_tag != tag {
+                        break;
+                    }
+                    last_new = *next_new;
+                    iter.next();
+                }
+                out.push(EditorUndoOp::MoveTag {
+                    tag,
+                    old_pos,
+                    new_pos: last_new,
+                });
+            }
+            other => out.push(other),
+        }
+    }
+
+    out
 }
 
 impl Drop for AtomicUndoGuard {

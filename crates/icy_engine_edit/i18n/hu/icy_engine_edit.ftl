@@ -47,6 +47,7 @@ undo-update_layer_properties=Réteg tulajdonságainak frissítése
 undo-set_use_letter_spacing=Betűköz használatának beállítása
 undo-set_use_aspect_ratio=Képarány használatának beállítása
 undo-edit-tag=Címke szerkesztése
+undo-move-tag=Címke mozgatása
 undo-remove-tag=Címke eltávolítása
 undo-show-tags=Címkék megjelenítése
 

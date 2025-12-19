@@ -46,6 +46,8 @@ pub struct ClickTool {
     selection_start_pos: Option<Position>,
     selection_cur_pos: Option<Position>,
     selection_start_rect: Option<icy_engine::Rectangle>,
+    /// Atomic undo guard for selection drag operations
+    selection_undo: Option<AtomicUndoGuard>,
 }
 
 impl ClickTool {
@@ -171,6 +173,7 @@ impl ToolHandler for ClickTool {
         self.selection_start_pos = None;
         self.selection_cur_pos = None;
         self.selection_start_rect = None;
+        self.selection_undo = None;
     }
 
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
@@ -245,6 +248,7 @@ impl ToolHandler for ClickTool {
                     self.selection_start_pos = Some(pos);
                     self.selection_cur_pos = Some(pos);
                     self.hover_drag = SelectionDrag::None;
+                    self.selection_undo = Some(ctx.state.begin_atomic_undo("Selection"));
 
                     ToolResult::StartCapture.and(ToolResult::Redraw)
                 } else {
@@ -347,11 +351,13 @@ impl ToolHandler for ClickTool {
                         }
                     }
 
+                    // Reset state - dropping the guard groups all operations into one undo entry
                     self.selection_drag = SelectionDrag::None;
                     self.hover_drag = SelectionDrag::None;
                     self.selection_start_pos = None;
                     self.selection_cur_pos = None;
                     self.selection_start_rect = None;
+                    self.selection_undo = None;
 
                     ToolResult::EndCapture.and(ToolResult::Redraw)
                 } else {

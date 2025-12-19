@@ -47,6 +47,7 @@ undo-update_layer_properties=Atualizar propriedades da camada
 undo-set_use_letter_spacing=Definir uso de espaçamento de letras
 undo-set_use_aspect_ratio=Definir uso de proporção
 undo-edit-tag=Editar tag
+undo-move-tag=Mover tag
 undo-remove-tag=Remover tag
 undo-show-tags=Mostrar tags
 
