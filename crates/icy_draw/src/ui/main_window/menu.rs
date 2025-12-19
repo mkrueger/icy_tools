@@ -29,6 +29,7 @@ use icy_engine_gui::commands::{CommandDef, Hotkey};
 // ============================================================================
 
 /// State passed to dynamic menu builders
+#[allow(dead_code)]
 pub struct MenuState<'a> {
     pub recent_files: &'a MostRecentlyUsedFiles,
     pub undo_description: Option<&'a str>,
@@ -38,6 +39,7 @@ pub struct MenuState<'a> {
 /// A menu item that can be rendered and checked for hotkeys.
 /// Single source of truth for both menu display and keyboard handling.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum MenuItem {
     /// Command-based item with hotkey support from CommandDef
     Command {
@@ -74,6 +76,7 @@ pub enum MenuItem {
     Separator,
 }
 
+#[allow(dead_code)]
 impl MenuItem {
     // ========================================================================
     // Constructors
@@ -385,6 +388,7 @@ pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<iced
 }
 
 /// Check all items in a menu for hotkey matches
+#[allow(dead_code)]
 pub fn check_menu_hotkeys(items: &[MenuItem], hotkey: &Hotkey, state: &MenuState<'_>) -> Option<Message> {
     for item in items {
         if let Some(msg) = item.matches_hotkey_with_state(hotkey, state) {

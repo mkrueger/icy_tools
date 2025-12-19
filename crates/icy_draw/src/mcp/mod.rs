@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub use server::*;
 use tokio::sync::oneshot;
 
-use crate::mcp::types::{AnimationStatus, BitFontStatus, EditorStatus, ScreenCaptureFormat};
+use crate::mcp::types::{EditorStatus, ScreenCaptureFormat};
 
 pub type SenderType<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
 

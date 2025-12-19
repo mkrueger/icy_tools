@@ -15,4 +15,4 @@ pub mod font_import;
 pub mod new_file;
 pub mod settings;
 
-pub use connect::{CollaborationDialog, CollaborationDialogMessage, CollaborationMode, ConnectDialogResult, HostSessionResult};
+pub use connect::{CollaborationDialog, CollaborationDialogMessage, ConnectDialogResult, HostSessionResult};

@@ -8,7 +8,7 @@ use crate::Options;
 use crate::ui::{MainWindow, Message};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
-use icy_engine_gui::{any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
+use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 
 fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
     let img = image::load_from_memory(png_bytes)?;
@@ -225,7 +225,6 @@ impl WindowManager {
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         // Check if any window needs animation
-        let needs_animation = any_window_needs_animation(&self.windows);
 
         let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
@@ -274,12 +273,6 @@ impl WindowManager {
             // important for updating slow blinking and smooth scroll animations
             iced::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick),
         ];
-
-        // Add animation tick subscription when any window needs animation
-        if needs_animation {
-            // Use window::frames() for better vsync synchronization
-            subs.push(window::frames().map(|_| WindowManagerMessage::AnimationTick));
-        }
 
         Subscription::batch(subs)
     }

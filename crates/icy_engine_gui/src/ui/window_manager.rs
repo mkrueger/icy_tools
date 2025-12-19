@@ -127,26 +127,6 @@ where
     }
 }
 
-/// Handle AnimationTick by forwarding to all windows that need animation.
-///
-/// The `make_tick_msg` parameter is a function that creates the tick message
-/// for a window (e.g., `|| Message::AnimationTick`).
-pub fn handle_animation_tick<W, M, F>(windows: &BTreeMap<window::Id, W>, make_tick_msg: F) -> Task<WindowManagerMessage<M>>
-where
-    W: Window<Message = M>,
-    M: Clone + Send + 'static,
-    F: Fn() -> M,
-{
-    let mut tasks = Vec::new();
-    for (window_id, window) in windows.iter() {
-        if window.needs_animation() {
-            let id = *window_id;
-            tasks.push(Task::done(WindowManagerMessage::WindowMessage(id, make_tick_msg())));
-        }
-    }
-    Task::batch(tasks)
-}
-
 // ============================================================================
 // Window trait
 // ============================================================================
@@ -181,11 +161,6 @@ pub trait Window {
 
     /// Handle an event, returning an optional message and a task.
     fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>);
-
-    /// Whether this window needs animation ticks.
-    fn needs_animation(&self) -> bool {
-        false
-    }
 }
 
 // ============================================================================
@@ -264,14 +239,6 @@ pub fn handle_window_closed<W, T: 'static>(windows: &mut BTreeMap<window::Id, W>
     windows.remove(&id);
     if windows.is_empty() { iced::exit() } else { Task::none() }
 }
-
-/// Check if any window needs animation ticks.
-pub fn any_window_needs_animation<W: Window>(windows: &BTreeMap<window::Id, W>) -> bool {
-    windows.values().any(|w| w.needs_animation())
-}
-
-// Re-export ANIMATION_TICK_MS from viewport module for convenience
-pub use crate::viewport::ANIMATION_TICK_MS;
 
 /// Result of keyboard handling for window manager actions.
 #[derive(Clone, Debug, PartialEq, Eq)]

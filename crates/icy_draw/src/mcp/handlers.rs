@@ -1,10 +1,10 @@
 //! MCP tool handlers for icy_draw
 
+use crate::mcp::McpCommand;
 use crate::mcp::types::{
     AnimationGetScreenRequest, AnimationGetTextRequest, AnimationReplaceTextRequest, BitFontGetCharRequest, BitFontSetCharRequest, CharListResponse,
-    EditorStatus, GetHelpRequest, GlyphData, LoadDocumentRequest, NewDocumentRequest, ScreenCaptureFormat,
+    EditorStatus, GetHelpRequest, LoadDocumentRequest, NewDocumentRequest,
 };
-use crate::mcp::{McpCommand, SenderType};
 
 use parking_lot::Mutex;
 use rmcp::{

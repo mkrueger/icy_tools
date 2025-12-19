@@ -140,6 +140,7 @@ impl UserStatus {
     }
 
     /// Display name for this status
+    #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
             UserStatus::Active => "Active",

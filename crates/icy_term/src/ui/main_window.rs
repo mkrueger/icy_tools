@@ -2059,8 +2059,4 @@ impl icy_engine_gui::Window for MainWindow {
     fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         self.handle_event(event)
     }
-
-    fn needs_animation(&self) -> bool {
-        false
-    }
 }

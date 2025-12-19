@@ -422,6 +422,7 @@ fn view_input_area(input_text: &str) -> Element<'_, Message> {
 // Styles
 // ============================================================================
 
+#[allow(dead_code)]
 fn chat_panel_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {

@@ -13,6 +13,5 @@ pub mod state;
 pub mod subscription;
 
 pub use chat_panel::{ChatPanelMessage, view_chat_panel};
-pub use icons::{Avatar, UserStatus};
 pub use state::*;
 pub use subscription::*;

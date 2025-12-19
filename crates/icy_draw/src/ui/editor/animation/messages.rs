@@ -46,6 +46,12 @@ pub enum AnimationEditorMessage {
     // === Animation update ===
     /// Tick for animation update
     Tick,
+
+    /// Events coming from the preview terminal widget (mouse/zoom).
+    ///
+    /// The animation editor currently does not handle these explicitly,
+    /// but we still need a sink message type for the `TerminalView`.
+    PreviewEvent(icy_engine_gui::TerminalMessage),
     /// Force recompile script
     Recompile,
 

@@ -103,6 +103,8 @@ pub enum WindowManagerMessage {
     AutosaveTick,
     /// Debounced session-save tick
     SessionSaveTick,
+    /// Animation tick for animation playback
+    AnimationTick,
     /// MCP command received from automation server
     McpCommand(Arc<McpCommand>),
 }
@@ -394,8 +396,9 @@ impl WindowManager {
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
+        println!("[WindowManager] Received message: {:?}", message);
         // Poll for MCP commands on every update cycle
-        let mcp_task = self.poll_mcp_commands();
+        let mcp_task: Task<WindowManagerMessage> = self.poll_mcp_commands();
 
         let main_task = match message {
             WindowManagerMessage::OpenWindow => {
@@ -703,6 +706,20 @@ impl WindowManager {
                 Task::none()
             }
 
+            WindowManagerMessage::AnimationTick => {
+                // Send tick to all windows that need animation updates
+                let tasks: Vec<_> = self
+                    .windows
+                    .iter_mut()
+                    .filter(|(_, w)| w.needs_animation_tick())
+                    .map(|(&wid, w)| {
+                        w.update(crate::ui::Message::AnimationEditor(crate::ui::editor::animation::AnimationEditorMessage::Tick))
+                            .map(move |msg| WindowManagerMessage::WindowMessage(wid, msg))
+                    })
+                    .collect();
+                Task::batch(tasks)
+            }
+
             WindowManagerMessage::McpCommand(cmd) => {
                 // Route MCP commands to the active window
                 if let Some((_window_id, window)) = self.windows.iter_mut().next() {
@@ -749,6 +766,8 @@ impl WindowManager {
                     window::Event::Closed => Some(WindowManagerMessage::WindowClosed(id)),
                     // CloseRequested is handled by close_requests() above - ignore here to prevent duplicate
                     window::Event::CloseRequested => None,
+                    // Animation tick is now handled via dedicated subscription
+                    window::Event::RedrawRequested(_) => None,
                     _ => Some(WindowManagerMessage::Event(id, Event::Window(event))),
                 }
             }),
@@ -789,6 +808,12 @@ impl WindowManager {
         // Debounced session-save tick (only when something scheduled)
         if self.session_save_deadline.is_some() {
             subs.push(iced::time::every(Duration::from_millis(50)).map(|_| WindowManagerMessage::SessionSaveTick));
+        }
+
+        // Animation tick - only active when an animation editor is playing
+        let needs_animation = self.windows.values().any(|w| w.needs_animation_tick());
+        if needs_animation {
+            subs.push(iced::time::every(Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         // Add collaboration subscriptions from all windows

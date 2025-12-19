@@ -408,6 +408,7 @@ impl SessionManager {
     }
 
     /// Remove session data file
+    #[allow(dead_code)]
     pub fn remove_session_data(&self, path: &PathBuf) {
         if path.exists() {
             let _ = fs::remove_file(path);

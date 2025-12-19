@@ -4,7 +4,7 @@ use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::error_dialog;
 use icy_engine_gui::music::music::SoundThread;
-use icy_engine_gui::{ANIMATION_TICK_MS, any_window_needs_animation, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
+use icy_engine_gui::{ANIMATION_TICK_MS, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 use parking_lot::Mutex;
 
 use iced::{
@@ -339,11 +339,6 @@ impl WindowManager {
             }),
             iced::time::every(std::time::Duration::from_millis(160)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
-
-        // Only subscribe to AnimationTick if any window needs animation (viewport or scrollbar)
-        if any_window_needs_animation(&self.windows) {
-            subs.push(iced::time::every(std::time::Duration::from_millis(ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick));
-        }
 
         iced::Subscription::batch(subs)
     }

@@ -850,6 +850,7 @@ impl AnsiEditorCore {
     }
 
     /// Get a clone of the undo stack for serialization
+    #[allow(dead_code)]
     pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
         let mut screen = self.screen.lock();
         if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
@@ -862,6 +863,7 @@ impl AnsiEditorCore {
     }
 
     /// Restore undo stack from serialization
+    #[allow(dead_code)]
     pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
         let mut screen = self.screen.lock();
         if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {

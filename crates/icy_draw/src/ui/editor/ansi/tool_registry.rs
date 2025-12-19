@@ -21,6 +21,7 @@ pub const ANSI_TOOL_SLOTS: &[ToolPair] = &[
 ];
 
 /// Tool slots for network/collaboration mode (no Tag tool - not compatible with Moebius)
+#[allow(dead_code)]
 pub const NETWORK_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Click),
     ToolPair::single(Tool::Select),

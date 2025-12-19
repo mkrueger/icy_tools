@@ -39,6 +39,7 @@ pub struct CollaborationState {
     pub connecting: bool,
 }
 
+#[allow(dead_code)]
 impl CollaborationState {
     /// Create new collaboration state
     pub fn new() -> Self {

@@ -134,6 +134,7 @@ impl ModeState {
     }
 
     /// Get a clone of the undo stack for serialization (Ansi editor only for now)
+    #[allow(dead_code)]
     pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
         match self {
             Self::Ansi(editor) => editor.get_undo_stack(),
@@ -145,6 +146,7 @@ impl ModeState {
     }
 
     /// Restore undo stack from serialization (Ansi editor only for now)
+    #[allow(dead_code)]
     pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
         match self {
             Self::Ansi(editor) => editor.set_undo_stack(stack),
@@ -844,11 +846,13 @@ impl MainWindow {
     }
 
     /// Get a clone of the undo stack for session serialization
+    #[allow(dead_code)]
     pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
         self.mode_state.get_undo_stack()
     }
 
     /// Restore undo stack from session
+    #[allow(dead_code)]
     pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
         self.mode_state.set_undo_stack(stack);
     }
@@ -1266,6 +1270,7 @@ impl MainWindow {
                     Task::none()
                 }
             }
+
             /*
             Message::Tick => {
                 self.update_title();
@@ -2014,6 +2019,15 @@ impl MainWindow {
                     slot_fonts: None,
                 }
             }
+        }
+    }
+
+    /// Check if animation editor needs periodic ticks (for playback or recompilation)
+    pub fn needs_animation_tick(&self) -> bool {
+        if let ModeState::Animation(editor) = &self.mode_state {
+            editor.is_playing() || editor.needs_recompile_check()
+        } else {
+            false
         }
     }
 

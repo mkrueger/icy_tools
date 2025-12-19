@@ -131,11 +131,13 @@ impl AnsiEditorMainArea {
     }
 
     /// Get a clone of the undo stack for serialization
+    #[allow(dead_code)]
     pub fn get_undo_stack(&self) -> Option<icy_engine_edit::EditorUndoStack> {
         self.core.get_undo_stack()
     }
 
     /// Restore undo stack from serialization
+    #[allow(dead_code)]
     pub fn set_undo_stack(&mut self, stack: icy_engine_edit::EditorUndoStack) {
         self.core.set_undo_stack(stack);
     }
@@ -690,15 +692,9 @@ impl AnsiEditorMainArea {
             // Tool and panel messages
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorMessage::SwitchTool(tool) => {
-                // Check if old tool showed cursor
-                let old_shows_cursor = self.core.current_tool_shows_cursor();
-
                 let reg = &mut self.tool_panel.registry;
                 self.core.change_tool(reg, tool);
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
-
-                // Check if new tool shows cursor
-                let new_shows_cursor = self.core.current_tool_shows_cursor();
 
                 // Send hide cursor if switched from cursor-showing to non-cursor tool
                 // (Collaboration sync now handled via undo stack)

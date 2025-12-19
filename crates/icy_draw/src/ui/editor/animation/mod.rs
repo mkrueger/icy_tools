@@ -21,8 +21,10 @@ pub use playback_controls::*;
 
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
+use iced::widget::canvas;
+use iced::widget::canvas::Canvas;
 use iced::{
-    Background, Border, Element, Length, Task, Theme, highlighter,
+    Background, Border, Element, Length, Task, Theme, highlighter, mouse,
     widget::{Space, column, container, pane_grid, row, rule, scrollable, stack, text, text_editor},
 };
 use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, theme::main_area_background, ui::DialogStack};
@@ -129,6 +131,12 @@ pub struct PlaybackState {
     pub last_update: Instant,
     /// Playback speed multiplier (0.25, 0.5, 1.0, 2.0, 4.0)
     pub speed: f32,
+
+    /// Internal counter to keep redraw-driven playback alive.
+    ///
+    /// Without this, `Tick` may not mutate any visible state for most frames
+    /// (because frame-delay hasn't elapsed yet), which can cause redraws to stop.
+    tick_seq: u64,
 }
 
 impl Default for PlaybackState {
@@ -139,7 +147,70 @@ impl Default for PlaybackState {
             is_loop: false,
             last_update: Instant::now(),
             speed: 1.0,
+            tick_seq: 0,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PlaybackRedrawTicker {
+    playing: bool,
+}
+
+#[derive(Debug)]
+struct PlaybackRedrawTickerState {
+    cache: canvas::Cache,
+    last_redraw: Option<Instant>,
+}
+
+impl Default for PlaybackRedrawTickerState {
+    fn default() -> Self {
+        Self {
+            cache: canvas::Cache::new(),
+            last_redraw: None,
+        }
+    }
+}
+
+impl iced::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTicker {
+    type State = PlaybackRedrawTickerState;
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &iced::Event,
+        _bounds: iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Option<iced::widget::canvas::Action<AnimationEditorMessage>> {
+        if let iced::Event::Window(iced::window::Event::RedrawRequested(now)) = event {
+            if self.playing {
+                state.last_redraw = Some(*now);
+                #[cfg(debug_assertions)]
+                eprintln!("[AnimationEditor] RedrawRequested -> Tick");
+                // Publishing `Tick` will schedule the next redraw as long as `Tick`
+                // actually updates state (like the ColorSwitcher pattern).
+                return Some(iced::widget::canvas::Action::publish(AnimationEditorMessage::Tick));
+            }
+
+            state.last_redraw = None;
+        }
+
+        None
+    }
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &Theme,
+        bounds: iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<iced::widget::canvas::Geometry> {
+        let geometry = _state.cache.draw(renderer, bounds.size(), |_| {
+            // Intentionally draw nothing. A cached (empty) geometry keeps the widget
+            // in the render tree so it can observe RedrawRequested events.
+        });
+        vec![geometry]
     }
 }
 
@@ -219,6 +290,11 @@ impl AnimationEditor {
     /// Check if the animation is ready (script finished executing)
     pub fn is_ready(&self) -> bool {
         self.animator.lock().success()
+    }
+
+    /// Check if we need recompile checks (for debounced recompilation)
+    pub fn needs_recompile_check(&self) -> bool {
+        self.needs_recompile || self.next_animator.is_some()
     }
 
     /// Get the number of frames
@@ -539,6 +615,7 @@ impl AnimationEditor {
             AnimationEditorMessage::TogglePlayback => {
                 if self.playback.is_playing {
                     self.playback.is_playing = false;
+                    Task::none()
                 } else {
                     // Reset to beginning if at end
                     if self.playback.current_frame + 1 >= self.frame_count() {
@@ -546,8 +623,8 @@ impl AnimationEditor {
                     }
                     self.playback.is_playing = true;
                     self.playback.last_update = Instant::now();
+                    Task::none()
                 }
-                Task::none()
             }
 
             AnimationEditorMessage::Stop => {
@@ -635,9 +712,15 @@ impl AnimationEditor {
             }
 
             AnimationEditorMessage::Tick => {
+                if self.playback.is_playing {
+                    self.playback.tick_seq = self.playback.tick_seq.wrapping_add(1);
+                    println!("[AnimationEditor] Tick seq={} frame={}", self.playback.tick_seq, self.playback.current_frame);
+                }
                 self.update_animator();
                 Task::none()
             }
+
+            AnimationEditorMessage::PreviewEvent(_) => Task::none(),
 
             AnimationEditorMessage::Recompile => {
                 self.recompile();
@@ -748,7 +831,7 @@ impl AnimationEditor {
         } else if let Some(terminal) = &self.preview_terminal {
             // Show terminal view with current frame
             // Enable auto-scaling for the preview (like terminal)
-            let view = TerminalView::show_with_effects(terminal, self.preview_monitor.clone(), None).map(|_| AnimationEditorMessage::Tick);
+            let view = TerminalView::show_with_effects(terminal, self.preview_monitor.clone(), None).map(AnimationEditorMessage::PreviewEvent);
             view
         } else {
             // No terminal yet
@@ -763,8 +846,22 @@ impl AnimationEditor {
         // Create frame info overlay (frame counter and time display)
         let frame_info_overlay = self.view_frame_info_overlay();
 
+        // Playback needs continuous redraws while playing.
+        // We follow the same RedrawRequested-driven pattern as ColorSwitcher:
+        // publish `Tick` on redraw; handling `Tick` updates state and triggers the next redraw.
+        let redraw_ticker: Element<'_, AnimationEditorMessage> = Canvas::new(PlaybackRedrawTicker {
+            playing: self.playback.is_playing && self.is_ready() && !self.has_error() && self.frame_count() > 0,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+
         // Stack the terminal view with the frame info overlay
-        let preview_with_overlay = stack![preview_element, frame_info_overlay,].width(Length::Fill).height(Length::Fill);
+        // Put ticker FIRST so it can observe RedrawRequested even if the terminal shader
+        // returns an Action for the same event.
+        let preview_with_overlay = stack![redraw_ticker, preview_element, frame_info_overlay]
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         // Preview container (takes most of the vertical space)
         // Use a distinct background color for the terminal area
