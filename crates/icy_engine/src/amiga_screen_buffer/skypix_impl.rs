@@ -14,7 +14,7 @@ fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
 
     // Only adjust if we're on a custom font page
     if current_page != 0 {
-        if let Some(current_font) = buf.font(current_page) {
+        if let Some(current_font) = buf.font(current_page as usize) {
             let current_height = current_font.size().height;
             let default_height = buf.font_dimensions().height;
 

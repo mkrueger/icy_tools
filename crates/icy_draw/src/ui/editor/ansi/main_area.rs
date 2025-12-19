@@ -573,7 +573,7 @@ impl AnsiEditorMainArea {
             AnsiEditorMessage::SwitchFontSlot(slot) => {
                 let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
                 let dialog = self.with_edit_state(|state| {
-                    state.set_caret_font_page(slot);
+                    state.set_caret_font_page(slot as u8);
                     is_double_click.then(|| FontSelectorDialog::new(state))
                 });
                 if let Some(dialog) = dialog {
@@ -594,7 +594,7 @@ impl AnsiEditorMainArea {
             }
             AnsiEditorMessage::OpenFontSelectorForSlot(slot) => {
                 let dialog = self.with_edit_state(|state| {
-                    state.set_caret_font_page(slot);
+                    state.set_caret_font_page(slot as u8);
                     FontSelectorDialog::new(state)
                 });
                 dialogs.push(dialog);

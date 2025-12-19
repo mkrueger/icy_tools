@@ -571,7 +571,8 @@ pub static ANSI_SLOT_FONTS: [AnsiSlotFont; ANSI_SLOT_COUNT] = [
 ///
 /// # Caching
 /// Fonts are cached after first load for performance.
-pub fn get_ansi_font(slot: usize, font_height: u8) -> Option<&'static BitFont> {
+pub fn get_ansi_font(slot: u8, font_height: u8) -> Option<&'static BitFont> {
+    let slot = slot as usize;
     if slot >= ANSI_SLOT_COUNT {
         log::warn!("Requested ANSI font slot {} is out of range", slot);
         return None;

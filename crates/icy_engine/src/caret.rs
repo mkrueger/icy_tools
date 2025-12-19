@@ -45,11 +45,11 @@ impl Caret {
         self.shape = CaretShape::Block;
     }
 
-    pub fn font_page(&self) -> usize {
+    pub fn font_page(&self) -> u8 {
         self.attribute.font_page()
     }
 
-    pub fn set_font_page(&mut self, page: usize) {
+    pub fn set_font_page(&mut self, page: u8) {
         self.attribute.set_font_page(page);
     }
 }

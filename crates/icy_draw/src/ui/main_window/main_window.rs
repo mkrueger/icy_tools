@@ -610,6 +610,7 @@ impl MainWindow {
                     Some(FileFormat::IcyAnim) => match AnimationEditor::load_from_autosave(autosave, orig.clone()) {
                         Ok(editor) => (ModeState::Animation(editor), None),
                         Err(e) => {
+                            log::error!("Error loading animation autosave: {}", e);
                             let error = Some(("Error Loading Animation Autosave".to_string(), e));
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
@@ -618,6 +619,7 @@ impl MainWindow {
                         match crate::ui::editor::charfont::CharFontEditor::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::CharFont(editor), None),
                             Err(e) => {
+                                log::error!("Error loading TDF font autosave: {}", e);
                                 let error = Some(("Error Loading TDF Font Autosave".to_string(), format!("{}", e)));
                                 (
                                     ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
@@ -631,6 +633,7 @@ impl MainWindow {
                         match AnsiEditorMainArea::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::Ansi(editor), None),
                             Err(e) => {
+                                log::error!("Error loading autosave: {}", e);
                                 let error = Some(("Error Loading Autosave".to_string(), format!("{}", e)));
                                 (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                             }

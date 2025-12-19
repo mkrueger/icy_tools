@@ -7,7 +7,7 @@ use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, IceMode, Layer, Palett
 use super::{EditState, undo_operation::EditorUndoOp};
 
 impl EditState {
-    pub fn switch_to_font_page(&mut self, page: usize) -> Result<()> {
+    pub fn switch_to_font_page(&mut self, page: u8) -> Result<()> {
         let op = EditorUndoOp::SwitchToFontPage {
             old: self.screen.caret.font_page(),
             new: page,
@@ -43,7 +43,7 @@ impl EditState {
         self.push_undo_action(op)
     }
 
-    pub fn add_ansi_font(&mut self, page: usize) -> Result<()> {
+    pub fn add_ansi_font(&mut self, page: u8) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
                 let new_font = BitFont::from_ansi_font_page(page, 16).unwrap().clone();
@@ -60,7 +60,7 @@ impl EditState {
         }
     }
 
-    pub fn set_ansi_font(&mut self, page: usize) -> Result<()> {
+    pub fn set_ansi_font(&mut self, page: u8) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Sauce => Err(crate::EngineError::Generic("Not supported for sauce buffers.".to_string())),
             crate::FontMode::Single => {
@@ -126,8 +126,8 @@ impl EditState {
     pub fn add_font(&mut self, new_font: BitFont) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
-                let mut page = 100;
-                for i in 100.. {
+                let mut page: u8 = 100;
+                for i in 100u8.. {
                     if !self.get_buffer().has_font(i) {
                         page = i;
                         break;
@@ -179,7 +179,7 @@ impl EditState {
 
     /// Set a font in a specific slot (with undo support).
     /// Use this for XBin Extended mode where you need to set fonts in specific slots.
-    pub fn set_font_in_slot(&mut self, slot: usize, new_font: BitFont) -> Result<()> {
+    pub fn set_font_in_slot(&mut self, slot: u8, new_font: BitFont) -> Result<()> {
         if let Some(old_font) = self.get_buffer().font(slot) {
             let op = EditorUndoOp::SetFont {
                 font_page: slot,
@@ -308,7 +308,7 @@ impl EditState {
         self.push_undo_action(op)
     }
 
-    pub fn replace_font_usage(&mut self, from: usize, to: usize) -> Result<()> {
+    pub fn replace_font_usage(&mut self, from: u8, to: u8) -> Result<()> {
         let old_layers = self.get_buffer().layers.clone();
         let old_font_page = self.get_caret().font_page();
         if old_font_page == from {
@@ -334,7 +334,7 @@ impl EditState {
         self.push_undo_action(op)
     }
 
-    pub fn change_font_slot(&mut self, from: usize, to: usize) -> Result<()> {
+    pub fn change_font_slot(&mut self, from: u8, to: u8) -> Result<()> {
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-change_font_slot"));
         let res = {
             let op = EditorUndoOp::ChangeFontSlot { from, to };
@@ -346,7 +346,7 @@ impl EditState {
         res
     }
 
-    pub fn remove_font(&mut self, font: usize) -> Result<()> {
+    pub fn remove_font(&mut self, font: u8) -> Result<()> {
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-remove_font"));
         let res = {
             let _ = self.replace_font_usage(font, 0);

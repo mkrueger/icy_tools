@@ -658,7 +658,7 @@ impl LayerView {
                 .collect();
 
             let font_key = font_page
-                .and_then(|fp| buffer.font(fp).map(super::glyph_renderer::font_key))
+                .and_then(|fp| buffer.font(fp as u8).map(super::glyph_renderer::font_key))
                 .or_else(|| buffer.font(0).map(super::glyph_renderer::font_key));
 
             (rows, current, layer_count, buffer_version, font_key)
@@ -985,7 +985,7 @@ impl<'a> LayerListWidget<'a> {
                 let mut screen_guard = self.screen.lock();
                 let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
                 let buffer = state.get_buffer();
-                let font = self.font_page.and_then(|fp| buffer.font(fp)).or_else(|| buffer.font(0));
+                let font = self.font_page.and_then(|fp| buffer.font(fp as u8)).or_else(|| buffer.font(0));
                 font.and_then(|font| LayerView::render_label(font, &key.text, fg))
             }) else {
                 return None;

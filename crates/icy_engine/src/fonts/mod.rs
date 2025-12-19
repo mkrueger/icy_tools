@@ -534,7 +534,7 @@ impl BitFont {
     /// # Returns
     /// * `Ok(BitFont)` - The loaded font (cached for performance)
     /// * `Err` - If the slot is invalid
-    pub fn from_ansi_font_page(font_page: usize, font_height: u8) -> Option<&'static Self> {
+    pub fn from_ansi_font_page(font_page: u8, font_height: u8) -> Option<&'static Self> {
         ansi::get_ansi_font(font_page, font_height)
     }
 

@@ -47,19 +47,12 @@ impl AttributedChar {
         (self.ch == '\0' || self.ch == ' ') || self.attribute.background() == self.attribute.foreground()
     }
 
-    pub fn font_page(&self) -> usize {
+    pub fn font_page(&self) -> u8 {
         self.attribute.font_page()
     }
 
-    pub fn set_font_page(&mut self, page: usize) {
+    pub fn set_font_page(&mut self, page: u8) {
         self.attribute.set_font_page(page);
-    }
-
-    pub(crate) fn with_font_page(&self, font_page: usize) -> AttributedChar {
-        AttributedChar {
-            ch: self.ch,
-            attribute: self.attribute.with_font_page(font_page),
-        }
     }
 }
 

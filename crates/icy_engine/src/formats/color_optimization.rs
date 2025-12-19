@@ -14,7 +14,7 @@ enum GlyphShape {
 /// That reduces the amount of color switches required in the output formats.
 pub struct ColorOptimizer {
     normalize_whitespace: bool,
-    shape_map: HashMap<usize, HashMap<char, GlyphShape>>,
+    shape_map: HashMap<u8, HashMap<char, GlyphShape>>,
 }
 
 impl ColorOptimizer {
@@ -65,7 +65,7 @@ impl ColorOptimizer {
     }
 }
 
-fn generate_shape_map(buf: &TextBuffer) -> HashMap<usize, HashMap<char, GlyphShape>> {
+fn generate_shape_map(buf: &TextBuffer) -> HashMap<u8, HashMap<char, GlyphShape>> {
     let mut shape_map = HashMap::new();
     for (slot, font) in buf.font_iter() {
         let mut font_map = HashMap::new();

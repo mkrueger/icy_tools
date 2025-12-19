@@ -166,7 +166,7 @@ impl PaletteScreenBuffer {
 
         let bg_color = ch.attribute.background() as u32; // Apply color limit
 
-        let font = if let Some(font) = self.font(ch.font_page()) {
+        let font = if let Some(font) = self.font(ch.font_page() as usize) {
             font
         } else if let Some(font) = self.font(0) {
             font

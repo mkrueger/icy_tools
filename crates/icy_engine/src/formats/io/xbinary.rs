@@ -114,15 +114,15 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result
     let mut flags = 0;
 
     // FontSize is always part of the header (11 bytes total). Default VGA is 16.
-    let mut fonts: Vec<usize> = Vec::new();
+    let mut fonts: Vec<u8> = Vec::new();
     let mut font_size: u8 = 16;
     let mut write_font_data = false;
 
     if buf.has_fonts() {
         // Fast path: if only 1 font slot, skip expensive analyze_font_usage (~21% hash overhead)
         let font_count = buf.font_count();
-        fonts = if font_count <= 1 { vec![0] } else { analyze_font_usage(buf) };
-        let primary_slot = *fonts.first().unwrap_or(&0);
+        fonts = if font_count <= 1 { vec![0u8] } else { analyze_font_usage(buf) };
+        let primary_slot = *fonts.first().unwrap_or(&0) as u8;
         let Some(font) = buf.font(primary_slot) else {
             return Err(SavingError::NoFontFound.into());
         };
@@ -187,7 +187,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result
     }
 
     if write_font_data {
-        let primary_slot = *fonts.first().unwrap_or(&0);
+        let primary_slot = *fonts.first().unwrap_or(&0) as u8;
         let Some(font) = buf.font(primary_slot) else {
             return Err(SavingError::NoFontFound.into());
         };
@@ -200,7 +200,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result
         }
         result.extend(font_data);
         if (flags & FLAG_512CHAR_MODE) == FLAG_512CHAR_MODE {
-            let secondary_slot = *fonts.get(1).unwrap_or(&1);
+            let secondary_slot = *fonts.get(1).unwrap_or(&1) as u8;
             if let Some(ext_font) = buf.font(secondary_slot) {
                 if ext_font.length() != 256 {
                     return Err(crate::EngineError::InvalidXBin {
@@ -532,7 +532,7 @@ fn decode_char(attr_table: &[TextAttribute; 256], char_code: u8, attr: u8) -> At
 }
 
 #[inline(always)]
-fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[usize]) -> u8 {
+fn encode_attr(buf: &TextBuffer, ch: AttributedChar, fonts: &[u8]) -> u8 {
     if fonts.len() == 2 {
         (ch.attribute.as_u8(buf.ice_mode) & 0b_1111_0111) | if ch.attribute.font_page() == fonts[1] { 0b1000 } else { 0 }
     } else {
@@ -585,7 +585,7 @@ fn read_data_uncompressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool>
     Ok(true)
 }
 
-fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[usize]) -> Result<()> {
+fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[u8]) -> Result<()> {
     // XBin compression is line-local. Encode each line independently (in parallel) and
     // append in scanline order to preserve identical output.
     let width = buffer.width() as usize;
@@ -634,7 +634,7 @@ fn compress_backtrack(outputdata: &mut Vec<u8>, buffer: &TextBuffer, fonts: &[us
 fn compress_line_optimal(
     outputdata: &mut Vec<u8>,
     buffer: &TextBuffer,
-    fonts: &[usize],
+    fonts: &[u8],
     y: i32,
     ch_bytes: &mut [u8],
     attr_bytes: &mut [u8],

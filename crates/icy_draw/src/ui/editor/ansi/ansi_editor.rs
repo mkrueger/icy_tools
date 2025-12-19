@@ -1894,8 +1894,8 @@ impl AnsiEditorCore {
                             let _ = state.set_font_in_slot(slot, font);
                         }
                         FontSelectorResult::FontForSlot { slot, font } => {
-                            state.set_caret_font_page(slot);
-                            let _ = state.set_font_in_slot(slot, font);
+                            state.set_caret_font_page(slot as u8);
+                            let _ = state.set_font_in_slot(slot as u8, font);
                         }
                     }
                 });
@@ -1906,21 +1906,21 @@ impl AnsiEditorCore {
                     use super::FontSlotManagerResult;
                     match result {
                         FontSlotManagerResult::SelectSlot { slot } => {
-                            state.set_caret_font_page(slot);
+                            state.set_caret_font_page(slot as u8);
                         }
                         FontSlotManagerResult::ResetSlot { slot, font } => {
                             if let Some(f) = font {
-                                let _ = state.set_font_in_slot(slot, f);
+                                let _ = state.set_font_in_slot(slot as u8, f);
                             }
                         }
                         FontSlotManagerResult::RemoveSlot { slot } => {
-                            state.get_buffer_mut().remove_font(slot);
+                            state.get_buffer_mut().remove_font(slot as u8);
                         }
                         FontSlotManagerResult::OpenFontSelector { .. } => {
                             // Handled by MainWindow intercept
                         }
                         FontSlotManagerResult::AddSlot { slot, font } => {
-                            let _ = state.set_font_in_slot(slot, font);
+                            let _ = state.set_font_in_slot(slot as u8, font);
                         }
                     }
                 });
@@ -2626,7 +2626,7 @@ impl AnsiEditorCore {
             insert_mode: caret.insert_mode,
             font_name,
             format_mode,
-            current_font_slot,
+            current_font_slot: current_font_slot as usize,
             slot_fonts,
             paste_layer_position,
             paste_layer_size,

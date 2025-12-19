@@ -168,17 +168,13 @@ pub enum EditorUndoOp {
     SetSauceData { new: SauceMetaData, old: SauceMetaData },
 
     /// Switch to font page
-    SwitchToFontPage { old: usize, new: usize },
+    SwitchToFontPage { old: u8, new: u8 },
 
     /// Set font
-    SetFont { font_page: usize, old: BitFont, new: BitFont },
+    SetFont { font_page: u8, old: BitFont, new: BitFont },
 
     /// Add font
-    AddFont {
-        old_font_page: usize,
-        new_font_page: usize,
-        font: BitFont,
-    },
+    AddFont { old_font_page: u8, new_font_page: u8, font: BitFont },
 
     /// Switch palette mode
     SwitchPalette {
@@ -200,17 +196,17 @@ pub enum EditorUndoOp {
 
     /// Replace font usage
     ReplaceFontUsage {
-        old_caret_page: usize,
+        old_caret_page: u8,
         old_layers: Vec<Layer>,
-        new_caret_page: usize,
+        new_caret_page: u8,
         new_layers: Vec<Layer>,
     },
 
     /// Remove font
-    RemoveFont { font_slot: usize, font: Option<BitFont> },
+    RemoveFont { font_slot: u8, font: Option<BitFont> },
 
     /// Change font slot
-    ChangeFontSlot { from: usize, to: usize },
+    ChangeFontSlot { from: u8, to: u8 },
 
     /// Update layer properties
     UpdateLayerProperties {

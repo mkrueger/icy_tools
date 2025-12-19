@@ -177,7 +177,7 @@ impl AmigaScreenBuffer {
         // Get colors from palette, swap if inverse video mode is
         let (fg_color, bg_color) = (ch.attribute.foreground() as u32, ch.attribute.background() as u32);
 
-        let font = if let Some(font) = self.font(ch.font_page()) {
+        let font = if let Some(font) = self.font(ch.font_page() as usize) {
             font
         } else if let Some(font) = self.font(0) {
             font
@@ -391,7 +391,7 @@ impl Screen for AmigaScreenBuffer {
     }
 
     fn font_dimensions(&self) -> Size {
-        if let Some(font) = self.font(self.caret.font_page()) {
+        if let Some(font) = self.font(self.caret.font_page() as usize) {
             font.size()
         } else if let Some(font) = self.font(0) {
             font.size()
@@ -614,7 +614,7 @@ impl EditableScreen for AmigaScreenBuffer {
         }
         let mut pos = self.caret.position();
 
-        if let Some(font) = self.font(self.caret.font_page()) {
+        if let Some(font) = self.font(self.caret.font_page() as usize) {
             if let Some(shift) = font.yaff_font.global_shift_up {
                 pos.y = pos.y.saturating_sub(shift as i32);
             }
@@ -624,7 +624,7 @@ impl EditableScreen for AmigaScreenBuffer {
             let advance_width = if self.graphics_type() == GraphicsType::Skypix {
                 // For proportional fonts with bearing information, use glyph metrics
                 // For monospace fonts, use font_size.width
-                let font = if let Some(font) = self.font(ch.font_page()) {
+                let font = if let Some(font) = self.font(ch.font_page() as usize) {
                     font
                 } else if let Some(font) = self.font(0) {
                     font

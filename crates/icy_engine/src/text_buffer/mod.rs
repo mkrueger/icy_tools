@@ -230,9 +230,9 @@ pub struct TextBuffer {
 
     pub palette: Palette,
 
-    font_table: HashMap<usize, BitFont>,
+    font_table: HashMap<u8, BitFont>,
     /// Cache for 9px converted fonts (lazily populated when use_letter_spacing is true)
-    font_table_9px: HashMap<usize, BitFont>,
+    font_table_9px: HashMap<u8, BitFont>,
     is_font_table_dirty: bool,
     pub layers: Vec<Layer>,
 
@@ -396,11 +396,11 @@ impl TextBuffer {
     }
 }
 
-pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<usize> {
+pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<u8> {
     // Fast path for the common case (typically <= 2 font pages) without hashing.
     // Fallback to an ordered set if the number of distinct pages grows.
-    let mut small: Vec<usize> = Vec::new();
-    let mut set: Option<std::collections::BTreeSet<usize>> = None;
+    let mut small: Vec<u8> = Vec::new();
+    let mut set: Option<std::collections::BTreeSet<u8>> = None;
 
     for y in 0..buf.height() {
         for x in 0..buf.width() {
@@ -547,7 +547,7 @@ impl TextBuffer {
         !self.font_table.is_empty()
     }
 
-    pub fn has_font(&self, id: usize) -> bool {
+    pub fn has_font(&self, id: u8) -> bool {
         self.font_table.contains_key(&id)
     }
 
@@ -559,7 +559,7 @@ impl TextBuffer {
         self.is_font_table_dirty = false;
     }
 
-    pub fn search_font_by_name(&self, name: impl Into<String>) -> Option<usize> {
+    pub fn search_font_by_name(&self, name: impl Into<String>) -> Option<u8> {
         let name = name.into();
         for (i, font) in &self.font_table {
             if font.name() == name {
@@ -569,15 +569,15 @@ impl TextBuffer {
         None
     }
 
-    pub fn font_iter(&self) -> impl Iterator<Item = (&usize, &BitFont)> {
+    pub fn font_iter(&self) -> impl Iterator<Item = (&u8, &BitFont)> {
         self.font_table.iter()
     }
 
-    pub fn font_iter_mut(&mut self) -> impl Iterator<Item = (&usize, &mut BitFont)> {
+    pub fn font_iter_mut(&mut self) -> impl Iterator<Item = (&u8, &mut BitFont)> {
         self.font_table.iter_mut()
     }
 
-    pub fn font(&self, font_number: usize) -> Option<&BitFont> {
+    pub fn font(&self, font_number: u8) -> Option<&BitFont> {
         if let Some(font) = self.font_table.get(&font_number) {
             Some(font)
         } else if let Some(font) = BitFont::from_ansi_font_page(font_number, self.font_cell_size.height as u8) {
@@ -590,7 +590,7 @@ impl TextBuffer {
     /// Get the appropriate font for rendering, considering letter spacing setting.
     /// Returns the 9px version if use_letter_spacing is true and cached, otherwise the original.
     /// For use during rendering (immutable access).
-    pub fn font_for_render(&self, font_number: usize) -> Option<&BitFont> {
+    pub fn font_for_render(&self, font_number: u8) -> Option<&BitFont> {
         if self.use_letter_spacing {
             // Try to get cached 9px font first
             if let Some(font) = self.font_table_9px.get(&font_number) {
@@ -604,7 +604,7 @@ impl TextBuffer {
     /// Get the appropriate font for rendering, considering letter spacing setting.
     /// Returns the 9px version if use_letter_spacing is true, otherwise the original.
     /// Note: This requires mutable access because it may lazily create the 9px font.
-    pub fn render_font(&mut self, font_number: usize) -> Option<&BitFont> {
+    pub fn render_font(&mut self, font_number: u8) -> Option<&BitFont> {
         if self.use_letter_spacing {
             // Lazily create 9px font if not cached
             if !self.font_table_9px.contains_key(&font_number) {
@@ -627,7 +627,7 @@ impl TextBuffer {
         }
 
         // Convert any fonts that aren't cached yet
-        let font_nums: Vec<usize> = self.font_table.keys().copied().collect();
+        let font_nums: Vec<u8> = self.font_table.keys().copied().collect();
         for font_num in font_nums {
             if !self.font_table_9px.contains_key(&font_num) {
                 if let Some(font) = self.font_table.get(&font_num) {
@@ -638,13 +638,13 @@ impl TextBuffer {
         }
     }
 
-    pub fn set_font(&mut self, font_number: usize, font: BitFont) {
-        self.font_table.insert(font_number, font);
-        self.font_table_9px.remove(&font_number); // Invalidate 9px cache for this font
+    pub fn set_font(&mut self, font_number: u8, font: BitFont) {
+        self.font_table.insert(font_number as u8, font);
+        self.font_table_9px.remove(&(font_number as u8)); // Invalidate 9px cache for this font
         self.is_font_table_dirty = true;
     }
 
-    pub fn remove_font(&mut self, font_number: usize) -> Option<BitFont> {
+    pub fn remove_font(&mut self, font_number: u8) -> Option<BitFont> {
         self.font_table_9px.remove(&font_number); // Also remove from 9px cache
         self.font_table.remove(&font_number)
     }
@@ -653,16 +653,16 @@ impl TextBuffer {
         self.font_table.len()
     }
 
-    pub fn font_table(&self) -> HashMap<usize, BitFont> {
+    pub fn font_table(&self) -> HashMap<u8, BitFont> {
         self.font_table.clone()
     }
 
-    pub fn set_font_table(&mut self, font_table: HashMap<usize, BitFont>) {
+    pub fn set_font_table(&mut self, font_table: HashMap<u8, BitFont>) {
         self.font_table = font_table;
         self.font_table_9px.clear(); // Invalidate entire 9px cache
     }
 
-    pub fn append_font(&mut self, font: BitFont) -> usize {
+    pub fn append_font(&mut self, font: BitFont) -> u8 {
         let mut i = 0;
         while self.font_table.contains_key(&i) {
             i += 1;

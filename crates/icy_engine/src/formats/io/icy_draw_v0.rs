@@ -40,6 +40,17 @@ const V0_SHORT_DATA_MASK: u16 = 0x0800 | 0x4000;
 // V0 stored "invisible cell" as a special attr-only marker.
 const V0_INVISIBLE_CELL: u16 = 0x8000;
 
+/// Load an IcyDraw v0 file (Base64 encoded tEXt/zTXt PNG chunks).
+/// Returns an error if the file is not a valid v0 file.
+pub(crate) fn load_icy_draw_v0(data: &[u8]) -> Result<TextScreen> {
+    match load_icy_draw_v0_base64_text_chunks(data)? {
+        Some(screen) => Ok(screen),
+        None => Err(crate::EngineError::UnsupportedFormat {
+            description: "Not a valid IcyDraw v0 file".to_string(),
+        }),
+    }
+}
+
 pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
@@ -318,7 +329,7 @@ fn process_icy_draw_v0_decoded_chunk(
 
                 let mut text_attr = TextAttribute::default();
                 text_attr.attr = attr;
-                text_attr.set_font_page(font_page as usize);
+                text_attr.set_font_page(font_page);
                 text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
                 text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
 
@@ -346,7 +357,7 @@ fn process_icy_draw_v0_decoded_chunk(
                 let (font_name, size) = read_utf8_encoded_string(&bytes[o..])?;
                 o += size;
                 let font = BitFont::from_bytes(font_name, &bytes[o..])?;
-                result.set_font(font_slot, font);
+                result.set_font(font_slot as u8, font);
                 return Ok(true);
             }
 
@@ -419,7 +430,7 @@ fn process_icy_draw_v0_decoded_chunk(
 
                                 let mut text_attr = TextAttribute::default();
                                 text_attr.attr = attr;
-                                text_attr.set_font_page(font_page as usize);
+                                text_attr.set_font_page(font_page);
                                 text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
                                 text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
 
@@ -613,7 +624,7 @@ fn process_icy_draw_v0_decoded_chunk(
 
                         let mut text_attr = TextAttribute::default();
                         text_attr.attr = attr;
-                        text_attr.set_font_page(font_page as usize);
+                        text_attr.set_font_page(font_page);
                         text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
                         text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
 
@@ -648,7 +659,7 @@ fn read_utf8_encoded_string(data: &[u8]) -> Result<(String, usize)> {
         return Err(crate::EngineError::OutOfBounds { offset: 4 });
     }
 
-    let size = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let size: usize = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
     let end = 4usize.saturating_add(size);
     if data.len() < end {
         return Err(crate::EngineError::OutOfBounds { offset: end });

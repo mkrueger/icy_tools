@@ -593,18 +593,18 @@ impl StringGeneratorV2 {
         (state, sgr, extra_esc)
     }
 
-    fn generate_ansi_font_map(buf: &TextBuffer) -> HashMap<usize, usize> {
+    fn generate_ansi_font_map(buf: &TextBuffer) -> HashMap<u8, u8> {
         let mut font_map = HashMap::new();
 
         let mut ansi_fonts = Vec::new();
-        for i in 0..ANSI_FONTS {
+        for i in 0..ANSI_FONTS as u8 {
             ansi_fonts.push(BitFont::from_ansi_font_page(i, buf.font_dimensions().height as u8).unwrap());
         }
         for (page, font) in buf.font_iter() {
             let mut to_page = *page;
             for (i, ansi_font) in ansi_fonts.iter().enumerate() {
                 if *ansi_font == font {
-                    to_page = i;
+                    to_page = i as u8;
                     break;
                 }
             }
@@ -614,7 +614,7 @@ impl StringGeneratorV2 {
         font_map
     }
 
-    fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<usize, usize>) -> (AnsiState, Vec<Vec<CharCell>>) {
+    fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<u8, u8>) -> (AnsiState, Vec<Vec<CharCell>>) {
         let mut result: Vec<Vec<CharCell>> = Vec::new();
 
         let mut state = AnsiState {
@@ -702,7 +702,7 @@ impl StringGeneratorV2 {
                         ch: ch.ch,
                         sgr,
                         extra_esc,
-                        font_page: *font_map.get(&ch.font_page()).unwrap_or(&0),
+                        font_page: *font_map.get(&ch.font_page()).unwrap_or(&0) as usize,
                         cur_state: state.clone(),
                     });
                 } else {
@@ -710,7 +710,7 @@ impl StringGeneratorV2 {
                         ch: ' ',
                         sgr: Vec::new(),
                         extra_esc: Vec::new(),
-                        font_page: *font_map.get(&ch.font_page()).unwrap_or(&0),
+                        font_page: *font_map.get(&ch.font_page()).unwrap_or(&0) as usize,
                         cur_state: state.clone(),
                     });
                 }
@@ -734,7 +734,7 @@ impl StringGeneratorV2 {
             for font_slot in used_fonts {
                 if font_slot >= 100 {
                     if let Some(font) = buf.font(font_slot) {
-                        result.extend_from_slice(font.encode_as_ansi(font_slot).as_bytes());
+                        result.extend_from_slice(font.encode_as_ansi(font_slot as usize).as_bytes());
                     }
                 }
             }

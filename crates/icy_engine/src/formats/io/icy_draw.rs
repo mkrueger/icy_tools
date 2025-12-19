@@ -1,82 +1,16 @@
-use std::collections::HashMap;
 use std::fmt::Alignment;
 use std::io::Cursor;
 
-use base64::{Engine, engine::general_purpose};
 use icy_sauce::SauceRecord;
 use regex::Regex;
 use zstd::stream::{decode_all as zstd_decode_all, encode_all as zstd_encode_all};
 
-use crate::{AttributeColor, BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen, attribute};
+use crate::{BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
 
-/// Decode legacy wire format (ext_attr + u32 fg/bg) into AttributeColor.
-/// This handles V0/V1 legacy files that used the old representation.
-fn decode_legacy_color(raw_color: u32, ext_attr: u8, is_foreground: bool) -> AttributeColor {
-    // Check for old TRANSPARENT_COLOR sentinel (1<<31)
-    if raw_color == 0x8000_0000 {
-        return AttributeColor::Transparent;
-    }
-
-    let (rgb_flag, ext_flag) = if is_foreground {
-        (0b0000_0001, 0b0000_0100) // FG_RGBA, FG_EXT
-    } else {
-        (0b0000_0010, 0b0000_1000) // BG_RGBA, BG_EXT
-    };
-
-    if (ext_attr & rgb_flag) != 0 {
-        // RGB mode: color is packed as 0x00RRGGBB
-        let r = ((raw_color >> 16) & 0xFF) as u8;
-        let g = ((raw_color >> 8) & 0xFF) as u8;
-        let b = (raw_color & 0xFF) as u8;
-        AttributeColor::Rgb(r, g, b)
-    } else if (ext_attr & ext_flag) != 0 {
-        // Extended palette (xterm 256)
-        AttributeColor::ExtendedPalette((raw_color & 0xFF) as u8)
-    } else {
-        // Standard palette
-        AttributeColor::Palette((raw_color & 0xFF) as u8)
-    }
-}
-
-/// Encode AttributeColor pairs to legacy wire format (fg_u32, bg_u32, ext_attr).
-/// Used for saving in ICY format for backwards compatibility.
-fn encode_colors_to_legacy(fg: AttributeColor, bg: AttributeColor) -> (u32, u32, u8) {
-    let mut ext_attr: u8 = 0;
-
-    let fg_u32 = match fg {
-        AttributeColor::Transparent => 0x8000_0000,
-        AttributeColor::Palette(p) => p as u32,
-        AttributeColor::ExtendedPalette(p) => {
-            ext_attr |= 0b0000_0100; // FG_EXT
-            p as u32
-        }
-        AttributeColor::Rgb(r, g, b) => {
-            ext_attr |= 0b0000_0001; // FG_RGBA
-            ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-        }
-    };
-
-    let bg_u32 = match bg {
-        AttributeColor::Transparent => 0x8000_0000,
-        AttributeColor::Palette(p) => p as u32,
-        AttributeColor::ExtendedPalette(p) => {
-            ext_attr |= 0b0000_1000; // BG_EXT
-            p as u32
-        }
-        AttributeColor::Rgb(r, g, b) => {
-            ext_attr |= 0b0000_0010; // BG_RGBA
-            ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-        }
-    };
-
-    (fg_u32, bg_u32, ext_attr)
-}
-
 mod constants {
     pub const ICED_VERSION: u16 = 1;
-    pub const ICED_HEADER_SIZEV0: usize = 19;
     pub const ICED_HEADER_SIZE: usize = 21;
 
     /// Compression methods for ICED format (stored in first byte of Type field)
@@ -147,7 +81,7 @@ fn write_compressed_chunk<W: std::io::Write>(writer: &mut png::Writer<W>, keywor
         other => return Err(IcedError::ErrorEncodingZText(format!("unsupported compression id {other}"))),
     };
 
-    let record = build_icyd_record(keyword, &compressed).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
+    let record: Vec<u8> = build_icyd_record(keyword, &compressed).map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
     writer
         .write_chunk(png::chunk::ChunkType(ICYD_CHUNK_TYPE), &record)
         .map_err(|e| IcedError::ErrorEncodingZText(format!("{e}")))?;
@@ -258,14 +192,7 @@ fn parse_icyd_record(payload: &[u8]) -> Result<(String, &[u8])> {
     Ok((keyword.to_string(), &payload[data_start..data_end]))
 }
 
-fn process_icy_draw_decoded_chunk(
-    keyword: &str,
-    bytes: &[u8],
-    result: &mut TextBuffer,
-    layer_resume_y: &mut HashMap<usize, i32>,
-    compression: &mut u8,
-    sixel_format: &mut u8,
-) -> Result<bool> {
+fn process_icy_draw_v1_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut TextBuffer, compression: &mut u8, sixel_format: &mut u8) -> Result<bool> {
     match keyword {
         "END" => return Ok(false),
         "ICED" => {
@@ -276,26 +203,15 @@ fn process_icy_draw_decoded_chunk(
             }
 
             let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-            match version {
-                0 => {
-                    if bytes.len() != constants::ICED_HEADER_SIZEV0 {
-                        return Err(crate::EngineError::UnsupportedFormat {
-                            description: format!("unsupported ICED v0 header size {}", bytes.len()),
-                        });
-                    }
-                }
-                1 => {
-                    if bytes.len() != constants::ICED_HEADER_SIZE {
-                        return Err(crate::EngineError::UnsupportedFormat {
-                            description: format!("unsupported ICED v1 header size {}", bytes.len()),
-                        });
-                    }
-                }
-                _ => {
-                    return Err(crate::EngineError::UnsupportedFormat {
-                        description: format!("unsupported ICED version {} (max supported: {})", version, constants::ICED_VERSION),
-                    });
-                }
+            if version != 1 {
+                return Err(crate::EngineError::UnsupportedFormat {
+                    description: format!("unsupported ICED version {} (expected: 1)", version),
+                });
+            }
+            if bytes.len() != constants::ICED_HEADER_SIZE {
+                return Err(crate::EngineError::UnsupportedFormat {
+                    description: format!("unsupported ICED v1 header size {}", bytes.len()),
+                });
             }
 
             let mut o: usize = 2; // skip version
@@ -375,8 +291,9 @@ fn process_icy_draw_decoded_chunk(
                 let (replacement_value, used) = read_utf8_encoded_string(cur)?;
                 cur = &cur[used..];
 
-                if cur.len() < 4 + 4 + 2 + 1 + 1 + 1 + 2 {
-                    return Err(crate::EngineError::OutOfBounds { offset: bytes.len() + 1 });
+                // x:4 + y:4 + length:2 + is_enabled:1 + alignment:1 + tag_placement:1 + tag_role:1 = 14 bytes
+                if cur.len() < 14 {
+                    return Err(crate::EngineError::OutOfBounds { offset: 14 });
                 }
                 let x = i32::from_le_bytes(cur[..4].try_into().unwrap());
                 cur = &cur[4..];
@@ -421,35 +338,8 @@ fn process_icy_draw_decoded_chunk(
                 };
                 cur = &cur[1..];
 
-                if cur.len() < 2 {
-                    return Err(crate::EngineError::OutOfBounds { offset: 2 });
-                }
-                let attr = u16::from_le_bytes(cur[..2].try_into().unwrap());
-                cur = &cur[2..];
-
-                let (fg, bg, font_page, ext_attr) = {
-                    if cur.len() < 10 {
-                        return Err(crate::EngineError::OutOfBounds { offset: 10 });
-                    }
-                    let fg = u32::from_le_bytes(cur[..4].try_into().unwrap());
-                    let bg = u32::from_le_bytes(cur[4..8].try_into().unwrap());
-                    let font_page = cur[8];
-                    let ext_attr = cur[9];
-                    cur = &cur[10..];
-                    (fg, bg, font_page, ext_attr)
-                };
-
-                if cur.len() < 16 {
-                    return Err(crate::EngineError::OutOfBounds { offset: 16 });
-                }
-                cur = &cur[16..]; // unused data for future use
-
-                let mut text_attr = TextAttribute::default();
-                text_attr.attr = attr;
-                text_attr.set_font_page(font_page as usize);
-                text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
-                text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
-
+                let (rest, text_attr) = TextAttribute::decode_attribute(cur);
+                cur = rest;
                 result.tags.push(crate::Tag {
                     preview,
                     replacement_value,
@@ -464,291 +354,152 @@ fn process_icy_draw_decoded_chunk(
             }
         }
 
-        text => {
-            if let Some(font_slot) = text.strip_prefix("FONT_") {
-                match font_slot.parse() {
-                    Ok(font_slot) => {
-                        let mut o: usize = 0;
-                        let (font_name, size) = read_utf8_encoded_string(&bytes[o..])?;
-                        o += size;
-                        let font = BitFont::from_bytes(font_name, &bytes[o..])?;
-                        result.set_font(font_slot, font);
-                    }
-                    Err(e) => return Err(IcedError::ErrorParsingFontSlot(e.to_string()).into()),
-                }
-                return Ok(true);
+        "FONT" => {
+            if bytes.is_empty() {
+                return Err(crate::EngineError::OutOfBounds { offset: 1 });
             }
-
-            if !text.starts_with("LAYER_") {
-                log::warn!("unsupported chunk {text}");
-                return Ok(true);
-            }
-
-            // Continuation chunk
-            if let Some(m) = LAYER_CONTINUE_REGEX.captures(text) {
-                let (_, [layer_num, _chunk]) = m.extract();
-                let layer_num = layer_num.parse::<usize>()?;
-
-                if layer_num >= result.layers.len() {
-                    return Err(crate::EngineError::UnsupportedFormat {
-                        description: format!("layer continuation refers to missing layer index {layer_num}"),
-                    });
-                }
-
-                let layer = &mut result.layers[layer_num];
-                match layer.role {
-                    crate::Role::Normal => {
-                        let mut o = 0;
-                        let start_y = *layer_resume_y.get(&layer_num).unwrap_or(&layer.line_count());
-                        let mut y = start_y;
-                        while y < layer.height() {
-                            if o >= bytes.len() {
-                                break;
-                            }
-                            for x in 0..layer.width() {
-                                if bytes.len() < o + 2 {
-                                    return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
-                                }
-                                let attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                                o += 2;
-                                let attr = attr_raw;
-                                if attr == attribute::INVISIBLE {
-                                    continue;
-                                }
-
-                                let need = 14;
-                                if bytes.len() < o + need {
-                                    return Err(crate::EngineError::OutOfBounds { offset: o + need });
-                                }
-
-                                let (ch_u32, fg, bg, ext_attr, font_page) = {
-                                    let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                                    let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
-                                    let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
-                                    let font_page = bytes[o + 12];
-                                    let ext_attr = bytes[o + 13];
-                                    o += 14;
-                                    (ch, fg, bg, ext_attr, font_page)
-                                };
-
-                                let ch = char::from_u32(ch_u32).ok_or_else(|| crate::EngineError::UnsupportedFormat {
-                                    description: format!("invalid unicode scalar value: {ch_u32}"),
-                                })?;
-
-                                let mut text_attr = TextAttribute::default();
-                                text_attr.attr = attr;
-                                text_attr.set_font_page(font_page as usize);
-                                text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
-                                text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
-
-                                layer.set_char((x, y), crate::AttributedChar { ch, attribute: text_attr });
-                            }
-                            y += 1;
-                        }
-
-                        layer_resume_y.insert(layer_num, y);
-                        if y >= layer.height() {
-                            layer_resume_y.remove(&layer_num);
-                        }
-                        return Ok(true);
-                    }
-                    crate::Role::Image => {
-                        layer.sixels[0].picture_data.extend(bytes);
-                        return Ok(true);
-                    }
-                    crate::Role::PastePreview | crate::Role::PasteImage => {
-                        return Ok(true);
-                    }
-                }
-            }
-
-            let layer_num = text
-                .strip_prefix("LAYER_")
-                .ok_or_else(|| crate::EngineError::UnsupportedFormat {
-                    description: format!("invalid layer keyword {text}"),
-                })?
-                .parse::<usize>()
-                .map_err(|_| crate::EngineError::UnsupportedFormat {
-                    description: format!("invalid layer index in keyword {text}"),
-                })?;
-
-            if layer_num != result.layers.len() {
-                return Err(crate::EngineError::UnsupportedFormat {
-                    description: format!("unexpected layer index {layer_num}, expected {}", result.layers.len()),
-                });
-            }
-
             let mut o: usize = 0;
-            let (title, used) = read_utf8_encoded_string(&bytes[o..])?;
-            let mut layer = Layer::new(title, (0, 0));
-            o += used;
-
-            if bytes.len() < o + 1 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 1 });
-            }
-            let role = bytes[o];
+            let font_slot = bytes[o];
             o += 1;
-            layer.role = if role == 1 { crate::Role::Image } else { crate::Role::Normal };
+            let (font_name, size) = read_utf8_encoded_string(&bytes[o..])?;
+            o += size;
+            let font = BitFont::from_bytes(font_name, &bytes[o..])?;
+            result.set_font(font_slot, font);
+        }
 
-            if bytes.len() < o + 4 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
-            }
-            o += 4; // unused
+        "LAYER" => {
+            let mut o: usize = 0;
 
-            if bytes.len() < o + 1 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 1 });
+            // Read layer title
+            let (title, size) = read_utf8_encoded_string(&bytes[o..])?;
+            o += size;
+
+            // Bounds check for fixed fields: role(1) + reserved(4) + mode(1) + color(4) + flags(4) + offset(8) = 22 bytes
+            if bytes.len() < o + 22 {
+                return Err(crate::EngineError::OutOfBounds { offset: o + 22 });
             }
-            let mode = bytes[o];
+
+            // Read role (0 = Normal, 1 = Image)
+            let role_byte = bytes[o];
             o += 1;
-            layer.properties.mode = match mode {
-                0 => crate::Mode::Normal,
+            let role = if role_byte == 1 { crate::Role::Image } else { crate::Role::Normal };
+
+            // Skip reserved bytes (4 bytes)
+            o += 4;
+
+            // Read mode
+            let mode = match bytes[o] {
                 1 => crate::Mode::Chars,
                 2 => crate::Mode::Attributes,
-                _ => return Err(LoadingError::IcyDrawUnsupportedLayerMode(mode).into()),
+                _ => crate::Mode::Normal,
             };
-
-            if bytes.len() < o + 4 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 4 });
-            }
-            let red = bytes[o];
-            let green = bytes[o + 1];
-            let blue = bytes[o + 2];
-            let alpha = bytes[o + 3];
-            o += 4;
-            if alpha != 0 {
-                layer.properties.color = Some(Color::new(red, green, blue));
-            }
-
-            if bytes.len() < o + 4 + 1 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 5 });
-            }
-            let flags = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-            o += 4;
-            layer.transparency = bytes[o];
             o += 1;
 
-            if bytes.len() < o + 4 + 4 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
-            }
-            let x_offset = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            // Read color (RGBA, where A=0xFF means color is set)
+            let r = bytes[o];
+            let g = bytes[o + 1];
+            let b = bytes[o + 2];
+            let a = bytes[o + 3];
             o += 4;
-            let y_offset = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-            o += 4;
-            layer.set_offset((x_offset, y_offset));
+            let color = if a == 0xFF { Some(Color::new(r, g, b)) } else { None };
 
-            if bytes.len() < o + 4 + 4 + 2 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 10 });
-            }
-            let width = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+            // Read flags
+            let flags = u32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
             o += 4;
-            let height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+
+            // Read offset
+            let offset_x = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
             o += 4;
-            layer.set_size((width, height));
+            let offset_y = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
+            o += 4;
 
-            if bytes.len() < o + 8 {
-                return Err(crate::EngineError::OutOfBounds { offset: o + 8 });
-            }
-            let length = u64::from_le_bytes(bytes[o..(o + 8)].try_into().unwrap()) as usize;
-            o += 8;
-
-            if role == 1 {
-                if bytes.len() < o + 16 {
-                    return Err(crate::EngineError::OutOfBounds { offset: o + 16 });
+            let mut layer = if matches!(role, crate::Role::Image) {
+                // Bounds check for sixel header: png_len(8) + width(4) + height(4) + v_scale(4) + h_scale(4) = 24 bytes
+                if bytes.len() < o + 24 {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + 24 });
                 }
-                let sixel_width = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+
+                // Read sixel data
+                let png_len = u64::from_le_bytes(bytes[o..o + 8].try_into().unwrap()) as usize;
+                o += 8;
+                let width = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
                 o += 4;
-                let sixel_height = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                let height = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
                 o += 4;
-                let vert_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                let vertical_scale = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
                 o += 4;
-                let horiz_scale = i32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
+                let horizontal_scale = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
                 o += 4;
 
-                // Check sixel format: PNG or raw RGBA
-                let picture_data = if *sixel_format == constants::sixel_format::PNG {
-                    // Decode PNG to RGBA
-                    let png_data = &bytes[o..o + length];
-                    let (_, _, rgba_data) = decode_png_to_rgba(png_data)?;
-                    rgba_data
-                } else {
-                    // Raw RGBA data
-                    bytes[o..].to_vec()
-                };
+                // Bounds check for PNG data
+                if bytes.len() < o + png_len {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + png_len });
+                }
 
+                let png_data = &bytes[o..o + png_len];
+                let (_, _, picture_data) = decode_png_to_rgba(png_data)?;
+
+                let mut sixel = Sixel::from_data((width, height), vertical_scale, horizontal_scale, picture_data);
+                sixel.position = Position::new(0, 0);
+
+                let mut layer = Layer::new(title.clone(), (0, 0));
+                layer.role = role;
+                layer.sixels.push(sixel);
                 layer
-                    .sixels
-                    .push(Sixel::from_data((sixel_width, sixel_height), vert_scale, horiz_scale, picture_data));
-                result.layers.push(layer);
             } else {
-                if bytes.len() < o + length {
-                    return Err(crate::EngineError::OutOfBounds { offset: o + length });
+                // Bounds check for char layer header: transparency(1) + width(4) + height(4) = 9 bytes
+                if bytes.len() < o + 9 {
+                    return Err(crate::EngineError::OutOfBounds { offset: o + 9 });
                 }
-                let char_data_end = o + length;
-                let mut y = 0;
-                while y < height {
-                    if o >= char_data_end {
-                        break;
-                    }
+
+                // Read char layer data
+                let transparency = bytes[o];
+                o += 1;
+                let width = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
+                o += 4;
+                let height = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
+                o += 4;
+
+                let mut layer = Layer::new(title.clone(), (width, height));
+                layer.transparency = transparency;
+
+                let mut cur = &bytes[o..];
+                for y in 0..height {
                     for x in 0..width {
-                        if o >= char_data_end {
-                            break;
+                        if cur.len() < 4 {
+                            return Err(crate::EngineError::OutOfBounds { offset: bytes.len() });
                         }
-                        if bytes.len() < o + 2 {
-                            return Err(crate::EngineError::OutOfBounds { offset: o + 2 });
-                        }
-                        let attr_raw = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
-                        o += 2;
+                        let ch = u32::from_le_bytes(cur[0..4].try_into().unwrap());
+                        cur = &cur[4..];
+                        let (rest, attribute) = TextAttribute::decode_attribute(cur);
+                        cur = rest;
 
-                        let attr = attr_raw;
-                        if attr == attribute::INVISIBLE {
-                            continue;
-                        }
-
-                        let need = 14;
-                        if bytes.len() < o + need {
-                            return Err(crate::EngineError::OutOfBounds { offset: o + need });
-                        }
-
-                        let (ch_u32, fg, bg, ext_attr, font_page) = {
-                            let ch = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
-                            let fg = u32::from_le_bytes(bytes[(o + 4)..(o + 8)].try_into().unwrap());
-                            let bg = u32::from_le_bytes(bytes[(o + 8)..(o + 12)].try_into().unwrap());
-                            let font_page = bytes[o + 12];
-                            let ext_attr = bytes[o + 13];
-                            o += 14;
-                            (ch, fg, bg, ext_attr, font_page)
-                        };
-
-                        let ch = char::from_u32(ch_u32).ok_or_else(|| crate::EngineError::UnsupportedFormat {
-                            description: format!("invalid unicode scalar value: {ch_u32}"),
-                        })?;
-
-                        let mut text_attr = TextAttribute::default();
-                        text_attr.attr = attr;
-                        text_attr.set_font_page(font_page as usize);
-                        text_attr.set_foreground_color(decode_legacy_color(fg, ext_attr, true));
-                        text_attr.set_background_color(decode_legacy_color(bg, ext_attr, false));
-
-                        layer.set_char((x, y), crate::AttributedChar { ch, attribute: text_attr });
+                        layer.set_char(
+                            Position::new(x, y),
+                            crate::AttributedChar::new(unsafe { char::from_u32_unchecked(ch) }, attribute),
+                        );
                     }
-                    y += 1;
                 }
-                result.layers.push(layer);
+                layer
+            };
 
-                // Remember where to resume if this layer continues in `LAYER_{layer_num}~k`.
-                if y < height {
-                    layer_resume_y.insert(layer_num, y);
-                }
-            }
+            // Set layer properties
+            layer.properties.title = title;
+            layer.properties.mode = mode;
+            layer.properties.color = color;
+            layer.properties.is_visible = (flags & constants::layer::IS_VISIBLE) != 0;
+            layer.properties.is_locked = (flags & constants::layer::EDIT_LOCK) != 0;
+            layer.properties.is_position_locked = (flags & constants::layer::POS_LOCK) != 0;
+            layer.properties.has_alpha_channel = (flags & constants::layer::HAS_ALPHA) != 0;
+            layer.properties.is_alpha_channel_locked = (flags & constants::layer::ALPHA_LOCKED) != 0;
+            layer.set_offset((offset_x, offset_y));
 
-            // set attributes at the end because of the way the parser works
-            if let Some(layer) = result.layers.last_mut() {
-                layer.properties.is_visible = (flags & constants::layer::IS_VISIBLE) == constants::layer::IS_VISIBLE;
-                layer.properties.is_locked = (flags & constants::layer::EDIT_LOCK) == constants::layer::EDIT_LOCK;
-                layer.properties.is_position_locked = (flags & constants::layer::POS_LOCK) == constants::layer::POS_LOCK;
-                layer.properties.has_alpha_channel = (flags & constants::layer::HAS_ALPHA) == constants::layer::HAS_ALPHA;
-                layer.properties.is_alpha_channel_locked = (flags & constants::layer::ALPHA_LOCKED) == constants::layer::ALPHA_LOCKED;
-            }
+            result.layers.push(layer);
+        }
+
+        text => {
+            log::warn!("unsupported chunk {text}");
+            return Ok(true);
         }
     }
 
@@ -833,15 +584,16 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
         write_compressed_chunk(&mut writer, "PALETTE", &pal_data)?;
     }
 
-    for (k, v) in buf.font_iter() {
+    for (slot, v) in buf.font_iter() {
         let mut font_data: Vec<u8> = Vec::new();
+        font_data.push(*slot as u8);
         write_utf8_encoded_string(&mut font_data, &v.name());
         font_data.extend(v.to_psf2_bytes().unwrap());
 
-        write_compressed_chunk(&mut writer, &format!("FONT_{k}"), &font_data)?;
+        write_compressed_chunk(&mut writer, &format!("FONT"), &font_data)?;
     }
 
-    for (i, layer) in buf.layers.iter().enumerate() {
+    for layer in &buf.layers {
         // Build layer data into a buffer first
         let mut layer_data = Vec::new();
         write_utf8_encoded_string(&mut layer_data, &layer.properties.title);
@@ -888,20 +640,14 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
             flags |= constants::layer::ALPHA_LOCKED;
         }
         layer_data.extend(u32::to_le_bytes(flags));
-        layer_data.push(layer.transparency);
 
         layer_data.extend(i32::to_le_bytes(layer.offset().x));
         layer_data.extend(i32::to_le_bytes(layer.offset().y));
 
-        layer_data.extend(i32::to_le_bytes(layer.width()));
-        layer_data.extend(i32::to_le_bytes(layer.height()));
-
         if matches!(layer.role, crate::Role::Image) {
             let sixel = &layer.sixels[0];
-
             // Encode sixel as PNG for better compression
             let png_data = encode_sixel_as_png(sixel)?;
-
             layer_data.extend(u64::to_le_bytes(png_data.len() as u64));
             layer_data.extend(i32::to_le_bytes(sixel.width()));
             layer_data.extend(i32::to_le_bytes(sixel.height()));
@@ -909,34 +655,20 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
             layer_data.extend(i32::to_le_bytes(sixel.horizontal_scale));
             layer_data.extend(&png_data);
         } else {
+            layer_data.push(layer.transparency);
+            layer_data.extend(i32::to_le_bytes(layer.width()));
+            layer_data.extend(i32::to_le_bytes(layer.height()));
             // Build char data
-            let mut char_data = Vec::new();
-
             for y in 0..layer.height() {
-                let real_length = get_invisible_line_length(layer, y);
-                for x in 0..real_length {
+                for x in 0..layer.width() {
                     let ch = layer.char_at((x, y).into());
-                    let attr = ch.attribute.attr;
-                    char_data.extend(u16::to_le_bytes(attr));
-                    if !ch.is_visible() {
-                        continue;
-                    }
-
-                    let (fg_u32, bg_u32, ext_attr) = encode_colors_to_legacy(ch.attribute.foreground_color(), ch.attribute.background_color());
-                    char_data.extend(u32::to_le_bytes(ch.ch as u32));
-                    char_data.extend(u32::to_le_bytes(fg_u32));
-                    char_data.extend(u32::to_le_bytes(bg_u32));
-                    char_data.push(ch.attribute.font_page() as u8);
-                    char_data.push(ext_attr);
+                    layer_data.extend((ch.ch as u32).to_le_bytes());
+                    TextAttribute::encode_attribute(&ch.attribute, &mut layer_data);
                 }
             }
-
-            layer_data.extend(u64::to_le_bytes(char_data.len() as u64));
-            layer_data.extend(char_data);
         }
-
         // Write the layer data with the configured ICED compression
-        let keyword = format!("LAYER_{i}");
+        let keyword = format!("LAYER");
         write_compressed_chunk(&mut writer, &keyword, &layer_data)?;
     }
 
@@ -967,19 +699,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
                 crate::TagRole::Displaycode => data.push(0),
                 crate::TagRole::Hyperlink => data.push(1),
             }
-            let attr = tag.attribute.attr;
-            data.extend(u16::to_le_bytes(attr));
-
-            let (fg_u32, bg_u32, ext_attr) = encode_colors_to_legacy(tag.attribute.foreground_color(), tag.attribute.background_color());
-            data.extend(u32::to_le_bytes(fg_u32));
-            data.extend(u32::to_le_bytes(bg_u32));
-            data.push(tag.attribute.font_page() as u8);
-            data.push(ext_attr);
-            // unused data for future use
-            data.extend(&[0, 0, 0, 0]);
-            data.extend(&[0, 0, 0, 0]);
-            data.extend(&[0, 0, 0, 0]);
-            data.extend(&[0, 0, 0, 0]);
+            TextAttribute::encode_attribute(&tag.attribute, &mut data);
         }
 
         write_compressed_chunk(&mut writer, "TAG", &data)?;
@@ -1006,24 +726,19 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
 }
 
 pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Result<TextScreen> {
-    if let Some(screen) = load_icy_draw_binary_chunks(data)? {
+    // Try v1 binary chunks first
+    if let Some(screen) = load_icy_draw_v1_binary_chunks(data)? {
         return Ok(screen);
     }
 
-    if let Some(screen) = super::icy_draw_v0::load_icy_draw_v0_base64_text_chunks(data)? {
-        return Ok(screen);
-    }
-
-    load_icy_draw_legacy_base64_text_chunks(data)
+    // Fall back to v0 loader
+    super::icy_draw_v0::load_icy_draw_v0(data)
 }
 
-fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
+fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
     result.layers.clear();
-
-    // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
-    let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
 
     // Compression and sixel format from ICED header
     let mut compression = constants::compression::NONE;
@@ -1066,7 +781,7 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
             bytes
         };
 
-        let keep_running = process_icy_draw_decoded_chunk(&keyword, actual_bytes, &mut result, &mut layer_resume_y, &mut compression, &mut sixel_format)?;
+        let keep_running = process_icy_draw_v1_decoded_chunk(&keyword, actual_bytes, &mut result, &mut compression, &mut sixel_format)?;
         if !keep_running {
             is_running = false;
             break;
@@ -1078,115 +793,6 @@ fn load_icy_draw_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     } else {
         Ok(Some(TextScreen::from_buffer(result)))
     }
-}
-
-// Legacy loader for older IcyDraw files that stored Base64 payloads in tEXt/zTXt chunks.
-fn load_icy_draw_legacy_base64_text_chunks(data: &[u8]) -> Result<TextScreen> {
-    let mut result = TextBuffer::new((80, 25));
-    result.terminal_state.is_terminal_buffer = false;
-    result.layers.clear();
-
-    // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
-    let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
-
-    // Legacy files have no compression
-    let mut compression = constants::compression::NONE;
-    let mut sixel_format = constants::sixel_format::RAW_RGBA;
-
-    let mut decoder = png::StreamingDecoder::new();
-    let mut len = 0;
-    let mut last_uncompressed_info = 0usize;
-    let mut last_compressed_info = 0usize;
-    let mut is_running = true;
-
-    while is_running {
-        match decoder.update(&data[len..], None) {
-            Ok((b, _)) => {
-                len += b;
-                if data.len() <= len {
-                    break;
-                }
-
-                let Some(info) = decoder.info() else {
-                    continue;
-                };
-
-                for i in last_uncompressed_info..info.uncompressed_latin1_text.len() {
-                    let chunk = &info.uncompressed_latin1_text[i];
-                    let text = chunk.text.as_str();
-
-                    let decoded = match general_purpose::STANDARD.decode(text) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            log::warn!("error decoding iced chunk: {e}");
-                            continue;
-                        }
-                    };
-
-                    let keep_running = process_icy_draw_decoded_chunk(
-                        chunk.keyword.as_str(),
-                        &decoded,
-                        &mut result,
-                        &mut layer_resume_y,
-                        &mut compression,
-                        &mut sixel_format,
-                    )?;
-                    if !keep_running {
-                        is_running = false;
-                        break;
-                    }
-                }
-                last_uncompressed_info = info.uncompressed_latin1_text.len();
-
-                if !is_running {
-                    break;
-                }
-
-                for i in last_compressed_info..info.compressed_latin1_text.len() {
-                    let chunk = &info.compressed_latin1_text[i];
-                    let Ok(text) = chunk.get_text() else {
-                        log::error!("error decoding iced chunk: {}", chunk.keyword);
-                        continue;
-                    };
-
-                    let decoded = match general_purpose::STANDARD.decode(text) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            log::warn!("error decoding iced chunk: {e}");
-                            continue;
-                        }
-                    };
-
-                    let keep_running = process_icy_draw_decoded_chunk(
-                        chunk.keyword.as_str(),
-                        &decoded,
-                        &mut result,
-                        &mut layer_resume_y,
-                        &mut compression,
-                        &mut sixel_format,
-                    )?;
-                    if !keep_running {
-                        is_running = false;
-                        break;
-                    }
-                }
-                last_compressed_info = info.compressed_latin1_text.len();
-            }
-            Err(err) => {
-                return Err(LoadingError::InvalidPng(format!("{err}")).into());
-            }
-        }
-    }
-
-    Ok(TextScreen::from_buffer(result))
-}
-
-fn get_invisible_line_length(layer: &Layer, y: i32) -> i32 {
-    let mut length = layer.width();
-    while length > 0 && !layer.char_at((length - 1, y).into()).is_visible() {
-        length -= 1;
-    }
-    length
 }
 
 fn read_utf8_encoded_string(data: &[u8]) -> Result<(String, usize)> {

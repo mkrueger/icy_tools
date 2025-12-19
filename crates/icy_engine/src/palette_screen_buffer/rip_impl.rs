@@ -28,7 +28,7 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
                 return;
             }
             buf.terminal_state_mut().set_text_window(x0.into(), y0.into(), x1.into(), y1.into());
-            buf.caret_mut().set_font_page(size.clamp(0, 4) as usize);
+            buf.caret_mut().set_font_page(size.clamp(0, 4) as u8);
             buf.set_caret_position((x0 as i32, y0 as i32).into());
         }
 

@@ -488,7 +488,7 @@ impl EditState {
     }
 
     /// Set the caret's font page
-    pub fn set_caret_font_page(&mut self, page: usize) {
+    pub fn set_caret_font_page(&mut self, page: u8) {
         self.screen.caret.set_font_page(page);
     }
 

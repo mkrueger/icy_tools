@@ -725,7 +725,7 @@ impl MainWindow {
                 let info = terminal_info_dialog::TerminalInfo {
                     buffer_size: terminal_state.size(),
                     screen_resolution: screen.resolution(),
-                    font_size: screen.font(caret.font_page()).map(|f| f.size()).unwrap_or_default(),
+                    font_size: screen.font(caret.font_page() as usize).map(|f| f.size()).unwrap_or_default(),
                     caret_position: caret.position(),
                     caret_visible: caret.visible,
                     caret_blinking: caret.blinking,

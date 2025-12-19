@@ -128,7 +128,7 @@ impl Screen for TextScreen {
     }
 
     fn font(&self, font_number: usize) -> Option<&BitFont> {
-        self.buffer.font(font_number)
+        self.buffer.font(font_number as u8)
     }
 
     fn font_count(&self) -> usize {
@@ -599,11 +599,11 @@ impl EditableScreen for TextScreen {
     }
 
     fn set_font(&mut self, font_number: usize, font: BitFont) {
-        self.buffer.set_font(font_number, font);
+        self.buffer.set_font(font_number as u8, font);
     }
 
     fn remove_font(&mut self, font_number: usize) -> Option<BitFont> {
-        self.buffer.remove_font(font_number)
+        self.buffer.remove_font(font_number as u8)
     }
 
     fn clear_font_table(&mut self) {

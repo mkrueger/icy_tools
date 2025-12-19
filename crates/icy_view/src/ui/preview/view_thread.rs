@@ -393,7 +393,7 @@ impl ViewThread {
             // Copy fonts
             editable.clear_font_table();
             for (i, font) in buffer.font_iter() {
-                editable.set_font(*i, font.clone());
+                editable.set_font(*i as usize, font.clone());
             }
 
             // Copy palette

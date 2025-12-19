@@ -123,15 +123,16 @@ impl FontSlotManagerDialog {
         let current_font_page = state.get_caret().font_page();
 
         // Determine font height from current font
-        let font_height = buffer.font(current_font_page).map(|f| f.size().height as u8).unwrap_or(16);
+        let font_height = buffer.font(current_font_page as u8).map(|f| f.size().height as u8).unwrap_or(16);
 
         // Build slot list: 0-42 (ANSI) + any custom slots from document
         let mut slots: Vec<usize> = (0..icy_engine::ANSI_FONTS).collect();
 
         // Add custom slots from document (> 42)
         for (slot, _) in buffer.font_iter() {
-            if *slot >= icy_engine::ANSI_FONTS && !slots.contains(slot) {
-                slots.push(*slot);
+            let slot_usize = *slot as usize;
+            if slot_usize >= icy_engine::ANSI_FONTS && !slots.contains(&slot_usize) {
+                slots.push(slot_usize);
             }
         }
         slots.sort();
@@ -141,13 +142,13 @@ impl FontSlotManagerDialog {
 
         // Initialize ANSI slots with defaults
         for slot in 0..icy_engine::ANSI_FONTS {
-            let default_font = BitFont::from_ansi_font_page(slot, font_height).cloned();
+            let default_font = BitFont::from_ansi_font_page(slot as u8, font_height).cloned();
             slot_fonts.insert(slot, default_font);
         }
 
         // Override with document fonts
         for (slot, font) in buffer.font_iter() {
-            slot_fonts.insert(*slot, Some(font.clone()));
+            slot_fonts.insert(*slot as usize, Some(font.clone()));
         }
 
         // Calculate content height
@@ -157,7 +158,7 @@ impl FontSlotManagerDialog {
             font_height,
             slots,
             slot_fonts,
-            active_slot: current_font_page,
+            active_slot: current_font_page as usize,
             viewport: RefCell::new(Viewport {
                 content_height,
                 ..Default::default()
@@ -177,7 +178,7 @@ impl FontSlotManagerDialog {
         }
 
         if let Some(Some(current)) = self.slot_fonts.get(&self.active_slot) {
-            if let Some(default) = BitFont::from_ansi_font_page(self.active_slot, self.font_height) {
+            if let Some(default) = BitFont::from_ansi_font_page(self.active_slot as u8, self.font_height) {
                 return current.name() != default.name();
             }
         }
@@ -413,7 +414,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                 let (font_name, is_empty, is_custom) = match self.dialog.slot_fonts.get(&slot) {
                     Some(Some(font)) => {
                         let is_ansi_default = if slot < icy_engine::ANSI_FONTS {
-                            BitFont::from_ansi_font_page(slot, self.dialog.font_height)
+                            BitFont::from_ansi_font_page(slot as u8, self.dialog.font_height)
                                 .map(|default| default.name() == font.name())
                                 .unwrap_or(false)
                         } else {
@@ -560,7 +561,7 @@ impl Dialog<Message> for FontSlotManagerDialog {
             }
             FontSlotManagerMessage::ResetSlot => {
                 if self.can_reset() {
-                    let default_font = BitFont::from_ansi_font_page(self.active_slot, self.font_height).cloned();
+                    let default_font = BitFont::from_ansi_font_page(self.active_slot as u8, self.font_height).cloned();
                     self.slot_fonts.insert(self.active_slot, default_font.clone());
                     Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(
                         AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::ResetSlot {

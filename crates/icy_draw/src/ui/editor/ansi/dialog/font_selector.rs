@@ -268,7 +268,7 @@ impl FontSelectorDialog {
         // Add ANSI fonts (if not in SAUCE-only mode)
         if !only_sauce_fonts {
             for slot in 0..icy_engine::ANSI_FONTS {
-                if let Some(ansi_font) = BitFont::from_ansi_font_page(slot, 16) {
+                if let Some(ansi_font) = BitFont::from_ansi_font_page(slot as u8, 16) {
                     let key = font_key(&ansi_font);
                     if let Some(&existing_idx) = font_key_map.get(&key) {
                         fonts[existing_idx].source.ansi_slot = Some(slot);
@@ -299,7 +299,7 @@ impl FontSelectorDialog {
                 current_font_size = (doc_font.size().width, doc_font.size().height);
             }
             if let Some(&existing_idx) = font_key_map.get(&key) {
-                fonts[existing_idx].source.document_slot = Some(*slot);
+                fonts[existing_idx].source.document_slot = Some(*slot as usize);
                 if *slot == current_font_page {
                     selected_index = existing_idx;
                 }
@@ -313,7 +313,7 @@ impl FontSelectorDialog {
                 fonts.push(FontEntry {
                     font: doc_font.clone(),
                     source: FontSource {
-                        document_slot: Some(*slot),
+                        document_slot: Some(*slot as usize),
                         ..Default::default()
                     },
                 });
@@ -347,7 +347,7 @@ impl FontSelectorDialog {
         }
 
         // Active slot is the current caret font page
-        let active_slot = current_font_page;
+        let active_slot = current_font_page as usize;
 
         let dialog = Self {
             format_mode,

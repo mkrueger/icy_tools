@@ -98,7 +98,7 @@ impl RightPanel {
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .expect("AnsiEditor screen should always be EditState");
-            Some(state.get_caret().font_page())
+            Some(state.get_caret().font_page() as usize)
         };
 
         // Use pane_grid for resizable split view (minimap + layers)

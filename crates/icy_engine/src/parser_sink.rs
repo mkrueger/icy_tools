@@ -64,18 +64,18 @@ impl<'a> ScreenSink<'a> {
         attr
     }
 
-    fn set_font_selection_success(&mut self, slot: usize) {
+    fn set_font_selection_success(&mut self, slot: u8) {
         self.screen.terminal_state_mut().font_selection_state = FontSelectionState::Success;
         self.screen.caret_mut().set_font_page(slot);
 
         if self.screen.caret().attribute.is_blinking() && self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot;
+            self.screen.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot as usize;
         } else if self.screen.caret().attribute.is_blinking() {
-            self.screen.terminal_state_mut().blink_attribute_font_slot = slot;
+            self.screen.terminal_state_mut().blink_attribute_font_slot = slot as usize;
         } else if self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_attribute_font_slot = slot;
+            self.screen.terminal_state_mut().high_intensity_attribute_font_slot = slot as usize;
         } else {
-            self.screen.terminal_state_mut().normal_attribute_font_slot = slot;
+            self.screen.terminal_state_mut().normal_attribute_font_slot = slot as usize;
         }
     }
 
@@ -130,7 +130,7 @@ impl<'a> ScreenSink<'a> {
                 let _ = on;
             }
             SgrAttribute::Font(font) => {
-                attr.set_font_page(font as usize);
+                attr.set_font_page(font);
             }
             SgrAttribute::Foreground(color) => {
                 match color {
@@ -641,16 +641,16 @@ impl<'a> CommandSink for ScreenSink<'a> {
 
             // Commands not yet fully mapped
             TerminalCommand::SetFontPage(page) => {
-                self.screen.caret_mut().set_font_page(page);
+                self.screen.caret_mut().set_font_page(page as u8);
             }
             TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
-                let nr = font_number as usize;
-                if self.screen().font(nr).is_some() {
+                let nr = font_number as u8;
+                if self.screen().font(nr as usize).is_some() {
                     self.set_font_selection_success(nr);
                 }
                 match BitFont::from_ansi_font_page(nr, self.screen().font_dimensions().height as u8) {
                     Some(font) => {
-                        self.screen_mut().set_font(nr, font.clone());
+                        self.screen_mut().set_font(nr as usize, font.clone());
                         self.set_font_selection_success(nr);
                     }
                     None => {

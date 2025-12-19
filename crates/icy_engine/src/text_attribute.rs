@@ -115,6 +115,78 @@ pub struct TextAttribute {
     pub attr: u16,
 }
 
+impl TextAttribute {
+    /// Decode AttributeColor from legacy wire format (ext_attr + u32 raw_color).
+    #[inline(always)]
+    fn decode_color(data: &[u8]) -> (&[u8], AttributeColor) {
+        match data[0] {
+            0 => (&data[1..], AttributeColor::Transparent),
+            1..=16 => (&data[1..], AttributeColor::Palette(data[0] - 1)),
+            17 => {
+                let p = data[1];
+                (&data[2..], AttributeColor::ExtendedPalette(p))
+            }
+            18 => {
+                let r = data[1];
+                let g = data[2];
+                let b = data[3];
+                (&data[4..], AttributeColor::Rgb(r, g, b))
+            }
+            _ => (&data[1..], AttributeColor::Transparent), // Fallback for unknown values
+        }
+    }
+
+    /// Encode AttributeColor to legacy wire format, returns (raw_u32, ext_attr_bits).
+    #[inline(always)]
+    fn encode_color(color: AttributeColor, data: &mut Vec<u8>) {
+        match color {
+            AttributeColor::Transparent => data.push(0),
+            AttributeColor::Palette(p) => data.push(1 + p as u8), // Palette colors 1-16
+            AttributeColor::ExtendedPalette(p) => {
+                data.push(17);
+                data.push(p);
+            }
+            AttributeColor::Rgb(r, g, b) => {
+                data.push(18);
+                data.push(r);
+                data.push(g);
+                data.push(b);
+            }
+        }
+    }
+
+    /// Decode a TextAttribute from bytes (10 bytes: fg:u32, bg:u32, font_page:u8, ext_attr:u8).
+    /// The attr:u16 field must be set separately on the returned TextAttribute.
+    #[inline(always)]
+    pub fn decode_attribute(bytes: &[u8]) -> (&[u8], Self) {
+        let (rest, foreground_color) = Self::decode_color(&bytes[0..]);
+        let (rest, background_color) = Self::decode_color(rest);
+        let font_page = rest[0];
+        let attr = rest[1] as u16 | (rest[2] as u16) << 8;
+        let rest = &rest[3..];
+
+        (
+            rest,
+            Self {
+                foreground_color,
+                background_color,
+                font_page,
+                attr,
+            },
+        )
+    }
+
+    /// Encode a TextAttribute to bytes (10 bytes: fg:u32, bg:u32, font_page:u8, ext_attr:u8).
+    /// The attr:u16 field must be written separately.
+    #[inline(always)]
+    pub fn encode_attribute(attr: &TextAttribute, data: &mut Vec<u8>) {
+        Self::encode_color(attr.foreground_color(), data);
+        Self::encode_color(attr.background_color(), data);
+        data.push(attr.font_page());
+        data.extend_from_slice(&u16::to_le_bytes(attr.attr));
+    }
+}
+
 impl std::fmt::Debug for TextAttribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextAttribute")
@@ -500,15 +572,15 @@ impl TextAttribute {
     // === Font page ===
 
     #[must_use]
-    pub fn font_page(&self) -> usize {
-        self.font_page as usize
+    pub fn font_page(&self) -> u8 {
+        self.font_page
     }
 
-    pub fn set_font_page(&mut self, page: usize) {
+    pub fn set_font_page(&mut self, page: u8) {
         self.font_page = page as u8;
     }
 
-    pub fn with_font_page(&self, font_page: usize) -> TextAttribute {
+    pub fn with_font_page(&self, font_page: u8) -> TextAttribute {
         TextAttribute {
             font_page: font_page as u8,
             ..*self

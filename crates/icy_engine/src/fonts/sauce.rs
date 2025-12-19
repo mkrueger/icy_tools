@@ -203,7 +203,7 @@ fn try_load_sauce_font(sauce_name: &str) -> Option<BitFont> {
             let mut font = match &mapping.source {
                 SauceFontSource::AnsiSlot(slot) => {
                     // Load ANSI font but rename it to the SAUCE name
-                    get_ansi_font(*slot, 16).cloned()
+                    get_ansi_font(*slot as u8, 16).cloned()
                 }
                 SauceFontSource::Dedicated(data) => BitFont::from_bytes(mapping.sauce_name, *data).ok(),
             };
