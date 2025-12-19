@@ -392,6 +392,132 @@ impl BitFontEditor {
         self.state.undo_stack_len()
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // MCP API Methods
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get list of all available character codes in the font
+    pub fn list_char_codes(&self) -> Vec<u32> {
+        // BitFonts support characters 0-255
+        (0u32..256).collect()
+    }
+
+    /// Get glyph data for a specific character code
+    ///
+    /// Returns GlyphData with base64-encoded bitmap (row-major, MSB first)
+    pub fn get_glyph_data(&self, code: u32) -> Result<crate::mcp::types::GlyphData, String> {
+        if code > 255 {
+            return Err(format!("Character code {} out of range (0-255)", code));
+        }
+        let ch = char::from_u32(code).ok_or_else(|| format!("Invalid character code: {}", code))?;
+        let pixels = self.state.get_glyph_pixels(ch);
+        let (width, height) = self.font_size();
+
+        // Convert bool grid to packed bits (row-major, MSB first)
+        let bytes_per_row = (width as usize + 7) / 8;
+        let mut bitmap = vec![0u8; bytes_per_row * height as usize];
+
+        for (y, row) in pixels.iter().enumerate() {
+            if y >= height as usize {
+                break;
+            }
+            for (x, &pixel) in row.iter().enumerate() {
+                if x >= width as usize {
+                    break;
+                }
+                if pixel {
+                    let byte_idx = y * bytes_per_row + x / 8;
+                    let bit_idx = 7 - (x % 8); // MSB first
+                    bitmap[byte_idx] |= 1 << bit_idx;
+                }
+            }
+        }
+
+        use base64::prelude::*;
+        let encoded = BASE64_STANDARD.encode(&bitmap);
+
+        // Get printable character representation if available
+        let char_str = if ch.is_ascii_graphic() || ch == ' ' { Some(ch.to_string()) } else { None };
+
+        Ok(crate::mcp::types::GlyphData {
+            code,
+            char: char_str,
+            width,
+            height,
+            bitmap: encoded,
+        })
+    }
+
+    /// Set glyph data for a specific character code
+    ///
+    /// Takes GlyphData with base64-encoded bitmap in row-major format, MSB first
+    pub fn set_glyph_data(&mut self, data: &crate::mcp::types::GlyphData) -> Result<(), String> {
+        if data.code > 255 {
+            return Err(format!("Character code {} out of range (0-255)", data.code));
+        }
+        let ch = char::from_u32(data.code).ok_or_else(|| format!("Invalid character code: {}", data.code))?;
+
+        use base64::prelude::*;
+        let bitmap = BASE64_STANDARD.decode(&data.bitmap).map_err(|e| format!("Invalid base64: {}", e))?;
+
+        let (font_width, font_height) = self.font_size();
+        if data.width != font_width || data.height != font_height {
+            return Err(format!(
+                "Glyph size {}x{} doesn't match font size {}x{}",
+                data.width, data.height, font_width, font_height
+            ));
+        }
+
+        let bytes_per_row = (data.width as usize + 7) / 8;
+        let expected_size = bytes_per_row * data.height as usize;
+        if bitmap.len() != expected_size {
+            return Err(format!(
+                "Bitmap size {} doesn't match expected {} ({}x{} at {} bytes/row)",
+                bitmap.len(),
+                expected_size,
+                data.width,
+                data.height,
+                bytes_per_row
+            ));
+        }
+
+        // Convert packed bits to bool grid
+        let mut pixels = vec![vec![false; data.width as usize]; data.height as usize];
+        for y in 0..data.height as usize {
+            for x in 0..data.width as usize {
+                let byte_idx = y * bytes_per_row + x / 8;
+                let bit_idx = 7 - (x % 8); // MSB first
+                pixels[y][x] = (bitmap[byte_idx] >> bit_idx) & 1 != 0;
+            }
+        }
+
+        // Use set_glyph_pixels which handles undo properly
+        self.state.set_glyph_pixels(ch, pixels).map_err(|e| format!("Failed to set glyph: {}", e))?;
+
+        self.invalidate_caches();
+        Ok(())
+    }
+
+    /// Get number of glyphs in the font (always 256 for BitFont)
+    pub fn glyph_count(&self) -> usize {
+        256
+    }
+
+    /// Get first character code (always 0 for BitFont)
+    pub fn first_char(&self) -> u32 {
+        0
+    }
+
+    /// Get last character code (always 255 for BitFont)
+    pub fn last_char(&self) -> u32 {
+        255
+    }
+
+    /// Get currently selected character code as u32 (for MCP API)
+    pub fn selected_char_code(&self) -> u32 {
+        self.state.selected_char() as u32
+    }
+
     /// Get session data for serialization
     pub fn get_session_data(&self) -> Option<icy_engine_edit::bitfont::BitFontSessionState> {
         Some(icy_engine_edit::bitfont::BitFontSessionState {

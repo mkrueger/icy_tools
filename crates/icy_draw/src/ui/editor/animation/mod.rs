@@ -907,6 +907,117 @@ impl AnimationEditor {
                 .into()
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MCP API methods
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get the script text (for MCP)
+    pub fn get_script_text(&self) -> String {
+        self.get_script()
+    }
+
+    /// Replace text in the script at given byte offset (for MCP)
+    pub fn replace_script_text(&mut self, offset: usize, length: usize, new_text: &str) {
+        let mut script = self.get_script();
+        let end = (offset + length).min(script.len());
+        script.replace_range(offset..end, new_text);
+
+        // Save current script for undo
+        self.push_undo_state();
+
+        // Update the content
+        self.script = text_editor::Content::with_text(&script);
+        self.schedule_recompile();
+        self.is_dirty = true;
+    }
+
+    /// Get script errors
+    pub fn get_errors(&self) -> Vec<String> {
+        let animator = self.animator.lock();
+        if animator.error.is_empty() { vec![] } else { vec![animator.error.clone()] }
+    }
+
+    /// Whether animation is playing
+    pub fn is_playing(&self) -> bool {
+        self.playback.is_playing
+    }
+
+    /// Get a rendered frame as text (for MCP)
+    pub fn get_frame_as_text(&self, frame: usize, format: &crate::mcp::types::ScreenCaptureFormat) -> Result<String, String> {
+        let animator = self.animator.lock();
+
+        if animator.frames.is_empty() {
+            return Err("No frames rendered. Run the animation first.".to_string());
+        }
+
+        let frame_idx = if frame == 0 { 0 } else { frame.saturating_sub(1) };
+
+        if frame_idx >= animator.frames.len() {
+            return Err(format!("Frame {} out of range. Animation has {} frames.", frame, animator.frames.len()));
+        }
+
+        let (screen, _monitor_settings, _delay) = &animator.frames[frame_idx];
+
+        // Convert screen to text using TextPane trait methods
+        let width = screen.width() as usize;
+        let height = screen.height() as usize;
+
+        let mut result = String::new();
+
+        match format {
+            crate::mcp::types::ScreenCaptureFormat::Text => {
+                // Plain text without colors
+                for y in 0..height {
+                    for x in 0..width {
+                        let ch = screen.char_at(icy_engine::Position::new(x as i32, y as i32));
+                        let c = if ch.ch == '\0' || ch.ch == ' ' { ' ' } else { ch.ch };
+                        result.push(c);
+                    }
+                    result.push('\n');
+                }
+            }
+            crate::mcp::types::ScreenCaptureFormat::Ansi => {
+                // ANSI escape codes
+                let mut last_fg = None;
+                let mut last_bg = None;
+
+                for y in 0..height {
+                    for x in 0..width {
+                        let ch = screen.char_at(icy_engine::Position::new(x as i32, y as i32));
+
+                        // Check if colors changed
+                        let fg = ch.attribute.foreground_color();
+                        let bg = ch.attribute.background_color();
+
+                        if last_fg != Some(fg) || last_bg != Some(bg) {
+                            // Emit ANSI color codes (simplified - using palette indices)
+                            let fg_idx = fg.as_palette_index().unwrap_or(7);
+                            let bg_idx = bg.as_palette_index().unwrap_or(0);
+                            result.push_str(&format!("\x1b[38;5;{}m\x1b[48;5;{}m", fg_idx, bg_idx));
+                            last_fg = Some(fg);
+                            last_bg = Some(bg);
+                        }
+
+                        let c = if ch.ch == '\0' { ' ' } else { ch.ch };
+                        result.push(c);
+                    }
+                    result.push_str("\x1b[0m\n"); // Reset at end of line
+                    last_fg = None;
+                    last_bg = None;
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Push current state to undo stack
+    fn push_undo_state(&mut self) {
+        let current = self.get_script();
+        self.undo_stack.push(current);
+        self.redo_stack.clear();
+    }
 }
 
 impl Default for AnimationEditor {

@@ -17,11 +17,13 @@ use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use lazy_static::lazy_static;
 use semver::Version;
 
+mod mcp;
 mod session;
 mod ui;
 mod util;
 mod window_manager;
 
+pub use mcp::McpCommand;
 pub use ui::settings::*;
 pub use window_manager::*;
 
@@ -81,6 +83,10 @@ pub struct Args {
     /// Path to file to open
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
+
+    /// Enable MCP server on specified port (e.g., --mcp-port 8080)
+    #[arg(long, value_name = "PORT")]
+    mcp_port: Option<u16>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -195,14 +201,38 @@ fn main() {
 
     log::info!("Starting iCY DRAW {}", *VERSION);
 
+    // Start MCP server if requested
+    let mcp_rx = if let Some(port) = args.mcp_port {
+        let (mcp_server, command_rx) = mcp::McpServer::new();
+        let mcp_server = std::sync::Arc::new(mcp_server);
+        let mcp_clone = mcp_server.clone();
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                if let Err(e) = mcp_clone.start(port).await {
+                    log::error!("MCP server error: {}", e);
+                }
+            });
+        });
+
+        log::info!("MCP server started on port {}", port);
+        Some(parking_lot::Mutex::new(Some(command_rx)))
+    } else {
+        None
+    };
+
     iced::daemon(
         move || {
             let font_library = FontLibrary::create_shared();
 
+            // Take the MCP receiver if available
+            let mcp_receiver = mcp_rx.as_ref().and_then(|mutex| mutex.lock().take());
+
             if let Some(ref path) = args.path {
-                WindowManager::with_path(font_library, path.clone())
+                WindowManager::with_path(font_library, path.clone(), mcp_receiver)
             } else {
-                WindowManager::new(font_library)
+                WindowManager::new(font_library, mcp_receiver)
             }
         },
         WindowManager::update,

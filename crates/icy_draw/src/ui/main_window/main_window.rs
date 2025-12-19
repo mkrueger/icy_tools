@@ -2116,6 +2116,321 @@ impl MainWindow {
 
         (None, Task::none())
     }
+
+    /// Handle MCP commands from the automation server
+    pub fn handle_mcp_command(&mut self, cmd: &crate::mcp::McpCommand) {
+        use crate::mcp::McpCommand;
+
+        match cmd {
+            McpCommand::GetHelp { editor_type, response } => {
+                let doc = match editor_type.as_deref() {
+                    Some("animation") => include_str!("../../../doc/ANIMATION.md"),
+                    Some("bitfont") => include_str!("../../../doc/BITFONT.md"),
+                    _ => include_str!("../../../doc/HELP.md"),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(doc.to_string());
+                }
+            }
+
+            McpCommand::GetStatus(response) => {
+                let status = self.build_editor_status();
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(status);
+                }
+            }
+
+            McpCommand::NewDocument { doc_type, response } => {
+                let result = match doc_type.as_str() {
+                    "ansi" => {
+                        self.mode_state = ModeState::Ansi(AnsiEditorMainArea::new(self.options.clone(), self.font_library.clone()));
+                        self.last_save = 0;
+                        self.update_title();
+                        Ok(())
+                    }
+                    "animation" => {
+                        self.mode_state = ModeState::Animation(AnimationEditor::new());
+                        self.last_save = 0;
+                        self.update_title();
+                        Ok(())
+                    }
+                    "bitfont" => {
+                        self.mode_state = ModeState::BitFont(BitFontEditor::new());
+                        self.last_save = 0;
+                        self.update_title();
+                        Ok(())
+                    }
+                    "charfont" => {
+                        self.mode_state = ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(
+                            self.options.clone(),
+                            self.font_library.clone(),
+                        ));
+                        self.last_save = 0;
+                        self.update_title();
+                        Ok(())
+                    }
+                    _ => Err(format!("Unknown document type: {}", doc_type)),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::LoadDocument { path, response } => {
+                let path_buf = PathBuf::from(path);
+                let result = self.load_file_internal(&path_buf);
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::Save(response) => {
+                let result = if let Some(path) = self.file_path().cloned() {
+                    match self.mode_state.save(&path) {
+                        Ok(()) => {
+                            self.mark_saved();
+                            Ok(())
+                        }
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    Err("No file path set. Use save_as or provide a path.".to_string())
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::Undo(response) => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => {
+                        editor.with_edit_state(|state| {
+                            if let Err(e) = state.undo() {
+                                log::error!("MCP Undo failed: {}", e);
+                            }
+                        });
+                        editor.sync_ui();
+                        Ok(())
+                    }
+                    ModeState::BitFont(editor) => {
+                        editor.undo();
+                        Ok(())
+                    }
+                    ModeState::CharFont(_editor) => {
+                        // CharFont doesn't have direct undo support yet
+                        Ok(())
+                    }
+                    ModeState::Animation(_editor) => {
+                        // Animation uses text_editor's built-in undo
+                        Ok(())
+                    }
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::Redo(response) => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => {
+                        editor.with_edit_state(|state| {
+                            if let Err(e) = state.redo() {
+                                log::error!("MCP Redo failed: {}", e);
+                            }
+                        });
+                        editor.sync_ui();
+                        Ok(())
+                    }
+                    ModeState::BitFont(editor) => {
+                        editor.redo();
+                        Ok(())
+                    }
+                    ModeState::CharFont(_editor) => {
+                        // CharFont doesn't have direct redo support yet
+                        Ok(())
+                    }
+                    ModeState::Animation(_editor) => {
+                        // Animation uses text_editor's built-in redo
+                        Ok(())
+                    }
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            // Animation-specific commands
+            McpCommand::AnimationGetText { offset, length, response } => {
+                let result = match &self.mode_state {
+                    ModeState::Animation(editor) => {
+                        let text = editor.get_script_text();
+                        let start = offset.unwrap_or(0);
+                        let len = length.unwrap_or(text.len().saturating_sub(start));
+                        let end = (start + len).min(text.len());
+                        Ok(text[start..end].to_string())
+                    }
+                    _ => Err("Not in animation editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnimationReplaceText {
+                offset,
+                length,
+                text,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Animation(editor) => {
+                        editor.replace_script_text(*offset, *length, text);
+                        Ok(())
+                    }
+                    _ => Err("Not in animation editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnimationGetScreen { frame, format, response } => {
+                let result = match &self.mode_state {
+                    ModeState::Animation(editor) => editor.get_frame_as_text(*frame, format),
+                    _ => Err("Not in animation editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            // BitFont-specific commands
+            McpCommand::BitFontListChars(response) => {
+                let result = match &self.mode_state {
+                    ModeState::BitFont(editor) => Ok(editor.list_char_codes()),
+                    _ => Err("Not in bitfont editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::BitFontGetChar { code, response } => {
+                let result = match &self.mode_state {
+                    ModeState::BitFont(editor) => editor.get_glyph_data(*code),
+                    _ => Err("Not in bitfont editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::BitFontSetChar { data, response, .. } => {
+                let result = match &mut self.mode_state {
+                    ModeState::BitFont(editor) => editor.set_glyph_data(data),
+                    _ => Err("Not in bitfont editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+        }
+    }
+
+    /// Build editor status for MCP get_status command
+    fn build_editor_status(&self) -> crate::mcp::types::EditorStatus {
+        use crate::mcp::types::{AnimationStatus, BitFontStatus, EditorStatus};
+
+        let editor = match &self.mode_state {
+            ModeState::Ansi(_) => "ansi",
+            ModeState::BitFont(_) => "bitfont",
+            ModeState::CharFont(_) => "charfont",
+            ModeState::Animation(_) => "animation",
+        };
+
+        let file = self.file_path().map(|p| p.display().to_string());
+        let dirty = self.is_modified();
+
+        let animation = if let ModeState::Animation(editor) = &self.mode_state {
+            Some(AnimationStatus {
+                text_length: editor.get_script_text().len(),
+                frame_count: editor.frame_count(),
+                errors: editor.get_errors(),
+                is_playing: editor.is_playing(),
+                current_frame: editor.current_frame(),
+            })
+        } else {
+            None
+        };
+
+        let bitfont = if let ModeState::BitFont(editor) = &self.mode_state {
+            let (width, height) = editor.font_size();
+            Some(BitFontStatus {
+                glyph_width: width,
+                glyph_height: height,
+                glyph_count: editor.glyph_count(),
+                first_char: editor.first_char(),
+                last_char: editor.last_char(),
+                selected_char: editor.selected_char_code(),
+            })
+        } else {
+            None
+        };
+
+        EditorStatus {
+            editor: editor.to_string(),
+            file,
+            dirty,
+            animation,
+            bitfont,
+        }
+    }
+
+    /// Internal method to load a file (used by MCP and regular file loading)
+    fn load_file_internal(&mut self, path: &PathBuf) -> Result<(), String> {
+        let format = icy_engine::formats::FileFormat::from_path(path);
+
+        match format {
+            Some(icy_engine::formats::FileFormat::BitFont(_)) => match BitFontEditor::from_file(path.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::BitFont(editor);
+                    self.last_save = self.mode_state.undo_stack_len();
+                    self.update_title();
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+            Some(icy_engine::formats::FileFormat::IcyAnim) => match AnimationEditor::load_file(path.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::Animation(editor);
+                    self.last_save = self.mode_state.undo_stack_len();
+                    self.update_title();
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+            Some(icy_engine::formats::FileFormat::CharacterFont(_)) => {
+                match crate::ui::editor::charfont::CharFontEditor::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
+                    Ok(editor) => {
+                        self.mode_state = ModeState::CharFont(editor);
+                        self.last_save = self.mode_state.undo_stack_len();
+                        self.update_title();
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("{}", e)),
+                }
+            }
+            _ => match AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
+                Ok(editor) => {
+                    self.mode_state = ModeState::Ansi(editor);
+                    self.last_save = self.mode_state.undo_stack_len();
+                    self.update_title();
+                    Ok(())
+                }
+                Err(e) => Err(format!("{}", e)),
+            },
+        }
+    }
 }
 
 // Implement the Window trait for use with shared WindowManager helpers

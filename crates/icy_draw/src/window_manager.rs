@@ -8,9 +8,11 @@ use std::time::{Duration, Instant};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::RwLock;
+use tokio::sync::mpsc as tokio_mpsc;
 
 use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
 
+use crate::mcp::McpCommand;
 use crate::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
 use crate::ui::{MainWindow, main_window::commands::create_draw_commands};
 use crate::{Settings, SharedFontLibrary, load_window_icon};
@@ -74,6 +76,8 @@ pub struct WindowManager {
     /// Tick counter for periodic session save
     session_save_counter: u64,
     commands: WindowCommands,
+    /// MCP command receiver (optional)
+    mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +103,8 @@ pub enum WindowManagerMessage {
     AutosaveTick,
     /// Debounced session-save tick
     SessionSaveTick,
+    /// MCP command received from automation server
+    McpCommand(Arc<McpCommand>),
 }
 
 fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
@@ -144,7 +150,7 @@ fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
 impl WindowManager {
     /// Create a new WindowManager, restoring session if available
 
-    pub fn new(font_library: SharedFontLibrary) -> (Self, Task<WindowManagerMessage>) {
+    pub fn new(font_library: SharedFontLibrary, mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
         let session_save_tx = start_session_save_worker();
         let options = Settings::load();
@@ -153,15 +159,19 @@ impl WindowManager {
         // Try to restore session
         if let Some(session) = session_manager.load_session() {
             log::info!("Restoring session with {} windows", session.windows.len());
-            return Self::restore_session(font_library, session, session_manager, options, commands);
+            return Self::restore_session(font_library, session, session_manager, options, commands, mcp_rx);
         }
 
         // No session - open default window
-        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, None)
+        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, None, mcp_rx)
     }
 
     /// Create WindowManager with a specific file (CLI argument - starts fresh session)
-    pub fn with_path(font_library: SharedFontLibrary, path: PathBuf) -> (Self, Task<WindowManagerMessage>) {
+    pub fn with_path(
+        font_library: SharedFontLibrary,
+        path: PathBuf,
+        mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
+    ) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
         let session_save_tx = start_session_save_worker();
         // Clear any existing session when opening via CLI
@@ -170,7 +180,7 @@ impl WindowManager {
         let options = Settings::load();
         let commands = WindowCommands::new();
 
-        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, Some(path))
+        Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, Some(path), mcp_rx)
     }
 
     /// Restore a session from saved state
@@ -180,6 +190,7 @@ impl WindowManager {
         session_manager: SessionManager,
         options: Settings,
         commands: WindowCommands,
+        mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
     ) -> (Self, Task<WindowManagerMessage>) {
         // Convert all window states to restore info
         let mut pending_restores: Vec<WindowRestoreInfo> = session.windows.into_iter().map(|ws| ws.to_restore_info()).collect();
@@ -223,6 +234,7 @@ impl WindowManager {
             restoring_session: true,
             session_save_counter: 0,
             commands,
+            mcp_rx,
         };
 
         // Store first window info for later
@@ -241,6 +253,7 @@ impl WindowManager {
         options: Settings,
         commands: WindowCommands,
         path: Option<PathBuf>,
+        mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
     ) -> (Self, Task<WindowManagerMessage>) {
         let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
         let settings = window::Settings {
@@ -277,6 +290,7 @@ impl WindowManager {
                 restoring_session: false,
                 session_save_counter: 0,
                 commands,
+                mcp_rx,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )
@@ -380,10 +394,13 @@ impl WindowManager {
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
-        match message {
+        // Poll for MCP commands on every update cycle
+        let mcp_task = self.poll_mcp_commands();
+
+        let main_task = match message {
             WindowManagerMessage::OpenWindow => {
                 let Some(last_window) = self.windows.keys().last() else {
-                    return Task::none();
+                    return Task::batch([mcp_task]);
                 };
 
                 window::position(*last_window)
@@ -679,7 +696,17 @@ impl WindowManager {
                 }
                 Task::none()
             }
-        }
+
+            WindowManagerMessage::McpCommand(cmd) => {
+                // Route MCP commands to the active window
+                if let Some((_window_id, window)) = self.windows.iter_mut().next() {
+                    window.handle_mcp_command(&cmd);
+                }
+                Task::none()
+            }
+        };
+
+        Task::batch([main_task, mcp_task])
     }
 
     /// Save session and close the last window
@@ -768,5 +795,23 @@ impl WindowManager {
         }
 
         Subscription::batch(subs)
+    }
+
+    /// Poll MCP commands from the receiver (called from update)
+    pub fn poll_mcp_commands(&mut self) -> Task<WindowManagerMessage> {
+        if let Some(ref mut rx) = self.mcp_rx {
+            // Try to receive without blocking
+            match rx.try_recv() {
+                Ok(cmd) => {
+                    return Task::done(WindowManagerMessage::McpCommand(Arc::new(cmd)));
+                }
+                Err(tokio_mpsc::error::TryRecvError::Empty) => {}
+                Err(tokio_mpsc::error::TryRecvError::Disconnected) => {
+                    log::warn!("MCP channel disconnected");
+                    self.mcp_rx = None;
+                }
+            }
+        }
+        Task::none()
     }
 }

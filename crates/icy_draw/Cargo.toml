@@ -99,6 +99,11 @@ open = { workspace = true }
 # Clipboard
 clipboard-rs = { workspace = true }
 
+# MCP (rmcp + HTTP server)
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+axum = "0.8"
+schemars = "1.0"
+
 [features]
 default = []
 
