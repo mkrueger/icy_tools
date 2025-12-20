@@ -2215,8 +2215,9 @@ impl AnsiEditorCore {
                         let rect = sel.as_rectangle();
                         let x = rect.left() as f32 * font_width;
                         let y = rect.top() as f32 * font_height;
-                        let w = (rect.width() + 1) as f32 * font_width;
-                        let h = (rect.height() + 1) as f32 * font_height;
+                        // Selection.size() already returns inclusive dimensions (+1), no need to add again
+                        let w = rect.width() as f32 * font_width;
+                        let h = rect.height() as f32 * font_height;
                         (x, y, w, h)
                     });
 
@@ -2226,8 +2227,9 @@ impl AnsiEditorCore {
                     let rect = sel.as_rectangle();
                     let x = rect.left() as f32 * font_width;
                     let y = rect.top() as f32 * font_height;
-                    let w = (rect.width() + 1) as f32 * font_width;
-                    let h = (rect.height() + 1) as f32 * font_height;
+                    // Selection.size() already returns inclusive dimensions (+1), no need to add again
+                    let w = rect.width() as f32 * font_width;
+                    let h = rect.height() as f32 * font_height;
 
                     (Some((x, y, w, h)), selection_color, None)
                 } else {

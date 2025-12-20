@@ -1016,7 +1016,7 @@ mod tests {
                 let pos = Position::new(x, y);
                 let ch = state.get_buffer().char_at(pos);
 
-                if rect.is_inside_inclusive(pos) {
+                if rect.is_inside(pos) {
                     assert_eq!(ch.ch, ' ');
                 } else {
                     assert_eq!(ch.ch, '#');
@@ -1044,7 +1044,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -1093,7 +1093,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -1142,7 +1142,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -1192,7 +1192,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
@@ -1240,7 +1240,7 @@ mod tests {
             }
         }
 
-        state.set_selection(Rectangle::from(0, 0, 9, 9)).unwrap();
+        state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();
         state.erase_selection().unwrap();
 
         state.set_selection(Rectangle::from(0, 0, 10, 10)).unwrap();

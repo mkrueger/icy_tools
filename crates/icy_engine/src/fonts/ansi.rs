@@ -33,6 +33,7 @@ pub const ANSI_SLOT_COUNT: usize = 43;
 
 /// Default Font Name (Slot 0)
 pub const DEFAULT_FONT_NAME: &str = "Codepage 437 English";
+pub const ALT_DEFAULT_FONT_NAME: &str = "IBM VGA";
 
 /// CP437 raw bytes for direct access (Slot 0, 16px)
 pub const CP437: &[u8] = include_bytes!("../../data/fonts/ansi/00-Codepage_437_English.f16");

@@ -245,11 +245,11 @@ impl Rectangle {
     }
 
     pub fn contains(&self, x: i32, y: i32) -> bool {
-        self.start.x <= x && x <= self.start.x + self.size.width && self.start.y <= y && y <= self.start.y + self.size.height
+        self.start.x <= x && x < self.start.x + self.size.width && self.start.y <= y && y < self.start.y + self.size.height
     }
 
     pub fn contains_pt(&self, point: Position) -> bool {
-        self.start.x <= point.x && point.x <= self.start.x + self.size.width && self.start.y <= point.y && point.y <= self.start.y + self.size.height
+        self.start.x <= point.x && point.x < self.start.x + self.size.width && self.start.y <= point.y && point.y < self.start.y + self.size.height
     }
 
     pub fn contains_rect(&self, other: &Rectangle) -> bool {
@@ -343,9 +343,12 @@ impl Rectangle {
         self.start.x <= pos.x && self.start.y <= pos.y && pos.x < self.start.x + self.size.width && pos.y < self.start.y + self.size.height
     }
 
+    /// Check if position is inside the rectangle (inclusive of the last row/column).
+    /// This is for backward compatibility with code that expects inclusive bounds.
+    /// For new code, prefer using is_inside() which uses exclusive bounds.
     pub fn is_inside_inclusive(&self, pos: impl Into<Position>) -> bool {
         let pos = pos.into();
-        self.start.x <= pos.x && self.start.y <= pos.y && pos.x <= self.start.x + self.size.width && pos.y <= self.start.y + self.size.height
+        self.start.x <= pos.x && self.start.y <= pos.y && pos.x < self.start.x + self.size.width && pos.y < self.start.y + self.size.height
     }
 }
 
