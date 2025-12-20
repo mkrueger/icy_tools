@@ -62,7 +62,7 @@ pub use tag::{TagTool, TagToolState};
 use iced::Element;
 use iced::widget::{column, text};
 use icy_engine::Position;
-use icy_engine::{BitFont, Palette};
+use icy_engine::{BitFont, Palette, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
 use icy_engine_edit::tools::Tool;
@@ -301,14 +301,6 @@ pub enum ToolMessage {
     PasteToggleTransparent,
     PasteAnchor,
     PasteCancel,
-
-    // === Pipette Tool ===
-    /// Take foreground color
-    PipetteTakeForeground(bool),
-    /// Take background color
-    PipetteTakeBackground(bool),
-    /// Take character
-    PipetteTakeChar(bool),
 }
 
 // ============================================================================
@@ -361,6 +353,305 @@ pub struct ToolContext<'a> {
 // ============================================================================
 // Tool Handler Trait
 // ============================================================================
+
+// ============================================================================
+// Shared Navigation/Selection Helpers
+// ============================================================================
+
+/// Result of handling a navigation key event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavResult {
+    /// Event was not handled
+    NotHandled,
+    /// Event was handled, redraw needed
+    Redraw,
+    /// Event was handled, commit with message
+    Commit(&'static str),
+}
+
+impl NavResult {
+    /// Convert to ToolResult
+    pub fn to_tool_result(self) -> ToolResult {
+        match self {
+            NavResult::NotHandled => ToolResult::None,
+            NavResult::Redraw => ToolResult::Redraw,
+            NavResult::Commit(msg) => ToolResult::Commit(msg.to_string()),
+        }
+    }
+
+    /// Check if the event was handled
+    pub fn is_handled(self) -> bool {
+        !matches!(self, NavResult::NotHandled)
+    }
+}
+
+/// Handle common navigation and selection keyboard events.
+///
+/// This covers:
+/// - Arrow keys (with Shift for selection extension)
+/// - Home/End (with Shift for selection)
+/// - PageUp/PageDown (with Shift for selection)
+/// - Delete key
+/// - Tab/Shift+Tab
+/// - Insert (toggle insert mode)
+///
+/// Does NOT handle: Backspace, Enter, Space, character input (tool-specific).
+pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> NavResult {
+    use iced::keyboard::key::Named;
+
+    let iced::keyboard::Key::Named(named) = key else {
+        return NavResult::NotHandled;
+    };
+
+    match named {
+        Named::ArrowUp => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(0, -1);
+            } else {
+                ctx.state.move_caret_up(1);
+            }
+            NavResult::Redraw
+        }
+        Named::ArrowDown => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(0, 1);
+            } else {
+                ctx.state.move_caret_down(1);
+            }
+            NavResult::Redraw
+        }
+        Named::ArrowLeft => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(-1, 0);
+            } else {
+                ctx.state.move_caret_left(1);
+            }
+            NavResult::Redraw
+        }
+        Named::ArrowRight => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(1, 0);
+            } else {
+                ctx.state.move_caret_right(1);
+            }
+            NavResult::Redraw
+        }
+        Named::Home => {
+            if modifiers.shift() {
+                let cur_x = ctx.state.get_caret().x;
+                ctx.state.extend_selection(-cur_x, 0);
+            } else {
+                ctx.state.set_caret_x(0);
+            }
+            NavResult::Redraw
+        }
+        Named::End => {
+            let width = ctx.state.get_buffer().width();
+            if modifiers.shift() {
+                let cur_x = ctx.state.get_caret().x;
+                let dx = width.saturating_sub(1) - cur_x;
+                ctx.state.extend_selection(dx, 0);
+            } else {
+                ctx.state.set_caret_x(width.saturating_sub(1));
+            }
+            NavResult::Redraw
+        }
+        Named::PageUp => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(0, -24);
+            } else {
+                ctx.state.move_caret_up(24);
+            }
+            NavResult::Redraw
+        }
+        Named::PageDown => {
+            if modifiers.shift() {
+                ctx.state.extend_selection(0, 24);
+            } else {
+                ctx.state.move_caret_down(24);
+            }
+            NavResult::Redraw
+        }
+        Named::Delete => {
+            let _ = if ctx.state.is_something_selected() {
+                ctx.state.erase_selection()
+            } else {
+                ctx.state.delete_key()
+            };
+            NavResult::Commit("Delete")
+        }
+        Named::Tab => {
+            if modifiers.shift() {
+                ctx.state.handle_reverse_tab();
+            } else {
+                ctx.state.handle_tab();
+            }
+            NavResult::Redraw
+        }
+        Named::Insert => {
+            ctx.state.toggle_insert_mode();
+            NavResult::Redraw
+        }
+        _ => NavResult::NotHandled,
+    }
+}
+
+// ============================================================================
+// Shared Selection Mouse State
+// ============================================================================
+
+use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
+use icy_engine::Selection;
+
+/// Shared state for mouse-based selection handling.
+///
+/// Used by Click tool and Font tool for consistent selection behavior.
+#[derive(Default)]
+pub struct SelectionMouseState {
+    /// Current selection drag mode
+    pub selection_drag: SelectionDrag,
+    /// Hover drag mode (for cursor icon)
+    pub hover_drag: SelectionDrag,
+    /// Start position of selection drag
+    pub selection_start_pos: Option<Position>,
+    /// Current position during selection drag
+    pub selection_cur_pos: Option<Position>,
+    /// Selection rectangle at start of drag
+    pub selection_start_rect: Option<icy_engine::Rectangle>,
+    /// Atomic undo guard for selection operations
+    pub selection_undo: Option<AtomicUndoGuard>,
+}
+
+impl SelectionMouseState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reset all selection drag state.
+    pub fn cancel(&mut self) {
+        self.selection_drag = SelectionDrag::None;
+        self.hover_drag = SelectionDrag::None;
+        self.selection_start_pos = None;
+        self.selection_cur_pos = None;
+        self.selection_start_rect = None;
+        self.selection_undo = None;
+    }
+
+    /// Handle mouse move for hover cursor updates.
+    pub fn handle_move(&mut self, selection: Option<Selection>, pos: Position) {
+        self.hover_drag = hit_test_selection(selection, pos);
+    }
+
+    /// Handle mouse press to start selection drag.
+    ///
+    /// Returns `true` if a selection operation was started.
+    pub fn handle_press(&mut self, ctx: &mut ToolContext, pos: Position) -> bool {
+        let current_selection = ctx.state.selection();
+        let hit = hit_test_selection(current_selection, pos);
+
+        if hit != SelectionDrag::None {
+            // Start move/resize of existing selection
+            self.selection_drag = hit;
+            self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
+        } else {
+            // Start new selection + position caret
+            let _ = ctx.state.clear_selection();
+            ctx.state.set_caret_from_document_position(pos);
+            self.selection_drag = SelectionDrag::Create;
+            self.selection_start_rect = None;
+        }
+
+        self.selection_start_pos = Some(pos);
+        self.selection_cur_pos = Some(pos);
+        self.hover_drag = SelectionDrag::None;
+        self.selection_undo = Some(ctx.state.begin_atomic_undo("Selection"));
+
+        true
+    }
+
+    /// Handle mouse drag to update selection.
+    ///
+    /// Returns `true` if the selection was updated.
+    pub fn handle_drag(&mut self, ctx: &mut ToolContext, pos: Position) -> bool {
+        if self.selection_drag == SelectionDrag::None {
+            return false;
+        }
+
+        self.selection_cur_pos = Some(pos);
+
+        let Some(start_pos) = self.selection_start_pos else {
+            return false;
+        };
+
+        if self.selection_drag == SelectionDrag::Create {
+            let selection = Selection {
+                anchor: start_pos,
+                lead: pos,
+                locked: false,
+                shape: icy_engine::Shape::Rectangle,
+                add_type: icy_engine::AddType::Default,
+            };
+            let _ = ctx.state.set_selection(selection);
+            return true;
+        }
+
+        let Some(start_rect) = self.selection_start_rect else {
+            return false;
+        };
+
+        let params = DragParameters {
+            start_rect,
+            start_pos,
+            cur_pos: pos,
+        };
+
+        if let Some(new_rect) = compute_dragged_selection(self.selection_drag, params) {
+            let mut selection = Selection::from(new_rect);
+            selection.add_type = icy_engine::AddType::Default;
+            let _ = ctx.state.set_selection(selection);
+            return true;
+        }
+
+        false
+    }
+
+    /// Handle mouse release to finalize selection.
+    ///
+    /// Returns `true` if a selection was finalized or cleared.
+    pub fn handle_release(&mut self, ctx: &mut ToolContext, end_pos: Option<Position>) -> bool {
+        if self.selection_drag == SelectionDrag::None {
+            return false;
+        }
+
+        // For Create mode: click without drag clears selection
+        if self.selection_drag == SelectionDrag::Create {
+            if let (Some(start), Some(end)) = (self.selection_start_pos, end_pos) {
+                if start == end {
+                    let _ = ctx.state.clear_selection();
+                }
+            }
+        }
+
+        self.cancel();
+        true
+    }
+
+    /// Get the cursor interaction for the current state.
+    pub fn cursor(&self) -> Option<iced::mouse::Interaction> {
+        if self.selection_drag != SelectionDrag::None {
+            self.selection_drag.to_cursor_interaction()
+        } else if self.hover_drag != SelectionDrag::None {
+            self.hover_drag.to_cursor_interaction()
+        } else {
+            None
+        }
+    }
+
+    /// Check if a selection drag is active.
+    pub fn is_dragging(&self) -> bool {
+        self.selection_drag != SelectionDrag::None
+    }
+}
 
 /// Trait for tool-specific behavior.
 ///

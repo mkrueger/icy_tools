@@ -109,6 +109,15 @@ impl FontTarget for TdfEditStateRenderer<'_> {
         Ok(())
     }
 
+    fn skip(&mut self) -> std::result::Result<(), Self::Error> {
+        self.cur_x += 1;
+        // Track the maximum X position reached
+        if self.cur_x > self.max_x {
+            self.max_x = self.cur_x;
+        }
+        Ok(())
+    }
+
     fn next_line(&mut self) -> std::result::Result<(), Self::Error> {
         self.cur_y += 1;
         self.cur_x = self.start_x;

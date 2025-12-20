@@ -51,7 +51,6 @@ command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     // Selection
     selection_cmd::SELECT_NONE => Message::Deselect,
     selection_cmd::SELECT_INVERSE => Message::AnsiEditor(AnsiEditorMessage::InverseSelection),
-    selection_cmd::SELECT_ERASE => Message::DeleteSelection,
     selection_cmd::SELECT_FLIP_X => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)),
     selection_cmd::SELECT_FLIP_Y => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)),
     selection_cmd::SELECT_CROP => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)),
@@ -293,7 +292,6 @@ pub enum Message {
     Paste,
     SelectAll,
     Deselect,
-    DeleteSelection,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // View operations
@@ -419,7 +417,6 @@ command_handlers! {
     fn handle_main_window_command() -> Option<Message> {
         cmd::EDIT_UNDO => Message::Undo,
         cmd::EDIT_REDO => Message::Redo,
-        cmd::EDIT_DELETE => Message::DeleteSelection,
         cmd::FILE_NEW => Message::NewFile,
         cmd::FILE_OPEN => Message::OpenFile,
         cmd::FILE_SAVE => Message::SaveFile,
@@ -1419,18 +1416,6 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::DeleteSelection => {
-                if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor
-                        .update(
-                            AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteSelection),
-                            &mut self.dialogs,
-                            &self.plugins,
-                        )
-                        .map(Message::AnsiEditor);
-                }
-                Task::none()
-            }
 
             // ═══════════════════════════════════════════════════════════════════
             // View operations
@@ -2077,12 +2062,9 @@ impl MainWindow {
                 let undo_desc = editor.undo_description();
                 let redo_desc = editor.redo_description();
                 let mirror_mode = editor.mirror_mode();
-                if let Some(msg) = crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(
-                    event,
-                    undo_desc.as_deref(),
-                    redo_desc.as_deref(),
-                    mirror_mode,
-                ) {
+                if let Some(msg) =
+                    crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref(), mirror_mode)
+                {
                     return (Some(msg), Task::none());
                 }
             }

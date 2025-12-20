@@ -47,6 +47,11 @@ impl FontTarget for TdfBufferRenderer<'_> {
         Ok(())
     }
 
+    fn skip(&mut self) -> std::result::Result<(), Self::Error> {
+        self.cur_x += 1;
+        Ok(())
+    }
+
     fn next_line(&mut self) -> std::result::Result<(), Self::Error> {
         self.cur_y += 1;
         self.cur_x = self.start_x;

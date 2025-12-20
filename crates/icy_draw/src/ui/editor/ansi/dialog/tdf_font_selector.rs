@@ -28,15 +28,17 @@ use iced::{
 use icy_engine_gui::{
     Viewport,
     ui::{
-        ButtonType, DIALOG_SPACING, DIALOG_WIDTH_XARGLE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, dialog_title, modal_container,
-        primary_button, secondary_button, separator,
+        ButtonType, DIALOG_SPACING, DIALOG_WIDTH_XARGLE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, modal_container, primary_button,
+        secondary_button, separator,
     },
     wrap_with_scrollbars,
 };
 
+use crate::LANGUAGE_LOADER;
 use crate::SharedFontLibrary;
 use crate::ui::Message;
 use crate::ui::editor::ansi::AnsiEditorMessage;
+use i18n_embed_fl::fl;
 
 /// Helper function to wrap TdfFontSelectorMessage in the full Message path
 fn tdf_msg(m: TdfFontSelectorMessage) -> Message {
@@ -74,12 +76,12 @@ pub enum FontType {
 }
 
 impl FontType {
-    fn label(&self) -> &'static str {
+    fn label(&self) -> String {
         match self {
-            FontType::Outline => "Outline",
-            FontType::Block => "Block",
-            FontType::Color => "Color",
-            FontType::Figlet => "Figlet",
+            FontType::Outline => fl!(LANGUAGE_LOADER, "tdf-font-selector-type_outline"),
+            FontType::Block => fl!(LANGUAGE_LOADER, "tdf-font-selector-type_block"),
+            FontType::Color => fl!(LANGUAGE_LOADER, "tdf-font-selector-type_color"),
+            FontType::Figlet => fl!(LANGUAGE_LOADER, "tdf-font-selector-type_figlet"),
         }
     }
 
@@ -124,6 +126,15 @@ pub enum TdfFontSelectorMessage {
     Confirm(i32),
     /// Cancel dialog
     Cancel,
+    /// Export the currently selected font
+    Export,
+    /// Keyboard navigation
+    KeyUp,
+    KeyDown,
+    KeyHome,
+    KeyEnd,
+    KeyPageUp,
+    KeyPageDown,
 }
 
 // ============================================================================
@@ -625,7 +636,12 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
                     let list_idx = (clicked_y / FONT_ITEM_HEIGHT) as usize;
                     if list_idx < self.filtered_fonts.len() {
                         let font_idx = self.filtered_fonts[list_idx];
-                        shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
+                        // If clicking on already selected font, confirm and close
+                        if self.selected_font == font_idx as i32 {
+                            shell.publish(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)));
+                        } else {
+                            shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
+                        }
                     }
                 }
             }
@@ -699,20 +715,20 @@ impl<'a> From<FontListWidget<'a>> for Element<'a, Message> {
 }
 
 impl TdfFontSelectorDialog {
-    pub fn new(font_library: SharedFontLibrary) -> Self {
+    pub fn new(font_library: SharedFontLibrary, selected_font: i32) -> Self {
         let mut viewport = Viewport::default();
         viewport.visible_height = LIST_HEIGHT;
         viewport.content_height = 0.0; // Will be updated based on font count
 
         let mut dialog = Self {
             font_library,
-            selected_font: 0,
+            selected_font,
             filter: String::new(),
             show_outline: true,
             show_block: true,
             show_color: true,
             show_figlet: true,
-            keyboard_cursor: 0,
+            keyboard_cursor: 0, // Will be set by update_filtered_fonts based on selected_font
             filtered_fonts: Vec::new(),
             font_info_cache: HashMap::new(),
             viewport: RefCell::new(viewport),
@@ -720,6 +736,7 @@ impl TdfFontSelectorDialog {
 
         dialog.cache_all_font_info();
         dialog.update_filtered_fonts();
+        dialog.scroll_to_cursor();
         dialog
     }
 
@@ -732,25 +749,43 @@ impl TdfFontSelectorDialog {
         viewport.changed.store(true, Ordering::Relaxed);
     }
 
-    /// Ensure keyboard cursor is visible
+    /// Ensure keyboard cursor is visible (immediate scroll, for arrow keys)
     fn scroll_to_cursor(&self) {
+        self.scroll_to_cursor_impl(false);
+    }
+
+    /// Ensure keyboard cursor is visible (smooth scroll, for page/home/end)
+    fn scroll_to_cursor_smooth(&self) {
+        self.scroll_to_cursor_impl(true);
+    }
+
+    /// Implementation of scroll to cursor
+    fn scroll_to_cursor_impl(&self, smooth: bool) {
         let cursor_y = self.keyboard_cursor as f32 * FONT_ITEM_HEIGHT;
         let mut viewport = self.viewport.borrow_mut();
         let visible_h = viewport.visible_height.max(0.0);
 
+        let mut new_scroll_y = viewport.scroll_y;
+
         // If cursor is above visible area, scroll up
         if cursor_y < viewport.scroll_y {
-            viewport.scroll_y = cursor_y;
+            new_scroll_y = cursor_y;
         }
 
         // If cursor is below visible area, scroll down
         if cursor_y + FONT_ITEM_HEIGHT > viewport.scroll_y + visible_h {
-            viewport.scroll_y = cursor_y + FONT_ITEM_HEIGHT - visible_h;
+            new_scroll_y = cursor_y + FONT_ITEM_HEIGHT - visible_h;
         }
 
         // Clamp to valid range
         let max_scroll = (viewport.content_height - visible_h).max(0.0);
-        viewport.scroll_y = viewport.scroll_y.clamp(0.0, max_scroll);
+        new_scroll_y = new_scroll_y.clamp(0.0, max_scroll);
+
+        if smooth {
+            viewport.scroll_y_to_smooth(new_scroll_y);
+        } else {
+            viewport.scroll_y_to(new_scroll_y);
+        }
 
         // Sync scrollbar and mark as changed so UI updates
         viewport.sync_scrollbar_position();
@@ -789,6 +824,54 @@ impl TdfFontSelectorDialog {
             self.selected_font = idx as i32;
         }
         self.scroll_to_cursor();
+    }
+
+    fn set_cursor_and_selected_smooth(&mut self, cursor: usize) {
+        self.keyboard_cursor = cursor;
+        if let Some(&idx) = self.filtered_fonts.get(self.keyboard_cursor) {
+            self.selected_font = idx as i32;
+        }
+        self.scroll_to_cursor_smooth();
+    }
+
+    /// Export the currently selected font to a file
+    fn export_selected_font(&self) {
+        if self.selected_font < 0 {
+            return;
+        }
+        let font_idx = self.selected_font as usize;
+
+        // Get font info
+        let lib = self.font_library.read();
+        let Some(font) = lib.get_font(font_idx) else {
+            return;
+        };
+
+        let font_name = font.name().to_string();
+        let extension = font.default_extension();
+
+        // Serialize font to bytes
+        let Ok(bytes) = font.to_bytes() else {
+            log::error!("Failed to serialize font: {}", font_name);
+            return;
+        };
+
+        // Must drop the lock before opening the dialog (which blocks)
+        drop(lib);
+
+        // Open save dialog
+        let file_dialog = rfd::FileDialog::new()
+            .set_title(fl!(LANGUAGE_LOADER, "tdf-font-selector-export_title"))
+            .set_file_name(format!("{}.{}", font_name, extension))
+            .add_filter("Font file", &[extension]);
+
+        if let Some(path) = file_dialog.save_file() {
+            if let Err(e) = std::fs::write(&path, &bytes) {
+                log::error!("Failed to write font file: {}", e);
+            } else {
+                log::info!("Exported font to: {}", path.display());
+            }
+        }
     }
 
     /// Set the search filter
@@ -853,9 +936,14 @@ impl TdfFontSelectorDialog {
         // Sort for consistent ordering
         self.filtered_fonts.sort();
 
-        // Clamp keyboard cursor
+        // Find position of selected font in filtered list and set cursor there
         if !self.filtered_fonts.is_empty() {
-            self.keyboard_cursor = self.keyboard_cursor.min(self.filtered_fonts.len() - 1);
+            if let Some(pos) = self.filtered_fonts.iter().position(|&idx| idx as i32 == self.selected_font) {
+                self.keyboard_cursor = pos;
+            } else {
+                // Selected font not in filtered list, clamp cursor
+                self.keyboard_cursor = self.keyboard_cursor.min(self.filtered_fonts.len() - 1);
+            }
         } else {
             self.keyboard_cursor = 0;
         }
@@ -935,28 +1023,41 @@ impl TdfFontSelectorDialog {
 
 impl Dialog<Message> for TdfFontSelectorDialog {
     fn view(&self) -> Element<'_, Message> {
-        // Dialog title
-        let title = dialog_title("Select TDF/Figlet Font".to_string());
-
         // Search bar
-        let search_input = text_input("Search fonts...", &self.filter)
+        let search_input = text_input(&fl!(LANGUAGE_LOADER, "tdf-font-selector-filter_placeholder"), &self.filter)
             .on_input(|s| tdf_msg(TdfFontSelectorMessage::FilterChanged(s)))
             .width(Length::Fixed(200.0))
             .padding(DIALOG_SPACING as u16)
             .size(TEXT_SIZE_NORMAL);
 
         // Filter buttons
-        let outline_btn = filter_toggle_button("Outline", self.show_outline, tdf_msg(TdfFontSelectorMessage::ToggleOutline));
-        let block_btn = filter_toggle_button("Block", self.show_block, tdf_msg(TdfFontSelectorMessage::ToggleBlock));
-        let color_btn = filter_toggle_button("Color", self.show_color, tdf_msg(TdfFontSelectorMessage::ToggleColor));
-        let figlet_btn = filter_toggle_button("Figlet", self.show_figlet, tdf_msg(TdfFontSelectorMessage::ToggleFiglet));
+        let outline_btn = filter_toggle_button(
+            fl!(LANGUAGE_LOADER, "tdf-font-selector-type_outline"),
+            self.show_outline,
+            tdf_msg(TdfFontSelectorMessage::ToggleOutline),
+        );
+        let block_btn = filter_toggle_button(
+            fl!(LANGUAGE_LOADER, "tdf-font-selector-type_block"),
+            self.show_block,
+            tdf_msg(TdfFontSelectorMessage::ToggleBlock),
+        );
+        let color_btn = filter_toggle_button(
+            fl!(LANGUAGE_LOADER, "tdf-font-selector-type_color"),
+            self.show_color,
+            tdf_msg(TdfFontSelectorMessage::ToggleColor),
+        );
+        let figlet_btn = filter_toggle_button(
+            fl!(LANGUAGE_LOADER, "tdf-font-selector-type_figlet"),
+            self.show_figlet,
+            tdf_msg(TdfFontSelectorMessage::ToggleFiglet),
+        );
 
         let filter_row = row![search_input, Space::new().width(DIALOG_SPACING), outline_btn, block_btn, color_btn, figlet_btn,]
             .spacing(DIALOG_SPACING / 2.0)
             .align_y(Alignment::Center);
 
         // Font count
-        let font_count_text = text(format!("{} fonts", self.filtered_fonts.len())).size(TEXT_SIZE_SMALL);
+        let font_count_text = text(fl!(LANGUAGE_LOADER, "tdf-font-selector-font_count", count = self.filtered_fonts.len())).size(TEXT_SIZE_SMALL);
 
         let header = row![filter_row, Space::new().width(Length::Fill), font_count_text,].align_y(Alignment::Center);
 
@@ -976,19 +1077,14 @@ impl Dialog<Message> for TdfFontSelectorDialog {
                 ..Default::default()
             });
 
-        // Content area (title + filter + list)
-        let content = column![
-            title,
-            Space::new().height(DIALOG_SPACING),
-            header,
-            Space::new().height(DIALOG_SPACING),
-            list_container,
-        ];
+        // Content area (filter + list)
+        let content = column![header, Space::new().height(DIALOG_SPACING), list_container,];
 
         let content_area = dialog_area(content.into());
 
         // Button row
         let button_row = row![
+            secondary_button(fl!(LANGUAGE_LOADER, "tdf-font-selector-export"), Some(tdf_msg(TdfFontSelectorMessage::Export))),
             Space::new().width(Length::Fill),
             secondary_button(format!("{}", ButtonType::Cancel), Some(tdf_msg(TdfFontSelectorMessage::Cancel))),
             primary_button(
@@ -1055,6 +1151,48 @@ impl Dialog<Message> for TdfFontSelectorDialog {
             }
             TdfFontSelectorMessage::Confirm(_) => Some(DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))),
             TdfFontSelectorMessage::Cancel => Some(DialogAction::Close),
+            TdfFontSelectorMessage::Export => {
+                self.export_selected_font();
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyUp => {
+                if !self.filtered_fonts.is_empty() && self.keyboard_cursor > 0 {
+                    self.set_cursor_and_selected(self.keyboard_cursor - 1);
+                }
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyDown => {
+                if !self.filtered_fonts.is_empty() && self.keyboard_cursor < self.filtered_fonts.len() - 1 {
+                    self.set_cursor_and_selected(self.keyboard_cursor + 1);
+                }
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyHome => {
+                if !self.filtered_fonts.is_empty() {
+                    self.set_cursor_and_selected_smooth(0);
+                }
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyEnd => {
+                if !self.filtered_fonts.is_empty() {
+                    self.set_cursor_and_selected_smooth(self.filtered_fonts.len() - 1);
+                }
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyPageUp => {
+                if !self.filtered_fonts.is_empty() {
+                    let page_items = (LIST_HEIGHT / FONT_ITEM_HEIGHT) as usize;
+                    self.set_cursor_and_selected_smooth(self.keyboard_cursor.saturating_sub(page_items));
+                }
+                Some(DialogAction::None)
+            }
+            TdfFontSelectorMessage::KeyPageDown => {
+                if !self.filtered_fonts.is_empty() {
+                    let page_items = (LIST_HEIGHT / FONT_ITEM_HEIGHT) as usize;
+                    self.set_cursor_and_selected_smooth((self.keyboard_cursor + page_items).min(self.filtered_fonts.len() - 1));
+                }
+                Some(DialogAction::None)
+            }
         }
     }
 
@@ -1067,9 +1205,21 @@ impl Dialog<Message> for TdfFontSelectorDialog {
     }
 
     fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
-            if self.handle_key(key, modifiers) {
-                return Some(DialogAction::None);
+        use iced::keyboard::Key;
+        use iced::keyboard::key::Named;
+
+        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+            let msg = match key {
+                Key::Named(Named::ArrowUp) => Some(TdfFontSelectorMessage::KeyUp),
+                Key::Named(Named::ArrowDown) => Some(TdfFontSelectorMessage::KeyDown),
+                Key::Named(Named::Home) => Some(TdfFontSelectorMessage::KeyHome),
+                Key::Named(Named::End) => Some(TdfFontSelectorMessage::KeyEnd),
+                Key::Named(Named::PageUp) => Some(TdfFontSelectorMessage::KeyPageUp),
+                Key::Named(Named::PageDown) => Some(TdfFontSelectorMessage::KeyPageDown),
+                _ => None,
+            };
+            if let Some(m) = msg {
+                return Some(DialogAction::SendMessage(tdf_msg(m)));
             }
         }
         None
@@ -1080,7 +1230,7 @@ impl Dialog<Message> for TdfFontSelectorDialog {
 // Filter Toggle Button
 // ============================================================================
 
-fn filter_toggle_button<'a>(label: &'a str, is_active: bool, on_press: Message) -> Element<'a, Message> {
+fn filter_toggle_button(label: String, is_active: bool, on_press: Message) -> Element<'static, Message> {
     let style = if is_active { button::primary } else { button::secondary };
 
     button(text(label).size(TEXT_SIZE_SMALL)).padding([4, 8]).style(style).on_press(on_press).into()

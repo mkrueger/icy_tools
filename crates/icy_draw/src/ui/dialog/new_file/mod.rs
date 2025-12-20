@@ -204,6 +204,9 @@ impl FileTemplate {
 /// Create a TextBuffer for a given template with specified dimensions
 pub fn create_buffer_for_template(template: FileTemplate, width: i32, height: i32) -> TextBuffer {
     let mut buf = TextBuffer::new((width.max(1), height.max(1)));
+    if let Ok(font) = BitFont::from_sauce_name("IBM VGA") {
+        buf.set_font(0, font);
+    }
 
     match template {
         FileTemplate::ModernAnsi => {

@@ -45,7 +45,6 @@ pub mod cmd {
         EDIT_CUT = "edit.cut",
         EDIT_COPY = "edit.copy",
         EDIT_PASTE = "edit.paste",
-        EDIT_DELETE = "edit.delete",
         EDIT_SELECT_ALL = "edit.select_all",
 
         // View

@@ -8,8 +8,8 @@ use iced::{
     Alignment, Element, Length, Task, Theme,
     widget::{column, container, pane_grid, row},
 };
-use icy_engine::TextPane;
 use icy_engine::formats::{FileFormat, LoadData};
+use icy_engine::{BitFont, TextPane};
 use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
 use icy_engine_edit::tools::Tool;
@@ -60,6 +60,8 @@ enum CenterPane {
 impl AnsiEditorMainArea {
     pub fn new(options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let mut buffer = icy_engine::TextBuffer::new((80, 25));
+        buffer.set_font(0, BitFont::from_sauce_name("IBM VGA").unwrap());
+
         buffer.terminal_state.is_terminal_buffer = false;
         Self::with_buffer(buffer, None, options, font_library)
     }
@@ -523,6 +525,18 @@ impl AnsiEditorMainArea {
             .get_ref::<tools::FontTool>()
             .map(|t| t.font_tool.font_library())
             .expect("FontTool should exist")
+    }
+
+    pub fn font_tool_selected_font(&self) -> i32 {
+        if let Some(font) = self.core.active_font_tool() {
+            return font.font_tool.selected_font;
+        }
+
+        self.tool_panel
+            .registry
+            .get_ref::<tools::FontTool>()
+            .map(|t| t.font_tool.selected_font)
+            .unwrap_or(0)
     }
 
     pub fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
@@ -1139,7 +1153,7 @@ impl AnsiEditorMainArea {
             }
             AnsiEditorMessage::Core(AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::OpenFontSelector)) => {
                 // Open TDF font dialog from TopToolbar
-                let dialog = TdfFontSelectorDialog::new(self.font_tool_library());
+                let dialog = TdfFontSelectorDialog::new(self.font_tool_library(), self.font_tool_selected_font());
                 dialogs.push(dialog);
                 Task::none()
             }
@@ -1200,7 +1214,16 @@ impl AnsiEditorMainArea {
                 Task::none()
             }
             AnsiEditorMessage::TdfFontSelector(ref dialog_msg) => {
+                // Forward to DialogStack for UI updates
                 let _ = dialogs.update(&Message::AnsiEditor(AnsiEditorMessage::TdfFontSelector(dialog_msg.clone())));
+                // Handle Confirm: apply the selected font to the FontTool
+                if let TdfFontSelectorMessage::Confirm(index) = dialog_msg {
+                    return self.update(
+                        AnsiEditorMessage::Core(AnsiEditorCoreMessage::TopToolbar(TopToolbarMessage::SelectFont(*index))),
+                        dialogs,
+                        plugins,
+                    );
+                }
                 Task::none()
             }
             AnsiEditorMessage::PaletteEditorDialog(_) => {
@@ -1578,8 +1601,10 @@ impl AnsiEditorMainArea {
         };
 
         let toolbar_height = constants::TOP_CONTROL_TOTAL_HEIGHT;
-
-        let top_toolbar = row![color_switcher, top_toolbar_content].spacing(4).align_y(Alignment::Start);
+        let top_toolbar = row![color_switcher, top_toolbar_content]
+            .spacing(4)
+            .height(Length::Fixed(toolbar_height))
+            .align_y(Alignment::Center);
 
         // === CENTER: Canvas (+ optional chat) ===
         // Canvas is created FIRST so Terminal's shader renders and populates the shared cache.
@@ -1639,7 +1664,7 @@ impl AnsiEditorMainArea {
             // Top toolbar - full width of left area
             container(top_toolbar)
                 .width(Length::Fill)
-                .height(Length::Fixed(toolbar_height))
+                //.height(Length::Fixed(toolbar_height))
                 .style(container::rounded_box),
             // Left sidebar + canvas
             left_content_row,

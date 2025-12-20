@@ -682,23 +682,27 @@ impl ToolHandler for TagTool {
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
                 use iced::keyboard::key::Named;
-                if matches!(key, iced::keyboard::Key::Named(Named::Escape)) {
-                    // Cancel add-tag mode (undo the newly created tag)
-                    if self.state.add_new_index.is_some() {
-                        self.state.add_new_index = None;
-                        self.state.selection_drag_active = false;
-                        self.state.end_drag();
-                        let _ = ctx.state.undo();
-                        return ToolResult::EndCapture.and(ToolResult::Redraw);
-                    }
+                match key {
+                    iced::keyboard::Key::Named(Named::Escape) => {
+                        // Cancel add-tag mode (undo the newly created tag)
+                        if self.state.add_new_index.is_some() {
+                            self.state.add_new_index = None;
+                            self.state.selection_drag_active = false;
+                            self.state.end_drag();
+                            let _ = ctx.state.undo();
+                            return ToolResult::EndCapture.and(ToolResult::Redraw);
+                        }
 
-                    // Cancel selection-drag rectangle
-                    if self.state.selection_drag_active {
-                        self.state.cancel_selection_drag();
-                        return ToolResult::EndCapture.and(ToolResult::Redraw);
+                        // Cancel selection-drag rectangle
+                        if self.state.selection_drag_active {
+                            self.state.cancel_selection_drag();
+                            return ToolResult::EndCapture.and(ToolResult::Redraw);
+                        }
+                        ToolResult::None
                     }
+                    iced::keyboard::Key::Named(Named::Delete | Named::Backspace) => TagTool::handle_key(ctx.state, &mut self.state, key),
+                    _ => ToolResult::None,
                 }
-                ToolResult::None
             }
             _ => ToolResult::None,
         }
@@ -781,21 +785,11 @@ impl ToolHandler for TagTool {
             text("").into()
         };
 
-        let right_side: Element<'_, ToolMessage> = if has_selected_tags {
-            button(text("Delete").size(TEXT_SIZE_SMALL))
-                .on_press(ToolMessage::TagDeleteSelected)
-                .style(button::danger)
-                .into()
-        } else {
-            Space::new().width(iced::Length::Shrink).into()
-        };
-
         row![
             left_side,
             Space::new().width(iced::Length::Fixed(SPACE_16)),
             middle,
             Space::new().width(iced::Length::Fill),
-            right_side,
         ]
         .spacing(SPACE_8)
         .into()

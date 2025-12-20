@@ -11,6 +11,7 @@ use iced::{
 };
 use icy_engine_gui::ui::{SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
 
+use crate::fl;
 use crate::ui::FKeySets;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use icy_engine::{BitFont, BufferType, Palette};
@@ -944,22 +945,22 @@ impl TopToolbar {
     fn view_tag_panel(&self, tag_add_mode: bool, selected_tag: Option<SelectedTagInfo>, tag_selection_count: usize) -> Element<'_, TopToolbarMessage> {
         let add_button = if tag_add_mode {
             // Active state - show as primary/pressed button
-            button(text("Add").size(TEXT_SIZE_SMALL))
+            button(text(fl!("tag-toolbar-add")).size(TEXT_SIZE_SMALL))
                 .on_press(TopToolbarMessage::StartAddTag)
                 .style(button::primary)
         } else {
             // Normal state
-            button(text("Add").size(TEXT_SIZE_SMALL))
+            button(text(fl!("tag-toolbar-add")).size(TEXT_SIZE_SMALL))
                 .on_press(TopToolbarMessage::StartAddTag)
                 .style(button::secondary)
         };
 
-        let tags_button = button(text("Tags…").size(TEXT_SIZE_SMALL))
+        let tags_button = button(text(fl!("tag-toolbar-tags")).size(TEXT_SIZE_SMALL))
             .on_press(TopToolbarMessage::OpenTagList)
             .style(button::secondary);
 
         // Left side: [Add] [Tags…]
-        let left_side = row![add_button, tags_button].spacing(SPACE_8);
+        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(iced::Alignment::Center);
 
         // Check if tags are selected
         let has_selected_tags = tag_selection_count > 0;
@@ -967,31 +968,34 @@ impl TopToolbar {
         // Middle: selected tag info (if any)
         let middle: Element<'_, TopToolbarMessage> = if tag_selection_count > 1 {
             // Multiple tags selected - show count
-            text(format!("({} tags)", tag_selection_count)).size(TEXT_SIZE_SMALL).into()
+            text(fl!("tag-toolbar-selected-tags", count = tag_selection_count)).size(TEXT_SIZE_SMALL).into()
         } else if let Some(tag_info) = selected_tag {
             // Single tag selected - show edit button and details
-            let edit_button = button(text("Edit").size(TEXT_SIZE_SMALL))
+            let edit_button = button(text(fl!("tag-toolbar-edit")).size(TEXT_SIZE_SMALL))
                 .on_press(TopToolbarMessage::EditSelectedTag)
                 .style(button::secondary);
 
             let pos_text = text(format!("({}, {})", tag_info.position.x, tag_info.position.y)).size(TEXT_SIZE_SMALL);
 
             let replacement_text = if tag_info.replacement.is_empty() {
-                text("(no replacement)").size(TEXT_SIZE_SMALL)
+                text(fl!("tag-toolbar-no-replacement")).size(TEXT_SIZE_SMALL)
             } else {
                 text(tag_info.replacement).size(TEXT_SIZE_SMALL)
             };
 
-            row![edit_button, pos_text, replacement_text].spacing(SPACE_8).into()
+            row![edit_button, pos_text, replacement_text]
+                .spacing(SPACE_8)
+                .align_y(iced::Alignment::Center)
+                .into()
         } else if tag_add_mode {
-            text("Click to place tag, ESC to cancel").size(TEXT_SIZE_SMALL).into()
+            text(fl!("tag-toolbar-add-hint")).size(TEXT_SIZE_SMALL).into()
         } else {
             text("").into()
         };
 
         // Right side: [Delete] (only if tag(s) selected)
         let right_side: Element<'_, TopToolbarMessage> = if has_selected_tags {
-            button(text("Delete").size(TEXT_SIZE_SMALL))
+            button(text(fl!("tag-toolbar-delete")).size(TEXT_SIZE_SMALL))
                 .on_press(TopToolbarMessage::DeleteSelectedTags)
                 .style(button::danger)
                 .into()
@@ -1007,6 +1011,7 @@ impl TopToolbar {
             right_side,
         ]
         .spacing(SPACE_8)
+        .align_y(iced::Alignment::Center)
         .into()
     }
 }

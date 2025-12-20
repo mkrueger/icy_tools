@@ -68,11 +68,6 @@ hotkey = ["Ctrl+Shift+I"]
 hotkey_mac = ["Cmd+Shift+I"]
 category = "selection"
 
-[[commands]]
-id = "select.erase"
-hotkey = ["Delete"]
-hotkey_mac = ["Backspace"]
-category = "selection"
 
 [[commands]]
 id = "select.flip_x"

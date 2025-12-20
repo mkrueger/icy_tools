@@ -2,7 +2,11 @@
 //!
 //! Renders text using TDF (TheDraw Font) or Figlet fonts.
 //! Each character typed is rendered as a multi-cell font glyph.
+//!
+//! This tool extends the Click tool's navigation and selection behavior,
+//! adding font-specific character rendering, backspace, and enter handling.
 
+use i18n_embed_fl::fl;
 use iced::Element;
 use iced::widget::{Space, button, column, container, row, text};
 use iced::{Length, Theme};
@@ -11,8 +15,9 @@ use icy_engine_edit::tools::Tool;
 use icy_engine_edit::{OperationType, TdfEditStateRenderer};
 use icy_engine_gui::TerminalMessage;
 
-use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
+use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
 
+use crate::LANGUAGE_LOADER;
 use crate::Settings;
 use crate::SharedFontLibrary;
 use crate::ui::editor::ansi::widget::font_tool::FontToolState;
@@ -27,6 +32,9 @@ pub struct FontTool {
     pub font_tool: FontToolState,
     outline_selector_open: bool,
     outline_style_cache: usize,
+
+    // === Selection/Mouse State (shared with ClickTool) ===
+    selection_mouse: SelectionMouseState,
 }
 
 impl FontTool {
@@ -36,6 +44,7 @@ impl FontTool {
             font_tool: FontToolState::new(font_library.clone()),
             outline_selector_open: false,
             outline_style_cache: 0,
+            selection_mouse: SelectionMouseState::new(),
         }
     }
 
@@ -241,16 +250,59 @@ impl ToolHandler for FontTool {
         }
     }
 
+    fn cancel_capture(&mut self) {
+        self.selection_mouse.cancel();
+    }
+
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
         match msg {
+            TerminalMessage::Move(evt) => {
+                if self.selection_mouse.is_dragging() {
+                    return ToolResult::None;
+                }
+
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+
+                // Hover: update cursor interaction for selection resize handles.
+                self.selection_mouse.handle_move(ctx.state.selection(), pos);
+                ToolResult::None
+            }
+
             TerminalMessage::Press(evt) => {
                 let Some(pos) = evt.text_position else {
                     return ToolResult::None;
                 };
-                // Position caret at click location (convert from document to layer coordinates)
-                ctx.state.set_caret_from_document_position(pos);
-                ToolResult::Redraw
+
+                if evt.button == icy_engine::MouseButton::Left {
+                    self.selection_mouse.handle_press(ctx, pos);
+                    return ToolResult::StartCapture.and(ToolResult::Redraw);
+                }
+
+                ToolResult::None
             }
+
+            TerminalMessage::Drag(evt) => {
+                let Some(pos) = evt.text_position else {
+                    return ToolResult::None;
+                };
+
+                if self.selection_mouse.handle_drag(ctx, pos) {
+                    return ToolResult::Redraw;
+                }
+
+                ToolResult::None
+            }
+
+            TerminalMessage::Release(evt) => {
+                if self.selection_mouse.handle_release(ctx, evt.text_position) {
+                    return ToolResult::EndCapture.and(ToolResult::Redraw);
+                }
+
+                ToolResult::None
+            }
+
             _ => ToolResult::None,
         }
     }
@@ -260,25 +312,9 @@ impl ToolHandler for FontTool {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 use iced::keyboard::key::Named;
 
-                // Handle navigation keys
+                // Font-specific keys: Backspace, Enter, Space
                 if let iced::keyboard::Key::Named(named) = key {
                     match named {
-                        Named::ArrowUp => {
-                            ctx.state.move_caret_up(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowDown => {
-                            ctx.state.move_caret_down(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowLeft => {
-                            ctx.state.move_caret_left(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowRight => {
-                            ctx.state.move_caret_right(1);
-                            return ToolResult::Redraw;
-                        }
                         Named::Backspace => {
                             return self.backspace(ctx);
                         }
@@ -294,6 +330,12 @@ impl ToolHandler for FontTool {
                         }
                         _ => {}
                     }
+                }
+
+                // Common navigation keys (arrows, home, end, page up/down, delete, tab, insert)
+                let nav_result = handle_navigation_key(ctx, key, modifiers);
+                if nav_result.is_handled() {
+                    return nav_result.to_tool_result();
                 }
 
                 // Handle font slot switching (0-9)
@@ -322,18 +364,35 @@ impl ToolHandler for FontTool {
     }
 
     fn view_toolbar(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        // Outline style names for the button label
-        const OUTLINE_NAMES: [&str; 19] = [
-            "Normal", "Round", "Square", "Shadow", "3D", "Block 1", "Block 2", "Block 3", "Block 4", "Fancy 1", "Fancy 2", "Fancy 3", "Fancy 4", "Fancy 5",
-            "Fancy 6", "Fancy 7", "Fancy 8", "Fancy 9", "Fancy 10",
+        // Outline style labels (localized)
+        let outline_labels: [String; 19] = [
+            fl!(LANGUAGE_LOADER, "font-tool-outline_normal"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_round"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_square"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_shadow"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_3d"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_block1"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_block2"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_block3"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_block4"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy1"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy2"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy3"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy4"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy5"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy6"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy7"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy8"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy9"),
+            fl!(LANGUAGE_LOADER, "font-tool-outline_fancy10"),
         ];
 
         let has_fonts = self.font_tool.has_fonts();
         if !has_fonts {
             let content = row![
-                text("No fonts installed").size(14),
+                text(fl!(LANGUAGE_LOADER, "font-tool-no_fonts")).size(14),
                 Space::new().width(Length::Fixed(16.0)),
-                button(text("Open Font Directory").size(14))
+                button(text(fl!(LANGUAGE_LOADER, "font-tool-open_directory")).size(14))
                     .padding([4, 12])
                     .style(button::primary)
                     .on_press(ToolMessage::FontOpenDirectory),
@@ -352,7 +411,7 @@ impl ToolHandler for FontTool {
         let font_label = self
             .font_tool
             .with_selected_font(|f| f.name().to_string())
-            .unwrap_or_else(|| "Select Font...".to_string());
+            .unwrap_or_else(|| fl!(LANGUAGE_LOADER, "font-tool-select_font"));
 
         let font_button = button(text(font_label).size(14))
             .padding([4, 12])
@@ -365,7 +424,7 @@ impl ToolHandler for FontTool {
                 r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
                     let p = theme.extended_palette();
                     iced::widget::text::Style {
-                        color: Some(if ok { p.primary.base.color } else { p.secondary.base.color }),
+                        color: Some(if ok { p.background.base.text } else { p.secondary.base.color }),
                     }
                 }))
             })
@@ -377,7 +436,7 @@ impl ToolHandler for FontTool {
                 r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
                     let p = theme.extended_palette();
                     iced::widget::text::Style {
-                        color: Some(if ok { p.primary.base.color } else { p.secondary.base.color }),
+                        color: Some(if ok { p.background.base.text } else { p.secondary.base.color }),
                     }
                 }))
             })
@@ -395,8 +454,11 @@ impl ToolHandler for FontTool {
             })
             .into();
 
-        let outline_label = OUTLINE_NAMES.get(self.outline_style_cache).unwrap_or(&"Normal");
-        let outline_button = button(text(*outline_label).size(14))
+        let outline_label = outline_labels
+            .get(self.outline_style_cache)
+            .cloned()
+            .unwrap_or_else(|| fl!(LANGUAGE_LOADER, "font-tool-outline_normal"));
+        let outline_button = button(text(outline_label).size(14))
             .padding([4, 12])
             .style(button::secondary)
             .on_press(ToolMessage::FontOpenOutlineSelector);
@@ -407,7 +469,7 @@ impl ToolHandler for FontTool {
             Space::new().width(Length::Fixed(8.0)),
             char_preview,
             Space::new().width(Length::Fixed(16.0)),
-            text("Outline:").size(14),
+            text(fl!(LANGUAGE_LOADER, "font-tool-outline")).size(14),
             outline_button,
             Space::new().width(Length::Fill),
         ]
@@ -418,7 +480,7 @@ impl ToolHandler for FontTool {
     }
 
     fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Text
+        self.selection_mouse.cursor().unwrap_or(iced::mouse::Interaction::Text)
     }
 
     fn show_caret(&self) -> bool {

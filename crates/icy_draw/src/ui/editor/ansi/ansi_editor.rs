@@ -1968,20 +1968,6 @@ impl AnsiEditorCore {
                 self.refresh_selection_display();
                 Task::none()
             }
-            AnsiEditorCoreMessage::DeleteSelection => {
-                let result = self.with_edit_state(|state| {
-                    if state.is_something_selected() {
-                        state.erase_selection()
-                    } else {
-                        state.delete_key()
-                    }
-                });
-                if result.is_ok() {
-                    self.is_modified = true;
-                }
-                self.refresh_selection_display();
-                Task::none()
-            }
         };
 
         task
@@ -2155,7 +2141,7 @@ impl AnsiEditorCore {
     }
 
     /// Update the selection display in the shader
-    fn update_selection_display(&mut self) {
+    fn update_selection_mask_display(&mut self) {
         use icy_engine::AddType;
         use icy_engine_gui::selection_colors;
 
@@ -2298,9 +2284,13 @@ impl AnsiEditorCore {
                     }
                 }
 
-                // Editor-owned Escape handling for transient shape drag overlays.
+                // Editor-owned Escape handling for transient shape drag overlays and selection.
                 if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
                     let _ = self.cancel_shape_drag();
+                    // Clear selection independent of current tool/mode
+                    let _ = self.with_edit_state(|state| state.clear_selection());
+                    // Update the selection display to reflect the cleared selection
+                    self.update_selection_mask_display();
                 }
 
                 // Paste mode has priority for special keys (handled by PasteTool)
@@ -2319,7 +2309,7 @@ impl AnsiEditorCore {
                 match self.current_tool.id() {
                     tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
                         if !matches!(result, tools::ToolResult::None) {
-                            self.update_selection_display();
+                            self.update_selection_mask_display();
                         }
                     }
                     tools::ToolId::Tool(Tool::Tag) => {
@@ -2366,7 +2356,7 @@ impl AnsiEditorCore {
                 // Post-dispatch UI updates
                 match self.current_tool.id() {
                     tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
-                        self.update_selection_display();
+                        self.update_selection_mask_display();
                     }
                     tools::ToolId::Tool(Tool::Tag) => {
                         self.update_tag_overlays();
@@ -2394,7 +2384,7 @@ impl AnsiEditorCore {
 
                         match self.current_tool.id() {
                             tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
-                                self.update_selection_display();
+                                self.update_selection_mask_display();
                             }
                             tools::ToolId::Tool(Tool::Tag) => {
                                 self.update_tag_overlays();
@@ -2440,13 +2430,13 @@ impl AnsiEditorCore {
 
                         match self.current_tool.id() {
                             tools::ToolId::Tool(Tool::Select) => {
-                                self.update_selection_display();
+                                self.update_selection_mask_display();
                                 if let Some(select) = self.current_tool.as_any().downcast_ref::<tools::SelectTool>() {
                                     *self.canvas.terminal.cursor_icon.write() = Some(select.cursor());
                                 }
                             }
                             tools::ToolId::Tool(Tool::Click | Tool::Font) => {
-                                self.update_selection_display();
+                                self.update_selection_mask_display();
                                 if let Some(click) = self.current_tool.as_any().downcast_ref::<tools::ClickTool>() {
                                     *self.canvas.terminal.cursor_icon.write() = Some(click.cursor());
                                 }
@@ -2598,7 +2588,7 @@ impl AnsiEditorCore {
     /// Refresh selection + selection-mask overlay data sent to the shader.
     /// Useful for menu/command actions executed outside the editor's own input handling.
     pub fn refresh_selection_display(&mut self) {
-        self.update_selection_display();
+        self.update_selection_mask_display();
     }
 
     /// Get status bar information for this editor

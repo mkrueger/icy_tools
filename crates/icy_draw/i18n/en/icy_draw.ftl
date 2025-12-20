@@ -458,6 +458,46 @@ move_layer_down_tooltip = Move layer down
 delete_layer_tooltip = Delete layer
 anchor_layer_tooltip = Anchor layer
 
+pipette-foreground = FG { $index }
+pipette-background = BG { $index }
+pipette-hover_hint = Hover over canvas to pick colors
+pipette-help = ⇧: FG only   ⌃: BG only
+
+# Font Tool
+font-tool-no_fonts = No fonts installed
+font-tool-open_directory = Open Font Directory
+font-tool-select_font = Select Font…
+font-tool-outline = Outline:
+font-tool-outline_normal = Normal
+font-tool-outline_round = Round
+font-tool-outline_square = Square
+font-tool-outline_shadow = Shadow
+font-tool-outline_3d = 3D
+font-tool-outline_block1 = Block 1
+font-tool-outline_block2 = Block 2
+font-tool-outline_block3 = Block 3
+font-tool-outline_block4 = Block 4
+font-tool-outline_fancy1 = Fancy 1
+font-tool-outline_fancy2 = Fancy 2
+font-tool-outline_fancy3 = Fancy 3
+font-tool-outline_fancy4 = Fancy 4
+font-tool-outline_fancy5 = Fancy 5
+font-tool-outline_fancy6 = Fancy 6
+font-tool-outline_fancy7 = Fancy 7
+font-tool-outline_fancy8 = Fancy 8
+font-tool-outline_fancy9 = Fancy 9
+font-tool-outline_fancy10 = Fancy 10
+
+# TDF Font Selector Dialog
+tdf-font-selector-filter_placeholder = Filter fonts…
+tdf-font-selector-type_outline = Outline
+tdf-font-selector-type_block = Block
+tdf-font-selector-type_color = Color
+tdf-font-selector-type_figlet = Figlet
+tdf-font-selector-font_count = { $count } fonts
+tdf-font-selector-export = Export…
+tdf-font-selector-export_title = Export Font
+
 glyph-char-label=Char
 glyph-font-label=Font
 
@@ -852,3 +892,12 @@ reference-image-browse=Browse...
 reference-image-alpha=Opacity
 reference-image-info=The reference image will be displayed as an overlay on the canvas.
 reference-image-clear=Clear
+
+# Tag Tool Toolbar
+tag-toolbar-add=Add
+tag-toolbar-tags=Tags…
+tag-toolbar-edit=Edit
+tag-toolbar-delete=Delete
+tag-toolbar-selected-tags={ $count } tags selected
+tag-toolbar-no-replacement=(no replacement)
+tag-toolbar-add-hint=Click to place tag, ESC to cancel

@@ -11,10 +11,8 @@ use iced_aw::{menu_bar, menu_items};
 use crate::MostRecentlyUsedFiles;
 use crate::fl;
 use crate::ui::main_window::Message;
-use crate::ui::main_window::menu::{
-    MenuItem, MenuState, menu_button, menu_items_to_iced,
-};
-use icy_engine_gui::commands::{cmd, Hotkey, hotkey_from_iced};
+use crate::ui::main_window::menu::{MenuItem, MenuState, menu_button, menu_items_to_iced};
+use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 // ============================================================================
 // AnimationMenu - Unified menu definition for Animation editor

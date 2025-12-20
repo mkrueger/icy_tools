@@ -15,7 +15,7 @@ use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{
     MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_submenu, menu_item_undo, separator,
 };
-use icy_engine_gui::commands::{cmd, Hotkey, hotkey_from_iced};
+use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 // ============================================================================
 // CharFontMenu - Unified menu definition for CharFont editor
@@ -68,14 +68,38 @@ impl CharFontMenu {
                 MenuItem::cmd(&cmd::EDIT_PASTE, Message::Paste),
             ],
             colors: vec![
-                MenuItem::simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))),
-                MenuItem::simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))),
+                MenuItem::simple(
+                    fl!("menu-next_fg_color"),
+                    "Ctrl+Down",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-prev_fg_color"),
+                    "Ctrl+Up",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                ),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))),
-                MenuItem::simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))),
+                MenuItem::simple(
+                    fl!("menu-next_bg_color"),
+                    "Ctrl+Right",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-prev_bg_color"),
+                    "Ctrl+Left",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                ),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-toggle_color"), "Alt+X", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))),
-                MenuItem::simple(fl!("menu-default_color"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))),
+                MenuItem::simple(
+                    fl!("menu-toggle_color"),
+                    "Alt+X",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-default_color"),
+                    "",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor)),
+                ),
             ],
             view: vec![
                 MenuItem::cmd(&cmd::VIEW_ZOOM_RESET, Message::ZoomReset),

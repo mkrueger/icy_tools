@@ -9,14 +9,13 @@
 
 use iced::Element;
 use icy_engine::BufferType;
-use icy_engine::{Position, Selection, TextPane};
+use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 
-use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
+use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
 use crate::Settings;
-use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
 
 /// Click tool state
@@ -40,14 +39,8 @@ pub struct ClickTool {
     /// Atomic undo guard for layer drag operations
     layer_drag_undo: Option<AtomicUndoGuard>,
 
-    // === Selection Drag State (shared behavior with SelectTool) ===
-    selection_drag: SelectionDrag,
-    hover_drag: SelectionDrag,
-    selection_start_pos: Option<Position>,
-    selection_cur_pos: Option<Position>,
-    selection_start_rect: Option<icy_engine::Rectangle>,
-    /// Atomic undo guard for selection drag operations
-    selection_undo: Option<AtomicUndoGuard>,
+    // === Selection Mouse State (shared with FontTool) ===
+    selection_mouse: SelectionMouseState,
 }
 
 impl ClickTool {
@@ -168,12 +161,7 @@ impl ToolHandler for ClickTool {
         self.layer_drag_undo = None;
 
         // Reset selection drag state
-        self.selection_drag = SelectionDrag::None;
-        self.hover_drag = SelectionDrag::None;
-        self.selection_start_pos = None;
-        self.selection_cur_pos = None;
-        self.selection_start_rect = None;
-        self.selection_undo = None;
+        self.selection_mouse.cancel();
     }
 
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
@@ -201,7 +189,7 @@ impl ToolHandler for ClickTool {
                 };
 
                 // Hover: update cursor interaction for selection resize handles.
-                self.hover_drag = hit_test_selection(ctx.state.selection(), pos);
+                self.selection_mouse.handle_move(ctx.state.selection(), pos);
                 ToolResult::None
             }
 
@@ -229,27 +217,8 @@ impl ToolHandler for ClickTool {
 
                     ToolResult::StartCapture.and(ToolResult::Redraw)
                 } else if evt.button == icy_engine::MouseButton::Left {
-                    // Selection drag handling (shared behavior with SelectTool)
-                    let current_selection = ctx.state.selection();
-                    let hit = hit_test_selection(current_selection, pos);
-
-                    if hit != SelectionDrag::None {
-                        // Start move/resize of existing selection
-                        self.selection_drag = hit;
-                        self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
-                    } else {
-                        // Start new selection + position caret like the old AnsiEditor behavior
-                        let _ = ctx.state.clear_selection();
-                        ctx.state.set_caret_from_document_position(pos);
-                        self.selection_drag = SelectionDrag::Create;
-                        self.selection_start_rect = None;
-                    }
-
-                    self.selection_start_pos = Some(pos);
-                    self.selection_cur_pos = Some(pos);
-                    self.hover_drag = SelectionDrag::None;
-                    self.selection_undo = Some(ctx.state.begin_atomic_undo("Selection"));
-
+                    // Selection drag handling (shared with FontTool)
+                    self.selection_mouse.handle_press(ctx, pos);
                     ToolResult::StartCapture.and(ToolResult::Redraw)
                 } else {
                     ToolResult::None
@@ -274,43 +243,8 @@ impl ToolHandler for ClickTool {
                 }
 
                 // Selection drag update
-                if self.selection_drag != SelectionDrag::None {
-                    let Some(pos) = evt.text_position else {
-                        return ToolResult::None;
-                    };
-
-                    self.selection_cur_pos = Some(pos);
-
-                    let Some(start_pos) = self.selection_start_pos else {
-                        return ToolResult::None;
-                    };
-
-                    if self.selection_drag == SelectionDrag::Create {
-                        let selection = Selection {
-                            anchor: start_pos,
-                            lead: pos,
-                            locked: false,
-                            shape: icy_engine::Shape::Rectangle,
-                            add_type: icy_engine::AddType::Default,
-                        };
-                        let _ = ctx.state.set_selection(selection);
-                        return ToolResult::Redraw;
-                    }
-
-                    let Some(start_rect) = self.selection_start_rect else {
-                        return ToolResult::None;
-                    };
-
-                    let params = DragParameters {
-                        start_rect,
-                        start_pos,
-                        cur_pos: pos,
-                    };
-
-                    if let Some(new_rect) = compute_dragged_selection(self.selection_drag, params) {
-                        let mut selection = Selection::from(new_rect);
-                        selection.add_type = icy_engine::AddType::Default;
-                        let _ = ctx.state.set_selection(selection);
+                if let Some(pos) = evt.text_position {
+                    if self.selection_mouse.handle_drag(ctx, pos) {
                         return ToolResult::Redraw;
                     }
                 }
@@ -338,27 +272,7 @@ impl ToolHandler for ClickTool {
                     self.layer_drag_undo = None;
 
                     ToolResult::EndCapture.and(ToolResult::Commit("Move layer".to_string()))
-                } else if self.selection_drag != SelectionDrag::None {
-                    // Finalize selection drag
-                    let end_pos = evt.text_position;
-
-                    if self.selection_drag == SelectionDrag::Create {
-                        if let (Some(start), Some(end)) = (self.selection_start_pos, end_pos) {
-                            if start == end {
-                                // Click without drag -> clear selection (old AnsiEditor behavior for Click tool)
-                                let _ = ctx.state.clear_selection();
-                            }
-                        }
-                    }
-
-                    // Reset state - dropping the guard groups all operations into one undo entry
-                    self.selection_drag = SelectionDrag::None;
-                    self.hover_drag = SelectionDrag::None;
-                    self.selection_start_pos = None;
-                    self.selection_cur_pos = None;
-                    self.selection_start_rect = None;
-                    self.selection_undo = None;
-
+                } else if self.selection_mouse.handle_release(ctx, evt.text_position) {
                     ToolResult::EndCapture.and(ToolResult::Redraw)
                 } else {
                     ToolResult::None
@@ -464,47 +378,7 @@ impl ToolHandler for ClickTool {
                             return self.type_fkey_slot(ctx, self.current_fkey_set, slot);
                         }
 
-                        Named::ArrowUp => {
-                            ctx.state.move_caret_up(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowDown => {
-                            ctx.state.move_caret_down(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowLeft => {
-                            ctx.state.move_caret_left(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::ArrowRight => {
-                            ctx.state.move_caret_right(1);
-                            return ToolResult::Redraw;
-                        }
-                        Named::Home => {
-                            ctx.state.set_caret_x(0);
-                            return ToolResult::Redraw;
-                        }
-                        Named::End => {
-                            let width = ctx.state.get_buffer().width();
-                            ctx.state.set_caret_x(width.saturating_sub(1));
-                            return ToolResult::Redraw;
-                        }
-                        Named::PageUp => {
-                            ctx.state.move_caret_up(24);
-                            return ToolResult::Redraw;
-                        }
-                        Named::PageDown => {
-                            ctx.state.move_caret_down(24);
-                            return ToolResult::Redraw;
-                        }
-                        Named::Delete => {
-                            let _ = if ctx.state.is_something_selected() {
-                                ctx.state.erase_selection()
-                            } else {
-                                ctx.state.delete_key()
-                            };
-                            return ToolResult::Commit("Delete".to_string());
-                        }
+                        // Click-specific: Backspace and Enter
                         Named::Backspace => {
                             let _ = if ctx.state.is_something_selected() {
                                 ctx.state.erase_selection()
@@ -517,24 +391,14 @@ impl ToolHandler for ClickTool {
                             let _ = ctx.state.new_line();
                             return ToolResult::Commit("New line".to_string());
                         }
-                        Named::Tab => {
-                            if modifiers.shift() {
-                                ctx.state.handle_reverse_tab();
-                            } else {
-                                ctx.state.handle_tab();
-                            }
-                            return ToolResult::Redraw;
-                        }
-                        Named::Insert => {
-                            ctx.state.toggle_insert_mode();
-                            return ToolResult::Redraw;
-                        }
-                        Named::Escape => {
-                            let _ = ctx.state.clear_selection();
-                            return ToolResult::Redraw;
-                        }
                         _ => {}
                     }
+                }
+
+                // Common navigation keys (arrows, home, end, page up/down, delete, tab, insert)
+                let nav_result = handle_navigation_key(ctx, key, modifiers);
+                if nav_result.is_handled() {
+                    return nav_result.to_tool_result();
                 }
 
                 ToolResult::None
@@ -546,10 +410,8 @@ impl ToolHandler for ClickTool {
     fn cursor(&self) -> iced::mouse::Interaction {
         if self.layer_drag_active {
             iced::mouse::Interaction::Grabbing
-        } else if self.selection_drag != SelectionDrag::None {
-            self.selection_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
-        } else if self.hover_drag != SelectionDrag::None {
-            self.hover_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
+        } else if let Some(cursor) = self.selection_mouse.cursor() {
+            cursor
         } else {
             iced::mouse::Interaction::Text
         }

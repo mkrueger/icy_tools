@@ -88,6 +88,30 @@ impl EditState {
         }
     }
 
+    /// Extend selection by moving the lead position by (dx, dy).
+    /// If no selection exists, creates one with anchor at current caret position.
+    /// Used for Shift+Arrow key selection.
+    pub fn extend_selection(&mut self, dx: i32, dy: i32) {
+        let caret_pos = Position::new(self.get_caret().x, self.get_caret().y);
+
+        let selection = if let Some(mut sel) = self.selection_opt {
+            // Extend existing selection
+            sel.lead.x = (sel.lead.x + dx).max(0);
+            sel.lead.y = (sel.lead.y + dy).max(0);
+            sel
+        } else {
+            // Create new selection from current caret position
+            let mut sel = Selection::new(caret_pos);
+            sel.lead.x = (caret_pos.x + dx).max(0);
+            sel.lead.y = (caret_pos.y + dy).max(0);
+            sel
+        };
+
+        self.selection_opt = Some(selection);
+        // Move caret to lead position
+        self.set_caret_position(selection.lead);
+    }
+
     pub fn selected_rectangle(&self) -> Rectangle {
         self.selection_mask.selected_rectangle(&self.selection_opt)
     }

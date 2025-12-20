@@ -35,7 +35,6 @@ pub mod selection_cmd {
 
         SELECT_NONE = "select.none",
         SELECT_INVERSE = "select.inverse",
-        SELECT_ERASE = "select.erase",
         SELECT_FLIP_X = "select.flip_x",
         SELECT_FLIP_Y = "select.flip_y",
         SELECT_CROP = "select.crop",

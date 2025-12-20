@@ -322,6 +322,11 @@ move_layer_down_tooltip = Ebene runter
 delete_layer_tooltip = Ebene löschen
 anchor_layer_tooltip = Ebene verankern
 
+pipette-foreground = VG { $index }
+pipette-background = HG { $index }
+pipette-hover_hint = Über den Canvas fahren um Farben zu wählen
+pipette-help = ⇧: Nur VG   ⌃: Nur HG
+
 glyph-char-label=Zeichen
 glyph-font-label=Schriftart
 
@@ -405,6 +410,41 @@ font_tool_no_fonts_label=
     Keine Fonts gefunden
     Installiere Fonts in das Fontverzeichnis
 font_tool_open_directory_button=Fontverzeichnis öffnen
+
+# Font Tool (neue Strings)
+font-tool-no_fonts = Keine Fonts installiert
+font-tool-open_directory = Fontverzeichnis öffnen
+font-tool-select_font = Font auswählen…
+font-tool-outline = Outline:
+font-tool-outline_normal = Normal
+font-tool-outline_round = Rund
+font-tool-outline_square = Eckig
+font-tool-outline_shadow = Schatten
+font-tool-outline_3d = 3D
+font-tool-outline_block1 = Block 1
+font-tool-outline_block2 = Block 2
+font-tool-outline_block3 = Block 3
+font-tool-outline_block4 = Block 4
+font-tool-outline_fancy1 = Fancy 1
+font-tool-outline_fancy2 = Fancy 2
+font-tool-outline_fancy3 = Fancy 3
+font-tool-outline_fancy4 = Fancy 4
+font-tool-outline_fancy5 = Fancy 5
+font-tool-outline_fancy6 = Fancy 6
+font-tool-outline_fancy7 = Fancy 7
+font-tool-outline_fancy8 = Fancy 8
+font-tool-outline_fancy9 = Fancy 9
+font-tool-outline_fancy10 = Fancy 10
+
+# TDF Font Selector Dialog
+tdf-font-selector-filter_placeholder = Fonts filtern…
+tdf-font-selector-type_outline = Kontur
+tdf-font-selector-type_block = Block
+tdf-font-selector-type_color = Farbe
+tdf-font-selector-type_figlet = Figlet
+tdf-font-selector-font_count = { $count } Fonts
+tdf-font-selector-export = Exportieren…
+tdf-font-selector-export_title = Font exportieren
 
 pipette_tool_char_code=Code { $code }
 pipette_tool_foreground=Vordergrund { $fg }
@@ -689,3 +729,12 @@ reference-image-browse=Durchsuchen...
 reference-image-alpha=Deckkraft
 reference-image-info=Das Referenzbild wird als Overlay auf der Leinwand angezeigt.
 reference-image-clear=Löschen
+
+# Tag Tool Toolbar
+tag-toolbar-add=Hinzufügen
+tag-toolbar-tags=Tags…
+tag-toolbar-edit=Bearbeiten
+tag-toolbar-delete=Löschen
+tag-toolbar-selected-tags={ $count } Tags ausgewählt
+tag-toolbar-no-replacement=(kein Ersetzungstext)
+tag-toolbar-add-hint=Klicken zum Platzieren, ESC zum Abbrechen

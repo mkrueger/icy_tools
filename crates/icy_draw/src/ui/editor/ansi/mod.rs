@@ -178,7 +178,6 @@ pub enum AnsiEditorCoreMessage {
 
     // --- Selection Operations ---
     Deselect,
-    DeleteSelection,
 }
 
 /// UI messages handled by `AnsiEditorMainArea`

@@ -20,10 +20,10 @@ use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::area_cmd;
 use crate::ui::main_window::commands::selection_cmd;
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu,
-    menu_item_undo, separator,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style,
+    menu_item_submenu, menu_item_undo, separator,
 };
-use icy_engine_gui::commands::{cmd, Hotkey, hotkey_from_iced};
+use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 /// Current state of guides/raster for menu display
 #[derive(Clone, Debug, Default)]
@@ -95,32 +95,91 @@ impl AnsiMenu {
                 MenuItem::cmd(&cmd::EDIT_PASTE, Message::Paste),
                 MenuItem::separator(),
                 // Area operations submenu
-                MenuItem::submenu(fl!("menu-area_operations"), vec![
-                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineLeft))),
-                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_CENTER, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineCenter))),
-                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineRight))),
-                    MenuItem::separator(),
-                    MenuItem::cmd(&area_cmd::INSERT_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertRow))),
-                    MenuItem::cmd(&area_cmd::DELETE_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteRow))),
-                    MenuItem::cmd(&area_cmd::INSERT_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertColumn))),
-                    MenuItem::cmd(&area_cmd::DELETE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteColumn))),
-                    MenuItem::separator(),
-                    MenuItem::cmd(&area_cmd::ERASE_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRow))),
-                    MenuItem::cmd(&area_cmd::ERASE_ROW_TO_START, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToStart))),
-                    MenuItem::cmd(&area_cmd::ERASE_ROW_TO_END, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToEnd))),
-                    MenuItem::cmd(&area_cmd::ERASE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumn))),
-                    MenuItem::cmd(&area_cmd::ERASE_COLUMN_TO_START, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToStart))),
-                    MenuItem::cmd(&area_cmd::ERASE_COLUMN_TO_END, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToEnd))),
-                    MenuItem::separator(),
-                    MenuItem::cmd(&area_cmd::SCROLL_UP, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaUp))),
-                    MenuItem::cmd(&area_cmd::SCROLL_DOWN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaDown))),
-                    MenuItem::cmd(&area_cmd::SCROLL_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaLeft))),
-                    MenuItem::cmd(&area_cmd::SCROLL_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight))),
-                ]),
+                MenuItem::submenu(
+                    fl!("menu-area_operations"),
+                    vec![
+                        MenuItem::cmd(
+                            &area_cmd::JUSTIFY_LINE_LEFT,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineLeft)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::JUSTIFY_LINE_CENTER,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineCenter)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::JUSTIFY_LINE_RIGHT,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineRight)),
+                        ),
+                        MenuItem::separator(),
+                        MenuItem::cmd(
+                            &area_cmd::INSERT_ROW,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertRow)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::DELETE_ROW,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteRow)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::INSERT_COLUMN,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertColumn)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::DELETE_COLUMN,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteColumn)),
+                        ),
+                        MenuItem::separator(),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_ROW,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRow)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_ROW_TO_START,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToStart)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_ROW_TO_END,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToEnd)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_COLUMN,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumn)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_COLUMN_TO_START,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToStart)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::ERASE_COLUMN_TO_END,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToEnd)),
+                        ),
+                        MenuItem::separator(),
+                        MenuItem::cmd(
+                            &area_cmd::SCROLL_UP,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaUp)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::SCROLL_DOWN,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaDown)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::SCROLL_LEFT,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaLeft)),
+                        ),
+                        MenuItem::cmd(
+                            &area_cmd::SCROLL_RIGHT,
+                            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight)),
+                        ),
+                    ],
+                ),
                 MenuItem::separator(),
                 MenuItem::simple(fl!("menu-open_font_selector"), "", Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector)),
                 MenuItem::separator(),
-                MenuItem::toggle(fl!("menu-mirror_mode"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode)), mirror_mode),
+                MenuItem::toggle(
+                    fl!("menu-mirror_mode"),
+                    "",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode)),
+                    mirror_mode,
+                ),
                 MenuItem::separator(),
                 MenuItem::simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog),
             ],
@@ -129,26 +188,71 @@ impl AnsiMenu {
                 MenuItem::cmd(&selection_cmd::SELECT_NONE, Message::Deselect),
                 MenuItem::cmd(&selection_cmd::SELECT_INVERSE, Message::AnsiEditor(AnsiEditorMessage::InverseSelection)),
                 MenuItem::separator(),
-                MenuItem::cmd(&selection_cmd::SELECT_ERASE, Message::DeleteSelection),
-                MenuItem::cmd(&selection_cmd::SELECT_FLIP_X, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX))),
-                MenuItem::cmd(&selection_cmd::SELECT_FLIP_Y, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY))),
-                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_CENTER, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter))),
-                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLeft))),
-                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight))),
-                MenuItem::cmd(&selection_cmd::SELECT_CROP, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop))),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_FLIP_X,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)),
+                ),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_FLIP_Y,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)),
+                ),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_JUSTIFY_CENTER,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter)),
+                ),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_JUSTIFY_LEFT,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLeft)),
+                ),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_JUSTIFY_RIGHT,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight)),
+                ),
+                MenuItem::cmd(
+                    &selection_cmd::SELECT_CROP,
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)),
+                ),
             ],
             colors: vec![
                 MenuItem::simple(fl!("menu-edit_palette"), "", Message::AnsiEditor(AnsiEditorMessage::EditPalette)),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))),
-                MenuItem::simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))),
+                MenuItem::simple(
+                    fl!("menu-next_fg_color"),
+                    "Ctrl+Down",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-prev_fg_color"),
+                    "Ctrl+Up",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                ),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))),
-                MenuItem::simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))),
+                MenuItem::simple(
+                    fl!("menu-next_bg_color"),
+                    "Ctrl+Right",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-prev_bg_color"),
+                    "Ctrl+Left",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                ),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-pick_attribute_under_caret"), "Alt+U", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret))),
-                MenuItem::simple(fl!("menu-toggle_color"), "Alt+X", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))),
-                MenuItem::simple(fl!("menu-default_color"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))),
+                MenuItem::simple(
+                    fl!("menu-pick_attribute_under_caret"),
+                    "Alt+U",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-toggle_color"),
+                    "Alt+X",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)),
+                ),
+                MenuItem::simple(
+                    fl!("menu-default_color"),
+                    "",
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor)),
+                ),
             ],
             view: vec![
                 // View items are dynamic based on marker state, handled separately
@@ -610,7 +714,6 @@ pub fn view_ansi(
                     (menu_item(&selection_cmd::SELECT_NONE, Message::Deselect)),
                     (menu_item(&selection_cmd::SELECT_INVERSE, Message::AnsiEditor(AnsiEditorMessage::InverseSelection))),
                     (separator()),
-                    (menu_item(&selection_cmd::SELECT_ERASE, Message::DeleteSelection)),
                     (menu_item(
                         &selection_cmd::SELECT_FLIP_X,
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX))
@@ -766,7 +869,6 @@ pub fn view_ansi(
                     (menu_item(&selection_cmd::SELECT_NONE, Message::Deselect)),
                     (menu_item(&selection_cmd::SELECT_INVERSE, Message::AnsiEditor(AnsiEditorMessage::InverseSelection))),
                     (separator()),
-                    (menu_item(&selection_cmd::SELECT_ERASE, Message::DeleteSelection)),
                     (menu_item(
                         &selection_cmd::SELECT_FLIP_X,
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX))

@@ -658,7 +658,7 @@ impl CharFontEditor {
             CharFontEditorMessage::OpenTdfFontSelector => {
                 // Open TDF font selector dialog
                 // TODO: Get proper font library from CharFontEditor
-                dialogs.push(TdfFontSelectorDialog::new(Default::default()));
+                dialogs.push(TdfFontSelectorDialog::new(Default::default(), 0));
                 Task::none()
             }
             CharFontEditorMessage::TdfFontSelector(_) => {
