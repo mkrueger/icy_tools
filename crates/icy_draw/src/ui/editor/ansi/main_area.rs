@@ -11,6 +11,7 @@ use iced::{
 use icy_engine::TextPane;
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine_edit::EditState;
+use icy_engine_edit::UndoState;
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{DialogStack, export_dialog_with_defaults_from_msg};
@@ -236,6 +237,21 @@ impl AnsiEditorMainArea {
 
     pub fn get_mirror_mode(&self) -> bool {
         self.core.get_mirror_mode()
+    }
+
+    /// Get the undo description for menu display
+    pub fn undo_description(&self) -> Option<String> {
+        self.with_edit_state_readonly(|state| state.undo_description())
+    }
+
+    /// Get the redo description for menu display
+    pub fn redo_description(&self) -> Option<String> {
+        self.with_edit_state_readonly(|state| state.redo_description())
+    }
+
+    /// Get mirror mode state for menu display
+    pub fn mirror_mode(&self) -> bool {
+        self.get_mirror_mode()
     }
 
     pub fn zoom_in(&mut self) {

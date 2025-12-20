@@ -1,4 +1,7 @@
 //! ANSI Editor menu bar
+//!
+//! Menu structure is defined as data, then rendered to UI.
+//! This allows hotkey handling and menu generation from a single source.
 
 use iced::{
     Border, Element, Length, Theme,
@@ -17,10 +20,10 @@ use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::area_cmd;
 use crate::ui::main_window::commands::selection_cmd;
 use crate::ui::main_window::menu::{
-    UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style, menu_item_submenu,
     menu_item_undo, separator,
 };
-use icy_engine_gui::commands::cmd;
+use icy_engine_gui::commands::{cmd, Hotkey, hotkey_from_iced};
 
 /// Current state of guides/raster for menu display
 #[derive(Clone, Debug, Default)]
@@ -38,6 +41,156 @@ pub struct MarkerMenuState {
     /// Is layer borders visible
     pub layer_borders_visible: bool,
 }
+
+// ============================================================================
+// AnsiMenu - Unified menu definition for ANSI editor
+// ============================================================================
+
+/// Menu definition for the ANSI editor
+/// Single source of truth for both menu display and keyboard handling
+pub struct AnsiMenu {
+    pub file: Vec<MenuItem>,
+    pub edit: Vec<MenuItem>,
+    pub selection: Vec<MenuItem>,
+    pub colors: Vec<MenuItem>,
+    pub view: Vec<MenuItem>,
+    pub help: Vec<MenuItem>,
+}
+
+impl AnsiMenu {
+    /// Create the menu structure with current state
+    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Self {
+        let undo_label = match undo_desc {
+            Some(desc) => format!("{} {}", cmd::EDIT_UNDO.label_menu, desc),
+            None => cmd::EDIT_UNDO.label_menu.clone(),
+        };
+        let redo_label = match redo_desc {
+            Some(desc) => format!("{} {}", cmd::EDIT_REDO.label_menu, desc),
+            None => cmd::EDIT_REDO.label_menu.clone(),
+        };
+
+        Self {
+            file: vec![
+                MenuItem::cmd(&cmd::FILE_NEW, Message::NewFile),
+                MenuItem::cmd(&cmd::FILE_OPEN, Message::OpenFile),
+                MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
+                // Recent files submenu handled separately in view
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
+                MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
+                MenuItem::simple(fl!("menu-export"), "", Message::ExportFile),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-collaboration"), "", Message::ShowCollaborationDialog),
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::SETTINGS_OPEN, Message::ShowSettings),
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::FILE_CLOSE, Message::CloseFile),
+            ],
+            edit: vec![
+                MenuItem::cmd_with_label(&cmd::EDIT_UNDO, Message::Undo, undo_label).enabled(undo_desc.is_some()),
+                MenuItem::cmd_with_label(&cmd::EDIT_REDO, Message::Redo, redo_label).enabled(redo_desc.is_some()),
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::EDIT_CUT, Message::Cut),
+                MenuItem::cmd(&cmd::EDIT_COPY, Message::Copy),
+                MenuItem::cmd(&cmd::EDIT_PASTE, Message::Paste),
+                MenuItem::separator(),
+                // Area operations submenu
+                MenuItem::submenu(fl!("menu-area_operations"), vec![
+                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineLeft))),
+                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_CENTER, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineCenter))),
+                    MenuItem::cmd(&area_cmd::JUSTIFY_LINE_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineRight))),
+                    MenuItem::separator(),
+                    MenuItem::cmd(&area_cmd::INSERT_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertRow))),
+                    MenuItem::cmd(&area_cmd::DELETE_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteRow))),
+                    MenuItem::cmd(&area_cmd::INSERT_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertColumn))),
+                    MenuItem::cmd(&area_cmd::DELETE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteColumn))),
+                    MenuItem::separator(),
+                    MenuItem::cmd(&area_cmd::ERASE_ROW, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRow))),
+                    MenuItem::cmd(&area_cmd::ERASE_ROW_TO_START, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToStart))),
+                    MenuItem::cmd(&area_cmd::ERASE_ROW_TO_END, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToEnd))),
+                    MenuItem::cmd(&area_cmd::ERASE_COLUMN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumn))),
+                    MenuItem::cmd(&area_cmd::ERASE_COLUMN_TO_START, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToStart))),
+                    MenuItem::cmd(&area_cmd::ERASE_COLUMN_TO_END, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToEnd))),
+                    MenuItem::separator(),
+                    MenuItem::cmd(&area_cmd::SCROLL_UP, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaUp))),
+                    MenuItem::cmd(&area_cmd::SCROLL_DOWN, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaDown))),
+                    MenuItem::cmd(&area_cmd::SCROLL_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaLeft))),
+                    MenuItem::cmd(&area_cmd::SCROLL_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight))),
+                ]),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-open_font_selector"), "", Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector)),
+                MenuItem::separator(),
+                MenuItem::toggle(fl!("menu-mirror_mode"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode)), mirror_mode),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog),
+            ],
+            selection: vec![
+                MenuItem::cmd(&cmd::EDIT_SELECT_ALL, Message::SelectAll),
+                MenuItem::cmd(&selection_cmd::SELECT_NONE, Message::Deselect),
+                MenuItem::cmd(&selection_cmd::SELECT_INVERSE, Message::AnsiEditor(AnsiEditorMessage::InverseSelection)),
+                MenuItem::separator(),
+                MenuItem::cmd(&selection_cmd::SELECT_ERASE, Message::DeleteSelection),
+                MenuItem::cmd(&selection_cmd::SELECT_FLIP_X, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX))),
+                MenuItem::cmd(&selection_cmd::SELECT_FLIP_Y, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY))),
+                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_CENTER, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter))),
+                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_LEFT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLeft))),
+                MenuItem::cmd(&selection_cmd::SELECT_JUSTIFY_RIGHT, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight))),
+                MenuItem::cmd(&selection_cmd::SELECT_CROP, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop))),
+            ],
+            colors: vec![
+                MenuItem::simple(fl!("menu-edit_palette"), "", Message::AnsiEditor(AnsiEditorMessage::EditPalette)),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-next_fg_color"), "Ctrl+Down", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))),
+                MenuItem::simple(fl!("menu-prev_fg_color"), "Ctrl+Up", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-next_bg_color"), "Ctrl+Right", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))),
+                MenuItem::simple(fl!("menu-prev_bg_color"), "Ctrl+Left", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-pick_attribute_under_caret"), "Alt+U", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret))),
+                MenuItem::simple(fl!("menu-toggle_color"), "Alt+X", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))),
+                MenuItem::simple(fl!("menu-default_color"), "", Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))),
+            ],
+            view: vec![
+                // View items are dynamic based on marker state, handled separately
+                MenuItem::cmd(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen),
+            ],
+            help: vec![
+                MenuItem::simple(fl!("menu-discuss"), "", Message::OpenDiscussions),
+                MenuItem::simple(fl!("menu-report-bug"), "", Message::ReportBug),
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::HELP_ABOUT, Message::ShowAbout),
+            ],
+        }
+    }
+
+    /// Check if any menu item matches the given hotkey
+    pub fn handle_hotkey(&self, hotkey: &Hotkey) -> Option<Message> {
+        for menu in [&self.file, &self.edit, &self.selection, &self.colors, &self.view, &self.help] {
+            for item in menu {
+                if let Some(msg) = item.matches_hotkey(hotkey) {
+                    return Some(msg);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Handle keyboard event by checking all ANSI menu commands
+pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Option<Message> {
+    let (key, modifiers) = match event {
+        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
+        _ => return None,
+    };
+
+    let hotkey = hotkey_from_iced(key, modifiers)?;
+    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode);
+    menu.handle_hotkey(&hotkey)
+}
+
+// ============================================================================
+// Legacy view functions (still used for rendering, but hotkeys now handled by AnsiMenu)
+// ============================================================================
 
 /// Build the guides submenu with predefined guide sizes
 fn build_guides_submenu(state: &MarkerMenuState) -> Menu<'static, Message, Theme, iced::Renderer> {

@@ -2072,6 +2072,20 @@ impl MainWindow {
 
         // Handle mode-specific menu commands
         match &self.mode_state {
+            ModeState::Ansi(editor) => {
+                // Check ANSI menu commands
+                let undo_desc = editor.undo_description();
+                let redo_desc = editor.redo_description();
+                let mirror_mode = editor.mirror_mode();
+                if let Some(msg) = crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(
+                    event,
+                    undo_desc.as_deref(),
+                    redo_desc.as_deref(),
+                    mirror_mode,
+                ) {
+                    return (Some(msg), Task::none());
+                }
+            }
             ModeState::BitFont(editor) => {
                 // Check BitFont menu commands
                 let undo_desc = editor.undo_description();
@@ -2088,7 +2102,14 @@ impl MainWindow {
                     return (Some(msg), Task::none());
                 }
             }
-            _ => {}
+            ModeState::CharFont(editor) => {
+                // Check CharFont menu commands (uses embedded ANSI editor core)
+                let undo_desc = editor.undo_description();
+                let redo_desc = editor.redo_description();
+                if let Some(msg) = crate::ui::editor::charfont::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
+                    return (Some(msg), Task::none());
+                }
+            }
         }
 
         // Handle editor-specific events (tools, navigation, etc.)
