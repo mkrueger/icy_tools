@@ -532,7 +532,12 @@ pub fn view_ansi(
             // View menu
             (
                 menu_button(fl!("menu-view")),
-                build_view_menu(marker_state, build_guides_submenu(marker_state), build_raster_submenu(marker_state), is_connected)
+                build_view_menu(
+                    marker_state,
+                    build_guides_submenu(marker_state),
+                    build_raster_submenu(marker_state),
+                    is_connected
+                )
             ),
             // Help menu
             (
@@ -683,7 +688,12 @@ pub fn view_ansi(
             // View menu
             (
                 menu_button(fl!("menu-view")),
-                build_view_menu(marker_state, build_guides_submenu(marker_state), build_raster_submenu(marker_state), is_connected)
+                build_view_menu(
+                    marker_state,
+                    build_guides_submenu(marker_state),
+                    build_raster_submenu(marker_state),
+                    is_connected
+                )
             ),
             // Plugins menu
             (menu_button(fl!("menu-plugins")), plugins_submenu),

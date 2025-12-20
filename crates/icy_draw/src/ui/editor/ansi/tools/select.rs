@@ -356,20 +356,6 @@ impl ToolHandler for SelectTool {
         .into()
     }
 
-    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let status = if let (Some(start), Some(end)) = (self.start_pos, self.current_pos) {
-            let w = (end.x - start.x).abs() + 1;
-            let h = (end.y - start.y).abs() + 1;
-            format!(
-                "Select | ({},{}) → ({},{}) [{}x{}] | Shift=Add, Ctrl=Remove",
-                start.x, start.y, end.x, end.y, w, h
-            )
-        } else {
-            "Select | Click and drag to select".to_string()
-        };
-        text(status).into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         if self.is_dragging {
             self.drag_mode.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Crosshair)

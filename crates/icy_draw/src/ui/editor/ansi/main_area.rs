@@ -532,7 +532,10 @@ impl AnsiEditorMainArea {
         self.with_edit_state_readonly(|state| {
             let buffer = state.get_buffer();
 
-            let layer = buffer.layers.get(layer_index).ok_or_else(|| format!("Layer index {} out of range (0-{})", layer_index, buffer.layers.len().saturating_sub(1)))?;
+            let layer = buffer
+                .layers
+                .get(layer_index)
+                .ok_or_else(|| format!("Layer index {} out of range (0-{})", layer_index, buffer.layers.len().saturating_sub(1)))?;
 
             let size = layer.size();
             let width = size.width;
@@ -625,10 +628,7 @@ impl AnsiEditorMainArea {
             let size = buffer.layers[layer_index].size();
 
             if x < 0 || x >= size.width || y < 0 || y >= size.height {
-                return Err(format!(
-                    "Position ({}, {}) out of bounds for layer size {}x{}",
-                    x, y, size.width, size.height
-                ));
+                return Err(format!("Position ({}, {}) out of bounds for layer size {}x{}", x, y, size.width, size.height));
             }
 
             let attributed_char = AttributedChar::new(converted_char, attr);
@@ -656,11 +656,7 @@ impl AnsiEditorMainArea {
             let palette_len = buffer.palette.len();
 
             if (index as usize) >= palette_len {
-                return Err(format!(
-                    "Palette index {} out of range (0-{})",
-                    index,
-                    palette_len.saturating_sub(1)
-                ));
+                return Err(format!("Palette index {} out of range (0-{})", index, palette_len.saturating_sub(1)));
             }
 
             buffer.palette.set_color(index as u32, Color::new(r, g, b));
@@ -755,12 +751,7 @@ impl AnsiEditorMainArea {
         self.with_edit_state_readonly(|state| {
             let caret = state.get_caret();
             let current_layer = state.get_current_layer().map_err(|e| e.to_string())?;
-            let layer_offset = state
-                .get_buffer()
-                .layers
-                .get(current_layer)
-                .map(|l| l.offset())
-                .unwrap_or_default();
+            let layer_offset = state.get_buffer().layers.get(current_layer).map(|l| l.offset()).unwrap_or_default();
 
             Ok(crate::mcp::types::CaretInfo {
                 x: caret.x,
@@ -969,11 +960,7 @@ impl AnsiEditorMainArea {
         use icy_engine::{AttributedChar, Position, TextAttribute, TextPane};
 
         if (width * height) as usize != chars.len() {
-            return Err(format!(
-                "chars length mismatch: expected {}, got {}",
-                (width * height),
-                chars.len()
-            ));
+            return Err(format!("chars length mismatch: expected {}, got {}", (width * height), chars.len()));
         }
 
         self.with_edit_state(|state| {

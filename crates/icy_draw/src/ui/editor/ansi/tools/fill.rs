@@ -394,15 +394,6 @@ impl ToolHandler for FillTool {
         .into()
     }
 
-    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let status = if let Some(pos) = self.last_fill_pos {
-            format!("Fill | Position: ({},{}) | Right-click=Swap colors", pos.x, pos.y)
-        } else {
-            "Fill | Click to fill region".to_string()
-        };
-        text(status).into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Crosshair
     }

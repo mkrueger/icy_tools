@@ -54,7 +54,9 @@ impl IcyDrawMcpHandler {
     // General tools
     // ═══════════════════════════════════════════════════════════════════════
 
-    #[tool(description = "Get documentation. Without 'editor' parameter: general overview. With 'ansi', 'animation' or 'bitfont': editor-specific documentation.")]
+    #[tool(
+        description = "Get documentation. Without 'editor' parameter: general overview. With 'ansi', 'animation' or 'bitfont': editor-specific documentation."
+    )]
     async fn get_help(&self, params: Parameters<GetHelpRequest>) -> Result<CallToolResult, McpError> {
         let doc = match params.0.editor.as_deref() {
             Some("ansi") => ANSI_DOC,
@@ -328,7 +330,9 @@ impl IcyDrawMcpHandler {
     // ANSI editor tools
     // ═══════════════════════════════════════════════════════════════════════
 
-    #[tool(description = "[ANSI Editor] Run a Lua script on the current buffer. The script has access to the 'buf' object with all buffer manipulation methods (set_char, get_char, fg_rgb, bg_rgb, print, etc.) and selection bounds (start_x, end_x, start_y, end_y). Changes are wrapped in an atomic undo operation.")]
+    #[tool(
+        description = "[ANSI Editor] Run a Lua script on the current buffer. The script has access to the 'buf' object with all buffer manipulation methods (set_char, get_char, fg_rgb, bg_rgb, print, etc.) and selection bounds (start_x, end_x, start_y, end_y). Changes are wrapped in an atomic undo operation."
+    )]
     async fn ansi_run_script(&self, params: Parameters<AnsiRunScriptRequest>) -> Result<CallToolResult, McpError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx
@@ -350,7 +354,9 @@ impl IcyDrawMcpHandler {
         }
     }
 
-    #[tool(description = "[ANSI Editor] Get full layer data including all character cells. Returns layer properties and a flat array of character data (row-major order).")]
+    #[tool(
+        description = "[ANSI Editor] Get full layer data including all character cells. Returns layer properties and a flat array of character data (row-major order)."
+    )]
     async fn ansi_get_layer(&self, params: Parameters<AnsiGetLayerRequest>) -> Result<CallToolResult, McpError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx
@@ -367,8 +373,7 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(layer_data) => {
-                let json = serde_json::to_string_pretty(&layer_data)
-                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                let json = serde_json::to_string_pretty(&layer_data).map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
@@ -461,8 +466,7 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(caret) => {
-                let json = serde_json::to_string_pretty(&caret)
-                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                let json = serde_json::to_string_pretty(&caret).map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
@@ -487,7 +491,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to set caret", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Caret set")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Caret set")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -508,8 +512,7 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(layers) => {
-                let json = serde_json::to_string_pretty(&layers)
-                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                let json = serde_json::to_string_pretty(&layers).map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
@@ -602,7 +605,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to merge layer", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer merged down")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer merged down")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -624,7 +627,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to move layer", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer moved")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer moved")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -646,7 +649,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to resize buffer", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Buffer resized")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Buffer resized")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -672,8 +675,7 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(region) => {
-                let json = serde_json::to_string_pretty(&region)
-                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                let json = serde_json::to_string_pretty(&region).map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
@@ -701,7 +703,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to set region", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Region set")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Region set")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -722,8 +724,7 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(sel) => {
-                let json = serde_json::to_string_pretty(&sel)
-                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                let json = serde_json::to_string_pretty(&sel).map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
@@ -749,7 +750,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to set selection", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection set")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection set")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -769,7 +770,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to clear selection", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection cleared")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection cleared")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -790,7 +791,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to run action", None))?;
 
         match result {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Action executed")])) ,
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Action executed")])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }

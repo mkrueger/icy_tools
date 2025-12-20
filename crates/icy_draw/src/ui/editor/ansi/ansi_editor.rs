@@ -1891,6 +1891,31 @@ impl AnsiEditorCore {
             }
 
             // ═══════════════════════════════════════════════════════════════════
+            // CORE MESSAGES - Display Mode Operations
+            // ═══════════════════════════════════════════════════════════════════
+            AnsiEditorCoreMessage::ToggleIceColors => {
+                self.with_edit_state(|state| {
+                    let buffer = state.get_buffer();
+                    let new_mode = if buffer.ice_mode.has_high_bg_colors() {
+                        icy_engine::IceMode::Blink
+                    } else {
+                        icy_engine::IceMode::Ice
+                    };
+                    let _ = state.set_ice_mode(new_mode);
+                });
+                self.is_modified = true;
+                Task::none()
+            }
+            AnsiEditorCoreMessage::ToggleLetterSpacing => {
+                self.with_edit_state(|state| {
+                    let current = state.get_buffer().use_letter_spacing();
+                    let _ = state.set_use_letter_spacing(!current);
+                });
+                self.is_modified = true;
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
             // CORE MESSAGES - Font Apply Operations
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorCoreMessage::ApplyFontSelection(result) => {
@@ -2585,7 +2610,6 @@ impl AnsiEditorCore {
             .expect("AnsiEditor screen should always be EditState");
         let buffer = state.get_buffer();
         let caret = state.get_caret();
-        let current_layer = state.get_current_layer().unwrap_or(0);
         let format_mode = state.get_format_mode();
 
         // Get font info based on format mode
@@ -2609,35 +2633,30 @@ impl AnsiEditorCore {
             (font_name, font_page, None)
         };
 
-        // Get paste layer info if in paste mode
-        let (paste_layer_position, paste_layer_size) = if state.has_floating_layer() {
-            buffer
-                .layers
-                .iter()
-                .find(|l| l.role.is_paste())
-                .map(|layer| {
-                    let offset = layer.offset();
-                    let size = layer.size();
-                    (Some((offset.x, offset.y)), Some((size.width, size.height)))
-                })
-                .unwrap_or((None, None))
-        } else {
-            (None, None)
-        };
+        // Get cursor position only if the current tool shows caret
+        let cursor_position = if self.current_tool.show_caret() { Some((caret.x, caret.y)) } else { None };
+
+        // Get selection range if there is a selection
+        let selection_range = state.selection().map(|sel| {
+            let min = sel.min();
+            let max = sel.max();
+            (min.x, min.y, max.x, max.y)
+        });
+
+        // Get ice colors and letter spacing from buffer
+        let ice_colors = buffer.ice_mode.has_high_bg_colors();
+        let letter_spacing = buffer.use_letter_spacing();
 
         AnsiStatusInfo {
-            cursor_position: (caret.x, caret.y),
+            cursor_position,
+            selection_range,
             buffer_size: (buffer.width(), buffer.height()),
-            current_layer,
-            total_layers: buffer.layers.len(),
-            current_tool: self.current_tool_for_panel().name().to_string(),
-            insert_mode: caret.insert_mode,
             font_name,
+            ice_colors,
+            letter_spacing,
             format_mode,
             current_font_slot: current_font_slot as usize,
             slot_fonts,
-            paste_layer_position,
-            paste_layer_size,
         }
     }
 

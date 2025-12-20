@@ -150,9 +150,7 @@ pub enum McpCommand {
     },
 
     /// Get current caret position and attribute
-    AnsiGetCaret {
-        response: SenderType<Result<types::CaretInfo, String>>,
-    },
+    AnsiGetCaret { response: SenderType<Result<types::CaretInfo, String>> },
 
     /// Set caret position and attribute
     AnsiSetCaret {
@@ -174,10 +172,7 @@ pub enum McpCommand {
     },
 
     /// Delete a layer
-    AnsiDeleteLayer {
-        layer: usize,
-        response: SenderType<Result<(), String>>,
-    },
+    AnsiDeleteLayer { layer: usize, response: SenderType<Result<(), String>> },
 
     /// Update layer properties
     AnsiSetLayerProps {
@@ -193,10 +188,7 @@ pub enum McpCommand {
     },
 
     /// Merge a layer down into the layer below
-    AnsiMergeDownLayer {
-        layer: usize,
-        response: SenderType<Result<(), String>>,
-    },
+    AnsiMergeDownLayer { layer: usize, response: SenderType<Result<(), String>> },
 
     /// Move a layer up/down in the layer stack
     AnsiMoveLayer {
@@ -248,13 +240,8 @@ pub enum McpCommand {
     },
 
     /// Clear selection
-    AnsiClearSelection {
-        response: SenderType<Result<(), String>>,
-    },
+    AnsiClearSelection { response: SenderType<Result<(), String>> },
 
     /// Run a selection action
-    AnsiSelectionAction {
-        action: String,
-        response: SenderType<Result<(), String>>,
-    },
+    AnsiSelectionAction { action: String, response: SenderType<Result<(), String>> },
 }

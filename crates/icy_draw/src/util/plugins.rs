@@ -144,11 +144,7 @@ impl Plugin {
 
     /// Run a Lua script string directly on the buffer (for MCP/API usage)
     /// Returns the collected log output or an error
-    pub fn run_script_string(
-        screen: &Arc<Mutex<Box<dyn icy_engine::Screen>>>,
-        script: &str,
-        undo_description: &str,
-    ) -> Result<String, String> {
+    pub fn run_script_string(screen: &Arc<Mutex<Box<dyn icy_engine::Screen>>>, script: &str, undo_description: &str) -> Result<String, String> {
         use std::sync::Arc as StdArc;
         use std::sync::Mutex as StdMutex;
 

@@ -2,7 +2,7 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont,  IceMode, Layer, Palette, Result, TextPane};
+use crate::{AttributedChar, BitFont, IceMode, Layer, Palette, Result, TextPane};
 
 use super::{EditState, undo_operation::EditorUndoOp};
 

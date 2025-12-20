@@ -212,22 +212,6 @@ impl ToolHandler for PipetteTool {
         content.into()
     }
 
-    fn view_status(&self, _ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
-        let status = if let (Some(pos), Some(ch)) = (&self.hovered_pos, &self.hovered_char) {
-            format!(
-                "Pipette | Pos: ({}, {}) | Char: '{}' | FG: {} | BG: {}",
-                pos.x,
-                pos.y,
-                if ch.ch.is_control() { '?' } else { ch.ch },
-                ch.attribute.foreground(),
-                ch.attribute.background()
-            )
-        } else {
-            "Pipette | Click to pick color".to_string()
-        };
-        text(status).into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Crosshair
     }

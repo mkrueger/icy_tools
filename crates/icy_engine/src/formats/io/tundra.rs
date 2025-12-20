@@ -2,8 +2,8 @@ use std::{collections::HashSet, io};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{
-    AttributedChar, BufferType, EditableScreen, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane,
-    TextScreen, analyze_font_usage,
+    AttributedChar, BufferType, EditableScreen, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen,
+    analyze_font_usage,
 };
 
 // http://fileformats.archiveteam.org/wiki/TUNDRA

@@ -417,10 +417,6 @@ impl ToolHandler for FontTool {
         content.into()
     }
 
-    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        text(format!("Font | Slot: {} | Ctrl+0-9=Switch font", self.font_slot)).into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Text
     }

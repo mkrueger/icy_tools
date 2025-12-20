@@ -168,6 +168,10 @@ pub enum AnsiEditorCoreMessage {
     ToggleColor,
     SwitchToDefaultColor,
 
+    // --- Display Mode Operations ---
+    ToggleIceColors,
+    ToggleLetterSpacing,
+
     // --- Font Apply Operations ---
     ApplyFontSelection(FontSelectorResult),
     ApplyFontSlotChange(FontSlotManagerResult),
@@ -256,21 +260,22 @@ enum MouseCaptureTarget {
 /// Status bar information for the ANSI editor
 #[derive(Clone, Debug)]
 pub struct AnsiStatusInfo {
-    pub cursor_position: (i32, i32),
+    /// Caret position (x, y) - None if tool doesn't show caret
+    pub cursor_position: Option<(i32, i32)>,
+    /// Selection range (min_x, min_y, max_x, max_y) - None if no selection
+    pub selection_range: Option<(i32, i32, i32, i32)>,
+    /// Buffer size (width, height)
     pub buffer_size: (i32, i32),
-    pub current_layer: usize,
-    pub total_layers: usize,
-    pub current_tool: String,
-    pub insert_mode: bool,
+    /// Font name for display
     pub font_name: String,
+    /// Ice colors mode enabled
+    pub ice_colors: bool,
+    /// Letter spacing (9px mode) enabled
+    pub letter_spacing: bool,
     /// Current format mode
     pub format_mode: icy_engine_edit::FormatMode,
     /// Currently active font slot (0 or 1 for XBinExtended)
     pub current_font_slot: usize,
     /// Font names for slots (only set for XBinExtended)
     pub slot_fonts: Option<[Option<String>; 2]>,
-    /// Paste layer position (if in paste mode)
-    pub paste_layer_position: Option<(i32, i32)>,
-    /// Paste layer size (if in paste mode)
-    pub paste_layer_size: Option<(i32, i32)>,
 }

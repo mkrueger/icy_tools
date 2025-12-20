@@ -801,11 +801,6 @@ impl ToolHandler for TagTool {
         .into()
     }
 
-    fn view_status(&self, _ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
-        // Status is managed by editor using TagToolState
-        text("Tag").into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Pointer
     }

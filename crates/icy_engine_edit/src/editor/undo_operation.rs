@@ -6,8 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, Position, Properties, Result, Role, SauceMetaData, Selection,
-    SelectionMask, Size, Tag, TextPane, stamp_layer,
+    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, Position, Properties, Result, Role, SauceMetaData, Selection, SelectionMask, Size,
+    Tag, TextPane, stamp_layer,
 };
 
 use super::EditState;

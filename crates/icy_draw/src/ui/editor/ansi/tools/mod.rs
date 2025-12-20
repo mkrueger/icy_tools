@@ -423,14 +423,6 @@ pub trait ToolHandler: Send + Sync {
         column![].into()
     }
 
-    /// Render status bar content for this tool.
-    ///
-    /// Default: empty text.
-    fn view_status(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let _ = ctx;
-        text("").into()
-    }
-
     // === Appearance ===
 
     /// Get cursor style for this tool.

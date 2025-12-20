@@ -89,7 +89,7 @@ impl FormatMode {
     /// Derive FormatMode from buffer's palette_mode and font_mode.
     /// Default is Unrestricted, falls back to LegacyDos if no match.
     pub fn from_buffer(buffer: &TextBuffer) -> Self {
-        use crate::{FontMode};
+        use crate::FontMode;
 
         match buffer.font_mode {
             FontMode::Sauce => FormatMode::LegacyDos,
@@ -101,7 +101,7 @@ impl FormatMode {
 
     /// Apply this format mode to a buffer (sets palette_mode and font_mode)
     pub fn apply_to_buffer(&self, buffer: &mut TextBuffer) {
-        use crate::{FontMode};
+        use crate::FontMode;
 
         match self {
             FormatMode::LegacyDos => {
@@ -1176,67 +1176,67 @@ mod tests {
     #[test]
     fn test_document_to_layer_position_no_offset() {
         let state = create_test_edit_state();
-        
+
         // With no offset, document and layer positions should be the same
         let doc_pos = Position::new(10, 5);
         let layer_pos = state.document_to_layer_position(doc_pos);
-        
+
         assert_eq!(layer_pos, Position::new(10, 5));
     }
 
     #[test]
     fn test_document_to_layer_position_with_offset() {
         let state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
-        
+
         // Document position (15, 8) with layer offset (10, 5) should give layer position (5, 3)
         let doc_pos = Position::new(15, 8);
         let layer_pos = state.document_to_layer_position(doc_pos);
-        
+
         assert_eq!(layer_pos, Position::new(5, 3));
     }
 
     #[test]
     fn test_layer_to_document_position_no_offset() {
         let state = create_test_edit_state();
-        
+
         // With no offset, layer and document positions should be the same
         let layer_pos = Position::new(10, 5);
         let doc_pos = state.layer_to_document_position(layer_pos);
-        
+
         assert_eq!(doc_pos, Position::new(10, 5));
     }
 
     #[test]
     fn test_layer_to_document_position_with_offset() {
         let state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
-        
+
         // Layer position (5, 3) with layer offset (10, 5) should give document position (15, 8)
         let layer_pos = Position::new(5, 3);
         let doc_pos = state.layer_to_document_position(layer_pos);
-        
+
         assert_eq!(doc_pos, Position::new(15, 8));
     }
 
     #[test]
     fn test_document_layer_position_roundtrip() {
         let state = create_test_edit_state_with_layer_offset(Position::new(20, 10));
-        
+
         // Converting doc->layer->doc should give the original position
         let original_doc_pos = Position::new(50, 30);
         let layer_pos = state.document_to_layer_position(original_doc_pos);
         let roundtrip_doc_pos = state.layer_to_document_position(layer_pos);
-        
+
         assert_eq!(roundtrip_doc_pos, original_doc_pos);
     }
 
     #[test]
     fn test_set_caret_from_document_position() {
         let mut state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
-        
+
         // Clicking at document position (15, 8) with layer offset (10, 5)
         // should set caret to layer position (5, 3)
         state.set_caret_from_document_position(Position::new(15, 8));
-        
+
         let caret_pos = state.get_caret().position();
         assert_eq!(caret_pos, Position::new(5, 3));
     }
@@ -1244,11 +1244,11 @@ mod tests {
     #[test]
     fn test_set_caret_from_document_position_negative_result() {
         let mut state = create_test_edit_state_with_layer_offset(Position::new(10, 5));
-        
+
         // Clicking at document position (5, 2) with layer offset (10, 5)
         // should set caret to layer position (-5, -3) - this is valid for layers
         state.set_caret_from_document_position(Position::new(5, 2));
-        
+
         let caret_pos = state.get_caret().position();
         assert_eq!(caret_pos, Position::new(-5, -3));
     }

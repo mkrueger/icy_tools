@@ -3,11 +3,7 @@
 //! Each MainWindow represents one editing window with its own state and mode.
 //! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
-use std::{
-    cell::{Cell, RefCell},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{cell::Cell, path::PathBuf, sync::Arc};
 
 use parking_lot::RwLock;
 
@@ -365,14 +361,21 @@ pub enum Message {
     Collaboration(crate::ui::collaboration::CollaborationMessage),
 }
 
-/// Status bar information that can be provided by any editor mode
+/// Status bar information for ANSI editor
 #[derive(Clone, Debug, Default)]
-pub struct StatusBarInfo {
-    pub left: String,
-    pub center: String,
-    pub right: String,
-    /// Optional clickable font name (for ANSI editor)
-    pub font_name: Option<String>,
+pub struct AnsiStatusBarInfo {
+    /// Caret position (x, y) - None if tool doesn't show caret
+    pub cursor_position: Option<(i32, i32)>,
+    /// Selection range (min, max) - None if no selection
+    pub selection_range: Option<((i32, i32), (i32, i32))>,
+    /// Buffer size (width, height)
+    pub buffer_size: (i32, i32),
+    /// Font name for display
+    pub font_name: String,
+    /// Ice colors mode enabled
+    pub ice_colors: bool,
+    /// Letter spacing (9px mode) enabled
+    pub letter_spacing: bool,
     /// For XBinExtended: slot font info
     pub slot_fonts: Option<SlotFontsInfo>,
 }
@@ -385,7 +388,7 @@ pub struct SlotFontsInfo {
     pub slot1_name: Option<String>,
 }
 
-impl From<AnsiStatusInfo> for StatusBarInfo {
+impl From<AnsiStatusInfo> for AnsiStatusBarInfo {
     fn from(info: AnsiStatusInfo) -> Self {
         let slot_fonts = if info.format_mode == icy_engine_edit::FormatMode::XBinExtended {
             info.slot_fonts.map(|fonts| SlotFontsInfo {
@@ -397,24 +400,15 @@ impl From<AnsiStatusInfo> for StatusBarInfo {
             None
         };
 
-        // Show paste layer info in center when in paste mode
-        let center = if let (Some(pos), Some(size)) = (info.paste_layer_position, info.paste_layer_size) {
-            format!("Paste: {}×{} @ ({}, {})", size.0, size.1, pos.0, pos.1)
-        } else {
-            format!("Layer {}/{}", info.current_layer + 1, info.total_layers)
-        };
+        let selection_range = info.selection_range.map(|(min_x, min_y, max_x, max_y)| ((min_x, min_y), (max_x, max_y)));
 
         Self {
-            left: format!("{}×{}", info.buffer_size.0, info.buffer_size.1,),
-            center,
-            right: format!(
-                "{}  {}  ({}, {})",
-                info.current_tool,
-                if info.insert_mode { "INS" } else { "OVR" },
-                info.cursor_position.0,
-                info.cursor_position.1,
-            ),
-            font_name: if slot_fonts.is_some() { None } else { Some(info.font_name) },
+            cursor_position: info.cursor_position,
+            selection_range,
+            buffer_size: info.buffer_size,
+            font_name: info.font_name,
+            ice_colors: info.ice_colors,
+            letter_spacing: info.letter_spacing,
             slot_fonts,
         }
     }
@@ -477,9 +471,6 @@ pub struct MainWindow {
 
     /// Bumps on every UI update (used to cache expensive view-derived data)
     ui_revision: Cell<u64>,
-
-    /// Cached status bar info for the current `ui_revision`
-    status_info_cache: RefCell<Option<(u64, StatusBarInfo)>>,
 
     /// Loaded plugins from the plugin directory
     plugins: Arc<Vec<Plugin>>,
@@ -571,7 +562,6 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             ui_revision: Cell::new(0),
-            status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
             collaboration_state: CollaborationState::new(),
@@ -778,7 +768,6 @@ impl MainWindow {
             pending_open_path: None,
             title: String::new(),
             ui_revision: Cell::new(0),
-            status_info_cache: RefCell::new(None),
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
             collaboration_state: CollaborationState::new(),
@@ -1816,9 +1805,15 @@ impl MainWindow {
 
         let is_connected = self.collaboration_state.active;
 
-        let menu_bar = self
-            .menu_state
-            .view(&self.mode_state.mode(), options, &undo_info, &marker_state, self.plugins.clone(), mirror_mode, is_connected);
+        let menu_bar = self.menu_state.view(
+            &self.mode_state.mode(),
+            options,
+            &undo_info,
+            &marker_state,
+            self.plugins.clone(),
+            mirror_mode,
+            is_connected,
+        );
 
         // Pass collaboration state to the ANSI editor; it builds the chat pane and splitter itself.
         let content: Element<'_, Message> = match &self.mode_state {
@@ -1924,12 +1919,67 @@ impl MainWindow {
             .into();
         }
 
-        // Default status bar for other modes
-        let info = self.status_info_cached();
+        // ANSI editor status bar - moebius style
+        if let ModeState::Ansi(editor) = &self.mode_state {
+            let info: AnsiStatusBarInfo = editor.status_info().into();
+            return self.view_ansi_status_bar(&info);
+        }
 
-        // Build right section - with slot buttons for XBinExtended or clickable font name
-        let right_section: Element<'_, Message> = if let Some(slots) = &info.slot_fonts {
-            // XBinExtended mode: show two slot buttons
+        // BitFont/CharFont - simple status bar
+        let (left, center, right) = match &self.mode_state {
+            ModeState::BitFont(editor) => editor.status_info(),
+            ModeState::CharFont(editor) => editor.status_info(),
+            _ => (String::new(), String::new(), String::new()),
+        };
+
+        container(
+            row![
+                container(text(left).size(12)).width(Length::FillPortion(1)),
+                container(text(center).size(12)).width(Length::FillPortion(1)).center_x(Length::Fill),
+                container(text(right).size(12)).width(Length::FillPortion(1)).align_x(Alignment::End),
+            ]
+            .align_y(Alignment::Center)
+            .padding([2, 8]),
+        )
+        .height(Length::Fixed(24.0))
+        .into()
+    }
+
+    /// Render ANSI editor status bar in moebius style:
+    /// Left: Letter Spacing toggle, iCE Colors toggle
+    /// Center: Buffer dimensions
+    /// Right: Position/Selection, Font
+    fn view_ansi_status_bar(&self, info: &AnsiStatusBarInfo) -> Element<'_, Message> {
+        // Left section: Letter Spacing and iCE Colors toggles
+        let letter_spacing_text = if info.letter_spacing { "On" } else { "Off" };
+        let letter_spacing_toggle = mouse_area(text(format!("Letter Spacing {}", letter_spacing_text)).size(12))
+            .on_press(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLetterSpacing)));
+
+        let ice_colors_text = if info.ice_colors { "On" } else { "Off" };
+        let ice_colors_toggle = mouse_area(text(format!("iCE Colors {}", ice_colors_text)).size(12))
+            .on_press(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleIceColors)));
+
+        let left_section = row![letter_spacing_toggle, Space::new().width(16.0), ice_colors_toggle,].align_y(Alignment::Center);
+
+        // Center section: Buffer dimensions
+        let center_text = format!("{}×{}", info.buffer_size.0, info.buffer_size.1);
+
+        // Right section: Position/Selection + Font
+        let position_text: Element<'_, Message> = if let Some(((min_x, min_y), (max_x, max_y))) = info.selection_range {
+            // Show selection range and size
+            let width = (max_x - min_x).abs() + 1;
+            let height = (max_y - min_y).abs() + 1;
+            text(format!("({},{})–({},{}) {}×{}", min_x, min_y, max_x, max_y, width, height))
+                .size(12)
+                .into()
+        } else if let Some((x, y)) = info.cursor_position {
+            text(format!("Ln {}, Col {}", y + 1, x + 1)).size(12).into()
+        } else {
+            Space::new().width(0.0).into()
+        };
+
+        // Font display - XBinExtended has slot buttons, otherwise clickable font name
+        let font_section: Element<'_, Message> = if let Some(slots) = &info.slot_fonts {
             let slot0_name = slots.slot0_name.as_deref().unwrap_or("Slot 0");
             let slot1_name = slots.slot1_name.as_deref().unwrap_or("Slot 1");
 
@@ -1942,41 +1992,18 @@ impl MainWindow {
             let slot1_btn = mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6]))
                 .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
 
-            row![text(format!("{}  ", info.right)).size(12), slot0_btn, Space::new().width(4.0), slot1_btn,]
-                .align_y(Alignment::Center)
-                .into()
-        } else if let Some(font_name) = &info.font_name {
-            let font_display = mouse_area(
-                container(text(format!("🔤 {}", font_name)).size(12))
-                    .style(|theme: &Theme| {
-                        let palette = theme.extended_palette();
-                        container::Style {
-                            background: Some(iced::Background::Color(palette.background.weak.color)),
-                            border: iced::Border {
-                                radius: 3.0.into(),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        }
-                    })
-                    .padding([2, 6]),
-            )
-            .on_press(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector));
-
-            row![text(format!("{}  ", info.right)).size(12), font_display,]
-                .align_y(Alignment::Center)
-                .into()
+            row![slot0_btn, Space::new().width(4.0), slot1_btn].align_y(Alignment::Center).into()
         } else {
-            text(info.right).size(12).into()
+            let font_display = mouse_area(text(info.font_name.clone()).size(12)).on_press(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector));
+            font_display.into()
         };
+
+        let right_section = row![position_text, Space::new().width(16.0), font_section,].align_y(Alignment::Center);
 
         container(
             row![
-                // Left section
-                container(text(info.left).size(12)).width(Length::FillPortion(1)),
-                // Center section
-                container(text(info.center).size(12)).width(Length::FillPortion(1)).center_x(Length::Fill),
-                // Right section - with clickable font name
+                container(left_section).width(Length::FillPortion(1)),
+                container(text(center_text).size(12)).width(Length::FillPortion(1)).center_x(Length::Fill),
                 container(right_section).width(Length::FillPortion(1)).align_x(Alignment::End),
             ]
             .align_y(Alignment::Center)
@@ -1986,42 +2013,6 @@ impl MainWindow {
         .into()
     }
 
-    fn get_status_info(&self) -> StatusBarInfo {
-        match &self.mode_state {
-            ModeState::Ansi(editor) => editor.status_info().into(),
-            ModeState::BitFont(editor) => {
-                let (left, center, right) = editor.status_info();
-                StatusBarInfo {
-                    left,
-                    center,
-                    right,
-                    font_name: None,
-                    slot_fonts: None,
-                }
-            }
-            ModeState::CharFont(editor) => {
-                let (left, center, right) = editor.status_info();
-                StatusBarInfo {
-                    left,
-                    center,
-                    right,
-                    font_name: None,
-                    slot_fonts: None,
-                }
-            }
-            ModeState::Animation(editor) => {
-                let (line, col) = editor.cursor_position();
-                StatusBarInfo {
-                    left: format!("Ln {}, Col {}", line + 1, col + 1),
-                    center: String::new(),
-                    right: if editor.is_dirty() { "Modified".into() } else { String::new() },
-                    font_name: None,
-                    slot_fonts: None,
-                }
-            }
-        }
-    }
-
     /// Check if animation editor needs periodic ticks (for playback or recompilation)
     pub fn needs_animation_tick(&self) -> bool {
         if let ModeState::Animation(editor) = &self.mode_state {
@@ -2029,19 +2020,6 @@ impl MainWindow {
         } else {
             false
         }
-    }
-
-    fn status_info_cached(&self) -> StatusBarInfo {
-        let rev = self.ui_revision.get();
-        if let Some((cached_rev, cached)) = self.status_info_cache.borrow().as_ref() {
-            if *cached_rev == rev {
-                return cached.clone();
-            }
-        }
-
-        let info = self.get_status_info();
-        *self.status_info_cache.borrow_mut() = Some((rev, info.clone()));
-        info
     }
 
     /// Get undo/redo descriptions for menu display
@@ -2400,13 +2378,7 @@ impl MainWindow {
                 }
             }
 
-            McpCommand::AnsiSetColor {
-                index,
-                r,
-                g,
-                b,
-                response,
-            } => {
+            McpCommand::AnsiSetColor { index, r, g, b, response } => {
                 let result = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.set_palette_color(*index, *r, *g, *b),
                     _ => Err("Not in ANSI editor mode".to_string()),
@@ -2436,12 +2408,7 @@ impl MainWindow {
                 }
             }
 
-            McpCommand::AnsiSetCaret {
-                x,
-                y,
-                attribute,
-                response,
-            } => {
+            McpCommand::AnsiSetCaret { x, y, attribute, response } => {
                 let result = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.set_caret(*x, *y, attribute),
                     _ => Err("Not in ANSI editor mode".to_string()),
@@ -2520,11 +2487,7 @@ impl MainWindow {
                 }
             }
 
-            McpCommand::AnsiMoveLayer {
-                layer,
-                direction,
-                response,
-            } => {
+            McpCommand::AnsiMoveLayer { layer, direction, response } => {
                 let result = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.move_layer(*layer, direction.clone()),
                     _ => Err("Not in ANSI editor mode".to_string()),
@@ -2534,11 +2497,7 @@ impl MainWindow {
                 }
             }
 
-            McpCommand::AnsiResize {
-                width,
-                height,
-                response,
-            } => {
+            McpCommand::AnsiResize { width, height, response } => {
                 let result = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.resize_buffer(*width, *height),
                     _ => Err("Not in ANSI editor mode".to_string()),
@@ -2593,13 +2552,7 @@ impl MainWindow {
                 }
             }
 
-            McpCommand::AnsiSetSelection {
-                x,
-                y,
-                width,
-                height,
-                response,
-            } => {
+            McpCommand::AnsiSetSelection { x, y, width, height, response } => {
                 let result = match &mut self.mode_state {
                     ModeState::Ansi(editor) => editor.set_selection(*x, *y, *width, *height),
                     _ => Err("Not in ANSI editor mode".to_string()),
@@ -2750,9 +2703,11 @@ impl MainWindow {
                         font_count: buffer.font_count(),
                         font_mode: font_mode.to_string(),
                         ice_mode: ice_mode.to_string(),
-                        palette: buffer.palette.export_palette(&FileFormat::Palette(icy_engine::PaletteFormat::Hex))
+                        palette: buffer
+                            .palette
+                            .export_palette(&FileFormat::Palette(icy_engine::PaletteFormat::Hex))
                             .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-                            .unwrap_or_default()
+                            .unwrap_or_default(),
                     },
                     caret: CaretInfo {
                         x: caret.x,

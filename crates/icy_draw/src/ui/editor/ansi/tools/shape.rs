@@ -621,17 +621,6 @@ impl ToolHandler for ShapeTool {
         }
     }
 
-    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let status = if let (Some(start), Some(end)) = (self.start_pos, self.current_pos) {
-            let w = (end.x - start.x).abs() + 1;
-            let h = (end.y - start.y).abs() + 1;
-            format!("Shape | ({},{}) → ({},{}) [{}x{}] | Shift=Erase", start.x, start.y, end.x, end.y, w, h)
-        } else {
-            "Shape | Click and drag to draw".to_string()
-        };
-        text(status).into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Crosshair
     }

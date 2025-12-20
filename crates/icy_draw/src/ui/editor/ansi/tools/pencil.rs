@@ -386,11 +386,6 @@ impl ToolHandler for PencilTool {
         column![].into()
     }
 
-    fn view_status(&self, _ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        // Status rendering by AnsiEditor for now
-        column![].into()
-    }
-
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Crosshair
     }
