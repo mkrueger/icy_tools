@@ -11,14 +11,14 @@ fn main() {
     let loaded = FileFormat::IcyDraw.from_bytes(&original_data, None).expect("Failed to load original .icy file");
     println!(
         "Loaded buffer: {}x{}, {} layers",
-        loaded.buffer.width(),
-        loaded.buffer.height(),
-        loaded.buffer.layers.len()
+        loaded.screen.buffer.width(),
+        loaded.screen.buffer.height(),
+        loaded.screen.buffer.layers.len()
     );
 
     // Save it back using the new format (V1 with icYD chunks)
     let options = AnsiSaveOptionsV2::default();
-    let saved_data = FileFormat::IcyDraw.to_bytes(&loaded.buffer, &options).expect("Failed to save .icy file");
+    let saved_data = FileFormat::IcyDraw.to_bytes(&loaded.screen.buffer, &options).expect("Failed to save .icy file");
     println!("Saved file size: {} bytes", saved_data.len());
 
     // Save to temp file for inspection
@@ -30,9 +30,9 @@ fn main() {
         Ok(reloaded) => {
             println!(
                 "Reloaded buffer: {}x{}, {} layers",
-                reloaded.buffer.width(),
-                reloaded.buffer.height(),
-                reloaded.buffer.layers.len()
+                reloaded.screen.buffer.width(),
+                reloaded.screen.buffer.height(),
+                reloaded.screen.buffer.layers.len()
             );
             println!("SUCCESS: Roundtrip works!");
         }

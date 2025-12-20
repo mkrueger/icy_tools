@@ -169,23 +169,16 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Resul
     Ok(result)
 }
 
-pub(crate) fn load_ctrla(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_ctrla(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((80, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    let mut min_height = -1;
-    if let Some(sauce) = &load_data.sauce_opt {
-        let lines = result.apply_sauce(sauce);
-        if lines.1 > 0 {
-            min_height = lines.1 as i32;
-        }
-    }
 
     let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
     if is_unicode {
         result.buffer.buffer_type = crate::BufferType::Unicode;
     }
-    crate::load_with_parser(&mut result, &mut icy_parser_core::CtrlAParser::default(), file_data, true, min_height)?;
+    crate::load_with_parser(&mut result, &mut icy_parser_core::CtrlAParser::default(), file_data, true, -1)?;
     Ok(result)
 }

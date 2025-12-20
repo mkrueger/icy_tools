@@ -57,7 +57,7 @@ fn main() -> icy_engine::Result<()> {
     opt.output_line_length = None;
     opt.longer_terminal_output = false;
 
-    let bytes_cp437 = save_ansi_v2(&screen.buffer, &opt)?;
+    let bytes_cp437 = save_ansi_v2(&screen.screen.buffer, &opt)?;
     let bytes_utf8 = cp437_ansi_bytes_to_utf8_with_bom(&bytes_cp437);
 
     fs::write(&output, &bytes_utf8)?;

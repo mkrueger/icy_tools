@@ -47,9 +47,11 @@ pub enum ControlCharHandling {
     FilterOut,
 }
 
+/// Options for loading files.
+///
+/// Note: SAUCE metadata is returned separately in `LoadedDocument`, not passed as input.
 #[derive(Default)]
 pub struct LoadData {
-    sauce_opt: Option<icy_sauce::SauceRecord>,
     ansi_music: Option<MusicOption>,
     default_terminal_width: Option<usize>,
     /// Optional maximum height limit for the buffer
@@ -59,14 +61,21 @@ pub struct LoadData {
 }
 
 impl LoadData {
-    pub fn new(sauce_opt: Option<icy_sauce::SauceRecord>, ansi_music: Option<MusicOption>, default_terminal_width: Option<usize>) -> Self {
+    pub fn new(ansi_music: Option<MusicOption>, default_terminal_width: Option<usize>) -> Self {
         LoadData {
-            sauce_opt,
             ansi_music,
             default_terminal_width,
             max_height: None,
             convert_to_utf8: false,
         }
+    }
+
+    pub fn ansi_music(&self) -> Option<MusicOption> {
+        self.ansi_music
+    }
+
+    pub fn default_terminal_width(&self) -> Option<usize> {
+        self.default_terminal_width
     }
 
     pub fn convert_to_utf8(&self) -> bool {
@@ -88,6 +97,18 @@ impl LoadData {
     pub fn max_height(&self) -> Option<i32> {
         self.max_height
     }
+}
+
+/// Result of loading a document.
+///
+/// Contains both the loaded screen and any SAUCE metadata found in the file.
+/// SAUCE settings (size, font, ice colors) are automatically applied to the screen,
+/// but the original SAUCE record is also available for access to title, author, group, etc.
+pub struct LoadedDocument {
+    /// The loaded screen with SAUCE settings applied
+    pub screen: TextScreen,
+    /// The original SAUCE record, if present in the file
+    pub sauce_opt: Option<icy_sauce::SauceRecord>,
 }
 
 use crate::{IceMode, TextBuffer, limits};

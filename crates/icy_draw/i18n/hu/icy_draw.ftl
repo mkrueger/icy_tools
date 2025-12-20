@@ -2,6 +2,28 @@ font-editor-table = Karakter táblázat 0-{ $length }:
 
 unsaved-title=Nevezetlen
 
+# CLI (clap)
+app-about = Icy Draw — create ANSI/ASCII art, edit fonts, and collaborate in real time
+arg-path-help = File to open on startup
+arg-mcp-port-help = Start an MCP server on the given port (e.g. --mcp-port 8080)
+cmd-host-about = Host a real-time collaboration session (Moebius-compatible)
+arg-host-port-help = Port to listen on (default: 8000)
+arg-host-bind-help = Bind address (default: 0.0.0.0)
+arg-host-password-help = Session password (optional)
+arg-host-max-users-help = Maximum number of users (0 = unlimited)
+arg-host-file-help = File to host (optional; starts with an empty 80x25 canvas if omitted)
+
+# Server banner
+server-title = Icy Draw Collaboration Server
+server-bind-address = Bind Address
+server-password = Password
+server-document = Document
+server-max-users = Max Users
+server-connect-with = Connect with
+server-stop-hint = Press Ctrl+C to stop the server
+server-none = (none)
+server-unlimited = unlimited
+
 menu-file=Fájl
 menu-new=Új…
 menu-open=Megnyitás…

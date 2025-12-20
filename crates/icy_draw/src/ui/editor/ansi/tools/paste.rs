@@ -14,7 +14,6 @@ use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
-use icy_engine_edit::UndoState;
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
 
@@ -37,17 +36,15 @@ pub struct PasteTool {
 
     /// Atomic undo guard for moving pasted layer during drag
     move_undo: Option<AtomicUndoGuard>,
+
+    /// Atomic undo guard for the entire paste operation (paste + all manipulations).
+    /// This groups paste, move, rotate, flip, etc. into a single undo action.
+    paste_undo: Option<AtomicUndoGuard>,
 }
 
 impl PasteTool {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn begin_paste(&mut self, previous_tool: super::ToolId) {
-        self.active = true;
-        self.previous_tool = Some(previous_tool);
-        self.abort();
     }
 
     pub fn can_paste(&self) -> bool {
@@ -60,6 +57,9 @@ impl PasteTool {
         if self.active {
             return Ok(ToolResult::None);
         }
+
+        // Start atomic undo guard BEFORE the paste operation so it's included in the group
+        self.paste_undo = Some(ctx.state.begin_atomic_undo("Paste".to_string()));
 
         // Priority: ICY binary > Image > Text
         if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
@@ -79,10 +79,14 @@ impl PasteTool {
             log::debug!("paste: Using text data: {:?}", text);
             ctx.state.paste_text(&text).map_err(|e| e.to_string())?;
         } else {
+            // No compatible content - drop the undo guard without committing
+            self.paste_undo = None;
             return Err("No compatible clipboard content".to_string());
         }
 
-        self.begin_paste(previous_tool);
+        self.active = true;
+        self.previous_tool = Some(previous_tool);
+        self.abort();
         Ok(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
             .and(ToolResult::UpdateLayerBounds)
             .and(ToolResult::CollabPasteAsSelection)
@@ -96,6 +100,8 @@ impl PasteTool {
     fn finish_paste(&mut self) -> super::ToolId {
         self.active = false;
         self.abort();
+        // End the atomic undo group - all paste operations are now a single undo action
+        self.paste_undo = None;
         self.previous_tool.take().unwrap_or(super::ToolId::Tool(Tool::Click))
     }
 
@@ -216,17 +222,20 @@ impl PasteTool {
                 self.abort();
                 state.set_layer_preview_offset(None);
 
-                // Remove the floating layer by undoing the paste.
-                if let Err(e) = state.undo() {
-                    log::error!("Failed to discard floating layer: {}", e);
+                // Discard the atomic undo group - this removes all paste operations
+                // (paste, move, rotate, flip, etc.) from the undo stack without committing.
+                if let Some(ref mut guard) = self.paste_undo {
+                    guard.discard();
                 }
 
-                let prev = self.finish_paste();
+                self.active = false;
+                self.paste_undo = None;
+                let prev = self.previous_tool.take().unwrap_or(super::ToolId::Tool(Tool::Click));
+
                 ToolResult::Multi(vec![
                     ToolResult::EndCapture,
                     ToolResult::SetCursorIcon(None),
                     ToolResult::UpdateLayerBounds,
-                    ToolResult::Commit("Discard floating layer".to_string()),
                     ToolResult::SwitchTool(prev),
                     ToolResult::Redraw,
                 ])

@@ -106,12 +106,12 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     Ok(result)
 }
 
-pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut result = TextBuffer::new((80, 25));
     result.ice_mode = IceMode::Ice;
     result.terminal_state.is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    let max_height = load_data.max_height();
+    let max_height = load_data_opt.and_then(|ld| ld.max_height());
 
     if data.len() < HEADER_SIZE + FONT_SIZE + PALETTE_SIZE {
         return Err(LoadingError::FileTooShort.into());

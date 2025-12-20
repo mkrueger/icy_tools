@@ -25,7 +25,7 @@ fn load_all_xbin_files() -> Vec<icy_engine::TextBuffer> {
             {
                 if let Ok(data) = fs::read(&path) {
                     if let Ok(screen) = FileFormat::XBin.from_bytes(&data, None) {
-                        buffers.push(screen.buffer);
+                        buffers.push(screen.screen.buffer);
                     }
                 }
             }

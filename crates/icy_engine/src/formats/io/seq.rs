@@ -12,7 +12,8 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Result
     Err(crate::EngineError::not_implemented("Seq export"))
 }
 
-pub(crate) fn load_seq(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((40, 25));
 
     result.buffer.clear_font_table();
@@ -22,10 +23,6 @@ pub(crate) fn load_seq(data: &[u8], load_data_opt: Option<LoadData>) -> Result<T
     result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
     result.buffer.buffer_type = crate::BufferType::Petscii;
     result.buffer.terminal_state.is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    if let Some(sauce) = load_data.sauce_opt {
-        result.apply_sauce(&sauce);
-    }
 
     seq_prepare(&mut result);
     crate::load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), data, true, 25)?;

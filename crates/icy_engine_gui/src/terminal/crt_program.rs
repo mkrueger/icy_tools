@@ -93,6 +93,7 @@ impl<'a> CRTShaderProgram<'a> {
         let visible_height: f32;
         let visible_width: f32;
         let full_content_height: f32;
+        let aspect_ratio_y: f32;
         let texture_width: u32;
         let blink_on: bool;
         let char_blink_supported: bool;
@@ -119,9 +120,25 @@ impl<'a> CRTShaderProgram<'a> {
             let mut screen = self.term.screen.lock();
             scan_lines = screen.scan_lines();
 
+            // IMPORTANT: `screen.font_dimensions()` already includes aspect ratio correction
+            // (and may involve rounding to integer pixels). For the shader sampling path,
+            // we need the *effective* ratio between display pixel space and the raw
+            // rendered texture pixel space.
             let font_dims = screen.font_dimensions();
             font_w = font_dims.width as usize;
             font_h = font_dims.height as usize;
+
+            // Raw render uses the font bitmap height (no aspect ratio correction).
+            // Use the actual ratio (including rounding) so textures and overlays stay aligned.
+            let raw_font_h = screen.font(0).map(|f| f.size().height as f32).unwrap_or(font_h as f32).max(1.0);
+
+            let display_font_h = font_h as f32;
+
+            aspect_ratio_y = if screen.use_aspect_ratio() {
+                (display_font_h / raw_font_h).max(1.0)
+            } else {
+                1.0
+            };
 
             // Get the ORIGINAL document resolution BEFORE fit_terminal_height_to_bounds modifies it.
             // This is needed for proper centering calculation.
@@ -428,12 +445,18 @@ impl<'a> CRTShaderProgram<'a> {
             // Each tile is TILE_HEIGHT pixels tall
             let tile_height = TILE_HEIGHT as f32;
 
+            // Tile slicing/rendering happens in RAW texture pixel coordinates.
+            // Viewport/scroll inputs are in aspect-corrected document pixels.
+            let scroll_offset_y_raw = scroll_offset_y / aspect_ratio_y;
+            let visible_height_raw = visible_height / aspect_ratio_y;
+            let full_content_height_raw = full_content_height / aspect_ratio_y;
+
             // Current tile index based on scroll position
-            let current_tile_idx = (scroll_offset_y / tile_height).floor() as i32;
-            let max_tile_idx = ((full_content_height / tile_height).ceil() as i32 - 1).max(0);
+            let current_tile_idx = (scroll_offset_y_raw / tile_height).floor() as i32;
+            let max_tile_idx = ((full_content_height_raw / tile_height).ceil() as i32 - 1).max(0);
 
             // Dynamic slice count: visible tiles + 1 above + 1 below
-            let visible_tiles = (visible_height / tile_height).ceil().max(1.0) as i32;
+            let visible_tiles = (visible_height_raw / tile_height).ceil().max(1.0) as i32;
             let mut desired_count = (visible_tiles + 2).clamp(1, MAX_TEXTURE_SLICES as i32);
             desired_count = desired_count.min(max_tile_idx + 1);
 
@@ -454,17 +477,37 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Get or render each tile using the shared cache for BOTH blink states
             let resolution = screen.resolution();
-            // Selection is now rendered in the shader, not in the textures
+
+            // For icy_term: get selection from screen and render it in the RGBA data
+            // (icy_draw uses editor_markers for selection, so this only applies when editor_markers is None)
+            let (selection, selection_fg, selection_bg) = if self.editor_markers.is_none() {
+                let sel = screen.selection();
+                if sel.is_some() {
+                    let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
+                    (sel, Some(fg_sel), Some(bg_sel))
+                } else {
+                    (None, None, None)
+                }
+            } else {
+                // icy_draw handles selection via shader/editor_markers
+                (None, None, None)
+            };
+            let has_selection = selection.is_some();
 
             // Helper to get or render tiles for a specific blink state
             let get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
                 for &tile_idx in &tile_indices {
                     let tile_start_y = tile_idx as f32 * tile_height;
-                    let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height);
-                    let actual_tile_height = (tile_end_y - tile_start_y).max(1.0) as u32;
+                    let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height_raw);
+                    let actual_tile_height = (tile_end_y - tile_start_y).ceil().max(1.0) as u32;
 
                     let cache_key = TileCacheKey::new(tile_idx, blink_state);
-                    let cached_tile = self.term.render_cache.read().get(&cache_key).cloned();
+                    // Don't use cache when selection is active (selection changes frequently)
+                    let cached_tile = if has_selection {
+                        None
+                    } else {
+                        self.term.render_cache.read().get(&cache_key).cloned()
+                    };
 
                     if let Some(cached) = cached_tile {
                         slices.push(cached.texture);
@@ -476,7 +519,7 @@ impl<'a> CRTShaderProgram<'a> {
                         let tile_region: icy_engine::Rectangle =
                             icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
 
-                        // Selection is rendered in the shader now, not in the texture
+                        // Include selection in render options (for icy_term)
                         let render_options = icy_engine::RenderOptions {
                             rect: icy_engine::Rectangle {
                                 start: icy_engine::Position::new(0, tile_start_y as i32),
@@ -484,12 +527,12 @@ impl<'a> CRTShaderProgram<'a> {
                             }
                             .into(),
                             blink_on: blink_state,
-                            selection: None,
-                            selection_fg: None,
-                            selection_bg: None,
+                            selection,
+                            selection_fg: selection_fg.clone(),
+                            selection_bg: selection_bg.clone(),
                             override_scan_lines: None,
                         };
-                        let (render_size, rgba_data) = screen.render_region_to_rgba(tile_region, &render_options);
+                        let (render_size, rgba_data) = screen.render_region_to_rgba_raw(tile_region, &render_options);
                         let width = render_size.width as u32;
                         let height = render_size.height as u32;
 
@@ -499,13 +542,15 @@ impl<'a> CRTShaderProgram<'a> {
                             height,
                         };
 
-                        // Cache this tile
-                        let cached_tile = SharedCachedTile {
-                            texture: slice.clone(),
-                            height,
-                            start_y: tile_start_y,
-                        };
-                        self.term.render_cache.write().insert(cache_key, cached_tile);
+                        // Only cache if no selection is active
+                        if !has_selection {
+                            let cached_tile = SharedCachedTile {
+                                texture: slice.clone(),
+                                height,
+                                start_y: tile_start_y,
+                            };
+                            self.term.render_cache.write().insert(cache_key, cached_tile);
+                        }
 
                         slices.push(slice);
                         if heights.len() < tile_indices.len() {
@@ -613,6 +658,7 @@ impl<'a> CRTShaderProgram<'a> {
             background_color: *self.term.background_color.read(),
             scroll_offset_y,
             visible_height,
+            aspect_ratio_y,
             first_slice_start_y,
             scroll_offset_x,
             visible_width,

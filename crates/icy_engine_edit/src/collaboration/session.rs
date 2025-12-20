@@ -139,6 +139,32 @@ impl Session {
         }
     }
 
+    /// Update a user's group.
+    pub fn update_group(&self, id: UserId, group: String) {
+        if let Some(user) = self.users.write().get_mut(&id) {
+            user.group = group;
+        }
+    }
+
+    /// Get IDs of all registered users (not web clients).
+    ///
+    /// Web clients are identified by status == WEB (3) and have an empty nickname.
+    /// They connect to view the document but don't participate in chat or
+    /// receive join/leave notifications.
+    ///
+    /// This is used by the server to implement Moebius-compatible broadcast behavior:
+    /// - `send_all`: Only sends to registered users (status != WEB)
+    /// - `send_all_including_guests`: Sends to all users including web clients
+    pub fn get_registered_user_ids(&self) -> Vec<UserId> {
+        use super::user_status;
+        self.users
+            .read()
+            .iter()
+            .filter(|(_, user)| user.status != user_status::WEB)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Update SAUCE metadata.
     pub fn update_sauce(&self, title: String, author: String, group: String) {
         let mut sauce = self.sauce.write();
@@ -148,6 +174,7 @@ impl Session {
     }
 
     /// Add a chat message to the history.
+    /// Moebius limits chat history to 32 messages.
     pub fn add_chat_message(&self, id: UserId, nick: String, text: String) {
         let msg = ChatMessage {
             id,
@@ -156,10 +183,15 @@ impl Session {
             group: String::new(),
             time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
+                .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
         };
-        self.chat_history.write().push(msg);
+        let mut history = self.chat_history.write();
+        history.push(msg);
+        // Moebius limits chat history to 32 messages
+        if history.len() > 32 {
+            history.remove(0);
+        }
     }
 
     /// Get the chat history.

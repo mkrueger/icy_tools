@@ -62,13 +62,13 @@ static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
     use icy_engine::{Rectangle, RenderOptions, Selection, TextPane};
 
     // Load the XBin file
-    let mut screen = FileFormat::XBin.from_bytes(WELCOME_LOGO, None).expect("Failed to load welcome logo");
+    let mut loaded_doc = FileFormat::XBin.from_bytes(WELCOME_LOGO, None).expect("Failed to load welcome logo");
 
     // Replace version marker
-    replace_version_marker(&mut screen.buffer, &VERSION, None);
+    replace_version_marker(&mut loaded_doc.screen.buffer, &VERSION, None);
 
     // Render to RGBA
-    let rect = Selection::from(Rectangle::from(0, 0, screen.buffer.width(), screen.buffer.height()));
+    let rect = Selection::from(Rectangle::from(0, 0, loaded_doc.screen.buffer.width(), loaded_doc.screen.buffer.height()));
     let opts = RenderOptions {
         rect,
         blink_on: true,
@@ -78,7 +78,7 @@ static WELCOME_IMAGE: Lazy<iced_image::Handle> = Lazy::new(|| {
         override_scan_lines: Some(false),
     };
 
-    let (size, rgba) = screen.buffer.render_to_rgba(&opts, false);
+    let (size, rgba) = loaded_doc.screen.buffer.render_to_rgba(&opts, false);
     iced_image::Handle::from_rgba(size.width as u32, size.height as u32, rgba)
 });
 

@@ -62,10 +62,9 @@ fn test_respect_sauce_width() {
     opt.save_sauce = Some(sauce);
     let ansi_bytes = FileFormat::Ansi.to_bytes(&buf, &opt).unwrap();
 
-    // Extract SAUCE from the bytes
-    let sauce_opt = SauceRecord::from_bytes(&ansi_bytes).ok().flatten();
-    let load_data = LoadData::new(sauce_opt, None, None);
-    let loaded_buf = FileFormat::Ansi.from_bytes(&ansi_bytes, Some(load_data)).unwrap().buffer;
+    // Extract SAUCE from the bytes - SAUCE is now returned in LoadedDocument, not passed in
+    let load_data = LoadData::new(None, None);
+    let loaded_buf = FileFormat::Ansi.from_bytes(&ansi_bytes, Some(load_data)).unwrap().screen.buffer;
     assert_eq!(10, loaded_buf.width());
     assert_eq!(10, loaded_buf.layers[0].width());
 }

@@ -80,9 +80,8 @@ fn render_buffer_rgba(buffer: &icy_engine::TextBuffer, height: i32) -> (Size, Ve
     buffer.render_to_rgba(&options, scan_lines)
 }
 
-fn load_ansi_with_sauce(bytes: &[u8]) -> icy_engine::Result<icy_engine::TextScreen> {
-    let sauce_opt = icy_sauce::SauceRecord::from_bytes(bytes).ok().flatten();
-    FileFormat::Ansi.from_bytes(bytes, Some(LoadData::new(sauce_opt, None, Some(80))))
+fn load_ansi_with_sauce(bytes: &[u8]) -> icy_engine::Result<icy_engine::formats::LoadedDocument> {
+    FileFormat::Ansi.from_bytes(bytes, Some(LoadData::new(None, Some(80))))
 }
 
 fn terminalize_for_compare(buffer: &icy_engine::TextBuffer) -> icy_engine::TextBuffer {
@@ -500,7 +499,7 @@ fn main() -> icy_engine::Result<()> {
             }
         };
 
-        let original_buf = terminalize_for_compare(&original.buffer);
+        let original_buf = terminalize_for_compare(&original.screen.buffer);
         let orig_lines = original_buf.line_count().min(original_buf.height());
 
         // Preserve SAUCE if present
@@ -552,7 +551,7 @@ fn main() -> icy_engine::Result<()> {
                 }
             };
 
-            let v2_rt_buf = terminalize_for_compare(&v2_rt.buffer);
+            let v2_rt_buf = terminalize_for_compare(&v2_rt.screen.buffer);
             let v2_lines = v2_rt_buf.line_count().min(v2_rt_buf.height());
             let cmp_lines = orig_lines.max(v2_lines);
 
@@ -568,8 +567,8 @@ fn main() -> icy_engine::Result<()> {
                 if fail_fast {
                     eprintln!(
                         "orig ice_colors={} rt ice_colors={}",
-                        original.terminal_state().ice_colors,
-                        v2_rt.terminal_state().ice_colors
+                        original.screen.terminal_state().ice_colors,
+                        v2_rt.screen.terminal_state().ice_colors
                     );
                     let (tcount, tmaxy) = tag_stats(&original_buf);
                     eprintln!("orig tags={tcount} max_y={:?}", tmaxy);

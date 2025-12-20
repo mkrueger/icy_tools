@@ -25,7 +25,7 @@ fn main() {
 
 fn generate_from_xbin(xbin_path: &Path, out_path: &Path) {
     let data = fs::read(xbin_path).expect("read xbin input");
-    let mut buf = FileFormat::XBin.from_bytes(&data, None).expect("load xbin").buffer;
+    let mut buf = FileFormat::XBin.from_bytes(&data, None).expect("load xbin").screen.buffer;
 
     let width = buf.width();
     let height = buf.height();

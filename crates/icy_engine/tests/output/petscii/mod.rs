@@ -29,6 +29,6 @@ pub fn test_seq() {
         let screen = FileFormat::Petscii
             .load(&cur_entry, None)
             .unwrap_or_else(|e| panic!("Error loading SEQ file {:?}: {}", cur_entry, e));
-        crate::compare_buffer_output(&screen.buffer, &cur_entry);
+        crate::compare_buffer_output(&screen.screen.buffer, &cur_entry);
     }
 }

@@ -45,10 +45,10 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
 
     println!(
         "  Loaded .icy: {}x{}, {} fonts, ice_mode={:?}",
-        original.buffer.width(),
-        original.buffer.height(),
-        original.buffer.font_count(),
-        original.buffer.ice_mode
+        original.screen.buffer.width(),
+        original.screen.buffer.height(),
+        original.screen.buffer.font_count(),
+        original.screen.buffer.ice_mode
     );
 
     // Step 2: Save as XBin (uncompressed)
@@ -58,7 +58,7 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
     save_options.lossles_output = true;
 
     let xbin_bytes = xbin_format
-        .to_bytes(&original.buffer, &save_options)
+        .to_bytes(&original.screen.buffer, &save_options)
         .unwrap_or_else(|e| panic!("Failed to save {} as XBin: {:?}", filename, e));
 
     // Step 3: Load the XBin back
@@ -68,18 +68,18 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
 
     println!(
         "  Reloaded XBin: {}x{}, {} fonts",
-        reloaded.buffer.width(),
-        reloaded.buffer.height(),
-        reloaded.buffer.font_count()
+        reloaded.screen.buffer.width(),
+        reloaded.screen.buffer.height(),
+        reloaded.screen.buffer.font_count()
     );
 
     // Step 4: Compare original with reloaded
-    compare_buffers(&original.buffer, &reloaded.buffer, CompareOptions::ALL);
+    compare_buffers(&original.screen.buffer, &reloaded.screen.buffer, CompareOptions::ALL);
 
     // Step 5: Also test with compression
     save_options.compress = true;
     let xbin_compressed = xbin_format
-        .to_bytes(&original.buffer, &save_options)
+        .to_bytes(&original.screen.buffer, &save_options)
         .unwrap_or_else(|e| panic!("Failed to save {} as compressed XBin: {:?}", filename, e));
 
     // Verify compression size hasn't regressed
@@ -96,5 +96,5 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
         .from_bytes(&xbin_compressed, None)
         .unwrap_or_else(|e| panic!("Failed to reload compressed XBin for {}: {:?}", filename, e));
 
-    compare_buffers(&original.buffer, &reloaded_compressed.buffer, CompareOptions::ALL);
+    compare_buffers(&original.screen.buffer, &reloaded_compressed.screen.buffer, CompareOptions::ALL);
 }

@@ -14,7 +14,7 @@ impl BitFontEditState {
     pub fn build_preview_content_for(&self, tile_char: char, fg_color: u8, bg_color: u8) -> TextScreen {
         // Load the preview template from embedded .icy file
         let mut screen = match FileFormat::IcyDraw.from_bytes(PREVIEW_TEMPLATE, None) {
-            Ok(ts) => ts,
+            Ok(loaded_doc) => loaded_doc.screen,
             Err(_) => {
                 // Fallback to blank screen if template fails to load
                 TextScreen::new(Size::new(80, 25))

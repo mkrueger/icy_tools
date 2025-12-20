@@ -91,8 +91,8 @@ fn register_load_buffer(lua: &Lua, globals: &mlua::Table, parent: &Option<PathBu
                 let ext = file_name.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
                 let format = FileFormat::from_extension(&ext);
                 if let Some(format) = format {
-                    if let Ok(text_screen) = format.load(&file_name, None) {
-                        let screen: Box<dyn Screen> = Box::new(text_screen);
+                    if let Ok(loaded_doc) = format.load(&file_name, None) {
+                        let screen: Box<dyn Screen> = Box::new(loaded_doc.screen);
                         mlua::Result::Ok(LuaLayer::new(Arc::new(Mutex::new(screen))))
                     } else {
                         Err(mlua::Error::RuntimeError(format!("Could not load file {}", file)))

@@ -145,8 +145,7 @@ impl BitFont {
     }
 
     pub fn is_default(&self) -> bool {
-        self.name() == ansi::DEFAULT_FONT_NAME || 
-        self.name() == ansi::ALT_DEFAULT_FONT_NAME
+        self.name() == ansi::DEFAULT_FONT_NAME || self.name() == ansi::ALT_DEFAULT_FONT_NAME
     }
 
     /// Build a lookup table for chars 0..256

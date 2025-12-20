@@ -2,6 +2,28 @@ font-editor-table = Zeichentabelle 0-{ $length }:
 
 unsaved-title=Unbenannt
 
+# CLI (clap)
+app-about = Icy Draw — ANSI/ASCII-Kunst erstellen, Fonts bearbeiten und in Echtzeit zusammenarbeiten
+arg-path-help = Datei zum Öffnen beim Start
+arg-mcp-port-help = MCP-Server auf dem angegebenen Port starten (z.B. --mcp-port 8080)
+cmd-host-about = Kollaborations-Session in Echtzeit hosten (Moebius-kompatibel)
+arg-host-port-help = Port zum Lauschen (Standard: 8000)
+arg-host-bind-help = Bind-Adresse (Standard: 0.0.0.0)
+arg-host-password-help = Session-Passwort (optional)
+arg-host-max-users-help = Maximale Benutzerzahl (0 = unbegrenzt)
+arg-host-file-help = Datei, die gehostet wird (optional; sonst leere 80x25-Leinwand)
+
+# Server banner
+server-title = Icy Draw Kollaborations-Server
+server-bind-address = Adresse
+server-password = Passwort
+server-document = Dokument
+server-max-users = Max. Benutzer
+server-connect-with = Verbinden mit
+server-stop-hint = Drücke Strg+C um den Server zu beenden
+server-none = (keines)
+server-unlimited = unbegrenzt
+
 menu-file=Datei
 menu-new=Neu…
 menu-open=Datei öffnen…

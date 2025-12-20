@@ -50,7 +50,7 @@ fn bench_icy_draw_loading(c: &mut Criterion) {
 fn bench_icy_draw_saving(c: &mut Criterion) {
     let data = load_large_icy_bytes();
     let loaded = FileFormat::IcyDraw.from_bytes(&data, None).expect("load icydraw");
-    let buf = loaded.buffer;
+    let buf = loaded.screen.buffer;
 
     let mut group = c.benchmark_group("icy_draw_large (dZ-taos1.xb ×2, layers=5)");
     let size = (buf.width() * buf.height()) as u64;
@@ -69,7 +69,7 @@ fn bench_icy_draw_saving(c: &mut Criterion) {
 fn bench_icy_draw_saving_skip_thumbnail(c: &mut Criterion) {
     let data = load_large_icy_bytes();
     let loaded = FileFormat::IcyDraw.from_bytes(&data, None).expect("load icydraw");
-    let buf = loaded.buffer;
+    let buf = loaded.screen.buffer;
 
     let mut group = c.benchmark_group("icy_draw_large (dZ-taos1.xb ×2, layers=5)");
     let size = (buf.width() * buf.height()) as u64;

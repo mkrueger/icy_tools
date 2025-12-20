@@ -77,9 +77,85 @@ pub fn compare_buffer_output_with_options(buffer: &mut TextBuffer, src_file: &Pa
 
     let rect: Rectangle = Rectangle::from(0, 0, buffer.width(), buffer.height());
     let opts = RenderOptions::from(rect);
-    let (rendered_size, rendered_data) = buffer.render_to_rgba(&opts, false);
+    let (mut rendered_size, mut rendered_data) = buffer.render_to_rgba_raw(&opts, false);
+
+    // Aspect ratio correction is now applied at display/shader level.
+    // For legacy output comparisons, apply the same vertical stretch here.
+    if use_aspect_ratio {
+        let stretch_factor = buffer.get_aspect_ratio_stretch_factor();
+        let (scaled_h, scaled_pixels) = scale_image_vertical(rendered_data, rendered_size.width, rendered_size.height, stretch_factor);
+        rendered_size = icy_engine::Size::new(rendered_size.width, scaled_h);
+        rendered_data = scaled_pixels;
+    }
     let dims = buffer.font_dimensions();
     compare_rendered_output(&rendered_size, dims.width as usize, dims.height as usize, &rendered_data, src_file);
+}
+
+fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) -> (i32, Vec<u8>) {
+    let new_height = (height as f32 * scale).round() as i32;
+    if new_height <= 0 || width <= 0 || height <= 0 || scale <= 0.0 {
+        return (height, pixels);
+    }
+
+    let stride = width as usize * 4;
+    let mut scaled = vec![0u8; stride * new_height as usize];
+
+    for new_y in 0..new_height {
+        let src_y = new_y as f32 / scale;
+        let src_y0 = (src_y.floor() as i32).clamp(0, height - 1) as usize;
+        let src_y1 = (src_y0 + 1).min(height as usize - 1);
+        let t = src_y.fract();
+
+        let dst_row = new_y as usize * stride;
+        let src_row0 = src_y0 * stride;
+        let src_row1 = src_y1 * stride;
+
+        for x in 0..width as usize {
+            let px = x * 4;
+
+            let a0 = pixels[src_row0 + px + 3] as f32;
+            let a1 = pixels[src_row1 + px + 3] as f32;
+            let a = a0 + (a1 - a0) * t;
+            let out_a = if a >= 128.0 { 255u8 } else { 0u8 };
+
+            if out_a == 0 {
+                scaled[dst_row + px] = 0;
+                scaled[dst_row + px + 1] = 0;
+                scaled[dst_row + px + 2] = 0;
+                scaled[dst_row + px + 3] = 0;
+                continue;
+            }
+
+            let mut w0 = 1.0 - t;
+            let mut w1 = t;
+            if pixels[src_row0 + px + 3] == 0 {
+                w0 = 0.0;
+            }
+            if pixels[src_row1 + px + 3] == 0 {
+                w1 = 0.0;
+            }
+
+            let w_sum = w0 + w1;
+            if w_sum <= f32::EPSILON {
+                scaled[dst_row + px] = 0;
+                scaled[dst_row + px + 1] = 0;
+                scaled[dst_row + px + 2] = 0;
+                scaled[dst_row + px + 3] = 0;
+                continue;
+            }
+            w0 /= w_sum;
+            w1 /= w_sum;
+
+            for c in 0..3 {
+                let v0 = pixels[src_row0 + px + c] as f32;
+                let v1 = pixels[src_row1 + px + c] as f32;
+                scaled[dst_row + px + c] = (v0 * w0 + v1 * w1).round() as u8;
+            }
+            scaled[dst_row + px + 3] = 255;
+        }
+    }
+
+    (new_height, scaled)
 }
 
 fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font_h: usize, rendered_data: &[u8], src_file: &Path) {

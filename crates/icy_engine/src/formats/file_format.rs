@@ -12,9 +12,9 @@ use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextScreen};
+use crate::{BufferType, EditableScreen, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
-use super::{AnsiSaveOptionsV2, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, PaletteFormat, io};
+use super::{AnsiSaveOptionsV2, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, io};
 
 /// Represents all supported file formats for ANSI art and related files.
 ///
@@ -852,15 +852,15 @@ impl FileFormat {
         }
     }
 
-    /// Load content from bytes into a TextScreen.
+    /// Load content from bytes into a LoadedDocument.
     ///
     /// # Arguments
-    /// * `file_name` - Path to the file (used for format-specific handling)
     /// * `data` - The raw file data
-    /// * `load_data` - Optional loading options (SAUCE, music settings, etc.)
+    /// * `load_data` - Optional loading options (music settings, terminal width, etc.)
     ///
     /// # Returns
-    /// A `TextScreen` containing the loaded content with proper caret state.
+    /// A `LoadedDocument` containing the loaded screen and any SAUCE metadata.
+    /// SAUCE settings are automatically applied to the screen.
     ///
     /// # Errors
     /// Returns an error if the format doesn't support loading or if loading fails.
@@ -868,59 +868,73 @@ impl FileFormat {
     /// # Example
     /// ```no_run
     /// use icy_engine::formats::{FileFormat, LoadData};
-    /// use std::path::Path;
+    /// use icy_engine::TextPane;
     ///
     /// let data = std::fs::read("artwork.ans").unwrap();
     /// let format = FileFormat::from_extension("ans").unwrap();
-    /// let screen = format.from_bytes(&data, None).unwrap();
+    /// let loaded = format.from_bytes(&data, None).unwrap();
+    /// println!("Loaded {}x{}", loaded.screen.buffer.width(), loaded.screen.buffer.height());
+    /// if let Some(sauce) = &loaded.sauce_opt {
+    ///     println!("Title: {}", sauce.title());
+    /// }
     /// ```
-    pub fn from_bytes(&self, data: &[u8], load_data: Option<LoadData>) -> Result<TextScreen> {
-        match self {
-            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(data, load_data),
-            FileFormat::Ascii => io::load_ascii(data, load_data),
-            FileFormat::Avatar => io::load_avatar(data, load_data),
-            FileFormat::PCBoard => io::load_pcboard(data, load_data),
-            FileFormat::CtrlA => io::load_ctrla(data, load_data),
-            FileFormat::Renegade => io::load_renegade(data, load_data),
-            FileFormat::Atascii => io::load_atascii(data, load_data),
-            FileFormat::Petscii => io::load_seq(data, load_data),
-            FileFormat::Bin => io::load_bin(data, load_data),
-            FileFormat::XBin => io::load_xbin(data, load_data),
-            FileFormat::IcyDraw => io::load_icy_draw(data, load_data),
-            FileFormat::IceDraw => io::load_ice_draw(data, load_data),
-            FileFormat::TundraDraw => io::load_tundra(data, load_data),
-            FileFormat::Artworx => io::load_artworx(data, load_data),
+    pub fn from_bytes(&self, data: &[u8], load_data: Option<LoadData>) -> Result<LoadedDocument> {
+        // Extract SAUCE record from the data
+        let sauce_opt: Option<icy_sauce::SauceRecord> = icy_sauce::SauceRecord::from_bytes(data).ok().flatten();
+
+        let mut screen = match self {
+            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(data, load_data.as_ref()),
+            FileFormat::Ascii => io::load_ascii(data, load_data.as_ref()),
+            FileFormat::Avatar => io::load_avatar(data, load_data.as_ref()),
+            FileFormat::PCBoard => io::load_pcboard(data, load_data.as_ref()),
+            FileFormat::CtrlA => io::load_ctrla(data, load_data.as_ref()),
+            FileFormat::Renegade => io::load_renegade(data, load_data.as_ref()),
+            FileFormat::Atascii => io::load_atascii(data, load_data.as_ref()),
+            FileFormat::Petscii => io::load_seq(data, load_data.as_ref()),
+            FileFormat::Bin => io::load_bin(data, load_data.as_ref()),
+            FileFormat::XBin => io::load_xbin(data, load_data.as_ref()),
+            FileFormat::IcyDraw => io::load_icy_draw(data, load_data.as_ref()),
+            FileFormat::IceDraw => io::load_ice_draw(data, load_data.as_ref()),
+            FileFormat::TundraDraw => io::load_tundra(data, load_data.as_ref()),
+            FileFormat::Artworx => io::load_artworx(data, load_data.as_ref()),
             _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "loading".to_string(),
             }),
+        }?;
+
+        // Apply SAUCE settings to the screen
+        if let Some(ref sauce) = sauce_opt {
+            screen.apply_sauce(sauce);
         }
+
+        // Apply max height limit if specified
+        if let Some(max_height) = load_data.as_ref().and_then(|ld| ld.max_height()) {
+            if screen.height() > max_height {
+                screen.buffer.set_height(max_height);
+            }
+        }
+
+        Ok(LoadedDocument { screen, sauce_opt })
     }
 
-    /// Load content from a file path, automatically extracting SAUCE metadata.
+    /// Load content from a file path.
     ///
-    /// This is a convenience method that reads the file, extracts any SAUCE record,
-    /// and passes it to `from_bytes`. Use this when you want automatic SAUCE handling.
+    /// This is a convenience method that reads the file and calls `from_bytes`.
+    /// SAUCE metadata is automatically extracted and applied.
     ///
     /// # Arguments
     /// * `file_path` - Path to the file to load
+    /// * `load_data` - Optional loading options
     ///
     /// # Returns
-    /// A `TextScreen` containing the loaded content with SAUCE metadata applied.
+    /// A `LoadedDocument` containing the loaded screen and any SAUCE metadata.
     ///
     /// # Errors
     /// Returns an error if file reading fails or if the format doesn't support loading.
-    pub fn load(&self, file_path: &Path, load_data: Option<LoadData>) -> Result<TextScreen> {
+    pub fn load(&self, file_path: &Path, load_data: Option<LoadData>) -> Result<LoadedDocument> {
         let data = std::fs::read(file_path)?;
-
-        let mut load_data = load_data.unwrap_or_default();
-        // Extract SAUCE record from the data
-        let sauce_opt = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten();
-        if sauce_opt.is_some() {
-            load_data.sauce_opt = sauce_opt;
-        }
-
-        self.from_bytes(&data, Some(load_data))
+        self.from_bytes(&data, load_data)
     }
 
     /// Save a buffer to bytes.

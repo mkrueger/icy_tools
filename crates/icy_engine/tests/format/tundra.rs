@@ -16,7 +16,7 @@ fn test_tundra(buffer: &mut TextBuffer) -> TextBuffer {
     opt.compress = false;
     opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
-    let buffer2 = xb.from_bytes(&bytes, None).unwrap().buffer;
+    let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     let mut opt = CompareOptions::ALL;
     opt.compare_palette = false;
     opt.ignore_invisible_chars = true;

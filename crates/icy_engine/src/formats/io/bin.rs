@@ -1,18 +1,17 @@
 //! Binary format (.bin) I/O implementation.
 
-use crate::{AttributedChar, EditableScreen, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
+use crate::{AttributedChar, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
 
 /// Load a binary file into a TextScreen.
-pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+///
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((160, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    let max_height = load_data.max_height();
-    if let Some(sauce) = &load_data.sauce_opt {
-        screen.apply_sauce(sauce);
-    }
+    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+
     let mut o = 0;
     let mut pos = Position::default();
     loop {

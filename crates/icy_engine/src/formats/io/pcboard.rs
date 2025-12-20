@@ -103,34 +103,18 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Res
     Ok(result)
 }
 
-pub(crate) fn load_pcboard(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
-    let load_data = load_data_opt.unwrap_or_default();
-    let width = load_data.default_terminal_width.unwrap_or(80);
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_pcboard(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+    let width = load_data_opt.and_then(|ld| ld.default_terminal_width()).unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;
-    let mut min_height = -1;
-    if let Some(sauce) = &load_data.sauce_opt {
-        let lines = result.apply_sauce(sauce);
-        if lines.1 > 0 {
-            min_height = lines.1 as i32;
-        }
-    }
 
-    /*
-            let mut interpreter: Box<dyn BufferParser> = match interpreter {
-        CharInterpreter::Ansi => {
-            let mut parser = Box::<parsers::ansi::Parser>::default();
-            parser.bs_is_ctrl_char = false;
-            parser
-        }
-    };
-     */
     let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
     if is_unicode {
         result.buffer.buffer_type = crate::BufferType::Unicode;
     }
-    crate::load_with_parser(&mut result, &mut icy_parser_core::PcBoardParser::default(), file_data, true, min_height)?;
+    crate::load_with_parser(&mut result, &mut icy_parser_core::PcBoardParser::default(), file_data, true, -1)?;
     Ok(result)
 }
 

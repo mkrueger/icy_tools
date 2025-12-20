@@ -720,7 +720,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     Ok(png_bytes)
 }
 
-pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     // Try v1 binary chunks first
     if let Some(screen) = load_icy_draw_v1_binary_chunks(data)? {
         return Ok(screen);

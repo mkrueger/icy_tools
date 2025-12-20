@@ -2,8 +2,7 @@ use std::{collections::HashSet, io};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{
-    AttributedChar, BufferType, EditableScreen, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen,
-    analyze_font_usage,
+    AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage,
 };
 
 // http://fileformats.archiveteam.org/wiki/TUNDRA
@@ -133,14 +132,12 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Resu
     Ok(result)
 }
 
-pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    let max_height = load_data.max_height();
-    if let Some(sauce) = &load_data.sauce_opt {
-        screen.apply_sauce(sauce);
-    }
+    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+
     if data.len() < 1 + TUNDRA_HEADER.len() {
         return Err(LoadingError::FileTooShort.into());
     }

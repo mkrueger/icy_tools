@@ -389,11 +389,6 @@ impl ToolHandler for ShapeTool {
             Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
         );
         let is_filled = matches!(self.tool, Tool::RectangleFilled | Tool::EllipseFilled);
-        let filled_toggle: Element<'_, ToolMessage> = if show_filled_toggle {
-            toggler(is_filled).label("Filled").on_toggle(ToolMessage::ToggleFilled).text_size(11).into()
-        } else {
-            Space::new().width(Length::Fixed(0.0)).into()
-        };
 
         let secondary_color = ctx.theme.extended_palette().secondary.base.color;
         let base_color = ctx.theme.extended_palette().primary.base.color;
@@ -431,8 +426,6 @@ impl ToolHandler for ShapeTool {
         row![
             Space::new().width(Length::Fill),
             segmented_control,
-            Space::new().width(Length::Fixed(16.0)),
-            filled_toggle,
             Space::new().width(Length::Fixed(16.0)),
             color_filter,
             Space::new().width(Length::Fixed(16.0)),

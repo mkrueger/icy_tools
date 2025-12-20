@@ -9,7 +9,8 @@ pub fn create_welcome_screen() -> TextScreen {
     // Load the welcome screen from MAIN_SCREEN_ANSI
     let mut screen = FileFormat::IcyDraw
         .from_bytes(if fastrand::bool() { MAIN_SCREEN_ANSI1 } else { MAIN_SCREEN_ANSI2 }, None)
-        .unwrap();
+        .unwrap()
+        .screen;
     screen.buffer.buffer_type = icy_engine::BufferType::CP437;
     screen.buffer.terminal_state.is_terminal_buffer = true;
     // Find and replace special characters

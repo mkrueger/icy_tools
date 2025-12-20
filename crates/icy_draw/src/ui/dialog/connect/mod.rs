@@ -77,7 +77,7 @@ pub struct CollaborationDialog {
     group: String,
     /// Session password
     password: String,
-    /// Port for hosting (default 6464)
+    /// Port for hosting (default 8000)
     host_port: String,
     /// Recent servers (for dropdown)
     recent_servers: Vec<String>,
@@ -98,7 +98,7 @@ impl CollaborationDialog {
             nick: "Anonymous".to_string(),
             group: String::new(),
             password: String::new(),
-            host_port: "6464".to_string(),
+            host_port: crate::DEFAULT_COLLAB_PORT_STR.to_string(),
             recent_servers: Vec::new(),
         }
     }
@@ -116,7 +116,7 @@ impl CollaborationDialog {
             nick,
             group,
             password: String::new(),
-            host_port: "6464".to_string(),
+            host_port: crate::DEFAULT_COLLAB_PORT_STR.to_string(),
             recent_servers,
         }
     }
@@ -214,9 +214,11 @@ impl Dialog<Message> for CollaborationDialog {
         let port_label = container(text(fl!("collab-port")).size(TEXT_SIZE_NORMAL).color(port_color)).width(label_width);
 
         let port_input = if port_dimmed {
-            text_input("6464", &self.host_port).padding(8).width(Length::Fixed(80.0))
+            text_input(crate::DEFAULT_COLLAB_PORT_STR, &self.host_port)
+                .padding(8)
+                .width(Length::Fixed(80.0))
         } else {
-            text_input("6464", &self.host_port)
+            text_input(crate::DEFAULT_COLLAB_PORT_STR, &self.host_port)
                 .on_input(|s| Message::CollaborationDialog(CollaborationDialogMessage::PortChanged(s)))
                 .padding(8)
                 .width(Length::Fixed(80.0))
@@ -318,7 +320,7 @@ impl Dialog<Message> for CollaborationDialog {
                     }
                     CollaborationMode::Host => {
                         let result = HostSessionResult {
-                            port: self.host_port.parse().unwrap_or(6464),
+                            port: self.host_port.parse().unwrap_or(crate::DEFAULT_COLLAB_PORT),
                             nick: self.nick.trim().to_string(),
                             group: self.group.trim().to_string(),
                             password: self.password.clone(),
@@ -351,7 +353,7 @@ impl Dialog<Message> for CollaborationDialog {
                     }
                     CollaborationMode::Host => {
                         let result = HostSessionResult {
-                            port: self.host_port.parse().unwrap_or(6464),
+                            port: self.host_port.parse().unwrap_or(crate::DEFAULT_COLLAB_PORT),
                             nick: self.nick.trim().to_string(),
                             group: self.group.trim().to_string(),
                             password: self.password.clone(),

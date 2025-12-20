@@ -106,8 +106,16 @@ impl Screen for SharedTextScreen {
         self.inner.lock().render_to_rgba(options)
     }
 
+    fn render_to_rgba_raw(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.inner.lock().render_to_rgba_raw(options)
+    }
+
     fn render_region_to_rgba(&self, region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         self.inner.lock().render_region_to_rgba(region, options)
+    }
+
+    fn render_region_to_rgba_raw(&self, region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.inner.lock().render_region_to_rgba_raw(region, options)
     }
 
     fn palette(&self) -> &Palette {
@@ -215,6 +223,10 @@ impl Screen for SharedTextScreen {
 
     fn use_aspect_ratio(&self) -> bool {
         self.inner.lock().use_aspect_ratio()
+    }
+
+    fn aspect_ratio_stretch_factor(&self) -> f32 {
+        self.inner.lock().aspect_ratio_stretch_factor()
     }
 
     fn as_editable(&mut self) -> Option<&mut dyn EditableScreen> {

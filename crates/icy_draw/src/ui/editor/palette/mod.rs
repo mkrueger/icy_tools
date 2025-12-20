@@ -115,8 +115,8 @@ impl PaletteEditorDialog {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
 
         if matches!(ext.as_deref(), Some("xb") | Some("xbin")) {
-            let screen = FileFormat::XBin.load(path.as_path(), None).map_err(|e| e.to_string())?;
-            let mut pal = screen.palette().clone();
+            let loaded_doc = FileFormat::XBin.load(path.as_path(), None).map_err(|e| e.to_string())?;
+            let mut pal = loaded_doc.screen.palette().clone();
             pal.resize(16);
             return Ok(pal);
         }

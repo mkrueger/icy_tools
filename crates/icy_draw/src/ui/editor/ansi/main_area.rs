@@ -110,8 +110,8 @@ impl AnsiEditorMainArea {
 
     pub fn with_file(path: PathBuf, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Result<Self, String> {
         let format = FileFormat::from_path(&path).unwrap_or(FileFormat::Ansi);
-        let screen = format.load(&path, Some(LoadData::default())).map_err(|e| e.to_string())?;
-        Ok(Self::with_buffer(screen.buffer, Some(path), options, font_library))
+        let loaded_doc = format.load(&path, Some(LoadData::default())).map_err(|e| e.to_string())?;
+        Ok(Self::with_buffer(loaded_doc.screen.buffer, Some(path), options, font_library))
     }
 
     pub fn load_from_autosave(
@@ -122,9 +122,9 @@ impl AnsiEditorMainArea {
     ) -> Result<Self, String> {
         let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
         let format = FileFormat::from_path(&original_path).unwrap_or(FileFormat::Ansi);
-        let screen = format.from_bytes(&data, Some(LoadData::default())).map_err(|e| e.to_string())?;
+        let loaded_doc = format.from_bytes(&data, Some(LoadData::default())).map_err(|e| e.to_string())?;
 
-        let mut editor = Self::with_buffer(screen.buffer, Some(original_path), options, font_library);
+        let mut editor = Self::with_buffer(loaded_doc.screen.buffer, Some(original_path), options, font_library);
         editor.core.is_modified = true;
         Ok(editor)
     }

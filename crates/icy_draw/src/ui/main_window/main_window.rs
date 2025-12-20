@@ -1556,6 +1556,15 @@ impl MainWindow {
                         rows,
                         enable_extended_protocol: true,
                         status_message: String::new(),
+                        initial_document: None,
+                        ice_colors: false,
+                        use_9px_font: false,
+                        font_name: "IBM VGA".to_string(),
+                        sauce_title: String::new(),
+                        sauce_author: String::new(),
+                        sauce_group: String::new(),
+                        // Use defaults for UI strings (this runs in background)
+                        ..Default::default()
                     };
 
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");

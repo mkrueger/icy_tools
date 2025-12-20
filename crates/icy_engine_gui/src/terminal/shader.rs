@@ -54,6 +54,9 @@ struct CRTUniforms {
     total_image_height: f32,
     scroll_offset_y: f32,
     visible_height: f32,
+
+    // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
+    aspect_params: [f32; 4],
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
     // slice_heights[1] = [h3, h4, h5, h6]
@@ -195,7 +198,7 @@ mod tests {
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
-        assert_eq!(std::mem::size_of::<CRTUniforms>(), 608); // 560 + 48 (3 new vec4s for checkerboard)
+        assert_eq!(std::mem::size_of::<CRTUniforms>(), 624);
     }
 }
 
@@ -230,6 +233,8 @@ pub struct TerminalShader {
     pub scroll_offset_y: f32,
     /// Visible height in pixels
     pub visible_height: f32,
+    /// Display-level aspect ratio correction factor for Y (1.0 = disabled)
+    pub aspect_ratio_y: f32,
     /// Where the first slice starts in document Y coordinates
     pub first_slice_start_y: f32,
     /// Scroll offset in pixels (X axis)
@@ -1413,6 +1418,7 @@ impl shader::Primitive for TerminalShader {
             total_image_height: self.total_content_height,
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,
+            aspect_params: [self.aspect_ratio_y, 0.0, 0.0, 0.0],
             slice_heights,
             // X-axis scrolling uniforms
             scroll_offset_x: self.scroll_offset_x,

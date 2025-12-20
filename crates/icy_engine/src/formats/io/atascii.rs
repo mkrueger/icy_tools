@@ -1,5 +1,5 @@
 use super::super::{AnsiSaveOptionsV2, LoadData};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, EditableScreen, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
+use crate::{ATARI, ATARI_DEFAULT_PALETTE, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
 
 #[allow(unused)]
 pub(crate) fn save_atascii(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
@@ -43,7 +43,8 @@ pub(crate) fn save_atascii(buf: &TextBuffer, _options: &AnsiSaveOptionsV2) -> Re
     Ok(result)
 }
 
-pub(crate) fn load_atascii(data: &[u8], load_data_opt: Option<LoadData>) -> Result<TextScreen> {
+/// Note: SAUCE is applied externally by FileFormat::from_bytes().
+pub(crate) fn load_atascii(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
     let mut result = TextScreen::new((40, 24));
 
     result.buffer.clear_font_table();
@@ -53,10 +54,6 @@ pub(crate) fn load_atascii(data: &[u8], load_data_opt: Option<LoadData>) -> Resu
 
     result.buffer.buffer_type = crate::BufferType::Atascii;
     result.buffer.terminal_state.is_terminal_buffer = false;
-    let load_data = load_data_opt.unwrap_or_default();
-    if let Some(sauce) = &load_data.sauce_opt {
-        result.apply_sauce(sauce);
-    }
 
     crate::load_with_parser(&mut result, &mut icy_parser_core::AtasciiParser::default(), data, true, 24)?;
     Ok(result)

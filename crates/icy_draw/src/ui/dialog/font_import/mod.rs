@@ -216,8 +216,8 @@ impl FontImportDialog {
             Ok(data) => {
                 // Parse XB file using icy_engine
                 match icy_engine::formats::FileFormat::XBin.from_bytes(&data, None) {
-                    Ok(screen) => {
-                        let buffer = screen.buffer;
+                    Ok(loaded_doc) => {
+                        let buffer = loaded_doc.screen.buffer;
                         // Extract fonts from the loaded buffer
                         let mut fonts = Vec::new();
 

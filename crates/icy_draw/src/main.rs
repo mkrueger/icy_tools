@@ -13,6 +13,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use lazy_static::lazy_static;
 use semver::Version;
@@ -59,6 +60,10 @@ struct Localizations;
 
 use once_cell::sync::Lazy;
 
+/// Default port for the icy_draw collaboration server (kept in sync with Moebius).
+pub const DEFAULT_COLLAB_PORT: u16 = 8000;
+pub const DEFAULT_COLLAB_PORT_STR: &str = "8000";
+
 #[allow(dead_code)]
 static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::new(|| {
     let loader = i18n_embed::fluent::fluent_language_loader!();
@@ -78,14 +83,15 @@ macro_rules! fl {
 }
 
 #[derive(Parser, Debug)]
-#[command(version, about = "A drawing program for ANSI & ASCII art", long_about = None)]
+#[command(version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]
+#[clap_i18n]
 pub struct Args {
-    /// Path to file to open
-    #[arg(value_name = "PATH")]
+    /// File to open on startup
+    #[arg(value_name = "PATH", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-path-help"))]
     path: Option<PathBuf>,
 
-    /// Enable MCP server on specified port (e.g., --mcp-port 8080)
-    #[arg(long, value_name = "PORT")]
+    /// Start an MCP server on the given port (e.g. --mcp-port 8080)
+    #[arg(long, value_name = "PORT", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-mcp-port-help"))]
     mcp_port: Option<u16>,
 
     #[command(subcommand)]
@@ -94,26 +100,27 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Start a collaboration server
-    Serve {
-        /// Port to listen on (default: 6464)
-        #[arg(short, long, default_value = "6464")]
+    /// Host a real-time collaboration session (Moebius-compatible)
+    #[command(version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "cmd-host-about"))]
+    Host {
+        /// Port to listen on (default: 8000)
+        #[arg(short, long, default_value_t = DEFAULT_COLLAB_PORT, help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-port-help"))]
         port: u16,
 
         /// Bind address (default: 0.0.0.0)
-        #[arg(short, long, default_value = "0.0.0.0")]
+        #[arg(short, long, default_value = "0.0.0.0", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-bind-help"))]
         bind: String,
 
         /// Session password (optional)
-        #[arg(long)]
+        #[arg(long, help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-password-help"))]
         password: Option<String>,
 
         /// Maximum number of users (0 = unlimited)
-        #[arg(long, default_value = "0")]
+        #[arg(long, default_value = "0", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-max-users-help"))]
         max_users: usize,
 
-        /// File to host (optional, creates empty 80x25 canvas if not specified)
-        #[arg(value_name = "FILE")]
+        /// File to host (optional; starts with an empty 80x25 canvas if omitted)
+        #[arg(value_name = "FILE", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-file-help"))]
         file: Option<PathBuf>,
     },
 }
@@ -130,16 +137,70 @@ fn get_log_dir() -> Option<PathBuf> {
 
 /// Run the collaboration server in headless mode.
 fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>) {
-    use icy_engine_edit::collaboration::{ServerConfig, run_server as run_collab_server};
+    use icy_engine::{FileFormat, IceMode, TextPane};
+    use icy_engine_edit::collaboration::{Block, ServerConfig, run_server as run_collab_server};
 
-    // Determine document dimensions (default 80x25)
-    // TODO: Load document from file to get actual dimensions and content
-    let (columns, rows) = if let Some(ref path) = file {
-        println!("Note: File loading not yet implemented, starting with 80x25 canvas");
-        println!("File: {}", path.display());
-        (80, 25)
+    // Load document from file or create empty 80x25 canvas
+    let (columns, rows, initial_document, ice_colors, use_9px_font, font_name, sauce_title, sauce_author, sauce_group) = if let Some(ref path) = file {
+        // Detect format and load file
+        let format = match FileFormat::from_path(path) {
+            Some(f) => f,
+            None => {
+                eprintln!("Error: Unknown file format for '{}'", path.display());
+                eprintln!("Starting with empty 80x25 canvas");
+                FileFormat::Ansi // Fallback, will likely fail to load
+            }
+        };
+        match format.load(path, None) {
+            Ok(loaded_doc) => {
+                let buffer = &loaded_doc.screen.buffer;
+                let cols = buffer.width() as u32;
+                let rws = buffer.height() as u32;
+
+                // Extract character data (column-major for server)
+                let mut doc = Vec::with_capacity(cols as usize);
+                for col in 0..cols as i32 {
+                    let mut column = Vec::with_capacity(rws as usize);
+                    for row in 0..rws as i32 {
+                        let ch = buffer.char_at((col, row).into());
+                        // Extract palette index from AttributeColor
+                        let fg = match ch.attribute.foreground_color() {
+                            icy_engine::AttributeColor::Palette(n) | icy_engine::AttributeColor::ExtendedPalette(n) => n,
+                            icy_engine::AttributeColor::Rgb(_, _, _) => 7, // Default to light gray
+                            icy_engine::AttributeColor::Transparent => 0,
+                        };
+                        let bg = match ch.attribute.background_color() {
+                            icy_engine::AttributeColor::Palette(n) | icy_engine::AttributeColor::ExtendedPalette(n) => n,
+                            icy_engine::AttributeColor::Rgb(_, _, _) => 0, // Default to black
+                            icy_engine::AttributeColor::Transparent => 0,
+                        };
+                        column.push(Block { code: ch.ch as u32, fg, bg });
+                    }
+                    doc.push(column);
+                }
+
+                // Extract metadata
+                let ice = matches!(buffer.ice_mode, IceMode::Ice);
+                let font = buffer.font(0).map(|f| f.name().to_string()).unwrap_or_else(|| "IBM VGA".to_string());
+
+                // Get SAUCE data from the LoadedDocument
+                let (title, author, group) = if let Some(ref sauce) = loaded_doc.sauce_opt {
+                    (sauce.title().to_string(), sauce.author().to_string(), sauce.group().to_string())
+                } else {
+                    (String::new(), String::new(), String::new())
+                };
+
+                println!("Loaded: {} ({}x{})", path.display(), cols, rws);
+                (cols, rws, Some(doc), ice, false, font, title, author, group)
+            }
+            Err(e) => {
+                eprintln!("Error loading file '{}': {}", path.display(), e);
+                eprintln!("Starting with empty 80x25 canvas");
+                (80, 25, None, false, false, "IBM VGA".to_string(), String::new(), String::new(), String::new())
+            }
+        }
     } else {
-        (80, 25)
+        (80, 25, None, false, false, "IBM VGA".to_string(), String::new(), String::new(), String::new())
     };
 
     let bind_addr = format!("{}:{}", bind, port);
@@ -159,6 +220,23 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
         rows,
         enable_extended_protocol: true,
         status_message: String::new(),
+        initial_document,
+        ice_colors,
+        use_9px_font,
+        font_name,
+        sauce_title,
+        sauce_author,
+        sauce_group,
+        // Localized UI strings for server banner
+        ui_title: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-title"),
+        ui_bind_address: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-bind-address"),
+        ui_password: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-password"),
+        ui_document: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-document"),
+        ui_max_users: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-max-users"),
+        ui_connect_with: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-connect-with"),
+        ui_stop_hint: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-stop-hint"),
+        ui_none: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-none"),
+        ui_unlimited: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-unlimited"),
     };
 
     // Create tokio runtime and run the server
@@ -172,10 +250,10 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = Args::parse_i18n_or_exit();
 
     // Check if we're running the server subcommand
-    if let Some(Command::Serve {
+    if let Some(Command::Host {
         port,
         bind,
         password,

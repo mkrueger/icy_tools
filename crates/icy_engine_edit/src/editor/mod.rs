@@ -190,6 +190,20 @@ impl AtomicUndoGuard {
         self.end_action();
     }
 
+    /// Discard all operations in this atomic group without committing them.
+    /// The operations are removed from the undo stack and the guard is marked as ended.
+    pub fn discard(&mut self) {
+        if self.ended {
+            return;
+        }
+        let mut stack = self.undo_stack.lock().unwrap();
+        // Remove all operations pushed since base_count
+        while stack.undo_len() > self.base_count {
+            stack.pop_undo();
+        }
+        self.ended = true;
+    }
+
     fn end_action(&mut self) {
         if self.ended {
             return;

@@ -99,6 +99,14 @@ impl Screen for TextScreen {
         self.buffer.use_aspect_ratio()
     }
 
+    fn aspect_ratio_stretch_factor(&self) -> f32 {
+        if self.use_aspect_ratio() {
+            self.buffer.get_aspect_ratio_stretch_factor()
+        } else {
+            1.0
+        }
+    }
+
     fn scan_lines(&self) -> bool {
         self.scan_lines
     }
@@ -123,8 +131,16 @@ impl Screen for TextScreen {
         self.buffer.render_to_rgba(options, self.scan_lines)
     }
 
+    fn render_to_rgba_raw(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.buffer.render_to_rgba_raw(options, self.scan_lines)
+    }
+
     fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         self.buffer.render_region_to_rgba(px_region, options, self.scan_lines)
+    }
+
+    fn render_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.buffer.render_region_to_rgba_raw(px_region, options, self.scan_lines)
     }
 
     fn font(&self, font_number: usize) -> Option<&BitFont> {
@@ -136,11 +152,7 @@ impl Screen for TextScreen {
     }
 
     fn font_dimensions(&self) -> Size {
-        let dims = if self.buffer.use_aspect_ratio() {
-            self.buffer.font_dimensions_with_aspect_ratio()
-        } else {
-            self.buffer.font_dimensions()
-        };
+        let dims = self.buffer.font_dimensions_with_aspect_ratio();
         if self.use_letter_spacing() && dims.width == 8 {
             Size::new(9, dims.height)
         } else {

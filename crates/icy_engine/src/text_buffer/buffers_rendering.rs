@@ -2,82 +2,16 @@ use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane, XTERM_256_
 
 use super::Size;
 
-/// Scale an RGBA image vertically by a factor (e.g., 1.2 for VGA aspect ratio correction)
-/// Uses bilinear interpolation for smooth scaling
-fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) -> (i32, Vec<u8>) {
-    let new_height = (height as f32 * scale).round() as i32;
-    if new_height <= 0 || width <= 0 {
-        return (height, pixels);
-    }
-
-    let stride = width as usize * 4;
-    let mut scaled = vec![0u8; stride * new_height as usize];
-
-    for new_y in 0..new_height {
-        // Map new_y back to original image coordinate
-        let src_y = new_y as f32 / scale;
-        let src_y0 = (src_y.floor() as i32).clamp(0, height - 1) as usize;
-        let src_y1 = (src_y0 + 1).min(height as usize - 1);
-        let t = src_y.fract();
-
-        let dst_row = new_y as usize * stride;
-        let src_row0 = src_y0 * stride;
-        let src_row1 = src_y1 * stride;
-
-        for x in 0..width as usize {
-            let px = x * 4;
-
-            // We only support binary alpha (0/255) and want to avoid RGB bleed when scaling.
-            // Strategy:
-            // - Compute alpha via vertical interpolation, then threshold to 0/255
-            // - For RGB, only blend samples that are opaque (alpha=255), renormalize weights
-            let a0 = pixels[src_row0 + px + 3] as f32;
-            let a1 = pixels[src_row1 + px + 3] as f32;
-            let a = a0 + (a1 - a0) * t;
-            let out_a = if a >= 128.0 { 255u8 } else { 0u8 };
-
-            if out_a == 0 {
-                scaled[dst_row + px] = 0;
-                scaled[dst_row + px + 1] = 0;
-                scaled[dst_row + px + 2] = 0;
-                scaled[dst_row + px + 3] = 0;
-                continue;
-            }
-
-            let mut w0 = 1.0 - t;
-            let mut w1 = t;
-            if pixels[src_row0 + px + 3] == 0 {
-                w0 = 0.0;
-            }
-            if pixels[src_row1 + px + 3] == 0 {
-                w1 = 0.0;
-            }
-
-            let w_sum = w0 + w1;
-            if w_sum <= f32::EPSILON {
-                scaled[dst_row + px] = 0;
-                scaled[dst_row + px + 1] = 0;
-                scaled[dst_row + px + 2] = 0;
-                scaled[dst_row + px + 3] = 0;
-                continue;
-            }
-            w0 /= w_sum;
-            w1 /= w_sum;
-
-            for c in 0..3 {
-                let v0 = pixels[src_row0 + px + c] as f32;
-                let v1 = pixels[src_row1 + px + c] as f32;
-                scaled[dst_row + px + c] = (v0 * w0 + v1 * w1).round() as u8;
-            }
-            scaled[dst_row + px + 3] = 255;
-        }
-    }
-
-    (new_height, scaled)
-}
-
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_to_rgba_raw(options, scan_lines)
+    }
+
+    /// Render RGBA without aspect ratio correction.
+    ///
+    /// This is useful for GPU/display-layer aspect ratio correction (e.g. CRT shader),
+    /// and for callers that want a stable pixel coordinate system.
+    pub fn render_to_rgba_raw(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         // Use get_font_for_render to get the correct font (9px if letter spacing is enabled)
         let Some(font) = self.font_for_render(0) else {
             log::error!("render_to_rgba: no font available");
@@ -151,37 +85,30 @@ impl TextBuffer {
             Vec::from_raw_parts(ptr, len, cap)
         };
 
-        // Apply aspect ratio correction if enabled (VGA pixel aspect ratio correction)
-        if self.use_aspect_ratio {
-            let stretch_factor = self.get_aspect_ratio_stretch_factor();
-            let (scaled_height, scaled_pixels) = scale_image_vertical(pixels, px_width, out_height, stretch_factor);
-            (Size::new(px_width, scaled_height), scaled_pixels)
-        } else {
-            (Size::new(px_width, out_height), pixels)
-        }
+        (Size::new(px_width, out_height), pixels)
     }
 
     /// Render only a specific pixel region (for viewport-based rendering)
-    /// Renders the character region and crops to exact pixel bounds
-    /// Render only a specific pixel region (for viewport-based rendering)
-    /// Renders the character region and crops to exact pixel bounds
-    pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+    /// Renders the character region and crops to exact pixel bounds.
+    ///
+    /// NOTE: `px_region` is in *raw* pixel coordinates (no aspect-ratio correction applied).
+    pub fn render_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         let Some(font) = self.font_for_render(0) else {
-            log::error!("render_region_to_rgba: no font available");
+            log::error!("render_region_to_rgba_raw: no font available");
             return (Size::new(0, 0), Vec::new());
         };
         let font_size = font.size();
 
         // Validate buffer dimensions
         if self.width() <= 0 || self.height() <= 0 {
-            log::error!("render_region_to_rgba: invalid buffer dimensions {}x{}", self.width(), self.height());
+            log::error!("render_region_to_rgba_raw: invalid buffer dimensions {}x{}", self.width(), self.height());
             return (Size::new(0, 0), Vec::new());
         }
 
         // Validate px_region dimensions
         if px_region.size.width <= 0 || px_region.size.height <= 0 {
             log::warn!(
-                "render_region_to_rgba: invalid region dimensions {}x{}",
+                "render_region_to_rgba_raw: invalid region dimensions {}x{}",
                 px_region.size.width,
                 px_region.size.height
             );
@@ -207,7 +134,7 @@ impl TextBuffer {
             return (Size::new(0, 0), Vec::new());
         }
 
-        // Create render options
+        // Create render options for the character region
         let region_options = RenderOptions {
             rect: Rectangle::from_coords(char_x, char_y, char_x + char_width, char_y + char_height).into(),
             blink_on: options.blink_on,
@@ -217,15 +144,15 @@ impl TextBuffer {
             override_scan_lines: None,
         };
 
-        // Render the character region
-        let (full_size, full_pixels) = self.render_to_rgba(&region_options, scan_lines);
+        // Render the character region (raw, without aspect ratio)
+        let (full_size, mut full_pixels) = self.render_to_rgba_raw(&region_options, scan_lines);
 
         // Check if render produced valid output
         if full_size.width <= 0 || full_size.height <= 0 || full_pixels.is_empty() {
             return (Size::new(0, 0), Vec::new());
         }
 
-        // Calculate crop bounds with safe arithmetic
+        // Calculate crop bounds within rendered region
         let crop_x = (px_region.start.x - char_x * font_size.width).max(0);
         let crop_y = (px_region.start.y - char_y * font_size.height).max(0);
 
@@ -233,7 +160,6 @@ impl TextBuffer {
         let crop_width = px_region.size.width.min(full_size.width.saturating_sub(crop_x)).max(0);
         let crop_height = px_region.size.height.min(full_size.height.saturating_sub(crop_y)).max(0);
 
-        // Early exit if crop dimensions are invalid
         if crop_width <= 0 || crop_height <= 0 {
             return (Size::new(0, 0), Vec::new());
         }
@@ -249,11 +175,9 @@ impl TextBuffer {
         // Check for potential overflow before allocation
         let total_bytes = (crop_width as u64).saturating_mul(crop_height as u64).saturating_mul(4);
         if total_bytes > 100_000_000 || total_bytes == 0 {
-            log::error!("render_region_to_rgba: crop dimensions too large or zero {}x{}", crop_width, crop_height);
+            log::error!("render_region_to_rgba_raw: crop dimensions too large or zero {}x{}", crop_width, crop_height);
             return (Size::new(0, 0), Vec::new());
         }
-
-        let mut full_pixels = full_pixels;
 
         // Fast path: only vertical cropping (no X offset, same width)
         if crop_x == 0 && crop_width == full_size.width {
@@ -263,10 +187,9 @@ impl TextBuffer {
                 full_pixels.copy_within(src_start..src_start + total_bytes, 0);
                 full_pixels.truncate(total_bytes);
                 return (Size::new(crop_width, crop_height), full_pixels);
-            } else {
-                log::error!("render_region_to_rgba: vertical crop out of bounds");
-                return (Size::new(0, 0), Vec::new());
             }
+            log::error!("render_region_to_rgba_raw: vertical crop out of bounds");
+            return (Size::new(0, 0), Vec::new());
         }
 
         // General case: both X and Y cropping
@@ -276,7 +199,7 @@ impl TextBuffer {
 
         for _ in 0..crop_height as usize {
             if src_offset + dst_stride > full_pixels.len() {
-                log::error!("render_region_to_rgba: general crop out of bounds");
+                log::error!("render_region_to_rgba_raw: general crop out of bounds");
                 break;
             }
             full_pixels.copy_within(src_offset..src_offset + dst_stride, dst_offset);
@@ -287,6 +210,12 @@ impl TextBuffer {
         let final_size = (crop_width as usize * crop_height as usize * 4).min(full_pixels.len());
         full_pixels.truncate(final_size);
         (Size::new(crop_width, crop_height), full_pixels)
+    }
+
+    /// Render only a specific pixel region (for viewport-based rendering)
+    ///
+    pub fn render_region_to_rgba(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba_raw(px_region, options, scan_lines)
     }
 
     fn render_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, px_width: i32, px_height: i32) {

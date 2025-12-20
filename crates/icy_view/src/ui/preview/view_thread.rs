@@ -526,10 +526,10 @@ impl ViewThread {
             let path_clone = path.clone();
             let stripped_data_clone = stripped_data.clone();
             let handle = tokio::task::spawn_blocking(move || {
-                let load_data = LoadData::new(repaired_sauce_opt, None, None);
+                let load_data = LoadData::new(None, None);
                 match format.from_bytes(&stripped_data_clone, Some(load_data)) {
-                    Ok(screen) => {
-                        let buffer = screen.buffer;
+                    Ok(loaded_doc) => {
+                        let buffer = loaded_doc.screen.buffer;
                         // Validate buffer before returning
                         if buffer.width() == 0 || buffer.height() == 0 {
                             log::error!("Format produced invalid buffer dimensions: {}x{}", buffer.width(), buffer.height());

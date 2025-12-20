@@ -41,6 +41,9 @@ struct Uniforms {
     total_image_height: f32,     // Total height in pixels across all slices
     scroll_offset_y: f32,        // Current scroll offset in pixels
     visible_height: f32,         // Visible viewport height in pixels
+
+    // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
+    aspect_params: vec4<f32>,
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
     // slice_heights[1] = [h3, h4, h5, h6]
@@ -228,9 +231,9 @@ fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
 // Sample from the appropriate texture slice based on pixel Y coordinate
 // Uses sliding window approach: 3 slices covering current viewport area
 fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
-    let total_height = uniforms.total_image_height;
+    let total_height_display = uniforms.total_image_height;
     let tex_width = uniforms.texture_width;
-    if total_height <= 0.0 || tex_width <= 0.0 {
+    if total_height_display <= 0.0 || tex_width <= 0.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
     
@@ -259,17 +262,25 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     // scroll_offset_y tells us where in the full document we're looking
     // visible_height tells us how much of the document is visible
     
+    let aspect_y = max(1e-4, uniforms.aspect_params.x);
     let visible_h = uniforms.visible_height;
-    let max_scroll_y = max(0.0, total_height - visible_h);
+    let max_scroll_y = max(0.0, total_height_display - visible_h);
     let scroll_y = clamp(uniforms.scroll_offset_y, 0.0, max_scroll_y);
     
     // Screen pixel Y (relative to visible viewport)
     let screen_pixel_y = uv.y * visible_h;
     
     // Document pixel Y (absolute position in full document)
-    let doc_pixel_y = scroll_y + screen_pixel_y;
+    let doc_pixel_y_display = scroll_y + screen_pixel_y;
     
     // Check if we're outside the document
+    if doc_pixel_y_display < 0.0 || doc_pixel_y_display >= total_height_display {
+        return get_canvas_background();
+    }
+
+    // Convert to raw texture coordinate system (undo aspect ratio correction)
+    let doc_pixel_y = doc_pixel_y_display / aspect_y;
+    let total_height = total_height_display / aspect_y;
     if doc_pixel_y < 0.0 || doc_pixel_y >= total_height {
         return get_canvas_background();
     }

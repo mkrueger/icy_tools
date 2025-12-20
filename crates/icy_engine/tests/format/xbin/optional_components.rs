@@ -71,8 +71,8 @@ fn test_xbin_no_palette_no_font_no_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with custom palette, default font, no compression
@@ -95,8 +95,8 @@ fn test_xbin_palette_no_font_no_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with default palette, custom font, no compression
@@ -119,8 +119,8 @@ fn test_xbin_no_palette_font_no_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with custom palette and font, no compression
@@ -148,8 +148,8 @@ fn test_xbin_palette_font_no_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with default palette, default font, with compression
@@ -172,8 +172,8 @@ fn test_xbin_no_palette_no_font_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with custom palette, default font, with compression
@@ -196,8 +196,8 @@ fn test_xbin_palette_no_font_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with default palette, custom font, with compression
@@ -220,8 +220,8 @@ fn test_xbin_no_palette_font_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }
 
 /// Test XBin with all optional components (custom palette, custom font, compression)
@@ -249,6 +249,6 @@ fn test_xbin_palette_font_compress() {
 
     // Verify we can load it back
     let loaded = FileFormat::XBin.from_bytes(&xbin_data, None).unwrap();
-    assert_eq!(buffer.width(), loaded.buffer.width());
-    assert_eq!(buffer.height(), loaded.buffer.height());
+    assert_eq!(buffer.width(), loaded.screen.buffer.width());
+    assert_eq!(buffer.height(), loaded.screen.buffer.height());
 }

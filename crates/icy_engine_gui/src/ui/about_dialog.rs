@@ -46,10 +46,10 @@ impl AboutDialogState {
     pub fn new(ansi_data: &[u8], version: &Version, build_date: Option<String>) -> Self {
         let mut screen;
 
-        match FileFormat::IcyDraw.from_bytes(ansi_data, Some(icy_engine::formats::LoadData::new(None, Some(MusicOption::Off), None))) {
-            Ok(mut loaded_screen) => {
-                replace_version_marker(&mut loaded_screen.buffer, version, build_date);
-                screen = loaded_screen;
+        match FileFormat::IcyDraw.from_bytes(ansi_data, Some(icy_engine::formats::LoadData::new(Some(MusicOption::Off), None))) {
+            Ok(mut loaded_doc) => {
+                replace_version_marker(&mut loaded_doc.screen.buffer, version, build_date);
+                screen = loaded_doc.screen;
             }
             Err(e) => {
                 panic!("Failed to load about ANSI: {}", e);

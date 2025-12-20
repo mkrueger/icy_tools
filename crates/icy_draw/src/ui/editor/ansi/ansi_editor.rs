@@ -1911,6 +1911,10 @@ impl AnsiEditorCore {
                     let current = state.get_buffer().use_letter_spacing();
                     let _ = state.set_use_letter_spacing(!current);
                 });
+                // Letter spacing affects effective font metrics (and with aspect ratio
+                // enabled also the effective cell height), so the terminal viewport
+                // content size must be refreshed to avoid clipping/blank bands.
+                self.canvas.update_viewport_size();
                 self.is_modified = true;
                 Task::none()
             }
@@ -1919,6 +1923,10 @@ impl AnsiEditorCore {
                     let current = state.get_buffer().use_aspect_ratio();
                     let _ = state.set_use_aspect_ratio(!current);
                 });
+                // Aspect ratio affects effective font dimensions and therefore
+                // the document pixel size. Keep the terminal viewport's content
+                // size in sync to avoid clipping/blank bands.
+                self.canvas.update_viewport_size();
                 self.is_modified = true;
                 Task::none()
             }
@@ -2511,12 +2519,10 @@ impl AnsiEditorCore {
                 };
             }
             TerminalMessage::Scroll(delta) => match delta {
-                iced::mouse::ScrollDelta::Lines { x, y } => {
-                    self.canvas.scroll_by(*x * 20.0, *y * 20.0);
-                }
-                iced::mouse::ScrollDelta::Pixels { x, y } => {
-                    self.canvas.scroll_by(*x, *y);
-                }
+                // Wheel scrolling is handled by `CanvasView::update`.
+                // Handling it here as well would apply the delta twice (and with opposite sign),
+                // effectively cancelling scrolling.
+                iced::mouse::ScrollDelta::Lines { .. } | iced::mouse::ScrollDelta::Pixels { .. } => {}
             },
             TerminalMessage::Zoom(_) => {
                 // Zoom is handled elsewhere

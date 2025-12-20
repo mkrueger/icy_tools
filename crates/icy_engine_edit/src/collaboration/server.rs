@@ -2,6 +2,27 @@
 //!
 //! This module provides a Tokio-based WebSocket server that hosts collaboration
 //! sessions compatible with both Moebius clients and icy_draw clients.
+//!
+//! # Broadcast Behavior (Moebius Compatibility)
+//!
+//! The server implements three broadcast methods matching Moebius behavior:
+//!
+//! | Method | Moebius Equivalent | Description |
+//! |--------|-------------------|-------------|
+//! | `broadcast()` | `send_all_including_guests` | All clients except sender (incl. web guests) |
+//! | `broadcast_to_registered()` | `send_all` | Registered users only, except sender |
+//! | `broadcast_to_registered_including_self()` | `send_all_including_self` | Registered users including sender |
+//!
+//! ## Action-specific broadcast rules:
+//!
+//! - **DRAW**: `broadcast()` - All clients see drawing updates (including web viewers)
+//! - **CHAT**: `broadcast_to_registered()` - Only registered users receive chat messages
+//! - **JOIN/LEAVE**: `broadcast_to_registered()` - Only registered users get notified
+//! - **STATUS**: `broadcast_to_registered_including_self()` - Status echoed back to sender
+//! - **SAUCE, ICE_COLORS, USE_9PX_FONT, CHANGE_FONT, SET_CANVAS_SIZE**: `broadcast()` - Document settings to all
+//!
+//! Web clients (guests) are identified by an empty nickname and receive status `WEB=3`.
+//! They receive drawing updates but not chat, join/leave notifications, or status changes.
 
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -14,6 +35,20 @@ use tokio_tungstenite::tungstenite::Message;
 use super::compression::compress_moebius_data;
 use super::protocol::*;
 use super::session::{Session, SessionEvent, SharedSession, UserId};
+
+// ANSI color codes for server output
+mod colors {
+    pub const RESET: &str = "\x1b[0m";
+    pub const BOLD: &str = "\x1b[1m";
+    pub const CYAN: &str = "\x1b[1;36m";
+    pub const GREEN: &str = "\x1b[1;32m";
+    pub const YELLOW: &str = "\x1b[1;33m";
+    pub const RED: &str = "\x1b[1;31m";
+    pub const BLUE: &str = "\x1b[1;34m";
+    pub const MAGENTA: &str = "\x1b[1;35m";
+    pub const WHITE: &str = "\x1b[1;37m";
+    pub const GRAY: &str = "\x1b[1;90m";
+}
 
 /// Error type for server operations.
 #[derive(Debug)]
@@ -55,6 +90,41 @@ pub struct ServerConfig {
     pub enable_extended_protocol: bool,
     /// Server status message
     pub status_message: String,
+    /// Initial document content (column-major: blocks[col][row])
+    /// If None, creates empty document
+    pub initial_document: Option<Vec<Vec<Block>>>,
+    /// Initial ICE colors setting
+    pub ice_colors: bool,
+    /// Initial 9px font setting
+    pub use_9px_font: bool,
+    /// Initial font name
+    pub font_name: String,
+    /// SAUCE metadata: title
+    pub sauce_title: String,
+    /// SAUCE metadata: author
+    pub sauce_author: String,
+    /// SAUCE metadata: group
+    pub sauce_group: String,
+
+    // UI strings for localization (defaults to English)
+    /// Server banner title (default: "icy_draw Collaboration Server")
+    pub ui_title: String,
+    /// Label for bind address (default: "Bind Address")
+    pub ui_bind_address: String,
+    /// Label for password (default: "Password")
+    pub ui_password: String,
+    /// Label for document size (default: "Document")
+    pub ui_document: String,
+    /// Label for max users (default: "Max Users")
+    pub ui_max_users: String,
+    /// Label for connect URL (default: "Connect with")
+    pub ui_connect_with: String,
+    /// Stop server hint (default: "Press Ctrl+C to stop the server")
+    pub ui_stop_hint: String,
+    /// "none" placeholder for empty password
+    pub ui_none: String,
+    /// "unlimited" for max_users = 0
+    pub ui_unlimited: String,
 }
 
 impl Default for ServerConfig {
@@ -67,6 +137,23 @@ impl Default for ServerConfig {
             rows: 25,
             enable_extended_protocol: true,
             status_message: String::new(),
+            initial_document: None,
+            ice_colors: false,
+            use_9px_font: false,
+            font_name: "IBM VGA".to_string(),
+            sauce_title: String::new(),
+            sauce_author: String::new(),
+            sauce_group: String::new(),
+            // Default English UI strings
+            ui_title: "icy_draw Collaboration Server".to_string(),
+            ui_bind_address: "Bind Address".to_string(),
+            ui_password: "Password".to_string(),
+            ui_document: "Document".to_string(),
+            ui_max_users: "Max Users".to_string(),
+            ui_connect_with: "Connect with".to_string(),
+            ui_stop_hint: "Press Ctrl+C to stop the server".to_string(),
+            ui_none: "(none)".to_string(),
+            ui_unlimited: "unlimited".to_string(),
         }
     }
 }
@@ -91,12 +178,23 @@ impl ServerState {
     pub fn new(config: ServerConfig) -> Arc<Self> {
         let session = Arc::new(Session::with_dimensions(config.password.clone(), config.columns, config.rows));
 
-        // Initialize empty document
-        let mut document = Vec::with_capacity(config.columns as usize);
-        for _ in 0..config.columns {
-            let column = vec![Block::default(); config.rows as usize];
-            document.push(column);
-        }
+        // Apply initial settings
+        session.set_ice_colors(config.ice_colors);
+        session.set_use_9px(config.use_9px_font);
+        session.set_font(config.font_name.clone());
+        session.update_sauce(config.sauce_title.clone(), config.sauce_author.clone(), config.sauce_group.clone());
+
+        // Initialize document from config or create empty
+        let document = if let Some(initial_doc) = &config.initial_document {
+            initial_doc.clone()
+        } else {
+            let mut doc = Vec::with_capacity(config.columns as usize);
+            for _ in 0..config.columns {
+                let column = vec![Block::default(); config.rows as usize];
+                doc.push(column);
+            }
+            doc
+        };
 
         let (event_tx, _) = broadcast::channel(1024);
 
@@ -217,10 +315,53 @@ impl ServerState {
     }
 
     /// Broadcast a message to all clients except the sender.
+    ///
+    /// Equivalent to Moebius `send_all_including_guests(ws, type, data)`.
+    ///
+    /// Used for: DRAW, SAUCE, ICE_COLORS, USE_9PX_FONT, CHANGE_FONT, SET_CANVAS_SIZE
+    ///
+    /// Web clients (guests with status=WEB) receive these messages so they can
+    /// see real-time drawing updates even without being logged in.
     pub async fn broadcast(&self, message: &str, except: Option<UserId>) {
         let clients = self.clients.read().await;
         for (id, sender) in clients.iter() {
             if except != Some(*id) {
+                let _ = sender.send(message.to_string()).await;
+            }
+        }
+    }
+
+    /// Broadcast a message to registered users only (not web clients).
+    ///
+    /// Equivalent to Moebius `send_all(ws, type, data)`.
+    ///
+    /// Used for: CHAT, JOIN, LEAVE
+    ///
+    /// Web clients (guests with status=WEB) do NOT receive these messages.
+    /// Only users with a valid nickname (status != WEB) are included.
+    pub async fn broadcast_to_registered(&self, message: &str, except: Option<UserId>) {
+        let registered_ids = self.session.get_registered_user_ids();
+        let clients = self.clients.read().await;
+        for (id, sender) in clients.iter() {
+            if except != Some(*id) && registered_ids.contains(id) {
+                let _ = sender.send(message.to_string()).await;
+            }
+        }
+    }
+
+    /// Broadcast a message to all registered users including the sender.
+    ///
+    /// Equivalent to Moebius `send_all_including_self(type, data)`.
+    ///
+    /// Used for: STATUS
+    ///
+    /// The sender receives their own message back as confirmation.
+    /// Web clients (guests with status=WEB) do NOT receive these messages.
+    pub async fn broadcast_to_registered_including_self(&self, message: &str) {
+        let registered_ids = self.session.get_registered_user_ids();
+        let clients = self.clients.read().await;
+        for (id, sender) in clients.iter() {
+            if registered_ids.contains(id) {
                 let _ = sender.send(message.to_string()).await;
             }
         }
@@ -271,19 +412,41 @@ impl ServerState {
             return Err(serde_json::to_string(&response).unwrap());
         }
 
+        // Get existing users BEFORE adding the new user (Moebius behavior)
+        // This way the new user doesn't see themselves in the initial user list
+        let existing_users = self.session.get_users();
+        let chat_history = self.session.get_chat_history();
+
         // Add user
-        let user_id = self.session.add_user(nick);
+        let user_id = self.session.add_user(nick.clone());
 
         // Build connected response
-        let response = ConnectedResponse {
-            msg_type: ActionCode::Connected as u8,
-            data: ConnectedData {
-                id: user_id,
-                doc: self.get_compressed_document().await,
-                users: self.session.get_users(),
-                chat_history: self.session.get_chat_history(),
-                status: 0, // Default status
-            },
+        // Moebius sends different data for web clients (empty nick) vs regular clients
+        let is_web_client = nick.is_empty();
+        let response = if is_web_client {
+            // Web client: minimal response (no users, chat_history, status)
+            ConnectedResponse {
+                msg_type: ActionCode::Connected as u8,
+                data: ConnectedData {
+                    id: user_id,
+                    doc: self.get_compressed_document().await,
+                    users: Vec::new(),
+                    chat_history: Vec::new(),
+                    status: 3, // WEB status
+                },
+            }
+        } else {
+            // Regular client: full response
+            ConnectedResponse {
+                msg_type: ActionCode::Connected as u8,
+                data: ConnectedData {
+                    id: user_id,
+                    doc: self.get_compressed_document().await,
+                    users: existing_users,
+                    chat_history,
+                    status: 0, // ACTIVE status
+                },
+            }
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -336,23 +499,25 @@ impl ServerState {
     /// Handle a chat message.
     pub async fn handle_chat(&self, user_id: UserId, text: String) {
         let user = self.session.get_user(user_id);
-        let nick = user.map(|u| u.nick).unwrap_or_else(|| "Unknown".to_string());
+        let nick = user.as_ref().map(|u| u.nick.clone()).unwrap_or_else(|| "Unknown".to_string());
+        let group = user.map(|u| u.group).unwrap_or_default();
 
         self.session.add_chat_message(user_id, nick.clone(), text.clone());
 
-        // Broadcast chat message
+        // Broadcast chat message to registered users only (not web clients)
+        // Moebius uses send_all which excludes sender and web guests
         let msg = ChatBroadcastMessage {
             msg_type: ActionCode::Chat as u8,
             data: ChatMessage {
                 id: user_id,
                 nick: nick.clone(),
                 text: text.clone(),
-                group: String::new(),
+                group,
                 time: 0,
             },
         };
         let json = serde_json::to_string(&msg).unwrap();
-        self.broadcast_all(&json).await;
+        self.broadcast_to_registered(&json, Some(user_id)).await;
 
         self.emit_event(SessionEvent::Chat { nick, text });
     }
@@ -500,37 +665,112 @@ pub async fn run_server(config: ServerConfig) -> Result<(), ServerError> {
     let local_addr = listener.local_addr().map_err(|e| ServerError::ServerError(e.to_string()))?;
 
     use anstream::println;
+    use colors::*;
 
-    println!("\x1b[1;36m╔═══════════════════════════════════════════════════════════════╗\x1b[0m");
-    println!("\x1b[1;36m║\x1b[0m  \x1b[1;33micy_draw Collaboration Server\x1b[0m                              \x1b[1;36m║\x1b[0m");
-    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
-    println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mBind Address:\x1b[0m  {:<44} \x1b[1;36m║\x1b[0m", local_addr);
+    // Calculate field widths for proper alignment
+    // Find the longest label to determine label_width
+    let labels = [
+        &config.ui_bind_address,
+        &config.ui_password,
+        &config.ui_document,
+        &config.ui_max_users,
+        &config.ui_connect_with,
+    ];
+    let label_width = labels.iter().map(|s| s.chars().count()).max().unwrap_or(13);
 
-    if !config.password.is_empty() {
-        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mPassword:\x1b[0m      {:<44} \x1b[1;36m║\x1b[0m", "********");
+    // Calculate box dimensions based on content
+    // Row format: "║  {label}{label_pad}:  {value}{value_pad} ║"
+    // Title/hint format: "║  {text}{pad} ║"
+
+    let title_len = config.ui_title.chars().count();
+    let hint_len = config.ui_stop_hint.chars().count();
+
+    // Calculate the longest possible row content
+    let ws_url = format!("ws://{}", local_addr);
+    let doc_size = format!("{}x{}", config.columns, config.rows);
+    let max_users_display = if config.max_users > 0 {
+        config.max_users.to_string()
     } else {
-        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mPassword:\x1b[0m      {:<44} \x1b[1;36m║\x1b[0m", "(none)");
-    }
+        config.ui_unlimited.clone()
+    };
+    let password_display = if config.password.is_empty() {
+        config.ui_none.clone()
+    } else {
+        "********".to_string()
+    };
 
+    let values = [
+        local_addr.to_string(),
+        password_display.clone(),
+        doc_size.clone(),
+        max_users_display.clone(),
+        ws_url.clone(),
+    ];
+    let max_value_len = values.iter().map(|s| s.chars().count()).max().unwrap_or(20);
+
+    // Inner content width = label_width + ":" (1) + "  " (2) + max_value_len
+    let labeled_row_width = label_width + 3 + max_value_len;
+    let inner_width = title_len.max(hint_len).max(labeled_row_width);
+
+    // Box content: "  " (2) + inner_width
+    let box_width = inner_width + 2;
+    let border = "═".repeat(box_width);
+
+    println!("{CYAN}╔{border}╗{RESET}", CYAN = CYAN, border = border, RESET = RESET);
+
+    // Title row
+    let title_pad = box_width - config.ui_title.chars().count() - 2;
     println!(
-        "\x1b[1;36m║\x1b[0m  \x1b[1;32mDocument:\x1b[0m      {}x{} {:<34} \x1b[1;36m║\x1b[0m",
-        config.columns, config.rows, ""
+        "{CYAN}║{RESET}  {YELLOW}{title}{RESET}{pad}{CYAN}║{RESET}",
+        CYAN = CYAN,
+        YELLOW = YELLOW,
+        RESET = RESET,
+        title = config.ui_title,
+        pad = " ".repeat(title_pad)
     );
 
-    if config.max_users > 0 {
-        println!(
-            "\x1b[1;36m║\x1b[0m  \x1b[1;32mMax Users:\x1b[0m     {:<44} \x1b[1;36m║\x1b[0m",
-            config.max_users
-        );
-    } else {
-        println!("\x1b[1;36m║\x1b[0m  \x1b[1;32mMax Users:\x1b[0m     {:<44} \x1b[1;36m║\x1b[0m", "unlimited");
-    }
+    println!("{CYAN}╠{border}╣{RESET}", CYAN = CYAN, border = border, RESET = RESET);
 
-    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
-    println!("\x1b[1;36m║\x1b[0m  \x1b[1;37mConnect with:\x1b[0m  ws://{:<39} \x1b[1;36m║\x1b[0m", local_addr);
-    println!("\x1b[1;36m╠═══════════════════════════════════════════════════════════════╣\x1b[0m");
-    println!("\x1b[1;36m║\x1b[0m  \x1b[1;90mPress Ctrl+C to stop the server\x1b[0m                            \x1b[1;36m║\x1b[0m");
-    println!("\x1b[1;36m╚═══════════════════════════════════════════════════════════════╝\x1b[0m");
+    // Print labeled rows with proper alignment
+    let print_row = |label: &str, value: &str, color: &str| {
+        let label_pad = label_width - label.chars().count();
+        // Content: label + label_pad + ":" (1) + "  " (2) + value
+        // Padding: box_width - 2 (prefix) - label - label_pad - 1 - 2 - value
+        let content_len = label.chars().count() + label_pad + 3 + value.chars().count();
+        let value_pad = box_width - 2 - content_len;
+        println!(
+            "{CYAN}║{RESET}  {color}{label}{label_spaces}:{RESET}  {value}{value_spaces}{CYAN}║{RESET}",
+            CYAN = CYAN,
+            RESET = RESET,
+            color = color,
+            label = label,
+            label_spaces = " ".repeat(label_pad),
+            value = value,
+            value_spaces = " ".repeat(value_pad)
+        );
+    };
+
+    print_row(&config.ui_bind_address, &local_addr.to_string(), GREEN);
+    print_row(&config.ui_password, &password_display, GREEN);
+    print_row(&config.ui_document, &doc_size, GREEN);
+    print_row(&config.ui_max_users, &max_users_display, GREEN);
+
+    println!("{CYAN}╠{border}╣{RESET}", CYAN = CYAN, border = border, RESET = RESET);
+    print_row(&config.ui_connect_with, &ws_url, WHITE);
+    println!("{CYAN}╠{border}╣{RESET}", CYAN = CYAN, border = border, RESET = RESET);
+
+    // Hint row
+    let hint_pad = box_width - config.ui_stop_hint.chars().count() - 2;
+    println!(
+        "{CYAN}║{RESET}  {GRAY}{hint}{RESET}{pad}{CYAN}║{RESET}",
+        CYAN = CYAN,
+        GRAY = GRAY,
+        RESET = RESET,
+        hint = config.ui_stop_hint,
+        pad = " ".repeat(hint_pad)
+    );
+
+    println!("{CYAN}╚{border}╝{RESET}", CYAN = CYAN, border = border, RESET = RESET);
     println!();
 
     log::info!("Server listening on {}", local_addr);
@@ -550,8 +790,9 @@ pub async fn run_server(config: ServerConfig) -> Result<(), ServerError> {
 /// Handle a single WebSocket connection.
 async fn handle_connection(state: Arc<ServerState>, stream: TcpStream, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use anstream::println;
+    use colors::*;
 
-    println!("\x1b[1;34m[{}]\x1b[0m New connection", addr);
+    println!("{BLUE}[{addr}]{RESET} New connection", BLUE = BLUE, addr = addr, RESET = RESET);
 
     let ws_stream = tokio_tungstenite::accept_async(stream).await?;
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
@@ -590,7 +831,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: TcpStream, addr: Soc
                 }
             }
             Message::Close(_) => {
-                println!("\x1b[1;33m[{}]\x1b[0m Client requested close", addr);
+                println!("{YELLOW}[{addr}]{RESET} Client requested close", YELLOW = YELLOW, addr = addr, RESET = RESET);
                 break;
             }
             Message::Ping(_data) => {
@@ -604,25 +845,29 @@ async fn handle_connection(state: Arc<ServerState>, stream: TcpStream, addr: Soc
     if let Some(id) = user_id {
         state.unregister_client(id).await;
 
-        // Broadcast leave message
+        // Broadcast leave message to registered users only (Moebius uses send_all)
         let leave_msg = LeaveMessage {
             msg_type: ActionCode::Leave as u8,
             data: LeaveData { id },
         };
         if let Ok(json) = serde_json::to_string(&leave_msg) {
-            state.broadcast(&json, Some(id)).await;
+            state.broadcast_to_registered(&json, Some(id)).await;
         }
 
+        let user_count = state.client_count().await;
         println!(
-            "\x1b[1;31m[{}]\x1b[0m \x1b[1m{}\x1b[0m left (users: {})",
-            addr,
-            user_nick,
-            state.client_count().await
+            "{RED}[{addr}]{RESET} {BOLD}{nick}{RESET} left (users: {count})",
+            RED = RED,
+            addr = addr,
+            RESET = RESET,
+            BOLD = BOLD,
+            nick = user_nick,
+            count = user_count
         );
 
         state.emit_event(SessionEvent::UserLeft(id));
     } else {
-        println!("\x1b[1;31m[{}]\x1b[0m Disconnected (no login)", addr);
+        println!("{RED}[{addr}]{RESET} Disconnected (no login)", RED = RED, addr = addr, RESET = RESET);
     }
 
     sender_task.abort();
@@ -651,56 +896,79 @@ async fn handle_message(
         Some(0) => {
             // CONNECT request (client wants to join)
             // Extract nick and password from data
-            let nick = data.get("nick").and_then(|v| v.as_str()).unwrap_or("Guest").to_string();
+            // Moebius: nick == undefined means web client, nick == "" means guest
+            let nick_opt = data.get("nick").and_then(|v| v.as_str());
+            let is_web_client = nick_opt.is_none();
+            let nick = nick_opt.unwrap_or("").to_string();
             let password = data.get("pass").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
             match state.handle_connect(nick.clone(), password).await {
                 Ok((id, response)) => {
                     *user_id = Some(id);
                     *user_nick = nick.clone();
 
+                    // Update user with group if provided
+                    if !group.is_empty() {
+                        state.session.update_group(id, group.clone());
+                    }
+
+                    // Set status based on client type (Moebius: WEB=3 for web clients, ACTIVE=0 for regular)
+                    let user_status = if is_web_client { 3 } else { 0 };
+                    state.session.update_status(id, user_status);
+
                     state.register_client(id, tx.clone()).await;
 
                     // Send CONNECTED response
                     let _ = tx.send(response).await;
 
-                    // Broadcast JOIN to other clients
-                    let user = state.session.get_user(id);
+                    // Broadcast JOIN to other registered clients only (Moebius uses send_all)
                     let join_msg = JoinMessage {
                         msg_type: ActionCode::Join as u8,
                         data: JoinData {
                             id,
-                            nick: user.as_ref().map(|u| u.nick.clone()).unwrap_or_default(),
-                            group: user.as_ref().map(|u| u.group.clone()).unwrap_or_default(),
-                            status: user.as_ref().map(|u| u.status).unwrap_or(0),
+                            nick: nick.clone(),
+                            group: group.clone(),
+                            status: user_status,
                         },
                     };
                     if let Ok(json) = serde_json::to_string(&join_msg) {
-                        state.broadcast(&json, Some(id)).await;
+                        state.broadcast_to_registered(&json, Some(id)).await;
                     }
 
+                    let user_count = state.client_count().await;
+                    let display_name = if is_web_client {
+                        "web client"
+                    } else if nick.is_empty() {
+                        "Guest"
+                    } else {
+                        &nick
+                    };
                     println!(
-                        "\x1b[1;32m[{}]\x1b[0m \x1b[1m{}\x1b[0m joined (users: {})",
-                        addr,
-                        nick,
-                        state.client_count().await
+                        "{GREEN}[{addr}]{RESET} {BOLD}{name}{RESET} joined (users: {count})",
+                        GREEN = colors::GREEN,
+                        addr = addr,
+                        RESET = colors::RESET,
+                        BOLD = colors::BOLD,
+                        name = display_name,
+                        count = user_count
                     );
 
-                    state.emit_event(SessionEvent::UserJoined(user.unwrap_or(User {
+                    state.emit_event(SessionEvent::UserJoined(User {
                         id,
                         nick: nick.clone(),
-                        group: String::new(),
-                        status: 0,
+                        group,
+                        status: user_status,
                         col: 0,
                         row: 0,
                         selecting: false,
                         selection_col: 0,
                         selection_row: 0,
-                    })));
+                    }));
                 }
                 Err(refuse_json) => {
                     let _ = tx.send(refuse_json).await;
-                    println!("\x1b[1;31m[{}]\x1b[0m Connection refused", addr);
+                    println!("{RED}[{addr}]{RESET} Connection refused", RED = colors::RED, addr = addr, RESET = colors::RESET);
                 }
             }
         }
@@ -802,15 +1070,37 @@ async fn handle_message(
             // CHAT
             if let Some(id) = *user_id {
                 let chat_text = data.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Moebius also sends nick and group in chat messages
+                let nick = data.get("nick").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
                 if !chat_text.is_empty() {
+                    // Update nick/group if changed (Moebius behavior)
+                    if let Some(ref new_nick) = nick {
+                        if new_nick != user_nick {
+                            *user_nick = new_nick.clone();
+                        }
+                    }
+                    if !group.is_empty() {
+                        state.session.update_group(id, group);
+                    }
+
                     state.handle_chat(id, chat_text.clone()).await;
-                    println!("\x1b[1;35m[{}]\x1b[0m <\x1b[1m{}\x1b[0m> {}", addr, user_nick, chat_text);
+                    println!(
+                        "{MAGENTA}[{addr}]{RESET} <{BOLD}{nick}{RESET}> {text}",
+                        MAGENTA = colors::MAGENTA,
+                        addr = addr,
+                        RESET = colors::RESET,
+                        BOLD = colors::BOLD,
+                        nick = user_nick,
+                        text = chat_text
+                    );
                 }
             }
         }
 
         Some(11) => {
-            // STATUS
+            // STATUS - Moebius uses send_all_including_self (registered users including sender)
             if let Some(id) = *user_id {
                 let status = data.get("status").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
                 state.session.update_status(id, status);
@@ -831,7 +1121,7 @@ async fn handle_message(
                     data: StatusBroadcastData { id, status },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
-                    state.broadcast(&json, Some(id)).await;
+                    state.broadcast_to_registered_including_self(&json).await;
                 }
             }
         }
@@ -951,13 +1241,13 @@ async fn handle_message(
 
         Some(16) => {
             // SET_CANVAS_SIZE
-            if let Some(_id) = *user_id {
+            if let Some(id) = *user_id {
                 let columns = data.get("columns").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
                 let rows = data.get("rows").and_then(|v| v.as_u64()).unwrap_or(25) as u32;
 
                 state.resize(columns, rows).await;
 
-                // Broadcast to all (including sender for confirmation)
+                // Broadcast to all including guests, except sender (Moebius behavior)
                 #[derive(serde::Serialize)]
                 struct CanvasSizeBroadcast {
                     #[serde(rename = "type")]
@@ -974,10 +1264,17 @@ async fn handle_message(
                     data: CanvasSizeData { columns, rows },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
-                    state.broadcast_all(&json).await;
+                    state.broadcast(&json, Some(id)).await;
                 }
 
-                println!("\x1b[1;33m[{}]\x1b[0m Canvas resized to {}x{}", addr, columns, rows);
+                println!(
+                    "{YELLOW}[{addr}]{RESET} Canvas resized to {cols}x{rows}",
+                    YELLOW = colors::YELLOW,
+                    addr = addr,
+                    RESET = colors::RESET,
+                    cols = columns,
+                    rows = rows
+                );
             }
         }
 

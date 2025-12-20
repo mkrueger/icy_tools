@@ -2,14 +2,14 @@ use icy_engine::{AnsiSaveOptionsV2, TextPane, formats::FileFormat};
 
 #[test]
 fn test_clear() {
-    let buf = FileFormat::Avatar.from_bytes(&[b'X', 12, b'X'], None).unwrap().buffer;
+    let buf = FileFormat::Avatar.from_bytes(&[b'X', 12, b'X'], None).unwrap().screen.buffer;
     assert_eq!(1, buf.line_count());
     assert_eq!(1, buf.real_buffer_width());
 }
 
 #[test]
 fn test_repeat() {
-    let buf = FileFormat::Avatar.from_bytes(&[b'X', 25, b'b', 3, b'X'], None).unwrap().buffer;
+    let buf = FileFormat::Avatar.from_bytes(&[b'X', 25, b'b', 3, b'X'], None).unwrap().screen.buffer;
     assert_eq!(1, buf.line_count());
     assert_eq!(5, buf.real_buffer_width());
     assert_eq!(b'X', buf.char_at((0, 0).into()).ch as u8);
@@ -21,7 +21,7 @@ fn test_repeat() {
 
 #[test]
 fn test_zero_repeat() {
-    let buf = FileFormat::Avatar.from_bytes(&[25, b'b', 0], None).unwrap().buffer;
+    let buf = FileFormat::Avatar.from_bytes(&[25, b'b', 0], None).unwrap().screen.buffer;
     assert_eq!(0, buf.line_count());
     assert_eq!(0, buf.real_buffer_width());
 }
@@ -37,6 +37,7 @@ fn test_linebreak_bug() {
             None,
         )
         .unwrap()
+        .screen
         .buffer;
     assert_eq!(1, buf.line_count());
     assert_eq!(47, buf.real_buffer_width());
@@ -77,7 +78,7 @@ fn output_avt(data: &[u8]) -> Vec<u8> {
 }
 
 fn test_avt(data: &[u8]) {
-    let mut buf = FileFormat::Avatar.from_bytes(data, None).unwrap().buffer;
+    let mut buf = FileFormat::Avatar.from_bytes(data, None).unwrap().screen.buffer;
     let converted = FileFormat::Avatar.to_bytes(&mut buf, &AnsiSaveOptionsV2::new()).unwrap();
 
     // more gentle output.

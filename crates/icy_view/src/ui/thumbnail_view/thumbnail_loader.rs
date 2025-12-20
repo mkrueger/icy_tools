@@ -600,10 +600,10 @@ fn render_with_format(
     }
 
     // Use max_height limit for thumbnail loading
-    let load_data = LoadData::new(sauce.cloned(), None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
+    let load_data = LoadData::new(None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
     match format.from_bytes(data, Some(load_data)) {
-        Ok(screen) => {
-            let buffer = &screen.buffer;
+        Ok(loaded_doc) => {
+            let buffer = &loaded_doc.screen.buffer;
             let buffer_load_elapsed: std::time::Duration = start.elapsed();
             debug!("[TIMING] {} buffer load: {:?}", path, buffer_load_elapsed);
 
@@ -617,7 +617,7 @@ fn render_with_format(
             let width = buffer.width();
             let height = buffer.height();
 
-            let result = render_screen_to_thumbnail(path, &screen, is_unicode, sauce.cloned(), label, cancel_token);
+            let result = render_screen_to_thumbnail(path, &loaded_doc.screen, is_unicode, sauce.cloned(), label, cancel_token);
 
             debug!("[TIMING] {} total format render ({}x{}): {:?}", path, width, height, total_start.elapsed());
             result

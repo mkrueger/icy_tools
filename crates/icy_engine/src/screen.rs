@@ -67,12 +67,26 @@ pub trait Screen: TextPane + Send + Sync {
     // Rendering
     fn render_to_rgba(&self, options: &RenderOptions) -> (Size, Vec<u8>);
 
+    /// Render to RGBA without aspect ratio correction.
+    ///
+    /// Default implementation falls back to `render_to_rgba`.
+    fn render_to_rgba_raw(&self, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_to_rgba(options)
+    }
+
     fn render_region_to_rgba(&self, _region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
         // Default implementation: render full and crop
         //let (full_size, full_pixels) = self.render_to_rgba(options);
         //crop_region(&full_pixels, full_size, region)
 
         todo!("Implement render_region_to_rgba for specific screen types");
+    }
+
+    /// Render a pixel region without aspect ratio correction.
+    ///
+    /// Default implementation falls back to `render_region_to_rgba`.
+    fn render_region_to_rgba_raw(&self, region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba(region, options)
     }
 
     // Visual state
@@ -132,6 +146,13 @@ pub trait Screen: TextPane + Send + Sync {
     /// Whether to use legacy aspect ratio correction - from SAUCE data
     fn use_aspect_ratio(&self) -> bool {
         false
+    }
+
+    /// Stretch factor for legacy aspect ratio correction (Y scaling).
+    ///
+    /// This is only meaningful when `use_aspect_ratio()` is true. Default is `1.0`.
+    fn aspect_ratio_stretch_factor(&self) -> f32 {
+        1.0
     }
 
     // Access to editor if this screen is editable
