@@ -217,8 +217,8 @@ impl AnsiEditorCore {
             (size.width as f32, size.height as f32)
         };
 
-        // Caret + buffer dimensions for line numbers.
-        let (caret_row, caret_col, buffer_height, buffer_width) = {
+        // Caret + buffer dimensions + selection for line numbers.
+        let (caret_row, caret_col, buffer_height, buffer_width, selection_range) = {
             let mut screen_guard = self.screen.lock();
             let state = screen_guard
                 .as_any_mut()
@@ -226,7 +226,12 @@ impl AnsiEditorCore {
                 .expect("AnsiEditor screen should always be EditState");
             let caret = state.get_caret();
             let buffer = state.get_buffer();
-            (caret.y as usize, caret.x as usize, buffer.height(), buffer.width() as usize)
+            let selection = state.selection().map(|sel| {
+                let min = sel.min();
+                let max = sel.max();
+                (min.x as usize, min.y as usize, max.x as usize, max.y as usize)
+            });
+            (caret.y as usize, caret.x as usize, buffer.height(), buffer.width() as usize, selection)
         };
 
         // Build the center area with optional line numbers overlay and tag context menu.
@@ -243,6 +248,7 @@ impl AnsiEditorCore {
                 caret_col,
                 scroll_x,
                 scroll_y,
+                selection_range,
             );
             center_layers.push(line_numbers_overlay);
         }

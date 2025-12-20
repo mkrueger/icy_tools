@@ -12,6 +12,9 @@ use std::sync::Arc;
 
 /// Create line numbers overlay that draws on top of the terminal
 /// Uses RenderInfo.display_scale for the actual zoom factor (works with Auto/Manual modes)
+///
+/// If `selection_range` is Some, it highlights the selection range instead of the caret position.
+/// The selection_range is (min_col, min_row, max_col, max_row).
 pub fn line_numbers_overlay(
     render_info: Arc<RwLock<RenderInfo>>,
     buffer_width: usize,
@@ -22,6 +25,7 @@ pub fn line_numbers_overlay(
     caret_col: usize,
     scroll_x: f32,
     scroll_y: f32,
+    selection_range: Option<(usize, usize, usize, usize)>,
 ) -> Element<'static, AnsiEditorCoreMessage> {
     let state = LineNumbersOverlayState {
         render_info,
@@ -33,6 +37,7 @@ pub fn line_numbers_overlay(
         caret_col,
         scroll_x,
         scroll_y,
+        selection_range,
     };
 
     canvas(state).width(Length::Fill).height(Length::Fill).into()
@@ -48,6 +53,7 @@ struct LineNumbersOverlayState {
     caret_col: usize,
     scroll_x: f32,
     scroll_y: f32,
+    selection_range: Option<(usize, usize, usize, usize)>,
 }
 
 impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
@@ -104,8 +110,13 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
             }
 
             let label = format!("{}", row + 1);
-            let is_caret_row = row == self.caret_row;
-            let color = if is_caret_row { highlight_color } else { text_color };
+            // Highlight if row is in selection range, otherwise check caret position
+            let is_highlighted = if let Some((_, min_row, _, max_row)) = self.selection_range {
+                row >= min_row && row <= max_row
+            } else {
+                row == self.caret_row
+            };
+            let color = if is_highlighted { highlight_color } else { text_color };
 
             // Left side: right-aligned, just before content
             let left_x = offset_x - 4.0;
@@ -146,8 +157,13 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
 
             // Show only last digit (1-based, mod 10)
             let label = format!("{}", (col + 1) % 10);
-            let is_caret_col = col == self.caret_col;
-            let color = if is_caret_col { highlight_color } else { text_color };
+            // Highlight if column is in selection range, otherwise check caret position
+            let is_highlighted = if let Some((min_col, _, max_col, _)) = self.selection_range {
+                col >= min_col && col <= max_col
+            } else {
+                col == self.caret_col
+            };
+            let color = if is_highlighted { highlight_color } else { text_color };
 
             // Top: above content
             let top_y = offset_y - 2.0;
