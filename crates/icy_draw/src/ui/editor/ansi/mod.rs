@@ -171,6 +171,7 @@ pub enum AnsiEditorCoreMessage {
     // --- Display Mode Operations ---
     ToggleIceColors,
     ToggleLetterSpacing,
+    ToggleAspectRatio,
 
     // --- Font Apply Operations ---
     ApplyFontSelection(FontSelectorResult),
@@ -271,6 +272,8 @@ pub struct AnsiStatusInfo {
     pub ice_colors: bool,
     /// Letter spacing (9px mode) enabled
     pub letter_spacing: bool,
+    /// Use aspect ratio correction
+    pub use_aspect_ratio: bool,
     /// Current format mode
     pub format_mode: icy_engine_edit::FormatMode,
     /// Currently active font slot (0 or 1 for XBinExtended)

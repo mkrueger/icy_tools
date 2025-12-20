@@ -75,14 +75,22 @@ impl AnsiEditorMainArea {
             click.sync_fkey_set_from_options(&options);
         }
 
-        let (core, palette, format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool);
+        let (mut core, palette, _format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool);
 
         let mut tool_panel = ToolPanel::new(tool_registry);
         tool_panel.set_tool(core.current_tool_for_panel());
 
+        // Get ice_mode and font_mode for palette grid constraints
+        let (ice_mode, font_mode) = core.with_edit_state(|state| {
+            let buffer = state.get_buffer();
+            (buffer.ice_mode, buffer.font_mode)
+        });
+
         let mut palette_grid = PaletteGrid::new();
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        palette_grid.sync_palette(&palette, palette_limit);
+        // Always show all 16 colors - constraints for XBinExtended are enforced in click handler
+        palette_grid.sync_palette(&palette, None);
+        palette_grid.set_ice_mode(ice_mode);
+        palette_grid.set_font_mode(font_mode);
 
         Self {
             core,
@@ -451,17 +459,28 @@ impl AnsiEditorMainArea {
 
     pub fn sync_ui(&mut self) {
         self.core.sync_ui();
-        let (palette, format_mode, caret_fg, caret_bg, tag_count) = self.core.with_edit_state(|state| {
-            let palette = state.get_buffer().palette.clone();
-            let format_mode = state.get_format_mode();
+        let (palette, caret_fg, caret_bg, ice_mode, font_mode, tag_count) = self.core.with_edit_state(|state| {
+            let buffer = state.get_buffer();
+            let palette = buffer.palette.clone();
+            let ice_mode = buffer.ice_mode;
+            let font_mode = buffer.font_mode;
             let caret = state.get_caret();
-            let tag_count = state.get_buffer().tags.len();
-            (palette, format_mode, caret.attribute.foreground(), caret.attribute.background(), tag_count)
+            let tag_count = buffer.tags.len();
+            (
+                palette,
+                caret.attribute.foreground(),
+                caret.attribute.background(),
+                ice_mode,
+                font_mode,
+                tag_count,
+            )
         });
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        self.palette_grid.sync_palette(&palette, palette_limit);
+        // Always show all 16 colors - constraints for XBinExtended are enforced in click handler
+        self.palette_grid.sync_palette(&palette, None);
         self.palette_grid.set_foreground(caret_fg);
         self.palette_grid.set_background(caret_bg);
+        self.palette_grid.set_ice_mode(ice_mode);
+        self.palette_grid.set_font_mode(font_mode);
 
         // Clear invalid tag selections (tags may have been removed by undo).
         if let Some(tag_tool) = self.core.active_tag_tool_mut() {
@@ -1493,7 +1512,7 @@ impl AnsiEditorMainArea {
         let sidebar_width = constants::LEFT_BAR_WIDTH;
 
         // Get caret colors from the edit state (also used for palette mode decisions)
-        let (caret_fg, caret_bg, format_mode) = {
+        let (caret_fg, caret_bg) = {
             let mut screen_guard = editor.screen.lock();
             let state = screen_guard
                 .as_any_mut()
@@ -1503,19 +1522,14 @@ impl AnsiEditorMainArea {
             let caret_visible = !editor.is_paste_mode() && state.selection().is_none();
             state.set_caret_visible(caret_visible);
             let caret = state.get_caret();
-            let format_mode = state.get_format_mode();
             let fg = caret.attribute.foreground();
             let bg = caret.attribute.background();
-            (fg, bg, format_mode)
+            (fg, bg)
         };
 
         // Palette grid - adapts to sidebar width
-        // In XBinExtended only 8 colors are available
-        let palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
-        let palette_view = self
-            .palette_grid
-            .view_with_width(sidebar_width, palette_limit)
-            .map(AnsiEditorMessage::PaletteGrid);
+        // Always show all 16 colors - constraints for XBinExtended are enforced in click handler
+        let palette_view = self.palette_grid.view_with_width(sidebar_width, None).map(AnsiEditorMessage::PaletteGrid);
 
         // Tool panel - calculate columns based on sidebar width
         // Use theme's main area background color

@@ -103,7 +103,7 @@ impl Clone for BitFont {
 
 impl Default for BitFont {
     fn default() -> Self {
-        BitFont::from_ansi_font_page(0, 16).unwrap().clone()
+        BitFont::from_sauce_name("IBM VGA").unwrap()
     }
 }
 

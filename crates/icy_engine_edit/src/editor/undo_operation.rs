@@ -596,8 +596,10 @@ impl EditorUndoOp {
             } => {
                 std::mem::swap(old_palette, new_palette);
                 std::mem::swap(old_layers, new_layers);
-                edit_state.get_buffer_mut().palette = new_palette.clone();
-                edit_state.get_buffer_mut().layers = new_layers.clone();
+                let buf = edit_state.get_buffer_mut();
+                buf.palette = new_palette.clone();
+                buf.layers = new_layers.clone();
+                buf.mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetIceMode {
@@ -669,12 +671,24 @@ impl EditorUndoOp {
             }
             EditorUndoOp::EditTag { tag_index, old_tag, new_tag } => {
                 std::mem::swap(old_tag, new_tag);
-                edit_state.get_buffer_mut().tags[*tag_index] = new_tag.clone();
+                if let Some(tag) = edit_state.get_buffer_mut().tags.get_mut(*tag_index) {
+                    *tag = new_tag.clone();
+                } else {
+                    log::warn!(
+                        "EditTag undo: tag index {} out of bounds (len={})",
+                        tag_index,
+                        edit_state.get_buffer().tags.len()
+                    );
+                }
                 Ok(())
             }
             EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
                 std::mem::swap(old_pos, new_pos);
-                edit_state.get_buffer_mut().tags[*tag].position = *new_pos;
+                if let Some(t) = edit_state.get_buffer_mut().tags.get_mut(*tag) {
+                    t.position = *new_pos;
+                } else {
+                    log::warn!("MoveTag undo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
+                }
                 Ok(())
             }
             EditorUndoOp::RemoveTag { tag_index, tag } => {
@@ -964,8 +978,10 @@ impl EditorUndoOp {
                 new_layers,
             } => {
                 // Set values first, then swap for undo symmetry
-                edit_state.get_buffer_mut().palette = new_palette.clone();
-                edit_state.get_buffer_mut().layers = new_layers.clone();
+                let buf = edit_state.get_buffer_mut();
+                buf.palette = new_palette.clone();
+                buf.layers = new_layers.clone();
+                buf.mark_dirty();
                 std::mem::swap(old_palette, new_palette);
                 std::mem::swap(old_layers, new_layers);
                 Ok(())
@@ -1042,13 +1058,25 @@ impl EditorUndoOp {
             }
             EditorUndoOp::EditTag { tag_index, old_tag, new_tag } => {
                 // Set tag first, then swap for undo symmetry
-                edit_state.get_buffer_mut().tags[*tag_index] = new_tag.clone();
+                if let Some(tag) = edit_state.get_buffer_mut().tags.get_mut(*tag_index) {
+                    *tag = new_tag.clone();
+                } else {
+                    log::warn!(
+                        "EditTag redo: tag index {} out of bounds (len={})",
+                        tag_index,
+                        edit_state.get_buffer().tags.len()
+                    );
+                }
                 std::mem::swap(old_tag, new_tag);
                 Ok(())
             }
             EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
                 // Move tag first, then swap for undo symmetry
-                edit_state.get_buffer_mut().tags[*tag].position = *new_pos;
+                if let Some(t) = edit_state.get_buffer_mut().tags.get_mut(*tag) {
+                    t.position = *new_pos;
+                } else {
+                    log::warn!("MoveTag redo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
+                }
                 std::mem::swap(old_pos, new_pos);
                 Ok(())
             }

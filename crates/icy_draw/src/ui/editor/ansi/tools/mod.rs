@@ -193,6 +193,16 @@ impl ToolResult {
             (this, other) => ToolResult::Multi(vec![this, other]),
         }
     }
+
+    /// Returns true if this result contains a Redraw, StartCapture, or anything
+    /// that indicates the overlay should be updated.
+    pub fn needs_redraw(&self) -> bool {
+        match self {
+            ToolResult::Redraw | ToolResult::StartCapture | ToolResult::EndCapture | ToolResult::Commit(_) => true,
+            ToolResult::Multi(results) => results.iter().any(|r| r.needs_redraw()),
+            _ => false,
+        }
+    }
 }
 
 // ============================================================================

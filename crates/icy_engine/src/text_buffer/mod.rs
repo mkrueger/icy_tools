@@ -121,7 +121,7 @@ impl Tag {
 
     pub fn len(&self) -> usize {
         if self.length == 0 {
-            return self.preview.len();
+            return self.preview.chars().count();
         }
         self.length
     }
@@ -757,6 +757,53 @@ impl TextBuffer {
     #[must_use]
     pub fn font_dimensions(&self) -> Size {
         self.font_cell_size
+    }
+
+    /// Get font dimensions with aspect ratio correction applied
+    /// Returns the effective display size of a font cell
+    #[must_use]
+    pub fn font_dimensions_with_aspect_ratio(&self) -> Size {
+        if !self.use_aspect_ratio {
+            return self.font_cell_size;
+        }
+
+        let stretch_factor = self.get_aspect_ratio_stretch_factor();
+        if stretch_factor <= 0.0 {
+            return self.font_cell_size;
+        }
+
+        Size::new(self.font_cell_size.width, (self.font_cell_size.height as f32 * stretch_factor).round() as i32)
+    }
+
+    /// Get the aspect ratio stretch factor for this buffer
+    /// Returns 0.0 if no stretching should be applied
+    #[must_use]
+    pub fn get_aspect_ratio_stretch_factor(&self) -> f32 {
+        match self.buffer_type {
+            BufferType::Petscii => 1.2,
+            BufferType::Atascii => 1.25,
+            _ => {
+                let mut res = if self.use_letter_spacing { 1.35 } else { 1.2 };
+                if let Some(font) = self.font(0) {
+                    if font.name().starts_with("IBM EGA") {
+                        res = 1.3714;
+                    }
+                    if font.name().starts_with("IBM VGA25G") {
+                        res = 0.0;
+                    }
+                    if font.name().starts_with("Amiga") {
+                        res = 1.4;
+                    }
+                    if font.name().starts_with("C64") {
+                        res = 1.2;
+                    }
+                    if font.name().starts_with("Atari ATASCII") {
+                        res = 1.25;
+                    }
+                }
+                res
+            }
+        }
     }
 
     /// Set the font cell size for this document

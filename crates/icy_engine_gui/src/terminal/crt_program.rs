@@ -775,7 +775,7 @@ impl<'a> CRTShaderProgram<'a> {
             });
 
             if let mouse::Event::ButtonReleased(button) = mouse_event {
-                if state.dragging && matches!(button, mouse::Button::Left) {
+                if state.dragging && (matches!(button, mouse::Button::Left) || matches!(button, mouse::Button::Right)) {
                     state.dragging = false;
                     state.drag_anchor = None;
                     state.last_drag_position = None;
@@ -790,7 +790,8 @@ impl<'a> CRTShaderProgram<'a> {
                     };
 
                     let modifiers = Self::get_modifiers();
-                    let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+                    let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, state.drag_button, modifiers);
+                    state.drag_button = MouseButton::None;
                     return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                 }
             }
@@ -808,7 +809,7 @@ impl<'a> CRTShaderProgram<'a> {
                         state.last_drag_position = Some(cell_pos);
 
                         let modifiers = Self::get_modifiers();
-                        let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), MouseButton::Left, modifiers);
+                        let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), state.drag_button, modifiers);
                         return Some(iced::widget::Action::publish(TerminalMessage::Drag(evt)));
                     }
                 }
@@ -834,7 +835,7 @@ impl<'a> CRTShaderProgram<'a> {
                         }
 
                         let modifiers = Self::get_modifiers();
-                        let button = if state.dragging { MouseButton::Left } else { MouseButton::None };
+                        let button = if state.dragging { state.drag_button } else { MouseButton::None };
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
 
                         if state.dragging {
@@ -899,8 +900,9 @@ impl<'a> CRTShaderProgram<'a> {
                             _ => return None,
                         };
 
-                        if matches!(button, mouse::Button::Left) {
+                        if matches!(button, mouse::Button::Left | mouse::Button::Right) {
                             state.dragging = true;
+                            state.drag_button = mouse_button;
                             state.drag_anchor = cell_pos;
                             state.last_drag_position = cell_pos;
                         }
@@ -913,64 +915,18 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::ButtonReleased(button) => {
-                    if !matches!(button, mouse::Button::Left) {
+                    // Middle button single-click (Middle doesn't support drag)
+                    if matches!(button, mouse::Button::Middle) {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
 
-                            if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
-                                let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
-                                let (term_x_u, term_y_u_raw) = render_info.screen_to_terminal_pixels_unclamped(position.x, position.y);
-                                let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
-                                let font_w = render_info.font_width.max(1.0);
-                                let font_h = render_info.font_height.max(1.0);
-                                let abs_px_x = term_x_u + viewport.scroll_x;
-                                let abs_px_y = term_y_u + viewport.scroll_y;
-                                let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
-                                let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
-
-                                eprintln!(
-                                    "[mouse_map][release {:?}] pos=({:.3},{:.3}) cell={:?} term_clamped={:?} term_u=({:.3},{:.3}) abs_px=({:.3},{:.3}) dbg_cell=({},{}); vp(scroll=({:.3},{:.3}) vis=({:.3},{:.3}) zoom={:.3}); ri(scale={:.3} vp=({:.3},{:.3},{:.3},{:.3}) term=({:.3},{:.3}) font=({:.3},{:.3}) scanlines={})",
-                                    button,
-                                    position.x,
-                                    position.y,
-                                    cell_pos,
-                                    clamped_term,
-                                    term_x_u,
-                                    term_y_u,
-                                    abs_px_x,
-                                    abs_px_y,
-                                    dbg_cell_x,
-                                    dbg_cell_y,
-                                    viewport.scroll_x,
-                                    viewport.scroll_y,
-                                    viewport.visible_width,
-                                    viewport.visible_height,
-                                    viewport.zoom,
-                                    render_info.display_scale,
-                                    render_info.viewport_x,
-                                    render_info.viewport_y,
-                                    render_info.viewport_width,
-                                    render_info.viewport_height,
-                                    render_info.terminal_width,
-                                    render_info.terminal_height,
-                                    render_info.font_width,
-                                    render_info.font_height,
-                                    render_info.scan_lines
-                                );
-                            }
-
-                            let mouse_button = match button {
-                                mouse::Button::Middle => MouseButton::Middle,
-                                mouse::Button::Right => MouseButton::Right,
-                                _ => return None,
-                            };
-
                             let modifiers = Self::get_modifiers();
-                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Middle, modifiers);
 
                             return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
+                    // Left/Right single-click (only if not dragging)
                     } else if !state.dragging {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
@@ -1023,8 +979,14 @@ impl<'a> CRTShaderProgram<'a> {
                             state.last_drag_position = None;
                             state.last_move_position = None;
 
+                            let mouse_button = match button {
+                                mouse::Button::Left => MouseButton::Left,
+                                mouse::Button::Right => MouseButton::Right,
+                                _ => return None,
+                            };
+
                             let modifiers = Self::get_modifiers();
-                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Left, modifiers);
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
                             return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
                         }

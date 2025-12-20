@@ -1,4 +1,4 @@
-use crate::{BufferType, Position, Rectangle, RenderOptions, TextBuffer, TextPane, XTERM_256_PALETTE};
+use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane, XTERM_256_PALETTE};
 
 use super::Size;
 
@@ -153,43 +153,7 @@ impl TextBuffer {
 
         // Apply aspect ratio correction if enabled (VGA pixel aspect ratio correction)
         if self.use_aspect_ratio {
-            // From Sauce spec:
-            // M VGA 	9×16  	720×400 	4:3 	20:27 (1:1.35) 	35% 	Standard hardware font on VGA cards for 80×25 text mode (code page 437)
-            //          8×16 	640×400 	4:3 	6:5 (1:1.2) 	20% 	Modified stats when using an 8 pixel wide version of "IBM VGA" or code page variant.
-            // C64 PETSCII unshifted 	8×8 [10] 	320×200 	4:3 	5:6 (1:1.2) 	20% 	Original Commodore PETSCII font (PET, VIC-20, C64, CBM-II, Plus/4, C16, C116 and C128) in the unshifted mode. Unshifted mode (graphics) only has uppercase letters and additional graphic characters. This is the normal boot font.
-            // C64 PETSCII shifted 	    8×8 [10] 	320×200 	4:3 	5:6 (1:1.2) 	20% 	Original PETSCII font in shifted mode. Shifted mode (text) has both uppercase and lowercase letters. This mode is actuated by pressing Shift+Commodore key.
-            // Atari ATASCII 	8×8  	320×192 	4:3 	4:5 (1:1.25) 	25% 	Original ATASCII font (Atari 400, 800, XL, XE)
-
-            // From what I can see for the rest all 9x fonts have 1.35 - all 8px 1.2
-            // Only exception are the Amiga fonts with 1.40
-            let stretch_factor = match self.buffer_type {
-                BufferType::Petscii => 1.2,
-                BufferType::Atascii => 1.25,
-
-                _ => {
-                    let mut res = if self.use_letter_spacing { 1.35 } else { 1.2 };
-                    if let Some(font) = self.font(0) {
-                        // This only works for SAUCE originated fonts but that's where AR matters most
-                        if font.name().starts_with("IBM EGA") {
-                            res = 1.3714;
-                        }
-                        if font.name().starts_with("IBM VGA25G") {
-                            res = 0.0;
-                        }
-                        if font.name().starts_with("Amiga") {
-                            res = 1.4;
-                        }
-                        if font.name().starts_with("C64") {
-                            res = 1.2;
-                        }
-                        if font.name().starts_with("Atari ATASCII") {
-                            res = 1.25;
-                        }
-                    }
-                    res
-                }
-            };
-
+            let stretch_factor = self.get_aspect_ratio_stretch_factor();
             let (scaled_height, scaled_pixels) = scale_image_vertical(pixels, px_width, out_height, stretch_factor);
             (Size::new(px_width, scaled_height), scaled_pixels)
         } else {

@@ -1003,12 +1003,15 @@ impl TopToolbar {
             Space::new().width(Length::Shrink).into()
         };
 
+        // Center content with Fill space on both sides
         row![
+            Space::new().width(Length::Fill),
             left_side,
             Space::new().width(Length::Fixed(SPACE_16)),
             middle,
-            Space::new().width(Length::Fill),
+            Space::new().width(Length::Fixed(SPACE_16)),
             right_side,
+            Space::new().width(Length::Fill),
         ]
         .spacing(SPACE_8)
         .align_y(iced::Alignment::Center)

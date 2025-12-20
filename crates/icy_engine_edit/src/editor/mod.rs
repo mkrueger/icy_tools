@@ -485,23 +485,51 @@ impl EditState {
         self.screen.caret.y = y;
     }
 
-    /// Set the caret foreground color
-    pub fn set_caret_foreground(&mut self, color: u32) {
-        self.screen.caret.attribute.set_foreground(color);
+    /// Constrain a foreground color based on the current font mode.
+    /// In XBinExtended mode (FontMode::FixedSize), FG colors are limited to 0-7.
+    /// Other modes allow all 16 colors.
+    pub fn constrain_foreground_color(&self, color: u32) -> u32 {
+        if !self.screen.buffer.font_mode.has_high_fg_colors() && color >= 8 && color < 16 {
+            color % 8
+        } else {
+            color
+        }
     }
 
-    /// Set the caret background color
+    /// Constrain a background color based on the current ice mode.
+    /// In Blink mode (no high bg colors), BG colors are limited to 0-7.
+    /// In Ice mode, all 16 colors are allowed.
+    pub fn constrain_background_color(&self, color: u32) -> u32 {
+        if !self.screen.buffer.ice_mode.has_high_bg_colors() && color >= 8 && color < 16 {
+            color % 8
+        } else {
+            color
+        }
+    }
+
+    /// Set the caret foreground color (applies constraint based on font mode)
+    pub fn set_caret_foreground(&mut self, color: u32) {
+        let constrained = self.constrain_foreground_color(color);
+        self.screen.caret.attribute.set_foreground(constrained);
+    }
+
+    /// Set the caret background color (applies constraint based on ice mode)
     pub fn set_caret_background(&mut self, color: u32) {
-        self.screen.caret.attribute.set_background(color);
+        let constrained = self.constrain_background_color(color);
+        self.screen.caret.attribute.set_background(constrained);
     }
 
     /// Swap foreground and background colors, returns (new_fg, new_bg)
+    /// Applies constraints: if swapped BG->FG would be 8-15 in FixedSize mode, it's reduced to 0-7
     pub fn swap_caret_colors(&mut self) -> (u32, u32) {
         let fg = self.screen.caret.attribute.foreground();
         let bg = self.screen.caret.attribute.background();
-        self.screen.caret.attribute.set_foreground(bg);
-        self.screen.caret.attribute.set_background(fg);
-        (bg, fg)
+        // Apply constraints when swapping
+        let new_fg = self.constrain_foreground_color(bg);
+        let new_bg = self.constrain_background_color(fg);
+        self.screen.caret.attribute.set_foreground(new_fg);
+        self.screen.caret.attribute.set_background(new_bg);
+        (new_fg, new_bg)
     }
 
     /// Reset caret colors to default (fg=7, bg=0)

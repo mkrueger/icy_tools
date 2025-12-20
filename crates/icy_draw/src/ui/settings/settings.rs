@@ -63,6 +63,10 @@ struct PersistedOptions {
     /// Most recently used collaboration servers (last = most recent)
     #[serde(default)]
     pub collaboration_servers: Vec<String>,
+
+    /// Selected tag replacement list name (without extension)
+    #[serde(default)]
+    pub selected_taglist: String,
 }
 
 fn default_nick() -> String {
@@ -84,6 +88,7 @@ impl Default for PersistedOptions {
             collaboration_nick: default_nick(),
             collaboration_group: String::new(),
             collaboration_servers: Vec::new(),
+            selected_taglist: String::new(),
         }
     }
 }
@@ -121,6 +126,9 @@ pub struct Settings {
 
     /// Most recently used collaboration servers (persisted, last = most recent)
     pub collaboration_servers: Arc<RwLock<Vec<String>>>,
+
+    /// Selected tag replacement list name (persisted)
+    pub selected_taglist: Arc<RwLock<String>>,
 }
 
 impl Settings {
@@ -139,6 +147,7 @@ impl Settings {
             collaboration_nick: Arc::new(RwLock::new(persistent.collaboration_nick)),
             collaboration_group: Arc::new(RwLock::new(persistent.collaboration_group)),
             collaboration_servers: Arc::new(RwLock::new(persistent.collaboration_servers)),
+            selected_taglist: Arc::new(RwLock::new(persistent.selected_taglist)),
         }
     }
 
@@ -152,6 +161,7 @@ impl Settings {
             collaboration_nick: self.collaboration_nick.read().clone(),
             collaboration_group: self.collaboration_group.read().clone(),
             collaboration_servers: self.collaboration_servers.read().clone(),
+            selected_taglist: self.selected_taglist.read().clone(),
         };
         Self::store_options_file(&settings);
     }
@@ -245,6 +255,10 @@ impl Settings {
 
     pub fn plugin_dir() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join("data/plugins"))
+    }
+
+    pub fn taglists_dir() -> Option<PathBuf> {
+        Self::config_dir().map(|d| d.join("data/taglists"))
     }
 
     /// Add a collaboration server to the MRU list and save

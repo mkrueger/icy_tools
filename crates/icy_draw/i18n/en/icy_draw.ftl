@@ -901,3 +901,19 @@ tag-toolbar-delete=Delete
 tag-toolbar-selected-tags={ $count } tags selected
 tag-toolbar-no-replacement=(no replacement)
 tag-toolbar-add-hint=Click to place tag, ESC to cancel
+
+# Tag List Dialog
+tag-list-title=Tags
+tag-list-preview=Preview
+tag-list-pos=Pos
+tag-list-placement=Placement
+tag-list-replacement=Replacement
+tag-list-no-tags=No tags
+tag-list-in-text=In text
+tag-list-with-gotoxy=With GotoXY
+
+# Tag Edit Dialog
+tag-edit-preview=Preview
+tag-edit-replacement=Replacement
+tag-edit-position=Position
+tag-edit-filter=Filter…

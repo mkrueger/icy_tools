@@ -60,6 +60,16 @@ impl PaletteGrid {
         self.background = color;
     }
 
+    /// Set ice mode (for high background color availability)
+    pub fn set_ice_mode(&mut self, mode: IceMode) {
+        self.ice_mode = mode;
+    }
+
+    /// Set font mode (for high foreground color availability)
+    pub fn set_font_mode(&mut self, mode: FontMode) {
+        self.font_mode = mode;
+    }
+
     /// Sync palette from edit state.
     ///
     /// `color_limit` is only used to clamp the stored FG/BG marker indices.
@@ -163,6 +173,33 @@ struct PaletteGridProgram {
     x_offset: f32,
 }
 
+impl PaletteGridProgram {
+    /// Convert (col, row) grid position to color index.
+    /// For 16-color palette with 2 columns: lo colors (0-7) left, hi colors (8-15) right.
+    fn grid_to_color(&self, col: u32, row: u32) -> u32 {
+        if self.visible_len == 16 && self.items_per_row == 2 {
+            // Column 0: colors 0-7, Column 1: colors 8-15
+            col * 8 + row
+        } else {
+            col + row * self.items_per_row as u32
+        }
+    }
+
+    /// Convert color index to (col, row) grid position.
+    fn color_to_grid(&self, color: u32) -> (usize, usize) {
+        if self.visible_len == 16 && self.items_per_row == 2 {
+            // Column 0: colors 0-7, Column 1: colors 8-15
+            let col = if color >= 8 { 1 } else { 0 };
+            let row = (color % 8) as usize;
+            (col, row)
+        } else {
+            let col = color as usize % self.items_per_row;
+            let row = color as usize / self.items_per_row;
+            (col, row)
+        }
+    }
+}
+
 impl Program<PaletteGridMessage> for PaletteGridProgram {
     type State = Option<u32>; // Hovered color index
 
@@ -175,8 +212,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
 
         // Draw color cells
         for i in 0..upper_limit.min(self.visible_len) {
-            let col = i % self.items_per_row;
-            let row = i / self.items_per_row;
+            let (col, row) = self.color_to_grid(i as u32);
             let x = self.x_offset + col as f32 * cell_width;
             let y = row as f32 * cell_height;
 
@@ -190,8 +226,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
         let foreground = self.foreground.min(max_index);
         let background = self.background.min(max_index);
 
-        let fg_col = foreground as usize % self.items_per_row;
-        let fg_row = foreground as usize / self.items_per_row;
+        let (fg_col, fg_row) = self.color_to_grid(foreground);
         let fg_origin = Point::new(self.x_offset + fg_col as f32 * cell_width, fg_row as f32 * cell_height);
 
         let fg_marker = Path::new(|builder| {
@@ -205,8 +240,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
         frame.stroke(&fg_marker, Stroke::default().with_color(Color::from_rgb8(128, 128, 128)).with_width(1.0));
 
         // Draw background marker (triangle bottom-right)
-        let bg_col = background as usize % self.items_per_row;
-        let bg_row = background as usize / self.items_per_row;
+        let (bg_col, bg_row) = self.color_to_grid(background);
         let bg_origin = Point::new(self.x_offset + (bg_col + 1) as f32 * cell_width, (bg_row + 1) as f32 * cell_height);
 
         let bg_marker = Path::new(|builder| {
@@ -238,7 +272,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
 
                     let col = (local_x / cell_width) as u32;
                     let row = (pos.y / cell_height) as u32;
-                    let color = col + row * self.items_per_row as u32;
+                    let color = self.grid_to_color(col, row);
                     if color < self.visible_len as u32 {
                         *state = Some(color);
                     } else {
@@ -256,7 +290,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
 
                     let col = (local_x / cell_width) as u32;
                     let row = (pos.y / cell_height) as u32;
-                    let color = col + row * self.items_per_row as u32;
+                    let color = self.grid_to_color(col, row);
 
                     if color < self.visible_len as u32 {
                         match button {

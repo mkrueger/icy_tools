@@ -6,6 +6,8 @@ use icy_engine::{Position, TagPlacement};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;
 
+use crate::fl;
+
 #[derive(Clone, Debug)]
 pub enum TagListDialogMessage {
     Close,
@@ -33,13 +35,13 @@ impl TagListDialog {
     }
 
     pub fn view(&self) -> Element<'_, TagListDialogMessage> {
-        let title = dialog_title("Tags".to_string());
+        let title = dialog_title(fl!("tag-list-title"));
 
         let header = row![
-            text("Preview").size(TEXT_SIZE_SMALL).width(Length::Fixed(140.0)),
-            text("Pos").size(TEXT_SIZE_SMALL).width(Length::Fixed(80.0)),
-            text("Placement").size(TEXT_SIZE_SMALL).width(Length::Fixed(120.0)),
-            text("Replacement").size(TEXT_SIZE_SMALL),
+            text(fl!("tag-list-preview")).size(TEXT_SIZE_SMALL).width(Length::Fixed(140.0)),
+            text(fl!("tag-list-pos")).size(TEXT_SIZE_SMALL).width(Length::Fixed(80.0)),
+            text(fl!("tag-list-placement")).size(TEXT_SIZE_SMALL).width(Length::Fixed(120.0)),
+            text(fl!("tag-list-replacement")).size(TEXT_SIZE_SMALL),
             Space::new().width(Length::Fixed(44.0)),
         ]
         .spacing(DIALOG_SPACING)
@@ -49,7 +51,7 @@ impl TagListDialog {
 
         if self.items.is_empty() {
             rows = rows.push(
-                container(text("No tags").size(TEXT_SIZE_NORMAL))
+                container(text(fl!("tag-list-no-tags")).size(TEXT_SIZE_NORMAL))
                     .width(Length::Fill)
                     .padding(8)
                     .style(|theme: &Theme| {
@@ -80,8 +82,8 @@ impl TagListDialog {
                     .width(Length::Fixed(80.0));
 
                 let placement = text(match item.placement {
-                    TagPlacement::InText => "In text",
-                    TagPlacement::WithGotoXY => "With GotoXY",
+                    TagPlacement::InText => fl!("tag-list-in-text"),
+                    TagPlacement::WithGotoXY => fl!("tag-list-with-gotoxy"),
                 })
                 .size(TEXT_SIZE_SMALL)
                 .width(Length::Fixed(120.0));
@@ -92,7 +94,7 @@ impl TagListDialog {
                     text(&item.replacement_value).size(TEXT_SIZE_SMALL)
                 };
 
-                let delete_btn = button(text("Delete").size(TEXT_SIZE_SMALL))
+                let delete_btn = button(text(fl!("tag-toolbar-delete")).size(TEXT_SIZE_SMALL))
                     .padding([2, 6])
                     .style(button::text)
                     .on_press(TagListDialogMessage::Delete(item.index));
@@ -116,7 +118,7 @@ impl TagListDialog {
 
         let dialog_content: Element<'_, TagListDialogMessage> = dialog_area(container(content).width(Length::Fill).height(Length::Fill).into());
 
-        let buttons = button_row(vec![secondary_button("Close", Some(TagListDialogMessage::Close)).into()]);
+        let buttons = button_row(vec![secondary_button(&fl!("menu-close"), Some(TagListDialogMessage::Close)).into()]);
         let button_area: Element<'_, TagListDialogMessage> = dialog_area(buttons);
 
         modal_container(column![dialog_content, separator(), button_area].into(), DIALOG_WIDTH_LARGE).into()

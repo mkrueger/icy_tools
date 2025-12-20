@@ -9,8 +9,8 @@ use parking_lot::RwLock;
 
 use crate::{SharedFontLibrary, fl};
 use iced::{
-    Alignment, Element, Event, Length, Subscription, Task, Theme,
-    widget::{Space, column, container, mouse_area, row, rule, text},
+    Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
+    widget::{Space, button, column, container, mouse_area, row, rule, text},
 };
 use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
@@ -374,6 +374,8 @@ pub struct AnsiStatusBarInfo {
     pub ice_colors: bool,
     /// Letter spacing (9px mode) enabled
     pub letter_spacing: bool,
+    /// Use aspect ratio correction
+    pub use_aspect_ratio: bool,
     /// For XBinExtended: slot font info
     pub slot_fonts: Option<SlotFontsInfo>,
 }
@@ -407,6 +409,7 @@ impl From<AnsiStatusInfo> for AnsiStatusBarInfo {
             font_name: info.font_name,
             ice_colors: info.ice_colors,
             letter_spacing: info.letter_spacing,
+            use_aspect_ratio: info.use_aspect_ratio,
             slot_fonts,
         }
     }
@@ -1907,7 +1910,7 @@ impl MainWindow {
         // ANSI editor status bar - moebius style
         if let ModeState::Ansi(editor) = &self.mode_state {
             let info: AnsiStatusBarInfo = editor.status_info().into();
-            return self.view_ansi_status_bar(&info);
+            return self.view_ansi_status_bar(info);
         }
 
         // BitFont/CharFont - simple status bar
@@ -1931,22 +1934,52 @@ impl MainWindow {
     }
 
     /// Render ANSI editor status bar in moebius style:
-    /// Left: Letter Spacing toggle, iCE Colors toggle
+    /// Left: Letter Spacing toggle (9px/8px), iCE/BLINK toggle, SQUARE toggle, ASPECT RATIO toggle
     /// Center: Buffer dimensions
     /// Right: Position/Selection, Font
-    fn view_ansi_status_bar(&self, info: &AnsiStatusBarInfo) -> Element<'_, Message> {
-        // Left section: Letter Spacing and iCE Colors toggles
-        let letter_spacing_text = if info.letter_spacing { "On" } else { "Off" };
-        let letter_spacing_toggle = mouse_area(text(format!("Letter Spacing {}", letter_spacing_text)).size(12))
+    fn view_ansi_status_bar(&self, info: AnsiStatusBarInfo) -> Element<'_, Message> {
+        // Copy values needed for closures
+        let use_aspect_ratio = info.use_aspect_ratio;
+
+        // Left section: Toggles with separators
+        // Letter spacing: "9 px" when on, "8 px" when off
+        let letter_spacing_text = if info.letter_spacing { "9 px" } else { "8 px" };
+        let letter_spacing_toggle = button(text(letter_spacing_text).size(14))
+            .style(statusbar_toggle_style)
+            .padding([0, 4])
             .on_press(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLetterSpacing)));
 
-        let ice_colors_text = if info.ice_colors { "On" } else { "Off" };
-        let ice_colors_toggle = mouse_area(text(format!("iCE Colors {}", ice_colors_text)).size(12))
+        // Ice colors: "ICE" when on, "BLINK" when off
+        let ice_colors_text = if info.ice_colors { "ICE" } else { "BLINK" };
+        let ice_colors_toggle = button(text(ice_colors_text).size(14))
+            .style(statusbar_toggle_style)
+            .padding([0, 4])
             .on_press(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleIceColors)));
 
-        let left_section = row![letter_spacing_toggle, Space::new().width(16.0), ice_colors_toggle,].align_y(Alignment::Center);
+        // Aspect ratio: "ASPECT RATIO" when on, "SQUARE" when off
+        let aspect_text = if use_aspect_ratio { "ASPECT RATIO" } else { "SQUARE" };
+        let aspect_toggle = button(text(aspect_text).size(14))
+            .style(statusbar_toggle_style)
+            .padding([0, 4])
+            .on_press(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleAspectRatio)));
 
-        // Center section: Buffer dimensions
+        // Vertical separator
+        let separator = || rule::vertical(1).style(statusbar_separator_style);
+
+        let left_section = row![
+            ice_colors_toggle,
+            Space::new().width(8.0),
+            separator(),
+            Space::new().width(8.0),
+            letter_spacing_toggle,
+            Space::new().width(8.0),
+            separator(),
+            Space::new().width(8.0),
+            aspect_toggle,
+        ]
+        .align_y(Alignment::Center);
+
+        // Center section: Buffer dimensions (secondary color)
         let center_text = format!("{}×{}", info.buffer_size.0, info.buffer_size.1);
 
         // Right section: Position/Selection + Font
@@ -1955,10 +1988,11 @@ impl MainWindow {
             let width = (max_x - min_x).abs() + 1;
             let height = (max_y - min_y).abs() + 1;
             text(format!("({},{})–({},{}) {}×{}", min_x, min_y, max_x, max_y, width, height))
-                .size(12)
+                .size(14)
+                .style(statusbar_secondary_text_style)
                 .into()
         } else if let Some((x, y)) = info.cursor_position {
-            text(format!("Ln {}, Col {}", y + 1, x + 1)).size(12).into()
+            text(format!("({},{})", x, y)).size(14).style(statusbar_secondary_text_style).into()
         } else {
             Space::new().width(0.0).into()
         };
@@ -1971,15 +2005,19 @@ impl MainWindow {
             let slot0_style = if slots.current_slot == 0 { active_slot_style } else { inactive_slot_style };
             let slot1_style = if slots.current_slot == 1 { active_slot_style } else { inactive_slot_style };
 
-            let slot0_btn = mouse_area(container(text(format!("0: {}", slot0_name)).size(11)).style(slot0_style).padding([2, 6]))
+            let slot0_btn = mouse_area(container(text(format!("0: {}", slot0_name)).size(14)).style(slot0_style).padding([2, 6]))
                 .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(0)));
 
-            let slot1_btn = mouse_area(container(text(format!("1: {}", slot1_name)).size(11)).style(slot1_style).padding([2, 6]))
+            let slot1_btn = mouse_area(container(text(format!("1: {}", slot1_name)).size(14)).style(slot1_style).padding([2, 6]))
                 .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
 
             row![slot0_btn, Space::new().width(4.0), slot1_btn].align_y(Alignment::Center).into()
         } else {
-            let font_display = mouse_area(text(info.font_name.clone()).size(12)).on_press(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector));
+            // Font name as button with hover effect
+            let font_display = button(text(info.font_name.clone()).size(14))
+                .style(statusbar_font_button_style)
+                .padding([0, 4])
+                .on_press(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector));
             font_display.into()
         };
 
@@ -1988,7 +2026,9 @@ impl MainWindow {
         container(
             row![
                 container(left_section).width(Length::FillPortion(1)),
-                container(text(center_text).size(12)).width(Length::FillPortion(1)).center_x(Length::Fill),
+                container(text(center_text).size(14).style(statusbar_secondary_text_style))
+                    .width(Length::FillPortion(1))
+                    .center_x(Length::Fill),
                 container(right_section).width(Length::FillPortion(1)).align_x(Alignment::End),
             ]
             .align_y(Alignment::Center)
@@ -2882,5 +2922,68 @@ fn inactive_slot_style(theme: &Theme) -> container::Style {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+// ============================================================================
+// Style functions for status bar toggles and text
+// ============================================================================
+
+/// Style for status bar toggle buttons (left section)
+/// Default: secondary color, Hover: base.text color
+fn statusbar_toggle_style(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let base = button::Style {
+        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        text_color: palette.secondary.base.color,
+        border: Border::default(),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            text_color: palette.background.base.text,
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// Style for the font button in status bar (right section)
+/// Default: secondary color, Hover: base.text color
+fn statusbar_font_button_style(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let base = button::Style {
+        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        text_color: palette.secondary.base.color,
+        border: Border::default(),
+        ..Default::default()
+    };
+
+    match status {
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            text_color: palette.background.base.text,
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// Style for secondary text in status bar (position, dimensions)
+fn statusbar_secondary_text_style(theme: &Theme) -> text::Style {
+    let palette = theme.extended_palette();
+    text::Style {
+        color: Some(palette.secondary.base.color),
+    }
+}
+
+/// Style for vertical separator in status bar
+fn statusbar_separator_style(theme: &Theme) -> rule::Style {
+    let palette = theme.extended_palette();
+    rule::Style {
+        color: palette.secondary.weak.color,
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: false,
     }
 }

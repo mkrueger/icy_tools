@@ -136,7 +136,11 @@ impl Screen for TextScreen {
     }
 
     fn font_dimensions(&self) -> Size {
-        let dims = self.buffer.font_dimensions();
+        let dims = if self.buffer.use_aspect_ratio() {
+            self.buffer.font_dimensions_with_aspect_ratio()
+        } else {
+            self.buffer.font_dimensions()
+        };
         if self.use_letter_spacing() && dims.width == 8 {
             Size::new(9, dims.height)
         } else {

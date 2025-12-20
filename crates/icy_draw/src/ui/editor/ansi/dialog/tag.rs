@@ -1,10 +1,13 @@
 use iced::{
     Element, Length,
-    widget::{Space, column, container, pick_list, row, text, text_input},
+    widget::{Space, button, column, container, pick_list, row, scrollable, text, text_input},
 };
 use icy_engine::{Position, TagPlacement};
 use icy_engine_gui::settings::{effect_box, left_label};
 use icy_engine_gui::ui::*;
+
+use crate::fl;
+use crate::util::{TagReplacementList, get_available_taglists, load_taglist};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TagPlacementChoice {
@@ -26,8 +29,8 @@ impl TagPlacementChoice {
 impl std::fmt::Display for TagPlacementChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TagPlacementChoice::InText => write!(f, "In text"),
-            TagPlacementChoice::WithGotoXY => write!(f, "With GotoXY"),
+            TagPlacementChoice::InText => write!(f, "{}", fl!("tag-list-in-text")),
+            TagPlacementChoice::WithGotoXY => write!(f, "{}", fl!("tag-list-with-gotoxy")),
         }
     }
 }
@@ -39,6 +42,10 @@ pub enum TagDialogMessage {
     SetPosX(String),
     SetPosY(String),
     SetPlacement(TagPlacementChoice),
+    ToggleReplacements,
+    SelectReplacement(String, String),
+    SelectTaglist(String),
+    SetFilter(String),
     Ok,
     Cancel,
 }
@@ -57,15 +64,34 @@ pub struct TagDialog {
     pub length: Option<usize>,
     /// If true, this tag was created from a selection
     pub from_selection: bool,
+    /// Whether the replacement list browser is shown
+    pub show_replacements: bool,
+    /// Available tag lists (name, path)
+    pub available_taglists: Vec<String>,
+    /// Currently selected taglist name
+    pub selected_taglist: String,
+    /// Loaded replacement entries
+    pub replacement_list: TagReplacementList,
+    /// Filter text for replacement list
+    pub filter: String,
 }
 
 impl TagDialog {
     /// Create a dialog for editing an existing tag
-    pub fn edit(tag: &icy_engine::Tag, index: usize) -> Self {
+    pub fn edit(tag: &icy_engine::Tag, index: usize, selected_taglist: &str) -> Self {
         let placement = match tag.tag_placement {
             TagPlacement::InText => TagPlacementChoice::InText,
             TagPlacement::WithGotoXY => TagPlacementChoice::WithGotoXY,
         };
+
+        let available_taglists: Vec<String> = get_available_taglists().into_iter().map(|(name, _)| name).collect();
+        let taglist_name = if selected_taglist.is_empty() {
+            available_taglists.first().cloned().unwrap_or_default()
+        } else {
+            selected_taglist.to_string()
+        };
+        let replacement_list = load_taglist(&taglist_name);
+
         Self {
             position: tag.position,
             pos_x: tag.position.x.to_string(),
@@ -76,26 +102,22 @@ impl TagDialog {
             edit_index: Some(index),
             length: if tag.length > 0 { Some(tag.length) } else { None },
             from_selection: false,
+            show_replacements: false,
+            available_taglists,
+            selected_taglist: taglist_name,
+            replacement_list,
+            filter: String::new(),
         }
     }
 
-    /// Returns true if this dialog is editing an existing tag
-    pub fn is_editing(&self) -> bool {
-        self.edit_index.is_some()
-    }
-
     pub fn view(&self) -> Element<'_, TagDialogMessage> {
-        let title_text = if self.is_editing() {
-            "Edit Tag"
-        } else if self.from_selection {
-            "New Tag from Selection"
-        } else {
-            "New Tag"
-        };
-        let title = dialog_title(title_text.to_string());
+        // If showing replacement browser, show that instead
+        if self.show_replacements {
+            return self.view_replacement_browser();
+        }
 
         let preview_row = row![
-            left_label("Preview".to_string()),
+            left_label(fl!("tag-edit-preview")),
             text_input("", &self.preview)
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill)
@@ -105,11 +127,14 @@ impl TagDialog {
         .align_y(iced::Alignment::Center);
 
         let replacement_row = row![
-            left_label("Replacement".to_string()),
+            left_label(fl!("tag-edit-replacement")),
             text_input("", &self.replacement_value)
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill)
                 .on_input(TagDialogMessage::SetReplacement),
+            button(text("…").size(TEXT_SIZE_NORMAL))
+                .padding([2, 8])
+                .on_press(TagDialogMessage::ToggleReplacements),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(iced::Alignment::Center);
@@ -123,29 +148,20 @@ impl TagDialog {
             .width(Length::Fixed(70.0))
             .on_input(TagDialogMessage::SetPosY);
 
-        let pos_row = row![left_label("Position".to_string()), pos_x_input, text(",").size(TEXT_SIZE_NORMAL), pos_y_input,]
+        let pos_row = row![left_label(fl!("tag-edit-position")), pos_x_input, text(",").size(TEXT_SIZE_NORMAL), pos_y_input,]
             .spacing(DIALOG_SPACING)
             .align_y(iced::Alignment::Center);
 
         let placement_row = row![
-            left_label("Placement".to_string()),
+            left_label(fl!("tag-list-placement")),
             pick_list(TagPlacementChoice::ALL.as_slice(), Some(self.placement), TagDialogMessage::SetPlacement).width(Length::Fixed(140.0)),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(iced::Alignment::Center);
 
-        // Build form rows - include length info if from selection
-        let mut form_rows: Vec<Element<'_, TagDialogMessage>> = vec![preview_row.into(), replacement_row.into(), pos_row.into(), placement_row.into()];
-
-        if let Some(len) = self.length {
-            let length_row = row![left_label("Length".to_string()), text(format!("{} characters", len)).size(TEXT_SIZE_NORMAL),]
-                .spacing(DIALOG_SPACING)
-                .align_y(iced::Alignment::Center);
-            form_rows.push(length_row.into());
-        }
+        let form_rows: Vec<Element<'_, TagDialogMessage>> = vec![preview_row.into(), replacement_row.into(), pos_row.into(), placement_row.into()];
 
         let content = column![
-            title,
             Space::new().height(DIALOG_SPACING),
             effect_box(column(form_rows).spacing(DIALOG_SPACING).into()),
         ]
@@ -154,11 +170,71 @@ impl TagDialog {
         let dialog_content: Element<'_, TagDialogMessage> = dialog_area(container(content).width(Length::Fill).into());
 
         let buttons = button_row(vec![
-            secondary_button("Cancel", Some(TagDialogMessage::Cancel)).into(),
+            secondary_button(&fl!("button-cancel"), Some(TagDialogMessage::Cancel)).into(),
             primary_button("OK", Some(TagDialogMessage::Ok)).into(),
         ]);
         let button_area: Element<'_, TagDialogMessage> = dialog_area(buttons);
 
         modal_container(column![dialog_content, separator(), button_area].into(), DIALOG_WIDTH_MEDIUM).into()
+    }
+
+    fn view_replacement_browser(&self) -> Element<'_, TagDialogMessage> {
+        // Header with taglist selector and filter
+        let taglist_picker = pick_list(
+            self.available_taglists.clone(),
+            Some(self.selected_taglist.clone()),
+            TagDialogMessage::SelectTaglist,
+        )
+        .width(Length::Fixed(150.0));
+
+        let filter_input = text_input(&fl!("tag-edit-filter"), &self.filter)
+            .size(TEXT_SIZE_NORMAL)
+            .width(Length::Fill)
+            .on_input(TagDialogMessage::SetFilter);
+
+        let header = row![taglist_picker, filter_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center);
+
+        // Build list of replacements
+        let filter_lower = self.filter.to_lowercase();
+        let mut list_items: Vec<Element<'_, TagDialogMessage>> = Vec::new();
+
+        for entry in &self.replacement_list.entries {
+            // Filter
+            if !self.filter.is_empty() && !entry.tag.to_lowercase().contains(&filter_lower) && !entry.description.to_lowercase().contains(&filter_lower) {
+                continue;
+            }
+
+            let tag_text = text(&entry.tag).size(TEXT_SIZE_NORMAL).width(Length::Fixed(150.0));
+            let desc_text = text(&entry.description).size(TEXT_SIZE_SMALL).width(Length::Fill);
+
+            let row_btn = button(row![tag_text, desc_text].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(button::text)
+                .on_press(TagDialogMessage::SelectReplacement(entry.example.clone(), entry.tag.clone()));
+
+            list_items.push(row_btn.into());
+        }
+
+        let list = scrollable(column(list_items).spacing(2).padding(4))
+            .width(Length::Fill)
+            .height(Length::Fixed(300.0));
+
+        let content = column![
+            Space::new().height(DIALOG_SPACING),
+            effect_box(
+                column![header, container(list).height(Length::Fill).width(Length::Fill)]
+                    .spacing(DIALOG_SPACING)
+                    .into()
+            ),
+        ]
+        .spacing(0);
+
+        let dialog_content: Element<'_, TagDialogMessage> = dialog_area(container(content).width(Length::Fill).height(Length::Fill).into());
+
+        let buttons = button_row(vec![secondary_button(&fl!("menu-close"), Some(TagDialogMessage::ToggleReplacements)).into()]);
+        let button_area: Element<'_, TagDialogMessage> = dialog_area(buttons);
+
+        modal_container(column![dialog_content, separator(), button_area].into(), DIALOG_WIDTH_LARGE).into()
     }
 }

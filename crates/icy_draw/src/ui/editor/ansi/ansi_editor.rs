@@ -1247,7 +1247,7 @@ impl AnsiEditorCore {
                         screen_guard.as_any_mut().downcast_mut::<EditState>(),
                         self.current_tool.as_any_mut().downcast_mut::<tools::TagTool>(),
                     ) {
-                        tag_tool.state_mut().handle_dialog_message(state, msg)
+                        tag_tool.state_mut().handle_dialog_message(state, msg, Some(&self.options))
                     } else {
                         tools::ToolResult::None
                     }
@@ -1914,6 +1914,14 @@ impl AnsiEditorCore {
                 self.is_modified = true;
                 Task::none()
             }
+            AnsiEditorCoreMessage::ToggleAspectRatio => {
+                self.with_edit_state(|state| {
+                    let current = state.get_buffer().use_aspect_ratio();
+                    let _ = state.set_use_aspect_ratio(!current);
+                });
+                self.is_modified = true;
+                Task::none()
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // CORE MESSAGES - Font Apply Operations
@@ -2351,17 +2359,19 @@ impl AnsiEditorCore {
                     return;
                 }
 
-                let _result = self.dispatch_current_tool_terminal_message(msg);
+                let result = self.dispatch_current_tool_terminal_message(msg);
 
-                // Post-dispatch UI updates
-                match self.current_tool.id() {
-                    tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
-                        self.update_selection_mask_display();
+                // Post-dispatch UI updates (only if tool signaled a redraw)
+                if result.needs_redraw() {
+                    match self.current_tool.id() {
+                        tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
+                            self.update_selection_mask_display();
+                        }
+                        tools::ToolId::Tool(Tool::Tag) => {
+                            self.update_tag_overlays();
+                        }
+                        _ => {}
                     }
-                    tools::ToolId::Tool(Tool::Tag) => {
-                        self.update_tag_overlays();
-                    }
-                    _ => {}
                 }
             }
             TerminalMessage::Release(evt) => {
@@ -2636,6 +2646,7 @@ impl AnsiEditorCore {
         // Get ice colors and letter spacing from buffer
         let ice_colors = buffer.ice_mode.has_high_bg_colors();
         let letter_spacing = buffer.use_letter_spacing();
+        let use_aspect_ratio = buffer.use_aspect_ratio();
 
         AnsiStatusInfo {
             cursor_position,
@@ -2644,6 +2655,7 @@ impl AnsiEditorCore {
             font_name,
             ice_colors,
             letter_spacing,
+            use_aspect_ratio,
             format_mode,
             current_font_slot: current_font_slot as usize,
             slot_fonts,

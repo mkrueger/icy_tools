@@ -130,6 +130,7 @@ pub struct CRTShaderState {
 
     // Mouse/selection tracking
     pub dragging: bool,
+    pub drag_button: icy_engine::MouseButton,
     pub drag_anchor: Option<Position>,
     pub last_drag_position: Option<Position>,
     pub shift_pressed_during_selection: bool,
@@ -167,6 +168,7 @@ impl CRTShaderState {
             caret_blink: Blink::new(buffer_type.caret_blink_rate() as u128),
             character_blink: Blink::new(buffer_type.blink_rate() as u128),
             dragging: false,
+            drag_button: icy_engine::MouseButton::None,
             drag_anchor: None,
             last_drag_position: None,
             shift_pressed_during_selection: false,
@@ -299,6 +301,7 @@ impl Default for CRTShaderState {
             caret_blink: Blink::new(buffer_type.caret_blink_rate() as u128),
             character_blink: Blink::new(buffer_type.blink_rate() as u128),
             dragging: false,
+            drag_button: icy_engine::MouseButton::None,
             drag_anchor: None,
             last_drag_position: None,
             shift_pressed_during_selection: false,

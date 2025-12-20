@@ -3,6 +3,8 @@
 //! Creates and manages annotation tags on the canvas.
 //! Tags are rectangular regions with optional labels.
 
+use std::sync::Arc;
+
 use iced::Element;
 use iced::widget::{Space, button, row, text};
 use icy_engine::Position;
@@ -10,17 +12,19 @@ use icy_engine::Rectangle;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
+use icy_engine_gui::DoubleClickDetector;
 use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::ui::{SPACE_8, SPACE_16, TEXT_SIZE_SMALL};
+use parking_lot::RwLock;
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use crate::fl;
 use crate::ui::editor::ansi::dialog::tag::TagDialog;
 use crate::ui::editor::ansi::dialog::tag::TagDialogMessage;
 use crate::ui::editor::ansi::dialog::tag_list::TagListDialog;
 use crate::ui::editor::ansi::dialog::tag_list::TagListDialogMessage;
 use crate::ui::editor::ansi::dialog::tag_list::TagListItem;
 use icy_engine::{Tag, TagPlacement, TagRole, TextPane};
-
 /// Consolidated state for the Tag tool system.
 ///
 /// This structure holds all tag-related state that was previously scattered
@@ -56,6 +60,12 @@ pub struct TagToolState {
     pub drag_start: Position,
     /// Drag current position (text coordinates)
     pub drag_cur: Position,
+    /// Pending click: Some((tag_index, position)) when mouse pressed but not yet dragged
+    pub pending_click: Option<(usize, Position)>,
+    /// Double-click detector for opening edit dialog
+    pub double_click_detector: DoubleClickDetector<usize>,
+    /// Currently selected taglist (from settings)
+    pub selected_taglist: String,
 }
 
 impl TagToolState {
@@ -72,6 +82,7 @@ impl TagToolState {
         self.drag_undo = None;
         self.add_new_index = None;
         self.context_menu = None;
+        self.pending_click = None;
     }
 
     pub fn collect_overlay_data(&self, state: &EditState) -> Vec<(Position, usize, bool)> {
@@ -137,12 +148,12 @@ impl TagToolState {
         }
     }
 
-    pub fn open_edit_dialog_for_tag(&mut self, state: &EditState, index: usize) {
+    pub fn open_edit_dialog_for_tag(&mut self, state: &EditState, index: usize, selected_taglist: &str) {
         self.close_context_menu();
         let tag = state.get_buffer().tags.get(index).cloned();
         if let Some(tag) = tag {
             self.list_dialog = None;
-            self.dialog = Some(TagDialog::edit(&tag, index));
+            self.dialog = Some(TagDialog::edit(&tag, index, selected_taglist));
         }
     }
 
@@ -250,7 +261,7 @@ impl TagToolState {
         ToolResult::None
     }
 
-    pub fn handle_dialog_message(&mut self, state: &mut EditState, msg: TagDialogMessage) -> ToolResult {
+    pub fn handle_dialog_message(&mut self, state: &mut EditState, msg: TagDialogMessage, settings: Option<&Arc<RwLock<crate::Settings>>>) -> ToolResult {
         let Some(dialog) = &mut self.dialog else {
             return ToolResult::None;
         };
@@ -274,6 +285,31 @@ impl TagToolState {
             }
             TagDialogMessage::SetPlacement(p) => {
                 dialog.placement = p;
+                ToolResult::None
+            }
+            TagDialogMessage::ToggleReplacements => {
+                dialog.show_replacements = !dialog.show_replacements;
+                ToolResult::Redraw
+            }
+            TagDialogMessage::SelectReplacement(example, tag) => {
+                dialog.preview = example;
+                dialog.replacement_value = tag;
+                dialog.show_replacements = false;
+                ToolResult::Redraw
+            }
+            TagDialogMessage::SelectTaglist(name) => {
+                dialog.selected_taglist = name.clone();
+                dialog.replacement_list = crate::util::load_taglist(&name);
+                // Store in state so it persists for the next dialog
+                self.selected_taglist = name.clone();
+                // Save to settings
+                if let Some(settings) = settings {
+                    *settings.read().selected_taglist.write() = name;
+                }
+                ToolResult::Redraw
+            }
+            TagDialogMessage::SetFilter(s) => {
+                dialog.filter = s;
                 ToolResult::None
             }
             TagDialogMessage::Cancel => {
@@ -523,18 +559,22 @@ impl TagTool {
             return (None, None);
         }
 
-        // Find bounding box of all tags
+        // Find bounding box of all tags (with 1px margin for outer border)
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
 
         for (x, y, w, h, _) in &overlay_rects {
-            min_x = min_x.min(*x);
-            min_y = min_y.min(*y);
-            max_x = max_x.max(x + w);
-            max_y = max_y.max(y + h);
+            min_x = min_x.min(*x - 1.0);
+            min_y = min_y.min(*y - 1.0);
+            max_x = max_x.max(x + w + 1.0);
+            max_y = max_y.max(y + h + 1.0);
         }
+
+        // Clamp to non-negative
+        min_x = min_x.max(0.0);
+        min_y = min_y.max(0.0);
 
         let total_w = (max_x - min_x).ceil() as u32;
         let total_h = (max_y - min_y).ceil() as u32;
@@ -546,35 +586,81 @@ impl TagTool {
         // Create RGBA buffer for overlay
         let mut rgba = vec![0u8; (total_w * total_h * 4) as usize];
 
-        for (x, y, w, h, is_selected) in &overlay_rects {
-            let local_x = (x - min_x) as u32;
-            let local_y = (y - min_y) as u32;
-            let rect_w = *w as u32;
-            let rect_h = *h as u32;
+        // Helper to set a pixel
+        let set_pixel = |rgba: &mut [u8], px: u32, py: u32, r: u8, g: u8, b: u8, a: u8| {
+            if px < total_w && py < total_h {
+                let idx = ((py * total_w + px) * 4) as usize;
+                if idx + 3 < rgba.len() {
+                    rgba[idx] = r;
+                    rgba[idx + 1] = g;
+                    rgba[idx + 2] = b;
+                    rgba[idx + 3] = a;
+                }
+            }
+        };
 
-            // Different colors for selected vs non-selected tags
-            let (r, g, b, a) = if *is_selected {
-                (255, 200, 50, 255) // Yellow/orange for selected
+        for (x, y, w, h, is_selected) in &overlay_rects {
+            let local_x = (*x - min_x) as i32;
+            let local_y = (*y - min_y) as i32;
+            let rect_w = *w as i32;
+            let rect_h = *h as i32;
+
+            // Colors: white/black for selected, light gray/black for non-selected
+            let inner_color: (u8, u8, u8) = if *is_selected {
+                (255, 255, 255) // White
             } else {
-                (100, 150, 255, 200) // Translucent blue for normal
+                (180, 180, 180) // Light gray
             };
 
-            // Draw border
-            for py in local_y..(local_y + rect_h).min(total_h) {
-                for px in local_x..(local_x + rect_w).min(total_w) {
-                    // Border pixels only
-                    let is_border =
-                        px == local_x || px == (local_x + rect_w - 1).min(total_w - 1) || py == local_y || py == (local_y + rect_h - 1).min(total_h - 1);
+            // Draw outer border (black) - 1px outside the rect
+            for px in (local_x - 1).max(0)..(local_x + rect_w + 1).min(total_w as i32) {
+                let px = px as u32;
+                // Top outer
+                if local_y > 0 {
+                    set_pixel(&mut rgba, px, (local_y - 1) as u32, 0, 0, 0, 255);
+                }
+                // Bottom outer
+                let bottom_outer = local_y + rect_h;
+                if bottom_outer >= 0 && (bottom_outer as u32) < total_h {
+                    set_pixel(&mut rgba, px, bottom_outer as u32, 0, 0, 0, 255);
+                }
+            }
+            for py in local_y.max(0)..(local_y + rect_h).min(total_h as i32) {
+                let py = py as u32;
+                // Left outer
+                if local_x > 0 {
+                    set_pixel(&mut rgba, (local_x - 1) as u32, py, 0, 0, 0, 255);
+                }
+                // Right outer
+                let right_outer = local_x + rect_w;
+                if right_outer >= 0 && (right_outer as u32) < total_w {
+                    set_pixel(&mut rgba, right_outer as u32, py, 0, 0, 0, 255);
+                }
+            }
 
-                    if is_border {
-                        let idx = ((py * total_w + px) * 4) as usize;
-                        if idx + 3 < rgba.len() {
-                            rgba[idx] = r;
-                            rgba[idx + 1] = g;
-                            rgba[idx + 2] = b;
-                            rgba[idx + 3] = a;
-                        }
-                    }
+            // Draw inner border (white or light gray) - on the rect edge
+            for px in local_x.max(0)..(local_x + rect_w).min(total_w as i32) {
+                let px = px as u32;
+                // Top inner
+                if local_y >= 0 && (local_y as u32) < total_h {
+                    set_pixel(&mut rgba, px, local_y as u32, inner_color.0, inner_color.1, inner_color.2, 255);
+                }
+                // Bottom inner
+                let bottom_inner = local_y + rect_h - 1;
+                if bottom_inner >= 0 && (bottom_inner as u32) < total_h {
+                    set_pixel(&mut rgba, px, bottom_inner as u32, inner_color.0, inner_color.1, inner_color.2, 255);
+                }
+            }
+            for py in local_y.max(0)..(local_y + rect_h).min(total_h as i32) {
+                let py = py as u32;
+                // Left inner
+                if local_x >= 0 && (local_x as u32) < total_w {
+                    set_pixel(&mut rgba, local_x as u32, py, inner_color.0, inner_color.1, inner_color.2, 255);
+                }
+                // Right inner
+                let right_inner = local_x + rect_w - 1;
+                if right_inner >= 0 && (right_inner as u32) < total_w {
+                    set_pixel(&mut rgba, right_inner as u32, py, inner_color.0, inner_color.1, inner_color.2, 255);
                 }
             }
         }
@@ -709,9 +795,14 @@ impl ToolHandler for TagTool {
     }
 
     fn handle_message(&mut self, ctx: &mut ToolContext, msg: &ToolMessage) -> ToolResult {
+        let selected_taglist = ctx.options.as_ref().map(|o| o.read().selected_taglist.read().clone()).unwrap_or_default();
+
+        // Keep taglist in sync with settings
+        self.state.selected_taglist = selected_taglist.clone();
+
         match *msg {
             ToolMessage::TagEdit(index) => {
-                self.state.open_edit_dialog_for_tag(ctx.state, index);
+                self.state.open_edit_dialog_for_tag(ctx.state, index, &selected_taglist);
                 ToolResult::Redraw
             }
             ToolMessage::TagDelete(index) => self.state.delete_tag(ctx.state, index),
@@ -734,7 +825,7 @@ impl ToolHandler for TagTool {
             ToolMessage::TagEditSelected => {
                 if self.state.selection.len() == 1 {
                     let idx = self.state.selection[0];
-                    self.state.open_edit_dialog_for_tag(ctx.state, idx);
+                    self.state.open_edit_dialog_for_tag(ctx.state, idx, &selected_taglist);
                     ToolResult::Redraw
                 } else {
                     ToolResult::None
@@ -747,51 +838,58 @@ impl ToolHandler for TagTool {
 
     fn view_toolbar(&self, ctx: &super::ToolViewContext) -> Element<'_, ToolMessage> {
         let add_button = if ctx.tag_add_mode {
-            button(text("Add").size(TEXT_SIZE_SMALL))
+            button(text(fl!("tag-toolbar-add")).size(TEXT_SIZE_SMALL))
                 .on_press(ToolMessage::TagStartAdd)
                 .style(button::primary)
         } else {
-            button(text("Add").size(TEXT_SIZE_SMALL))
+            button(text(fl!("tag-toolbar-add")).size(TEXT_SIZE_SMALL))
                 .on_press(ToolMessage::TagStartAdd)
                 .style(button::secondary)
         };
 
-        let tags_button = button(text("Tags…").size(TEXT_SIZE_SMALL))
+        let tags_button = button(text(fl!("tag-toolbar-tags")).size(TEXT_SIZE_SMALL))
             .on_press(ToolMessage::TagOpenList)
             .style(button::secondary);
 
-        let left_side = row![add_button, tags_button].spacing(SPACE_8);
+        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(iced::Alignment::Center);
 
-        let has_selected_tags = ctx.tag_selection_count > 0;
+        let _has_selected_tags = ctx.tag_selection_count > 0;
 
         let middle: Element<'_, ToolMessage> = if ctx.tag_selection_count > 1 {
-            text(format!("({} tags)", ctx.tag_selection_count)).size(TEXT_SIZE_SMALL).into()
+            text(fl!("tag-toolbar-selected-tags", count = ctx.tag_selection_count))
+                .size(TEXT_SIZE_SMALL)
+                .into()
         } else if let Some(tag_info) = ctx.selected_tag.clone() {
-            let edit_button = button(text("Edit").size(TEXT_SIZE_SMALL))
+            let edit_button = button(text(fl!("tag-toolbar-edit")).size(TEXT_SIZE_SMALL))
                 .on_press(ToolMessage::TagEditSelected)
                 .style(button::secondary);
 
             let pos_text = text(format!("({}, {})", tag_info.position.x, tag_info.position.y)).size(TEXT_SIZE_SMALL);
             let replacement_text = if tag_info.replacement.is_empty() {
-                text("(no replacement)").size(TEXT_SIZE_SMALL)
+                text(fl!("tag-toolbar-no-replacement")).size(TEXT_SIZE_SMALL)
             } else {
                 text(tag_info.replacement).size(TEXT_SIZE_SMALL)
             };
 
-            row![edit_button, pos_text, replacement_text].spacing(SPACE_8).into()
+            row![edit_button, pos_text, replacement_text]
+                .spacing(SPACE_8)
+                .align_y(iced::Alignment::Center)
+                .into()
         } else if ctx.tag_add_mode {
-            text("Click to place tag, ESC to cancel").size(TEXT_SIZE_SMALL).into()
+            text(fl!("tag-toolbar-add-hint")).size(TEXT_SIZE_SMALL).into()
         } else {
             text("").into()
         };
 
         row![
+            Space::new().width(iced::Length::Fill),
             left_side,
             Space::new().width(iced::Length::Fixed(SPACE_16)),
             middle,
             Space::new().width(iced::Length::Fill),
         ]
         .spacing(SPACE_8)
+        .align_y(iced::Alignment::Center)
         .into()
     }
 
@@ -842,6 +940,16 @@ impl TagTool {
                 .map(|(i, t)| (i, t.position));
 
             if let Some((index, tag_pos)) = tag_at_pos {
+                // Check for double-click to open edit dialog
+                /*if tag_state.double_click_detector.is_double_click(index) {
+                    tag_state.pending_click = None;
+                    // Open edit dialog for this tag
+                    if let Some(tag) = state.get_buffer().tags.get(index).cloned() {
+                        tag_state.dialog = Some(TagDialog::edit(&tag, index, &tag_state.selected_taglist));
+                    }
+                    return ToolResult::Redraw;
+                }*/
+
                 // Handle Ctrl+Click for multi-selection toggle
                 if modifiers.ctrl || modifiers.meta {
                     if tag_state.selection.contains(&index) {
@@ -852,37 +960,18 @@ impl TagTool {
                     return ToolResult::Redraw;
                 }
 
-                // Check if this tag is part of multi-selection
-                if tag_state.selection.contains(&index) {
-                    // Drag all selected tags
-                    let selected_positions: Vec<(usize, Position)> = tag_state
-                        .selection
-                        .iter()
-                        .filter_map(|&i| state.get_buffer().tags.get(i).map(|t| (i, t.position)))
-                        .collect();
-                    tag_state.drag_indices = selected_positions.iter().map(|(i, _)| *i).collect();
-                    tag_state.drag_start_positions = selected_positions.iter().map(|(_, p)| *p).collect();
-                } else {
-                    // Clear selection and drag single tag
-                    tag_state.selection.clear();
-                    tag_state.selection.push(index);
-                    tag_state.drag_indices = vec![index];
-                    tag_state.drag_start_positions = vec![tag_pos];
-                }
-
-                tag_state.drag_active = true;
+                // Store pending click - don't start drag yet, wait for mouse move
+                tag_state.pending_click = Some((index, tag_pos));
                 tag_state.drag_start = pos;
                 tag_state.drag_cur = pos;
 
-                // Start atomic undo for drag operation
-                let desc = if tag_state.selection.len() > 1 {
-                    format!("Move {} tags", tag_state.selection.len())
-                } else {
-                    "Move tag".to_string()
-                };
-                tag_state.drag_undo = Some(state.begin_atomic_undo(desc));
-
-                return ToolResult::StartCapture.and(ToolResult::Redraw);
+                // Select the tag if not already selected
+                if !tag_state.selection.contains(&index) {
+                    tag_state.selection.clear();
+                    tag_state.selection.push(index);
+                    return ToolResult::StartCapture.and(ToolResult::Redraw);
+                }
+                return ToolResult::None;
             }
 
             // No tag at position - start a selection drag to select multiple tags
@@ -893,6 +982,7 @@ impl TagTool {
             tag_state.selection_drag_active = true;
             tag_state.drag_start = pos;
             tag_state.drag_cur = pos;
+            println!("Start selection drag at {:?}", pos);
 
             ToolResult::StartCapture.and(ToolResult::Redraw)
         } else if button == icy_engine::MouseButton::Right {
@@ -917,6 +1007,39 @@ impl TagTool {
     /// Handle mouse drag for Tag tool
     pub fn handle_mouse_drag(state: &mut icy_engine_edit::EditState, tag_state: &mut TagToolState, pos: Position) -> ToolResult {
         tag_state.drag_cur = pos;
+        // Convert pending click to drag if mouse moved
+        if let Some((index, tag_pos)) = tag_state.pending_click.take() {
+            // Check if mouse moved enough to start drag (threshold of 1 cell)
+            let delta = tag_state.drag_cur - tag_state.drag_start;
+            if delta.x.abs() > 0 || delta.y.abs() > 0 {
+                // Start actual drag operation
+                if tag_state.selection.contains(&index) {
+                    // Drag all selected tags
+                    let selected_positions: Vec<(usize, Position)> = tag_state
+                        .selection
+                        .iter()
+                        .filter_map(|&i| state.get_buffer().tags.get(i).map(|t| (i, t.position)))
+                        .collect();
+                    tag_state.drag_indices = selected_positions.iter().map(|(i, _)| *i).collect();
+                    tag_state.drag_start_positions = selected_positions.iter().map(|(_, p)| *p).collect();
+                } else {
+                    tag_state.drag_indices = vec![index];
+                    tag_state.drag_start_positions = vec![tag_pos];
+                }
+
+                tag_state.drag_active = true;
+                let desc = if tag_state.selection.len() > 1 {
+                    format!("Move {} tags", tag_state.selection.len())
+                } else {
+                    "Move tag".to_string()
+                };
+                tag_state.drag_undo = Some(state.begin_atomic_undo(desc));
+            } else {
+                // Mouse didn't move enough, restore pending click
+                tag_state.pending_click = Some((index, tag_pos));
+                return ToolResult::None;
+            }
+        }
 
         // Handle new tag placement drag
         if tag_state.add_new_index.is_some() && tag_state.drag_active {
@@ -968,13 +1091,19 @@ impl TagTool {
     pub fn handle_mouse_up(state: &mut icy_engine_edit::EditState, tag_state: &mut TagToolState, pos: Position) -> ToolResult {
         tag_state.drag_cur = pos;
 
+        // Handle pending click (mouse was pressed but not dragged)
+        if let Some((_index, _tag_pos)) = tag_state.pending_click.take() {
+            // Just a click, selection was already set in mouse_down
+            return ToolResult::EndCapture.and(ToolResult::Redraw);
+        }
+
         // Handle new tag placement completion
         if let Some(new_tag_index) = tag_state.add_new_index.take() {
             tag_state.end_drag();
 
             // Open edit dialog for the newly placed tag
             if let Some(tag) = state.get_buffer().tags.get(new_tag_index).cloned() {
-                tag_state.dialog = Some(TagDialog::edit(&tag, new_tag_index));
+                tag_state.dialog = Some(TagDialog::edit(&tag, new_tag_index, &tag_state.selected_taglist));
             }
             return ToolResult::EndCapture.and(ToolResult::Redraw);
         }
