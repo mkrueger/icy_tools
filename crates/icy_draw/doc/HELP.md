@@ -11,30 +11,30 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 
 ### General Tools
 
-| Tool | Description |
-|------|-------------|
-| `get_help(editor?)` | Get documentation. Without parameter: this overview. With `animation` or `bitfont`: editor-specific docs |
-| `get_status()` | Get current editor state, open file, dimensions, errors |
-| `new_document(type)` | Create new document. Types: `ansi`, `animation`, `bitfont`, `charfont` |
-| `load_document(path)` | Open a file |
-| `save()` | Save current document |
-| `undo()` | Undo last action |
-| `redo()` | Redo undone action |
+| Tool                 | Description                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `get_help(editor?)`  | Get documentation. Without parameter: this overview. With `animation` or `bitfont`: editor-specific docs |
+| `get_status()`       | Get current editor state, open file, dimensions, errors                              |
+| `new_document(type)` | Create new document. Types: `ansi`, `animation`, `bitfont`, `charfont`               |
+| `load_document(path)` | Open a file                                                                         |
+| `save()`             | Save current document                                                                |
+| `undo()`             | Undo last action                                                                     |
+| `redo()`             | Redo undone action                                                                   |
 
 ### Animation Editor Tools
 
-| Tool | Description |
-|------|-------------|
-| `animation.get_text(offset?, length?)` | Get Lua script text. Without params: entire script |
-| `animation.replace_text(offset, length, text)` | Replace text in script at byte offset |
-| `animation.get_screen(frame)` | Get rendered frame as ANSI text |
+| Tool                                       | Description                                          |
+| ------------------------------------------ | ---------------------------------------------------- |
+| `animation.get_text(offset?, length?)`     | Get Lua script text. Without params: entire script   |
+| `animation.replace_text(offset, length, text)` | Replace text in script at byte offset            |
+| `animation.get_screen(frame)`              | Get rendered frame as ANSI text                      |
 
 ### BitFont Editor Tools
 
-| Tool | Description |
-|------|-------------|
-| `bitfont.list_chars()` | List all glyph codes in the font |
-| `bitfont.get_char(code)` | Get glyph bitmap as base64 |
+| Tool                       | Description                   |
+| -------------------------- | ----------------------------- |
+| `bitfont.list_chars()`     | List all glyph codes in the font |
+| `bitfont.get_char(code)`   | Get glyph bitmap as base64    |
 | `bitfont.set_char(code, data)` | Set glyph bitmap from base64 |
 
 ## Status Response Format
@@ -48,14 +48,16 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 }
 ```
 
-### Animation-specific status fields:
+### Animation-specific status fields
+
 - `text_length`: Length of Lua script in bytes
 - `frame_count`: Number of rendered frames
 - `errors`: Array of script errors (empty if none)
 - `is_playing`: Whether animation is playing
 - `current_frame`: Current frame number
 
-### BitFont-specific status fields:
+### BitFont-specific status fields
+
 - `glyph_width`: Width of glyphs in pixels
 - `glyph_height`: Height of glyphs in pixels
 - `glyph_count`: Number of glyphs in font
@@ -65,7 +67,8 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 ## Workflow Examples
 
 ### Creating an Animation
-```
+
+```text
 1. new_document("animation")
 2. animation.replace_text(0, 0, "local buf = new_buffer(80, 25)\n...")
 3. get_status() -> check for errors
@@ -74,7 +77,8 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 ```
 
 ### Editing a BitFont
-```
+
+```text
 1. load_document("/path/to/font.psf")
 2. get_status() -> get dimensions
 3. bitfont.get_char(65) -> get 'A' glyph
@@ -85,6 +89,7 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 ## Error Handling
 
 All tools return errors in a consistent format:
+
 ```json
 {
   "error": "Error message",
@@ -93,6 +98,7 @@ All tools return errors in a consistent format:
 ```
 
 Common error codes:
+
 - `WRONG_EDITOR`: Tool called in wrong editor mode
 - `INVALID_PARAM`: Invalid parameter value
 - `FILE_ERROR`: File operation failed

@@ -396,7 +396,6 @@ impl WindowManager {
     }
 
     pub fn update(&mut self, message: WindowManagerMessage) -> Task<WindowManagerMessage> {
-        println!("[WindowManager] Received message: {:?}", message);
         // Poll for MCP commands on every update cycle
         let mcp_task: Task<WindowManagerMessage> = self.poll_mcp_commands();
 

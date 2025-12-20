@@ -2,8 +2,11 @@
 
 use crate::mcp::McpCommand;
 use crate::mcp::types::{
-    AnimationGetScreenRequest, AnimationGetTextRequest, AnimationReplaceTextRequest, BitFontGetCharRequest, BitFontSetCharRequest, CharListResponse,
-    EditorStatus, GetHelpRequest, LoadDocumentRequest, NewDocumentRequest,
+    AnimationGetScreenRequest, AnimationGetTextRequest, AnimationReplaceTextRequest, AnsiAddLayerRequest, AnsiDeleteLayerRequest, AnsiGetLayerRequest,
+    AnsiGetRegionRequest, AnsiGetScreenRequest, AnsiMergeDownLayerRequest, AnsiMoveLayerRequest, AnsiResizeRequest, AnsiRunScriptRequest,
+    AnsiSelectionActionRequest, AnsiSetCaretRequest, AnsiSetCharRequest, AnsiSetColorRequest, AnsiSetLayerPropsRequest, AnsiSetRegionRequest,
+    AnsiSetSelectionRequest, BitFontGetCharRequest, BitFontSetCharRequest, CharListResponse, EditorStatus, GetHelpRequest, LoadDocumentRequest,
+    NewDocumentRequest,
 };
 
 use parking_lot::Mutex;
@@ -27,6 +30,7 @@ use tokio::time::Duration;
 const HELP_DOC: &str = include_str!("../../doc/HELP.md");
 const ANIMATION_DOC: &str = include_str!("../../doc/ANIMATION.md");
 const BITFONT_DOC: &str = include_str!("../../doc/BITFONT.md");
+const ANSI_DOC: &str = include_str!("../../doc/ANSI.md");
 
 /// Timeout for commands that need a response
 const COMMAND_TIMEOUT_SECS: u64 = 30;
@@ -50,9 +54,10 @@ impl IcyDrawMcpHandler {
     // General tools
     // ═══════════════════════════════════════════════════════════════════════
 
-    #[tool(description = "Get documentation. Without 'editor' parameter: general overview. With 'animation' or 'bitfont': editor-specific documentation.")]
+    #[tool(description = "Get documentation. Without 'editor' parameter: general overview. With 'ansi', 'animation' or 'bitfont': editor-specific documentation.")]
     async fn get_help(&self, params: Parameters<GetHelpRequest>) -> Result<CallToolResult, McpError> {
         let doc = match params.0.editor.as_deref() {
+            Some("ansi") => ANSI_DOC,
             Some("animation") => ANIMATION_DOC,
             Some("bitfont") => BITFONT_DOC,
             _ => HELP_DOC,
@@ -315,6 +320,477 @@ impl IcyDrawMcpHandler {
 
         match result {
             Ok(()) => Ok(CallToolResult::success(vec![Content::text("Glyph updated")])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ANSI editor tools
+    // ═══════════════════════════════════════════════════════════════════════
+
+    #[tool(description = "[ANSI Editor] Run a Lua script on the current buffer. The script has access to the 'buf' object with all buffer manipulation methods (set_char, get_char, fg_rgb, bg_rgb, print, etc.) and selection bounds (start_x, end_x, start_y, end_y). Changes are wrapped in an atomic undo operation.")]
+    async fn ansi_run_script(&self, params: Parameters<AnsiRunScriptRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiRunScript {
+                script: params.0.script.clone(),
+                undo_description: params.0.undo_description.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout executing script", None))?
+            .map_err(|_| McpError::internal_error("Failed to execute script", None))?;
+
+        match result {
+            Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Get full layer data including all character cells. Returns layer properties and a flat array of character data (row-major order).")]
+    async fn ansi_get_layer(&self, params: Parameters<AnsiGetLayerRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiGetLayer {
+                layer: params.0.layer,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout getting layer", None))?
+            .map_err(|_| McpError::internal_error("Failed to get layer", None))?;
+
+        match result {
+            Ok(layer_data) => {
+                let json = serde_json::to_string_pretty(&layer_data)
+                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Set a character at a specific position in a layer with the given text attribute.")]
+    async fn ansi_set_char(&self, params: Parameters<AnsiSetCharRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetChar {
+                layer: params.0.layer,
+                x: params.0.x,
+                y: params.0.y,
+                ch: params.0.ch.clone(),
+                attribute: params.0.attribute.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting char", None))?
+            .map_err(|_| McpError::internal_error("Failed to set char", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Character set")])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Set a palette color by index. Changes the RGB values of a specific palette entry.")]
+    async fn ansi_set_color(&self, params: Parameters<AnsiSetColorRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetColor {
+                index: params.0.index,
+                r: params.0.r,
+                g: params.0.g,
+                b: params.0.b,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting color", None))?
+            .map_err(|_| McpError::internal_error("Failed to set color", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!("Palette color {} set", params.0.index))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Get the current screen. format: 'ansi' (with escape codes) or 'ascii' (plain text, no images).")]
+    async fn ansi_get_screen(&self, params: Parameters<AnsiGetScreenRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiGetScreen {
+                format: params.0.format.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout getting screen", None))?
+            .map_err(|_| McpError::internal_error("Failed to get screen", None))?;
+
+        match result {
+            Ok(screen) => Ok(CallToolResult::success(vec![Content::text(screen)])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Get current caret x/y and text attribute.")]
+    async fn ansi_get_caret(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiGetCaret {
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout getting caret", None))?
+            .map_err(|_| McpError::internal_error("Failed to get caret", None))?;
+
+        match result {
+            Ok(caret) => {
+                let json = serde_json::to_string_pretty(&caret)
+                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Set caret x/y and text attribute.")]
+    async fn ansi_set_caret(&self, params: Parameters<AnsiSetCaretRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetCaret {
+                x: params.0.x,
+                y: params.0.y,
+                attribute: params.0.attribute.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting caret", None))?
+            .map_err(|_| McpError::internal_error("Failed to set caret", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Caret set")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] List all layers (metadata only).")]
+    async fn ansi_list_layers(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiListLayers {
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout listing layers", None))?
+            .map_err(|_| McpError::internal_error("Failed to list layers", None))?;
+
+        match result {
+            Ok(layers) => {
+                let json = serde_json::to_string_pretty(&layers)
+                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Add a new layer after a given layer index.")]
+    async fn ansi_add_layer(&self, params: Parameters<AnsiAddLayerRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiAddLayer {
+                after_layer: params.0.after_layer,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout adding layer", None))?
+            .map_err(|_| McpError::internal_error("Failed to add layer", None))?;
+
+        match result {
+            Ok(idx) => Ok(CallToolResult::success(vec![Content::text(format!("Layer added: {}", idx))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Delete a layer by index.")]
+    async fn ansi_delete_layer(&self, params: Parameters<AnsiDeleteLayerRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiDeleteLayer {
+                layer: params.0.layer,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout deleting layer", None))?
+            .map_err(|_| McpError::internal_error("Failed to delete layer", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer deleted")])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Update layer properties (title/visibility/locks/offset/transparency).")]
+    async fn ansi_set_layer_props(&self, params: Parameters<AnsiSetLayerPropsRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetLayerProps {
+                layer: params.0.layer,
+                title: params.0.title.clone(),
+                is_visible: params.0.is_visible,
+                is_locked: params.0.is_locked,
+                is_position_locked: params.0.is_position_locked,
+                offset_x: params.0.offset_x,
+                offset_y: params.0.offset_y,
+                transparency: params.0.transparency,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting layer props", None))?
+            .map_err(|_| McpError::internal_error("Failed to set layer props", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer properties updated")])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Merge a layer down into the layer below.")]
+    async fn ansi_merge_down_layer(&self, params: Parameters<AnsiMergeDownLayerRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiMergeDownLayer {
+                layer: params.0.layer,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout merging layer", None))?
+            .map_err(|_| McpError::internal_error("Failed to merge layer", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer merged down")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Move a layer up/down in the layer stack.")]
+    async fn ansi_move_layer(&self, params: Parameters<AnsiMoveLayerRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiMoveLayer {
+                layer: params.0.layer,
+                direction: params.0.direction.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout moving layer", None))?
+            .map_err(|_| McpError::internal_error("Failed to move layer", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Layer moved")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Resize the buffer to width/height.")]
+    async fn ansi_resize(&self, params: Parameters<AnsiResizeRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiResize {
+                width: params.0.width,
+                height: params.0.height,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout resizing buffer", None))?
+            .map_err(|_| McpError::internal_error("Failed to resize buffer", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Buffer resized")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Get a rectangular region from a layer (row-major CharInfo array).")]
+    async fn ansi_get_region(&self, params: Parameters<AnsiGetRegionRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiGetRegion {
+                layer: params.0.layer,
+                x: params.0.x,
+                y: params.0.y,
+                width: params.0.width,
+                height: params.0.height,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout getting region", None))?
+            .map_err(|_| McpError::internal_error("Failed to get region", None))?;
+
+        match result {
+            Ok(region) => {
+                let json = serde_json::to_string_pretty(&region)
+                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Set a rectangular region on a layer using a row-major CharInfo array.")]
+    async fn ansi_set_region(&self, params: Parameters<AnsiSetRegionRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetRegion {
+                layer: params.0.layer,
+                x: params.0.x,
+                y: params.0.y,
+                width: params.0.width,
+                height: params.0.height,
+                chars: params.0.chars.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting region", None))?
+            .map_err(|_| McpError::internal_error("Failed to set region", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Region set")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Get current selection (or null if none).")]
+    async fn ansi_get_selection(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiGetSelection {
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout getting selection", None))?
+            .map_err(|_| McpError::internal_error("Failed to get selection", None))?;
+
+        match result {
+            Ok(sel) => {
+                let json = serde_json::to_string_pretty(&sel)
+                    .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Set selection rectangle.")]
+    async fn ansi_set_selection(&self, params: Parameters<AnsiSetSelectionRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSetSelection {
+                x: params.0.x,
+                y: params.0.y,
+                width: params.0.width,
+                height: params.0.height,
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout setting selection", None))?
+            .map_err(|_| McpError::internal_error("Failed to set selection", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection set")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Clear selection.")]
+    async fn ansi_clear_selection(&self) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiClearSelection {
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout clearing selection", None))?
+            .map_err(|_| McpError::internal_error("Failed to clear selection", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Selection cleared")])) ,
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
+        }
+    }
+
+    #[tool(description = "[ANSI Editor] Run a selection action (flip/justify/crop/etc).")]
+    async fn ansi_selection_action(&self, params: Parameters<AnsiSelectionActionRequest>) -> Result<CallToolResult, McpError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(McpCommand::AnsiSelectionAction {
+                action: params.0.action.clone(),
+                response: Arc::new(Mutex::new(Some(response_tx))),
+            })
+            .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), response_rx)
+            .await
+            .map_err(|_| McpError::internal_error("Timeout running action", None))?
+            .map_err(|_| McpError::internal_error("Failed to run action", None))?;
+
+        match result {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text("Action executed")])) ,
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }

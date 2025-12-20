@@ -200,9 +200,9 @@ fn process_icy_draw_v0_decoded_chunk(
             o += 1;
             result.ice_mode = crate::IceMode::from_byte(ice_mode);
 
-            let palette_mode = bytes[o];
+            // legacey
+            let _palette_mode = bytes[o];
             o += 1;
-            result.palette_mode = crate::PaletteMode::from_byte(palette_mode);
 
             let font_mode = bytes[o];
             o += 1;

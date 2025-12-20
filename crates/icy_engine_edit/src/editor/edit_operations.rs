@@ -79,6 +79,29 @@ impl EditState {
         }
     }
 
+    /// Set a character at a specific layer without starting its own atomic undo group.
+    ///
+    /// This is intended for MCP operations that need to set characters on a specific layer
+    /// while managing their own `AtomicUndoGuard`.
+    pub fn set_char_at_layer_in_atomic(&mut self, layer_index: usize, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
+        let buffer = self.get_buffer();
+        if layer_index >= buffer.layers.len() {
+            return Err(crate::EngineError::Generic(format!("Layer index {} out of range", layer_index)));
+        }
+
+        let pos = pos.into();
+        let old = buffer.layers[layer_index].char_at(pos);
+
+        self.push_undo_action(EditorUndoOp::SetChar {
+            pos,
+            layer: layer_index,
+            old,
+            new: attributed_char,
+            undo_caret: None,
+            redo_caret: None,
+        })
+    }
+
     pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) -> Result<()> {
         let pos1 = pos1.into();
         let pos2 = pos2.into();
@@ -390,14 +413,11 @@ impl EditState {
     }
 
     pub fn switch_to_palette(&mut self, pal: Palette) -> Result<()> {
-        let old_mode = self.get_buffer().palette_mode;
         let old_palette = self.get_buffer().palette.clone();
         let old_layers = self.get_buffer().layers.clone();
         self.push_undo_action(EditorUndoOp::SwitchPalette {
-            old_mode,
             old_palette,
             old_layers,
-            new_mode: old_mode, // Use same mode, just change palette
             new_palette: pal,
             new_layers: Vec::new(), // Will be populated on redo
         })

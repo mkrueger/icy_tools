@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, PaletteMode, Position, Properties, Result, Role, SauceMetaData, Selection,
+    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, Position, Properties, Result, Role, SauceMetaData, Selection,
     SelectionMask, Size, Tag, TextPane, stamp_layer,
 };
 
@@ -178,10 +178,8 @@ pub enum EditorUndoOp {
 
     /// Switch palette mode
     SwitchPalette {
-        old_mode: PaletteMode,
         old_palette: Palette,
         old_layers: Vec<Layer>,
-        new_mode: PaletteMode,
         new_palette: Palette,
         new_layers: Vec<Layer>,
     },
@@ -591,17 +589,13 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwitchPalette {
-                old_mode,
                 old_palette,
                 old_layers,
-                new_mode,
                 new_palette,
                 new_layers,
             } => {
-                std::mem::swap(old_mode, new_mode);
                 std::mem::swap(old_palette, new_palette);
                 std::mem::swap(old_layers, new_layers);
-                edit_state.get_buffer_mut().palette_mode = *new_mode;
                 edit_state.get_buffer_mut().palette = new_palette.clone();
                 edit_state.get_buffer_mut().layers = new_layers.clone();
                 Ok(())
@@ -964,18 +958,14 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwitchPalette {
-                old_mode,
                 old_palette,
                 old_layers,
-                new_mode,
                 new_palette,
                 new_layers,
             } => {
                 // Set values first, then swap for undo symmetry
-                edit_state.get_buffer_mut().palette_mode = *new_mode;
                 edit_state.get_buffer_mut().palette = new_palette.clone();
                 edit_state.get_buffer_mut().layers = new_layers.clone();
-                std::mem::swap(old_mode, new_mode);
                 std::mem::swap(old_palette, new_palette);
                 std::mem::swap(old_layers, new_layers);
                 Ok(())

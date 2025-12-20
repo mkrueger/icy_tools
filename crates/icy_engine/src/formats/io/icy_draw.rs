@@ -11,7 +11,7 @@ use super::super::{AnsiSaveOptionsV2, LoadData};
 
 mod constants {
     pub const ICED_VERSION: u16 = 1;
-    pub const ICED_HEADER_SIZE: usize = 21;
+    pub const ICED_HEADER_SIZE: usize = 20;
 
     /// Compression methods for ICED format (stored in first byte of Type field)
     pub mod compression {
@@ -232,10 +232,6 @@ fn process_icy_draw_v1_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut T
             let ice_mode = bytes[o];
             o += 1;
             result.ice_mode = crate::IceMode::from_byte(ice_mode);
-
-            let palette_mode = bytes[o];
-            o += 1;
-            result.palette_mode = crate::PaletteMode::from_byte(palette_mode);
 
             let font_mode = bytes[o];
             o += 1;
@@ -561,7 +557,6 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
         // Modes
         result.extend(u16::to_le_bytes(buf.buffer_type.to_byte() as u16));
         result.push(buf.ice_mode.to_byte());
-        result.push(buf.palette_mode.to_byte());
         result.push(buf.font_mode.to_byte());
 
         result.extend(u32::to_le_bytes(buf.width() as u32));

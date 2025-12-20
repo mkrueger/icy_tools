@@ -73,7 +73,6 @@ pub(crate) fn load_artworx(data: &[u8], load_data_opt: Option<LoadData>) -> Resu
     }
     screen.buffer.set_width(80);
     screen.buffer.buffer_type = BufferType::CP437;
-    screen.buffer.palette_mode = crate::PaletteMode::Free16;
     screen.buffer.ice_mode = IceMode::Ice;
     screen.buffer.font_mode = FontMode::Single;
     let file_size = data.len();

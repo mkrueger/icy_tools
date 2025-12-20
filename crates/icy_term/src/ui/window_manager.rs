@@ -4,7 +4,7 @@ use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::error_dialog;
 use icy_engine_gui::music::music::SoundThread;
-use icy_engine_gui::{ANIMATION_TICK_MS, find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
+use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 use parking_lot::Mutex;
 
 use iced::{
@@ -290,7 +290,7 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let mut subs: Vec<Subscription<WindowManagerMessage>> = vec![
+        let subs: Vec<Subscription<WindowManagerMessage>> = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
                 // Only forward events that are actually needed - skip mouse move events

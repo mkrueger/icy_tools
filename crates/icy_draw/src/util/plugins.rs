@@ -142,6 +142,91 @@ impl Plugin {
         Ok(())
     }
 
+    /// Run a Lua script string directly on the buffer (for MCP/API usage)
+    /// Returns the collected log output or an error
+    pub fn run_script_string(
+        screen: &Arc<Mutex<Box<dyn icy_engine::Screen>>>,
+        script: &str,
+        undo_description: &str,
+    ) -> Result<String, String> {
+        use std::sync::Arc as StdArc;
+        use std::sync::Mutex as StdMutex;
+
+        let lua = Lua::new();
+        let globals = lua.globals();
+
+        // Collect log output
+        let log_output: StdArc<StdMutex<Vec<String>>> = StdArc::new(StdMutex::new(Vec::new()));
+        let log_output_clone = log_output.clone();
+
+        globals
+            .set(
+                "log",
+                lua.create_function(move |_lua, txt: String| {
+                    log::info!("[MCP Script] {txt}");
+                    if let Ok(mut logs) = log_output_clone.lock() {
+                        logs.push(txt);
+                    }
+                    Ok(())
+                })
+                .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+
+        globals
+            .set("buf", LuaBufferView { screen: screen.clone() })
+            .map_err(|error| error.to_string())?;
+
+        // Get selection bounds or layer bounds
+        let (start_x, end_x, start_y, end_y) = {
+            let mut screen_guard = screen.lock();
+            let edit_state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .ok_or_else(|| "Screen is not EditState".to_string())?;
+
+            let sel = edit_state.selection();
+            let rect = if let Some(l) = edit_state.get_cur_layer() {
+                l.rectangle()
+            } else {
+                return Err("No layer selected".to_string());
+            };
+
+            if let Some(sel) = sel {
+                let mut selected_rect = sel.as_rectangle().intersect(&rect);
+                selected_rect -= rect.start;
+                (selected_rect.left(), selected_rect.right() - 1, selected_rect.top(), selected_rect.bottom() - 1)
+            } else {
+                (0, rect.width(), 0, rect.height())
+            }
+        };
+
+        globals.set("start_x", start_x).map_err(|error| error.to_string())?;
+        globals.set("end_x", end_x).map_err(|error| error.to_string())?;
+        globals.set("start_y", start_y).map_err(|error| error.to_string())?;
+        globals.set("end_y", end_y).map_err(|error| error.to_string())?;
+
+        // Begin atomic undo
+        {
+            let mut screen_guard = screen.lock();
+            let edit_state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .ok_or_else(|| "Screen is not EditState".to_string())?;
+            let _ = edit_state.begin_atomic_undo(undo_description.to_string());
+        }
+
+        lua.load(script).exec().map_err(|error| error.to_string())?;
+
+        // Return collected log output
+        let logs = log_output.lock().map_err(|e| e.to_string())?;
+        if logs.is_empty() {
+            Ok("Script executed successfully".to_string())
+        } else {
+            Ok(logs.join("\n"))
+        }
+    }
+
     /// Read all plugins from the plugin directory
     pub fn read_plugin_directory() -> Vec<Self> {
         let mut result = Vec::new();

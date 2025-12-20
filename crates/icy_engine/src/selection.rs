@@ -107,7 +107,8 @@ impl Selection {
     }
 
     pub fn size(&self) -> Size {
-        Size::new((self.anchor.x - self.lead.x).abs(), (self.anchor.y - self.lead.y).abs())
+        // Selection is inclusive on both ends, so add 1 to each dimension
+        Size::new((self.anchor.x - self.lead.x).abs() + 1, (self.anchor.y - self.lead.y).abs() + 1)
     }
 
     pub fn as_rectangle(&self) -> Rectangle {
@@ -136,9 +137,12 @@ impl Selection {
 
 impl From<Rectangle> for Selection {
     fn from(value: Rectangle) -> Self {
+        // Rectangle uses exclusive bounds (start + size), Selection uses inclusive (anchor, lead)
+        // So lead should be bottom_right - 1 in each dimension
+        let br = value.bottom_right();
         Selection {
             anchor: value.top_left(),
-            lead: value.bottom_right(),
+            lead: Position::new(br.x.saturating_sub(1), br.y.saturating_sub(1)),
             locked: false,
             shape: Shape::Rectangle,
             add_type: AddType::Default,

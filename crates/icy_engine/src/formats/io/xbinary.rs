@@ -1,5 +1,5 @@
 use crate::{
-    AttributeColor, AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, PaletteMode, Result, SavingError, TextBuffer, TextPane,
+    AttributeColor, AttributedChar, BitFont, EditableScreen, FontMode, IceMode, LoadingError, Palette, Result, SavingError, TextBuffer, TextPane,
     TextScreen, analyze_font_usage, attribute, guess_font_name,
 };
 
@@ -317,7 +317,6 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<LoadData>) -> Result<
     }
 
     screen.buffer.font_mode = if extended_char_mode { FontMode::FixedSize } else { FontMode::Single };
-    screen.buffer.palette_mode = if extended_char_mode { PaletteMode::Free8 } else { PaletteMode::Free16 };
     screen.buffer.ice_mode = if use_ice { IceMode::Ice } else { IceMode::Blink };
 
     if has_custom_palette {

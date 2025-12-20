@@ -56,15 +56,6 @@ impl IceMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum PaletteMode {
-    RGB,
-    Fixed16,
-    /// Extended font mode in XB + Blink limits to 8 colors
-    Free8,
-    Free16,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TagPlacement {
     InText,
     WithGotoXY,
@@ -158,27 +149,6 @@ impl Tag {
     }
 }
 
-impl PaletteMode {
-    pub fn from_byte(b: u8) -> Self {
-        match b {
-            // 0 => PaletteMode::RGB,
-            1 => PaletteMode::Fixed16,
-            2 => PaletteMode::Free8,
-            3 => PaletteMode::Free16,
-            _ => PaletteMode::RGB,
-        }
-    }
-
-    pub fn to_byte(self) -> u8 {
-        match self {
-            PaletteMode::RGB => 0,
-            PaletteMode::Fixed16 => 1,
-            PaletteMode::Free8 => 2,
-            PaletteMode::Free16 => 3,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FontMode {
     /// Multiple fonts in the same document are possible without limit.
@@ -225,7 +195,6 @@ pub struct TextBuffer {
 
     pub buffer_type: BufferType,
     pub ice_mode: IceMode,
-    pub palette_mode: PaletteMode,
     pub font_mode: FontMode,
 
     pub palette: Palette,
@@ -294,7 +263,6 @@ impl Clone for TextBuffer {
             terminal_state: self.terminal_state.clone(),
             buffer_type: self.buffer_type,
             ice_mode: self.ice_mode,
-            palette_mode: self.palette_mode,
             font_mode: self.font_mode,
             palette: self.palette.clone(),
             font_table: self.font_table.clone(),
@@ -492,7 +460,6 @@ impl TextBuffer {
 
             buffer_type: BufferType::CP437,
             ice_mode: IceMode::Unlimited,
-            palette_mode: PaletteMode::Fixed16,
             font_mode: FontMode::Sauce,
 
             palette: Palette::dos_default(),

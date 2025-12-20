@@ -2,7 +2,7 @@ use std::{collections::HashSet, io};
 
 use super::super::{AnsiSaveOptionsV2, LoadData};
 use crate::{
-    AttributedChar, BufferType, EditableScreen, IceMode, LoadingError, PaletteMode, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane,
+    AttributedChar, BufferType, EditableScreen, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane,
     TextScreen, analyze_font_usage,
 };
 
@@ -156,7 +156,6 @@ pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<LoadData>) -> Resul
     screen.buffer.palette.clear();
     screen.buffer.palette.insert_color_rgb(0, 0, 0);
     screen.buffer.buffer_type = BufferType::CP437;
-    screen.buffer.palette_mode = PaletteMode::RGB;
     screen.buffer.ice_mode = IceMode::Ice;
 
     let mut pos = Position::default();

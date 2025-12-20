@@ -226,7 +226,7 @@ impl WindowManager {
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         // Check if any window needs animation
 
-        let mut subs = vec![
+        let subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
                 match &event {

@@ -624,22 +624,10 @@ impl TopToolbar {
                 color: Some(theme.extended_palette().secondary.base.color),
             });
 
-        let filled_toggle: Element<'_, TopToolbarMessage> = if show_filled_toggle {
-            toggler(self.filled)
-                .label("Filled")
-                .on_toggle(TopToolbarMessage::ToggleFilled)
-                .text_size(11)
-                .into()
-        } else {
-            Space::new().width(Length::Fixed(0.0)).into()
-        };
-
         // Center the control with flexible space on both sides
         row![
             Space::new().width(Length::Fill),
             segmented_control,
-            Space::new().width(Length::Fixed(16.0)),
-            filled_toggle,
             Space::new().width(Length::Fixed(16.0)),
             color_filter,
             Space::new().width(Length::Fixed(16.0)),

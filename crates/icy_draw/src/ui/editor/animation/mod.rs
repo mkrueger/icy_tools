@@ -185,8 +185,6 @@ impl iced::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTic
         if let iced::Event::Window(iced::window::Event::RedrawRequested(now)) = event {
             if self.playing {
                 state.last_redraw = Some(*now);
-                #[cfg(debug_assertions)]
-                eprintln!("[AnimationEditor] RedrawRequested -> Tick");
                 // Publishing `Tick` will schedule the next redraw as long as `Tick`
                 // actually updates state (like the ColorSwitcher pattern).
                 return Some(iced::widget::canvas::Action::publish(AnimationEditorMessage::Tick));
@@ -714,7 +712,6 @@ impl AnimationEditor {
             AnimationEditorMessage::Tick => {
                 if self.playback.is_playing {
                     self.playback.tick_seq = self.playback.tick_seq.wrapping_add(1);
-                    println!("[AnimationEditor] Tick seq={} frame={}", self.playback.tick_seq, self.playback.current_frame);
                 }
                 self.update_animator();
                 Task::none()

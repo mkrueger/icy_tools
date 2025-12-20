@@ -2,7 +2,7 @@
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, BitFont, DOS_DEFAULT_PALETTE, IceMode, Layer, Palette, PaletteMode, Result, TextPane};
+use crate::{AttributedChar, BitFont,  IceMode, Layer, Palette, Result, TextPane};
 
 use super::{EditState, undo_operation::EditorUndoOp};
 
@@ -195,38 +195,7 @@ impl EditState {
         }
     }
 
-    pub fn set_palette_mode(&mut self, mode: PaletteMode) -> Result<()> {
-        let old_palette = self.get_buffer().palette.clone();
-        let old_mode = self.get_buffer().palette_mode;
-        let old_layers = self.get_buffer().layers.clone();
-        let new_palette = match mode {
-            PaletteMode::RGB => old_palette.clone(),
-            PaletteMode::Fixed16 => Palette::from_slice(&DOS_DEFAULT_PALETTE),
-            PaletteMode::Free8 => palette(&old_layers, &old_palette, 8),
-            PaletteMode::Free16 => palette(&old_layers, &old_palette, 16),
-        };
-
-        let mut new_palette_table = Vec::new();
-        for i in 0..old_palette.len() {
-            let new_color = find_new_color(&old_palette, &new_palette, i as u32);
-            new_palette_table.push(new_color);
-        }
-
-        self.adjust_layer_colors(&new_palette_table);
-
-        let new_layers = self.get_buffer().layers.clone();
-        let op = EditorUndoOp::SwitchPalette {
-            old_mode,
-            old_palette,
-            old_layers,
-            new_mode: mode,
-            new_palette,
-            new_layers,
-        };
-        self.push_undo_action(op)
-    }
-
-    fn adjust_layer_colors(&mut self, table: &[u32]) {
+    fn _adjust_layer_colors(&mut self, table: &[u32]) {
         for layer in &mut self.get_buffer_mut().layers {
             for line in &mut layer.lines {
                 for ch in &mut line.chars {
@@ -427,7 +396,7 @@ fn remove_ice_color(ch: crate::AttributedChar) -> crate::AttributedChar {
     AttributedChar::new(ch.ch, attr)
 }
 
-fn palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize) -> Palette {
+fn _palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize) -> Palette {
     let mut color_count = vec![0; old_palette.len()];
     for layer in old_layers {
         for line in &layer.lines {
@@ -473,7 +442,7 @@ fn palette(old_layers: &[Layer], old_palette: &Palette, palette_size: usize) -> 
     new_palette
 }
 
-fn find_new_color(old_palette: &Palette, new_palette: &Palette, color: u32) -> u32 {
+fn _find_new_color(old_palette: &Palette, new_palette: &Palette, color: u32) -> u32 {
     let (o_r, o_g, o_b) = old_palette.rgb(color);
     let o_r = o_r as i32;
     let o_g = o_g as i32;

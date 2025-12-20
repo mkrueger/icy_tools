@@ -89,38 +89,31 @@ impl FormatMode {
     /// Derive FormatMode from buffer's palette_mode and font_mode.
     /// Default is Unrestricted, falls back to LegacyDos if no match.
     pub fn from_buffer(buffer: &TextBuffer) -> Self {
-        use crate::{FontMode, PaletteMode};
+        use crate::{FontMode};
 
-        match (buffer.palette_mode, buffer.font_mode) {
-            (PaletteMode::Fixed16, FontMode::Sauce | FontMode::Single) => FormatMode::LegacyDos,
-            (PaletteMode::Free16, FontMode::Sauce | FontMode::Single) => FormatMode::XBin,
-            (PaletteMode::Free8, FontMode::FixedSize) => FormatMode::XBinExtended,
-            (PaletteMode::RGB, FontMode::Unlimited) => FormatMode::Unrestricted,
-            // Default to Unrestricted, but fall back to LegacyDos for unmatched combinations
-            (PaletteMode::RGB, _) | (_, FontMode::Unlimited) => FormatMode::Unrestricted,
-            _ => FormatMode::LegacyDos,
+        match buffer.font_mode {
+            FontMode::Sauce => FormatMode::LegacyDos,
+            FontMode::Single => FormatMode::XBin,
+            FontMode::FixedSize => FormatMode::XBinExtended,
+            FontMode::Unlimited => FormatMode::Unrestricted,
         }
     }
 
     /// Apply this format mode to a buffer (sets palette_mode and font_mode)
     pub fn apply_to_buffer(&self, buffer: &mut TextBuffer) {
-        use crate::{FontMode, PaletteMode};
+        use crate::{FontMode};
 
         match self {
             FormatMode::LegacyDos => {
-                buffer.palette_mode = PaletteMode::Fixed16;
                 buffer.font_mode = FontMode::Sauce;
             }
             FormatMode::XBin => {
-                buffer.palette_mode = PaletteMode::Free16;
-                buffer.font_mode = FontMode::Sauce;
+                buffer.font_mode = FontMode::Single;
             }
             FormatMode::XBinExtended => {
-                buffer.palette_mode = PaletteMode::Free8;
                 buffer.font_mode = FontMode::FixedSize;
             }
             FormatMode::Unrestricted => {
-                buffer.palette_mode = PaletteMode::RGB;
                 buffer.font_mode = FontMode::Unlimited;
             }
         }

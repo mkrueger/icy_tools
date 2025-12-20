@@ -517,6 +517,587 @@ impl AnsiEditorMainArea {
         self.core.with_edit_state_readonly(f)
     }
 
+    /// Run a Lua script on the current buffer (for MCP/API usage)
+    /// Returns the script output or an error message
+    pub fn run_lua_script(&self, script: &str, undo_description: Option<&str>) -> Result<String, String> {
+        let undo_desc = undo_description.unwrap_or("MCP Script");
+        Plugin::run_script_string(self.screen(), script, undo_desc)
+    }
+
+    /// Get full layer data including all character cells (for MCP)
+    pub fn get_layer_data(&self, layer_index: usize) -> Result<crate::mcp::types::LayerData, String> {
+        use crate::mcp::types::{CharInfo, ColorInfo, LayerData};
+        use icy_engine::{AttributeColor, TextPane};
+
+        self.with_edit_state_readonly(|state| {
+            let buffer = state.get_buffer();
+
+            let layer = buffer.layers.get(layer_index).ok_or_else(|| format!("Layer index {} out of range (0-{})", layer_index, buffer.layers.len().saturating_sub(1)))?;
+
+            let size = layer.size();
+            let width = size.width;
+            let height = size.height;
+
+            // Helper to convert color
+            fn color_to_info(color: &AttributeColor) -> ColorInfo {
+                match color {
+                    AttributeColor::Rgb(r, g, b) => ColorInfo::Rgb { r: *r, g: *g, b: *b },
+                    AttributeColor::Palette(idx) => ColorInfo::Palette(*idx),
+                    AttributeColor::ExtendedPalette(idx) => ColorInfo::ExtendedPalette(*idx),
+                    AttributeColor::Transparent => ColorInfo::Transparent,
+                }
+            }
+
+            let mut chars = Vec::with_capacity((width * height) as usize);
+
+            for y in 0..height {
+                for x in 0..width {
+                    let ch = layer.char_at((x, y).into());
+                    let attr = ch.attribute;
+                    let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
+
+                    chars.push(CharInfo {
+                        ch: unicode_ch.to_string(),
+                        fg: color_to_info(&attr.foreground_color()),
+                        bg: color_to_info(&attr.background_color()),
+                        font_page: attr.font_page(),
+                        bold: attr.is_bold(),
+                        blink: attr.is_blinking(),
+                        is_visible: ch.is_visible(),
+                    });
+                }
+            }
+
+            Ok(LayerData {
+                index: layer_index,
+                title: layer.properties.title.clone(),
+                is_visible: layer.properties.is_visible,
+                is_locked: layer.properties.is_locked,
+                is_position_locked: layer.properties.is_position_locked,
+                offset_x: layer.offset().x,
+                offset_y: layer.offset().y,
+                width,
+                height,
+                transparency: layer.transparency,
+                mode: format!("{:?}", layer.properties.mode),
+                role: format!("{:?}", layer.role),
+                chars,
+            })
+        })
+    }
+
+    /// Set a character at a specific position in a layer (for MCP)
+    /// This operation is atomic and supports undo.
+    pub fn set_char_at(&mut self, layer_index: usize, x: i32, y: i32, ch: &str, attribute: &crate::mcp::types::TextAttributeInfo) -> Result<(), String> {
+        use icy_engine::{AttributeColor, AttributedChar, Position, TextAttribute, TextPane};
+
+        // Convert attribute info to AttributeColor
+        fn info_to_color(info: &crate::mcp::types::ColorInfo) -> AttributeColor {
+            match info {
+                crate::mcp::types::ColorInfo::Palette(idx) => AttributeColor::Palette(*idx),
+                crate::mcp::types::ColorInfo::ExtendedPalette(idx) => AttributeColor::ExtendedPalette(*idx),
+                crate::mcp::types::ColorInfo::Rgb { r, g, b } => AttributeColor::Rgb(*r, *g, *b),
+                crate::mcp::types::ColorInfo::Transparent => AttributeColor::Transparent,
+            }
+        }
+
+        let fg = info_to_color(&attribute.foreground);
+        let bg = info_to_color(&attribute.background);
+
+        let mut attr = TextAttribute::from_colors(fg, bg);
+        attr.set_is_bold(attribute.bold);
+        attr.set_is_blinking(attribute.blink);
+
+        let char_value = ch.chars().next().ok_or_else(|| "Empty character string".to_string())?;
+
+        self.with_edit_state(|state| {
+            let buffer = state.get_buffer();
+
+            if layer_index >= buffer.layers.len() {
+                return Err(format!(
+                    "Layer index {} out of range (0-{})",
+                    layer_index,
+                    buffer.layers.len().saturating_sub(1)
+                ));
+            }
+
+            let converted_char = buffer.buffer_type.convert_from_unicode(char_value);
+            let size = buffer.layers[layer_index].size();
+
+            if x < 0 || x >= size.width || y < 0 || y >= size.height {
+                return Err(format!(
+                    "Position ({}, {}) out of bounds for layer size {}x{}",
+                    x, y, size.width, size.height
+                ));
+            }
+
+            let attributed_char = AttributedChar::new(converted_char, attr);
+            let pos = Position::new(x, y);
+
+            // Use atomic undo for single character set
+            let _undo = state.begin_atomic_undo("MCP Set Char");
+            if let Err(e) = state.set_char_at_layer_in_atomic(layer_index, pos, attributed_char) {
+                log::error!("MCP set_char_at failed: {}", e);
+                return Err(e.to_string());
+            }
+            Ok(())
+        })?;
+
+        self.sync_ui();
+        Ok(())
+    }
+
+    /// Set a palette color (for MCP)
+    pub fn set_palette_color(&mut self, index: u8, r: u8, g: u8, b: u8) -> Result<(), String> {
+        use icy_engine::Color;
+
+        self.core.with_edit_state_mut_shared(|state| {
+            let buffer = state.get_buffer_mut();
+            let palette_len = buffer.palette.len();
+
+            if (index as usize) >= palette_len {
+                return Err(format!(
+                    "Palette index {} out of range (0-{})",
+                    index,
+                    palette_len.saturating_sub(1)
+                ));
+            }
+
+            buffer.palette.set_color(index as u32, Color::new(r, g, b));
+            Ok(())
+        })
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MCP helpers (ANSI editor)
+    // ═══════════════════════════════════════════════════════════════════
+
+    fn mcp_color_to_info(color: &icy_engine::AttributeColor) -> crate::mcp::types::ColorInfo {
+        use crate::mcp::types::ColorInfo;
+        match color {
+            icy_engine::AttributeColor::Rgb(r, g, b) => ColorInfo::Rgb { r: *r, g: *g, b: *b },
+            icy_engine::AttributeColor::Palette(idx) => ColorInfo::Palette(*idx),
+            icy_engine::AttributeColor::ExtendedPalette(idx) => ColorInfo::ExtendedPalette(*idx),
+            icy_engine::AttributeColor::Transparent => ColorInfo::Transparent,
+        }
+    }
+
+    fn mcp_info_to_color(info: &crate::mcp::types::ColorInfo) -> icy_engine::AttributeColor {
+        match info {
+            crate::mcp::types::ColorInfo::Palette(idx) => icy_engine::AttributeColor::Palette(*idx),
+            crate::mcp::types::ColorInfo::ExtendedPalette(idx) => icy_engine::AttributeColor::ExtendedPalette(*idx),
+            crate::mcp::types::ColorInfo::Rgb { r, g, b } => icy_engine::AttributeColor::Rgb(*r, *g, *b),
+            crate::mcp::types::ColorInfo::Transparent => icy_engine::AttributeColor::Transparent,
+        }
+    }
+
+    fn mcp_attr_to_info(attr: &icy_engine::TextAttribute) -> crate::mcp::types::TextAttributeInfo {
+        crate::mcp::types::TextAttributeInfo {
+            foreground: Self::mcp_color_to_info(&attr.foreground_color()),
+            background: Self::mcp_color_to_info(&attr.background_color()),
+            bold: attr.is_bold(),
+            blink: attr.is_blinking(),
+        }
+    }
+
+    fn mcp_text_attr_from_info(info: &crate::mcp::types::TextAttributeInfo) -> icy_engine::TextAttribute {
+        let fg = Self::mcp_info_to_color(&info.foreground);
+        let bg = Self::mcp_info_to_color(&info.background);
+        let mut attr = icy_engine::TextAttribute::from_colors(fg, bg);
+        attr.set_is_bold(info.bold);
+        attr.set_is_blinking(info.blink);
+        attr
+    }
+
+    /// Get the current screen as ANSI or ASCII
+    pub fn get_screen(&self, format: &crate::mcp::types::AnsiScreenFormat) -> Result<String, String> {
+        use icy_engine::TextPane;
+        use icy_engine::formats::FileFormat;
+
+        self.with_edit_state_readonly(|state| {
+            let buffer = state.get_buffer();
+            match format {
+                crate::mcp::types::AnsiScreenFormat::Ascii => {
+                    // Compose from the merged buffer and convert CP437 bytes to Unicode.
+                    let mut out = String::new();
+                    for y in 0..buffer.height() {
+                        for x in 0..buffer.width() {
+                            let ch = buffer.char_at((x, y).into());
+                            out.push(buffer.buffer_type.convert_to_unicode(ch.ch));
+                        }
+                        if y + 1 < buffer.height() {
+                            out.push('\n');
+                        }
+                    }
+                    Ok(out)
+                }
+                crate::mcp::types::AnsiScreenFormat::Ansi => {
+                    let options = icy_engine::AnsiSaveOptionsV2::default();
+                    let bytes = FileFormat::Ansi.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
+
+                    // Convert CP437 bytes to Unicode while preserving control codes and ESC sequences.
+                    let mut out = String::with_capacity(bytes.len());
+                    for b in bytes {
+                        if b < 0x80 {
+                            out.push(b as char);
+                        } else {
+                            out.push(buffer.buffer_type.convert_to_unicode(b as char));
+                        }
+                    }
+                    Ok(out)
+                }
+            }
+        })
+    }
+
+    /// Get caret position and attribute (for MCP)
+    pub fn get_caret_info(&self) -> Result<crate::mcp::types::CaretInfo, String> {
+        self.with_edit_state_readonly(|state| {
+            let caret = state.get_caret();
+            let current_layer = state.get_current_layer().map_err(|e| e.to_string())?;
+            let layer_offset = state
+                .get_buffer()
+                .layers
+                .get(current_layer)
+                .map(|l| l.offset())
+                .unwrap_or_default();
+
+            Ok(crate::mcp::types::CaretInfo {
+                x: caret.x,
+                y: caret.y,
+                doc_x: caret.x + layer_offset.x,
+                doc_y: caret.y + layer_offset.y,
+                attribute: Self::mcp_attr_to_info(&caret.attribute),
+                insert_mode: caret.insert_mode,
+                font_page: caret.font_page(),
+            })
+        })
+    }
+
+    /// Set caret position and attribute (for MCP)
+    pub fn set_caret(&mut self, x: i32, y: i32, attribute: &crate::mcp::types::TextAttributeInfo) -> Result<(), String> {
+        use icy_engine::Position;
+
+        let attr = Self::mcp_text_attr_from_info(attribute);
+
+        self.with_edit_state(|state| {
+            state.set_caret_position(Position::new(x, y));
+            state.set_caret_attribute(attr);
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    /// List layer metadata (for MCP)
+    pub fn list_layers(&self) -> Result<Vec<crate::mcp::types::LayerInfo>, String> {
+        self.with_edit_state_readonly(|state| {
+            let buffer = state.get_buffer();
+            Ok(buffer
+                .layers
+                .iter()
+                .enumerate()
+                .map(|(index, layer)| {
+                    let size = layer.size();
+                    crate::mcp::types::LayerInfo {
+                        index,
+                        title: layer.properties.title.clone(),
+                        is_visible: layer.properties.is_visible,
+                        is_locked: layer.properties.is_locked,
+                        is_position_locked: layer.properties.is_position_locked,
+                        offset_x: layer.offset().x,
+                        offset_y: layer.offset().y,
+                        width: size.width,
+                        height: size.height,
+                        transparency: layer.transparency,
+                        mode: format!("{:?}", layer.properties.mode),
+                        role: format!("{:?}", layer.role),
+                    }
+                })
+                .collect())
+        })
+    }
+
+    /// Add a new layer after the given layer index (for MCP)
+    pub fn add_layer(&mut self, after_layer: usize) -> Result<usize, String> {
+        let mut new_index: Option<usize> = None;
+        self.with_edit_state(|state| {
+            if let Err(e) = state.add_new_layer(after_layer) {
+                log::error!("MCP add_layer failed: {}", e);
+            } else {
+                new_index = state.get_current_layer().ok();
+            }
+        });
+        self.sync_ui();
+        new_index.ok_or_else(|| "Failed to determine new layer index".to_string())
+    }
+
+    pub fn delete_layer(&mut self, layer: usize) -> Result<(), String> {
+        self.with_edit_state(|state| {
+            if let Err(e) = state.remove_layer(layer) {
+                log::error!("MCP delete_layer failed: {}", e);
+            }
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn set_layer_props(&mut self, req: &crate::mcp::types::AnsiSetLayerPropsRequest) -> Result<(), String> {
+        use icy_engine::Position;
+
+        // Update Properties via undo-enabled op, transparency directly.
+        self.with_edit_state(|state| {
+            let buffer = state.get_buffer();
+            let Some(layer) = buffer.layers.get(req.layer) else {
+                log::error!("MCP set_layer_props: invalid layer {}", req.layer);
+                return;
+            };
+
+            let mut props = layer.properties.clone();
+
+            if let Some(title) = &req.title {
+                props.title = title.clone();
+            }
+            if let Some(is_visible) = req.is_visible {
+                props.is_visible = is_visible;
+            }
+            if let Some(is_locked) = req.is_locked {
+                props.is_locked = is_locked;
+            }
+            if let Some(is_position_locked) = req.is_position_locked {
+                props.is_position_locked = is_position_locked;
+            }
+            if req.offset_x.is_some() || req.offset_y.is_some() {
+                let x = req.offset_x.unwrap_or(props.offset.x);
+                let y = req.offset_y.unwrap_or(props.offset.y);
+                props.offset = Position::new(x, y);
+            }
+
+            if let Err(e) = state.update_layer_properties(req.layer, props) {
+                log::error!("MCP update_layer_properties failed: {}", e);
+            }
+
+            if let Some(transparency) = req.transparency {
+                // Not currently undo-tracked, but requested by MCP API.
+                if let Some(layer_mut) = state.get_buffer_mut().layers.get_mut(req.layer) {
+                    layer_mut.transparency = transparency;
+                }
+            }
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn merge_down_layer(&mut self, layer: usize) -> Result<(), String> {
+        self.with_edit_state(|state| {
+            if let Err(e) = state.merge_layer_down(layer) {
+                log::error!("MCP merge_down_layer failed: {}", e);
+            }
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn move_layer(&mut self, layer: usize, direction: crate::mcp::types::LayerMoveDirection) -> Result<(), String> {
+        self.with_edit_state(|state| {
+            let res = match direction {
+                crate::mcp::types::LayerMoveDirection::Up => state.raise_layer(layer),
+                crate::mcp::types::LayerMoveDirection::Down => state.lower_layer(layer),
+            };
+            if let Err(e) = res {
+                log::error!("MCP move_layer failed: {}", e);
+            }
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn resize_buffer(&mut self, width: i32, height: i32) -> Result<(), String> {
+        self.with_edit_state(|state| {
+            if let Err(e) = state.resize_buffer(false, (width, height)) {
+                log::error!("MCP resize_buffer failed: {}", e);
+            }
+        });
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn get_region(&self, layer: usize, x: i32, y: i32, width: i32, height: i32) -> Result<crate::mcp::types::RegionData, String> {
+        use icy_engine::TextPane;
+
+        self.with_edit_state_readonly(|state| {
+            let buffer = state.get_buffer();
+            let layer_ref = buffer.layers.get(layer).ok_or_else(|| format!("Layer index {} out of range", layer))?;
+
+            let size = layer_ref.size();
+            if x < 0 || y < 0 || width < 0 || height < 0 || x + width > size.width || y + height > size.height {
+                return Err(format!(
+                    "Region ({},{}) {}x{} out of bounds for layer size {}x{}",
+                    x, y, width, height, size.width, size.height
+                ));
+            }
+
+            let mut chars = Vec::with_capacity((width * height) as usize);
+            for yy in 0..height {
+                for xx in 0..width {
+                    let ch = layer_ref.char_at((x + xx, y + yy).into());
+                    let attr = ch.attribute;
+                    let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
+                    chars.push(crate::mcp::types::CharInfo {
+                        ch: unicode_ch.to_string(),
+                        fg: Self::mcp_color_to_info(&attr.foreground_color()),
+                        bg: Self::mcp_color_to_info(&attr.background_color()),
+                        font_page: attr.font_page(),
+                        bold: attr.is_bold(),
+                        blink: attr.is_blinking(),
+                        is_visible: ch.is_visible(),
+                    });
+                }
+            }
+
+            Ok(crate::mcp::types::RegionData {
+                layer,
+                x,
+                y,
+                width,
+                height,
+                chars,
+            })
+        })
+    }
+
+    pub fn set_region(&mut self, layer: usize, x: i32, y: i32, width: i32, height: i32, chars: &[crate::mcp::types::CharInfo]) -> Result<(), String> {
+        use icy_engine::{AttributedChar, Position, TextAttribute, TextPane};
+
+        if (width * height) as usize != chars.len() {
+            return Err(format!(
+                "chars length mismatch: expected {}, got {}",
+                (width * height),
+                chars.len()
+            ));
+        }
+
+        self.with_edit_state(|state| {
+            // Validate layer index
+            let buffer = state.get_buffer();
+            if layer >= buffer.layers.len() {
+                return Err(format!("Layer index {} out of range", layer));
+            }
+
+            let size = buffer.layers[layer].size();
+            if x < 0 || y < 0 || width < 0 || height < 0 || x + width > size.width || y + height > size.height {
+                return Err(format!(
+                    "Region ({},{}) {}x{} out of bounds for layer size {}x{}",
+                    x, y, width, height, size.width, size.height
+                ));
+            }
+
+            let buffer_type = buffer.buffer_type;
+
+            // Begin atomic undo group for all character changes
+            let _undo = state.begin_atomic_undo("MCP Set Region");
+
+            let mut i = 0usize;
+            for yy in 0..height {
+                for xx in 0..width {
+                    let cell = &chars[i];
+                    i += 1;
+
+                    let pos = Position::new(x + xx, y + yy);
+
+                    let new = if !cell.is_visible {
+                        AttributedChar::invisible()
+                    } else {
+                        let ch_value = cell.ch.chars().next().ok_or_else(|| "Empty character string".to_string())?;
+                        let converted_char = buffer_type.convert_from_unicode(ch_value);
+                        let fg = Self::mcp_info_to_color(&cell.fg);
+                        let bg = Self::mcp_info_to_color(&cell.bg);
+                        let mut attr = TextAttribute::from_colors(fg, bg);
+                        attr.set_is_bold(cell.bold);
+                        attr.set_is_blinking(cell.blink);
+                        attr.set_font_page(cell.font_page);
+                        AttributedChar::new(converted_char, attr)
+                    };
+
+                    // Push undo operation for this character using the new layer-specific method
+                    if let Err(e) = state.set_char_at_layer_in_atomic(layer, pos, new) {
+                        log::error!("MCP set_region set_char_at_layer_in_atomic failed: {}", e);
+                    }
+                }
+            }
+            Ok(())
+        })?;
+
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn get_selection(&self) -> Result<Option<crate::mcp::types::SelectionInfo>, String> {
+        self.with_edit_state_readonly(|state| {
+            let Some(sel) = state.selection() else { return Ok(None) };
+
+            let rect = sel.as_rectangle();
+            Ok(Some(crate::mcp::types::SelectionInfo {
+                anchor_x: sel.anchor.x,
+                anchor_y: sel.anchor.y,
+                lead_x: sel.lead.x,
+                lead_y: sel.lead.y,
+                shape: format!("{:?}", sel.shape),
+                locked: sel.locked,
+                bounds: crate::mcp::types::RectangleInfo {
+                    x: rect.left(),
+                    y: rect.top(),
+                    width: rect.width(),
+                    height: rect.height(),
+                },
+            }))
+        })
+    }
+
+    pub fn set_selection(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+        use icy_engine::Rectangle;
+        self.with_edit_state(|state| {
+            let _ = state.set_selection(Rectangle::from(x, y, width, height));
+        });
+        self.refresh_selection_display();
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn clear_selection(&mut self) -> Result<(), String> {
+        self.with_edit_state(|state| {
+            let _ = state.clear_selection();
+        });
+        self.refresh_selection_display();
+        self.sync_ui();
+        Ok(())
+    }
+
+    pub fn selection_action(&mut self, action: &str) -> Result<(), String> {
+        let action = action.trim().to_lowercase();
+        self.with_edit_state(|state| {
+            let res = match action.as_str() {
+                "flip_x" => state.flip_x(),
+                "flip_y" => state.flip_y(),
+                "crop" => state.crop(),
+                "justify_left" => state.justify_left(),
+                "justify_center" | "center" => state.center(),
+                "justify_right" => state.justify_right(),
+                "justify_line_left" => state.justify_line_left(),
+                "justify_line_center" | "center_line" => state.center_line(),
+                "justify_line_right" => state.justify_line_right(),
+                "delete_selection" | "delete" => state.erase_selection(),
+                "deselect" | "clear" => state.clear_selection(),
+                _ => Ok(()),
+            };
+            if let Err(e) = res {
+                log::error!("MCP selection_action '{}' failed: {}", action, e);
+            }
+        });
+        self.refresh_selection_display();
+        self.sync_ui();
+        Ok(())
+    }
+
     pub fn update(&mut self, message: AnsiEditorMessage, dialogs: &mut DialogStack<Message>, plugins: &Arc<Vec<Plugin>>) -> Task<AnsiEditorMessage> {
         match message {
             // ═══════════════════════════════════════════════════════════════════

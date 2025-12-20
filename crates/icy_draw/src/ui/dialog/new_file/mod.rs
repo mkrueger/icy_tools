@@ -20,7 +20,7 @@ use iced::{
     },
 };
 
-use icy_engine::{BitFont, FontMode, IceMode, PaletteMode, TextBuffer};
+use icy_engine::{BitFont, FontMode, IceMode, TextBuffer};
 use icy_engine_gui::{
     ButtonType, ScrollbarOverlay, Viewport, focus,
     ui::{DIALOG_SPACING, Dialog, DialogAction, TEXT_SIZE_NORMAL, dialog_area, modal_container, primary_button, secondary_button, separator},
@@ -208,38 +208,31 @@ pub fn create_buffer_for_template(template: FileTemplate, width: i32, height: i3
     match template {
         FileTemplate::ModernAnsi => {
             buf.ice_mode = IceMode::Unlimited;
-            buf.palette_mode = PaletteMode::RGB;
             buf.font_mode = FontMode::Unlimited;
         }
         FileTemplate::Dos16 => {
             buf.ice_mode = IceMode::Blink;
-            buf.palette_mode = PaletteMode::Fixed16;
             buf.font_mode = FontMode::Sauce;
         }
         FileTemplate::Ice16 => {
             buf.ice_mode = IceMode::Ice;
-            buf.palette_mode = PaletteMode::Fixed16;
             buf.font_mode = FontMode::Sauce;
         }
         FileTemplate::XBin16 => {
             buf.ice_mode = IceMode::Ice;
-            buf.palette_mode = PaletteMode::Free16;
             buf.font_mode = FontMode::Single;
         }
         FileTemplate::XBinExtended => {
             buf.ice_mode = IceMode::Ice;
-            buf.palette_mode = PaletteMode::Free16;
             buf.font_mode = FontMode::FixedSize;
             buf.set_font(1, BitFont::default());
         }
         FileTemplate::FileIdDiz => {
             buf.ice_mode = IceMode::Blink;
-            buf.palette_mode = PaletteMode::Fixed16;
             buf.font_mode = FontMode::Sauce;
         }
         FileTemplate::BitFont | FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont | FileTemplate::Animation => {
             buf.ice_mode = IceMode::Blink;
-            buf.palette_mode = PaletteMode::Fixed16;
             buf.font_mode = FontMode::Sauce;
         }
     }

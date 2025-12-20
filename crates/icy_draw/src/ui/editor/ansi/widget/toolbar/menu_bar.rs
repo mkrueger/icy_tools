@@ -13,7 +13,6 @@ use crate::MostRecentlyUsedFiles;
 use crate::Plugin;
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
-use crate::ui::editor::bitfont::BitFontEditorMessage;
 use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::area_cmd;
 use crate::ui::main_window::commands::selection_cmd;

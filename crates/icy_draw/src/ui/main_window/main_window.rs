@@ -2358,12 +2358,285 @@ impl MainWindow {
                     let _ = tx.send(result);
                 }
             }
+
+            McpCommand::AnsiRunScript {
+                script,
+                undo_description,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.run_lua_script(&script, undo_description.as_deref()),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiGetLayer { layer, response } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.get_layer_data(*layer),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetChar {
+                layer,
+                x,
+                y,
+                ch,
+                attribute,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_char_at(*layer, *x, *y, ch, attribute),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetColor {
+                index,
+                r,
+                g,
+                b,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_palette_color(*index, *r, *g, *b),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiGetScreen { format, response } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.get_screen(format),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiGetCaret { response } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.get_caret_info(),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetCaret {
+                x,
+                y,
+                attribute,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_caret(*x, *y, attribute),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiListLayers { response } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.list_layers(),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiAddLayer { after_layer, response } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.add_layer(*after_layer),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiDeleteLayer { layer, response } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.delete_layer(*layer),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetLayerProps {
+                layer,
+                title,
+                is_visible,
+                is_locked,
+                is_position_locked,
+                offset_x,
+                offset_y,
+                transparency,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_layer_props(&crate::mcp::types::AnsiSetLayerPropsRequest {
+                        layer: *layer,
+                        title: title.clone(),
+                        is_visible: *is_visible,
+                        is_locked: *is_locked,
+                        is_position_locked: *is_position_locked,
+                        offset_x: *offset_x,
+                        offset_y: *offset_y,
+                        transparency: *transparency,
+                    }),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiMergeDownLayer { layer, response } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.merge_down_layer(*layer),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiMoveLayer {
+                layer,
+                direction,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.move_layer(*layer, direction.clone()),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiResize {
+                width,
+                height,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.resize_buffer(*width, *height),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiGetRegion {
+                layer,
+                x,
+                y,
+                width,
+                height,
+                response,
+            } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.get_region(*layer, *x, *y, *width, *height),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetRegion {
+                layer,
+                x,
+                y,
+                width,
+                height,
+                chars,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_region(*layer, *x, *y, *width, *height, chars),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiGetSelection { response } => {
+                let result = match &self.mode_state {
+                    ModeState::Ansi(editor) => editor.get_selection(),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSetSelection {
+                x,
+                y,
+                width,
+                height,
+                response,
+            } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.set_selection(*x, *y, *width, *height),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiClearSelection { response } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.clear_selection(),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
+
+            McpCommand::AnsiSelectionAction { action, response } => {
+                let result = match &mut self.mode_state {
+                    ModeState::Ansi(editor) => editor.selection_action(action),
+                    _ => Err("Not in ANSI editor mode".to_string()),
+                };
+                if let Some(tx) = response.lock().take() {
+                    let _ = tx.send(result);
+                }
+            }
         }
     }
 
     /// Build editor status for MCP get_status command
     fn build_editor_status(&self) -> crate::mcp::types::EditorStatus {
-        use crate::mcp::types::{AnimationStatus, BitFontStatus, EditorStatus};
+        use crate::mcp::types::{
+            AnimationStatus, AnsiStatus, BitFontStatus, BufferInfo, CaretInfo, ColorInfo, EditorStatus, LayerInfo, RectangleInfo, SelectionInfo,
+            TextAttributeInfo,
+        };
 
         let editor = match &self.mode_state {
             ModeState::Ansi(_) => "ansi",
@@ -2374,6 +2647,138 @@ impl MainWindow {
 
         let file = self.file_path().map(|p| p.display().to_string());
         let dirty = self.is_modified();
+
+        // Build ANSI status if in ANSI mode
+        let ansi = if let ModeState::Ansi(ansi_editor) = &self.mode_state {
+            Some(ansi_editor.with_edit_state_readonly(|state| {
+                let buffer = state.get_buffer();
+                let caret = state.get_caret();
+
+                // Convert AttributeColor to ColorInfo
+                let fg_color = match caret.attribute.foreground_color() {
+                    icy_engine::AttributeColor::Palette(n) => ColorInfo::Palette(n),
+                    icy_engine::AttributeColor::ExtendedPalette(n) => ColorInfo::ExtendedPalette(n),
+                    icy_engine::AttributeColor::Rgb(r, g, b) => ColorInfo::Rgb { r, g, b },
+                    icy_engine::AttributeColor::Transparent => ColorInfo::Transparent,
+                };
+                let bg_color = match caret.attribute.background_color() {
+                    icy_engine::AttributeColor::Palette(n) => ColorInfo::Palette(n),
+                    icy_engine::AttributeColor::ExtendedPalette(n) => ColorInfo::ExtendedPalette(n),
+                    icy_engine::AttributeColor::Rgb(r, g, b) => ColorInfo::Rgb { r, g, b },
+                    icy_engine::AttributeColor::Transparent => ColorInfo::Transparent,
+                };
+
+                // Build layer info
+                let layers: Vec<LayerInfo> = buffer
+                    .layers
+                    .iter()
+                    .enumerate()
+                    .map(|(index, layer)| {
+                        let mode = match layer.properties.mode {
+                            icy_engine::Mode::Normal => "normal",
+                            icy_engine::Mode::Chars => "chars",
+                            icy_engine::Mode::Attributes => "attributes",
+                        };
+                        let role = match layer.role {
+                            icy_engine::Role::Normal => "normal",
+                            icy_engine::Role::PastePreview => "paste_preview",
+                            icy_engine::Role::PasteImage => "paste_image",
+                            icy_engine::Role::Image => "image",
+                        };
+                        LayerInfo {
+                            index,
+                            title: layer.properties.title.clone(),
+                            is_visible: layer.properties.is_visible,
+                            is_locked: layer.properties.is_locked,
+                            is_position_locked: layer.properties.is_position_locked,
+                            offset_x: layer.offset().x,
+                            offset_y: layer.offset().y,
+                            width: layer.size().width,
+                            height: layer.size().height,
+                            transparency: layer.transparency,
+                            mode: mode.to_string(),
+                            role: role.to_string(),
+                        }
+                    })
+                    .collect();
+
+                // Build selection info
+                let selection = state.selection().map(|sel| {
+                    let rect = sel.as_rectangle();
+                    SelectionInfo {
+                        anchor_x: sel.anchor.x,
+                        anchor_y: sel.anchor.y,
+                        lead_x: sel.lead.x,
+                        lead_y: sel.lead.y,
+                        shape: match sel.shape {
+                            icy_engine::Shape::Rectangle => "rectangle".to_string(),
+                            icy_engine::Shape::Lines => "lines".to_string(),
+                        },
+                        locked: sel.locked,
+                        bounds: RectangleInfo {
+                            x: rect.left(),
+                            y: rect.top(),
+                            width: rect.width(),
+                            height: rect.height(),
+                        },
+                    }
+                });
+
+                // Font mode string
+                let font_mode = match buffer.font_mode {
+                    icy_engine::FontMode::Sauce => "sauce",
+                    icy_engine::FontMode::Single => "single",
+                    icy_engine::FontMode::FixedSize => "fixed_size",
+                    icy_engine::FontMode::Unlimited => "unlimited",
+                };
+
+                // Ice mode string
+                let ice_mode = match buffer.ice_mode {
+                    icy_engine::IceMode::Unlimited => "unlimited",
+                    icy_engine::IceMode::Blink => "blink",
+                    icy_engine::IceMode::Ice => "ice",
+                };
+
+                // Get document position from layer position
+                let doc_pos = state.layer_to_document_position(caret.position());
+
+                AnsiStatus {
+                    buffer: BufferInfo {
+                        width: buffer.width(),
+                        height: buffer.height(),
+                        layer_count: buffer.layers.len(),
+                        font_count: buffer.font_count(),
+                        font_mode: font_mode.to_string(),
+                        ice_mode: ice_mode.to_string(),
+                        palette: buffer.palette.export_palette(&FileFormat::Palette(icy_engine::PaletteFormat::Hex))
+                            .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+                            .unwrap_or_default()
+                    },
+                    caret: CaretInfo {
+                        x: caret.x,
+                        y: caret.y,
+                        doc_x: doc_pos.x,
+                        doc_y: doc_pos.y,
+                        attribute: TextAttributeInfo {
+                            foreground: fg_color,
+                            background: bg_color,
+                            bold: caret.attribute.is_bold(),
+                            blink: caret.attribute.is_blinking(),
+                        },
+                        insert_mode: caret.insert_mode,
+                        font_page: caret.font_page(),
+                    },
+                    layers,
+                    current_layer: state.get_current_layer().unwrap_or(0),
+                    selection,
+                    format_mode: state.get_format_mode().to_string(),
+                    outline_style: state.get_outline_style(),
+                    mirror_mode: state.get_mirror_mode(),
+                }
+            }))
+        } else {
+            None
+        };
 
         let animation = if let ModeState::Animation(editor) = &self.mode_state {
             Some(AnimationStatus {
@@ -2405,6 +2810,7 @@ impl MainWindow {
             editor: editor.to_string(),
             file,
             dirty,
+            ansi,
             animation,
             bitfont,
         }
