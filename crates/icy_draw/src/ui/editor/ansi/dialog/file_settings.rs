@@ -309,11 +309,16 @@ impl FileSettingsDialog {
         })
         .width(Length::Fixed(140.0));
 
-        let format_description = text(self.format_mode.description())
-            .size(TEXT_SIZE_SMALL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.strong.color),
-            });
+        let format_desc = match self.format_mode {
+            FormatMode::LegacyDos => fl!("file-settings-format-legacy-dos"),
+            FormatMode::XBin => fl!("file-settings-format-xbin"),
+            FormatMode::XBinExtended => fl!("file-settings-format-xbin-extended"),
+            FormatMode::Unrestricted => fl!("file-settings-format-unrestricted"),
+        };
+
+        let format_description = text(format_desc).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            color: Some(theme.extended_palette().secondary.strong.color),
+        });
 
         let format_row = row![
             container(text(fl!("file-settings-format")).size(TEXT_SIZE_NORMAL)).width(label_width),

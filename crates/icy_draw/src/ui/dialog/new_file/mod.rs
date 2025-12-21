@@ -8,6 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use iced::{
     Alignment, Element, Length, Point, Rectangle, Renderer, Size, Theme,
@@ -23,7 +24,11 @@ use iced::{
 use icy_engine::{BitFont, FontMode, IceMode, TextBuffer};
 use icy_engine_gui::{
     ButtonType, ScrollbarOverlay, Viewport, focus,
-    ui::{DIALOG_SPACING, Dialog, DialogAction, TEXT_SIZE_NORMAL, dialog_area, modal_container, primary_button, secondary_button, separator},
+    settings::effect_box,
+    ui::{
+        DIALOG_SPACING, Dialog, DialogAction, HEADER_TEXT_SIZE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, left_label_small, modal_container,
+        primary_button, secondary_button, separator,
+    },
 };
 
 use crate::{fl, ui::Message};
@@ -87,7 +92,6 @@ pub enum FileTemplate {
     Ice16,
     XBin16,
     XBinExtended,
-    FileIdDiz,
     // Bit Font
     BitFont,
     // TDF Font templates
@@ -101,12 +105,7 @@ pub enum FileTemplate {
 impl FileTemplate {
     fn editor_type(&self) -> EditorType {
         match self {
-            FileTemplate::ModernAnsi
-            | FileTemplate::Dos16
-            | FileTemplate::Ice16
-            | FileTemplate::XBin16
-            | FileTemplate::XBinExtended
-            | FileTemplate::FileIdDiz => EditorType::AnsiArt,
+            FileTemplate::ModernAnsi | FileTemplate::Dos16 | FileTemplate::Ice16 | FileTemplate::XBin16 | FileTemplate::XBinExtended => EditorType::AnsiArt,
             FileTemplate::BitFont => EditorType::BitFont,
             FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont => EditorType::TdfFont,
             FileTemplate::Animation => EditorType::Animation,
@@ -120,7 +119,6 @@ impl FileTemplate {
             FileTemplate::Ice16 => fl!("new-file-template-ice-title"),
             FileTemplate::XBin16 => fl!("new-file-template-xb-title"),
             FileTemplate::XBinExtended => fl!("new-file-template-xb-ext-title"),
-            FileTemplate::FileIdDiz => fl!("new-file-template-file_id-title"),
             FileTemplate::BitFont => fl!("new-file-template-bit_font-title"),
             FileTemplate::ColorFont => fl!("new-file-template-color_font-title"),
             FileTemplate::BlockFont => fl!("new-file-template-block_font-title"),
@@ -136,7 +134,6 @@ impl FileTemplate {
             FileTemplate::Ice16 => fl!("new-file-template-ice-description"),
             FileTemplate::XBin16 => fl!("new-file-template-xb-description"),
             FileTemplate::XBinExtended => fl!("new-file-template-xb-ext-description"),
-            FileTemplate::FileIdDiz => fl!("new-file-template-file_id-description"),
             FileTemplate::BitFont => fl!("new-file-template-bit_font-description"),
             FileTemplate::ColorFont => fl!("new-file-template-color_font-description"),
             FileTemplate::BlockFont => fl!("new-file-template-block_font-description"),
@@ -152,7 +149,6 @@ impl FileTemplate {
             FileTemplate::Ice16 => "❄",
             FileTemplate::XBin16 => "🎨",
             FileTemplate::XBinExtended => "🎨",
-            FileTemplate::FileIdDiz => "📋",
             FileTemplate::BitFont => "🔤",
             FileTemplate::ColorFont => "🌈",
             FileTemplate::BlockFont => "▓",
@@ -163,7 +159,6 @@ impl FileTemplate {
 
     fn default_width(&self) -> i32 {
         match self {
-            FileTemplate::FileIdDiz => 44,
             FileTemplate::BitFont => 8,
             _ => 80,
         }
@@ -171,7 +166,6 @@ impl FileTemplate {
 
     fn default_height(&self) -> i32 {
         match self {
-            FileTemplate::FileIdDiz => 5,
             FileTemplate::BitFont => 16,
             _ => 25,
         }
@@ -192,7 +186,6 @@ impl FileTemplate {
                 FileTemplate::Ice16,
                 FileTemplate::XBin16,
                 FileTemplate::XBinExtended,
-                FileTemplate::FileIdDiz,
             ],
             EditorType::BitFont => vec![FileTemplate::BitFont],
             EditorType::TdfFont => vec![FileTemplate::ColorFont, FileTemplate::BlockFont, FileTemplate::OutlineFont],
@@ -229,10 +222,6 @@ pub fn create_buffer_for_template(template: FileTemplate, width: i32, height: i3
             buf.ice_mode = IceMode::Ice;
             buf.font_mode = FontMode::FixedSize;
             buf.set_font(1, BitFont::default());
-        }
-        FileTemplate::FileIdDiz => {
-            buf.ice_mode = IceMode::Blink;
-            buf.font_mode = FontMode::Sauce;
         }
         FileTemplate::BitFont | FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont | FileTemplate::Animation => {
             buf.ice_mode = IceMode::Blink;
@@ -295,6 +284,7 @@ pub struct NewFileDialog {
     height_input: String,
     list_viewport: RefCell<Viewport>,
     visible_items: RefCell<Vec<ListItem>>,
+    last_click: RefCell<Option<(Instant, FileTemplate)>>,
 }
 
 impl Default for NewFileDialog {
@@ -323,6 +313,7 @@ impl NewFileDialog {
             height_input: template.default_height().to_string(),
             list_viewport: RefCell::new(Viewport::default()),
             visible_items: RefCell::new(Vec::new()),
+            last_click: RefCell::new(None),
         };
 
         dialog.rebuild_visible_items();
@@ -564,27 +555,37 @@ impl NewFileDialog {
     fn view_right_panel(&self) -> Element<'_, Message> {
         let template = self.selected_template;
 
-        // Icon (smaller)
+        // Icon
         let icon = text(template.icon()).size(32);
 
-        // Title (smaller)
-        let title = text(template.title()).size(16);
+        // Title with standard header size
+        let title = text(template.title()).size(HEADER_TEXT_SIZE).font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::default()
+        });
 
-        // Editor type badge
+        // Editor type badge with consistent styling
         let editor_type = template.editor_type();
-        let badge = container(row![text(editor_type.icon()).size(11), Space::new().width(3.0), text(editor_type.label()).size(11),].align_y(Alignment::Center))
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.primary.weak.color)),
-                    border: iced::Border {
-                        radius: 3.0.into(),
-                        ..Default::default()
-                    },
+        let badge = container(
+            row![
+                text(editor_type.icon()).size(TEXT_SIZE_SMALL),
+                Space::new().width(4.0),
+                text(editor_type.label()).size(TEXT_SIZE_SMALL),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .style(|theme: &iced::Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background.strong.color)),
+                border: iced::Border {
+                    radius: 4.0.into(),
                     ..Default::default()
-                }
-            })
-            .padding([2, 6]);
+                },
+                ..Default::default()
+            }
+        })
+        .padding([3, 8]);
 
         // Description
         let description = text(template.description())
@@ -595,53 +596,44 @@ impl NewFileDialog {
 
         // Size inputs (only for templates that need it)
         let size_section: Element<'_, Message> = if template.needs_size() {
-            let width_label = text(fl!("new-file-width")).size(TEXT_SIZE_NORMAL);
             let width_input = text_input("", &self.width_input)
                 .on_input(|s| Message::NewFileDialog(NewFileMessage::SetWidth(s)))
-                .width(Length::Fixed(70.0));
+                .size(TEXT_SIZE_NORMAL)
+                .width(Length::Fixed(80.0));
 
-            let height_label = text(fl!("new-file-height")).size(TEXT_SIZE_NORMAL);
+            let width_row = row![left_label_small(fl!("new-file-width")), width_input]
+                .spacing(DIALOG_SPACING)
+                .align_y(Alignment::Center);
+
             let height_input = text_input("", &self.height_input)
                 .on_input(|s| Message::NewFileDialog(NewFileMessage::SetHeight(s)))
-                .width(Length::Fixed(70.0));
+                .size(TEXT_SIZE_NORMAL)
+                .width(Length::Fixed(80.0));
 
-            container(
-                column![
-                    text(fl!("new-file-size-section")).size(TEXT_SIZE_NORMAL),
-                    Space::new().height(8.0),
-                    row![width_label, Space::new().width(8.0), width_input,].align_y(Alignment::Center),
-                    Space::new().height(4.0),
-                    row![height_label, Space::new().width(8.0), height_input,].align_y(Alignment::Center),
-                ]
-                .spacing(4),
-            )
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            })
-            .padding(12)
-            .width(Length::Fill)
-            .into()
+            let height_row = row![left_label_small(fl!("new-file-height")), height_input]
+                .spacing(DIALOG_SPACING)
+                .align_y(Alignment::Center);
+
+            let size_content = column![width_row, height_row].spacing(DIALOG_SPACING);
+
+            effect_box(size_content.into())
         } else {
             Space::new().height(0.0).into()
         };
 
         let content = column![
-            row![icon, Space::new().width(10.0), column![title, badge].spacing(4).align_x(Alignment::Start)].align_y(Alignment::Center),
-            Space::new().height(8.0),
+            row![
+                icon,
+                Space::new().width(12.0),
+                column![title, Space::new().height(4.0), badge].align_x(Alignment::Start)
+            ]
+            .align_y(Alignment::Center),
+            Space::new().height(DIALOG_SPACING),
             description,
-            Space::new().height(12.0),
+            Space::new().height(DIALOG_SPACING * 2.0),
             size_section,
         ]
-        .spacing(2)
-        .padding(12);
+        .padding(DIALOG_SPACING);
 
         container(content).width(Length::Fill).height(Length::Fill).into()
     }
@@ -775,7 +767,30 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                                     return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::ToggleEditor(*editor))));
                                 }
                                 ListItem::TemplateItem { template } => {
-                                    return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::SelectTemplate(*template))));
+                                    // Check for double-click (within 500ms on same template)
+                                    let now = Instant::now();
+                                    let is_double_click = {
+                                        let last = self.dialog.last_click.borrow();
+                                        if let Some((last_time, last_template)) = *last {
+                                            last_template == *template && now.duration_since(last_time).as_millis() < 500
+                                        } else {
+                                            false
+                                        }
+                                    };
+
+                                    if is_double_click {
+                                        // Double-click: create the file
+                                        *self.dialog.last_click.borrow_mut() = None;
+                                        return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::Create(
+                                            *template,
+                                            template.default_width(),
+                                            template.default_height(),
+                                        ))));
+                                    } else {
+                                        // Single click: select and record time
+                                        *self.dialog.last_click.borrow_mut() = Some((now, *template));
+                                        return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::SelectTemplate(*template))));
+                                    }
                                 }
                             }
                         }
