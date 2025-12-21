@@ -213,6 +213,7 @@ category = "navigation"
 
 [[commands]]
 id = "settings.open"
-hotkey = ["Ctrl+,"]
-hotkey_mac = ["Cmd+,"]
+hotkey = [] 
+hotkey_mac = ["Cmd+,"] 
 category = "settings"
+

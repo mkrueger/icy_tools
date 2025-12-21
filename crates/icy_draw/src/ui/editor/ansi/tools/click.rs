@@ -17,6 +17,7 @@ use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
 use crate::Settings;
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
+use crate::ui::FKeySets;
 
 /// Click tool state
 #[derive(Default)]
@@ -287,6 +288,41 @@ impl ToolHandler for ClickTool {
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
+
+                // Moebius: Previous/Next/Default Character Set (F-key set)
+                // - Ctrl+,  => previous set
+                // - Ctrl+.  => next set
+                // - Ctrl+/  => default set
+                if modifiers.control() && !modifiers.alt() {
+                    let Some(options) = ctx.options else {
+                        return ToolResult::None;
+                    };
+
+                    match key {
+                        Key::Character(ch) if ch == "," => {
+                            let cur = self.current_fkey_set;
+                            let prev = {
+                                let opts = options.read();
+                                let count = opts.fkeys.set_count();
+                                if count == 0 { 0 } else { (cur + count - 1) % count }
+                            };
+                            self.set_current_fkey_set(options, prev);
+                            return ToolResult::Redraw;
+                        }
+                        Key::Character(ch) if ch == "." => {
+                            let next = self.current_fkey_set.saturating_add(1);
+                            self.set_current_fkey_set(options, next);
+                            return ToolResult::Redraw;
+                        }
+                        Key::Character(ch) if ch == "/" => {
+                            let default_set = FKeySets::default().current_set;
+                            self.set_current_fkey_set(options, default_set);
+                            return ToolResult::Redraw;
+                        }
+                        _ => {}
+                    }
+                }
 
                 // Shift+Space inserts 0xFF (hard blank) - works for all font types
                 if modifiers.shift() {

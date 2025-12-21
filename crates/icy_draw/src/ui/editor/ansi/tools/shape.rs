@@ -614,6 +614,60 @@ impl ToolHandler for ShapeTool {
         }
     }
 
+    fn handle_event(&mut self, _ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+        match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
+
+                // Moebius: Brush size shortcuts (no menu items)
+                // - Alt+= increase
+                // - Alt+- decrease
+                // - Alt+0 reset to 1
+                if modifiers.alt() && !modifiers.control() {
+                    let mut changed = false;
+
+                    match key {
+                        Key::Character(ch) if ch == "=" || ch == "+" => {
+                            let new_size = (self.brush.brush_size + 1).min(9);
+                            if new_size != self.brush.brush_size {
+                                self.brush.brush_size = new_size;
+                                changed = true;
+                            }
+                        }
+                        Key::Character(ch) if ch == "-" => {
+                            let new_size = self.brush.brush_size.saturating_sub(1).max(1);
+                            if new_size != self.brush.brush_size {
+                                self.brush.brush_size = new_size;
+                                changed = true;
+                            }
+                        }
+                        Key::Character(ch) if ch == "0" => {
+                            if self.brush.brush_size != 1 {
+                                self.brush.brush_size = 1;
+                                changed = true;
+                            }
+                        }
+                        Key::Named(Named::Digit0) => {
+                            if self.brush.brush_size != 1 {
+                                self.brush.brush_size = 1;
+                                changed = true;
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if changed {
+                        return ToolResult::Redraw;
+                    }
+                }
+
+                ToolResult::None
+            }
+            _ => ToolResult::None,
+        }
+    }
+
     fn cursor(&self) -> iced::mouse::Interaction {
         iced::mouse::Interaction::Crosshair
     }
