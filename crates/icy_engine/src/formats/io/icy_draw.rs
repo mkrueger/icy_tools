@@ -450,7 +450,6 @@ fn process_icy_draw_v1_decoded_chunk(
             // Read layer title
             let (title, size) = read_utf8_encoded_string(&bytes[o..])?;
             o += size;
-
             // Bounds check for fixed fields: mode(1) + color(4) + flags(4) + offset(8) + width(4) + height(4) = 25 bytes
             if bytes.len() < o + 25 {
                 return Err(IcedError::DataTruncated(o + 25));
@@ -484,8 +483,28 @@ fn process_icy_draw_v1_decoded_chunk(
             let height = i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
             o += 4;
 
-            let mut layer = Layer::new(title.clone(), (width, height));
+            // Sanity check: validate layer dimensions against available char data
+            // Each char is: char(4) + attribute(5..11 bytes)
+            // - Attribute min: fg(1) + bg(1) + font_page(1) + attr(2) = 5 bytes
+            // - Attribute max: fg(4) + bg(4) + font_page(1) + attr(2) = 11 bytes
+            // So per char: min 9 bytes, max 15 bytes
+            let char_data_size = bytes.len().saturating_sub(o);
+            let cell_count = (width as i64) * (height as i64);
 
+            const MIN_BYTES_PER_CHAR: i64 = 9; // char(4) + attr_min(5)
+            const MAX_BYTES_PER_CHAR: i64 = 15; // char(4) + attr_max(11)
+
+            let min_expected = cell_count * MIN_BYTES_PER_CHAR;
+            let max_expected = cell_count * MAX_BYTES_PER_CHAR;
+
+            if (char_data_size as i64) < min_expected || (char_data_size as i64) > max_expected {
+                return Err(IcedError::InvalidRecord(format!(
+                    "layer '{}' char data size {} doesn't match dimensions {}x{} (expected {}..{} bytes)",
+                    title, char_data_size, width, height, min_expected, max_expected
+                )));
+            }
+
+            let mut layer = Layer::new(title.clone(), (width, height));
             let mut cur = &bytes[o..];
             for y in 0..height {
                 for x in 0..width {

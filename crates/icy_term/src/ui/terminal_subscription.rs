@@ -42,15 +42,12 @@ fn take_pending_receiver(window_id: usize) -> Option<UnboundedReceiver<TerminalE
 /// Uses window_id as the subscription identifier for deduplication
 pub fn terminal_events(window_id: usize) -> Subscription<(usize, TerminalEvent)> {
     // Use run_with with window_id as the hashable data for subscription identity
-    Subscription::run_with(
-        window_id,
-        |id: &usize| {
-            let window_id = *id;
-            channel(100, move |output: Sender<(usize, TerminalEvent)>| async move {
-                run_terminal_subscription(window_id, output).await;
-            })
-        },
-    )
+    Subscription::run_with(window_id, |id: &usize| {
+        let window_id = *id;
+        channel(100, move |output: Sender<(usize, TerminalEvent)>| async move {
+            run_terminal_subscription(window_id, output).await;
+        })
+    })
 }
 
 async fn run_terminal_subscription(window_id: usize, mut output: Sender<(usize, TerminalEvent)>) {

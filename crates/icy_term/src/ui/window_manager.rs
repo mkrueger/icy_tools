@@ -224,9 +224,7 @@ impl WindowManager {
                     (None, None) => focus_task,
                 }
             }
-            WindowManagerMessage::WindowClosed(id) => {
-                handle_window_closed(&mut self.windows, id)
-            }
+            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
@@ -349,18 +347,12 @@ impl WindowManager {
 
         // Add async terminal subscriptions for each window
         for window in self.windows.values() {
-            subs.push(
-                super::terminal_subscription::terminal_events(window.id)
-                    .map(|(window_id, event)| WindowManagerMessage::TerminalEvent(window_id, event)),
-            );
+            subs.push(super::terminal_subscription::terminal_events(window.id).map(|(window_id, event)| WindowManagerMessage::TerminalEvent(window_id, event)));
         }
 
         // Add MCP subscription if MCP is enabled (single global subscription)
         if super::terminal_subscription::has_mcp_receiver() || self.mcp_rx.is_some() {
-            subs.push(
-                super::terminal_subscription::mcp_events()
-                    .map(WindowManagerMessage::McpCommand),
-            );
+            subs.push(super::terminal_subscription::mcp_events().map(WindowManagerMessage::McpCommand));
         }
 
         iced::Subscription::batch(subs)
