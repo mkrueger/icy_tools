@@ -1309,7 +1309,7 @@ impl AnsiEditorCore {
                     }
                     TopToolbarMessage::OpenFontDirectory => {
                         // Open the font directory in the system file manager
-                        if let Some(font_dir) = Settings::font_dir() {
+                        if let Some(font_dir) = Settings::text_art_font_dir() {
                             // Create directory if it doesn't exist
                             if !font_dir.exists() {
                                 let _ = std::fs::create_dir_all(&font_dir);

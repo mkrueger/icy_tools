@@ -1,4 +1,4 @@
-//! Shared Font Library for TDF/Figlet fonts
+//! Shared Font Library for Text-Art fonts (TDF/FIGlet)
 //!
 //! Provides a centralized, shared font library that is loaded once at startup
 //! and shared between all windows via `Arc<RwLock<FontLibrary>>`.
@@ -29,7 +29,7 @@ const PREVIEW_BUFFER_WIDTH: i32 = 100;
 const PREVIEW_BUFFER_HEIGHT: i32 = 12;
 
 /// Shared font library type
-pub type SharedFontLibrary = Arc<RwLock<FontLibrary>>;
+pub type SharedFontLibrary = Arc<RwLock<TextArtFontLibrary>>;
 
 /// Cached font preview
 #[derive(Clone)]
@@ -43,7 +43,7 @@ pub struct FontPreview {
 ///
 /// This is shared between all windows and automatically reloads
 /// when the font directory changes.
-pub struct FontLibrary {
+pub struct TextArtFontLibrary {
     /// All loaded fonts
     fonts: Vec<Font>,
     /// Path to the font directory being watched
@@ -52,13 +52,13 @@ pub struct FontLibrary {
     preview_cache: HashMap<usize, FontPreview>,
 }
 
-impl Default for FontLibrary {
+impl Default for TextArtFontLibrary {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FontLibrary {
+impl TextArtFontLibrary {
     /// Create a new empty font library
     fn new() -> Self {
         Self {
@@ -86,7 +86,7 @@ impl FontLibrary {
     pub fn reload_async(library: SharedFontLibrary) {
         thread::spawn(move || {
             // Get font directory without holding lock
-            let font_dir = Settings::font_dir();
+            let font_dir = Settings::text_art_font_dir();
 
             let Some(font_dir) = font_dir else {
                 log::warn!("No font directory configured");
@@ -294,7 +294,7 @@ impl FontLibrary {
     /// Start a file watcher for the font directory
     fn start_watcher(library: SharedFontLibrary) {
         // Get font directory - wait briefly for initial load if needed
-        let font_dir = Settings::font_dir();
+        let font_dir = Settings::text_art_font_dir();
 
         let Some(font_dir) = font_dir else {
             log::warn!("No font directory configured, file watcher not started");
@@ -328,7 +328,7 @@ fn watch_font_directory(path: &Path, library: SharedFontLibrary) -> notify::Resu
                         match event.kind {
                             EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
                                 log::info!("Font directory changed, reloading fonts...");
-                                FontLibrary::reload_async(library.clone());
+                                TextArtFontLibrary::reload_async(library.clone());
                             }
                             _ => {}
                         }
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_font_library_default() {
-        let library = FontLibrary::new();
+        let library = TextArtFontLibrary::new();
         assert!(!library.has_fonts());
         assert_eq!(library.font_count(), 0);
     }

@@ -209,7 +209,9 @@ impl SettingsDialog {
         let config_dir = Settings::config_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
         let config_file = Settings::config_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
         let log_file = Settings::log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let font_dir = Settings::font_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let text_art_font_dir = Settings::text_art_font_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "N/A".to_string());
         let plugin_dir = Settings::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
         let tag_overlay_checked = self.temp_tag_render_mode == TagRenderMode::Overlay;
@@ -259,7 +261,7 @@ impl SettingsDialog {
             .align_y(iced::Alignment::Center),
             row![
                 left_label(fl!("settings-paths-font-dir")),
-                text_input("", &font_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
+                text_input("", &text_art_font_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
                 browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenFontDir)),
             ]
             .spacing(DIALOG_SPACING)
@@ -459,7 +461,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::OpenFontDir => {
-                if let Some(dir) = Settings::font_dir() {
+                if let Some(dir) = Settings::text_art_font_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
                         log::error!("Failed to open font dir: {}", err);

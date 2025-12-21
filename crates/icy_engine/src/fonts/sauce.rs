@@ -1,158 +1,639 @@
 //! SAUCE Font Mapping
 //!
-//! Maps SAUCE font names to either ANSI slots or dedicated font files.
+//! Maps SAUCE font names to dedicated font files.
 //! Implements fallback chain according to SAUCE specification.
+//!
+//! Font data converted from Moebius (blocktronics/moebius) using convert_moebius_fonts tool.
+//!
+//! ## Missing Codepages (referenced in Moebius but no files available)
+//! - CP720 (Arabic)
+//! - CP819 (Latin-1/ISO-8859-1)
+//! - CP858 (Western + Euro)
+//! - CP867 (KAM/Kamenický)
+//! - CP872 (Cyrillic + Euro)
+//! - CP667 (MAZ/Mazovia)
+//! - CP790, CP895, CP991 (unofficial)
+//!
+//! ## Missing Height Variants (use fallback to VGA/EGA)
+//! - VGA25G (.F19) missing for: CP737, CP775, CP855, CP857, CP862, CP864, CP866, CP869
 
 use super::BitFont;
-use super::ansi::get_ansi_font;
 
-/// Source for a SAUCE font - either an ANSI slot or a dedicated file
-pub enum SauceFontSource {
-    /// Reference to an ANSI slot (uses slot's f16 variant by default)
-    AnsiSlot(usize),
-    /// Dedicated font data embedded in binary
-    Dedicated(&'static [u8]),
-}
-
-/// SAUCE font mapping entry
+/// Dedicated font data embedded in binary
 pub struct SauceFontMapping {
     /// SAUCE font name (as specified in SAUCE TInfoS field)
     pub sauce_name: &'static str,
-    /// Font source
-    pub source: SauceFontSource,
+    /// Font data (PSF2 format)
+    pub data: &'static [u8],
 }
 
-// Dedicated SAUCE fonts (not available as ANSI slots)
-const IBM_VGA50: &[u8] = include_bytes!("../../data/fonts/Sauce/cp437/IBM_VGA50.psf");
-const IBM_VGA25G: &[u8] = include_bytes!("../../data/fonts/Sauce/cp437/IBM_VGA25G.psf");
-const IBM_EGA: &[u8] = include_bytes!("../../data/fonts/Sauce/cp437/IBM_EGA.psf");
-const IBM_EGA43: &[u8] = include_bytes!("../../data/fonts/Sauce/cp437/IBM_EGA43.F08");
+// ============================================================================
+// IBM PC Fonts - CP437 (base, no suffix)
+// ============================================================================
+const IBM_VGA: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA.psf");
+const IBM_VGA50: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50.psf");
+const IBM_VGA25G: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G.psf");
+const IBM_EGA: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA.psf");
+const IBM_EGA43: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43.psf");
 
-// Amiga fonts from dedicated files
-const AMIGA_TOPAZ_1: &[u8] = include_bytes!("../../data/fonts/Amiga/Topaz1.psf");
-const AMIGA_TOPAZ_1_PLUS: &[u8] = include_bytes!("../../data/fonts/Amiga/Topaz1+.psf");
-const AMIGA_TOPAZ_2: &[u8] = include_bytes!("../../data/fonts/Amiga/Topaz2.psf");
-const AMIGA_TOPAZ_2_PLUS: &[u8] = include_bytes!("../../data/fonts/Amiga/Topaz2+.psf");
-const AMIGA_P0T_NOODLE: &[u8] = include_bytes!("../../data/fonts/Amiga/P0T-NOoDLE.psf");
-const AMIGA_MICROKNIGHT: &[u8] = include_bytes!("../../data/fonts/Amiga/MicroKnight.psf");
-const AMIGA_MICROKNIGHT_PLUS: &[u8] = include_bytes!("../../data/fonts/Amiga/MicroKnight+.psf");
-const AMIGA_MOSOUL: &[u8] = include_bytes!("../../data/fonts/Amiga/mOsOul.psf");
+// CP437 explicit
+const IBM_VGA_437: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_437.psf");
+const IBM_VGA50_437: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_437.psf");
+const IBM_VGA25G_437: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_437.psf");
+const IBM_EGA_437: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_437.psf");
+const IBM_EGA43_437: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_437.psf");
 
-// C64 fonts
-const C64_PETSCII_UNSHIFTED: &[u8] = include_bytes!("../../data/fonts/Commodore/C64_PETSCII_unshifted.psf");
-const C64_PETSCII_SHIFTED: &[u8] = include_bytes!("../../data/fonts/Commodore/C64_PETSCII_shifted.psf");
+// ============================================================================
+// IBM PC Fonts - CP737 (Greek)
+// ============================================================================
+const IBM_VGA_737: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_737.psf");
+const IBM_VGA50_737: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_737.psf");
+const IBM_EGA_737: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_737.psf");
+const IBM_EGA43_737: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_737.psf");
 
-// Atari fonts
-const ATARI_ATASCII: &[u8] = include_bytes!("../../data/fonts/Atari/Atari_ATASCII.psf");
+// ============================================================================
+// IBM PC Fonts - CP775 (Baltic)
+// ============================================================================
+const IBM_VGA_775: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_775.psf");
+const IBM_VGA50_775: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_775.psf");
+const IBM_EGA_775: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_775.psf");
+const IBM_EGA43_775: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_775.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP850 (Western Europe)
+// ============================================================================
+const IBM_VGA_850: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_850.psf");
+const IBM_VGA50_850: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_850.psf");
+const IBM_VGA25G_850: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_850.psf");
+const IBM_EGA_850: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_850.psf");
+const IBM_EGA43_850: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_850.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP851 (Greek)
+// ============================================================================
+const IBM_VGA_851: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_851.psf");
+const IBM_VGA50_851: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_851.psf");
+const IBM_VGA25G_851: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_851.psf");
+const IBM_EGA_851: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_851.psf");
+const IBM_EGA43_851: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_851.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP852 (Central Europe)
+// ============================================================================
+const IBM_VGA_852: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_852.psf");
+const IBM_VGA50_852: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_852.psf");
+const IBM_VGA25G_852: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_852.psf");
+const IBM_EGA_852: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_852.psf");
+const IBM_EGA43_852: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_852.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP853 (Multilingual)
+// ============================================================================
+const IBM_VGA_853: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_853.psf");
+const IBM_VGA50_853: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_853.psf");
+const IBM_VGA25G_853: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_853.psf");
+const IBM_EGA_853: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_853.psf");
+const IBM_EGA43_853: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_853.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP855 (Cyrillic)
+// ============================================================================
+const IBM_VGA_855: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_855.psf");
+const IBM_VGA50_855: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_855.psf");
+const IBM_EGA_855: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_855.psf");
+const IBM_EGA43_855: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_855.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP857 (Turkish)
+// ============================================================================
+const IBM_VGA_857: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_857.psf");
+const IBM_VGA50_857: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_857.psf");
+const IBM_EGA_857: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_857.psf");
+const IBM_EGA43_857: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_857.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP860 (Portuguese)
+// ============================================================================
+const IBM_VGA_860: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_860.psf");
+const IBM_VGA50_860: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_860.psf");
+const IBM_VGA25G_860: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_860.psf");
+const IBM_EGA_860: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_860.psf");
+const IBM_EGA43_860: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_860.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP861 (Icelandic)
+// ============================================================================
+const IBM_VGA_861: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_861.psf");
+const IBM_VGA50_861: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_861.psf");
+const IBM_VGA25G_861: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_861.psf");
+const IBM_EGA_861: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_861.psf");
+const IBM_EGA43_861: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_861.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP862 (Hebrew)
+// ============================================================================
+const IBM_VGA_862: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_862.psf");
+const IBM_VGA50_862: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_862.psf");
+const IBM_EGA_862: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_862.psf");
+const IBM_EGA43_862: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_862.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP863 (French Canadian)
+// ============================================================================
+const IBM_VGA_863: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_863.psf");
+const IBM_VGA50_863: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_863.psf");
+const IBM_VGA25G_863: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_863.psf");
+const IBM_EGA_863: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_863.psf");
+const IBM_EGA43_863: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_863.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP864 (Arabic)
+// ============================================================================
+const IBM_VGA_864: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_864.psf");
+const IBM_VGA50_864: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_864.psf");
+const IBM_EGA_864: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_864.psf");
+const IBM_EGA43_864: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_864.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP865 (Nordic)
+// ============================================================================
+const IBM_VGA_865: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_865.psf");
+const IBM_VGA50_865: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_865.psf");
+const IBM_VGA25G_865: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA25G_865.psf");
+const IBM_EGA_865: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_865.psf");
+const IBM_EGA43_865: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_865.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP866 (Cyrillic/Russian)
+// ============================================================================
+const IBM_VGA_866: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_866.psf");
+const IBM_VGA50_866: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_866.psf");
+const IBM_EGA_866: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_866.psf");
+const IBM_EGA43_866: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_866.psf");
+
+// ============================================================================
+// IBM PC Fonts - CP869 (Greek 2)
+// ============================================================================
+const IBM_VGA_869: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_869.psf");
+const IBM_VGA50_869: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_869.psf");
+const IBM_EGA_869: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_869.psf");
+const IBM_EGA43_869: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_869.psf");
+
+// ============================================================================
+// IBM PC Fonts - MIK (Bulgarian Cyrillic, uses CP866 data)
+// ============================================================================
+const IBM_VGA_MIK: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA_MIK.psf");
+const IBM_VGA50_MIK: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_VGA50_MIK.psf");
+const IBM_EGA_MIK: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA_MIK.psf");
+const IBM_EGA43_MIK: &[u8] = include_bytes!("../../data/fonts/Sauce/ibm/IBM_EGA43_MIK.psf");
+
+// ============================================================================
+// Amiga Fonts
+// ============================================================================
+const AMIGA_TOPAZ_1: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_Topaz_1.psf");
+const AMIGA_TOPAZ_1_PLUS: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_Topaz_1Plus.psf");
+const AMIGA_TOPAZ_2: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_Topaz_2.psf");
+const AMIGA_TOPAZ_2_PLUS: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_Topaz_2Plus.psf");
+const AMIGA_P0T_NOODLE: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_P0T-NOoDLE.psf");
+const AMIGA_MICROKNIGHT: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_MicroKnight.psf");
+const AMIGA_MICROKNIGHT_PLUS: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_MicroKnightPlus.psf");
+const AMIGA_MOSOUL: &[u8] = include_bytes!("../../data/fonts/Sauce/amiga/Amiga_mOsOul.psf");
+
+// ============================================================================
+// Commodore 64 Fonts
+// ============================================================================
+const C64_PETSCII_UNSHIFTED: &[u8] = include_bytes!("../../data/fonts/Sauce/c64/C64_PETSCII_unshifted.psf");
+const C64_PETSCII_SHIFTED: &[u8] = include_bytes!("../../data/fonts/Sauce/c64/C64_PETSCII_shifted.psf");
+
+// ============================================================================
+// Atari Fonts
+// ============================================================================
+const ATARI_ATASCII: &[u8] = include_bytes!("../../data/fonts/Sauce/atari/Atari_ATASCII.psf");
 
 /// Complete SAUCE font mapping table
 ///
 /// According to SAUCE spec, these are the standard font names.
 /// See: https://www.acid.org/info/sauce/sauce.htm
+///
+/// Font data sourced from Moebius (blocktronics/moebius).
 pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
     // ========================================
-    // IBM PC VGA Fonts (CP437)
+    // IBM PC VGA Fonts (CP437 base)
     // ========================================
     SauceFontMapping {
         sauce_name: "IBM VGA",
-        source: SauceFontSource::AnsiSlot(0), // CP437 8x16
+        data: IBM_VGA,
     },
     SauceFontMapping {
         sauce_name: "IBM VGA50",
-        source: SauceFontSource::Dedicated(IBM_VGA50), // CP437 8x8 for 50-line mode
+        data: IBM_VGA50,
     },
     SauceFontMapping {
         sauce_name: "IBM VGA25G",
-        source: SauceFontSource::Dedicated(IBM_VGA25G), // CP437 8x19 for graphics mode
+        data: IBM_VGA25G,
     },
     SauceFontMapping {
         sauce_name: "IBM EGA",
-        source: SauceFontSource::Dedicated(IBM_EGA), // CP437 8x14
+        data: IBM_EGA,
     },
     SauceFontMapping {
         sauce_name: "IBM EGA43",
-        source: SauceFontSource::Dedicated(IBM_EGA43), // CP437 8x8 for 43-line mode
+        data: IBM_EGA43,
     },
-    // ========================================
-    // IBM PC VGA Fonts with Codepages
-    // ========================================
-    // CP437 variants
+    // CP437 explicit
     SauceFontMapping {
         sauce_name: "IBM VGA 437",
-        source: SauceFontSource::AnsiSlot(0),
+        data: IBM_VGA_437,
     },
-    // CP850 - Multilingual Latin I
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 437",
+        data: IBM_VGA50_437,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 437",
+        data: IBM_VGA25G_437,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 437",
+        data: IBM_EGA_437,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 437",
+        data: IBM_EGA43_437,
+    },
+    // CP737 (Greek)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 737",
+        data: IBM_VGA_737,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 737",
+        data: IBM_VGA50_737,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 737",
+        data: IBM_EGA_737,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 737",
+        data: IBM_EGA43_737,
+    },
+    // CP775 (Baltic)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 775",
+        data: IBM_VGA_775,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 775",
+        data: IBM_VGA50_775,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 775",
+        data: IBM_EGA_775,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 775",
+        data: IBM_EGA43_775,
+    },
+    // CP850 (Western Europe)
     SauceFontMapping {
         sauce_name: "IBM VGA 850",
-        source: SauceFontSource::AnsiSlot(18),
+        data: IBM_VGA_850,
     },
-    // CP865 - Norwegian
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 850",
+        data: IBM_VGA50_850,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 850",
+        data: IBM_VGA25G_850,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 850",
+        data: IBM_EGA_850,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 850",
+        data: IBM_EGA43_850,
+    },
+    // CP851 (Greek)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 851",
+        data: IBM_VGA_851,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 851",
+        data: IBM_VGA50_851,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 851",
+        data: IBM_VGA25G_851,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 851",
+        data: IBM_EGA_851,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 851",
+        data: IBM_EGA43_851,
+    },
+    // CP852 (Central Europe)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 852",
+        data: IBM_VGA_852,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 852",
+        data: IBM_VGA50_852,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 852",
+        data: IBM_VGA25G_852,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 852",
+        data: IBM_EGA_852,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 852",
+        data: IBM_EGA43_852,
+    },
+    // CP853 (Multilingual)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 853",
+        data: IBM_VGA_853,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 853",
+        data: IBM_VGA50_853,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 853",
+        data: IBM_VGA25G_853,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 853",
+        data: IBM_EGA_853,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 853",
+        data: IBM_EGA43_853,
+    },
+    // CP855 (Cyrillic)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 855",
+        data: IBM_VGA_855,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 855",
+        data: IBM_VGA50_855,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 855",
+        data: IBM_EGA_855,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 855",
+        data: IBM_EGA43_855,
+    },
+    // CP857 (Turkish)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 857",
+        data: IBM_VGA_857,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 857",
+        data: IBM_VGA50_857,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 857",
+        data: IBM_EGA_857,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 857",
+        data: IBM_EGA43_857,
+    },
+    // CP860 (Portuguese)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 860",
+        data: IBM_VGA_860,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 860",
+        data: IBM_VGA50_860,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 860",
+        data: IBM_VGA25G_860,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 860",
+        data: IBM_EGA_860,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 860",
+        data: IBM_EGA43_860,
+    },
+    // CP861 (Icelandic)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 861",
+        data: IBM_VGA_861,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 861",
+        data: IBM_VGA50_861,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 861",
+        data: IBM_VGA25G_861,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 861",
+        data: IBM_EGA_861,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 861",
+        data: IBM_EGA43_861,
+    },
+    // CP862 (Hebrew)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 862",
+        data: IBM_VGA_862,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 862",
+        data: IBM_VGA50_862,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 862",
+        data: IBM_EGA_862,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 862",
+        data: IBM_EGA43_862,
+    },
+    // CP863 (French Canadian)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 863",
+        data: IBM_VGA_863,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 863",
+        data: IBM_VGA50_863,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 863",
+        data: IBM_VGA25G_863,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 863",
+        data: IBM_EGA_863,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 863",
+        data: IBM_EGA43_863,
+    },
+    // CP864 (Arabic)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 864",
+        data: IBM_VGA_864,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 864",
+        data: IBM_VGA50_864,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 864",
+        data: IBM_EGA_864,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 864",
+        data: IBM_EGA43_864,
+    },
+    // CP865 (Nordic)
     SauceFontMapping {
         sauce_name: "IBM VGA 865",
-        source: SauceFontSource::AnsiSlot(28),
+        data: IBM_VGA_865,
     },
-    // CP866 - Russian
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 865",
+        data: IBM_VGA50_865,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA25G 865",
+        data: IBM_VGA25G_865,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 865",
+        data: IBM_EGA_865,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 865",
+        data: IBM_EGA43_865,
+    },
+    // CP866 (Cyrillic/Russian)
     SauceFontMapping {
         sauce_name: "IBM VGA 866",
-        source: SauceFontSource::AnsiSlot(25),
+        data: IBM_VGA_866,
     },
-    // CP1251 - Cyrillic
     SauceFontMapping {
-        sauce_name: "IBM VGA 1251",
-        source: SauceFontSource::AnsiSlot(20),
+        sauce_name: "IBM VGA50 866",
+        data: IBM_VGA50_866,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 866",
+        data: IBM_EGA_866,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 866",
+        data: IBM_EGA43_866,
+    },
+    // CP869 (Greek 2)
+    SauceFontMapping {
+        sauce_name: "IBM VGA 869",
+        data: IBM_VGA_869,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 869",
+        data: IBM_VGA50_869,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA 869",
+        data: IBM_EGA_869,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 869",
+        data: IBM_EGA43_869,
+    },
+    // MIK (Bulgarian Cyrillic)
+    SauceFontMapping {
+        sauce_name: "IBM VGA MIK",
+        data: IBM_VGA_MIK,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM VGA50 MIK",
+        data: IBM_VGA50_MIK,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA MIK",
+        data: IBM_EGA_MIK,
+    },
+    SauceFontMapping {
+        sauce_name: "IBM EGA43 MIK",
+        data: IBM_EGA43_MIK,
     },
     // ========================================
     // Amiga Fonts
     // ========================================
     SauceFontMapping {
         sauce_name: "Amiga Topaz 1",
-        source: SauceFontSource::Dedicated(AMIGA_TOPAZ_1),
+        data: AMIGA_TOPAZ_1,
     },
     SauceFontMapping {
         sauce_name: "Amiga Topaz 1+",
-        source: SauceFontSource::Dedicated(AMIGA_TOPAZ_1_PLUS),
+        data: AMIGA_TOPAZ_1_PLUS,
     },
     SauceFontMapping {
         sauce_name: "Amiga Topaz 2",
-        source: SauceFontSource::Dedicated(AMIGA_TOPAZ_2),
+        data: AMIGA_TOPAZ_2,
     },
     SauceFontMapping {
         sauce_name: "Amiga Topaz 2+",
-        source: SauceFontSource::Dedicated(AMIGA_TOPAZ_2_PLUS),
+        data: AMIGA_TOPAZ_2_PLUS,
     },
     SauceFontMapping {
         sauce_name: "Amiga P0T-NOoDLE",
-        source: SauceFontSource::Dedicated(AMIGA_P0T_NOODLE),
+        data: AMIGA_P0T_NOODLE,
     },
     SauceFontMapping {
         sauce_name: "Amiga MicroKnight",
-        source: SauceFontSource::Dedicated(AMIGA_MICROKNIGHT),
+        data: AMIGA_MICROKNIGHT,
     },
     SauceFontMapping {
         sauce_name: "Amiga MicroKnight+",
-        source: SauceFontSource::Dedicated(AMIGA_MICROKNIGHT_PLUS),
+        data: AMIGA_MICROKNIGHT_PLUS,
     },
     SauceFontMapping {
         sauce_name: "Amiga mOsOul",
-        source: SauceFontSource::Dedicated(AMIGA_MOSOUL),
+        data: AMIGA_MOSOUL,
     },
     // ========================================
     // Commodore 64 Fonts
     // ========================================
     SauceFontMapping {
         sauce_name: "C64 PETSCII unshifted",
-        source: SauceFontSource::Dedicated(C64_PETSCII_UNSHIFTED),
+        data: C64_PETSCII_UNSHIFTED,
     },
     SauceFontMapping {
         sauce_name: "C64 PETSCII shifted",
-        source: SauceFontSource::Dedicated(C64_PETSCII_SHIFTED),
+        data: C64_PETSCII_SHIFTED,
     },
     // ========================================
     // Atari Fonts
     // ========================================
     SauceFontMapping {
         sauce_name: "Atari ATASCII",
-        source: SauceFontSource::Dedicated(ATARI_ATASCII),
+        data: ATARI_ATASCII,
     },
 ];
 
@@ -160,9 +641,12 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
 ///
 /// Fallback chain (according to SAUCE spec):
 /// 1. Exact match
-/// 2. For "IBM VGA ###" → try "IBM VGA"
-/// 3. For "Amiga Font+" → try "Amiga Font"
-/// 4. Default to "IBM VGA" (slot 0)
+/// 2. For "IBM VGA50 ###" / "IBM VGA25G ###" → try "IBM VGA ###"
+/// 3. For "IBM EGA43 ###" → try "IBM EGA ###"
+/// 4. For "IBM VGA/EGA ###" → try "IBM VGA/EGA" (base without codepage)
+/// 5. For "Amiga Font+" → try "Amiga Font"
+/// 6. CP equivalences: 872↔855, 858↔850, 865↔437
+/// 7. Default to "IBM VGA"
 ///
 /// # Arguments
 /// * `sauce_name` - The font name from SAUCE TInfoS field
@@ -176,42 +660,89 @@ pub fn load_sauce_font(sauce_name: &str) -> crate::Result<BitFont> {
         return Ok(font);
     }
 
-    // Fallback 1: For "IBM VGA ###" or "IBM EGA ###", try base name
-    if sauce_name.starts_with("IBM VGA ") || sauce_name.starts_with("IBM EGA ") {
-        let base_name = if sauce_name.starts_with("IBM VGA") { "IBM VGA" } else { "IBM EGA" };
-        if let Some(font) = try_load_sauce_font(base_name) {
+    // Fallback 1: Height variants - VGA50/VGA25G → VGA, EGA43 → EGA
+    if sauce_name.contains("VGA50 ") || sauce_name.contains("VGA25G ") {
+        let fallback = sauce_name.replace("VGA50 ", "VGA ").replace("VGA25G ", "VGA ");
+        if let Some(font) = try_load_sauce_font(&fallback) {
+            return Ok(font);
+        }
+    }
+    if sauce_name.contains("EGA43 ") {
+        let fallback = sauce_name.replace("EGA43 ", "EGA ");
+        if let Some(font) = try_load_sauce_font(&fallback) {
             return Ok(font);
         }
     }
 
-    // Fallback 2: For "Amiga Font+" → try "Amiga Font"
+    // Fallback 2: For "IBM VGA ###" or "IBM EGA ###", try base name without codepage
+    if sauce_name.starts_with("IBM VGA") && sauce_name.len() > 7 {
+        // Try base variant (VGA/VGA50/VGA25G/EGA/EGA43)
+        let parts: Vec<&str> = sauce_name.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let base = format!("IBM {}", parts[1]);
+            if let Some(font) = try_load_sauce_font(&base) {
+                return Ok(font);
+            }
+        }
+        // Finally try plain IBM VGA
+        if let Some(font) = try_load_sauce_font("IBM VGA") {
+            return Ok(font);
+        }
+    }
+    if sauce_name.starts_with("IBM EGA") && sauce_name.len() > 7 {
+        let parts: Vec<&str> = sauce_name.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let base = format!("IBM {}", parts[1]);
+            if let Some(font) = try_load_sauce_font(&base) {
+                return Ok(font);
+            }
+        }
+        if let Some(font) = try_load_sauce_font("IBM EGA") {
+            return Ok(font);
+        }
+    }
+
+    // Fallback 3: For "Amiga Font+" → try "Amiga Font"
     if sauce_name.ends_with('+') {
         let base_name = &sauce_name[..sauce_name.len() - 1];
         if let Some(font) = try_load_sauce_font(base_name) {
             return Ok(font);
         }
+        // Fallback to Topaz 1
+        if let Some(font) = try_load_sauce_font("Amiga Topaz 1") {
+            return Ok(font);
+        }
     }
 
-    // Fallback 3: Default to IBM VGA (slot 0)
-    Ok(get_ansi_font(0, 16).cloned().unwrap())
+    // Fallback 4: CP equivalences (872↔855, 858↔850, 865↔437)
+    if sauce_name.contains(" 872") {
+        let fallback = sauce_name.replace(" 872", " 855");
+        if let Some(font) = try_load_sauce_font(&fallback) {
+            return Ok(font);
+        }
+    }
+    if sauce_name.contains(" 858") {
+        let fallback = sauce_name.replace(" 858", " 850");
+        if let Some(font) = try_load_sauce_font(&fallback) {
+            return Ok(font);
+        }
+    }
+    if sauce_name.contains(" 865") {
+        let fallback = sauce_name.replace(" 865", " 437");
+        if let Some(font) = try_load_sauce_font(&fallback) {
+            return Ok(font);
+        }
+    }
+
+    // Final fallback: Default to IBM VGA
+    try_load_sauce_font("IBM VGA").ok_or(crate::EngineError::FontNotFound)
 }
 
 /// Try to load a SAUCE font by exact name match
 fn try_load_sauce_font(sauce_name: &str) -> Option<BitFont> {
     for mapping in SAUCE_FONT_MAP {
         if mapping.sauce_name.eq_ignore_ascii_case(sauce_name) {
-            let mut font = match &mapping.source {
-                SauceFontSource::AnsiSlot(slot) => {
-                    // Load ANSI font but rename it to the SAUCE name
-                    get_ansi_font(*slot as u8, 16).cloned()
-                }
-                SauceFontSource::Dedicated(data) => BitFont::from_bytes(mapping.sauce_name, *data).ok(),
-            };
-            if let Some(font) = font.as_mut() {
-                font.set_name(mapping.sauce_name);
-            }
-
-            return font;
+            return BitFont::from_bytes(mapping.sauce_name, mapping.data).ok();
         }
     }
     None

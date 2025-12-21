@@ -61,6 +61,7 @@ pub trait Screen: TextPane + Send + Sync {
     }
 
     fn font_dimensions(&self) -> Size;
+    fn set_font_dimensions(&mut self, size: Size);
 
     fn scan_lines(&self) -> bool;
 
@@ -304,7 +305,9 @@ pub trait EditableScreen: Screen {
                 // Apply font if specified
                 if let Some(font_name) = &font_opt {
                     if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
+                        let font_size = font.size();
                         self.set_font(0, font);
+                        self.set_font_dimensions(font_size);
                     }
                 }
                 // Apply ice colors

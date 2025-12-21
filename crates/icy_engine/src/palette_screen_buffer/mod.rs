@@ -337,6 +337,9 @@ impl Screen for PaletteScreenBuffer {
     fn font_dimensions(&self) -> Size {
         if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
     }
+    fn set_font_dimensions(&mut self, _size: Size) {
+        // nothing
+    }
 
     fn font(&self, font_number: usize) -> Option<&BitFont> {
         self.font_table.get(&font_number)

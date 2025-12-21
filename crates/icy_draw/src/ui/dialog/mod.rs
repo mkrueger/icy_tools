@@ -6,7 +6,7 @@
 //! - `about` - About dialog
 //! - `font_export` - Font export dialog
 //! - `font_import` - Font import dialog
-//! - `connect` - Collaboration dialog (connect or host)
+//! - `connect` - Connect to server dialog
 
 pub mod about;
 pub mod connect;
@@ -15,4 +15,4 @@ pub mod font_import;
 pub mod new_file;
 pub mod settings;
 
-pub use connect::{CollaborationDialog, CollaborationDialogMessage, ConnectDialogResult, HostSessionResult};
+pub use connect::{ConnectDialog, ConnectDialogMessage, ConnectDialogResult};

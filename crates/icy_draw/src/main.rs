@@ -377,7 +377,7 @@ fn main() {
 
     iced::daemon(
         move || {
-            let font_library = FontLibrary::create_shared();
+            let font_library = TextArtFontLibrary::create_shared();
 
             // Take the MCP receiver if available
             let mcp_receiver = mcp_rx.as_ref().and_then(|mutex| mutex.lock().take());

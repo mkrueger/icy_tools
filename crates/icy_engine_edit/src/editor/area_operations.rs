@@ -569,6 +569,8 @@ fn negate_packed(glyph: &PackedGlyph, height: usize) -> PackedGlyph {
 }
 
 pub fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+    use rayon::prelude::*;
+
     let mut flip_table = BTreeMap::new();
 
     // List of characters that should never be included in the flip table
@@ -613,48 +615,56 @@ pub fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char
         }
     }
 
-    for ch_code in 0u8..=255 {
-        let ch = ch_code as char;
-        if excluded_chars.contains(&ch) {
-            continue;
-        }
+    // Pre-compute all glyph data
+    let glyphs: Vec<(char, PackedGlyph)> = (0u8..=255)
+        .filter(|&ch_code| !excluded_chars.contains(&(ch_code as char)))
+        .map(|ch_code| {
+            let ch = ch_code as char;
+            (ch, get_packed_glyph(font.glyph(ch)))
+        })
+        .collect();
 
-        let cur_glyph = get_packed_glyph(font.glyph(ch));
+    // Pre-compute variants for comparison targets
+    let cmp_variants: Vec<(char, Vec<PackedGlyph>)> = glyphs.iter().map(|(ch, glyph)| (*ch, generate_y_variants_packed(glyph, height))).collect();
 
-        let Some(flipped_variants) = generate_flipy_variants_packed(&cur_glyph, height) else {
-            continue;
-        };
+    // Parallel search for flip matches
+    let matches: Vec<(char, bool, char)> = glyphs
+        .par_iter()
+        .filter_map(|(ch, cur_glyph)| {
+            let flipped_variants = generate_flipy_variants_packed(cur_glyph, height)?;
 
-        'outer: for ch2_code in 0u8..=255 {
-            let ch2 = ch2_code as char;
-            if ch == ch2 || excluded_chars.contains(&ch2) {
-                continue;
-            }
+            for (ch2, variants) in &cmp_variants {
+                if ch == ch2 {
+                    continue;
+                }
 
-            let cmp_glyph = get_packed_glyph(font.glyph(ch2));
-            let cmp_variants = generate_y_variants_packed(&cmp_glyph, height);
-
-            for cmp in &cmp_variants {
-                for (i, flipped) in flipped_variants.iter().enumerate() {
-                    if packed_eq(flipped, cmp, height) {
-                        flip_table.insert(ch, (false, ch2));
-                        break 'outer;
-                    }
-                    // Check negated version
-                    let neg = negate_packed(flipped, height);
-                    if packed_eq(&neg, cmp, height) {
-                        flip_table.insert(ch, (true, ch2));
-                        break 'outer;
+                for cmp in variants {
+                    for flipped in &flipped_variants {
+                        if packed_eq(flipped, cmp, height) {
+                            return Some((*ch, false, *ch2));
+                        }
+                        let neg = negate_packed(flipped, height);
+                        if packed_eq(&neg, cmp, height) {
+                            return Some((*ch, true, *ch2));
+                        }
                     }
                 }
             }
-        }
+            None
+        })
+        .collect();
+
+    for (ch, negated, ch2) in matches {
+        flip_table.insert(ch, (negated, ch2));
     }
+
     check_bidirect(&mut flip_table);
     flip_table
 }
 
 pub fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+    use rayon::prelude::*;
+
     let mut flip_table = BTreeMap::new();
 
     // Hardcoded slash mappings
@@ -667,51 +677,59 @@ pub fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char
     let height = font.height as usize;
     let font_width = font.width as i32;
 
-    for ch_code in 0u8..=255 {
-        let ch = ch_code as char;
-        if excluded_chars.contains(&ch) {
-            continue;
-        }
+    // Pre-compute all glyph data
+    let glyphs: Vec<(char, PackedGlyph)> = (0u8..=255)
+        .filter(|&ch_code| !excluded_chars.contains(&(ch_code as char)))
+        .map(|ch_code| {
+            let ch = ch_code as char;
+            (ch, get_packed_glyph(font.glyph(ch)))
+        })
+        .collect();
 
-        let cur_glyph = get_packed_glyph(font.glyph(ch));
+    // Pre-compute variants for comparison targets
+    let cmp_variants: Vec<(char, Vec<PackedGlyph>)> = glyphs.iter().map(|(ch, glyph)| (*ch, generate_x_variants_packed(glyph, height))).collect();
 
-        let Some(flipped_variants) = generate_flipx_variants_packed(&cur_glyph, height, font_width) else {
-            continue;
-        };
+    // Parallel search for flip matches
+    let matches: Vec<(char, bool, char)> = glyphs
+        .par_iter()
+        .filter_map(|(ch, cur_glyph)| {
+            let flipped_variants = generate_flipx_variants_packed(cur_glyph, height, font_width)?;
 
-        'outer: for ch2_code in 0u8..=255 {
-            let ch2 = ch2_code as char;
-            if ch == ch2 || excluded_chars.contains(&ch2) {
-                continue;
-            }
+            for (ch2, variants) in &cmp_variants {
+                if ch == ch2 {
+                    continue;
+                }
 
-            if ch2 == 186 as char && ch != 186 as char {
-                continue;
-            }
+                // Skip ║ as comparison target if source is not ║
+                if *ch2 == 186 as char && *ch != 186 as char {
+                    continue;
+                }
 
-            let cmp_glyph = get_packed_glyph(font.glyph(ch2));
-            let cmp_variants = generate_x_variants_packed(&cmp_glyph, height);
+                for (idx, cmp) in variants.iter().enumerate() {
+                    for (i, flipped) in flipped_variants.iter().enumerate() {
+                        // Only accept exact flips for problematic characters
+                        if (*ch == 186 as char || *ch2 == 186 as char) && (i != 0 || idx != 0) {
+                            continue;
+                        }
 
-            for (idx, cmp) in cmp_variants.iter().enumerate() {
-                for (i, flipped) in flipped_variants.iter().enumerate() {
-                    // Only accept exact flips for problematic characters
-                    if (ch == 186 as char || ch2 == 186 as char) && (i != 0 || idx != 0) {
-                        continue;
-                    }
-
-                    if packed_eq(flipped, cmp, height) {
-                        flip_table.insert(ch, (false, ch2));
-                        break 'outer;
-                    }
-                    let neg = negate_packed(flipped, height);
-                    if packed_eq(&neg, cmp, height) {
-                        flip_table.insert(ch, (true, ch2));
-                        break 'outer;
+                        if packed_eq(flipped, cmp, height) {
+                            return Some((*ch, false, *ch2));
+                        }
+                        let neg = negate_packed(flipped, height);
+                        if packed_eq(&neg, cmp, height) {
+                            return Some((*ch, true, *ch2));
+                        }
                     }
                 }
             }
-        }
+            None
+        })
+        .collect();
+
+    for (ch, negated, ch2) in matches {
+        flip_table.insert(ch, (negated, ch2));
     }
+
     check_bidirect(&mut flip_table);
     flip_table
 }

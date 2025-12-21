@@ -242,6 +242,8 @@ impl EditState {
         if let Some(layer) = self.get_cur_layer_mut() {
             layer.set_preview_offset(offset);
         }
+        // Mark buffer dirty to trigger re-rendering with new layer position
+        self.screen.buffer.mark_dirty();
     }
 
     pub fn set_layer_size(&mut self, layer: usize, size: impl Into<Size>) -> Result<()> {

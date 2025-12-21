@@ -476,7 +476,7 @@ impl<'a> FontListWidget<'a> {
         font_idx: usize,
         font_name: &str,
         font_type: FontType,
-        lib: &crate::FontLibrary,
+        lib: &crate::TextArtFontLibrary,
     ) {
         let is_selected = self.selected_font == font_idx as i32;
         let is_cursor = self.keyboard_cursor == list_idx;

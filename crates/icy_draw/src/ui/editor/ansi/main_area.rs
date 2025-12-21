@@ -209,18 +209,6 @@ impl AnsiEditorMainArea {
         self.core.set_session_data(state);
     }
 
-    /// Get the current buffer dimensions (columns, rows)
-    pub fn get_buffer_dimensions(&self) -> (u32, u32) {
-        use icy_engine::TextPane;
-        let mut screen = self.core.screen.lock();
-        if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
-            let buffer = state.get_buffer();
-            (buffer.width() as u32, buffer.height() as u32)
-        } else {
-            (80, 25)
-        }
-    }
-
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
         self.core.save(path)
     }
@@ -298,100 +286,73 @@ impl AnsiEditorMainArea {
 
     /// Apply a full remote document snapshot from collaboration.
     ///
-    /// Sets all document properties: size, content, ice colors, 9px font, font, palette, etc.
-    pub fn apply_remote_document(&mut self, doc: &icy_engine_edit::collaboration::ConnectedDocument) {
-        use icy_engine::{AttributedChar, BitFont, Color, IceMode, Palette, Position};
+    /// Creates a new TextBuffer from a remote collaboration document.
+    /// This is used when connecting to a server to create a fresh document.
+    pub fn create_buffer_from_remote_document(doc: &icy_engine_edit::collaboration::ConnectedDocument) -> icy_engine::TextBuffer {
+        use icy_engine::{AttributedChar, BitFont, Color, IceMode, Layer, Palette, Position, TextBuffer};
 
         let cols_i32 = doc.columns as i32;
         let rows_i32 = doc.rows as i32;
 
         log::info!(
-            "[COLLAB] apply_remote_document: received doc with columns={}, rows={}, document.len()={}",
+            "[COLLAB] create_buffer_from_remote_document: received doc with columns={}, rows={}, document.len()={}",
             doc.columns,
             doc.rows,
             doc.document.len()
         );
 
-        self.core.with_edit_state(|state| {
-            let buffer = state.get_buffer_mut();
-            let before_w = buffer.width();
-            let before_h = buffer.height();
-            let before_lines = buffer.layers.first().map(|l| l.lines.len()).unwrap_or(0);
-            log::info!(
-                "[COLLAB] apply_remote_document: buffer BEFORE set_size: width={}, height={}, layer0.lines.len()={}",
-                before_w,
-                before_h,
-                before_lines
-            );
+        let mut buffer = TextBuffer::new((cols_i32, rows_i32));
 
-            // Set document size
-            buffer.set_size((cols_i32, rows_i32));
-            buffer.layers[0].set_size((cols_i32, rows_i32));
+        // Create a single layer with the remote document content
+        buffer.layers.clear();
+        let mut layer = Layer::new("Layer 1", (cols_i32, rows_i32));
+        layer.preallocate_lines(cols_i32, rows_i32);
+        buffer.layers.push(layer);
 
-            // Set ice colors mode
-            buffer.ice_mode = if doc.ice_colors { IceMode::Ice } else { IceMode::Blink };
+        // Set ice colors mode
+        buffer.ice_mode = if doc.ice_colors { IceMode::Ice } else { IceMode::Blink };
 
-            // Set 9px font (letter spacing)
-            buffer.set_use_letter_spacing(doc.use_9px);
+        // Set 9px font (letter spacing)
+        buffer.set_use_letter_spacing(doc.use_9px);
 
-            // Set font by name (try SAUCE name first, fallback to "IBM VGA")
-            let font_name = if doc.font.is_empty() { "IBM VGA" } else { &doc.font };
-            if let Ok(font) = BitFont::from_sauce_name(font_name) {
-                buffer.set_font(0, font);
-            } else {
-                log::warn!("[COLLAB] Font '{}' not found, using fallback 'IBM VGA'", font_name);
-                if let Ok(fallback) = BitFont::from_sauce_name("IBM VGA") {
-                    buffer.set_font(0, fallback);
-                }
+        // Set font by name (try SAUCE name first, fallback to "IBM VGA")
+        let font_name = if doc.font.is_empty() { "IBM VGA" } else { &doc.font };
+        if let Ok(font) = BitFont::from_sauce_name(font_name) {
+            buffer.set_font(0, font);
+        } else {
+            log::warn!("[COLLAB] Font '{}' not found, using fallback 'IBM VGA'", font_name);
+            if let Ok(fallback) = BitFont::from_sauce_name("IBM VGA") {
+                buffer.set_font(0, fallback);
             }
+        }
 
-            // Set 16-color palette from remote document
-            let colors: Vec<Color> = doc.palette.iter().map(|[r, g, b]| Color::new(*r, *g, *b)).collect();
-            buffer.palette = Palette::from_slice(&colors);
+        // Set 16-color palette from remote document
+        let colors: Vec<Color> = doc.palette.iter().map(|[r, g, b]| Color::new(*r, *g, *b)).collect();
+        buffer.palette = Palette::from_slice(&colors);
 
-            if buffer.layers.is_empty() {
-                return;
+        for col in 0..(doc.columns as usize) {
+            for row in 0..(doc.rows as usize) {
+                let block = doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
+
+                let mut ch = AttributedChar::default();
+                ch.ch = char::from_u32(block.code).unwrap_or(' ');
+                ch.attribute.set_foreground(block.fg as u32);
+                ch.attribute.set_background(block.bg as u32);
+
+                buffer.layers[0].set_char_unchecked(Position::new(col as i32, row as i32), ch);
             }
+        }
 
-            // Resize and preallocate layer 0 for fast bulk writes.
-            buffer.layers[0].preallocate_lines(cols_i32, rows_i32);
+        buffer.mark_dirty();
 
-            for col in 0..(doc.columns as usize) {
-                for row in 0..(doc.rows as usize) {
-                    let block = doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
+        log::info!(
+            "[COLLAB] create_buffer_from_remote_document: created new document width={}, height={}, layers={}",
+            buffer.width(),
+            buffer.height(),
+            buffer.layers.len()
+        );
 
-                    let mut ch = AttributedChar::default();
-                    ch.ch = char::from_u32(block.code).unwrap_or(' ');
-                    ch.attribute.set_foreground(block.fg as u32);
-                    ch.attribute.set_background(block.bg as u32);
-
-                    buffer.layers[0].set_char_unchecked(Position::new(col as i32, row as i32), ch);
-                }
-            }
-
-            buffer.mark_dirty();
-
-            let after_w = buffer.width();
-            let after_h = buffer.height();
-            let after_lines = buffer.layers.first().map(|l| l.lines.len()).unwrap_or(0);
-            log::info!(
-                "[COLLAB] apply_remote_document: buffer AFTER fill: width={}, height={}, layer0.lines.len()={}",
-                after_w,
-                after_h,
-                after_lines
-            );
-
-            // Set SAUCE metadata (stored on EditState, not buffer)
-            let mut sauce = icy_engine_edit::SauceMetaData::default();
-            sauce.title = doc.title.clone().into();
-            sauce.author = doc.author.clone().into();
-            sauce.group = doc.group.clone().into();
-            sauce.comments = doc.comments.lines().map(|line| line.to_string().into()).collect();
-            state.set_sauce_meta(sauce);
-        });
-
-        // Update viewport size after document size changed
-        self.core.update_viewport_size();
+        buffer
     }
 
     /// Apply a canvas size change (Moebius `SET_CANVAS_SIZE`).
@@ -1236,7 +1197,7 @@ impl AnsiEditorMainArea {
                 let is_double_click = self.slot_double_click.borrow_mut().is_double_click(slot);
                 let dialog = self.with_edit_state(|state| {
                     state.set_caret_font_page(slot as u8);
-                    is_double_click.then(|| FontSelectorDialog::new(state))
+                    is_double_click.then(|| SetFontDialog::new(state))
                 });
                 if let Some(dialog) = dialog {
                     dialogs.push(dialog);
@@ -1249,7 +1210,7 @@ impl AnsiEditorMainArea {
                     let dialog = self.with_edit_state_readonly(FontSlotManagerDialog::new);
                     dialogs.push(dialog);
                 } else {
-                    let dialog = self.with_edit_state_readonly(FontSelectorDialog::new);
+                    let dialog = self.with_edit_state_readonly(SetFontDialog::new);
                     dialogs.push(dialog);
                 }
                 Task::none()
@@ -1257,13 +1218,13 @@ impl AnsiEditorMainArea {
             AnsiEditorMessage::OpenFontSelectorForSlot(slot) => {
                 let dialog = self.with_edit_state(|state| {
                     state.set_caret_font_page(slot as u8);
-                    FontSelectorDialog::new(state)
+                    SetFontDialog::new(state)
                 });
                 dialogs.push(dialog);
                 Task::none()
             }
-            AnsiEditorMessage::FontSelector(ref dialog_msg) => {
-                let _ = dialogs.update(&Message::AnsiEditor(AnsiEditorMessage::FontSelector(dialog_msg.clone())));
+            AnsiEditorMessage::SetFont(ref dialog_msg) => {
+                let _ = dialogs.update(&Message::AnsiEditor(AnsiEditorMessage::SetFont(dialog_msg.clone())));
                 Task::none()
             }
             AnsiEditorMessage::OpenFontSlotManager => {

@@ -98,6 +98,10 @@ impl Screen for SharedTextScreen {
         self.inner.lock().font_dimensions()
     }
 
+    fn set_font_dimensions(&mut self, size: Size) {
+        self.inner.lock().set_font_dimensions(size);
+    }
+
     fn scan_lines(&self) -> bool {
         self.inner.lock().scan_lines()
     }

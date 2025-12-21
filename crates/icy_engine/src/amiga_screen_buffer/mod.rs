@@ -370,6 +370,10 @@ impl Screen for AmigaScreenBuffer {
         }
     }
 
+    fn set_font_dimensions(&mut self, _size: Size) {
+        // nothing
+    }
+
     fn font(&self, font_number: usize) -> Option<&BitFont> {
         self.font_table.get(&font_number)
     }

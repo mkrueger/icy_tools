@@ -68,13 +68,25 @@ impl AnimationMenu {
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
                 MenuItem::separator(),
-                MenuItem::simple(
+                MenuItem::submenu(
+                    fl!("menu-import"),
+                    vec![MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)],
+                ),
+                MenuItem::submenu(
                     fl!("menu-export"),
-                    "",
-                    Message::AnimationEditor(super::AnimationEditorMessage::ShowExportDialog),
+                    vec![MenuItem::simple(
+                        fl!("menu-export"),
+                        "",
+                        Message::AnimationEditor(super::AnimationEditorMessage::ShowExportDialog),
+                    )],
                 ),
                 MenuItem::separator(),
-                MenuItem::cmd(&cmd::FILE_CLOSE, Message::CloseFile),
+                MenuItem::simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog),
+                MenuItem::separator(),
+                MenuItem::cmd(&cmd::SETTINGS_OPEN, Message::ShowSettings),
+                MenuItem::separator(),
+                MenuItem::cmd_with_label(&cmd::WINDOW_CLOSE, Message::CloseEditor, fl!("menu-close-editor")),
+                MenuItem::cmd(&cmd::APP_QUIT, Message::QuitApp),
             ],
             edit: vec![
                 MenuItem::cmd_with_label(&cmd::EDIT_UNDO, Message::Undo, undo_label).enabled(undo_desc.is_some()),

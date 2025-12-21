@@ -25,6 +25,7 @@ command_handler!(WindowCommands, create_draw_commands(), _window_id: window::Id 
     cmd::WINDOW_NEW => WindowManagerMessage::OpenWindow,
     cmd::WINDOW_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
     cmd::FILE_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
+    cmd::APP_QUIT => WindowManagerMessage::WindowMessage(_window_id, crate::ui::Message::QuitApp),
 });
 
 const DEFAULT_SIZE: Size = Size::new(1280.0, 800.0);
@@ -594,6 +595,19 @@ impl WindowManager {
             }
 
             WindowManagerMessage::WindowMessage(id, msg) => {
+                // Close the current editor window (menu click)
+                if matches!(msg, crate::ui::Message::CloseEditor) {
+                    return Task::done(WindowManagerMessage::CloseWindow(id));
+                }
+
+                // Quit app (menu click): attempt to close all windows.
+                // Modified windows will prompt via the existing CloseWindow flow.
+                if matches!(msg, crate::ui::Message::QuitApp) {
+                    let window_ids: Vec<_> = self.windows.keys().cloned().collect();
+                    let tasks: Vec<_> = window_ids.into_iter().map(|wid| Task::done(WindowManagerMessage::CloseWindow(wid))).collect();
+                    return Task::batch(tasks);
+                }
+
                 // Handle ForceCloseFile by closing the window directly (bypass is_modified check)
                 if matches!(msg, crate::ui::Message::ForceCloseFile) {
                     // If this is the last window, save session first

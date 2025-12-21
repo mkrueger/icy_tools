@@ -39,6 +39,7 @@ menu-open=Datei öffnen…
 menu-open_recent=Zuletzt geöffnet
 menu-open_recent_clear=Liste leeren
 menu-save=Speichern
+menu-import=Importieren
 menu-edit-sauce=SAUCE Info bearbeiten…
 menu-9px-font=9px Font
 menu-aspect-ratio=Klassisches Seitenverhältnis
@@ -65,6 +66,22 @@ file-settings-comments-title=SAUCE Comments
 file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Schließen
 menu-save-as=Speichern unter…
+menu-connect-to-server=Mit Server verbinden…
+menu-close-editor=Editor schließen
+menu-quit-app=App beenden
+menu-toggle-chat=Chat-Panel umschalten
+
+# Mit Server verbinden Dialog
+collab-nickname=Nickname
+collab-nickname-placeholder=Dein Name
+collab-group=Gruppe
+collab-group-placeholder=Optional
+collab-password=Passwort
+collab-password-placeholder=Optional
+collab-server-url=Server URL
+collab-server-url-placeholder=host:port oder ws://host:port
+collab-connect-button=Verbinden
+button-cancel=Abbrechen
 
 # Dateidialoge
 file-dialog-save-as-title=Speichern unter
@@ -182,7 +199,7 @@ menu-open_font_selector=Schrift wählen…
 menu-open_font_slot_manager=Font Slots verwalten…
 menu-add_fonts=Schrift hinzufügen…
 menu-open_font_manager=Bufferfonts bearbeiten…
-menu-open_font_directoy=Fontverzeichnis öffnen…
+menu-open_font_directoy=Text-Art-Fontverzeichnis öffnen…
 
 menu-edit_palette=Palette bearbeiten…
 
@@ -439,12 +456,12 @@ font_tool_current_font_label=Aktueller TDF Font
 font_tool_no_font=<nichts>
 font_tool_no_fonts_label=
     Keine Fonts gefunden
-    Installiere Fonts in das Fontverzeichnis
-font_tool_open_directory_button=Fontverzeichnis öffnen
+    Installiere Fonts in das Text-Art-Fontverzeichnis
+font_tool_open_directory_button=Text-Art-Fontverzeichnis öffnen
 
 # Font Tool (neue Strings)
-font-tool-no_fonts = Keine Fonts installiert
-font-tool-open_directory = Fontverzeichnis öffnen
+font-tool-no_fonts = Keine Text-Art-Fonts installiert
+font-tool-open_directory = Text-Art-Fontverzeichnis öffnen
 font-tool-select_font = Font auswählen…
 font-tool-outline = Outline:
 font-tool-outline_normal = Normal
@@ -476,6 +493,15 @@ tdf-font-selector-type_figlet = Figlet
 tdf-font-selector-font_count = { $count } Fonts
 tdf-font-selector-export = Exportieren…
 tdf-font-selector-export_title = Font exportieren
+
+# Set Font Dialog
+set-font-load-font=Font laden…
+set-font-filter-fonts=Font-Dateien
+set-font-filter-all=Alle Dateien
+set-font-load-error=Fehler beim Laden des Fonts
+set-font-xbin-select-title=Font aus XBin-Datei auswählen
+set-font-xbin-font=Font { $slot }
+set-font-xbin-no-fonts=Keine Fonts in XBin-Datei gefunden
 
 pipette_tool_char_code=Code { $code }
 pipette_tool_foreground=Vordergrund { $fg }

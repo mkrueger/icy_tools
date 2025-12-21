@@ -166,6 +166,9 @@ impl Screen for ScrollbackBuffer {
     fn font_dimensions(&self) -> Size {
         self.font_dimensions
     }
+    fn set_font_dimensions(&mut self, size: Size) {
+        self.font_dimensions = size;
+    }
 
     fn scan_lines(&self) -> bool {
         self.scan_lines

@@ -73,18 +73,45 @@ impl AnsiMenu {
             file: vec![
                 MenuItem::cmd(&cmd::FILE_NEW, Message::NewFile),
                 MenuItem::cmd(&cmd::FILE_OPEN, Message::OpenFile),
-                MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
-                // Recent files submenu handled separately in view
+                MenuItem::dynamic_submenu(fl!("menu-open_recent"), |state| {
+                    let files = state.recent_files.files();
+
+                    if files.is_empty() {
+                        vec![MenuItem::simple(fl!("menu-no_recent_files"), "", Message::Noop).enabled(false)]
+                    } else {
+                        let mut items: Vec<MenuItem> = files
+                            .iter()
+                            .rev()
+                            .map(|file| {
+                                let file_name = file
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| file.display().to_string());
+                                MenuItem::simple(file_name, "", Message::OpenRecentFile(file.clone()))
+                            })
+                            .collect();
+
+                        items.push(MenuItem::separator());
+                        items.push(MenuItem::simple(fl!("menu-clear_recent_files"), "", Message::ClearRecentFiles));
+                        items
+                    }
+                }),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
-                MenuItem::simple(fl!("menu-export"), "", Message::ExportFile),
                 MenuItem::separator(),
-                MenuItem::simple(fl!("menu-collaboration"), "", Message::ShowCollaborationDialog),
+                MenuItem::submenu(
+                    fl!("menu-import"),
+                    vec![MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)],
+                ),
+                MenuItem::submenu(fl!("menu-export"), vec![MenuItem::cmd(&cmd::FILE_EXPORT, Message::ExportFile)]),
+                MenuItem::separator(),
+                MenuItem::simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::SETTINGS_OPEN, Message::ShowSettings),
                 MenuItem::separator(),
-                MenuItem::cmd(&cmd::FILE_CLOSE, Message::CloseFile),
+                MenuItem::cmd_with_label(&cmd::WINDOW_CLOSE, Message::CloseEditor, fl!("menu-close-editor")),
+                MenuItem::cmd(&cmd::APP_QUIT, Message::QuitApp),
             ],
             edit: vec![
                 MenuItem::cmd_with_label(&cmd::EDIT_UNDO, Message::Undo, undo_label).enabled(undo_desc.is_some()),
@@ -647,6 +674,8 @@ pub fn view_ansi(
 ) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
 
+    let close_editor_hotkey = cmd::WINDOW_CLOSE.primary_hotkey_display().unwrap_or_default();
+
     let style_fn = |theme: &Theme, status: Status| {
         let palette = theme.extended_palette();
         menu::Style {
@@ -667,18 +696,26 @@ pub fn view_ansi(
                 menu_template(menu_items!(
                     (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                    (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
-                    (menu_item_simple(fl!("menu-export"), "", Message::ExportFile)),
                     (separator()),
-                    (menu_item_simple(fl!("menu-collaboration"), "", Message::ShowCollaborationDialog)),
+                    (
+                        menu_item_submenu(fl!("menu-import")),
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog))))
+                    ),
+                    (
+                        menu_item_submenu(fl!("menu-export")),
+                        menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
+                    ),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
                     (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
-                    (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))
+                    (menu_item_simple(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor)),
+                    (menu_item(&cmd::APP_QUIT, Message::QuitApp))
                 ))
             ),
             // Edit menu
@@ -822,18 +859,26 @@ pub fn view_ansi(
                 menu_template(menu_items!(
                     (menu_item(&cmd::FILE_NEW, Message::NewFile)),
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                    (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
-                    (menu_item_simple(fl!("menu-export"), "", Message::ExportFile)),
                     (separator()),
-                    (menu_item_simple(fl!("menu-collaboration"), "", Message::ShowCollaborationDialog)),
+                    (
+                        menu_item_submenu(fl!("menu-import")),
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog))))
+                    ),
+                    (
+                        menu_item_submenu(fl!("menu-export")),
+                        menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
+                    ),
+                    (separator()),
+                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
                     (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
-                    (menu_item(&cmd::FILE_CLOSE, Message::CloseFile))
+                    (menu_item_simple(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor)),
+                    (menu_item(&cmd::APP_QUIT, Message::QuitApp))
                 ))
             ),
             // Edit menu

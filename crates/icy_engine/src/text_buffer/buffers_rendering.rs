@@ -17,7 +17,12 @@ impl TextBuffer {
             log::error!("render_to_rgba: no font available");
             return (Size::new(0, 0), Vec::new());
         };
-        let font_size = font.size();
+        // For 9px letter spacing mode, use 9px cell width (font stores 8px, 9th is rendered at runtime)
+        let font_size = if self.use_letter_spacing && font.width == 8 {
+            Size::new(9, font.height as i32)
+        } else {
+            font.size()
+        };
 
         // Validate buffer dimensions
         if self.width() <= 0 || self.height() <= 0 {
@@ -97,7 +102,12 @@ impl TextBuffer {
             log::error!("render_region_to_rgba_raw: no font available");
             return (Size::new(0, 0), Vec::new());
         };
-        let font_size = font.size();
+        // For 9px letter spacing mode, use 9px cell width (font stores 8px, 9th is rendered at runtime)
+        let font_size = if self.use_letter_spacing && font.width == 8 {
+            Size::new(9, font.height as i32)
+        } else {
+            font.size()
+        };
 
         // Validate buffer dimensions
         if self.width() <= 0 || self.height() <= 0 {
@@ -234,7 +244,11 @@ impl TextBuffer {
         match self.buffer_type {
             super::BufferType::Viewdata => self.render_viewdata_u32(options, pixels, font_size, rect, line_width),
             _ => {
-                self.render_optimized_u32(options, pixels, font_size, rect, line_width);
+                if self.use_letter_spacing {
+                    self.render_optimized_9px_u32(options, pixels, font_size, rect, line_width);
+                } else {
+                    self.render_optimized_u32(options, pixels, font_size, rect, line_width);
+                }
             }
         }
         // Sixel overlay now works on u32 directly
@@ -422,6 +436,199 @@ impl TextBuffer {
                         }
                     }
                     // Strike-through
+                    if ch.attribute.is_crossed_out() {
+                        let mid_y = cell_pixel_h / 2;
+                        let line_offset = (mid_y * line_width + base_px) as usize;
+                        unsafe {
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Separate render method for 9px letter spacing mode.
+    /// Box drawing chars (0xC0-0xDF in CP437) extend 8th pixel to 9th, mimicking VGA hardware.
+    fn render_optimized_9px_u32(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, line_width: i32) {
+        use crate::Palette;
+
+        let palette_cache = self.palette.palette_cache_rgba();
+        let default_fg = Palette::rgb_to_rgba_u32(255, 255, 255);
+        let default_bg = Palette::rgb_to_rgba_u32(0, 0, 0);
+
+        let selection_active = options.selection.is_some();
+        let selection_ref = options.selection.as_ref();
+
+        let explicit_sel_colors = options.selection_fg.as_ref().zip(options.selection_bg.as_ref()).map(|(fg, bg)| {
+            let (f_r, f_g, f_b) = fg.rgb();
+            let (b_r, b_g, b_b) = bg.rgb();
+            (Palette::rgb_to_rgba_u32(f_r, f_g, f_b), Palette::rgb_to_rgba_u32(b_r, b_g, b_b))
+        });
+
+        use rayon::prelude::*;
+
+        let row_size = (font_size.height * line_width) as usize;
+
+        pixels.par_chunks_mut(row_size).enumerate().for_each(|(y, row_pixels)| {
+            let y = y as i32;
+
+            for x in 0..rect.width() {
+                let pos = Position::new(x + rect.start.x, y + rect.start.y);
+                let ch = self.char_at(pos);
+
+                let font = self.font_for_render(ch.font_page()).unwrap_or_else(|| self.font_for_render(0).unwrap());
+
+                let mut fg = ch.attribute.foreground();
+                if ch.attribute.is_bold() && !ch.attribute.is_foreground_rgb() && !ch.attribute.is_foreground_ext() && fg < 8 {
+                    fg += 8;
+                }
+                let bg = ch.attribute.background();
+
+                let mut fg_is_rgb = ch.attribute.is_foreground_rgb();
+                let bg_is_rgb = ch.attribute.is_background_rgb();
+
+                if ch.attribute.is_blinking() && !options.blink_on {
+                    fg = bg;
+                    fg_is_rgb = bg_is_rgb;
+                }
+
+                let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
+
+                let (fg_u32, bg_u32) = if is_selected {
+                    if let Some((sel_fg, sel_bg)) = explicit_sel_colors {
+                        (sel_fg, sel_bg)
+                    } else {
+                        let fg_color = if bg_is_rgb {
+                            let (r, g, b) = ch.attribute.background_rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else if ch.attribute.is_background_ext() {
+                            let idx = ch.attribute.background_ext() as usize;
+                            let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else {
+                            let bg_idx = bg as usize;
+                            if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                        };
+                        let bg_color = if fg_is_rgb {
+                            let (r, g, b) = ch.attribute.foreground_rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else if ch.attribute.is_foreground_ext() {
+                            let idx = ch.attribute.foreground_ext() as usize;
+                            let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                            Palette::rgb_to_rgba_u32(r, g, b)
+                        } else {
+                            let fg_idx = fg as usize;
+                            if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                        };
+                        (fg_color, bg_color)
+                    }
+                } else {
+                    let fg_color = if fg_is_rgb {
+                        let (r, g, b) = ch.attribute.foreground_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if ch.attribute.is_foreground_ext() {
+                        let idx = ch.attribute.foreground_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else {
+                        let fg_idx = fg as usize;
+                        if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                    };
+                    let bg_color = if bg_is_rgb {
+                        let (r, g, b) = ch.attribute.background_rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else if ch.attribute.is_background_ext() {
+                        let idx = ch.attribute.background_ext() as usize;
+                        let (r, g, b) = XTERM_256_PALETTE[idx].1.rgb();
+                        Palette::rgb_to_rgba_u32(r, g, b)
+                    } else {
+                        let bg_idx = bg as usize;
+                        if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                    };
+                    (fg_color, bg_color)
+                };
+
+                let bg_is_transparent = !is_selected && ch.attribute.is_background_transparent();
+                let fg_is_transparent = !is_selected && ch.attribute.is_foreground_transparent();
+
+                let cell_pixel_w = font_size.width;
+                let cell_pixel_h = font_size.height;
+                let base_px = x * cell_pixel_w;
+
+                // Background fill
+                if !bg_is_transparent {
+                    unsafe {
+                        for cy in 0..cell_pixel_h {
+                            let line_offset = (cy * line_width + base_px) as usize;
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = bg_u32;
+                            }
+                        }
+                    }
+                }
+
+                // Foreground glyph with 9px extension for box drawing
+                if !fg_is_transparent {
+                    let glyph = font.glyph(ch.ch);
+                    let max_cy = (glyph.height as usize).min(cell_pixel_h as usize);
+                    let is_box_drawing = (0xC0..=0xDF).contains(&(ch.ch as u16));
+
+                    unsafe {
+                        for cy in 0..max_cy {
+                            let row_byte = glyph.data[cy];
+                            if row_byte == 0 {
+                                continue;
+                            }
+                            let line_offset = (cy as i32 * line_width + base_px) as usize;
+
+                            // Render 8 stored pixels
+                            for cx in 0..8.min(glyph.width as usize) {
+                                if (row_byte & (0x80 >> cx)) != 0 {
+                                    *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                                }
+                            }
+
+                            // 9th pixel: extend 8th for box drawing chars
+                            if is_box_drawing && (row_byte & 0x01) != 0 {
+                                *row_pixels.get_unchecked_mut(line_offset + 8) = fg_u32;
+                            }
+                        }
+                    }
+                }
+
+                // Underline/overline/strikethrough
+                if ch.attribute.is_underlined() || ch.attribute.is_overlined() || ch.attribute.is_crossed_out() {
+                    if fg_is_transparent {
+                        return;
+                    }
+                    if ch.attribute.is_underlined() {
+                        let lines: &[i32] = if ch.attribute.is_double_underlined() {
+                            &[cell_pixel_h - 2, cell_pixel_h - 1]
+                        } else {
+                            &[cell_pixel_h - 1]
+                        };
+                        unsafe {
+                            for ul_y in lines {
+                                if *ul_y >= 0 && *ul_y < cell_pixel_h {
+                                    let line_offset = (*ul_y * line_width + base_px) as usize;
+                                    for cx in 0..cell_pixel_w as usize {
+                                        *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ch.attribute.is_overlined() {
+                        let line_offset = base_px as usize;
+                        unsafe {
+                            for cx in 0..cell_pixel_w as usize {
+                                *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
+                            }
+                        }
+                    }
                     if ch.attribute.is_crossed_out() {
                         let mid_y = cell_pixel_h / 2;
                         let line_offset = (mid_y * line_width + base_px) as usize;

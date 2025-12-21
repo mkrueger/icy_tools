@@ -1,5 +1,5 @@
-pub mod font_library;
-pub use font_library::*;
+pub mod tdf_font_library;
+pub use tdf_font_library::*;
 
 pub mod plugins;
 pub use plugins::*;

@@ -109,6 +109,11 @@ cmd-file-close-action = Close
 cmd-file-close-desc = Close current file
 cmd-file-close-menu = Close
 
+# Application commands
+cmd-app-quit-action = Quit
+cmd-app-quit-desc = Quit the application
+cmd-app-quit-menu = Quit
+
 # Edit commands
 cmd-edit-undo-action = Undo
 cmd-edit-undo-desc = Undo last action

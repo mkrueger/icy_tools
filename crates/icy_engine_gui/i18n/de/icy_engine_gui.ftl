@@ -111,6 +111,11 @@ cmd-file-close-action = Schließen
 cmd-file-close-desc = Aktuelle Datei schließen
 cmd-file-close-menu = Schließen
 
+# Anwendung-Befehle
+cmd-app-quit-action = App beenden
+cmd-app-quit-desc = Anwendung beenden
+cmd-app-quit-menu = App beenden
+
 # Bearbeiten-Befehle
 cmd-edit-undo-action = Rückgängig
 cmd-edit-undo-desc = Letzte Aktion rückgängig machen

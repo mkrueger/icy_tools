@@ -58,6 +58,9 @@ pub mod cmd {
         WINDOW_NEW = "window.new",
         WINDOW_CLOSE = "window.close",
 
+        // Application
+        APP_QUIT = "app.quit",
+
         // Focus Navigation
         FOCUS_NEXT = "focus.next",
         FOCUS_PREVIOUS = "focus.previous",

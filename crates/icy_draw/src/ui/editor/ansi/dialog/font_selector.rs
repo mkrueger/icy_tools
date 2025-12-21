@@ -6,6 +6,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use iced::{
     Alignment, Color, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme,
@@ -17,7 +18,7 @@ use iced::{
         column, container, image, row, text, text_input,
     },
 };
-use icy_engine::{AttributedChar, BitFont, FontMode, RenderOptions, TextAttribute, TextBuffer, get_sauce_font_names};
+use icy_engine::{AttributedChar, BitFont, FileFormat, FontMode, RenderOptions, TextAttribute, TextBuffer, get_sauce_font_names};
 use icy_engine_edit::FormatMode;
 use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
 use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
@@ -26,9 +27,9 @@ use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
 use crate::ui::Message;
 
-/// Helper to wrap FontSelectorMessage in Message
-fn msg(m: FontSelectorMessage) -> Message {
-    Message::AnsiEditor(AnsiEditorMessage::FontSelector(m))
+/// Helper to wrap SetFontMessage in Message
+fn msg(m: SetFontMessage) -> Message {
+    Message::AnsiEditor(AnsiEditorMessage::SetFont(m))
 }
 
 // ============================================================================
@@ -74,7 +75,6 @@ struct CachedPreview {
 pub enum FontCategory {
     Sauce,
     Ansi,
-    Library,
 }
 
 impl FontCategory {
@@ -82,7 +82,6 @@ impl FontCategory {
         match self {
             FontCategory::Sauce => "SAUCE Fonts",
             FontCategory::Ansi => "ANSI Fonts",
-            FontCategory::Library => "Bibliothek",
         }
     }
 
@@ -90,7 +89,6 @@ impl FontCategory {
         match self {
             FontCategory::Sauce => "🏷",
             FontCategory::Ansi => "💻",
-            FontCategory::Library => "📚",
         }
     }
 }
@@ -112,13 +110,7 @@ pub struct FontSource {
 
 impl FontSource {
     fn primary_category(&self) -> FontCategory {
-        if self.sauce_name.is_some() {
-            FontCategory::Sauce
-        } else if self.ansi_slot.is_some() {
-            FontCategory::Ansi
-        } else {
-            FontCategory::Library
-        }
+        if self.sauce_name.is_some() { FontCategory::Sauce } else { FontCategory::Ansi }
     }
 }
 
@@ -146,9 +138,9 @@ enum ListItem {
 // Dialog Messages
 // ============================================================================
 
-/// Messages for the Font Selector dialog
+/// Messages for the Set Font dialog
 #[derive(Debug, Clone)]
-pub enum FontSelectorMessage {
+pub enum SetFontMessage {
     /// Filter text changed
     SetFilter(String),
     /// Clear filter
@@ -172,6 +164,15 @@ pub enum FontSelectorMessage {
     NavigatePageUp,
     /// Navigate page down in font list
     NavigatePageDown,
+
+    /// Load font from file
+    LoadFont,
+    /// Font file selected from dialog
+    FontFileSelected(std::path::PathBuf),
+    /// XBin file has multiple fonts - user selected one
+    XBinFontSelected(usize),
+    /// Cancel XBin font selection
+    XBinFontCancelled,
 
     /// Apply selection
     Apply,
@@ -203,8 +204,8 @@ struct CategoryState {
     font_indices: Vec<usize>,
 }
 
-/// State for the Font Selector dialog
-pub struct FontSelectorDialog {
+/// State for the Set Font dialog
+pub struct SetFontDialog {
     /// Current format mode - determines dialog behavior
     format_mode: FormatMode,
 
@@ -234,10 +235,13 @@ pub struct FontSelectorDialog {
 
     /// Cached list of visible items (rebuilt when filter/categories change)
     visible_items: RefCell<Vec<ListItem>>,
+
+    /// Pending XBin fonts when user selects an .xb file with multiple fonts
+    pending_xbin_fonts: Option<Vec<BitFont>>,
 }
 
-impl FontSelectorDialog {
-    /// Create a new Font Selector dialog
+impl SetFontDialog {
+    /// Create a new Set Font dialog
     pub fn new(state: &icy_engine_edit::EditState) -> Self {
         let buffer = state.get_buffer();
         let format_mode = state.get_format_mode();
@@ -304,7 +308,7 @@ impl FontSelectorDialog {
                     selected_index = existing_idx;
                 }
             } else {
-                // Document-only fonts that don't match SAUCE/ANSI - add to library
+                // Document-only fonts that don't match SAUCE/ANSI - will show in ANSI category
                 let idx = fonts.len();
                 if *slot == current_font_page {
                     selected_index = idx;
@@ -322,7 +326,7 @@ impl FontSelectorDialog {
 
         // Build category states
         let mut categories = HashMap::new();
-        for cat in [FontCategory::Sauce, FontCategory::Ansi, FontCategory::Library] {
+        for cat in [FontCategory::Sauce, FontCategory::Ansi] {
             let font_indices: Vec<usize> = fonts
                 .iter()
                 .enumerate()
@@ -333,7 +337,6 @@ impl FontSelectorDialog {
             let visible = match cat {
                 FontCategory::Sauce => true,
                 FontCategory::Ansi => !only_sauce_fonts,
-                FontCategory::Library => !only_sauce_fonts,
             };
 
             categories.insert(
@@ -360,6 +363,7 @@ impl FontSelectorDialog {
             large_preview_cache: RefCell::new(None),
             list_viewport: RefCell::new(Viewport::default()),
             visible_items: RefCell::new(Vec::new()),
+            pending_xbin_fonts: None,
         };
 
         // Build initial visible items and scroll to selection
@@ -392,7 +396,7 @@ impl FontSelectorDialog {
     fn rebuild_visible_items(&self) {
         let mut items = Vec::new();
 
-        for cat in [FontCategory::Sauce, FontCategory::Ansi, FontCategory::Library] {
+        for cat in [FontCategory::Sauce, FontCategory::Ansi] {
             if let Some(state) = self.categories.get(&cat) {
                 if !state.visible {
                     continue;
@@ -557,9 +561,83 @@ impl FontSelectorDialog {
         }
     }
 
+    fn create_result_from_font(&self, font: BitFont) -> FontSelectorResult {
+        match self.format_mode {
+            FormatMode::LegacyDos | FormatMode::XBin => FontSelectorResult::SingleFont(font),
+            FormatMode::XBinExtended | FormatMode::Unrestricted => FontSelectorResult::FontForSlot { slot: self.active_slot, font },
+        }
+    }
+
+    /// Load fonts from a file path
+    /// Returns Ok(fonts) if successful, with 1 or more fonts
+    fn load_fonts_from_file(path: &PathBuf) -> Result<Vec<BitFont>, String> {
+        let data = std::fs::read(path).map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))?;
+
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+
+        // Try loading based on extension
+        match ext.as_str() {
+            "psf" | "psf2" | "psfu" => {
+                // PSF font file
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
+                BitFont::from_bytes(name, &data)
+                    .map(|f| vec![f])
+                    .map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))
+            }
+            "yaff" => {
+                // YAFF font file
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
+                BitFont::from_bytes(name, &data)
+                    .map(|f| vec![f])
+                    .map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))
+            }
+            "xb" => {
+                // XBin file - may contain 1 or 2 fonts
+                Self::load_fonts_from_xbin(&data, path)
+            }
+            _ => {
+                // Try as raw font (F08, F14, F16, F19, etc.)
+                if ext.starts_with('f') && ext.len() >= 2 {
+                    let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
+                    BitFont::from_bytes(name, &data)
+                        .map(|f| vec![f])
+                        .map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))
+                } else {
+                    // Try generic loading
+                    let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
+                    BitFont::from_bytes(name, &data)
+                        .map(|f| vec![f])
+                        .map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))
+                }
+            }
+        }
+    }
+
+    /// Load fonts from XBin data
+    fn load_fonts_from_xbin(data: &[u8], path: &PathBuf) -> Result<Vec<BitFont>, String> {
+        // Try to parse as XBin
+        let screen = FileFormat::XBin
+            .from_bytes(data, None)
+            .map_err(|e| format!("{}: {}", fl!("set-font-load-error"), e))?;
+
+        let buffer = screen.screen.buffer;
+        let mut fonts = Vec::new();
+
+        for (slot, font) in buffer.font_iter() {
+            let mut font = font.clone();
+            if font.name().is_empty() || font.name() == "Font" {
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font");
+                font.set_name(&format!("{} ({})", name, slot + 1));
+            }
+            fonts.push(font);
+        }
+
+        if fonts.is_empty() { Err(fl!("set-font-xbin-no-fonts")) } else { Ok(fonts) }
+    }
+
     fn get_visible_fonts(&self) -> Vec<usize> {
         let mut result = Vec::new();
-        for cat in [FontCategory::Sauce, FontCategory::Ansi, FontCategory::Library] {
+        for cat in [FontCategory::Sauce, FontCategory::Ansi] {
             if let Some(state) = self.categories.get(&cat) {
                 if state.visible && state.expanded {
                     for &idx in &state.font_indices {
@@ -654,6 +732,11 @@ impl FontSelectorDialog {
     // ========================================================================
 
     fn view_split_layout(&self) -> Element<'_, Message> {
+        // If we have pending XBin fonts, show the selection dialog instead
+        if let Some(ref xbin_fonts) = self.pending_xbin_fonts {
+            return self.view_xbin_font_selection(xbin_fonts);
+        }
+
         let left_panel = self.view_left_panel();
         let right_panel = self.view_right_panel();
 
@@ -666,9 +749,10 @@ impl FontSelectorDialog {
         .spacing(0);
 
         let button_row = row![
+            secondary_button(fl!("set-font-load-font"), Some(msg(SetFontMessage::LoadFont))),
             Space::new().width(Length::Fill),
-            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(FontSelectorMessage::Cancel))),
-            primary_button(format!("{}", ButtonType::Ok), self.selected_font().map(|_| msg(FontSelectorMessage::Apply))),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(SetFontMessage::Cancel))),
+            primary_button(format!("{}", ButtonType::Ok), self.selected_font().map(|_| msg(SetFontMessage::Apply))),
         ]
         .spacing(DIALOG_SPACING)
         .align_y(Alignment::Center);
@@ -681,16 +765,44 @@ impl FontSelectorDialog {
         modal_container(dialog_column.into(), DIALOG_WIDTH).into()
     }
 
+    /// View for XBin font selection when .xb has multiple fonts
+    fn view_xbin_font_selection(&self, fonts: &[BitFont]) -> Element<'_, Message> {
+        let title = text(fl!("set-font-xbin-select-title")).size(16);
+
+        let mut font_buttons = column![].spacing(DIALOG_SPACING);
+        for (i, font) in fonts.iter().enumerate() {
+            let slot_num = (i + 1) as i64;
+            let font_label = fl!("set-font-xbin-font", slot = slot_num);
+            let label = format!("{}: {} ({}x{})", font_label, font.name(), font.size().width, font.size().height);
+            font_buttons = font_buttons.push(secondary_button(label, Some(msg(SetFontMessage::XBinFontSelected(i)))));
+        }
+
+        let button_row = row![
+            Space::new().width(Length::Fill),
+            secondary_button(format!("{}", ButtonType::Cancel), Some(msg(SetFontMessage::XBinFontCancelled))),
+        ]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center);
+
+        let content = column![title, Space::new().height(16.0), font_buttons, Space::new().height(16.0),].padding(16);
+
+        let dialog_content = dialog_area(content.into());
+        let button_area = dialog_area(button_row.into());
+        let dialog_column = column![container(dialog_content).height(Length::Shrink), separator(), button_area];
+
+        modal_container(dialog_column.into(), 400.0).into()
+    }
+
     fn view_left_panel(&self) -> Element<'_, Message> {
         let search_input = text_input(&fl!("font-selector-filter-placeholder"), &self.filter)
-            .on_input(|s| msg(FontSelectorMessage::SetFilter(s)))
+            .on_input(|s| msg(SetFontMessage::SetFilter(s)))
             .width(Length::Fill)
             .padding(8);
 
         // Canvas-based font list with overlay scrollbar
         let font_list_canvas: Element<'_, Message> = Canvas::new(FontListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport).view().map(|_| msg(FontSelectorMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
+        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport).view().map(|_| msg(SetFontMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
 
         let list_row = row![font_list_canvas, scrollbar,];
 
@@ -699,13 +811,13 @@ impl FontSelectorDialog {
             .on_event(|event, _id| {
                 if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
-                        Key::Named(Named::ArrowUp) => Some(msg(FontSelectorMessage::NavigateUp)),
-                        Key::Named(Named::ArrowDown) => Some(msg(FontSelectorMessage::NavigateDown)),
-                        Key::Named(Named::Home) => Some(msg(FontSelectorMessage::NavigateHome)),
-                        Key::Named(Named::End) => Some(msg(FontSelectorMessage::NavigateEnd)),
-                        Key::Named(Named::PageUp) => Some(msg(FontSelectorMessage::NavigatePageUp)),
-                        Key::Named(Named::PageDown) => Some(msg(FontSelectorMessage::NavigatePageDown)),
-                        Key::Named(Named::Enter) => Some(msg(FontSelectorMessage::Apply)),
+                        Key::Named(Named::ArrowUp) => Some(msg(SetFontMessage::NavigateUp)),
+                        Key::Named(Named::ArrowDown) => Some(msg(SetFontMessage::NavigateDown)),
+                        Key::Named(Named::Home) => Some(msg(SetFontMessage::NavigateHome)),
+                        Key::Named(Named::End) => Some(msg(SetFontMessage::NavigateEnd)),
+                        Key::Named(Named::PageUp) => Some(msg(SetFontMessage::NavigatePageUp)),
+                        Key::Named(Named::PageDown) => Some(msg(SetFontMessage::NavigatePageDown)),
+                        Key::Named(Named::Enter) => Some(msg(SetFontMessage::Apply)),
                         _ => None,
                     }
                 } else {
@@ -766,7 +878,7 @@ impl FontSelectorDialog {
 // ============================================================================
 
 struct FontListCanvas<'a> {
-    dialog: &'a FontSelectorDialog,
+    dialog: &'a SetFontDialog,
 }
 
 impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
@@ -877,10 +989,10 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         if click_y >= current_y && click_y < current_y + height {
                             match item {
                                 ListItem::CategoryHeader { category, .. } => {
-                                    return Some(canvas::Action::publish(msg(FontSelectorMessage::ToggleCategory(*category))));
+                                    return Some(canvas::Action::publish(msg(SetFontMessage::ToggleCategory(*category))));
                                 }
                                 ListItem::FontItem { font_idx } => {
-                                    return Some(canvas::Action::publish(msg(FontSelectorMessage::SelectFont(*font_idx))));
+                                    return Some(canvas::Action::publish(msg(SetFontMessage::SelectFont(*font_idx))));
                                 }
                             }
                         }
@@ -932,76 +1044,126 @@ fn preview_container_style(theme: &Theme) -> container::Style {
 // Dialog Implementation
 // ============================================================================
 
-impl Dialog<Message> for FontSelectorDialog {
+impl Dialog<Message> for SetFontDialog {
     fn view(&self) -> Element<'_, Message> {
         self.view_split_layout()
     }
 
     fn update(&mut self, message: &Message) -> Option<DialogAction<Message>> {
-        let Message::AnsiEditor(AnsiEditorMessage::FontSelector(msg)) = message else {
+        let Message::AnsiEditor(AnsiEditorMessage::SetFont(msg)) = message else {
             return None;
         };
 
         match msg {
-            FontSelectorMessage::SetFilter(f) => {
+            SetFontMessage::SetFilter(f) => {
                 self.filter = f.clone();
                 self.ensure_selection_visible();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::ClearFilter => {
+            SetFontMessage::ClearFilter => {
                 self.filter.clear();
                 self.rebuild_visible_items();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::ToggleCategory(cat) => {
+            SetFontMessage::ToggleCategory(cat) => {
                 if let Some(state) = self.categories.get_mut(cat) {
                     state.expanded = !state.expanded;
                 }
                 self.ensure_selection_visible();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::SelectFont(idx) => {
+            SetFontMessage::SelectFont(idx) => {
                 self.selected_index = *idx;
                 self.scroll_to_selection();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigateUp => {
+            SetFontMessage::NavigateUp => {
                 if let Some(prev) = self.find_prev_font() {
                     self.selected_index = prev;
                     self.scroll_to_selection();
                 }
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigateDown => {
+            SetFontMessage::NavigateDown => {
                 if let Some(next) = self.find_next_font() {
                     self.selected_index = next;
                     self.scroll_to_selection();
                 }
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigateHome => {
+            SetFontMessage::NavigateHome => {
                 if let Some(first) = self.find_first_font() {
                     self.selected_index = first;
                     self.scroll_to_selection();
                 }
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigateEnd => {
+            SetFontMessage::NavigateEnd => {
                 if let Some(last) = self.find_last_font() {
                     self.selected_index = last;
                     self.scroll_to_selection();
                 }
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigatePageUp => {
+            SetFontMessage::NavigatePageUp => {
                 self.page_up();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::NavigatePageDown => {
+            SetFontMessage::NavigatePageDown => {
                 self.page_down();
                 Some(DialogAction::None)
             }
-            FontSelectorMessage::Apply => {
+            SetFontMessage::LoadFont => {
+                // Open file dialog for font selection
+                let filter = rfd::FileDialog::new()
+                    .add_filter(
+                        &fl!("set-font-filter-fonts"),
+                        &["psf", "psf2", "psfu", "yaff", "xb", "f08", "f14", "f16", "f19"],
+                    )
+                    .add_filter(&fl!("set-font-filter-all"), &["*"]);
+
+                if let Some(path) = filter.pick_file() {
+                    // Process the file directly
+                    match Self::load_fonts_from_file(&path) {
+                        Ok(fonts) => {
+                            if fonts.len() == 1 {
+                                // Single font - apply directly
+                                let result = self.create_result_from_font(fonts.into_iter().next().unwrap());
+                                return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                                    AnsiEditorCoreMessage::ApplyFontSelection(result),
+                                ))));
+                            } else {
+                                // Multiple fonts - show selection dialog
+                                self.pending_xbin_fonts = Some(fonts);
+                            }
+                        }
+                        Err(_e) => {
+                            // TODO: Show error notification
+                        }
+                    }
+                }
+                Some(DialogAction::None)
+            }
+            SetFontMessage::FontFileSelected(_path) => {
+                // Handled synchronously in LoadFont
+                Some(DialogAction::None)
+            }
+            SetFontMessage::XBinFontSelected(idx) => {
+                if let Some(fonts) = self.pending_xbin_fonts.take() {
+                    if let Some(font) = fonts.into_iter().nth(*idx) {
+                        let result = self.create_result_from_font(font);
+                        return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                            AnsiEditorCoreMessage::ApplyFontSelection(result),
+                        ))));
+                    }
+                }
+                Some(DialogAction::None)
+            }
+            SetFontMessage::XBinFontCancelled => {
+                self.pending_xbin_fonts = None;
+                Some(DialogAction::None)
+            }
+            SetFontMessage::Apply => {
                 if let Some(result) = self.create_result() {
                     Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
                         AnsiEditorCoreMessage::ApplyFontSelection(result),
@@ -1010,7 +1172,7 @@ impl Dialog<Message> for FontSelectorDialog {
                     Some(DialogAction::None)
                 }
             }
-            FontSelectorMessage::Cancel => Some(DialogAction::Close),
+            SetFontMessage::Cancel => Some(DialogAction::Close),
         }
     }
 

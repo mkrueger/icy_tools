@@ -159,6 +159,9 @@ impl Screen for TextScreen {
             dims
         }
     }
+    fn set_font_dimensions(&mut self, size: Size) {
+        self.buffer.set_font_dimensions(size);
+    }
 
     fn selection(&self) -> Option<Selection> {
         self.selection_opt

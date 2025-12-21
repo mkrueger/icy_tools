@@ -41,6 +41,7 @@ menu-open_recent_clear=Clear
 menu-no_recent_files=No Recent Files
 menu-clear_recent_files=Clear Recent Files
 menu-save=Save
+menu-import=Import
 menu-edit-sauce=Edit Sauce Info…
 menu-9px-font=9px Font
 menu-aspect-ratio=Legacy Aspect Ratio
@@ -67,22 +68,21 @@ file-settings-comments-title=SAUCE Comments
 file-settings-comments-info=Max 255 lines, 64 characters per line
 menu-close=Close
 menu-save-as=Save As…
-menu-collaboration=Collaboration…
+menu-connect-to-server=Connect to Server…
+menu-close-editor=Close Editor
+menu-quit-app=Quit
 menu-toggle-chat=Toggle Chat Panel
 
-# Collaboration dialog
+# Connect to server dialog
 collab-nickname=Nickname
 collab-nickname-placeholder=Your name
 collab-group=Group
 collab-group-placeholder=Optional
 collab-password=Password
 collab-password-placeholder=Optional
-collab-mode-connect=Connect to existing server
-collab-mode-host=Host new session
 collab-server-url=Server URL
 collab-server-url-placeholder=host:port or ws://host:port
-collab-port=Port
-collab-start-button=Start
+collab-connect-button=Connect
 button-cancel=Cancel
 
 # File dialogs
@@ -196,7 +196,7 @@ menu-open_font_selector=Select Font…
 menu-open_font_slot_manager=Manage Font Slots…
 menu-add_fonts=Add Fonts…
 menu-open_font_manager=Edit Buffer Fonts…
-menu-open_font_directoy=Open Font Directory…
+menu-open_font_directoy=Open Text-Art Fonts Directory…
 
 # Font Selector Dialog
 font-selector-title-single=Select Font
@@ -212,6 +212,15 @@ font-selector-no-fonts-installed=No fonts installed
 font-selector-no-fonts-match=No fonts match the filter
 font-selector-no-selection=No font selected
 font-selector-preview-sample=ABCDEFGHIJ abcdefghij 0123456789 !@#$%
+
+# Set Font Dialog
+set-font-load-font=Load Font…
+set-font-filter-fonts=Font files
+set-font-filter-all=All files
+set-font-load-error=Error loading font
+set-font-xbin-select-title=Select font from XBin file
+set-font-xbin-font=Font { $slot }
+set-font-xbin-no-fonts=No fonts found in XBin file
 
 menu-help=Help
 menu-discuss=Discuss
@@ -495,8 +504,8 @@ pipette-hover_hint = Hover over canvas to pick colors
 pipette-help = ⇧: FG only   ⌃: BG only
 
 # Font Tool
-font-tool-no_fonts = No fonts installed
-font-tool-open_directory = Open Font Directory
+font-tool-no_fonts = No text-art fonts installed
+font-tool-open_directory = Open Text-Art Fonts Directory
 font-tool-select_font = Select Font…
 font-tool-outline = Outline:
 font-tool-outline_normal = Normal
@@ -612,7 +621,7 @@ font_tool_no_font=<none>
 font_tool_no_fonts_label=
     No tdf fonts found.
     Install new fonts in the font directory
-font_tool_open_directory_button=Open font directory
+font_tool_open_directory_button=Open text-art fonts directory
 
 pipette_tool_char_code=Code { $code }
 pipette_tool_foreground=Foreground { $fg }
@@ -832,7 +841,7 @@ settings-paths-header=Paths
 settings-paths-config-dir=Config dir:
 settings-paths-config-file=Config file:
 settings-paths-log-file=Log file:
-settings-paths-font-dir=Font dir:
+settings-paths-font-dir=Text-Art Fonts:
 settings-paths-plugin-dir=Plugin dir:
 settings-paths-open=Open
 settings-reference-alpha=Reference image alpha

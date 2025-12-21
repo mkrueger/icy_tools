@@ -1119,7 +1119,6 @@ impl EditorUndoOp {
 }
 
 // Collaboration support - mapping UndoOps to ClientCommands
-#[cfg(feature = "collaboration")]
 mod collab_mapping {
     use super::EditorUndoOp;
     use crate::collaboration::{Block, ClientCommand};

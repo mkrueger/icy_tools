@@ -254,6 +254,10 @@ pub enum Message {
     FileSaved(PathBuf), // Path where file was saved (from SaveAs dialog)
     ExportFile,
     CloseFile,
+    /// Close the current editor window (Ctrl+W semantics)
+    CloseEditor,
+    /// Quit the application (close all windows)
+    QuitApp,
     /// Save the file and then close the window
     SaveAndCloseFile,
     /// Close without saving (user confirmed "Don't Save")
@@ -343,16 +347,14 @@ pub enum Message {
     // ═══════════════════════════════════════════════════════════════════════════
     // Collaboration
     // ═══════════════════════════════════════════════════════════════════════════
-    /// Show collaboration dialog (connect or host)
-    ShowCollaborationDialog,
+    /// Show connect to server dialog
+    ShowConnectDialog,
     /// Toggle chat panel visibility
     ToggleChatPanel,
-    /// Collaboration dialog messages
-    CollaborationDialog(crate::ui::dialog::CollaborationDialogMessage),
+    /// Connect dialog messages
+    ConnectDialog(crate::ui::dialog::ConnectDialogMessage),
     /// Connect to server with result from dialog
     ConnectToServer(crate::ui::dialog::ConnectDialogResult),
-    /// Host a collaboration session
-    HostSession(crate::ui::dialog::HostSessionResult),
     /// Chat panel messages
     ChatPanel(crate::ui::collaboration::ChatPanelMessage),
     /// Collaboration subscription message
@@ -993,6 +995,10 @@ impl MainWindow {
             Message::FileSaved(path) => self.file_saved(path),
             Message::SaveSucceeded(_) => Task::none(),
             Message::CloseFile => self.close_file(),
+            Message::CloseEditor | Message::QuitApp => {
+                // Handled at WindowManager level
+                Task::none()
+            }
             Message::SaveAndCloseFile => self.save_and_close_file(),
             Message::ForceCloseFile => {
                 // Close the confirmation dialog first (if any)
@@ -1478,14 +1484,14 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════════════
             // Collaboration
             // ═══════════════════════════════════════════════════════════════════════════
-            Message::ShowCollaborationDialog => {
-                // Show collaboration dialog with settings pre-filled
-                use crate::ui::dialog::CollaborationDialog;
+            Message::ShowConnectDialog => {
+                // Show connect to server dialog with settings pre-filled
+                use crate::ui::dialog::ConnectDialog;
                 let opts = self.options.read();
-                self.dialogs.push(CollaborationDialog::with_settings(&opts));
+                self.dialogs.push(ConnectDialog::with_settings(&opts));
                 Task::none()
             }
-            Message::CollaborationDialog(_) => {
+            Message::ConnectDialog(_) => {
                 // Route to dialog stack
                 if let Some(task) = self.dialogs.update(&message) {
                     return task;
@@ -1510,76 +1516,6 @@ impl MainWindow {
                     .start_connecting(result.url.clone(), result.nick.clone(), result.group.clone(), result.password.clone());
 
                 let toast = Toast::info(format!("Connecting to {}...", result.url));
-                Task::done(Message::ShowToast(toast))
-            }
-            Message::HostSession(ref result) => {
-                // Start hosting a collaboration session with the current document
-                log::info!("Starting collaboration server on port {} as {}", result.port, result.nick);
-
-                // Save nick and group to settings
-                {
-                    let opts = self.options.read();
-                    opts.set_collaboration_nick(&result.nick);
-                    opts.set_collaboration_group(&result.group);
-                }
-
-                // Get document dimensions from current editor
-                let (columns, rows) = if let ModeState::Ansi(editor) = &self.mode_state {
-                    editor.get_buffer_dimensions()
-                } else {
-                    (80, 25)
-                };
-
-                // Start the embedded server
-                let port = result.port;
-                let password = result.password.clone();
-                let nick = result.nick.clone();
-
-                // Spawn server in background
-                std::thread::spawn(move || {
-                    use icy_engine_edit::collaboration::{ServerConfig, run_server as run_collab_server};
-
-                    let bind_addr = format!("0.0.0.0:{}", port);
-                    let bind_addr: std::net::SocketAddr = match bind_addr.parse() {
-                        Ok(addr) => addr,
-                        Err(e) => {
-                            log::error!("Invalid bind address: {}", e);
-                            return;
-                        }
-                    };
-
-                    let config = ServerConfig {
-                        bind_addr,
-                        password,
-                        max_users: 0,
-                        columns,
-                        rows,
-                        enable_extended_protocol: true,
-                        status_message: String::new(),
-                        initial_document: None,
-                        ice_colors: false,
-                        use_9px_font: false,
-                        font_name: "IBM VGA".to_string(),
-                        sauce: Default::default(),
-                        // Use defaults for UI strings (this runs in background)
-                        ..Default::default()
-                    };
-
-                    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-                    rt.block_on(async {
-                        if let Err(e) = run_collab_server(config).await {
-                            log::error!("Server error: {}", e);
-                        }
-                    });
-                });
-
-                // Give server a moment to start, then connect to it
-                let local_url = format!("ws://127.0.0.1:{}", port);
-                let group = result.group.clone();
-                self.collaboration_state
-                    .start_connecting(local_url.clone(), nick, group, result.password.clone());
-
-                let toast = Toast::success(format!("Hosting session on port {}", port));
                 Task::done(Message::ShowToast(toast))
             }
             Message::ToggleChatPanel => {
@@ -1637,9 +1573,21 @@ impl MainWindow {
                             CollaborationEvent::Connected(doc) => {
                                 self.collaboration_state.start_session(&doc);
 
-                                // Apply initial document snapshot from server
+                                // Create a new editor with the document from the server
+                                let buffer = AnsiEditorMainArea::create_buffer_from_remote_document(&doc);
+                                self.mode_state =
+                                    ModeState::Ansi(AnsiEditorMainArea::with_buffer(buffer, None, self.options.clone(), self.font_library.clone()));
+
+                                // Apply SAUCE metadata to the new editor
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                                    editor.apply_remote_document(&doc);
+                                    editor.with_edit_state(|state| {
+                                        let mut sauce = icy_engine_edit::SauceMetaData::default();
+                                        sauce.title = doc.title.clone().into();
+                                        sauce.author = doc.author.clone().into();
+                                        sauce.group = doc.group.clone().into();
+                                        sauce.comments = doc.comments.lines().map(|line| line.to_string().into()).collect();
+                                        state.set_sauce_meta(sauce);
+                                    });
                                     editor.sync_ui();
                                 }
 

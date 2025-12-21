@@ -9,7 +9,6 @@ license.workspace = true
 
 [features]
 default = []
-collaboration = ["tokio", "tokio-tungstenite", "futures-util", "serde_json", "anstream"]
 
 [dependencies]
 icy_engine = { workspace = true }
@@ -31,15 +30,16 @@ i18n-embed-fl= { workspace = true }
 rust-embed = { workspace = true } 
 once_cell = { workspace = true } 
 bstr = { workspace = true }
+rayon = { workspace = true }
 
 anyhow = "1.0.100"
 
-# Optional collaboration dependencies
-tokio = { workspace = true, optional = true }
-tokio-tungstenite = { workspace = true, optional = true }
-futures-util = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-anstream = { workspace = true, optional = true }
+# Collaboration dependencies
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+anstream = { workspace = true }
 
 [dev-dependencies]
 png = "0.18.0"

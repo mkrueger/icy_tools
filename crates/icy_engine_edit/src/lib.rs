@@ -12,7 +12,6 @@ pub use layer_utils::{layer_from_area, stamp_layer};
 
 pub mod tools;
 
-#[cfg(feature = "collaboration")]
 pub mod collaboration;
 
 use i18n_embed::{

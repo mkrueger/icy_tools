@@ -375,16 +375,6 @@ impl BitFont {
         }
     }
 
-    /// Convert this 8px wide font to a 9px wide font for VGA letter spacing mode.
-    /// For box-drawing characters (CP437 0xC0-0xDF), the 8th pixel is extended to the 9th.
-    /// Note: 9px fonts are stored as 8px with the 9th pixel logic applied at render time,
-    /// since CompactGlyph only supports up to 8 pixels width.
-    pub fn to_9px_font(&self) -> Self {
-        // 9px fonts can't be stored in CompactGlyph (max 8px width)
-        // Return a clone - the 9th pixel extension should be handled at render time
-        self.clone()
-    }
-
     /// Load font from ANSI font slot (0-42)
     ///
     /// # Arguments

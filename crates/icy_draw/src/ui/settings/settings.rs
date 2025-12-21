@@ -249,8 +249,25 @@ impl Settings {
         })
     }
 
-    pub fn font_dir() -> Option<PathBuf> {
-        Self::config_dir().map(|d| d.join("data/fonts"))
+    /// Directory for Text-Art fonts (TDF/FIGlet).
+    ///
+    /// Migration behavior:
+    /// - Prefer the new directory `data/text_art_fonts` if it exists.
+    /// - Otherwise fall back to the legacy directory `data/fonts` if it exists.
+    /// - If neither exists, return the new directory path.
+    pub fn text_art_font_dir() -> Option<PathBuf> {
+        let config_dir = Self::config_dir()?;
+        let new_dir = config_dir.join("data/text_art_fonts");
+        if new_dir.exists() {
+            return Some(new_dir);
+        }
+
+        let legacy_dir = config_dir.join("data/fonts");
+        if legacy_dir.exists() {
+            return Some(legacy_dir);
+        }
+
+        Some(new_dir)
     }
 
     pub fn plugin_dir() -> Option<PathBuf> {

@@ -224,7 +224,7 @@ pub enum AnsiEditorMessage {
     SwitchFontSlot(usize),
     OpenFontSelector,
     OpenFontSelectorForSlot(usize),
-    FontSelector(FontSelectorMessage),
+    SetFont(SetFontMessage),
     OpenFontSlotManager,
     FontSlotManager(FontSlotManagerMessage),
     TdfFontSelector(TdfFontSelectorMessage),

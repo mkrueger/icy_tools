@@ -721,7 +721,6 @@ impl EditState {
 
     /// Get the floating layer content as collaboration Blocks (for PasteAsSelection)
     /// Returns None if no floating layer exists
-    #[cfg(feature = "collaboration")]
     pub fn get_floating_layer_blocks(&self) -> Option<crate::collaboration::Blocks> {
         use icy_engine::TextPane;
 
@@ -901,6 +900,10 @@ impl Screen for EditState {
 
     fn font_dimensions(&self) -> Size {
         self.screen.font_dimensions()
+    }
+
+    fn set_font_dimensions(&mut self, size: Size) {
+        self.screen.set_font_dimensions(size);
     }
 
     fn selection(&self) -> Option<Selection> {

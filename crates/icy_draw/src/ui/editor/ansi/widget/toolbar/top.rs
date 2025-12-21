@@ -847,9 +847,9 @@ impl TopToolbar {
         // No fonts installed - show message and open directory button
         if !info.has_fonts {
             let content = row![
-                text("No fonts installed").size(TEXT_SIZE_NORMAL),
+                text(fl!("font-tool-no_fonts")).size(TEXT_SIZE_NORMAL),
                 Space::new().width(Length::Fixed(SPACE_16)),
-                primary_button("Open Font Directory", Some(TopToolbarMessage::OpenFontDirectory)),
+                primary_button(fl!("font-tool-open_directory"), Some(TopToolbarMessage::OpenFontDirectory)),
             ]
             .spacing(SPACE_8)
             .align_y(iced::Alignment::Center);
