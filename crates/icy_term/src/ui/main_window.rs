@@ -9,7 +9,6 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    McpHandler,
     commands::{cmd, create_icy_term_commands},
     mcp::{self, McpCommand, types::ScreenCaptureFormat},
     scripting::parse_key_string,
@@ -105,7 +104,6 @@ pub struct MainWindow {
 
     // Terminal thread communication
     terminal_tx: mpsc::UnboundedSender<TerminalCommand>,
-    terminal_rx: Option<mpsc::UnboundedReceiver<TerminalEvent>>,
 
     // Connection state
     is_connected: bool,
@@ -124,7 +122,6 @@ pub struct MainWindow {
     pub show_find_dialog: bool,
     show_disconnect: bool,
 
-    pub mcp_rx: McpHandler,
     /// Pending MCP script response channel
     pub pending_script_response: Option<crate::mcp::SenderType<crate::mcp::ScriptResult>>,
     pub title: String,
@@ -151,6 +148,9 @@ impl MainWindow {
 
         let (terminal_tx, terminal_rx) = create_terminal_thread(edit_screen.clone(), addresses.clone());
 
+        // Register the terminal receiver for the async subscription
+        super::terminal_subscription::register_terminal_receiver(id, terminal_rx);
+
         let serial = options.lock().serial.clone();
         let cached_monitor_settings = Arc::new(options.lock().monitor_settings.clone());
 
@@ -175,7 +175,6 @@ impl MainWindow {
             capture_directory: default_capture_path.to_string_lossy().to_string(),
 
             terminal_tx,
-            terminal_rx: Some(terminal_rx),
 
             is_connected: false,
             connection_time: None,
@@ -191,7 +190,6 @@ impl MainWindow {
             show_find_dialog: false,
             show_disconnect: false,
             sound_thread,
-            mcp_rx: None,
             pending_script_response: None,
             terminal_emulation: TerminalEmulation::Ansi,
             commands: MainWindowCommands::new(),
@@ -1522,26 +1520,6 @@ impl MainWindow {
                 Task::none()
             }
         }
-    }
-
-    pub fn get_mcp_commands(&mut self) -> Vec<McpCommand> {
-        let mut mcp_commands = Vec::new();
-        if let Some(rx) = &mut self.mcp_rx {
-            while let Ok(cmd) = rx.try_recv() {
-                mcp_commands.push(cmd);
-            }
-        }
-        mcp_commands
-    }
-
-    pub fn get_terminal_commands(&mut self) -> Vec<TerminalEvent> {
-        let mut events = Vec::new();
-        if let Some(rx) = &mut self.terminal_rx {
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
-            }
-        }
-        events
     }
 
     pub fn theme(&self) -> Theme {

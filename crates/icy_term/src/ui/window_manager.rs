@@ -45,6 +45,9 @@ pub struct WindowManager {
     commands: WindowCommands,
 }
 
+use crate::mcp::McpCommand;
+use crate::terminal::terminal_thread::TerminalEvent;
+
 #[derive(Debug, Clone)]
 pub enum WindowManagerMessage {
     OpenWindow,
@@ -57,7 +60,10 @@ pub enum WindowManagerMessage {
     WindowMessage(window::Id, Message),
     TitleChanged(window::Id, String),
     Event(window::Id, iced::Event),
-    UpdateBuffers,
+    /// Terminal event from async subscription (window_id, event)
+    TerminalEvent(usize, TerminalEvent),
+    /// MCP command from async subscription
+    McpCommand(Arc<McpCommand>),
     AnimationTick,
 }
 
@@ -173,8 +179,9 @@ impl WindowManager {
                     self.options.clone(),
                 );
 
+                // Register MCP receiver for async subscription (only once, for first window)
                 if let Some(mcp_rx) = self.mcp_rx.take() {
-                    window.mcp_rx = Some(mcp_rx);
+                    super::terminal_subscription::register_mcp_receiver(mcp_rx);
                 }
 
                 // Show startup error if any
@@ -217,7 +224,9 @@ impl WindowManager {
                     (None, None) => focus_task,
                 }
             }
-            WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
+            WindowManagerMessage::WindowClosed(id) => {
+                handle_window_closed(&mut self.windows, id)
+            }
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
@@ -244,23 +253,22 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::UpdateBuffers => {
-                let mut tasks = vec![];
-                for (id, window) in self.windows.iter_mut() {
-                    let mcp_commands = window.get_mcp_commands();
-                    for cmd in mcp_commands {
-                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::McpCommand(Arc::new(cmd)))));
+            WindowManagerMessage::TerminalEvent(window_id, event) => {
+                // Find the window by its id (usize) and forward the terminal event
+                for (id, window) in self.windows.iter() {
+                    if window.id == window_id {
+                        return Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::TerminalEvent(event)));
                     }
+                }
+                Task::none()
+            }
 
-                    let terminal_events = window.get_terminal_commands();
-                    for cmd in terminal_events {
-                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::TerminalEvent(cmd))));
-                    }
+            WindowManagerMessage::McpCommand(cmd) => {
+                // Forward MCP command to first window
+                if let Some((id, _)) = self.windows.iter().next() {
+                    return Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::McpCommand(cmd)));
                 }
-                if tasks.is_empty() {
-                    return Task::none();
-                }
-                Task::batch(tasks)
+                Task::none()
             }
 
             WindowManagerMessage::TitleChanged(id, title) => {
@@ -290,7 +298,7 @@ impl WindowManager {
     }
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
-        let subs: Vec<Subscription<WindowManagerMessage>> = vec![
+        let mut subs: Vec<Subscription<WindowManagerMessage>> = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             iced::event::listen_with(|event, _status, window_id| {
                 // Only forward events that are actually needed - skip mouse move events
@@ -337,8 +345,23 @@ impl WindowManager {
                     _ => None,
                 }
             }),
-            iced::time::every(std::time::Duration::from_millis(160)).map(|_| WindowManagerMessage::UpdateBuffers),
         ];
+
+        // Add async terminal subscriptions for each window
+        for window in self.windows.values() {
+            subs.push(
+                super::terminal_subscription::terminal_events(window.id)
+                    .map(|(window_id, event)| WindowManagerMessage::TerminalEvent(window_id, event)),
+            );
+        }
+
+        // Add MCP subscription if MCP is enabled (single global subscription)
+        if super::terminal_subscription::has_mcp_receiver() || self.mcp_rx.is_some() {
+            subs.push(
+                super::terminal_subscription::mcp_events()
+                    .map(WindowManagerMessage::McpCommand),
+            );
+        }
 
         iced::Subscription::batch(subs)
     }

@@ -4,6 +4,8 @@ pub use main_window::*;
 pub mod main_window_state;
 pub use main_window_state::*;
 
+pub mod terminal_subscription;
+
 pub mod dialogs;
 pub use dialogs::*;
 
