@@ -6,8 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, Role, SauceMetaData, Selection, SelectionMask,
-    Size, Tag, TextPane, stamp_layer,
+    AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, SauceMetaData, Selection, SelectionMask, Size, Tag,
+    TextPane, stamp_layer,
 };
 
 use super::EditState;
@@ -69,7 +69,7 @@ pub enum EditorUndoOp {
     SetLayerSize { index: usize, from: Size, to: Size },
 
     /// Paste operation
-    Paste { layer: Option<Layer>, current_layer: usize },
+    Paste { layer: Box<Layer>, current_layer: usize },
 
     /// Add floating layer
     AddFloatingLayer { current_layer: usize },
@@ -210,7 +210,7 @@ pub enum EditorUndoOp {
     },
 
     /// Remove font
-    RemoveFont { font_slot: u8, font: Option<BitFont> },
+    RemoveFont { font_slot: u8, font: Option<Box<BitFont>> },
 
     /// Change font slot
     ChangeFontSlot { from: u8, to: u8 },
@@ -394,11 +394,15 @@ impl EditorUndoOp {
                 merged_layer,
                 orig_layers,
             } => {
-                if let Some(mut layers) = orig_layers.take() {
-                    while let Some(layer) = layers.pop() {
-                        edit_state.get_buffer_mut().layers.insert(*index - 1, layer);
+                // Restore original layers from our stored copy
+                if let Some(stored_layers) = orig_layers.as_ref() {
+                    // Insert clones of original layers in reverse order
+                    for layer in stored_layers.iter().rev() {
+                        edit_state.get_buffer_mut().layers.insert(*index - 1, layer.clone());
                     }
-                    *merged_layer = Some(edit_state.get_buffer_mut().layers.remove(*index + 1));
+                    // Remove the merged layer and update our stored copy
+                    let removed = edit_state.get_buffer_mut().layers.remove(*index + 1);
+                    *merged_layer = Some(removed);
                     edit_state.set_current_layer(*index);
                     edit_state.clamp_current_layer();
                 }
@@ -423,7 +427,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Paste { layer, current_layer } => {
-                *layer = Some(edit_state.get_buffer_mut().layers.remove(*current_layer + 1));
+                // Remove the pasted layer and update our stored copy
+                let removed = edit_state.get_buffer_mut().layers.remove(*current_layer + 1);
+                *layer = Box::new(removed);
                 edit_state.set_current_layer(*current_layer);
                 Ok(())
             }
@@ -664,8 +670,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::RemoveFont { font_slot, font } => {
-                if let Some(f) = font.take() {
-                    edit_state.get_buffer_mut().set_font(*font_slot, f);
+                // Restore the font from our stored copy (clone to preserve for potential re-redo)
+                if let Some(f) = font.as_ref() {
+                    edit_state.get_buffer_mut().set_font(*font_slot, (**f).clone());
                 }
                 Ok(())
             }
@@ -793,9 +800,16 @@ impl EditorUndoOp {
                 merged_layer,
                 orig_layers,
             } => {
-                if let Some(layer) = merged_layer.take() {
-                    *orig_layers = Some(edit_state.get_buffer_mut().layers.drain((*index - 1)..=*index).collect());
-                    edit_state.get_buffer_mut().layers.insert(*index - 1, layer);
+                if let Some(layer) = merged_layer.as_ref() {
+                    // Store original layers before draining (only if not already stored)
+                    if orig_layers.is_none() {
+                        *orig_layers = Some(edit_state.get_buffer_mut().layers.drain((*index - 1)..=*index).collect());
+                    } else {
+                        // Already have orig_layers stored, just drain without storing
+                        edit_state.get_buffer_mut().layers.drain((*index - 1)..=*index);
+                    }
+                    // Insert a clone of the merged layer
+                    edit_state.get_buffer_mut().layers.insert(*index - 1, layer.clone());
                     edit_state.set_current_layer(*index - 1);
                 }
                 Ok(())
@@ -820,10 +834,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Paste { layer, current_layer } => {
-                if let Some(l) = layer.take() {
-                    edit_state.get_buffer_mut().layers.insert(*current_layer + 1, l);
-                    edit_state.set_current_layer(*current_layer + 1);
-                }
+                // Insert a clone of the stored layer (dereference the Box)
+                edit_state.get_buffer_mut().layers.insert(*current_layer + 1, (*layer).as_ref().clone());
+                edit_state.set_current_layer(*current_layer + 1);
                 Ok(())
             }
             EditorUndoOp::AddFloatingLayer { current_layer } => {
@@ -1076,7 +1089,13 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::RemoveFont { font_slot, font } => {
-                *font = edit_state.get_buffer_mut().remove_font(*font_slot);
+                // Remove and store the font (only first time, keep for multiple redo)
+                if font.is_none() {
+                    *font = edit_state.get_buffer_mut().remove_font(*font_slot).map(Box::new);
+                } else {
+                    // Already have the font stored, just remove from buffer
+                    edit_state.get_buffer_mut().remove_font(*font_slot);
+                }
                 Ok(())
             }
             EditorUndoOp::ChangeFontSlot { from, to } => {

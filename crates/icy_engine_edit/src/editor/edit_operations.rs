@@ -128,7 +128,7 @@ impl EditState {
             );
             self.push_undo_action(EditorUndoOp::Paste {
                 current_layer: self.get_current_layer()?,
-                layer: Some(layer),
+                layer: Box::new(layer),
             })?;
         } else {
             log::warn!("paste_clipboard_data: from_clipboard_data returned None");
@@ -156,7 +156,7 @@ impl EditState {
 
         self.push_undo_action(EditorUndoOp::Paste {
             current_layer: self.get_current_layer()?,
-            layer: Some(layer),
+            layer: Box::new(layer),
         })?;
         self.selection_opt = None;
         Ok(())
@@ -184,7 +184,7 @@ impl EditState {
 
         self.push_undo_action(EditorUndoOp::Paste {
             current_layer: self.get_current_layer()?,
-            layer: Some(layer),
+            layer: Box::new(layer),
         })?;
         self.selection_opt = None;
         Ok(())
