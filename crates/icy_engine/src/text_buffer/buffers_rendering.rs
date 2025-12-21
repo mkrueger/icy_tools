@@ -372,16 +372,18 @@ impl TextBuffer {
 
                 // Foreground glyph overlay
                 if !fg_is_transparent {
-                    if let Some(glyph) = font.glyph(ch.ch) {
-                        let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
-                        unsafe {
-                            for cy in 0..max_cy {
-                                let row = glyph.bitmap.pixels.get_unchecked(cy);
-                                let line_offset = (cy as i32 * line_width + base_px) as usize;
-                                for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
-                                    if *row.get_unchecked(cx) {
-                                        *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
-                                    }
+                    let glyph = font.glyph(ch.ch);
+                    let max_cy = (glyph.height as usize).min(cell_pixel_h as usize);
+                    unsafe {
+                        for cy in 0..max_cy {
+                            let row_byte = glyph.data[cy];
+                            if row_byte == 0 {
+                                continue; // Skip empty rows
+                            }
+                            let line_offset = (cy as i32 * line_width + base_px) as usize;
+                            for cx in 0..cell_pixel_w.min(glyph.width as i32) as usize {
+                                if (row_byte & (0x80 >> cx)) != 0 {
+                                    *row_pixels.get_unchecked_mut(line_offset + cx) = fg_u32;
                                 }
                             }
                         }
@@ -656,48 +658,52 @@ impl TextBuffer {
             // Decide how to render the glyph
             if !fg_is_transparent && (is_rendering_bottom_half || (is_in_double_height_line && render_ch.attribute.is_double_height())) {
                 // Render double-height (either top or bottom half)
-                if let Some(glyph) = font.glyph(render_ch.ch) {
-                    let glyph_height = glyph.bitmap.pixels.len();
+                let glyph = font.glyph(render_ch.ch);
+                let glyph_height = glyph.height as usize;
 
-                    unsafe {
-                        for cy in 0..cell_pixel_h {
-                            // Determine which part of the original glyph to sample
-                            let source_y = if is_rendering_bottom_half {
-                                // Bottom half: map from glyph_height/2 to glyph_height
-                                (glyph_height / 2) + (cy as usize * glyph_height / 2 / cell_pixel_h as usize)
-                            } else {
-                                // Top half: map from 0 to glyph_height/2
-                                cy as usize * glyph_height / 2 / cell_pixel_h as usize
-                            };
+                unsafe {
+                    for cy in 0..cell_pixel_h {
+                        // Determine which part of the original glyph to sample
+                        let source_y = if is_rendering_bottom_half {
+                            // Bottom half: map from glyph_height/2 to glyph_height
+                            (glyph_height / 2) + (cy as usize * glyph_height / 2 / cell_pixel_h as usize)
+                        } else {
+                            // Top half: map from 0 to glyph_height/2
+                            cy as usize * glyph_height / 2 / cell_pixel_h as usize
+                        };
 
-                            if source_y >= glyph_height {
-                                continue;
-                            }
+                        if source_y >= glyph_height {
+                            continue;
+                        }
 
-                            let row = glyph.bitmap.pixels.get_unchecked(source_y);
-                            let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
+                        let row_byte = glyph.data[source_y];
+                        if row_byte == 0 {
+                            continue;
+                        }
+                        let line_start = ((base_pixel_y + cy) * line_width + base_pixel_x) as usize;
 
-                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
-                                if *row.get_unchecked(cx) {
-                                    *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
-                                }
+                        for cx in 0..cell_pixel_w.min(glyph.width as i32) as usize {
+                            if (row_byte & (0x80 >> cx)) != 0 {
+                                *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                             }
                         }
                     }
                 }
             } else if !fg_is_transparent {
                 // Normal height rendering (including non-double-height chars in double-height lines)
-                if let Some(glyph) = font.glyph(render_ch.ch) {
-                    let max_cy = glyph.bitmap.pixels.len().min(cell_pixel_h as usize);
-                    unsafe {
-                        for cy in 0..max_cy {
-                            let row = glyph.bitmap.pixels.get_unchecked(cy);
-                            let line_start = ((base_pixel_y + cy as i32) * line_width + base_pixel_x) as usize;
+                let glyph = font.glyph(render_ch.ch);
+                let max_cy = (glyph.height as usize).min(cell_pixel_h as usize);
+                unsafe {
+                    for cy in 0..max_cy {
+                        let row_byte = glyph.data[cy];
+                        if row_byte == 0 {
+                            continue;
+                        }
+                        let line_start = ((base_pixel_y + cy as i32) * line_width + base_pixel_x) as usize;
 
-                            for cx in 0..cell_pixel_w.min(row.len() as i32) as usize {
-                                if *row.get_unchecked(cx) {
-                                    *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
-                                }
+                        for cx in 0..cell_pixel_w.min(glyph.width as i32) as usize {
+                            if (row_byte & (0x80 >> cx)) != 0 {
+                                *pixels.get_unchecked_mut(line_start + cx) = fg_u32;
                             }
                         }
                     }

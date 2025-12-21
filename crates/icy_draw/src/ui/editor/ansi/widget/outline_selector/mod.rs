@@ -172,21 +172,21 @@ impl OutlineSelectorProgram {
                 };
 
                 // Get the glyph from the CP437 font
-                if let Some(glyph) = self.font.glyph(cp437_ch) {
-                    // Draw each pixel of the glyph
-                    for (y, glyph_row) in glyph.bitmap.pixels.iter().enumerate() {
-                        if y >= font_h {
+                let glyph = self.font.glyph(cp437_ch);
+                // Draw each pixel of the glyph
+                let bitmap_pixels = glyph.to_bitmap_pixels();
+                for (y, glyph_row) in bitmap_pixels.iter().enumerate() {
+                    if y >= font_h {
+                        break;
+                    }
+                    for (x, &pixel) in glyph_row.iter().enumerate() {
+                        if x >= font_w {
                             break;
                         }
-                        for (x, &pixel) in glyph_row.iter().enumerate() {
-                            if x >= font_w {
-                                break;
-                            }
-                            if pixel {
-                                let px = rect.x + CELL_PADDING_LEFT + col as f32 * font_w as f32 + x as f32;
-                                let py = rect.y + CELL_PADDING + row as f32 * font_h as f32 + y as f32;
-                                frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
-                            }
+                        if pixel {
+                            let px = rect.x + CELL_PADDING_LEFT + col as f32 * font_w as f32 + x as f32;
+                            let py = rect.y + CELL_PADDING + row as f32 * font_h as f32 + y as f32;
+                            frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
                         }
                     }
                 }

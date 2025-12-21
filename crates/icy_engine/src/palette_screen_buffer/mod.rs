@@ -165,52 +165,44 @@ impl PaletteScreenBuffer {
         }
 
         let bg_color = ch.attribute.background() as u32; // Apply color limit
+        let pixel_width = self.pixel_size.width;
+        let pixel_height = self.pixel_size.height;
 
-        let font = if let Some(font) = self.font(ch.font_page() as usize) {
-            font
-        } else if let Some(font) = self.font(0) {
-            font
-        } else {
-            &DEFAULT_BITFONT
+        // Copy glyph data to avoid borrow conflict
+        let (glyph_data, pixel_x, pixel_y, font_size) = {
+            let font = if let Some(font) = self.font(ch.font_page() as usize) {
+                font
+            } else if let Some(font) = self.font(0) {
+                font
+            } else {
+                &DEFAULT_BITFONT
+            };
+
+            let font_size = font.size();
+            let pixel_x = x * font_size.width;
+            let pixel_y = y * font_size.height;
+            let glyph = font.glyph(ch.ch);
+            (glyph.data, pixel_x, pixel_y, font_size)
         };
 
-        // Calculate pixel position
-        let pixel_x = x * font.size().width;
-        let pixel_y = y * font.size().height;
-
-        // Get glyph data from font
-        let glyph = font.glyph(ch.ch);
         // Render the character
-        let font_size = font.size();
-
-        // let glyph_size = self.font.size();
         for row in 0..font_size.height {
             for col in 0..font_size.width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
-                if px >= self.pixel_size.width || py >= self.pixel_size.height {
+                if px >= pixel_width || py >= pixel_height {
                     continue;
                 }
 
-                // Check if pixel is set in font glyph
-                let is_foreground = if let Some(g) = &glyph {
-                    // Use bitmap.pixels[row][col] if in bounds
-                    if row < g.bitmap.pixels.len() as i32 && col < g.bitmap.pixels[row as usize].len() as i32 {
-                        g.bitmap.pixels[row as usize][col as usize]
-                    } else {
-                        false
-                    }
-                } else {
-                    log::error!("NO GLYPH for char '{}'", ch.ch);
-                    false
-                };
+                // Check if pixel is set in font glyph using packed byte data
+                let is_foreground = (glyph_data[row as usize] & (0x80 >> col)) != 0;
 
                 // Clone colors to avoid move in loop
                 let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
-                let offset = py * self.pixel_size.width + px;
+                let offset = py * pixel_width + px;
                 self.screen[offset as usize] = color as u8;
             }
         }

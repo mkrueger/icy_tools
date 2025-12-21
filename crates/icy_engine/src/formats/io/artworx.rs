@@ -94,7 +94,7 @@ pub(crate) fn load_artworx(data: &[u8], load_data_opt: Option<&LoadData>) -> Res
     let font_size = 4096;
     screen.buffer.clear_font_table();
     let mut font = BitFont::from_basic(8, 16, &data[o..(o + font_size)]);
-    font.yaff_font.name = Some(guess_font_name(&font));
+    font.name = guess_font_name(&font);
     screen.buffer.set_font(0, font);
     o += font_size;
 

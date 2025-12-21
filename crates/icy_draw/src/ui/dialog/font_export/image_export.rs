@@ -38,24 +38,23 @@ pub fn export_font_to_image(font: &BitFont, path: &Path, format: image::ImageFor
         let base_x = col * font_width;
         let base_y = row * font_height;
 
-        // Draw the glyph if it exists
-        if let Some(glyph_def) = glyph {
-            for (y, row_pixels) in glyph_def.bitmap.pixels.iter().enumerate() {
-                if y >= font_height as usize {
+        // Draw the glyph pixels
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (y, row_pixels) in bitmap_pixels.iter().enumerate() {
+            if y >= font_height as usize {
+                break;
+            }
+
+            for (x, &is_set) in row_pixels.iter().enumerate() {
+                if x >= font_width as usize {
                     break;
                 }
 
-                for (x, &is_set) in row_pixels.iter().enumerate() {
-                    if x >= font_width as usize {
-                        break;
-                    }
-
-                    if is_set {
-                        let px = base_x + x as u32;
-                        let py = base_y + y as u32;
-                        if px < img_width && py < img_height {
-                            img.put_pixel(px, py, image::Luma([0u8])); // Black for foreground
-                        }
+                if is_set {
+                    let px = base_x + x as u32;
+                    let py = base_y + y as u32;
+                    if px < img_width && py < img_height {
+                        img.put_pixel(px, py, image::Luma([0u8])); // Black for foreground
                     }
                 }
             }

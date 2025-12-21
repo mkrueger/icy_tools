@@ -54,23 +54,14 @@ impl<'a, Message> canvas::Program<Message> for FontPreviewCanvas<'a> {
             let pixel_scale_y = self.cell_height / font_height as f32;
 
             // Draw pixels
-            if let Some(glyph) = glyph {
-                for py in 0..font_height {
-                    for px in 0..font_width {
-                        let is_set = glyph
-                            .bitmap
-                            .pixels
-                            .get(py as usize)
-                            .and_then(|row| row.get(px as usize))
-                            .copied()
-                            .unwrap_or(false);
-                        if is_set {
-                            frame.fill_rectangle(
-                                Point::new(x + px as f32 * pixel_scale_x, y + py as f32 * pixel_scale_y),
-                                Size::new(pixel_scale_x, pixel_scale_y),
-                                fg_color,
-                            );
-                        }
+            for py in 0..font_height {
+                for px in 0..font_width {
+                    if glyph.get_pixel(px as usize, py as usize) {
+                        frame.fill_rectangle(
+                            Point::new(x + px as f32 * pixel_scale_x, y + py as f32 * pixel_scale_y),
+                            Size::new(pixel_scale_x, pixel_scale_y),
+                            fg_color,
+                        );
                     }
                 }
             }

@@ -1,5 +1,4 @@
-use crate::{AnsiSaveOptionsV2, BitFont, TextAttribute, TextBuffer, TextPane};
-use libyaff::GlyphDefinition;
+use crate::{AnsiSaveOptionsV2, BitFont, TextAttribute, TextBuffer, TextPane, fonts::CompactGlyph};
 use std::collections::HashMap;
 
 enum GlyphShape {
@@ -69,62 +68,33 @@ fn generate_shape_map(buf: &TextBuffer) -> HashMap<u8, HashMap<char, GlyphShape>
     let mut shape_map = HashMap::new();
     for (slot, font) in buf.font_iter() {
         let mut font_map = HashMap::new();
-        // Iterate over all glyphs in the yaff font
-        for glyph in &font.yaff_font.glyphs {
-            // Try to get character from glyph labels
-            if let Some(ch) = get_char_from_labels(&glyph.labels) {
-                font_map.insert(ch, get_shape(font, glyph));
-            }
+        // Iterate over all 256 characters in the font
+        for code in 0u8..=255 {
+            let ch = code as char;
+            let glyph = font.glyph(ch);
+            font_map.insert(ch, get_shape(font, glyph));
         }
         shape_map.insert(*slot, font_map);
     }
     shape_map
 }
 
-fn get_char_from_labels(labels: &[libyaff::Label]) -> Option<char> {
-    // Try to parse any label as a character
-    for label in labels {
-        match label {
-            libyaff::Label::Codepoint(codepoints) => {
-                // Get the first codepoint and convert to char
-                if let Some(&code) = codepoints.first() {
-                    if let Some(ch) = char::from_u32(code as u32) {
-                        return Some(ch);
-                    }
-                }
-            }
-            _ => {
-                // Fallback to debug string parsing for other label types
-                let label_str = format!("{:?}", label);
-                // Try hex format like "0x41"
-                if let Some(hex_str) = label_str.strip_prefix("0x") {
-                    if let Ok(code) = u32::from_str_radix(hex_str, 16) {
-                        if let Some(ch) = char::from_u32(code) {
-                            return Some(ch);
-                        }
-                    }
-                }
-                // Try decimal
-                if let Ok(code) = label_str.parse::<u32>() {
-                    if let Some(ch) = char::from_u32(code) {
-                        return Some(ch);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn get_shape(font: &BitFont, glyph: &GlyphDefinition) -> GlyphShape {
+fn get_shape(font: &BitFont, glyph: &CompactGlyph) -> GlyphShape {
     let mut ones = 0;
     let size = font.size();
-    for row in &glyph.bitmap.pixels {
-        ones += row.iter().filter(|&&b| b).count();
+
+    // Count set bits in the glyph
+    for y in 0..glyph.height as usize {
+        let row = glyph.data[y];
+        ones += row.count_ones() as usize;
     }
+
+    // Calculate expected total pixels based on actual glyph dimensions
+    let total_pixels = (glyph.width as usize) * (glyph.height as usize);
+
     if ones == 0 {
         GlyphShape::Whitespace
-    } else if ones == (size.width * size.height) as usize {
+    } else if ones == total_pixels {
         GlyphShape::Block
     } else {
         GlyphShape::Mixed

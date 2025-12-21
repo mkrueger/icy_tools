@@ -330,7 +330,7 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>) -> Result
         }
         screen.buffer.clear_font_table();
         let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
-        font.yaff_font.name = Some(guess_font_name(&font));
+        font.name = guess_font_name(&font);
         screen.buffer.set_font(0, font);
         o += font_length;
         if extended_char_mode {
@@ -338,7 +338,7 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>) -> Result
                 return Err(LoadingError::FileTooShort.into());
             }
             let mut font = BitFont::create_8("", 8, font_size, &data[o..(o + font_length)]);
-            font.yaff_font.name = Some(guess_font_name(&font));
+            font.name = guess_font_name(&font);
             screen.buffer.set_font(1, font);
             o += font_length;
         }

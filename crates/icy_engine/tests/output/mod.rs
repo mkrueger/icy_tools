@@ -9,7 +9,7 @@ mod avatar;
 mod igs;
 mod petscii;
 mod rip;
-mod skypix;
+// mod skypix;
 mod view_data;
 mod vt52;
 

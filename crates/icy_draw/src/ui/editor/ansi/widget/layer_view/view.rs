@@ -509,17 +509,11 @@ impl LayerView {
             let slot = super::glyph_renderer::cp437_index(ch);
             let slot_ch = char::from_u32(slot).unwrap_or('?');
 
-            let glyph = font.glyph(ch).or_else(|| font.glyph(slot_ch));
-            let Some(glyph) = glyph else {
-                continue;
-            };
+            let glyph = font.glyph(slot_ch);
 
             for y in 0..h as usize {
-                let Some(src_row) = glyph.bitmap.pixels.get(y) else {
-                    continue;
-                };
                 for x in 0..gw as usize {
-                    let on = src_row.get(x).copied().unwrap_or(false);
+                    let on = glyph.get_pixel(x, y);
                     if !on {
                         continue;
                     }

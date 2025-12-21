@@ -1,18 +1,22 @@
 use base64::{Engine, engine::general_purpose};
 #[allow(unused_imports)]
 use lazy_static::lazy_static;
-use libyaff::{GlyphDefinition, YaffFont};
+use libyaff::YaffFont;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{EngineError, FontError};
-use parking_lot::Mutex;
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
 
 pub mod ansi;
+pub mod compact_glyph;
 pub mod legacy;
+pub mod psf_parser;
 pub mod rip;
 pub mod sauce;
 pub mod skypix;
+
+pub use compact_glyph::CompactGlyph;
+pub use psf_parser::PsfFont;
 
 use super::Size;
 
@@ -30,15 +34,20 @@ pub enum BitFontType {
     Custom,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BitFont {
-    pub yaff_font: YaffFont,
-    glyph_cache: Mutex<HashMap<char, GlyphDefinition>>,
-    /// Pre-computed lookup table for ASCII/extended ASCII range (0..256)
-    /// Codepoint labels have priority over Unicode labels
-    glyph_lookup: Arc<[Option<GlyphDefinition>; 256]>,
+    /// Font name
+    pub name: String,
+    /// Width of each glyph in pixels (max 8)
+    pub width: u8,
+    /// Height of each glyph in pixels (max 32)
+    pub height: u8,
+    /// All 256 glyphs stored as compact bitmaps
+    pub glyphs: [CompactGlyph; 256],
+    /// Optional file path for custom fonts
     pub path_opt: Option<PathBuf>,
-    font_type: BitFontType,
+    /// Font type (built-in, library, or custom)
+    pub font_type: BitFontType,
 }
 
 /// Serializable representation of BitFont for serde
@@ -57,11 +66,10 @@ impl Serialize for BitFont {
     where
         S: Serializer,
     {
-        let size = self.size();
         BitFontSerde {
-            name: self.name().to_string(),
-            width: size.width as u8,
-            height: size.height as u8,
+            name: self.name.clone(),
+            width: self.width,
+            height: self.height,
             data: self.convert_to_u8_data(),
             font_type: self.font_type,
             path: self.path_opt.clone(),
@@ -85,19 +93,7 @@ impl<'de> Deserialize<'de> for BitFont {
 
 impl PartialEq for BitFont {
     fn eq(&self, other: &Self) -> bool {
-        self.yaff_font == other.yaff_font
-    }
-}
-
-impl Clone for BitFont {
-    fn clone(&self) -> Self {
-        Self {
-            yaff_font: self.yaff_font.clone(),
-            glyph_cache: Mutex::new(self.glyph_cache.lock().clone()),
-            glyph_lookup: self.glyph_lookup.clone(),
-            path_opt: self.path_opt.clone(),
-            font_type: self.font_type,
-        }
+        self.name == other.name && self.width == other.width && self.height == other.height && self.glyphs == other.glyphs
     }
 }
 
@@ -109,35 +105,15 @@ impl Default for BitFont {
 
 impl BitFont {
     pub fn name(&self) -> &str {
-        self.yaff_font.name.as_deref().unwrap_or("")
+        &self.name
     }
 
     pub fn set_name(&mut self, name: &str) {
-        self.yaff_font.name = Some(name.to_string());
+        self.name = name.to_string();
     }
 
     pub fn size(&self) -> Size {
-        let mut width: i32 = 8;
-        let mut height: i32 = 16;
-        if let Some(h) = self.yaff_font.pixel_size {
-            height = h;
-        } else if let Some(h) = self.yaff_font.size {
-            height = h;
-        } else if let Some(h) = self.yaff_font.line_height {
-            height = h;
-        } else if let Some((_x, y)) = self.yaff_font.bounding_box {
-            height = y as i32;
-        } else if let Some((_x, y)) = self.yaff_font.cell_size {
-            height = y as i32;
-        }
-
-        if let Some(cs) = self.yaff_font.bounding_box {
-            width = cs.0 as i32;
-        } else if let Some((x, _y)) = self.yaff_font.cell_size {
-            width = x as i32;
-        }
-
-        Size::new(width as i32, height as i32)
+        Size::new(self.width as i32, self.height as i32)
     }
 
     pub fn font_type(&self) -> BitFontType {
@@ -148,133 +124,44 @@ impl BitFont {
         self.name() == ansi::DEFAULT_FONT_NAME || self.name() == ansi::ALT_DEFAULT_FONT_NAME
     }
 
-    /// Build a lookup table for chars 0..256
-    /// Codepoint labels have priority over Unicode labels
-    fn build_glyph_lookup(yaff_font: &YaffFont) -> [Option<GlyphDefinition>; 256] {
-        use libyaff::Label;
-
-        let mut lookup: [Option<GlyphDefinition>; 256] = std::array::from_fn(|_| None);
-
-        // First pass: Fill in glyphs with codepoint labels (highest priority)
-        for glyph in &yaff_font.glyphs {
-            for label in &glyph.labels {
-                if let Label::Codepoint(codes) = label {
-                    for &code in codes {
-                        if (code as usize) < 256 && lookup[code as usize].is_none() {
-                            lookup[code as usize] = Some(glyph.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Second pass: Fill remaining slots with Unicode labels
-        for glyph in &yaff_font.glyphs {
-            for label in &glyph.labels {
-                if let Label::Unicode(codes) = label {
-                    for &code in codes {
-                        if (code as usize) < 256 && lookup[code as usize].is_none() {
-                            lookup[code as usize] = Some(glyph.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        lookup
-    }
-
-    /// Get a glyph for the given character, using lookup table for ASCII range
-    pub fn glyph(&self, ch: char) -> Option<GlyphDefinition> {
-        let ch_code = ch as u32;
-
-        // Use pre-built lookup table for ASCII/extended ASCII range (0..256)
+    /// Get a glyph for the given character (0-255)
+    /// Returns an empty glyph for characters outside the valid range
+    #[inline]
+    pub fn glyph(&self, ch: char) -> &CompactGlyph {
+        let ch_code = ch as usize;
         if ch_code < 256 {
-            return self.glyph_lookup[ch_code as usize].clone();
+            &self.glyphs[ch_code]
+        } else {
+            // Return empty glyph for out-of-range characters
+            &self.glyphs[0]
         }
-
-        // For characters outside 0..256, check cache first
-        {
-            let cache = self.glyph_cache.lock();
-            if let Some(glyph_def) = cache.get(&ch) {
-                return Some(glyph_def.clone());
-            }
-        }
-
-        // Find and cache the glyph
-        if let Some(glyph_def) = self.find_glyph_in_font(ch) {
-            self.glyph_cache.lock().insert(ch, glyph_def.clone());
-            return Some(glyph_def);
-        }
-
-        None
     }
 
-    /// Find a glyph definition for the given character
-    fn find_glyph_in_font(&self, ch: char) -> Option<GlyphDefinition> {
-        use libyaff::Label;
+    /// Get mutable reference to a glyph
+    #[inline]
+    pub fn glyph_mut(&mut self, ch: char) -> &mut CompactGlyph {
+        let ch_code = (ch as usize).min(255);
+        &mut self.glyphs[ch_code]
+    }
 
-        let result = self
-            .yaff_font
-            .glyphs
-            .iter()
-            .find(|g: &&GlyphDefinition| {
-                let matches = g.labels.iter().any(|label| match label {
-                    Label::Codepoint(codes) => {
-                        let match_found = codes.contains(&(ch as u16));
-                        match_found
-                    }
-                    Label::Unicode(codes) => {
-                        let match_found = codes.contains(&(ch as u32));
-                        match_found
-                    }
-                    _ => false,
-                });
-                matches
-            })
-            .cloned();
-
-        result
+    /// Get reference to all glyphs
+    pub fn glyphs(&self) -> &[CompactGlyph; 256] {
+        &self.glyphs
     }
 
     /// Convert font to raw u8 data for legacy formats
     pub fn convert_to_u8_data(&self) -> Vec<u8> {
         let mut result = Vec::new();
-        let size = self.size();
-        let length = 256; // Standard ASCII range
+        let height = self.height as usize;
 
-        for ch_code in 0..length {
-            let ch = unsafe { char::from_u32_unchecked(ch_code as u32) };
-            if let Some(glyph_def) = self.find_glyph_in_font(ch) {
-                // Convert bitmap to u8 rows
-                let mut rows = Vec::new();
-                let height = glyph_def.bitmap.height;
-                let width = glyph_def.bitmap.width;
-
-                for y in 0..height {
-                    let mut packed: u8 = 0;
-                    if y < glyph_def.bitmap.pixels.len() {
-                        let row = &glyph_def.bitmap.pixels[y];
-                        for x in 0..width.min(8) {
-                            if x < row.len() && row[x] {
-                                packed |= 1 << (7 - x);
-                            }
-                        }
-                    }
-                    rows.push(packed);
+        for glyph in &self.glyphs {
+            // Copy the glyph data, padded/truncated to font height
+            for y in 0..height {
+                if y < 32 {
+                    result.push(glyph.data[y]);
+                } else {
+                    result.push(0);
                 }
-
-                // Normalize to font height
-                let target = size.height as usize;
-                if rows.len() > target {
-                    rows.truncate(target);
-                } else if rows.len() < target {
-                    rows.resize(target, 0);
-                }
-                result.extend_from_slice(&rows);
-            } else {
-                // No glyph found, add empty rows
-                result.extend_from_slice(vec![0; size.height as usize].as_slice());
             }
         }
         result
@@ -286,17 +173,65 @@ impl BitFont {
         format!("\x1BPCTerm:Font:{font_slot}:{data}\x1B\\")
     }
 
+    /// Convert BitFont to YaffFont for export
+    pub fn to_yaff_font(&self) -> YaffFont {
+        use libyaff::{Bitmap, GlyphDefinition, Label};
+
+        let mut glyphs = Vec::with_capacity(256);
+
+        for i in 0..256u32 {
+            let glyph = &self.glyphs[i as usize];
+            let bitmap_pixels = glyph.to_bitmap_pixels();
+
+            let glyph_def = GlyphDefinition {
+                labels: vec![Label::Codepoint(vec![i as u16])],
+                bitmap: Bitmap {
+                    pixels: bitmap_pixels,
+                    width: glyph.width as usize,
+                    height: glyph.height as usize,
+                },
+                ..Default::default()
+            };
+            glyphs.push(glyph_def);
+        }
+
+        YaffFont {
+            name: Some(self.name.clone()),
+            pixel_size: Some(self.height as i32),
+            line_height: Some(self.height as i32),
+            bounding_box: Some((self.width as u32, self.height as u32)),
+            cell_size: Some((self.width as u32, self.height as u32)),
+            glyphs,
+            ..Default::default()
+        }
+    }
+
     /// Create a font from raw 8-bit data
     pub fn create_8(name: impl Into<String>, width: u8, height: u8, data: &[u8]) -> Self {
-        let mut yaff_font = YaffFont::from_raw_bytes(data, width as u32, height as u32).unwrap();
-        yaff_font.name = Some(name.into());
-        let glyph_lookup = Self::build_glyph_lookup(&yaff_font);
+        let height = height.min(32);
+        let width = width.min(8);
+        let name = name.into();
+
+        let mut glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(width, height));
+        let bytes_per_glyph = height as usize;
+
+        for i in 0..256 {
+            let offset = i * bytes_per_glyph;
+            if offset + bytes_per_glyph <= data.len() {
+                let glyph = &mut glyphs[i];
+                for y in 0..height as usize {
+                    glyph.data[y] = data[offset + y];
+                }
+            }
+        }
+
         Self {
+            name,
+            width,
+            height,
+            glyphs,
             path_opt: None,
             font_type: BitFontType::Custom,
-            yaff_font,
-            glyph_cache: Mutex::new(HashMap::new()),
-            glyph_lookup: Arc::new(glyph_lookup),
         }
     }
 
@@ -312,57 +247,51 @@ impl BitFont {
 
     /// Convert to PSF2 bytes format
     pub fn to_psf2_bytes(&self) -> crate::Result<Vec<u8>> {
-        // Use libyaff to convert to PSF2 format
-        Ok(libyaff::psf::to_psf2_bytes(&self.yaff_font)?)
+        let psf = PsfFont {
+            name: Some(self.name.clone()),
+            glyphs: self.glyphs.clone(),
+            width: self.width,
+            height: self.height,
+        };
+        Ok(psf.to_psf2_bytes())
     }
 
     /// Clone this font with a different line height using Atari-style row replication.
     /// This uses a Bresenham-like error accumulator so small size changes (e.g. 8->9)
     /// keep consistent baseline & stroke thickness, closer to original VDI behaviour.
     pub fn scale_to_height(&self, new_height: i32) -> crate::Result<Self> {
-        use libyaff::Bitmap;
-        if new_height == self.size().height {
+        if new_height == self.height as i32 {
             return Ok(self.clone());
         }
 
-        let old_height = self.size().height.max(1) as usize;
-        let target_height = new_height.max(1) as usize;
+        let old_height = self.height.max(1) as usize;
+        let target_height = (new_height.max(1) as usize).min(32);
 
-        let mut yaff_font = self.yaff_font.clone();
-        yaff_font.line_height = Some(target_height as i32);
-        yaff_font.bounding_box = Some((self.size().width as u32, target_height as u32));
-        yaff_font.cell_size = Some((self.size().width as u32, target_height as u32));
+        let mut new_glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(self.width, target_height as u8));
 
-        for glyph in yaff_font.glyphs.iter_mut() {
-            let old_pixels = &glyph.bitmap.pixels;
-            let mut new_pixels: Vec<Vec<bool>> = Vec::with_capacity(target_height);
+        for (i, old_glyph) in self.glyphs.iter().enumerate() {
+            let new_glyph = &mut new_glyphs[i];
             let mut err: isize = 0;
             let mut src_row: usize = 0;
-            while new_pixels.len() < target_height {
-                // Vertical replication
-                let src_vec = old_pixels.get(src_row).cloned().unwrap_or_else(|| vec![false; glyph.bitmap.width as usize]);
-                // Keep original width; Atari ST VDI did not scale width proportionally for simple height changes
-                new_pixels.push(src_vec);
+
+            for y in 0..target_height {
+                // Copy row from source
+                if src_row < old_height {
+                    new_glyph.data[y] = old_glyph.data[src_row];
+                }
                 err += old_height as isize;
                 if err >= target_height as isize {
                     err -= target_height as isize;
-                    src_row = (src_row + 1).min(old_pixels.len().saturating_sub(1));
+                    src_row = (src_row + 1).min(old_height.saturating_sub(1));
                 }
             }
-
-            let new_w = glyph.bitmap.width.max(1) as usize;
-            glyph.bitmap = Bitmap {
-                width: new_w,
-                height: target_height,
-                pixels: new_pixels,
-            };
         }
 
-        let glyph_lookup = BitFont::build_glyph_lookup(&yaff_font);
         Ok(Self {
-            yaff_font,
-            glyph_cache: Mutex::new(HashMap::new()),
-            glyph_lookup: Arc::new(glyph_lookup),
+            name: self.name.clone(),
+            width: self.width,
+            height: target_height as u8,
+            glyphs: new_glyphs,
             path_opt: None,
             font_type: self.font_type,
         })
@@ -370,87 +299,77 @@ impl BitFont {
 }
 
 impl BitFont {
-    /// Load font from bytes (PSF1, PSF2, or plain format)
+    /// Load font from bytes (PSF1, PSF2, YAFF, or plain format)
     pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> crate::Result<Self> {
-        // Try to parse as YaffFont first (handles PSF1, PSF2)
-        match YaffFont::from_bytes(data) {
-            Ok(mut yaff_font) => {
-                yaff_font.name = Some(name.into());
-                let glyph_lookup = Self::build_glyph_lookup(&yaff_font);
-                Ok(Self {
-                    path_opt: None,
-                    font_type: BitFontType::BuiltIn,
-                    yaff_font,
-                    glyph_cache: Mutex::new(HashMap::new()),
-                    glyph_lookup: Arc::new(glyph_lookup),
-                })
-            }
-            Err(_) => {
-                // Try as raw font data
-                if data.len() % 256 != 0 {
-                    return Err(FontError::UnknownFontFormat(data.len()).into());
-                }
-                let char_height = data.len() / 256;
-                Ok(Self::create_8(name, 8, char_height as u8, data))
-            }
+        let name = name.into();
+
+        // Try to parse as PSF font first
+        if let Ok(psf) = PsfFont::from_bytes(data) {
+            return Ok(Self {
+                name,
+                width: psf.width,
+                height: psf.height,
+                glyphs: psf.glyphs,
+                path_opt: None,
+                font_type: BitFontType::BuiltIn,
+            });
         }
+
+        // Try as YAFF format
+        if let Ok(yaff) = YaffFont::from_bytes(data) {
+            return Ok(Self::from_yaff_font(&yaff, name));
+        }
+
+        // Try as raw font data (must be multiple of 256)
+        if data.len() % 256 == 0 && !data.is_empty() {
+            let char_height = data.len() / 256;
+            return Ok(Self::create_8(name, 8, char_height as u8, data));
+        }
+
+        Err(FontError::UnknownFontFormat(data.len()).into())
     }
 
     /// Double the size of this font by doubling each pixel point and line
+    /// Note: This only works for fonts up to 4x16 (result would be 8x32)
     pub fn double_size(&self) -> Self {
-        use libyaff::Bitmap;
+        // Can only double if result fits in 8x32
+        let new_width = (self.width as usize * 2).min(8);
+        let new_height = (self.height as usize * 2).min(32);
 
-        let old_size = self.size();
-        let new_width = old_size.width * 2;
-        let new_height = old_size.height * 2;
+        let mut new_glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(new_width as u8, new_height as u8));
 
-        let mut yaff_font = self.yaff_font.clone();
-        yaff_font.line_height = Some(new_height);
-        yaff_font.bounding_box = Some((new_width as u32, new_height as u32));
-        yaff_font.cell_size = Some((new_width as u32, new_height as u32));
+        for (i, old_glyph) in self.glyphs.iter().enumerate() {
+            let new_glyph = &mut new_glyphs[i];
 
-        for glyph in yaff_font.glyphs.iter_mut() {
-            let old_pixels = &glyph.bitmap.pixels;
-            let old_w = glyph.bitmap.width;
-            let old_h = glyph.bitmap.height;
-
-            let new_w = old_w * 2;
-            let new_h = old_h * 2;
-
-            let mut new_pixels: Vec<Vec<bool>> = Vec::with_capacity(new_h);
-
-            // Double each row and each pixel in that row
-            for row in old_pixels {
-                let mut doubled_row = Vec::with_capacity(new_w);
-                for &pixel in row {
-                    // Each pixel becomes 2 pixels horizontally
-                    doubled_row.push(pixel);
-                    doubled_row.push(pixel);
+            for y in 0..self.height as usize {
+                if y * 2 >= 32 {
+                    break;
                 }
+
+                // Double the row horizontally
+                let old_row = old_glyph.data[y];
+                let mut new_row: u8 = 0;
+
+                // Each bit becomes two bits (but we only have 8 bits, so max 4 source bits)
+                for x in 0..(self.width as usize).min(4) {
+                    if old_row & (1 << (7 - x)) != 0 {
+                        new_row |= 0b11 << (6 - x * 2);
+                    }
+                }
+
                 // Each row appears twice vertically
-                new_pixels.push(doubled_row.clone());
-                new_pixels.push(doubled_row);
+                new_glyph.data[y * 2] = new_row;
+                if y * 2 + 1 < 32 {
+                    new_glyph.data[y * 2 + 1] = new_row;
+                }
             }
-
-            glyph.bitmap = Bitmap {
-                width: new_w,
-                height: new_h,
-                pixels: new_pixels,
-            };
-
-            // Double the bearing and shift values as well (if present)
-            glyph.left_bearing = glyph.left_bearing.map(|v| v * 2);
-            glyph.right_bearing = glyph.right_bearing.map(|v| v * 2);
-            glyph.shift_up = glyph.shift_up.map(|v| v * 2);
         }
 
-        // Rebuild glyph lookup table for the new font
-        let glyph_lookup = BitFont::build_glyph_lookup(&yaff_font);
-
         Self {
-            yaff_font,
-            glyph_cache: Mutex::new(HashMap::new()),
-            glyph_lookup: Arc::new(glyph_lookup),
+            name: self.name.clone(),
+            width: new_width as u8,
+            height: new_height as u8,
+            glyphs: new_glyphs,
             path_opt: None,
             font_type: self.font_type,
         }
@@ -458,71 +377,12 @@ impl BitFont {
 
     /// Convert this 8px wide font to a 9px wide font for VGA letter spacing mode.
     /// For box-drawing characters (CP437 0xC0-0xDF), the 8th pixel is extended to the 9th.
-    /// For all other characters, the 9th pixel remains empty (background color).
+    /// Note: 9px fonts are stored as 8px with the 9th pixel logic applied at render time,
+    /// since CompactGlyph only supports up to 8 pixels width.
     pub fn to_9px_font(&self) -> Self {
-        use libyaff::Bitmap;
-
-        let old_size = self.size();
-
-        // Only convert 8px wide fonts
-        if old_size.width != 8 {
-            return self.clone();
-        }
-
-        // Build a new glyph lookup table with 9px wide glyphs
-        // The key insight: glyph_lookup[i] contains the glyph for CP437 codepoint i
-        // So we can directly check if i is in the range 0xC0-0xDF
-        let mut new_glyph_lookup: [Option<libyaff::GlyphDefinition>; 256] = std::array::from_fn(|_| None);
-
-        for cp437_code in 0..256 {
-            if let Some(glyph) = &self.glyph_lookup[cp437_code] {
-                let old_pixels = &glyph.bitmap.pixels;
-                let old_h = glyph.bitmap.height;
-
-                // Check if this is a box-drawing character (CP437 0xC0-0xDF)
-                // These characters should have their 8th pixel extended to the 9th
-                // This matches the original logic from the OpenGL renderer
-                let extend_to_9th = (0xC0..=0xDF).contains(&cp437_code);
-
-                let new_pixels: Vec<Vec<bool>> = old_pixels
-                    .iter()
-                    .map(|row| {
-                        // Create a 9-element row initialized to false
-                        let mut new_row = vec![false; 9];
-                        // Copy the original pixels (up to 8)
-                        let copy_len = row.len().min(8);
-                        new_row[..copy_len].copy_from_slice(&row[..copy_len]);
-                        // Add the 9th pixel: extend from 8th for box-drawing characters
-                        // Only if the 8th pixel (index 7) is set
-                        if extend_to_9th && row.len() >= 8 && row[7] {
-                            new_row[8] = true;
-                        }
-                        new_row
-                    })
-                    .collect();
-
-                let mut new_glyph = glyph.clone();
-                new_glyph.bitmap = Bitmap {
-                    width: 9,
-                    height: old_h,
-                    pixels: new_pixels,
-                };
-                new_glyph_lookup[cp437_code] = Some(new_glyph);
-            }
-        }
-
-        // Also update the yaff_font for consistency (though we mainly use glyph_lookup)
-        let mut yaff_font = self.yaff_font.clone();
-        yaff_font.bounding_box = Some((9, old_size.height as u32));
-        yaff_font.cell_size = Some((9, old_size.height as u32));
-
-        Self {
-            yaff_font,
-            glyph_cache: Mutex::new(HashMap::new()),
-            glyph_lookup: Arc::new(new_glyph_lookup),
-            path_opt: None,
-            font_type: self.font_type,
-        }
+        // 9px fonts can't be stored in CompactGlyph (max 8px width)
+        // Return a clone - the 9th pixel extension should be handled at render time
+        self.clone()
     }
 
     /// Load font from ANSI font slot (0-42)
@@ -548,6 +408,99 @@ impl BitFont {
     /// * `Err` - If the font name is not supported
     pub fn from_sauce_name(sauce_name: &str) -> crate::Result<Self> {
         sauce::load_sauce_font(sauce_name)
+    }
+
+    /// Convert a YaffFont to BitFont (for loading YAFF format files)
+    pub fn from_yaff_font(yaff_font: &YaffFont, name: impl Into<String>) -> Self {
+        use libyaff::Label;
+
+        // Determine font dimensions
+        let width = yaff_font
+            .bounding_box
+            .map(|(w, _)| w as u8)
+            .or(yaff_font.cell_size.map(|(w, _)| w as u8))
+            .unwrap_or(8)
+            .min(8);
+
+        let height = yaff_font
+            .pixel_size
+            .or(yaff_font.size)
+            .or(yaff_font.line_height)
+            .or(yaff_font.bounding_box.map(|(_, h)| h as i32))
+            .or(yaff_font.cell_size.map(|(_, h)| h as i32))
+            .unwrap_or(16) as u8;
+        let height = height.min(32);
+
+        let mut glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(width, height));
+
+        // First pass: Fill glyphs with codepoint labels (highest priority)
+        for glyph_def in &yaff_font.glyphs {
+            for label in &glyph_def.labels {
+                if let Label::Codepoint(codes) = label {
+                    for &code in codes {
+                        if (code as usize) < 256 {
+                            let target = &mut glyphs[code as usize];
+                            // Convert bitmap to CompactGlyph
+                            for (y, row) in glyph_def.bitmap.pixels.iter().enumerate() {
+                                if y >= 32 {
+                                    break;
+                                }
+                                let mut packed: u8 = 0;
+                                for (x, &pixel) in row.iter().enumerate() {
+                                    if x >= 8 {
+                                        break;
+                                    }
+                                    if pixel {
+                                        packed |= 1 << (7 - x);
+                                    }
+                                }
+                                target.data[y] = packed;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: Fill remaining slots with Unicode labels
+        for glyph_def in &yaff_font.glyphs {
+            for label in &glyph_def.labels {
+                if let Label::Unicode(codes) = label {
+                    for &code in codes {
+                        if (code as usize) < 256 {
+                            let target = &mut glyphs[code as usize];
+                            // Only fill if empty (all zeros)
+                            if target.data.iter().all(|&b| b == 0) {
+                                for (y, row) in glyph_def.bitmap.pixels.iter().enumerate() {
+                                    if y >= 32 {
+                                        break;
+                                    }
+                                    let mut packed: u8 = 0;
+                                    for (x, &pixel) in row.iter().enumerate() {
+                                        if x >= 8 {
+                                            break;
+                                        }
+                                        if pixel {
+                                            packed |= 1 << (7 - x);
+                                        }
+                                    }
+                                    target.data[y] = packed;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Self {
+            name: name.into(),
+            width,
+            height,
+            glyphs,
+            path_opt: None,
+            font_type: BitFontType::Custom,
+        }
     }
 }
 

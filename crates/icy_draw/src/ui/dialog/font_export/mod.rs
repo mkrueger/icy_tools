@@ -204,7 +204,8 @@ impl FontExportDialog {
                 std::fs::write(path, bytes).map_err(|e| e.to_string())
             }
             FontExportFormat::Yaff => {
-                let yaff_string = libyaff::to_yaff_string(&self.font.yaff_font);
+                let yaff_font = self.font.to_yaff_font();
+                let yaff_string = libyaff::to_yaff_string(&yaff_font);
                 std::fs::write(path, yaff_string).map_err(|e| e.to_string())
             }
             FontExportFormat::AnsiDcs => {
@@ -454,17 +455,9 @@ fn export_to_raw_bytes(font: &BitFont) -> Result<Vec<u8>, String> {
         let glyph = font.glyph(unsafe { char::from_u32_unchecked(ch_code) });
 
         for row in 0..height {
-            let mut row_byte: u8 = 0;
-
-            if let Some(glyph_def) = &glyph {
-                if let Some(row_pixels) = glyph_def.bitmap.pixels.get(row) {
-                    for (x, &is_set) in row_pixels.iter().enumerate().take(8.min(width)) {
-                        if is_set {
-                            row_byte |= 1 << (7 - x);
-                        }
-                    }
-                }
-            }
+            // CompactGlyph stores data as packed bytes (MSB = leftmost pixel)
+            // We can use get_row() directly since it's already in the right format
+            let row_byte = if row < glyph.height as usize { glyph.get_row(row) } else { 0 };
 
             data.push(row_byte);
         }
@@ -492,28 +485,18 @@ fn convert_font_to_u8_data(font: &BitFont) -> Vec<u8> {
 
     for ch_code in 0..256u32 {
         let ch = unsafe { char::from_u32_unchecked(ch_code) };
-        if let Some(glyph) = font.glyph(ch) {
-            let mut rows = vec![0u8; bytes_per_row * size.height as usize];
-            for (y, row) in glyph.bitmap.pixels.iter().enumerate() {
-                if y >= size.height as usize {
-                    break;
-                }
-                for (x, &is_set) in row.iter().enumerate() {
-                    if x >= size.width as usize {
-                        break;
-                    }
-                    if is_set {
-                        let byte_idx = y * bytes_per_row + x / 8;
-                        let bit_idx = 7 - (x % 8);
-                        rows[byte_idx] |= 1 << bit_idx;
-                    }
+        let glyph = font.glyph(ch);
+        let mut rows = vec![0u8; bytes_per_row * size.height as usize];
+        for y in 0..size.height as usize {
+            for x in 0..size.width as usize {
+                if glyph.get_pixel(x, y) {
+                    let byte_idx = y * bytes_per_row + x / 8;
+                    let bit_idx = 7 - (x % 8);
+                    rows[byte_idx] |= 1 << bit_idx;
                 }
             }
-            result.extend_from_slice(&rows);
-        } else {
-            // No glyph found, add empty rows
-            result.extend_from_slice(&vec![0; bytes_per_row * size.height as usize]);
         }
+        result.extend_from_slice(&rows);
     }
     result
 }

@@ -43,4 +43,8 @@ anstream = { workspace = true, optional = true }
 
 [dev-dependencies]
 png = "0.18.0"
- 
+criterion = { version = "0.7", features = ["html_reports"] }
+
+[[bench]]
+name = "flip_table"
+harness = false

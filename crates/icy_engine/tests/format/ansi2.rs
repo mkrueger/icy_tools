@@ -186,14 +186,10 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         for (i, old_fnt) in buf_old.font_iter() {
             let new_fnt = buf_new.font(*i).unwrap();
 
-            // Compare the yaff_font glyphs directly
-            assert_eq!(
-                old_fnt.yaff_font.glyphs.len(),
-                new_fnt.yaff_font.glyphs.len(),
-                "glyph count differs for font {i}"
-            );
+            // Compare the glyphs directly (256 glyphs per font)
+            assert_eq!(old_fnt.glyphs.len(), new_fnt.glyphs.len(), "glyph count differs for font {i}");
             /*
-            for (old_glyph, new_glyph) in old_fnt.yaff_font.glyphs.iter().zip(new_fnt.yaff_font.glyphs.iter()) {
+            for (old_glyph, new_glyph) in old_fnt.glyphs.iter().zip(new_fnt.glyphs.iter()) {
                 assert_eq!(old_glyph, new_glyph, "glyphs differ font: {i}");
             }*/
         }

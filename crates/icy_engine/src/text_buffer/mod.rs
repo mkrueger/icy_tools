@@ -746,12 +746,11 @@ impl TextBuffer {
         res
     }
 
+    /// Get a reference to the glyph for the given attributed character.
+    /// Returns None if the font for the character's font page doesn't exist.
     #[must_use]
-    pub fn glyph(&self, ch: &AttributedChar) -> Option<libyaff::GlyphDefinition> {
-        if let Some(ext) = &self.font(ch.font_page()) {
-            return ext.glyph(ch.ch);
-        }
-        None
+    pub fn glyph(&self, ch: &AttributedChar) -> Option<&crate::fonts::CompactGlyph> {
+        self.font(ch.font_page()).map(|font| font.glyph(ch.ch))
     }
 
     #[must_use]

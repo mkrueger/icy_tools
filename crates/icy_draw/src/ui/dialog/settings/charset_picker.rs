@@ -113,20 +113,20 @@ impl CharGridProgram {
 
         // Get the glyph from the font
         let ch = char::from(char_code);
-        if let Some(glyph) = self.font.glyph(ch) {
-            for (y, glyph_row) in glyph.bitmap.pixels.iter().enumerate() {
-                if y >= font_h {
+        let glyph = self.font.glyph(ch);
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (y, glyph_row) in bitmap_pixels.iter().enumerate() {
+            if y >= font_h {
+                break;
+            }
+            for (x, &pixel) in glyph_row.iter().enumerate() {
+                if x >= font_w {
                     break;
                 }
-                for (x, &pixel) in glyph_row.iter().enumerate() {
-                    if x >= font_w {
-                        break;
-                    }
-                    if pixel {
-                        let px = rect.x + CELL_PADDING + x as f32 * CHAR_SCALE;
-                        let py = rect.y + CELL_PADDING + y as f32 * CHAR_SCALE;
-                        frame.fill_rectangle(Point::new(px, py), Size::new(CHAR_SCALE, CHAR_SCALE), fg);
-                    }
+                if pixel {
+                    let px = rect.x + CELL_PADDING + x as f32 * CHAR_SCALE;
+                    let py = rect.y + CELL_PADDING + y as f32 * CHAR_SCALE;
+                    frame.fill_rectangle(Point::new(px, py), Size::new(CHAR_SCALE, CHAR_SCALE), fg);
                 }
             }
         }
@@ -290,23 +290,23 @@ impl FKeySlotsProgram {
         // Draw the character glyph
         let char_code = self.codes[slot] as u8;
         let ch = char::from(char_code);
-        if let Some(glyph) = self.font.glyph(ch) {
-            let char_y = rect.y + 16.0;
-            let char_x = rect.x + (rect.width - font_w as f32) / 2.0;
+        let glyph = self.font.glyph(ch);
+        let char_y = rect.y + 16.0;
+        let char_x = rect.x + (rect.width - font_w as f32) / 2.0;
 
-            for (y, glyph_row) in glyph.bitmap.pixels.iter().enumerate() {
-                if y >= font_h {
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (y, glyph_row) in bitmap_pixels.iter().enumerate() {
+            if y >= font_h {
+                break;
+            }
+            for (x, &pixel) in glyph_row.iter().enumerate() {
+                if x >= font_w {
                     break;
                 }
-                for (x, &pixel) in glyph_row.iter().enumerate() {
-                    if x >= font_w {
-                        break;
-                    }
-                    if pixel {
-                        let px = char_x + x as f32;
-                        let py = char_y + y as f32;
-                        frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
-                    }
+                if pixel {
+                    let px = char_x + x as f32;
+                    let py = char_y + y as f32;
+                    frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
                 }
             }
         }

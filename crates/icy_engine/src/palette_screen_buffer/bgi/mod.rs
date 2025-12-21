@@ -1764,34 +1764,29 @@ impl Bgi {
             }
 
             for c in str.chars() {
-                if let Some(glyph) = DEFAULT_BITFONT.glyph(c) {
-                    let char_x = if matches!(self.direction, Direction::Vertical) { xf } else { xf };
-                    let char_y = if matches!(self.direction, Direction::Vertical) { yf - 8 * mag } else { yf };
+                let glyph = DEFAULT_BITFONT.glyph(c);
+                let char_x = if matches!(self.direction, Direction::Vertical) { xf } else { xf };
+                let char_y = if matches!(self.direction, Direction::Vertical) { yf - 8 * mag } else { yf };
 
-                    for gy in 0..8 {
-                        for gx in 0..8 {
-                            // Check pixel in bitmap.pixels[row][col]
-                            let pixel_set = if gy < glyph.bitmap.pixels.len() as i32 && gx < glyph.bitmap.pixels[gy as usize].len() as i32 {
-                                glyph.bitmap.pixels[gy as usize][gx as usize]
-                            } else {
-                                false
-                            };
-                            if pixel_set {
-                                // Draw magnified pixel
-                                for my in 0..mag {
-                                    for mx in 0..mag {
-                                        self.put_pixel(buf, char_x + gx * mag + mx, char_y + gy * mag + my, self.color);
-                                    }
+                for gy in 0..8 {
+                    for gx in 0..8 {
+                        // Check pixel using CompactGlyph
+                        let pixel_set = glyph.get_pixel(gx as usize, gy as usize);
+                        if pixel_set {
+                            // Draw magnified pixel
+                            for my in 0..mag {
+                                for mx in 0..mag {
+                                    self.put_pixel(buf, char_x + gx * mag + mx, char_y + gy * mag + my, self.color);
                                 }
                             }
                         }
                     }
+                }
 
-                    if matches!(self.direction, Direction::Horizontal) {
-                        xf += 8 * mag;
-                    } else {
-                        yf -= 8 * mag;
-                    }
+                if matches!(self.direction, Direction::Horizontal) {
+                    xf += 8 * mag;
+                } else {
+                    yf -= 8 * mag;
                 }
             }
             return Position::new(xf, yf);

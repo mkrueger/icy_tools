@@ -439,40 +439,136 @@ impl EditState {
     }
 }
 
-// Normalize glyph width to a fixed width by padding with false values
-fn normalize_glyph_width(glyph: &[Vec<bool>], target_width: usize) -> Vec<Vec<bool>> {
-    glyph
-        .iter()
-        .map(|row| {
-            let mut normalized_row = vec![false; target_width];
-            for (i, &pixel) in row.iter().enumerate() {
-                if i < target_width {
-                    normalized_row[i] = pixel;
-                }
-            }
-            normalized_row
-        })
-        .collect()
+// ============================================================================
+// Packed glyph data type for efficient flip table generation
+// Uses [u8; 32] to match CompactGlyph.data format (one byte per row, MSB first)
+// ============================================================================
+
+type PackedGlyph = [u8; 32];
+
+/// Extract packed glyph data from a CompactGlyph
+#[inline]
+fn get_packed_glyph(glyph: &crate::CompactGlyph) -> PackedGlyph {
+    glyph.data
 }
 
-// Normalize glyph dimensions to fixed width and height
-fn normalize_glyph(glyph: &[Vec<bool>], target_width: usize, target_height: usize) -> Vec<Vec<bool>> {
-    let mut normalized = Vec::with_capacity(target_height);
-    for i in 0..target_height {
-        let mut row = vec![false; target_width];
-        if i < glyph.len() {
-            for (j, &pixel) in glyph[i].iter().enumerate() {
-                if j < target_width {
-                    row[j] = pixel;
-                }
-            }
-        }
-        normalized.push(row);
+/// Check if two packed glyphs are equal (considering only valid height)
+#[inline]
+fn packed_eq(a: &PackedGlyph, b: &PackedGlyph, height: usize) -> bool {
+    a[..height] == b[..height]
+}
+
+/// Generate flip-x variants for a packed glyph (horizontal flip)
+fn generate_flipx_variants_packed(glyph: &PackedGlyph, height: usize, font_width: i32) -> Option<Vec<PackedGlyph>> {
+    let w = 8 - font_width as u32;
+    let mut flipped: PackedGlyph = [0; 32];
+    for i in 0..height {
+        flipped[i] = glyph[i].reverse_bits() << w;
     }
-    normalized
+
+    if packed_eq(glyph, &flipped, height) {
+        return None;
+    }
+
+    Some(generate_x_variants_packed(&flipped, height))
 }
 
-pub(crate) fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+/// Generate horizontal shift variants for a packed glyph
+fn generate_x_variants_packed(glyph: &PackedGlyph, height: usize) -> Vec<PackedGlyph> {
+    let mut variants = Vec::with_capacity(5);
+    variants.push(*glyph);
+
+    // Shift left by 1
+    let mut left: PackedGlyph = [0; 32];
+    for i in 0..height {
+        left[i] = glyph[i] << 1;
+    }
+    variants.push(left);
+
+    // Shift left by 2
+    let mut left2: PackedGlyph = [0; 32];
+    for i in 0..height {
+        left2[i] = glyph[i] << 2;
+    }
+    variants.push(left2);
+
+    // Shift right by 1
+    let mut right: PackedGlyph = [0; 32];
+    for i in 0..height {
+        right[i] = glyph[i] >> 1;
+    }
+    variants.push(right);
+
+    // Shift right by 2
+    let mut right2: PackedGlyph = [0; 32];
+    for i in 0..height {
+        right2[i] = glyph[i] >> 2;
+    }
+    variants.push(right2);
+
+    variants
+}
+
+/// Generate flip-y variants for a packed glyph (vertical flip)
+fn generate_flipy_variants_packed(glyph: &PackedGlyph, height: usize) -> Option<Vec<PackedGlyph>> {
+    let mut flipped: PackedGlyph = [0; 32];
+    for i in 0..height {
+        flipped[i] = glyph[height - 1 - i];
+    }
+
+    if packed_eq(glyph, &flipped, height) {
+        return None;
+    }
+
+    Some(generate_y_variants_packed(&flipped, height))
+}
+
+/// Generate vertical shift variants for a packed glyph
+fn generate_y_variants_packed(glyph: &PackedGlyph, height: usize) -> Vec<PackedGlyph> {
+    let mut variants = Vec::with_capacity(5);
+    variants.push(*glyph);
+
+    // Shift up by 1
+    let mut up: PackedGlyph = [0; 32];
+    for i in 0..height.saturating_sub(1) {
+        up[i] = glyph[i + 1];
+    }
+    variants.push(up);
+
+    // Shift up by 2
+    let mut up2: PackedGlyph = [0; 32];
+    for i in 0..height.saturating_sub(2) {
+        up2[i] = glyph[i + 2];
+    }
+    variants.push(up2);
+
+    // Shift down by 1
+    let mut down: PackedGlyph = [0; 32];
+    for i in 1..height {
+        down[i] = glyph[i - 1];
+    }
+    variants.push(down);
+
+    // Shift down by 2
+    let mut down2: PackedGlyph = [0; 32];
+    for i in 2..height {
+        down2[i] = glyph[i - 2];
+    }
+    variants.push(down2);
+
+    variants
+}
+
+/// Negate packed glyph data (invert all bits)
+fn negate_packed(glyph: &PackedGlyph, height: usize) -> PackedGlyph {
+    let mut neg: PackedGlyph = [0; 32];
+    for i in 0..height {
+        neg[i] = !glyph[i];
+    }
+    neg
+}
+
+pub fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     let mut flip_table = BTreeMap::new();
 
     // List of characters that should never be included in the flip table
@@ -488,30 +584,9 @@ pub(crate) fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (boo
         255 as char, // non-breaking space
     ];
 
-    // Collect all characters from the font glyphs
-    let mut sorted_keys: Vec<char> = Vec::new();
-    for glyph_def in &font.yaff_font.glyphs {
-        for label in &glyph_def.labels {
-            let label_str = format!("{:?}", label);
-            // Parse Codepoint([num]) format
-            if let Some(inner) = label_str.strip_prefix("Codepoint([") {
-                if let Some(num_str) = inner.strip_suffix("])") {
-                    if let Ok(code) = num_str.parse::<u32>() {
-                        if let Some(ch) = char::from_u32(code) {
-                            sorted_keys.push(ch);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    sorted_keys.sort();
-    sorted_keys.dedup();
-
-    let size = font.size();
+    let height = font.height as usize;
 
     // Add known vertical flip mappings for box-drawing characters
-    // These are hard to detect algorithmically due to subtle pixel differences
     let vertical_pairs = [
         (183, 189),
         (184, 190),
@@ -533,51 +608,43 @@ pub(crate) fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (boo
 
     for (ch1, ch2) in vertical_pairs {
         if let (Some(c1), Some(c2)) = (char::from_u32(ch1), char::from_u32(ch2)) {
-            if sorted_keys.contains(&c1) && sorted_keys.contains(&c2) {
-                flip_table.insert(c1, (false, c2));
-                flip_table.insert(c2, (false, c1));
-            }
+            flip_table.insert(c1, (false, c2));
+            flip_table.insert(c2, (false, c1));
         }
     }
 
-    for ch in &sorted_keys {
-        if excluded_chars.contains(ch) {
+    for ch_code in 0u8..=255 {
+        let ch = ch_code as char;
+        if excluded_chars.contains(&ch) {
             continue;
         }
 
-        if let Some(cur_glyph_def) = font.glyph(*ch) {
-            let cur_glyph = &cur_glyph_def.bitmap.pixels;
+        let cur_glyph = get_packed_glyph(font.glyph(ch));
 
-            // Normalize glyph to fixed dimensions for comparison
-            let normalized_glyph = normalize_glyph(cur_glyph, 8, size.height as usize);
+        let Some(flipped_variants) = generate_flipy_variants_packed(&cur_glyph, height) else {
+            continue;
+        };
 
-            let flipped_glyhps = generate_flipy_variants(&normalized_glyph);
-            let Some(flipped_glyhps) = flipped_glyhps else {
+        'outer: for ch2_code in 0u8..=255 {
+            let ch2 = ch2_code as char;
+            if ch == ch2 || excluded_chars.contains(&ch2) {
                 continue;
-            };
-            let neg_glyphs = negate_glyphs(&flipped_glyhps);
+            }
 
-            'outer: for ch2 in &sorted_keys {
-                if ch == ch2 || excluded_chars.contains(ch2) {
-                    continue;
-                }
-                if let Some(cmp_glyph_def) = font.glyph(*ch2) {
-                    let cmp_glyph = &cmp_glyph_def.bitmap.pixels;
-                    let normalized_cmp = normalize_glyph(cmp_glyph, 8, size.height as usize);
-                    let cmp_glyphs = generate_y_variants(&normalized_cmp);
+            let cmp_glyph = get_packed_glyph(font.glyph(ch2));
+            let cmp_variants = generate_y_variants_packed(&cmp_glyph, height);
 
-                    // Try matching any flipped variant against any comparison variant
-                    for cmp_glyph in &cmp_glyphs {
-                        for i in 0..flipped_glyhps.len() {
-                            if &flipped_glyhps[i] == cmp_glyph {
-                                flip_table.insert(*ch, (false, *ch2));
-                                break 'outer;
-                            }
-                            if &neg_glyphs[i] == cmp_glyph {
-                                flip_table.insert(*ch, (true, *ch2));
-                                break 'outer;
-                            }
-                        }
+            for cmp in &cmp_variants {
+                for (i, flipped) in flipped_variants.iter().enumerate() {
+                    if packed_eq(flipped, cmp, height) {
+                        flip_table.insert(ch, (false, ch2));
+                        break 'outer;
+                    }
+                    // Check negated version
+                    let neg = negate_packed(flipped, height);
+                    if packed_eq(&neg, cmp, height) {
+                        flip_table.insert(ch, (true, ch2));
+                        break 'outer;
                     }
                 }
             }
@@ -587,89 +654,59 @@ pub(crate) fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (boo
     flip_table
 }
 
-pub(crate) fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+pub fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     let mut flip_table = BTreeMap::new();
 
-    // Collect all characters from the font glyphs
-    let mut sorted_keys: Vec<char> = Vec::new();
-    for glyph_def in &font.yaff_font.glyphs {
-        for label in &glyph_def.labels {
-            let label_str = format!("{:?}", label);
-            // Parse Codepoint([num]) format
-            if let Some(inner) = label_str.strip_prefix("Codepoint([") {
-                if let Some(num_str) = inner.strip_suffix("])") {
-                    if let Ok(code) = num_str.parse::<u32>() {
-                        if let Some(ch) = char::from_u32(code) {
-                            sorted_keys.push(ch);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    sorted_keys.sort();
-    sorted_keys.dedup();
+    // Hardcoded slash mappings
+    flip_table.insert('\\', (false, '/'));
+    flip_table.insert('/', (false, '\\'));
 
-    // Only add hardcoded mappings if both characters exist in the font
-    if sorted_keys.contains(&'\\') && sorted_keys.contains(&'/') {
-        flip_table.insert('\\', (false, '/'));
-        flip_table.insert('/', (false, '\\'));
-    }
-
-    // List of characters that should never be included in the flip table
-    // These are symmetrical characters or ones that produce false matches
+    // Characters that should never be included
     let excluded_chars = [45 as char, 186 as char, 61 as char]; // -, ║, =
 
-    let size = font.size();
+    let height = font.height as usize;
+    let font_width = font.width as i32;
 
-    for ch in &sorted_keys {
-        if excluded_chars.contains(ch) {
+    for ch_code in 0u8..=255 {
+        let ch = ch_code as char;
+        if excluded_chars.contains(&ch) {
             continue;
         }
 
-        if let Some(cur_glyph_def) = font.glyph(*ch) {
-            let cur_glyph = &cur_glyph_def.bitmap.pixels;
+        let cur_glyph = get_packed_glyph(font.glyph(ch));
 
-            // Normalize glyph to 8-pixel width for comparison
-            let normalized_glyph = normalize_glyph_width(cur_glyph, 8);
+        let Some(flipped_variants) = generate_flipx_variants_packed(&cur_glyph, height, font_width) else {
+            continue;
+        };
 
-            let flipped_glyhps = generate_flipx_variants(&normalized_glyph, size.width);
-            let Some(flipped_glyhps) = flipped_glyhps else {
+        'outer: for ch2_code in 0u8..=255 {
+            let ch2 = ch2_code as char;
+            if ch == ch2 || excluded_chars.contains(&ch2) {
                 continue;
-            };
-            let neg_glyphs = negate_glyphs(&flipped_glyhps);
+            }
 
-            'outer: for ch2 in &sorted_keys {
-                if ch == ch2 || excluded_chars.contains(ch2) {
-                    continue;
-                }
+            if ch2 == 186 as char && ch != 186 as char {
+                continue;
+            }
 
-                // Skip if ch2 is character 186 and ch is not one of the expected mappings
-                if *ch2 == 186 as char && *ch != 186 as char {
-                    continue;
-                }
+            let cmp_glyph = get_packed_glyph(font.glyph(ch2));
+            let cmp_variants = generate_x_variants_packed(&cmp_glyph, height);
 
-                if let Some(cmp_glyph_def) = font.glyph(*ch2) {
-                    let cmp_glyph = &cmp_glyph_def.bitmap.pixels;
-                    let normalized_cmp = normalize_glyph_width(cmp_glyph, 8);
-                    let cmp_glyphs = generate_x_variants(&normalized_cmp, size.width);
+            for (idx, cmp) in cmp_variants.iter().enumerate() {
+                for (i, flipped) in flipped_variants.iter().enumerate() {
+                    // Only accept exact flips for problematic characters
+                    if (ch == 186 as char || ch2 == 186 as char) && (i != 0 || idx != 0) {
+                        continue;
+                    }
 
-                    for (idx, cmp_glyph) in cmp_glyphs.iter().enumerate() {
-                        for i in 0..flipped_glyhps.len() {
-                            // Only accept exact flips (index 0), not shifted variants for problematic characters
-                            if (*ch == 186 as char || *ch2 == 186 as char) && (i != 0 || idx != 0) {
-                                continue;
-                            }
-
-                            if flipped_glyhps[i] == *cmp_glyph {
-                                flip_table.insert(*ch, (false, *ch2));
-                                break 'outer;
-                            }
-                            if neg_glyphs[i] == *cmp_glyph {
-                                flip_table.insert(*ch, (true, *ch2));
-                                break 'outer;
-                            }
-                        }
+                    if packed_eq(flipped, cmp, height) {
+                        flip_table.insert(ch, (false, ch2));
+                        break 'outer;
+                    }
+                    let neg = negate_packed(flipped, height);
+                    if packed_eq(&neg, cmp, height) {
+                        flip_table.insert(ch, (true, ch2));
+                        break 'outer;
                     }
                 }
             }
@@ -747,149 +784,6 @@ pub(crate) fn flip_layer_y(layer: &mut crate::Layer, area: Rectangle, flip_table
             layer.set_char(pos2, pos1ch);
         }
     }
-}
-
-fn negate_glyphs(flipped_glyhps: &[Vec<Vec<bool>>]) -> Vec<Vec<Vec<bool>>> {
-    let mut neg_glyhps = Vec::new();
-    for flipped_glyph in flipped_glyhps {
-        let neg_glyph: Vec<Vec<bool>> = flipped_glyph.iter().map(|row| row.iter().map(|&pixel| !pixel).collect()).collect();
-        neg_glyhps.push(neg_glyph);
-    }
-    neg_glyhps
-}
-
-fn generate_flipx_variants(cur_glyph: &[Vec<bool>], font_width: i32) -> Option<Vec<Vec<Vec<bool>>>> {
-    // Simply reverse each row - no alignment needed for libyaff bitmaps
-    let flipped_glyph: Vec<Vec<bool>> = cur_glyph.iter().map(|row| row.iter().rev().copied().collect()).collect();
-
-    if cur_glyph == flipped_glyph {
-        return None;
-    }
-    Some(generate_x_variants(&flipped_glyph, font_width))
-}
-
-fn generate_x_variants(flipped_glyph: &[Vec<bool>], _font_width: i32) -> Vec<Vec<Vec<bool>>> {
-    let mut cmp_glyhps = vec![flipped_glyph.to_vec()];
-
-    // Only generate variants if rows are wide enough
-    if flipped_glyph.is_empty() || flipped_glyph[0].len() < 2 {
-        return cmp_glyhps;
-    }
-
-    let row_width = flipped_glyph[0].len();
-
-    // Shift left by 1
-    let left_glyph: Vec<Vec<bool>> = flipped_glyph
-        .iter()
-        .map(|row| {
-            let mut shifted = vec![false; row_width];
-            for i in 0..row_width.saturating_sub(1) {
-                shifted[i] = row[i + 1];
-            }
-            shifted
-        })
-        .collect();
-    cmp_glyhps.push(left_glyph);
-
-    // Shift left by 2
-    let left_by2_glyph: Vec<Vec<bool>> = flipped_glyph
-        .iter()
-        .map(|row| {
-            let mut shifted = vec![false; row_width];
-            for i in 0..row_width.saturating_sub(2) {
-                shifted[i] = row[i + 2];
-            }
-            shifted
-        })
-        .collect();
-    cmp_glyhps.push(left_by2_glyph);
-
-    // Shift right by 1
-    let right_glyph: Vec<Vec<bool>> = flipped_glyph
-        .iter()
-        .map(|row| {
-            let mut shifted = vec![false; row_width];
-            for i in 1..row_width {
-                shifted[i] = row[i - 1];
-            }
-            shifted
-        })
-        .collect();
-    cmp_glyhps.push(right_glyph);
-
-    // Shift right by 2
-    let right_by2_glyph: Vec<Vec<bool>> = flipped_glyph
-        .iter()
-        .map(|row| {
-            let mut shifted = vec![false; row_width];
-            for i in 2..row_width {
-                shifted[i] = row[i - 2];
-            }
-            shifted
-        })
-        .collect();
-    cmp_glyhps.push(right_by2_glyph);
-
-    cmp_glyhps
-}
-
-fn generate_flipy_variants(cur_glyph: &[Vec<bool>]) -> Option<Vec<Vec<Vec<bool>>>> {
-    let flipped_glyph: Vec<Vec<bool>> = cur_glyph.iter().rev().cloned().collect();
-    if cur_glyph == flipped_glyph {
-        return None;
-    }
-    Some(generate_y_variants(&flipped_glyph))
-}
-
-fn generate_y_variants(flipped_glyph: &[Vec<bool>]) -> Vec<Vec<Vec<bool>>> {
-    let mut cmp_glyhps = vec![flipped_glyph.to_vec()];
-
-    if flipped_glyph.is_empty() {
-        return cmp_glyhps;
-    }
-
-    let height = flipped_glyph.len();
-    let row_width = flipped_glyph.get(0).map(|r| r.len()).unwrap_or(0);
-
-    // Shift up by 1 (move rows up, add empty row at bottom)
-    let mut up_glyph = Vec::with_capacity(height);
-    for i in 1..height {
-        up_glyph.push(flipped_glyph[i].clone());
-    }
-    up_glyph.push(vec![false; row_width]);
-    cmp_glyhps.push(up_glyph);
-
-    // Shift up by 2
-    let mut up_by2_glyph = Vec::with_capacity(height);
-    for i in 2..height {
-        up_by2_glyph.push(flipped_glyph[i].clone());
-    }
-    up_by2_glyph.push(vec![false; row_width]);
-    if height >= 2 {
-        up_by2_glyph.push(vec![false; row_width]);
-    }
-    cmp_glyhps.push(up_by2_glyph);
-
-    // Shift down by 1 (add empty row at top, move rows down)
-    let mut down_glyph = Vec::with_capacity(height);
-    down_glyph.push(vec![false; row_width]);
-    for i in 0..height.saturating_sub(1) {
-        down_glyph.push(flipped_glyph[i].clone());
-    }
-    cmp_glyhps.push(down_glyph);
-
-    // Shift down by 2
-    let mut down_by2_glyph = Vec::with_capacity(height);
-    down_by2_glyph.push(vec![false; row_width]);
-    if height >= 2 {
-        down_by2_glyph.push(vec![false; row_width]);
-    }
-    for i in 0..height.saturating_sub(2) {
-        down_by2_glyph.push(flipped_glyph[i].clone());
-    }
-    cmp_glyhps.push(down_by2_glyph);
-
-    cmp_glyhps
 }
 
 #[cfg(test)]

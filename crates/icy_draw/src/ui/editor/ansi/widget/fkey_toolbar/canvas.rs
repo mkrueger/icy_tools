@@ -211,34 +211,34 @@ impl<'a> FKeyToolbarProgram<'a> {
         frame.fill_rectangle(Point::new(x, y), Size::new(char_width, char_height), bg);
 
         // Get glyph and draw pixels - combine horizontal runs
-        if let Some(glyph) = font.glyph(ch) {
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-                let row_y = y + (row_idx as f32 * pixel_h).floor();
-                let mut run_start: Option<usize> = None;
+        let glyph = font.glyph(ch);
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (row_idx, row) in bitmap_pixels.iter().enumerate() {
+            let row_y = y + (row_idx as f32 * pixel_h).floor();
+            let mut run_start: Option<usize> = None;
 
-                for (col_idx, &pixel) in row.iter().enumerate() {
-                    if pixel {
-                        if run_start.is_none() {
-                            run_start = Some(col_idx);
-                        }
-                    } else if let Some(start) = run_start {
-                        let run_len = col_idx - start;
-                        frame.fill_rectangle(
-                            Point::new(x + (start as f32 * pixel_w).floor(), row_y),
-                            Size::new(run_len as f32 * pixel_w, pixel_h),
-                            fg,
-                        );
-                        run_start = None;
+            for (col_idx, &pixel) in row.iter().enumerate() {
+                if pixel {
+                    if run_start.is_none() {
+                        run_start = Some(col_idx);
                     }
-                }
-                if let Some(start) = run_start {
-                    let run_len = row.len() - start;
+                } else if let Some(start) = run_start {
+                    let run_len = col_idx - start;
                     frame.fill_rectangle(
                         Point::new(x + (start as f32 * pixel_w).floor(), row_y),
                         Size::new(run_len as f32 * pixel_w, pixel_h),
                         fg,
                     );
+                    run_start = None;
                 }
+            }
+            if let Some(start) = run_start {
+                let run_len = row.len() - start;
+                frame.fill_rectangle(
+                    Point::new(x + (start as f32 * pixel_w).floor(), row_y),
+                    Size::new(run_len as f32 * pixel_w, pixel_h),
+                    fg,
+                );
             }
         }
     }
@@ -249,9 +249,7 @@ impl<'a> FKeyToolbarProgram<'a> {
         let Some(font) = &self.font else {
             return 0.0;
         };
-        let Some(glyph) = font.glyph(ch) else {
-            return 0.0;
-        };
+        let glyph = font.glyph(ch);
 
         let font_height = font.size().height as f32;
         let char_height = (font_height * scale).floor();
@@ -260,7 +258,8 @@ impl<'a> FKeyToolbarProgram<'a> {
         let mut min_row: Option<usize> = None;
         let mut max_row: Option<usize> = None;
 
-        for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (row_idx, row) in bitmap_pixels.iter().enumerate() {
             if row.iter().any(|&p| p) {
                 min_row = Some(min_row.map_or(row_idx, |m| m.min(row_idx)));
                 max_row = Some(max_row.map_or(row_idx, |m| m.max(row_idx)));

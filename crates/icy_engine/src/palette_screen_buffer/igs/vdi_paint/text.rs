@@ -49,18 +49,12 @@ impl VdiPaint {
         let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
 
         for ch in text {
-            let glyph = font.glyph(*ch as char).unwrap();
+            let glyph = font.glyph(*ch as char);
 
             if is_outlined {
                 for y in 0..font_size.height {
                     for x in 0..font_size.width {
-                        let iy = y;
-                        let ix = x;
-                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
-                            glyph.bitmap.pixels[iy as usize][ix as usize]
-                        } else {
-                            false
-                        };
+                        let pixel_set = glyph.get_pixel(x as usize, y as usize);
                         draw_mask = draw_mask.rotate_left(1);
                         if pixel_set && (1 & draw_mask) != 0 {
                             let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
@@ -76,13 +70,7 @@ impl VdiPaint {
                 let mut draw_mask: u16 = if self.text_effects.contains(TextEffects::GHOSTED) { 0x5555 } else { 0xFFFF };
                 for y in 0..font_size.height {
                     for x in 0..font_size.width {
-                        let iy = y;
-                        let ix = x;
-                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
-                            glyph.bitmap.pixels[iy as usize][ix as usize]
-                        } else {
-                            false
-                        };
+                        let pixel_set = glyph.get_pixel(x as usize, y as usize);
                         draw_mask = draw_mask.rotate_left(1);
 
                         if pixel_set && (1 & draw_mask) != 0 {
@@ -97,13 +85,7 @@ impl VdiPaint {
                     draw_mask = draw_mask.rotate_left(1);
 
                     for x in 0..font_size.width {
-                        let iy = y;
-                        let ix = x;
-                        let pixel_set = if iy < glyph.bitmap.pixels.len() as i32 && ix < glyph.bitmap.pixels[iy as usize].len() as i32 {
-                            glyph.bitmap.pixels[iy as usize][ix as usize]
-                        } else {
-                            false
-                        };
+                        let pixel_set = glyph.get_pixel(x as usize, y as usize);
                         if pixel_set {
                             if 1 & draw_mask != 0 {
                                 let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {

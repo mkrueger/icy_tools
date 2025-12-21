@@ -126,20 +126,20 @@ impl OutlineStyleSelectorProgram {
                     unicode_ch
                 };
 
-                if let Some(glyph) = self.font.glyph(cp437_ch) {
-                    for (y, glyph_row) in glyph.bitmap.pixels.iter().enumerate() {
-                        if y >= font_h {
+                let glyph = self.font.glyph(cp437_ch);
+                let bitmap_pixels = glyph.to_bitmap_pixels();
+                for (y, glyph_row) in bitmap_pixels.iter().enumerate() {
+                    if y >= font_h {
+                        break;
+                    }
+                    for (x, &pixel) in glyph_row.iter().enumerate() {
+                        if x >= font_w {
                             break;
                         }
-                        for (x, &pixel) in glyph_row.iter().enumerate() {
-                            if x >= font_w {
-                                break;
-                            }
-                            if pixel {
-                                let px = rect.x + CELL_PADDING + col as f32 * font_w as f32 + x as f32;
-                                let py = rect.y + CELL_PADDING + row as f32 * font_h as f32 + y as f32;
-                                frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
-                            }
+                        if pixel {
+                            let px = rect.x + CELL_PADDING + col as f32 * font_w as f32 + x as f32;
+                            let py = rect.y + CELL_PADDING + row as f32 * font_h as f32 + y as f32;
+                            frame.fill_rectangle(Point::new(px, py), Size::new(1.0, 1.0), fg);
                         }
                     }
                 }

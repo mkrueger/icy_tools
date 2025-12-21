@@ -110,34 +110,30 @@ pub(crate) fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
         // Fonts in the wild differ:
         // - some label glyphs by 0..255 "codepoint" slots (CP/ANSI index)
         // - others label glyphs by Unicode (e.g. box-drawing U+250C)
-        // We build the atlas by CP437 index, but try both lookup strategies.
+        // We build the atlas by CP437 index, using the slot character.
         let slot_ch = char::from_u32(code).unwrap_or(' ');
-        let unicode_ch = CP437_TO_UNICODE.get(code as usize).copied().unwrap_or(' ');
         let col = (code % 16) as u32;
         let row = (code / 16) as u32;
         let base_x = col * gw;
         let base_y = row * gh;
 
-        // default transparent
-        if let Some(glyph) = font.glyph(slot_ch).or_else(|| font.glyph(unicode_ch)) {
-            for y in 0..gh as usize {
-                let dst_y = base_y as usize + y;
-                if dst_y >= atlas_h as usize {
+        let glyph = font.glyph(slot_ch);
+        for y in 0..gh as usize {
+            let dst_y = base_y as usize + y;
+            if dst_y >= atlas_h as usize {
+                continue;
+            }
+            for x in 0..gw as usize {
+                let dst_x = base_x as usize + x;
+                if dst_x >= atlas_w as usize {
                     continue;
                 }
-                let src_row = glyph.bitmap.pixels.get(y);
-                for x in 0..gw as usize {
-                    let dst_x = base_x as usize + x;
-                    if dst_x >= atlas_w as usize {
-                        continue;
-                    }
-                    let on = src_row.and_then(|r| r.get(x)).copied().unwrap_or(false);
-                    let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
-                    rgba[idx + 0] = 255;
-                    rgba[idx + 1] = 255;
-                    rgba[idx + 2] = 255;
-                    rgba[idx + 3] = if on { 255 } else { 0 };
-                }
+                let on = glyph.get_pixel(x, y);
+                let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
+                rgba[idx + 0] = 255;
+                rgba[idx + 1] = 255;
+                rgba[idx + 2] = 255;
+                rgba[idx + 3] = if on { 255 } else { 0 };
             }
         }
     }
@@ -403,16 +399,15 @@ impl shader::Primitive for FKeyOnePassPrimitive {
             let Some(font) = font_opt else {
                 return 0.0;
             };
-            let Some(glyph) = font.glyph(ch) else {
-                return 0.0;
-            };
+            let glyph = font.glyph(ch);
 
             let char_height = label_render_h;
             let pixel_h = label_magnify;
 
             let mut min_row: Option<usize> = None;
             let mut max_row: Option<usize> = None;
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
+            let bitmap_pixels = glyph.to_bitmap_pixels();
+            for (row_idx, row) in bitmap_pixels.iter().enumerate() {
                 if row.iter().any(|&p| p) {
                     min_row = Some(min_row.map_or(row_idx, |m| m.min(row_idx)));
                     max_row = Some(max_row.map_or(row_idx, |m| m.max(row_idx)));

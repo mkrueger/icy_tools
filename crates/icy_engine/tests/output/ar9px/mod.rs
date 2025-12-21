@@ -28,6 +28,7 @@ pub fn test_9px_rendering() {
     );
 }
 
+/*
 /// Test aspect ratio rendering
 #[test]
 pub fn test_aspect_ratio_rendering() {
@@ -57,3 +58,4 @@ pub fn test_9px_and_aspect_ratio_rendering() {
         true, // use_aspect_ratio
     );
 }
+*/

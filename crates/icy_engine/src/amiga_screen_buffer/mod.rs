@@ -3,8 +3,6 @@ use icy_parser_core::{RipCommand, SkypixCommand};
 pub mod sky_paint;
 pub mod skypix_impl;
 
-use libyaff::GlyphDefinition;
-
 use crate::{
     AnsiSaveOptionsV2, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette,
     Position, Rectangle, RenderOptions, Result, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt,
@@ -170,73 +168,45 @@ impl AmigaScreenBuffer {
     }
 
     /// Render a character directly to the RGBA buffer
-    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) -> Option<GlyphDefinition> {
+    fn render_char_to_buffer(&mut self, pos: Position, ch: AttributedChar) -> Option<()> {
         let pixel_x = pos.x;
         let pixel_y = pos.y;
 
         // Get colors from palette, swap if inverse video mode is
         let (fg_color, bg_color) = (ch.attribute.foreground() as u32, ch.attribute.background() as u32);
 
-        let font = if let Some(font) = self.font(ch.font_page() as usize) {
-            font
-        } else if let Some(font) = self.font(0) {
-            font
-        } else {
-            &DEFAULT_BITFONT
-        };
         let font_size = self.font_dimensions();
-
-        // Get glyph data from font
-        let Some(glyph) = font.glyph(ch.ch) else {
-            log::error!("NO GLYPH for char '{}'", ch.ch);
-            return None;
-        };
-
-        // For proportional fonts, get bearing values
-        let left_bearing = if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-            glyph.left_bearing.unwrap_or(0)
-        } else {
-            0
-        };
-
-        let glyph_width = if glyph.bitmap.pixels.is_empty() { 0 } else { glyph.bitmap.pixels[0].len() } as i32;
         let transparent_bg = self.text_mode == TextMode::Jam1;
-        // Render width differs for Skypix vs other modes:
-        // - Skypix: render only the glyph bitmap (no bearing padding)
-        // - Other modes: render full advance width with left/right bearing as background
-        let render_width = if transparent_bg {
-            glyph_width
-        } else if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-            let right_bearing = glyph.right_bearing.unwrap_or(0);
-            // Special handling for empty glyphs (like space)
-            if glyph_width == 0 && left_bearing > 0 {
-                left_bearing
+        let pixel_width = self.pixel_size.width;
+        let pixel_height = self.pixel_size.height;
+
+        // Copy glyph data to avoid borrow conflict
+        let (glyph_data, glyph_width, glyph_height) = {
+            let font = if let Some(font) = self.font(ch.font_page() as usize) {
+                font
+            } else if let Some(font) = self.font(0) {
+                font
             } else {
-                left_bearing + glyph_width + right_bearing
-            }
-        } else {
-            font_size.width as i32
+                &DEFAULT_BITFONT
+            };
+            let glyph = font.glyph(ch.ch);
+            (glyph.data, glyph.width as i32, glyph.height as usize)
         };
+
+        let render_width = if transparent_bg { glyph_width } else { font_size.width as i32 };
 
         for row in 0..font_size.height {
             for col in 0..render_width {
                 let px = pixel_x + col;
                 let py = pixel_y + row;
 
-                if px < 0 || px >= self.pixel_size.width || py < 0 || py >= self.pixel_size.height {
+                if px < 0 || px >= pixel_width || py < 0 || py >= pixel_height {
                     continue;
                 }
 
-                // For Skypix: glyph bitmap starts at cursor (col 0 = bitmap col 0)
-                // For other modes: glyph bitmap starts after left_bearing
-                let glyph_col = if transparent_bg { col } else { col - left_bearing };
-
-                // Check if pixel is set in font glyph
-                let is_foreground = if glyph_col >= 0
-                    && row < glyph.bitmap.pixels.len() as i32
-                    && glyph_col < glyph.bitmap.pixels.get(row as usize).map(|r| r.len()).unwrap_or(0) as i32
-                {
-                    glyph.bitmap.pixels[row as usize][glyph_col as usize]
+                // Check if pixel is set in font glyph using packed byte data
+                let is_foreground = if col >= 0 && (row as usize) < glyph_height && col < glyph_width {
+                    (glyph_data[row as usize] & (0x80 >> col)) != 0
                 } else {
                     false
                 };
@@ -249,11 +219,11 @@ impl AmigaScreenBuffer {
                 let color = if is_foreground { fg_color } else { bg_color };
 
                 // Write to RGBA buffer
-                let offset = py * self.pixel_size.width + px;
+                let offset = py * pixel_width + px;
                 self.screen[offset as usize] = color as u8;
             }
         }
-        Some(glyph)
+        Some(())
     }
 
     pub fn get_pixel_dimensions(&self) -> (usize, usize) {
@@ -614,45 +584,8 @@ impl EditableScreen for AmigaScreenBuffer {
         }
         let mut pos = self.caret.position();
 
-        if let Some(font) = self.font(self.caret.font_page() as usize) {
-            if let Some(shift) = font.yaff_font.global_shift_up {
-                pos.y = pos.y.saturating_sub(shift as i32);
-            }
-        }
-
-        if let Some(glyph) = self.render_char_to_buffer(pos, ch) {
-            let advance_width = if self.graphics_type() == GraphicsType::Skypix {
-                // For proportional fonts with bearing information, use glyph metrics
-                // For monospace fonts, use font_size.width
-                let font = if let Some(font) = self.font(ch.font_page() as usize) {
-                    font
-                } else if let Some(font) = self.font(0) {
-                    font
-                } else {
-                    &DEFAULT_BITFONT
-                };
-
-                // For proportional fonts, use glyph metrics
-                if font.yaff_font.spacing == Some(libyaff::FontSpacing::Proportional) {
-                    // Calculate advance width using glyph bearings
-                    let glyph_width = glyph.bitmap.pixels.get(0).map(|row| row.len() as i32).unwrap_or(0);
-                    let left_bearing = glyph.left_bearing.unwrap_or(0);
-                    let right_bearing = glyph.right_bearing.unwrap_or(0);
-
-                    // For empty glyphs (like space), left_bearing is the total advance
-                    if glyph_width == 0 && left_bearing > 0 {
-                        left_bearing
-                    } else {
-                        left_bearing + glyph_width + right_bearing
-                    }
-                } else {
-                    // For monospace fonts, always use font_size.width
-                    font_size.width
-                }
-            } else {
-                font_size.width
-            };
-
+        if self.render_char_to_buffer(pos, ch).is_some() {
+            let advance_width = font_size.width;
             self.caret.x += advance_width;
         }
 

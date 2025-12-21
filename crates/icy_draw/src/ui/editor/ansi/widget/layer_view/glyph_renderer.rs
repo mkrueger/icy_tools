@@ -76,31 +76,28 @@ pub fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     for code in 0u32..256u32 {
         // Try both CP437 slot and Unicode lookup
         let slot_ch = char::from_u32(code).unwrap_or(' ');
-        let unicode_ch = CP437_TO_UNICODE.get(code as usize).copied().unwrap_or(' ');
         let col = (code % 16) as u32;
         let row = (code / 16) as u32;
         let base_x = col * gw;
         let base_y = row * gh;
 
-        if let Some(glyph) = font.glyph(slot_ch).or_else(|| font.glyph(unicode_ch)) {
-            for y in 0..gh as usize {
-                let dst_y = base_y as usize + y;
-                if dst_y >= atlas_h as usize {
+        let glyph = font.glyph(slot_ch);
+        for y in 0..gh as usize {
+            let dst_y = base_y as usize + y;
+            if dst_y >= atlas_h as usize {
+                continue;
+            }
+            for x in 0..gw as usize {
+                let dst_x = base_x as usize + x;
+                if dst_x >= atlas_w as usize {
                     continue;
                 }
-                let src_row = glyph.bitmap.pixels.get(y);
-                for x in 0..gw as usize {
-                    let dst_x = base_x as usize + x;
-                    if dst_x >= atlas_w as usize {
-                        continue;
-                    }
-                    let on = src_row.and_then(|r| r.get(x)).copied().unwrap_or(false);
-                    let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
-                    rgba[idx] = 255;
-                    rgba[idx + 1] = 255;
-                    rgba[idx + 2] = 255;
-                    rgba[idx + 3] = if on { 255 } else { 0 };
-                }
+                let on = glyph.get_pixel(x, y);
+                let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
+                rgba[idx] = 255;
+                rgba[idx + 1] = 255;
+                rgba[idx + 2] = 255;
+                rgba[idx + 3] = if on { 255 } else { 0 };
             }
         }
     }

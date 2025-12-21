@@ -71,19 +71,19 @@ impl canvas::Program<ToolMessage> for GlyphPreview {
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), self.bg);
 
         // Draw glyph pixels
-        if let Some(glyph) = self.font.glyph(self.ch) {
-            let pixel_w = scale;
-            let pixel_h = scale;
+        let glyph = self.font.glyph(self.ch);
+        let pixel_w = scale;
+        let pixel_h = scale;
 
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-                for (col_idx, &pixel) in row.iter().enumerate() {
-                    if pixel {
-                        frame.fill_rectangle(
-                            Point::new(offset_x + col_idx as f32 * pixel_w, offset_y + row_idx as f32 * pixel_h),
-                            Size::new(pixel_w, pixel_h),
-                            self.fg,
-                        );
-                    }
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (row_idx, row) in bitmap_pixels.iter().enumerate() {
+            for (col_idx, &pixel) in row.iter().enumerate() {
+                if pixel {
+                    frame.fill_rectangle(
+                        Point::new(offset_x + col_idx as f32 * pixel_w, offset_y + row_idx as f32 * pixel_h),
+                        Size::new(pixel_w, pixel_h),
+                        self.fg,
+                    );
                 }
             }
         }

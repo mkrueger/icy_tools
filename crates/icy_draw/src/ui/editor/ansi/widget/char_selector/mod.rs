@@ -114,19 +114,19 @@ impl CharSelectorProgram {
         frame.fill_rectangle(Point::new(x, y), Size::new(CELL_SIZE, CELL_SIZE), bg);
 
         // Get glyph and draw pixels (centered)
-        if let Some(glyph) = font.glyph(ch) {
-            let pixel_w = scale;
-            let pixel_h = scale;
+        let glyph = font.glyph(ch);
+        let pixel_w = scale;
+        let pixel_h = scale;
 
-            for (row_idx, row) in glyph.bitmap.pixels.iter().enumerate() {
-                for (col_idx, &pixel) in row.iter().enumerate() {
-                    if pixel {
-                        frame.fill_rectangle(
-                            Point::new(x + offset_x + col_idx as f32 * pixel_w, y + offset_y + row_idx as f32 * pixel_h),
-                            Size::new(pixel_w, pixel_h),
-                            fg,
-                        );
-                    }
+        let bitmap_pixels = glyph.to_bitmap_pixels();
+        for (row_idx, row) in bitmap_pixels.iter().enumerate() {
+            for (col_idx, &pixel) in row.iter().enumerate() {
+                if pixel {
+                    frame.fill_rectangle(
+                        Point::new(x + offset_x + col_idx as f32 * pixel_w, y + offset_y + row_idx as f32 * pixel_h),
+                        Size::new(pixel_w, pixel_h),
+                        fg,
+                    );
                 }
             }
         }

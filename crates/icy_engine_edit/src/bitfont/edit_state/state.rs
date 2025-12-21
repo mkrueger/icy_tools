@@ -225,17 +225,17 @@ impl BitFontEditState {
             let ch = char::from_u32(ch_code).unwrap_or(' ');
             let mut pixels = vec![vec![false; width as usize]; height as usize];
 
-            if let Some(glyph) = font.glyph(ch) {
-                for (y, row) in glyph.bitmap.pixels.iter().enumerate() {
-                    if y >= height as usize {
+            let glyph = font.glyph(ch);
+            let bitmap_pixels = glyph.to_bitmap_pixels();
+            for (y, row) in bitmap_pixels.iter().enumerate() {
+                if y >= height as usize {
+                    break;
+                }
+                for (x, &pixel) in row.iter().enumerate() {
+                    if x >= width as usize {
                         break;
                     }
-                    for (x, &pixel) in row.iter().enumerate() {
-                        if x >= width as usize {
-                            break;
-                        }
-                        pixels[y][x] = pixel;
-                    }
+                    pixels[y][x] = pixel;
                 }
             }
 
