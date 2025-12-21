@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use icy_sauce::SauceRecord;
 use regex::Regex;
-use zstd::stream::{decode_all as zstd_decode_all, encode_all as zstd_encode_all};
+use zstd::stream::encode_all as zstd_encode_all;
 
 use crate::{BitFont, Color, Layer, LoadingError, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen};
 
@@ -44,6 +44,10 @@ lazy_static::lazy_static! {
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 const ICYD_CHUNK_TYPE: [u8; 4] = *b"icYD";
 const ICYD_RECORD_VERSION: u8 = 1;
+
+// Safety/robustness limit for a single decompressed record payload.
+// This prevents malicious files from causing unbounded allocations.
+const MAX_DECOMPRESSED_RECORD_SIZE: usize = 256 * 1024 * 1024;
 
 fn build_icyd_record(keyword: &str, data: &[u8]) -> Result<Vec<u8>> {
     let keyword_bytes = keyword.as_bytes();
@@ -119,6 +123,17 @@ fn decode_png_to_rgba(png_data: &[u8]) -> Result<(i32, i32, Vec<u8>)> {
         description: format!("PNG decode failed: {e}"),
     })?;
 
+    // The embedded PNG is expected to be RGBA8.
+    let png_info = reader.info();
+    if png_info.color_type != png::ColorType::Rgba || png_info.bit_depth != png::BitDepth::Eight {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: format!(
+                "unsupported embedded PNG format: {:?}/{:?} (expected RGBA/8-bit)",
+                png_info.color_type, png_info.bit_depth
+            ),
+        });
+    }
+
     let buf_size = reader.output_buffer_size().ok_or_else(|| crate::EngineError::UnsupportedFormat {
         description: "PNG output buffer size unknown".to_string(),
     })?;
@@ -129,6 +144,32 @@ fn decode_png_to_rgba(png_data: &[u8]) -> Result<(i32, i32, Vec<u8>)> {
 
     buf.truncate(info.buffer_size());
     Ok((info.width as i32, info.height as i32, buf))
+}
+
+fn zstd_decode_all_limited(bytes: &[u8], limit: usize, context: &str) -> Result<Vec<u8>> {
+    use std::io::Read;
+
+    let mut decoder = zstd::stream::read::Decoder::new(Cursor::new(bytes)).map_err(|e| crate::EngineError::UnsupportedFormat {
+        description: format!("zstd decompression init failed for '{context}': {e}"),
+    })?;
+
+    let mut out: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 8 * 1024];
+    loop {
+        let read = decoder.read(&mut buf).map_err(|e| crate::EngineError::UnsupportedFormat {
+            description: format!("zstd decompression failed for '{context}': {e}"),
+        })?;
+        if read == 0 {
+            break;
+        }
+        if out.len().saturating_add(read) > limit {
+            return Err(crate::EngineError::UnsupportedFormat {
+                description: format!("decompressed record too large for '{context}' (limit: {limit} bytes)"),
+            });
+        }
+        out.extend_from_slice(&buf[..read]);
+    }
+    Ok(out)
 }
 
 fn extract_png_chunks_by_type(png: &[u8], wanted: [u8; 4]) -> Result<Vec<Vec<u8>>> {
@@ -480,7 +521,7 @@ fn process_icy_draw_v1_decoded_chunk(
 
                         layer.set_char(
                             Position::new(x, y),
-                            crate::AttributedChar::new(unsafe { char::from_u32_unchecked(ch) }, attribute),
+                            crate::AttributedChar::new(char::from_u32(ch).unwrap_or('\u{FFFD}'), attribute),
                         );
                     }
                 }
@@ -748,29 +789,62 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Opt
     let mut sixel_format = constants::sixel_format::RAW_RGBA;
     let mut sauce_opt: Option<SauceRecord> = None;
 
-    let records = extract_png_chunks_by_type(data, ICYD_CHUNK_TYPE)?;
-    if records.is_empty() {
+    let raw_records = extract_png_chunks_by_type(data, ICYD_CHUNK_TYPE)?;
+    if raw_records.is_empty() {
         return Ok(None);
     }
 
-    let mut is_running = true;
-    for payload in records {
+    // Parse all records first so we can locate ICED and determine compression.
+    let mut records: Vec<(String, Vec<u8>)> = Vec::with_capacity(raw_records.len());
+    for payload in raw_records {
         let (keyword, bytes) = parse_icyd_record(&payload)?;
+        records.push((keyword, bytes.to_vec()));
+    }
 
-        // Decompress data if needed (except for ICED header and END which are never compressed)
+    // Strict v1 requirement: ICED must be the first record.
+    match records.first() {
+        Some((first_keyword, _)) if first_keyword == "ICED" => {}
+        Some((first_keyword, _)) => {
+            return Err(crate::EngineError::UnsupportedFormat {
+                description: format!("ICED must be the first icYD record (found '{first_keyword}' first)"),
+            });
+        }
+        None => return Ok(None),
+    }
+
+    // Must have ICED to be considered a v1 file.
+    let mut iced_bytes_opt: Option<Vec<u8>> = None;
+    for (keyword, bytes) in &records {
+        if keyword == "ICED" {
+            if iced_bytes_opt.is_some() {
+                return Err(crate::EngineError::UnsupportedFormat {
+                    description: "multiple ICED headers found".to_string(),
+                });
+            }
+            iced_bytes_opt = Some(bytes.clone());
+        }
+    }
+    let Some(iced_bytes) = iced_bytes_opt else {
+        return Err(crate::EngineError::UnsupportedFormat {
+            description: "icYD records present but ICED header missing".to_string(),
+        });
+    };
+
+    // Process ICED first to initialize buffer metadata and the compression setting.
+    let _ = process_icy_draw_v1_decoded_chunk("ICED", &iced_bytes, &mut result, &mut compression, &mut sixel_format, &mut sauce_opt)?;
+
+    for (keyword, bytes) in records {
+        if keyword == "ICED" {
+            continue;
+        }
+
+        // Decompress data if needed (END is never compressed)
         let decompressed_data: Vec<u8>;
-        let actual_bytes: &[u8] = if keyword != "ICED" && keyword != "END" {
+        let actual_bytes: &[u8] = if keyword != "END" {
             match compression {
-                constants::compression::NONE => {
-                    decompressed_data = Vec::new();
-                    let _ = &decompressed_data; // suppress unused warning
-                    bytes
-                }
+                constants::compression::NONE => &bytes,
                 constants::compression::ZSTD => {
-                    let buf = zstd_decode_all(Cursor::new(bytes)).map_err(|e| crate::EngineError::UnsupportedFormat {
-                        description: format!("zstd decompression failed for '{}': {e}", keyword),
-                    })?;
-                    decompressed_data = buf;
+                    decompressed_data = zstd_decode_all_limited(&bytes, MAX_DECOMPRESSED_RECORD_SIZE, &keyword)?;
                     &decompressed_data
                 }
                 other => {
@@ -780,23 +854,16 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Opt
                 }
             }
         } else {
-            decompressed_data = Vec::new();
-            let _ = &decompressed_data; // suppress unused warning
-            bytes
+            &bytes
         };
 
         let keep_running = process_icy_draw_v1_decoded_chunk(&keyword, actual_bytes, &mut result, &mut compression, &mut sixel_format, &mut sauce_opt)?;
         if !keep_running {
-            is_running = false;
             break;
         }
     }
 
-    if is_running {
-        Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
-    } else {
-        Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
-    }
+    Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
 }
 
 fn read_utf8_encoded_string(data: &[u8]) -> Result<(String, usize)> {
