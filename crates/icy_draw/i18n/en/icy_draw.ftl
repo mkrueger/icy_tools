@@ -85,6 +85,14 @@ collab-server-url-placeholder=host:port or ws://host:port
 collab-connect-button=Connect
 button-cancel=Cancel
 
+# Collaboration connection errors
+collab-connection-lost-title=Collaboration disconnected
+collab-connection-lost-message=The connection to the collaboration server was lost.
+collab-connection-error-title=Collaboration connection error
+collab-connection-error-message=The connection to the collaboration server failed.
+
+    Error: { $error }
+
 # File dialogs
 file-dialog-save-as-title=Save File As
 file-dialog-filter-all-files=All Files

@@ -173,12 +173,12 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     frame.fill_rectangle(
                         iced::Point::new(sel_rect.x, sel_rect.y),
                         iced::Size::new(sel_rect.width, sel_rect.height),
-                        Color { a: 0.15, ..color },
+                        Color { a: 0.08, ..color },
                     );
 
                     // Draw outer border for selection
                     let outer_path = canvas::Path::rectangle(iced::Point::new(sel_rect.x, sel_rect.y), iced::Size::new(sel_rect.width, sel_rect.height));
-                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(color));
+                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(Color { a: 0.9, ..color }));
 
                     // Draw inner border for double-line effect (to distinguish from regular cursor)
                     if sel_rect.width > 6.0 && sel_rect.height > 6.0 {
@@ -202,7 +202,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     frame.fill_rectangle(
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
-                        Color { a: 0.4, ..color },
+                        Color { a: 0.25, ..color },
                     );
 
                     // Inner border
@@ -217,7 +217,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
                     );
-                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(color));
+                    frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(Color { a: 0.9, ..color }));
                 }
                 RemoteCursorMode::Editing | RemoteCursorMode::Hidden => {
                     // Normal cursor box (outline style like Moebius)
@@ -232,7 +232,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     frame.fill_rectangle(
                         iced::Point::new(cursor_rect.x, cursor_rect.y),
                         iced::Size::new(cursor_rect.width, cursor_rect.height),
-                        Color { a: 0.3, ..color },
+                        Color { a: 0.22, ..color },
                     );
 
                     // Draw border
@@ -255,7 +255,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                 frame.fill_rectangle(
                     iced::Point::new(x - 2.0, label_y - 2.0),
                     iced::Size::new(label_width, label_height),
-                    Color { a: 0.8, ..color },
+                    Color { a: 0.65, ..color },
                 );
 
                 // Nickname text

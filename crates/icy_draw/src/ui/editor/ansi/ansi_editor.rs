@@ -89,6 +89,9 @@ pub(crate) struct AnsiEditorCore {
     /// Remote cursors from collaboration (updated externally)
     remote_cursors: Vec<widget::remote_cursors::RemoteCursor>,
 
+    /// Remote paste-as-selection previews from collaboration (updated externally)
+    remote_paste_previews: Vec<widget::remote_paste_preview::RemotePastePreview>,
+
     /// Pending collaboration events to be processed by the parent
     pending_collab_events: Vec<CollabToolEvent>,
 }
@@ -251,6 +254,21 @@ impl AnsiEditorCore {
                 selection_range,
             );
             center_layers.push(line_numbers_overlay);
+        }
+
+        // Add remote paste preview overlay if there are any
+        if !self.remote_paste_previews.is_empty() {
+            let remote_paste_overlay = widget::remote_paste_preview::remote_paste_preview_overlay(
+                self.canvas.terminal.render_info.clone(),
+                self.remote_paste_previews.clone(),
+                font_width,
+                font_height,
+                scroll_x,
+                scroll_y,
+                buffer_width,
+                buffer_height as usize,
+            );
+            center_layers.push(remote_paste_overlay);
         }
 
         // Add remote cursors overlay if there are any
@@ -718,6 +736,7 @@ impl AnsiEditorCore {
             pending_tool_switch: None,
 
             remote_cursors: Vec::new(),
+            remote_paste_previews: Vec::new(),
             pending_collab_events: Vec::new(),
         };
 
@@ -733,6 +752,11 @@ impl AnsiEditorCore {
     /// Update remote cursors from collaboration state
     pub fn set_remote_cursors(&mut self, cursors: Vec<widget::remote_cursors::RemoteCursor>) {
         self.remote_cursors = cursors;
+    }
+
+    /// Update remote paste previews from collaboration state
+    pub fn set_remote_paste_previews(&mut self, previews: Vec<widget::remote_paste_preview::RemotePastePreview>) {
+        self.remote_paste_previews = previews;
     }
 
     pub(super) fn clear_tool_overlay(&mut self) {

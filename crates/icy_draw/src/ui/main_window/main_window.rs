@@ -3,7 +3,8 @@
 //! Each MainWindow represents one editing window with its own state and mode.
 //! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
-use std::{cell::Cell, path::PathBuf, sync::Arc};
+use std::{cell::Cell, collections::HashMap, hash::{Hash, Hasher}, path::PathBuf, sync::Arc};
+use std::collections::hash_map::DefaultHasher;
 
 use parking_lot::RwLock;
 
@@ -482,6 +483,19 @@ pub struct MainWindow {
 
     /// Collaboration state for real-time editing
     pub(super) collaboration_state: CollaborationState,
+
+    /// Cached rendered previews for remote paste-as-selection blocks
+    remote_paste_preview_cache: HashMap<u32, CachedRemotePastePreview>,
+}
+
+#[derive(Clone)]
+struct CachedRemotePastePreview {
+    blocks_hash: u64,
+    handle: iced::widget::image::Handle,
+    width_px: u32,
+    height_px: u32,
+    columns: u32,
+    rows: u32,
 }
 
 impl MainWindow {
@@ -567,9 +581,95 @@ impl MainWindow {
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
             collaboration_state: CollaborationState::new(),
+            remote_paste_preview_cache: HashMap::new(),
         };
         window.update_title();
         window
+    }
+
+    fn hash_blocks(blocks: &icy_engine_edit::collaboration::Blocks) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        blocks.columns.hash(&mut hasher);
+        blocks.rows.hash(&mut hasher);
+        for b in &blocks.data {
+            b.code.hash(&mut hasher);
+            b.fg.hash(&mut hasher);
+            b.bg.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn sync_remote_paste_previews_to_editor(&mut self) {
+        use crate::ui::collaboration::state::CursorMode;
+        use crate::ui::editor::ansi::widget::remote_paste_preview::RemotePastePreview;
+        use iced::Color;
+
+        let ModeState::Ansi(editor) = &mut self.mode_state else {
+            return;
+        };
+
+        let mut previews: Vec<RemotePastePreview> = Vec::new();
+
+        for user in self.collaboration_state.remote_users().values() {
+            if user.cursor_mode != CursorMode::Operation {
+                continue;
+            }
+
+            let blocks = match self.collaboration_state.remote_paste_blocks.get(&user.user.id) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            let (r, g, b) = self.collaboration_state.user_color(user.user.id);
+            let color = Color::from_rgb8(r, g, b);
+            let label = if user.user.group.is_empty() {
+                user.user.nick.clone()
+            } else {
+                format!("{} <{}>", user.user.nick, user.user.group)
+            };
+
+            let (col, row) = user.operation.as_ref().map(|o| (o.col, o.row)).or(user.cursor).unwrap_or((0, 0));
+
+            let blocks_hash = Self::hash_blocks(blocks);
+            let cached = self.remote_paste_preview_cache.get(&user.user.id);
+
+            let cache_entry = if cached.map(|c| c.blocks_hash) == Some(blocks_hash) {
+                cached.cloned()
+            } else {
+                editor
+                    .render_collab_blocks_preview(blocks)
+                    .map(|(handle, width_px, height_px)| CachedRemotePastePreview {
+                        blocks_hash,
+                        handle,
+                        width_px,
+                        height_px,
+                        columns: blocks.columns,
+                        rows: blocks.rows,
+                    })
+            };
+
+            let Some(entry) = cache_entry else {
+                continue;
+            };
+
+            self.remote_paste_preview_cache.insert(user.user.id, entry.clone());
+
+            previews.push(RemotePastePreview {
+                user_id: user.user.id,
+                nick: user.user.nick.clone(),
+                label,
+                color,
+                col,
+                row,
+                handle: entry.handle.clone(),
+                width_px: entry.width_px,
+                height_px: entry.height_px,
+                columns: entry.columns,
+                rows: entry.rows,
+            });
+        }
+
+        editor.set_remote_paste_previews(previews);
     }
 
     /// Create a MainWindow restored from a session
@@ -773,6 +873,7 @@ impl MainWindow {
             plugins: Arc::new(Plugin::read_plugin_directory()),
             toasts: Vec::new(),
             collaboration_state: CollaborationState::new(),
+            remote_paste_preview_cache: HashMap::new(),
         };
         window.update_title();
         window
@@ -1694,11 +1795,12 @@ impl MainWindow {
                                         .add_system_message(&format!("{} changed the font to {}", user.user.nick, font_name));
                                 }
                             }
-                            CollaborationEvent::PasteAsSelection { user_id, blocks: _ } => {
+                            CollaborationEvent::PasteAsSelection { user_id, blocks } => {
                                 // Moebius sends blocks for a floating selection preview.
-                                // Our UI currently only visualizes the cursor mode; keep the last known position.
-                                let (col, row) = self.collaboration_state.get_user(*user_id).and_then(|u| u.cursor).unwrap_or((0, 0));
+                                self.collaboration_state.update_paste_as_selection(*user_id, blocks.clone());
 
+                                // Keep the last known position (cursor/operation will be used by overlays).
+                                let (col, row) = self.collaboration_state.get_user(*user_id).and_then(|u| u.cursor).unwrap_or((0, 0));
                                 self.collaboration_state.update_operation(*user_id, col, row);
                                 self.sync_remote_cursors_to_editor();
                             }
@@ -1724,14 +1826,22 @@ impl MainWindow {
                             CollaborationEvent::Disconnected => {
                                 log::info!("Disconnected from collaboration server");
                                 self.collaboration_state.end_session();
-                                let toast = Toast::info("Disconnected from collaboration server".to_string());
-                                return Task::done(Message::ShowToast(toast));
+                                self.sync_remote_cursors_to_editor();
+                                self.dialogs.push(error_dialog(
+                                    fl!("collab-connection-lost-title"),
+                                    fl!("collab-connection-lost-message"),
+                                    |_| Message::CloseDialog,
+                                ));
                             }
                             CollaborationEvent::Error(e) => {
                                 log::error!("Collaboration error: {}", e);
                                 self.collaboration_state.end_session();
-                                let toast = Toast::error(format!("Connection error: {}", e));
-                                return Task::done(Message::ShowToast(toast));
+                                self.sync_remote_cursors_to_editor();
+                                self.dialogs.push(error_dialog(
+                                    fl!("collab-connection-error-title"),
+                                    fl!("collab-connection-error-message", error = e.to_string()),
+                                    |_| Message::CloseDialog,
+                                ));
                             }
                             _ => {
                                 // Handle other events as needed
@@ -1831,6 +1941,13 @@ impl MainWindow {
             .remote_users()
             .values()
             .filter_map(|user| {
+                // If the user is in operation mode *and* we have a paste preview for them,
+                // the dedicated paste preview overlay already renders frame + label.
+                // Hide the small operation cursor box to avoid a duplicate label.
+                if user.cursor_mode == CursorMode::Operation && self.collaboration_state.remote_paste_blocks.contains_key(&user.user.id) {
+                    return None;
+                }
+
                 // Skip hidden cursors
                 if user.cursor_mode == CursorMode::Hidden {
                     return None;
@@ -1870,6 +1987,7 @@ impl MainWindow {
 
         if let ModeState::Ansi(editor) = &mut self.mode_state {
             editor.set_remote_cursors(cursors);
+            self.sync_remote_paste_previews_to_editor();
         }
     }
 

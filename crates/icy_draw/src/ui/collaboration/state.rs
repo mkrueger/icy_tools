@@ -29,6 +29,9 @@ pub struct CollaborationState {
     pub password: Option<String>,
     /// UI-free collaboration data + sync logic
     pub core: CollaborationCoreState,
+
+    /// Latest remote paste-as-selection blocks per user (Moebius floating selection preview)
+    pub remote_paste_blocks: HashMap<UserId, icy_engine_edit::collaboration::Blocks>,
     /// Whether the chat panel is visible
     pub chat_visible: bool,
     /// Current chat input text
@@ -75,6 +78,7 @@ impl CollaborationState {
         self.connecting = false;
         self.client = None;
         self.core.end_session();
+        self.remote_paste_blocks.clear();
         // Keep chat messages for reference
     }
 
@@ -119,6 +123,12 @@ impl CollaborationState {
             }
         }
         self.core.remove_user(user_id);
+        self.remote_paste_blocks.remove(&user_id);
+    }
+
+    /// Update cached paste-as-selection blocks for a user.
+    pub fn update_paste_as_selection(&mut self, user_id: UserId, blocks: icy_engine_edit::collaboration::Blocks) {
+        self.remote_paste_blocks.insert(user_id, blocks);
     }
 
     /// Update user cursor position

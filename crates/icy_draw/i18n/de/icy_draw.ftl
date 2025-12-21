@@ -83,6 +83,14 @@ collab-server-url-placeholder=host:port oder ws://host:port
 collab-connect-button=Verbinden
 button-cancel=Abbrechen
 
+# Collaboration Verbindungsfehler
+collab-connection-lost-title=Verbindung getrennt
+collab-connection-lost-message=Die Verbindung zum Collaboration-Server wurde getrennt.
+collab-connection-error-title=Verbindungsfehler
+collab-connection-error-message=Die Verbindung zum Collaboration-Server ist fehlgeschlagen.
+
+    Fehler: { $error }
+
 # Dateidialoge
 file-dialog-save-as-title=Speichern unter
 file-dialog-filter-all-files=Alle Dateien

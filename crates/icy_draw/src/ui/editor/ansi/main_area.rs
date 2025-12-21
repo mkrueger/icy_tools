@@ -452,6 +452,100 @@ impl AnsiEditorMainArea {
         self.core.set_remote_cursors(cursors);
     }
 
+    /// Update remote paste previews from collaboration state
+    pub fn set_remote_paste_previews(&mut self, previews: Vec<super::widget::remote_paste_preview::RemotePastePreview>) {
+        self.core.set_remote_paste_previews(previews);
+    }
+
+    /// Render a Moebius/Collab `Blocks` rectangle to an RGBA image handle using the current font/palette.
+    pub fn render_collab_blocks_preview(
+        &self,
+        blocks: &icy_engine_edit::collaboration::Blocks,
+    ) -> Option<(iced::widget::image::Handle, u32, u32)> {
+        use icy_engine::{AttributedChar, RenderOptions, TextAttribute, TextBuffer};
+
+        if blocks.columns == 0 || blocks.rows == 0 {
+            return None;
+        }
+        if blocks.data.is_empty() {
+            return None;
+        }
+
+        let cols = blocks.columns as usize;
+        let rows = blocks.rows as usize;
+
+        // Capture rendering context from the active document.
+        let (font, palette, ice_mode, font_mode, use_letter_spacing, use_aspect_ratio) = self.core.with_edit_state_readonly(|state| {
+            let buffer = state.get_buffer();
+            let caret = state.get_caret();
+            let font_page = caret.font_page();
+            let font = buffer.font(font_page).or_else(|| buffer.font(0)).cloned();
+            (
+                font,
+                buffer.palette.clone(),
+                buffer.ice_mode,
+                buffer.font_mode,
+                buffer.use_letter_spacing(),
+                buffer.use_aspect_ratio(),
+            )
+        });
+
+        let font = font?;
+
+        let mut tmp = TextBuffer::new((blocks.columns as i32, blocks.rows as i32));
+        tmp.palette = palette;
+        tmp.ice_mode = ice_mode;
+        tmp.font_mode = font_mode;
+        tmp.set_use_letter_spacing(use_letter_spacing);
+        tmp.set_use_aspect_ratio(use_aspect_ratio);
+        tmp.set_font(0, font.clone());
+
+        let layer = &mut tmp.layers[0];
+
+        for y in 0..rows {
+            for x in 0..cols {
+                let idx = y * cols + x;
+                if idx >= blocks.data.len() {
+                    break;
+                }
+                let b = &blocks.data[idx];
+
+                let ch = char::from_u32(b.code).unwrap_or(' ');
+
+                let mut attr = TextAttribute::default();
+                if b.fg <= 15 {
+                    attr.set_foreground(b.fg as u32);
+                } else {
+                    attr.set_foreground_ext(b.fg);
+                }
+                if b.bg <= 15 {
+                    attr.set_background(b.bg as u32);
+                } else {
+                    attr.set_background_ext(b.bg);
+                }
+
+                layer.set_char((x as i32, y as i32), AttributedChar::new(ch, attr));
+            }
+        }
+
+        let region = icy_engine::Rectangle::from(
+            0,
+            0,
+            (blocks.columns as i32) * font.size().width,
+            (blocks.rows as i32) * font.size().height,
+        );
+
+        let options = RenderOptions::default();
+        let (size, rgba) = tmp.render_region_to_rgba(region, &options, false);
+
+        if size.width <= 0 || size.height <= 0 || rgba.is_empty() {
+            return None;
+        }
+
+        let handle = iced::widget::image::Handle::from_rgba(size.width as u32, size.height as u32, rgba);
+        Some((handle, size.width as u32, size.height as u32))
+    }
+
     /// Scroll the canvas to show the given character position (used for goto user)
     pub fn scroll_to_position(&mut self, col: i32, row: i32) {
         self.core.scroll_to_position(col, row);
