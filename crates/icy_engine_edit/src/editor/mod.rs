@@ -17,8 +17,8 @@ mod terminal_input;
 mod layer_operations;
 pub use layer_operations::*;
 mod area_operations;
+pub(crate) use area_operations::{generate_flipx_table, generate_flipy_table, map_char};
 mod edit_operations;
-pub use area_operations::*;
 mod font_operations;
 mod selection_operations;
 mod tag_operations;
@@ -689,22 +689,13 @@ impl EditState {
         self.undo_stack.clone()
     }
 
-    pub fn has_floating_layer(&self) -> bool {
-        for layer in &self.screen.buffer.layers {
-            if layer.role.is_paste() {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Get the floating layer content as collaboration Blocks (for PasteAsSelection)
     /// Returns None if no floating layer exists
     #[cfg(feature = "collaboration")]
     pub fn get_floating_layer_blocks(&self) -> Option<crate::collaboration::Blocks> {
         use icy_engine::TextPane;
 
-        let layer = self.screen.buffer.layers.iter().find(|l| l.role.is_paste())?;
+        let layer = self.get_cur_layer()?;
 
         let columns = layer.width() as u32;
         let rows = layer.height() as u32;
@@ -726,7 +717,7 @@ impl EditState {
 
     /// Get the floating layer position (offset)
     pub fn get_floating_layer_position(&self) -> Option<(i32, i32)> {
-        let layer = self.screen.buffer.layers.iter().find(|l| l.role.is_paste())?;
+        let layer = self.get_cur_layer()?;
         let offset = layer.offset();
         Some((offset.x, offset.y))
     }

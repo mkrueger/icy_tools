@@ -98,9 +98,9 @@ impl EditState {
     /// This function will return an error if .
     pub fn anchor_layer(&mut self) -> Result<()> {
         // Find the floating layer by role (it's at current_layer + 1)
-        let floating_idx = self.screen.buffer.layers.iter().position(|l| l.role.is_paste());
+        let floating_idx = self.get_current_layer();
 
-        let Some(floating_idx) = floating_idx else {
+        let Ok(floating_idx) = floating_idx else {
             // No floating layer - nothing to anchor
             return Ok(());
         };
@@ -108,7 +108,7 @@ impl EditState {
         let role = self.screen.buffer.layers[floating_idx].role;
 
         // PasteImage layers are handled differently (just convert role)
-        if matches!(role, Role::PasteImage) {
+        if matches!(role, Role::Image) {
             // Just convert the role to Image
             self.screen.buffer.layers[floating_idx].role = Role::Image;
             // Keep current_layer pointing to this layer (now a normal Image layer)
@@ -156,14 +156,14 @@ impl EditState {
             return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
         };
         let role = cur_layer.role;
-        if matches!(role, Role::PasteImage) {
+        if matches!(role, Role::Image) {
             return Ok(());
         }
 
         let base_layer = &self.screen.buffer.layers[layer - 1];
         let cur_layer = &self.screen.buffer.layers[layer];
 
-        let start = Position::new(base_layer.offset().x.min(cur_layer.offset().x), base_layer.offset().y.min(cur_layer.offset().y));
+        let start: Position = Position::new(base_layer.offset().x.min(cur_layer.offset().x), base_layer.offset().y.min(cur_layer.offset().y));
 
         let mut merge_layer = base_layer.clone();
         merge_layer.clear();
@@ -302,27 +302,129 @@ impl EditState {
         self.push_plain_undo(op)
     }
 
-    pub fn rotate_layer(&mut self) -> Result<()> {
+    /// Rotate the floating paste layer 90° clockwise.
+    /// This is only used in paste mode and generates collaboration ROTATE command.
+    pub fn paste_rotate(&mut self) -> Result<()> {
         let current_layer = self.screen.current_layer;
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
-            let size = layer.size();
-            let mut new_layer = Layer::new("", (size.height, size.width));
-            for y in 0..size.width {
-                for x in 0..size.height {
-                    let ch = layer.char_at((y, size.height - 1 - x).into());
+            let old_size = layer.size();
+            let new_size = crate::Size::new(old_size.height, old_size.width);
+            let mut new_layer = Layer::new("", new_size);
+            for y in 0..old_size.width {
+                for x in 0..old_size.height {
+                    let ch = layer.char_at((y, old_size.height - 1 - x).into());
                     let ch = map_char_u8(ch, &ROTATE_TABLE);
                     new_layer.set_char((x, y), ch);
                 }
             }
-            let op = EditorUndoOp::RotateLayer {
+            let op = EditorUndoOp::PasteRotate {
                 layer: current_layer,
                 old_lines: layer.lines.clone(),
                 new_lines: new_layer.lines.clone(),
+                old_size,
+                new_size,
             };
             self.push_undo_action(op)
         } else {
             Err(crate::EngineError::Generic(format!("Invalid layer: {}", current_layer)))
         }
+    }
+
+    /// Flip the floating paste layer horizontally.
+    /// This is only used in paste mode and generates collaboration FLIP_X command.
+    pub fn paste_flip_x(&mut self) -> Result<()> {
+        let current_layer = self.screen.current_layer;
+        let mut flip_tables = std::collections::HashMap::new();
+        self.screen.buffer.font_iter().for_each(|(page, font)| {
+            flip_tables.insert(*page, crate::generate_flipx_table(font));
+        });
+
+        if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
+            let old_lines = layer.lines.clone();
+            let size = layer.size();
+            let max = size.width / 2;
+
+            for y in 0..size.height {
+                for x in 0..max {
+                    let pos1 = icy_engine::Position::new(x, y);
+                    let pos2 = icy_engine::Position::new(size.width - x - 1, y);
+
+                    let pos1ch = layer.char_at(pos1);
+                    let pos1ch = crate::map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+                    let pos2ch = layer.char_at(pos2);
+                    let pos2ch = crate::map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
+                    layer.set_char(pos1, pos2ch);
+                    layer.set_char(pos2, pos1ch);
+                }
+            }
+
+            let op = EditorUndoOp::PasteFlipX {
+                layer: current_layer,
+                old_lines,
+                new_lines: layer.lines.clone(),
+            };
+            self.push_undo_action(op)
+        } else {
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", current_layer)))
+        }
+    }
+
+    /// Flip the floating paste layer vertically.
+    /// This is only used in paste mode and generates collaboration FLIP_Y command.
+    pub fn paste_flip_y(&mut self) -> Result<()> {
+        let current_layer = self.screen.current_layer;
+        let mut flip_tables = std::collections::HashMap::new();
+        self.screen.buffer.font_iter().for_each(|(page, font)| {
+            flip_tables.insert(*page, crate::generate_flipy_table(font));
+        });
+
+        if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
+            let old_lines = layer.lines.clone();
+            let size = layer.size();
+            let max = size.height / 2;
+
+            for x in 0..size.width {
+                for y in 0..max {
+                    let pos1 = icy_engine::Position::new(x, y);
+                    let pos2 = icy_engine::Position::new(x, size.height - 1 - y);
+                    let pos1ch = layer.char_at(pos1);
+                    let pos1ch = crate::map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+                    let pos2ch = layer.char_at(pos2);
+                    let pos2ch = crate::map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
+                    layer.set_char(pos1, pos2ch);
+                    layer.set_char(pos2, pos1ch);
+                }
+            }
+
+            let op = EditorUndoOp::PasteFlipY {
+                layer: current_layer,
+                old_lines,
+                new_lines: layer.lines.clone(),
+            };
+            self.push_undo_action(op)
+        } else {
+            Err(crate::EngineError::Generic(format!("Invalid layer: {}", current_layer)))
+        }
+    }
+
+    /// Anchor the floating paste layer and generate collaboration DRAW commands.
+    /// Returns the anchor data for collaboration sync.
+    pub fn paste_anchor(&mut self) -> Result<()> {
+        // Collect floating layer data BEFORE anchor for collaboration
+        let collab_data: Option<(i32, i32, crate::collaboration::Blocks)> = self
+            .get_floating_layer_blocks()
+            .and_then(|blocks| self.get_floating_layer_position().map(|(x, y)| (x, y, blocks)));
+
+        // Do the actual anchor
+        self.anchor_layer()?;
+
+        // Push PasteAnchor for collaboration sync
+        if let Some((x, y, blocks)) = collab_data {
+            let op = EditorUndoOp::PasteAnchor { x, y, blocks };
+            self.push_plain_undo(op)?;
+        }
+
+        Ok(())
     }
 
     /// Returns the make layer transparent of this [`EditState`].

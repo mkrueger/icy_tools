@@ -755,10 +755,6 @@ impl EditableScreen for TextScreen {
         self.buffer.layers.get(layer).map(|l| (l.offset(), l.size()))
     }
 
-    fn is_layer_paste(&self, layer: usize) -> bool {
-        self.buffer.layers.get(layer).map_or(false, |l| l.role.is_paste())
-    }
-
     fn saved_caret_pos(&mut self) -> &mut Position {
         &mut self.saved_caret_pos
     }

@@ -24,6 +24,15 @@ server-stop-hint = Drücke Strg+C um den Server zu beenden
 server-none = (keines)
 server-unlimited = unbegrenzt
 
+# Server messages
+server-error-unknown-format = Fehler: Unbekanntes Dateiformat für '{ $path }'
+server-starting-empty-canvas = Starte mit leerer 80x25-Leinwand
+server-loaded = Geladen: { $path } ({ $cols }x{ $rows })
+server-error-loading-file = Fehler beim Laden der Datei '{ $path }': { $error }
+server-error-invalid-bind-address = Fehler: Ungültige Bind-Adresse '{ $addr }': { $error }
+server-error-runtime = Fehler beim Erstellen der Tokio-Laufzeitumgebung
+server-error = Server-Fehler: { $error }
+
 menu-file=Datei
 menu-new=Neu…
 menu-open=Datei öffnen…

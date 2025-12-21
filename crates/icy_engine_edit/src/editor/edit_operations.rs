@@ -148,7 +148,6 @@ impl EditState {
                 (sixel.height() as f32 / dims.height as f32).ceil() as i32,
             ),
         );
-        layer.role = crate::Role::PasteImage;
         layer.properties.has_alpha_channel = true;
         layer.sixels.push(sixel);
         // Position the pasted layer at the current caret position
@@ -180,7 +179,6 @@ impl EditState {
 
         let mut layer: Layer = result.buffer.layers.remove(0);
         layer.properties.has_alpha_channel = true;
-        layer.role = Role::PastePreview;
         layer.set_offset((x, y));
 
         self.push_undo_action(EditorUndoOp::Paste {

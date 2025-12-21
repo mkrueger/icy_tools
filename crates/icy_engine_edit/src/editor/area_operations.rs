@@ -499,7 +499,7 @@ fn normalize_glyph(glyph: &[Vec<bool>], target_width: usize, target_height: usiz
     normalized
 }
 
-fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+pub(crate) fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     let mut flip_table = BTreeMap::new();
 
     // List of characters that should never be included in the flip table
@@ -614,7 +614,7 @@ fn generate_flipy_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     flip_table
 }
 
-fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
+pub(crate) fn generate_flipx_table(font: &crate::BitFont) -> BTreeMap<char, (bool, char)> {
     let mut flip_table = BTreeMap::new();
 
     // Collect all characters from the font glyphs

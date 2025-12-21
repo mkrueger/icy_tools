@@ -298,9 +298,9 @@ impl AnsiEditorMainArea {
 
     /// Apply a full remote document snapshot from collaboration.
     ///
-    /// Sets all document properties: size, content, ice colors, 9px font, etc.
+    /// Sets all document properties: size, content, ice colors, 9px font, font, palette, etc.
     pub fn apply_remote_document(&mut self, doc: &icy_engine_edit::collaboration::ConnectedDocument) {
-        use icy_engine::{AttributedChar, IceMode, Position};
+        use icy_engine::{AttributedChar, BitFont, Color, IceMode, Palette, Position};
 
         let cols_i32 = doc.columns as i32;
         let rows_i32 = doc.rows as i32;
@@ -334,8 +334,20 @@ impl AnsiEditorMainArea {
             // Set 9px font (letter spacing)
             buffer.set_use_letter_spacing(doc.use_9px);
 
-            // TODO: Set font by name when font lookup is available
-            // For now, Moebius uses CP437 fonts so this is usually fine
+            // Set font by name (try SAUCE name first, fallback to "IBM VGA")
+            let font_name = if doc.font.is_empty() { "IBM VGA" } else { &doc.font };
+            if let Ok(font) = BitFont::from_sauce_name(font_name) {
+                buffer.set_font(0, font);
+            } else {
+                log::warn!("[COLLAB] Font '{}' not found, using fallback 'IBM VGA'", font_name);
+                if let Ok(fallback) = BitFont::from_sauce_name("IBM VGA") {
+                    buffer.set_font(0, fallback);
+                }
+            }
+
+            // Set 16-color palette from remote document
+            let colors: Vec<Color> = doc.palette.iter().map(|[r, g, b]| Color::new(*r, *g, *b)).collect();
+            buffer.palette = Palette::from_slice(&colors);
 
             if buffer.layers.is_empty() {
                 return;
@@ -440,6 +452,37 @@ impl AnsiEditorMainArea {
             sauce.group = group.into();
             sauce.comments = comments.lines().map(|line| line.to_string().into()).collect();
             state.set_sauce_meta(sauce);
+        });
+    }
+
+    /// Apply ICE colors change from remote user.
+    pub fn apply_remote_ice_colors(&mut self, value: bool) {
+        use icy_engine::IceMode;
+        self.core.with_edit_state(|state| {
+            let buffer = state.get_buffer_mut();
+            buffer.ice_mode = if value { IceMode::Ice } else { IceMode::Blink };
+            buffer.mark_dirty();
+        });
+    }
+
+    /// Apply 9px font (letter spacing) change from remote user.
+    pub fn apply_remote_9px_font(&mut self, value: bool) {
+        self.core.with_edit_state(|state| {
+            let buffer = state.get_buffer_mut();
+            buffer.set_use_letter_spacing(value);
+            buffer.mark_dirty();
+        });
+    }
+
+    /// Apply font change from remote user.
+    pub fn apply_remote_font_change(&mut self, font_name: &str) {
+        use icy_engine::BitFont;
+        self.core.with_edit_state(|state| {
+            let buffer = state.get_buffer_mut();
+            if let Ok(font) = BitFont::from_sauce_name(font_name) {
+                buffer.set_font(0, font);
+                buffer.mark_dirty();
+            }
         });
     }
 

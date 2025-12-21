@@ -1636,7 +1636,7 @@ impl AnsiEditorCore {
                 // Persist to settings
                 *self.options.read().show_layer_borders.write() = self.show_layer_borders;
                 self.options.read().store_persistent();
-                Task::none()
+                self.task_none_with_markers_update()
             }
             AnsiEditorCoreMessage::ToggleMirrorMode => {
                 self.toggle_mirror_mode();
@@ -2087,11 +2087,7 @@ impl AnsiEditorCore {
                 .unwrap_or((0.0, 0.0));
 
             // In paste mode, find the floating layer instead of current layer
-            let target_layer = if edit_state.has_floating_layer() {
-                buffer.layers.iter().enumerate().find(|(_, l)| l.role.is_paste()).map(|(i, _)| i)
-            } else {
-                edit_state.get_current_layer().ok()
-            };
+            let target_layer = edit_state.get_current_layer().ok();
 
             if let Some(layer_idx) = target_layer {
                 if let Some(layer) = buffer.layers.get(layer_idx) {

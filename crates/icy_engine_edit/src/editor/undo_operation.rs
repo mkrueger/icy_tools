@@ -110,14 +110,23 @@ pub enum EditorUndoOp {
     /// Scroll whole layer down
     ScrollWholeLayerDown { layer: usize },
 
-    /// Rotate layer
-    RotateLayer { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+    /// Rotate floating paste layer (for collaboration: Moebius ROTATE=18)
+    PasteRotate {
+        layer: usize,
+        old_lines: Vec<Line>,
+        new_lines: Vec<Line>,
+        old_size: Size,
+        new_size: Size,
+    },
 
-    /// Flip layer horizontally (X-axis)
-    FlipLayerX { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+    /// Flip floating paste layer horizontally (for collaboration: Moebius FLIP_X=19)
+    PasteFlipX { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
 
-    /// Flip layer vertically (Y-axis)
-    FlipLayerY { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+    /// Flip floating paste layer vertically (for collaboration: Moebius FLIP_Y=20)
+    PasteFlipY { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+
+    /// Anchor floating paste layer - generates DRAW commands for all blocks
+    PasteAnchor { x: i32, y: i32, blocks: crate::collaboration::Blocks },
 
     /// Set background color
     SetBackground { old_value: u32, new_value: u32 },
@@ -265,9 +274,10 @@ impl EditorUndoOp {
             EditorUndoOp::InsertColumn { .. } => fl!(crate::LANGUAGE_LOADER, "undo-insert_column"),
             EditorUndoOp::ScrollWholeLayerUp { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_up"),
             EditorUndoOp::ScrollWholeLayerDown { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_down"),
-            EditorUndoOp::RotateLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer"),
-            EditorUndoOp::FlipLayerX { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_x"),
-            EditorUndoOp::FlipLayerY { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_y"),
+            EditorUndoOp::PasteRotate { .. } => fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer"),
+            EditorUndoOp::PasteFlipX { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_x"),
+            EditorUndoOp::PasteFlipY { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_y"),
+            EditorUndoOp::PasteAnchor { .. } => fl!(crate::LANGUAGE_LOADER, "undo-anchor"),
             EditorUndoOp::SetBackground { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_background"),
             EditorUndoOp::Reversed { description, .. } => description.clone(),
             EditorUndoOp::ReverseCaretPosition { .. } => "Reverse caret position".into(),
@@ -415,11 +425,6 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddFloatingLayer { current_layer } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*current_layer) {
-                    if matches!(layer.role, Role::Image) {
-                        layer.role = Role::PasteImage;
-                    } else {
-                        layer.role = Role::PastePreview;
-                    }
                     layer.properties.title = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "layer-pasted-name");
                 }
                 Ok(())
@@ -497,19 +502,32 @@ impl EditorUndoOp {
                 }
                 Ok(())
             }
-            EditorUndoOp::RotateLayer { layer, old_lines, new_lines } => {
+            EditorUndoOp::PasteRotate {
+                layer,
+                old_lines,
+                new_lines,
+                old_size,
+                new_size,
+            } => {
+                std::mem::swap(old_lines, new_lines);
+                std::mem::swap(old_size, new_size);
+                let l = &mut edit_state.get_buffer_mut().layers[*layer];
+                l.lines = new_lines.clone();
+                l.set_size(*new_size);
+                Ok(())
+            }
+            EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
                 std::mem::swap(old_lines, new_lines);
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
                 Ok(())
             }
-            EditorUndoOp::FlipLayerX { layer, old_lines, new_lines } => {
+            EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
                 std::mem::swap(old_lines, new_lines);
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
                 Ok(())
             }
-            EditorUndoOp::FlipLayerY { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+            EditorUndoOp::PasteAnchor { .. } => {
+                // PasteAnchor is only for collaboration sync, local undo is handled by atomic group
                 Ok(())
             }
             EditorUndoOp::SetBackground { old_value, .. } => {
@@ -787,11 +805,6 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddFloatingLayer { current_layer } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*current_layer) {
-                    if matches!(layer.role, Role::PasteImage) {
-                        layer.role = Role::Image;
-                    } else {
-                        layer.role = Role::Normal;
-                    }
                     layer.properties.title = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "layer-new-name");
                 }
                 Ok(())
@@ -871,22 +884,35 @@ impl EditorUndoOp {
                 }
                 Ok(())
             }
-            EditorUndoOp::RotateLayer { layer, old_lines, new_lines } => {
+            EditorUndoOp::PasteRotate {
+                layer,
+                old_lines,
+                new_lines,
+                old_size,
+                new_size,
+            } => {
+                // Set lines and size first, then swap for undo symmetry
+                let l = &mut edit_state.get_buffer_mut().layers[*layer];
+                l.lines = new_lines.clone();
+                l.set_size(*new_size);
+                std::mem::swap(old_lines, new_lines);
+                std::mem::swap(old_size, new_size);
+                Ok(())
+            }
+            EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
                 // Set lines first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
                 std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
-            EditorUndoOp::FlipLayerX { layer, old_lines, new_lines } => {
+            EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
                 // Set lines first, then swap for undo symmetry
                 edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
                 std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
-            EditorUndoOp::FlipLayerY { layer, old_lines, new_lines } => {
-                // Set lines first, then swap for undo symmetry
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
-                std::mem::swap(old_lines, new_lines);
+            EditorUndoOp::PasteAnchor { .. } => {
+                // PasteAnchor is only for collaboration sync, local redo is handled by atomic group
                 Ok(())
             }
             EditorUndoOp::SetBackground { new_value, .. } => {
@@ -1165,11 +1191,26 @@ mod collab_mapping {
 
                 EditorUndoOp::SetUseLetterSpacing { new_ls } => Some(vec![ClientCommand::SetUse9px { value: *new_ls }]),
 
-                EditorUndoOp::RotateLayer { .. } => Some(vec![ClientCommand::Rotate]),
+                EditorUndoOp::PasteRotate { .. } => Some(vec![ClientCommand::Rotate]),
 
-                EditorUndoOp::FlipLayerX { .. } => Some(vec![ClientCommand::FlipX]),
+                EditorUndoOp::PasteFlipX { .. } => Some(vec![ClientCommand::FlipX]),
 
-                EditorUndoOp::FlipLayerY { .. } => Some(vec![ClientCommand::FlipY]),
+                EditorUndoOp::PasteFlipY { .. } => Some(vec![ClientCommand::FlipY]),
+
+                EditorUndoOp::PasteAnchor { x, y, blocks } => {
+                    // Generate DRAW commands for all blocks in the anchored layer
+                    let mut cmds = Vec::new();
+                    for (idx, block) in blocks.data.iter().enumerate() {
+                        let col = *x + (idx as i32 % blocks.columns as i32);
+                        let row = *y + (idx as i32 / blocks.columns as i32);
+                        cmds.push(ClientCommand::Draw {
+                            col,
+                            row,
+                            block: block.clone(),
+                        });
+                    }
+                    Some(cmds)
+                }
 
                 EditorUndoOp::SetBackground { new_value, .. } => Some(vec![ClientCommand::SetBackground { value: *new_value }]),
 
@@ -1291,9 +1332,10 @@ mod collab_mapping {
 
                 // For rotate/flip, we'd need to send the opposite operation
                 // but the protocol doesn't have "undo rotate", so we skip
-                EditorUndoOp::RotateLayer { .. } => None,
-                EditorUndoOp::FlipLayerX { .. } => None,
-                EditorUndoOp::FlipLayerY { .. } => None,
+                EditorUndoOp::PasteRotate { .. } => None,
+                EditorUndoOp::PasteFlipX { .. } => None,
+                EditorUndoOp::PasteFlipY { .. } => None,
+                EditorUndoOp::PasteAnchor { .. } => None,
 
                 EditorUndoOp::SetBackground { old_value, .. } => Some(vec![ClientCommand::SetBackground { value: *old_value }]),
 

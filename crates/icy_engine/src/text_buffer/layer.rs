@@ -16,15 +16,7 @@ pub enum Mode {
 pub enum Role {
     #[default]
     Normal,
-    PastePreview,
-    PasteImage,
     Image,
-}
-
-impl Role {
-    pub fn is_paste(&self) -> bool {
-        matches!(self, Role::PastePreview | Role::PasteImage)
-    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]

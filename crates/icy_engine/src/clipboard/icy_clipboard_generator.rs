@@ -91,7 +91,6 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
 
     let mut layer = Layer::new(format!("New Layer"), (width, height));
     layer.properties.has_alpha_channel = true;
-    layer.role = Role::PastePreview;
     layer.set_offset((x, y));
     for y in 0..height {
         for x in 0..width {

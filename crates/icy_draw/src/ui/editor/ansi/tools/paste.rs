@@ -137,7 +137,7 @@ impl PasteTool {
             }
 
             PasteAction::Rotate => {
-                if let Err(e) = state.rotate_layer() {
+                if let Err(e) = state.paste_rotate() {
                     log::warn!("Failed to rotate layer: {}", e);
                 }
                 ToolResult::UpdateLayerBounds
@@ -146,7 +146,7 @@ impl PasteTool {
             }
 
             PasteAction::FlipX => {
-                if let Err(e) = state.flip_x() {
+                if let Err(e) = state.paste_flip_x() {
                     log::warn!("Failed to flip layer X: {}", e);
                 }
                 ToolResult::UpdateLayerBounds
@@ -155,7 +155,7 @@ impl PasteTool {
             }
 
             PasteAction::FlipY => {
-                if let Err(e) = state.flip_y() {
+                if let Err(e) = state.paste_flip_y() {
                     log::warn!("Failed to flip layer Y: {}", e);
                 }
                 ToolResult::UpdateLayerBounds
@@ -177,19 +177,22 @@ impl PasteTool {
                     let _ = state.move_layer(new_offset);
                 }
 
-                if let Err(e) = state.anchor_layer() {
+                // Use paste_anchor which handles both local anchor AND collaboration sync
+                if let Err(e) = state.paste_anchor() {
                     log::error!("Failed to anchor layer: {}", e);
                 }
 
                 let prev = self.finish_paste();
-                ToolResult::Multi(vec![
+                let results = vec![
                     ToolResult::EndCapture,
                     ToolResult::SetCursorIcon(None),
                     ToolResult::UpdateLayerBounds,
                     ToolResult::Commit("Anchor floating layer".to_string()),
                     ToolResult::SwitchTool(prev),
                     ToolResult::Redraw,
-                ])
+                ];
+
+                ToolResult::Multi(results)
             }
 
             PasteAction::KeepAsLayer => {

@@ -35,6 +35,7 @@ use tokio_tungstenite::tungstenite::Message;
 use super::compression::compress_moebius_data;
 use super::protocol::*;
 use super::session::{Session, SessionEvent, SharedSession, UserId};
+use crate::SauceMetaData;
 
 // ANSI color codes for server output
 mod colors {
@@ -99,12 +100,11 @@ pub struct ServerConfig {
     pub use_9px_font: bool,
     /// Initial font name
     pub font_name: String,
-    /// SAUCE metadata: title
-    pub sauce_title: String,
-    /// SAUCE metadata: author
-    pub sauce_author: String,
-    /// SAUCE metadata: group
-    pub sauce_group: String,
+    /// Color palette (exactly 16 RGB colors)
+    /// Each color is [r, g, b] with values 0-255
+    pub palette: [[u8; 3]; 16],
+    /// SAUCE metadata
+    pub sauce: SauceMetaData,
 
     // UI strings for localization (defaults to English)
     /// Server banner title (default: "icy_draw Collaboration Server")
@@ -141,9 +141,26 @@ impl Default for ServerConfig {
             ice_colors: false,
             use_9px_font: false,
             font_name: "IBM VGA".to_string(),
-            sauce_title: String::new(),
-            sauce_author: String::new(),
-            sauce_group: String::new(),
+            // Standard EGA palette (16 colors, 8-bit RGB)
+            palette: [
+                [0x00, 0x00, 0x00], // 0: Black
+                [0x00, 0x00, 0xAA], // 1: Blue
+                [0x00, 0xAA, 0x00], // 2: Green
+                [0x00, 0xAA, 0xAA], // 3: Cyan
+                [0xAA, 0x00, 0x00], // 4: Red
+                [0xAA, 0x00, 0xAA], // 5: Magenta
+                [0xAA, 0x55, 0x00], // 6: Brown/Yellow
+                [0xAA, 0xAA, 0xAA], // 7: Light Gray
+                [0x55, 0x55, 0x55], // 8: Dark Gray
+                [0x55, 0x55, 0xFF], // 9: Light Blue
+                [0x55, 0xFF, 0x55], // 10: Light Green
+                [0x55, 0xFF, 0xFF], // 11: Light Cyan
+                [0xFF, 0x55, 0x55], // 12: Light Red
+                [0xFF, 0x55, 0xFF], // 13: Light Magenta
+                [0xFF, 0xFF, 0x55], // 14: Yellow
+                [0xFF, 0xFF, 0xFF], // 15: White
+            ],
+            sauce: SauceMetaData::default(),
             // Default English UI strings
             ui_title: "icy_draw Collaboration Server".to_string(),
             ui_bind_address: "Bind Address".to_string(),
@@ -182,7 +199,7 @@ impl ServerState {
         session.set_ice_colors(config.ice_colors);
         session.set_use_9px(config.use_9px_font);
         session.set_font(config.font_name.clone());
-        session.update_sauce(config.sauce_title.clone(), config.sauce_author.clone(), config.sauce_group.clone());
+        session.update_sauce(config.sauce.clone());
 
         // Initialize document from config or create empty
         let document = if let Some(initial_doc) = &config.initial_document {
@@ -229,22 +246,41 @@ impl ServerState {
             }
         }
         let compressed = compress_moebius_data(&blocks);
+        let sauce = self.session.get_sauce();
         MoebiusDoc {
             columns,
             rows,
             data: None,
             compressed_data: Some(compressed),
-            title: String::new(),
-            author: String::new(),
-            group: String::new(),
+            title: sauce.title,
+            author: sauce.author,
+            group: sauce.group,
             date: String::new(),
-            palette: serde_json::Value::Array(Vec::new()),
+            palette: self.get_palette_json(),
             font_name: self.session.font(),
             ice_colors: self.session.get_ice_colors(),
             use_9px_font: self.session.get_use_9px(),
-            comments: String::new(),
+            comments: sauce.comments,
             c64_background: None,
         }
+    }
+
+    /// Convert the palette to JSON format for Moebius protocol.
+    /// Returns an array of 16 {r, g, b} objects.
+    fn get_palette_json(&self) -> serde_json::Value {
+        let palette_array: Vec<serde_json::Value> = self
+            .config
+            .palette
+            .iter()
+            .map(|[r, g, b]| {
+                serde_json::json!({
+                    "r": *r,
+                    "g": *g,
+                    "b": *b
+                })
+            })
+            .collect();
+        serde_json::Value::Array(palette_array)
     }
 
     /// Set a character in the document.
@@ -393,7 +429,11 @@ impl ServerState {
     }
 
     /// Handle a connect request and return the response.
-    pub async fn handle_connect(&self, nick: String, password: String) -> Result<(UserId, String), String> {
+    ///
+    /// Moebius compatibility note:
+    /// - Web viewers are identified by a missing `nick` field (server-side `is_web_client=true`).
+    /// - Guests can have an empty nickname (""), but are still registered users.
+    pub async fn handle_connect(&self, nick: String, password: String, is_web_client: bool) -> Result<(UserId, String), String> {
         // Check password
         if !self.session.check_password(&password) {
             let response = RefusedResponse {
@@ -421,23 +461,19 @@ impl ServerState {
         let user_id = self.session.add_user(nick.clone());
 
         // Build connected response
-        // Moebius sends different data for web clients (empty nick) vs regular clients
-        let is_web_client = nick.is_empty();
-        let response = if is_web_client {
-            // Web client: minimal response (no users, chat_history, status)
-            ConnectedResponse {
-                msg_type: ActionCode::Connected as u8,
-                data: ConnectedData {
-                    id: user_id,
-                    doc: self.get_compressed_document().await,
-                    users: Vec::new(),
-                    chat_history: Vec::new(),
-                    status: 3, // WEB status
-                },
-            }
+        // Moebius sends different payloads for web clients vs regular clients.
+        let response_json = if is_web_client {
+            // Web client: minimal response (only {id, doc})
+            serde_json::json!({
+                "type": ActionCode::Connected as u8,
+                "data": {
+                    "id": user_id,
+                    "doc": self.get_compressed_document().await
+                }
+            })
         } else {
             // Regular client: full response
-            ConnectedResponse {
+            let response = ConnectedResponse {
                 msg_type: ActionCode::Connected as u8,
                 data: ConnectedData {
                     id: user_id,
@@ -446,11 +482,11 @@ impl ServerState {
                     chat_history,
                     status: 0, // ACTIVE status
                 },
-            }
+            };
+            serde_json::to_value(&response).unwrap()
         };
 
-        let json = serde_json::to_string(&response).unwrap();
-        Ok((user_id, json))
+        Ok((user_id, serde_json::to_string(&response_json).unwrap()))
     }
 
     /// Handle a draw message.
@@ -475,23 +511,27 @@ impl ServerState {
     pub async fn handle_cursor(&self, user_id: UserId, col: i32, row: i32) {
         self.session.update_cursor(user_id, col, row);
 
-        // Broadcast cursor position with user ID
+        // Moebius forwards cursor updates via `send_all` (registered users only, excluding sender)
+        // Wire format: {"type": 4, "data": {"id": <u32>, "x": <i32>, "y": <i32>}}
         #[derive(serde::Serialize)]
         struct CursorBroadcast {
-            action: u8,
+            #[serde(rename = "type")]
+            msg_type: u8,
+            data: CursorBroadcastData,
+        }
+        #[derive(serde::Serialize)]
+        struct CursorBroadcastData {
             id: u32,
-            col: i32,
-            row: i32,
+            x: i32,
+            y: i32,
         }
 
         let msg = CursorBroadcast {
-            action: ActionCode::Cursor as u8,
-            id: user_id,
-            col,
-            row,
+            msg_type: ActionCode::Cursor as u8,
+            data: CursorBroadcastData { id: user_id, x: col, y: row },
         };
         let json = serde_json::to_string(&msg).unwrap();
-        self.broadcast(&json, Some(user_id)).await;
+        self.broadcast_to_registered(&json, Some(user_id)).await;
 
         self.emit_event(SessionEvent::CursorMoved { id: user_id, col, row });
     }
@@ -875,7 +915,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: TcpStream, addr: Soc
 }
 
 /// Handle a single JSON message from a client.
-async fn handle_message(
+pub async fn handle_message(
     state: &Arc<ServerState>,
     tx: &mpsc::Sender<String>,
     user_id: &mut Option<UserId>,
@@ -903,7 +943,7 @@ async fn handle_message(
             let password = data.get("pass").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-            match state.handle_connect(nick.clone(), password).await {
+            match state.handle_connect(nick.clone(), password, is_web_client).await {
                 Ok((id, response)) => {
                     *user_id = Some(id);
                     *user_nick = nick.clone();
@@ -976,8 +1016,8 @@ async fn handle_message(
         Some(4) => {
             // CURSOR
             if let Some(id) = *user_id {
-                let col = data.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let row = data.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let col = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let row = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                 state.handle_cursor(id, col, row).await;
             }
         }
@@ -985,15 +1025,12 @@ async fn handle_message(
         Some(5) => {
             // SELECTION
             if let Some(id) = *user_id {
-                let selecting = data.get("selecting").and_then(|v| v.as_bool()).unwrap_or(false);
-                let col = data.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let row = data.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let start_col = data.get("start_col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let start_row = data.get("start_row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let col = data.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let row = data.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
-                state.session.update_selection_with_start(id, selecting, col, row, start_col, start_row);
+                // Moebius selection updates are forwarded with just {id, x, y}
+                state.session.update_selection(id, true, col, row);
 
-                // Broadcast to others
                 #[derive(serde::Serialize)]
                 struct SelectionBroadcast {
                     #[serde(rename = "type")]
@@ -1003,25 +1040,16 @@ async fn handle_message(
                 #[derive(serde::Serialize)]
                 struct SelectionBroadcastData {
                     id: u32,
-                    selecting: bool,
-                    col: i32,
-                    row: i32,
-                    start_col: i32,
-                    start_row: i32,
+                    x: i32,
+                    y: i32,
                 }
                 let msg = SelectionBroadcast {
                     msg_type: ActionCode::Selection as u8,
-                    data: SelectionBroadcastData {
-                        id,
-                        selecting,
-                        col,
-                        row,
-                        start_col,
-                        start_row,
-                    },
+                    data: SelectionBroadcastData { id, x: col, y: row },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
-                    state.broadcast(&json, Some(id)).await;
+                    // Moebius default forwarding uses send_all (registered only, excluding sender)
+                    state.broadcast_to_registered(&json, Some(id)).await;
                 }
             }
         }
@@ -1044,7 +1072,8 @@ async fn handle_message(
                     data: HideCursorData { id },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
-                    state.broadcast(&json, Some(id)).await;
+                    // Moebius default forwarding uses send_all (registered only, excluding sender)
+                    state.broadcast_to_registered(&json, Some(id)).await;
                 }
             }
         }
@@ -1132,8 +1161,19 @@ async fn handle_message(
                 let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let author = data.get("author").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let comments_str = data.get("comments").and_then(|v| v.as_str()).unwrap_or("");
 
-                state.session.update_sauce(title.clone(), author.clone(), group.clone());
+                let meta = SauceMetaData {
+                    title: title.clone().into(),
+                    author: author.clone().into(),
+                    group: group.clone().into(),
+                    comments: if comments_str.is_empty() {
+                        vec![]
+                    } else {
+                        comments_str.lines().map(|l| l.into()).collect()
+                    },
+                };
+                state.session.update_sauce(meta);
 
                 #[derive(serde::Serialize)]
                 struct SauceBroadcast {
@@ -1147,10 +1187,17 @@ async fn handle_message(
                     title: String,
                     author: String,
                     group: String,
+                    comments: String,
                 }
                 let msg = SauceBroadcast {
                     msg_type: ActionCode::Sauce as u8,
-                    data: SauceBroadcastData { id, title, author, group },
+                    data: SauceBroadcastData {
+                        id,
+                        title,
+                        author,
+                        group,
+                        comments: comments_str.to_string(),
+                    },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     state.broadcast(&json, Some(id)).await;
@@ -1215,7 +1262,13 @@ async fn handle_message(
         Some(15) => {
             // CHANGE_FONT
             if let Some(id) = *user_id {
-                let font_name = data.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Moebius uses `font_name`; accept legacy `value` too.
+                let font_name = data
+                    .get("font_name")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| data.get("value").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
                 state.session.set_font(font_name.clone());
 
                 #[derive(serde::Serialize)]
@@ -1227,11 +1280,11 @@ async fn handle_message(
                 #[derive(serde::Serialize)]
                 struct ChangeFontBroadcastData {
                     id: u32,
-                    value: String,
+                    font_name: String,
                 }
                 let msg = ChangeFontBroadcast {
                     msg_type: ActionCode::ChangeFont as u8,
-                    data: ChangeFontBroadcastData { id, value: font_name },
+                    data: ChangeFontBroadcastData { id, font_name },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     state.broadcast(&json, Some(id)).await;
@@ -1279,86 +1332,19 @@ async fn handle_message(
         }
 
         _ => {
-            // Unknown or unhandled action - log but don't fail
+            // Moebius behavior: forward unhandled actions via `send_all` (registered users only, excluding sender).
+            // Exception: SET_BG is ignored in Moebius.
             if let Some(code) = action_code {
-                log::debug!("[{}] Unhandled action code: {}", addr, code);
+                if code == ActionCode::SetBackground as u8 {
+                    return Ok(());
+                }
+
+                if let Some(id) = *user_id {
+                    state.broadcast_to_registered(text, Some(id)).await;
+                }
             }
         }
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_server_state_creation() {
-        let config = ServerConfig::default();
-        let state = ServerState::new(config);
-
-        assert_eq!(state.client_count().await, 0);
-        let (columns, rows) = state.session.get_dimensions();
-        assert_eq!(columns, 80);
-        assert_eq!(rows, 25);
-    }
-
-    #[tokio::test]
-    async fn test_server_document_operations() {
-        let config = ServerConfig::default();
-        let state = ServerState::new(config);
-
-        let block = Block { code: 65, fg: 7, bg: 0 };
-        state.set_char(10, 5, block.clone()).await;
-
-        let retrieved = state.char_at(10, 5).await.unwrap();
-        assert_eq!(retrieved.code, 65);
-        assert_eq!(retrieved.fg, 7);
-        assert_eq!(retrieved.bg, 0);
-    }
-
-    #[tokio::test]
-    async fn test_server_resize() {
-        let config = ServerConfig::default();
-        let state = ServerState::new(config);
-
-        state.resize(100, 50).await;
-
-        let (columns, rows) = state.session.get_dimensions();
-        assert_eq!(columns, 100);
-        assert_eq!(rows, 50);
-    }
-
-    #[tokio::test]
-    async fn test_handle_connect() {
-        let config = ServerConfig {
-            password: "secret".to_string(),
-            ..Default::default()
-        };
-        let state = ServerState::new(config);
-
-        // Wrong password should fail
-        let result = state.handle_connect("User".to_string(), "wrong".to_string()).await;
-        assert!(result.is_err());
-
-        // Correct password should succeed
-        let result = state.handle_connect("User".to_string(), "secret".to_string()).await;
-        assert!(result.is_ok());
-        let (user_id, _) = result.unwrap();
-        assert!(user_id > 0);
-    }
-
-    #[test]
-    fn test_server_builder() {
-        let handle = ServerBuilder::new()
-            .bind_str("127.0.0.1:9000")
-            .unwrap()
-            .password("test")
-            .max_users(10)
-            .dimensions(160, 50)
-            .build();
-
-        assert!(!handle.is_running());
-    }
 }

@@ -135,19 +135,45 @@ fn get_log_dir() -> Option<PathBuf> {
     None
 }
 
+/// Returns the default EGA 16-color palette (8-bit RGB values).
+fn default_ega_palette() -> [[u8; 3]; 16] {
+    [
+        [0x00, 0x00, 0x00], // 0: Black
+        [0x00, 0x00, 0xAA], // 1: Blue
+        [0x00, 0xAA, 0x00], // 2: Green
+        [0x00, 0xAA, 0xAA], // 3: Cyan
+        [0xAA, 0x00, 0x00], // 4: Red
+        [0xAA, 0x00, 0xAA], // 5: Magenta
+        [0xAA, 0x55, 0x00], // 6: Brown/Yellow
+        [0xAA, 0xAA, 0xAA], // 7: Light Gray
+        [0x55, 0x55, 0x55], // 8: Dark Gray
+        [0x55, 0x55, 0xFF], // 9: Light Blue
+        [0x55, 0xFF, 0x55], // 10: Light Green
+        [0x55, 0xFF, 0xFF], // 11: Light Cyan
+        [0xFF, 0x55, 0x55], // 12: Light Red
+        [0xFF, 0x55, 0xFF], // 13: Light Magenta
+        [0xFF, 0xFF, 0x55], // 14: Yellow
+        [0xFF, 0xFF, 0xFF], // 15: White
+    ]
+}
+
 /// Run the collaboration server in headless mode.
 fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>) {
     use icy_engine::{FileFormat, IceMode, TextPane};
+    use icy_engine_edit::SauceMetaData;
     use icy_engine_edit::collaboration::{Block, ServerConfig, run_server as run_collab_server};
 
     // Load document from file or create empty 80x25 canvas
-    let (columns, rows, initial_document, ice_colors, use_9px_font, font_name, sauce_title, sauce_author, sauce_group) = if let Some(ref path) = file {
+    let (columns, rows, initial_document, ice_colors, use_9px_font, font_name, sauce, palette) = if let Some(ref path) = file {
         // Detect format and load file
         let format = match FileFormat::from_path(path) {
             Some(f) => f,
             None => {
-                eprintln!("Error: Unknown file format for '{}'", path.display());
-                eprintln!("Starting with empty 80x25 canvas");
+                eprintln!(
+                    "{}",
+                    i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-error-unknown-format", path = path.display().to_string())
+                );
+                eprintln!("{}", i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-starting-empty-canvas"));
                 FileFormat::Ansi // Fallback, will likely fail to load
             }
         };
@@ -155,7 +181,7 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
             Ok(loaded_doc) => {
                 let buffer = &loaded_doc.screen.buffer;
                 let cols = buffer.width() as u32;
-                let rws = buffer.height() as u32;
+                let rws: u32 = buffer.height() as u32;
 
                 // Extract character data (column-major for server)
                 let mut doc = Vec::with_capacity(cols as usize);
@@ -184,30 +210,80 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
                 let font = buffer.font(0).map(|f| f.name().to_string()).unwrap_or_else(|| "IBM VGA".to_string());
 
                 // Get SAUCE data from the LoadedDocument
-                let (title, author, group) = if let Some(ref sauce) = loaded_doc.sauce_opt {
-                    (sauce.title().to_string(), sauce.author().to_string(), sauce.group().to_string())
+                let sauce: SauceMetaData = if let Some(ref sauce_record) = loaded_doc.sauce_opt {
+                    sauce_record.metadata()
                 } else {
-                    (String::new(), String::new(), String::new())
+                    SauceMetaData::default()
                 };
 
-                println!("Loaded: {} ({}x{})", path.display(), cols, rws);
-                (cols, rws, Some(doc), ice, false, font, title, author, group)
+                // Extract 16-color palette from buffer
+                let mut palette = [[0u8; 3]; 16];
+                for i in 0..16 {
+                    let (r, g, b) = buffer.palette.rgb(i as u32);
+                    palette[i] = [r, g, b];
+                }
+
+                println!(
+                    "{}",
+                    i18n_embed_fl::fl!(
+                        crate::LANGUAGE_LOADER,
+                        "server-loaded",
+                        path = path.display().to_string(),
+                        cols = cols.to_string(),
+                        rows = rws.to_string()
+                    )
+                );
+                (cols, rws, Some(doc), ice, false, font, sauce, palette)
             }
             Err(e) => {
-                eprintln!("Error loading file '{}': {}", path.display(), e);
-                eprintln!("Starting with empty 80x25 canvas");
-                (80, 25, None, false, false, "IBM VGA".to_string(), String::new(), String::new(), String::new())
+                eprintln!(
+                    "{}",
+                    i18n_embed_fl::fl!(
+                        crate::LANGUAGE_LOADER,
+                        "server-error-loading-file",
+                        path = path.display().to_string(),
+                        error = e.to_string()
+                    )
+                );
+                eprintln!("{}", i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-starting-empty-canvas"));
+                (
+                    80,
+                    25,
+                    None,
+                    false,
+                    false,
+                    "IBM VGA".to_string(),
+                    SauceMetaData::default(),
+                    default_ega_palette(),
+                )
             }
         }
     } else {
-        (80, 25, None, false, false, "IBM VGA".to_string(), String::new(), String::new(), String::new())
+        (
+            80,
+            25,
+            None,
+            false,
+            false,
+            "IBM VGA".to_string(),
+            SauceMetaData::default(),
+            default_ega_palette(),
+        )
     };
 
     let bind_addr = format!("{}:{}", bind, port);
     let bind_addr: std::net::SocketAddr = match bind_addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            eprintln!("Error: Invalid bind address '{}': {}", bind_addr, e);
+            eprintln!(
+                "{}",
+                i18n_embed_fl::fl!(
+                    crate::LANGUAGE_LOADER,
+                    "server-error-invalid-bind-address",
+                    addr = format!("{}:{}", bind, port),
+                    error = e.to_string()
+                )
+            );
             std::process::exit(1);
         }
     };
@@ -224,9 +300,8 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
         ice_colors,
         use_9px_font,
         font_name,
-        sauce_title,
-        sauce_author,
-        sauce_group,
+        palette,
+        sauce,
         // Localized UI strings for server banner
         ui_title: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-title"),
         ui_bind_address: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-bind-address"),
@@ -240,10 +315,10 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
     };
 
     // Create tokio runtime and run the server
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let rt = tokio::runtime::Runtime::new().expect(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-error-runtime"));
     rt.block_on(async {
         if let Err(e) = run_collab_server(config).await {
-            eprintln!("Server error: {}", e);
+            eprintln!("{}", i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-error", error = e.to_string()));
             std::process::exit(1);
         }
     });

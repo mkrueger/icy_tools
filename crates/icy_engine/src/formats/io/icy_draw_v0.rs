@@ -42,22 +42,23 @@ const V0_INVISIBLE_CELL: u16 = 0x8000;
 
 /// Load an IcyDraw v0 file (Base64 encoded tEXt/zTXt PNG chunks).
 /// Returns an error if the file is not a valid v0 file.
-pub(crate) fn load_icy_draw_v0(data: &[u8]) -> Result<TextScreen> {
+pub(crate) fn load_icy_draw_v0(data: &[u8]) -> Result<(TextScreen, Option<SauceRecord>)> {
     match load_icy_draw_v0_base64_text_chunks(data)? {
-        Some(screen) => Ok(screen),
+        Some((screen, sauce_opt)) => Ok((screen, sauce_opt)),
         None => Err(crate::EngineError::UnsupportedFormat {
             description: "Not a valid IcyDraw v0 file".to_string(),
         }),
     }
 }
 
-pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
+pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<(TextScreen, Option<SauceRecord>)>> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
     result.layers.clear();
 
     // Track how many lines were decoded per layer so `LAYER_i~k` continues at the correct y.
     let mut layer_resume_y: HashMap<usize, i32> = HashMap::new();
+    let mut sauce_opt: Option<SauceRecord> = None;
 
     let mut decoder = png::StreamingDecoder::new();
     let mut len = 0;
@@ -92,7 +93,14 @@ pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<
                         }
                     };
 
-                    let keep_running = process_icy_draw_v0_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut saw_iced_v0)?;
+                    let keep_running = process_icy_draw_v0_decoded_chunk(
+                        chunk.keyword.as_str(),
+                        &decoded,
+                        &mut result,
+                        &mut layer_resume_y,
+                        &mut saw_iced_v0,
+                        &mut sauce_opt,
+                    )?;
                     if !keep_running {
                         is_running = false;
                         break;
@@ -119,7 +127,14 @@ pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<
                         }
                     };
 
-                    let keep_running = process_icy_draw_v0_decoded_chunk(chunk.keyword.as_str(), &decoded, &mut result, &mut layer_resume_y, &mut saw_iced_v0)?;
+                    let keep_running = process_icy_draw_v0_decoded_chunk(
+                        chunk.keyword.as_str(),
+                        &decoded,
+                        &mut result,
+                        &mut layer_resume_y,
+                        &mut saw_iced_v0,
+                        &mut sauce_opt,
+                    )?;
                     if !keep_running {
                         is_running = false;
                         break;
@@ -137,7 +152,7 @@ pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<
         return Ok(None);
     }
 
-    Ok(Some(TextScreen::from_buffer(result)))
+    Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
 }
 
 fn is_short_attr(mut attr_raw: u16) -> (bool, u16) {
@@ -154,6 +169,7 @@ fn process_icy_draw_v0_decoded_chunk(
     result: &mut TextBuffer,
     layer_resume_y: &mut HashMap<usize, i32>,
     saw_iced_v0: &mut bool,
+    sauce_opt: &mut Option<SauceRecord>,
 ) -> Result<bool> {
     match keyword {
         "END" => return Ok(false),
@@ -231,6 +247,7 @@ fn process_icy_draw_v0_decoded_chunk(
         "SAUCE" => {
             if let Some(sauce) = SauceRecord::from_bytes(bytes)? {
                 super::super::apply_sauce_to_buffer(result, &sauce);
+                *sauce_opt = Some(sauce);
             }
         }
 
@@ -447,9 +464,6 @@ fn process_icy_draw_v0_decoded_chunk(
                     }
                     crate::Role::Image => {
                         layer.sixels[0].picture_data.extend(bytes);
-                        return Ok(true);
-                    }
-                    crate::Role::PastePreview | crate::Role::PasteImage => {
                         return Ok(true);
                     }
                 }

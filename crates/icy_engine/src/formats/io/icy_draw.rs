@@ -192,7 +192,14 @@ fn parse_icyd_record(payload: &[u8]) -> Result<(String, &[u8])> {
     Ok((keyword.to_string(), &payload[data_start..data_end]))
 }
 
-fn process_icy_draw_v1_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut TextBuffer, compression: &mut u8, sixel_format: &mut u8) -> Result<bool> {
+fn process_icy_draw_v1_decoded_chunk(
+    keyword: &str,
+    bytes: &[u8],
+    result: &mut TextBuffer,
+    compression: &mut u8,
+    sixel_format: &mut u8,
+    sauce_opt: &mut Option<SauceRecord>,
+) -> Result<bool> {
     match keyword {
         "END" => return Ok(false),
         "ICED" => {
@@ -271,6 +278,7 @@ fn process_icy_draw_v1_decoded_chunk(keyword: &str, bytes: &[u8], result: &mut T
         "SAUCE" => {
             if let Some(sauce) = SauceRecord::from_bytes(bytes)? {
                 super::super::apply_sauce_to_buffer(result, &sauce);
+                *sauce_opt = Some(sauce);
             }
         }
 
@@ -720,17 +728,17 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Re
     Ok(png_bytes)
 }
 
-pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<(TextScreen, Option<SauceRecord>)> {
     // Try v1 binary chunks first
-    if let Some(screen) = load_icy_draw_v1_binary_chunks(data)? {
-        return Ok(screen);
+    if let Some((screen, sauce_opt)) = load_icy_draw_v1_binary_chunks(data)? {
+        return Ok((screen, sauce_opt));
     }
 
     // Fall back to v0 loader
     super::icy_draw_v0::load_icy_draw_v0(data)
 }
 
-fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
+fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Option<SauceRecord>)>> {
     let mut result = TextBuffer::new((80, 25));
     result.terminal_state.is_terminal_buffer = false;
     result.layers.clear();
@@ -738,6 +746,7 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     // Compression and sixel format from ICED header
     let mut compression = constants::compression::NONE;
     let mut sixel_format = constants::sixel_format::RAW_RGBA;
+    let mut sauce_opt: Option<SauceRecord> = None;
 
     let records = extract_png_chunks_by_type(data, ICYD_CHUNK_TYPE)?;
     if records.is_empty() {
@@ -776,7 +785,7 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
             bytes
         };
 
-        let keep_running = process_icy_draw_v1_decoded_chunk(&keyword, actual_bytes, &mut result, &mut compression, &mut sixel_format)?;
+        let keep_running = process_icy_draw_v1_decoded_chunk(&keyword, actual_bytes, &mut result, &mut compression, &mut sixel_format, &mut sauce_opt)?;
         if !keep_running {
             is_running = false;
             break;
@@ -784,9 +793,9 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<TextScreen>> {
     }
 
     if is_running {
-        Ok(Some(TextScreen::from_buffer(result)))
+        Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
     } else {
-        Ok(Some(TextScreen::from_buffer(result)))
+        Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
     }
 }
 

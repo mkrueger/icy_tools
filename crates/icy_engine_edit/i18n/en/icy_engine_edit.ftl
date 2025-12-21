@@ -59,6 +59,7 @@ undo-show-tags=Show Tags
 undo-type_char=Type
 undo-backspace=Backspace
 undo-delete=Delete
+undo-anchor=Anchor
 
 layer-duplicate-name={ $name } copy
 layer-new-name=Layer

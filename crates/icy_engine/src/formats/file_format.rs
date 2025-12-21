@@ -879,7 +879,21 @@ impl FileFormat {
     /// }
     /// ```
     pub fn from_bytes(&self, data: &[u8], load_data: Option<LoadData>) -> Result<LoadedDocument> {
-        // Extract SAUCE record from the data
+        // IcyDraw has embedded SAUCE record in PNG chunks, handle separately
+        if matches!(self, FileFormat::IcyDraw) {
+            let (mut screen, sauce_opt) = io::load_icy_draw(data, load_data.as_ref())?;
+
+            // Apply max height limit if specified
+            if let Some(max_height) = load_data.as_ref().and_then(|ld| ld.max_height()) {
+                if screen.height() > max_height {
+                    screen.buffer.set_height(max_height);
+                }
+            }
+
+            return Ok(LoadedDocument { screen, sauce_opt });
+        }
+
+        // Extract SAUCE record from the data (appended at end of file)
         let sauce_opt: Option<icy_sauce::SauceRecord> = icy_sauce::SauceRecord::from_bytes(data).ok().flatten();
 
         let mut screen = match self {
@@ -893,7 +907,7 @@ impl FileFormat {
             FileFormat::Petscii => io::load_seq(data, load_data.as_ref()),
             FileFormat::Bin => io::load_bin(data, load_data.as_ref()),
             FileFormat::XBin => io::load_xbin(data, load_data.as_ref()),
-            FileFormat::IcyDraw => io::load_icy_draw(data, load_data.as_ref()),
+            FileFormat::IcyDraw => unreachable!(), // Handled above
             FileFormat::IceDraw => io::load_ice_draw(data, load_data.as_ref()),
             FileFormat::TundraDraw => io::load_tundra(data, load_data.as_ref()),
             FileFormat::Artworx => io::load_artworx(data, load_data.as_ref()),

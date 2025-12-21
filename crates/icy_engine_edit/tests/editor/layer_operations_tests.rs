@@ -284,11 +284,11 @@ fn test_set_layer_size_changes_dimensions() {
 }
 
 // ============================================================================
-// Rotate Layer Tests
+// Paste Rotate Tests
 // ============================================================================
 
 #[test]
-fn test_rotate_layer_rotates_content() {
+fn test_paste_rotate_rotates_content() {
     let mut state = create_test_state(20, 10);
 
     // Put a character at a known position
@@ -298,7 +298,7 @@ fn test_rotate_layer_rotates_content() {
 
     let initial_undo_len = state.undo_stack_len();
 
-    state.rotate_layer().unwrap();
+    state.paste_rotate().unwrap();
 
     // After rotation, the layer lines should be different
     // (the actual rotation logic transforms positions and applies character mapping)

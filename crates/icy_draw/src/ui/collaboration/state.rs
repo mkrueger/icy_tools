@@ -217,18 +217,6 @@ impl CollaborationState {
         }
     }
 
-    /// Send selection update (returns a Task that should be spawned)
-    pub fn send_selection(&self, selecting: bool, col: i32, row: i32) -> Option<iced::Task<()>> {
-        if let Some(client) = &self.client {
-            let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
-                let _ = handle.send_selection(selecting, col, row).await;
-            }))
-        } else {
-            None
-        }
-    }
-
     /// Send operation mode position (floating selection) (returns a Task that should be spawned)
     pub fn send_operation(&self, col: i32, row: i32) -> Option<iced::Task<()>> {
         if let Some(client) = &self.client {
@@ -259,30 +247,6 @@ impl CollaborationState {
             let handle = client.handle().clone();
             Some(iced::Task::future(async move {
                 let _ = handle.send_hide_cursor().await;
-            }))
-        } else {
-            None
-        }
-    }
-
-    /// Send a draw operation (returns a Task that should be spawned)
-    pub fn send_draw(&self, col: i32, row: i32, block: icy_engine_edit::collaboration::Block) -> Option<iced::Task<()>> {
-        if let Some(client) = &self.client {
-            let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
-                let _ = handle.draw(col, row, block).await;
-            }))
-        } else {
-            None
-        }
-    }
-
-    /// Send SAUCE metadata update (returns a Task that should be spawned)
-    pub fn send_sauce(&self, title: String, author: String, group: String, comments: String) -> Option<iced::Task<()>> {
-        if let Some(client) = &self.client {
-            let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
-                let _ = handle.send_sauce(title, author, group, comments).await;
             }))
         } else {
             None

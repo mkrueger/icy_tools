@@ -24,6 +24,15 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
+# Server messages
+server-error-unknown-format = Error: Unknown file format for '{ $path }'
+server-starting-empty-canvas = Starting with empty 80x25 canvas
+server-loaded = Loaded: { $path } ({ $cols }x{ $rows })
+server-error-loading-file = Error loading file '{ $path }': { $error }
+server-error-invalid-bind-address = Error: Invalid bind address '{ $addr }': { $error }
+server-error-runtime = Failed to create Tokio runtime
+server-error = Server error: { $error }
+
 menu-file=File
 menu-new=New…
 menu-open=Open…

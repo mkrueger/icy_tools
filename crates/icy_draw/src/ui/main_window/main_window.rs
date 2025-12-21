@@ -1560,9 +1560,7 @@ impl MainWindow {
                         ice_colors: false,
                         use_9px_font: false,
                         font_name: "IBM VGA".to_string(),
-                        sauce_title: String::new(),
-                        sauce_author: String::new(),
-                        sauce_group: String::new(),
+                        sauce: Default::default(),
                         // Use defaults for UI strings (this runs in background)
                         ..Default::default()
                     };
@@ -1700,12 +1698,52 @@ impl MainWindow {
                                     editor.apply_remote_draw(*col, *row, block.code, block.fg, block.bg);
                                 }
                             }
-                            CollaborationEvent::CanvasResized { columns, rows } => {
+                            CollaborationEvent::CanvasResized { user_id, columns, rows } => {
                                 self.collaboration_state.update_canvas_size(*columns, *rows);
 
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                                     editor.apply_remote_canvas_resize(*columns, *rows);
                                     editor.sync_ui();
+                                }
+                                // Show system message
+                                if let Some(user) = self.collaboration_state.get_user(*user_id) {
+                                    self.collaboration_state
+                                        .add_system_message(&format!("{} changed the canvas size to {} × {}", user.user.nick, columns, rows));
+                                }
+                            }
+                            CollaborationEvent::IceColorsChanged { user_id, value } => {
+                                // Apply remote ICE colors change
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_ice_colors(*value);
+                                }
+                                // Show system message
+                                if let Some(user) = self.collaboration_state.get_user(*user_id) {
+                                    let state = if *value { "on" } else { "off" };
+                                    self.collaboration_state
+                                        .add_system_message(&format!("{} turned iCE colors {}", user.user.nick, state));
+                                }
+                            }
+                            CollaborationEvent::Use9pxChanged { user_id, value } => {
+                                // Apply remote 9px font (letter spacing) change
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_9px_font(*value);
+                                }
+                                // Show system message
+                                if let Some(user) = self.collaboration_state.get_user(*user_id) {
+                                    let state = if *value { "on" } else { "off" };
+                                    self.collaboration_state
+                                        .add_system_message(&format!("{} turned letter spacing {}", user.user.nick, state));
+                                }
+                            }
+                            CollaborationEvent::FontChanged { user_id, font_name } => {
+                                // Apply remote font change
+                                if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                    editor.apply_remote_font_change(font_name);
+                                }
+                                // Show system message
+                                if let Some(user) = self.collaboration_state.get_user(*user_id) {
+                                    self.collaboration_state
+                                        .add_system_message(&format!("{} changed the font to {}", user.user.nick, font_name));
                                 }
                             }
                             CollaborationEvent::PasteAsSelection { user_id, blocks: _ } => {
@@ -2686,8 +2724,6 @@ impl MainWindow {
                         };
                         let role = match layer.role {
                             icy_engine::Role::Normal => "normal",
-                            icy_engine::Role::PastePreview => "paste_preview",
-                            icy_engine::Role::PasteImage => "paste_image",
                             icy_engine::Role::Image => "image",
                         };
                         LayerInfo {
