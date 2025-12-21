@@ -5,13 +5,13 @@
 //! transformed into screen space using the same math as the terminal renderer.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{Border, Color, Element, Length, Point, Rectangle, Theme};
-use iced::advanced::{layout, renderer, widget};
-use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::Renderer as _;
 use iced::advanced::image::Renderer as _;
 use iced::advanced::text::Renderer as _;
+use iced::advanced::widget::tree::{self, Tree};
+use iced::advanced::{layout, renderer, widget};
 use iced::widget::image;
+use iced::{Border, Color, Element, Length, Point, Rectangle, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -261,6 +261,11 @@ fn super_intersect(a: Rectangle, b: Rectangle) -> Option<Rectangle> {
     if w <= 0.0 || h <= 0.0 {
         None
     } else {
-        Some(Rectangle { x: x0, y: y0, width: w, height: h })
+        Some(Rectangle {
+            x: x0,
+            y: y0,
+            width: w,
+            height: h,
+        })
     }
 }

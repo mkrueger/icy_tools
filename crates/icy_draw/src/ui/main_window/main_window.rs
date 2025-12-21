@@ -3,8 +3,14 @@
 //! Each MainWindow represents one editing window with its own state and mode.
 //! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
 
-use std::{cell::Cell, collections::HashMap, hash::{Hash, Hasher}, path::PathBuf, sync::Arc};
 use std::collections::hash_map::DefaultHasher;
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use parking_lot::RwLock;
 
@@ -1827,11 +1833,10 @@ impl MainWindow {
                                 log::info!("Disconnected from collaboration server");
                                 self.collaboration_state.end_session();
                                 self.sync_remote_cursors_to_editor();
-                                self.dialogs.push(error_dialog(
-                                    fl!("collab-connection-lost-title"),
-                                    fl!("collab-connection-lost-message"),
-                                    |_| Message::CloseDialog,
-                                ));
+                                self.dialogs
+                                    .push(error_dialog(fl!("collab-connection-lost-title"), fl!("collab-connection-lost-message"), |_| {
+                                        Message::CloseDialog
+                                    }));
                             }
                             CollaborationEvent::Error(e) => {
                                 log::error!("Collaboration error: {}", e);

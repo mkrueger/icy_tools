@@ -8,6 +8,7 @@
 //! - Layer dragging (Ctrl+Click+Drag)
 
 use iced::Element;
+use iced::keyboard::key::Physical;
 use icy_engine::BufferType;
 use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
@@ -16,8 +17,8 @@ use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 
 use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
 use crate::Settings;
-use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
 use crate::ui::FKeySets;
+use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
 
 /// Click tool state
 #[derive(Default)]
@@ -286,11 +287,16 @@ impl ToolHandler for ClickTool {
 
     fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
-                use iced::keyboard::key::Named;
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                text,
+                physical_key,
+                ..
+            }) => {
                 use iced::keyboard::Key;
+                use iced::keyboard::key::Named;
 
-                // Moebius: Previous/Next/Default Character Set (F-key set)
                 // - Ctrl+,  => previous set
                 // - Ctrl+.  => next set
                 // - Ctrl+/  => default set
@@ -298,9 +304,8 @@ impl ToolHandler for ClickTool {
                     let Some(options) = ctx.options else {
                         return ToolResult::None;
                     };
-
-                    match key {
-                        Key::Character(ch) if ch == "," => {
+                    match physical_key {
+                        Physical::Code(iced::keyboard::key::Code::Comma) => {
                             let cur = self.current_fkey_set;
                             let prev = {
                                 let opts = options.read();
@@ -310,12 +315,12 @@ impl ToolHandler for ClickTool {
                             self.set_current_fkey_set(options, prev);
                             return ToolResult::Redraw;
                         }
-                        Key::Character(ch) if ch == "." => {
+                        Physical::Code(iced::keyboard::key::Code::Period) => {
                             let next = self.current_fkey_set.saturating_add(1);
                             self.set_current_fkey_set(options, next);
                             return ToolResult::Redraw;
                         }
-                        Key::Character(ch) if ch == "/" => {
+                        Physical::Code(iced::keyboard::key::Code::Slash) => {
                             let default_set = FKeySets::default().current_set;
                             self.set_current_fkey_set(options, default_set);
                             return ToolResult::Redraw;

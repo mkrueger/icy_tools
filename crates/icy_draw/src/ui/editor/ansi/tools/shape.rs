@@ -5,6 +5,7 @@
 //!
 //! This tool handles: Line, RectangleOutline, RectangleFilled, EllipseOutline, EllipseFilled
 
+use iced::keyboard::key::Physical;
 use iced::widget::{Space, button, row, svg, text, toggler};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, TextPane};
@@ -616,39 +617,33 @@ impl ToolHandler for ShapeTool {
 
     fn handle_event(&mut self, _ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                use iced::keyboard::key::Named;
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key, modifiers, physical_key, ..
+            }) => {
                 use iced::keyboard::Key;
+                use iced::keyboard::key::Named;
 
-                // Moebius: Brush size shortcuts (no menu items)
                 // - Alt+= increase
                 // - Alt+- decrease
-                // - Alt+0 reset to 1
+                // - Alt+] reset to 1
                 if modifiers.alt() && !modifiers.control() {
                     let mut changed = false;
-
-                    match key {
-                        Key::Character(ch) if ch == "=" || ch == "+" => {
-                            let new_size = (self.brush.brush_size + 1).min(9);
+                    match physical_key {
+                        Physical::Code(iced::keyboard::key::Code::Equal) => {
+                            let new_size: usize = (self.brush.brush_size + 1).min(9);
                             if new_size != self.brush.brush_size {
                                 self.brush.brush_size = new_size;
                                 changed = true;
                             }
                         }
-                        Key::Character(ch) if ch == "-" => {
+                        Physical::Code(iced::keyboard::key::Code::Minus) => {
                             let new_size = self.brush.brush_size.saturating_sub(1).max(1);
                             if new_size != self.brush.brush_size {
                                 self.brush.brush_size = new_size;
                                 changed = true;
                             }
                         }
-                        Key::Character(ch) if ch == "0" => {
-                            if self.brush.brush_size != 1 {
-                                self.brush.brush_size = 1;
-                                changed = true;
-                            }
-                        }
-                        Key::Named(Named::Digit0) => {
+                        Physical::Code(iced::keyboard::key::Code::BracketRight) => {
                             if self.brush.brush_size != 1 {
                                 self.brush.brush_size = 1;
                                 changed = true;

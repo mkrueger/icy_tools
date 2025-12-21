@@ -458,10 +458,7 @@ impl AnsiEditorMainArea {
     }
 
     /// Render a Moebius/Collab `Blocks` rectangle to an RGBA image handle using the current font/palette.
-    pub fn render_collab_blocks_preview(
-        &self,
-        blocks: &icy_engine_edit::collaboration::Blocks,
-    ) -> Option<(iced::widget::image::Handle, u32, u32)> {
+    pub fn render_collab_blocks_preview(&self, blocks: &icy_engine_edit::collaboration::Blocks) -> Option<(iced::widget::image::Handle, u32, u32)> {
         use icy_engine::{AttributedChar, RenderOptions, TextAttribute, TextBuffer};
 
         if blocks.columns == 0 || blocks.rows == 0 {
@@ -528,12 +525,7 @@ impl AnsiEditorMainArea {
             }
         }
 
-        let region = icy_engine::Rectangle::from(
-            0,
-            0,
-            (blocks.columns as i32) * font.size().width,
-            (blocks.rows as i32) * font.size().height,
-        );
+        let region = icy_engine::Rectangle::from(0, 0, (blocks.columns as i32) * font.size().width, (blocks.rows as i32) * font.size().height);
 
         let options = RenderOptions::default();
         let (size, rgba) = tmp.render_region_to_rgba(region, &options, false);
