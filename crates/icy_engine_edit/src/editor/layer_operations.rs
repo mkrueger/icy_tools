@@ -341,22 +341,9 @@ impl EditState {
 
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
             let old_lines = layer.lines.clone();
-            let size = layer.size();
-            let max = size.width / 2;
-
-            for y in 0..size.height {
-                for x in 0..max {
-                    let pos1 = icy_engine::Position::new(x, y);
-                    let pos2 = icy_engine::Position::new(size.width - x - 1, y);
-
-                    let pos1ch = layer.char_at(pos1);
-                    let pos1ch = crate::map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
-                    let pos2ch = layer.char_at(pos2);
-                    let pos2ch = crate::map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
-                    layer.set_char(pos1, pos2ch);
-                    layer.set_char(pos2, pos1ch);
-                }
-            }
+            let size: Size = layer.size();
+            let area = crate::Rectangle::from_min_size(Position::default(), size);
+            crate::flip_layer_x(layer, area, &flip_tables);
 
             let op = EditorUndoOp::PasteFlipX {
                 layer: current_layer,
@@ -381,20 +368,8 @@ impl EditState {
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
             let old_lines = layer.lines.clone();
             let size = layer.size();
-            let max = size.height / 2;
-
-            for x in 0..size.width {
-                for y in 0..max {
-                    let pos1 = icy_engine::Position::new(x, y);
-                    let pos2 = icy_engine::Position::new(x, size.height - 1 - y);
-                    let pos1ch = layer.char_at(pos1);
-                    let pos1ch = crate::map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
-                    let pos2ch = layer.char_at(pos2);
-                    let pos2ch = crate::map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
-                    layer.set_char(pos1, pos2ch);
-                    layer.set_char(pos2, pos1ch);
-                }
-            }
+            let area = crate::Rectangle::from_min_size(Position::default(), size);
+            crate::flip_layer_y(layer, area, &flip_tables);
 
             let op = EditorUndoOp::PasteFlipY {
                 layer: current_layer,

@@ -566,3 +566,15 @@ ask_unsaved_file_dialog-description=Doriți să salvați modificările la următ
 ask_unsaved_file_dialog-subdescription=Modificările dvs. vor fi pierdute dacă nu le salvați.
 ask_unsaved_file_dialog-save_all_button=Salvați tot
 ask_unsaved_file_dialog-dont_save_button=Nu salvați
+
+# Save Changes Dialog (single file)
+save-changes-title=Salvați modificările în "{ $filename }"?
+save-changes-description=Modificările dvs. vor fi pierdute dacă nu le salvați.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Ștampilă (S)
+paste-tool-rotate=Rotire (R)
+paste-tool-flip-x=Răsturnare X
+paste-tool-flip-y=Răsturnare Y
+paste-tool-transparent=Transparent (T)
+paste-tool-hint=Enter: Ancorare | Esc: Anulare | Săgeți: Mutare

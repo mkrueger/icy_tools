@@ -735,6 +735,18 @@ ask_unsaved_file_dialog-subdescription=Alle Änderungen gehen verloren, wenn nic
 ask_unsaved_file_dialog-save_all_button=Alle Speichern
 ask_unsaved_file_dialog-dont_save_button=Nicht Speichern
 
+# Save Changes Dialog (single file)
+save-changes-title=Änderungen in "{ $filename }" speichern?
+save-changes-description=Alle Änderungen gehen verloren, wenn nicht gespeichert wird.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Stempeln (S)
+paste-tool-rotate=Drehen (R)
+paste-tool-flip-x=X spiegeln
+paste-tool-flip-y=Y spiegeln
+paste-tool-transparent=Transparent (T)
+paste-tool-hint=Enter: Verankern | Esc: Abbrechen | Pfeile: Bewegen
+
 # Animation Export Dialog
 animation-export-format=Format
 animation-export-path=Exportieren nach

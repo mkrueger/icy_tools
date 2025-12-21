@@ -566,3 +566,15 @@ ask_unsaved_file_dialog-description=Voleu desar els canvis als següents {
 ask_unsaved_file_dialog-subdescription=Els vostres canvis es perdran si no els deseu.
 ask_unsaved_file_dialog-save_all_button=Desar tot
 ask_unsaved_file_dialog-dont_save_button=No desar
+
+# Save Changes Dialog (single file)
+save-changes-title=Desar els canvis a "{ $filename }"?
+save-changes-description=Els vostres canvis es perdran si no els deseu.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Estampar (S)
+paste-tool-rotate=Girar (R)
+paste-tool-flip-x=Capgirar X
+paste-tool-flip-y=Capgirar Y
+paste-tool-transparent=Transparent (T)
+paste-tool-hint=Enter: Ancorar | Esc: Cancel·lar | Fletxes: Moure

@@ -566,3 +566,15 @@ ask_unsaved_file_dialog-description=Chcete uložit změny v následujících {
 ask_unsaved_file_dialog-subdescription=Vaše změny budou ztraceny, pokud je neuložíte.
 ask_unsaved_file_dialog-save_all_button=Uložit vše
 ask_unsaved_file_dialog-dont_save_button=Neukládat
+
+# Save Changes Dialog (single file)
+save-changes-title=Uložit změny v "{ $filename }"?
+save-changes-description=Vaše změny budou ztraceny, pokud je neuložíte.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Razítko (S)
+paste-tool-rotate=Otočit (R)
+paste-tool-flip-x=Překlopit X
+paste-tool-flip-y=Překlopit Y
+paste-tool-transparent=Průhledné (T)
+paste-tool-hint=Enter: Ukotvit | Esc: Zrušit | Šipky: Přesunout

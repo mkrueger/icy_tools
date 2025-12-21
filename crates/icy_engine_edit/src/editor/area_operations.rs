@@ -162,21 +162,7 @@ impl EditState {
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
-            let max = area.width() / 2;
-
-            for y in area.y_range() {
-                for x in 0..max {
-                    let pos1 = Position::new(area.left() + x, y);
-                    let pos2 = Position::new(area.right() - x - 1, y);
-
-                    let pos1ch = layer.char_at(pos1);
-                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
-                    let pos2ch = layer.char_at(pos2);
-                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
-                    layer.set_char(pos1, pos2ch);
-                    layer.set_char(pos2, pos1ch);
-                }
-            }
+            flip_layer_x(layer, area, &flip_tables);
             let new_layer = crate::layer_from_area(layer, area);
             let op = EditorUndoOp::LayerChange {
                 layer: self.get_current_layer()?,
@@ -191,7 +177,7 @@ impl EditState {
     }
 
     pub fn flip_y(&mut self) -> Result<()> {
-        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-y"));
         let sel = self.selection();
 
         let mut flip_tables = HashMap::new();
@@ -203,20 +189,7 @@ impl EditState {
         if let Some(layer) = self.get_cur_layer_mut() {
             let area = get_area(sel, layer.rectangle());
             let old_layer = crate::layer_from_area(layer, area);
-            let max = area.height() / 2;
-
-            for x in area.x_range() {
-                for y in 0..max {
-                    let pos1 = Position::new(x, area.top() + y);
-                    let pos2 = Position::new(x, area.bottom() - 1 - y);
-                    let pos1ch = layer.char_at(pos1);
-                    let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
-                    let pos2ch = layer.char_at(pos2);
-                    let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
-                    layer.set_char(pos1, pos2ch);
-                    layer.set_char(pos2, pos1ch);
-                }
-            }
+            flip_layer_y(layer, area, &flip_tables);
             let new_layer = crate::layer_from_area(layer, area);
             let op = EditorUndoOp::LayerChange {
                 layer: self.get_current_layer()?,
@@ -737,6 +710,43 @@ pub fn map_char(mut ch: AttributedChar, table: &BTreeMap<char, (bool, char)>) ->
         }
     }
     ch
+}
+
+/// Flip a layer horizontally in-place within the given area.
+/// This is the shared implementation used by both `flip_x` and `paste_flip_x`.
+pub(crate) fn flip_layer_x(layer: &mut crate::Layer, area: Rectangle, flip_tables: &HashMap<u8, BTreeMap<char, (bool, char)>>) {
+    let max = area.width() / 2;
+    for y in area.y_range() {
+        for x in 0..max {
+            let pos1 = Position::new(area.left() + x, y);
+            let pos2 = Position::new(area.right() - x - 1, y);
+
+            let pos1ch = layer.char_at(pos1);
+            let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+            let pos2ch = layer.char_at(pos2);
+            let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
+            layer.set_char(pos1, pos2ch);
+            layer.set_char(pos2, pos1ch);
+        }
+    }
+}
+
+/// Flip a layer vertically in-place within the given area.
+/// This is the shared implementation used by both `flip_y` and `paste_flip_y`.
+pub(crate) fn flip_layer_y(layer: &mut crate::Layer, area: Rectangle, flip_tables: &HashMap<u8, BTreeMap<char, (bool, char)>>) {
+    let max = area.height() / 2;
+    for x in area.x_range() {
+        for y in 0..max {
+            let pos1 = Position::new(x, area.top() + y);
+            let pos2 = Position::new(x, area.bottom() - 1 - y);
+            let pos1ch = layer.char_at(pos1);
+            let pos1ch = map_char(pos1ch, flip_tables.get(&pos1ch.font_page()).unwrap());
+            let pos2ch = layer.char_at(pos2);
+            let pos2ch = map_char(pos2ch, flip_tables.get(&pos2ch.font_page()).unwrap());
+            layer.set_char(pos1, pos2ch);
+            layer.set_char(pos2, pos1ch);
+        }
+    }
 }
 
 fn negate_glyphs(flipped_glyhps: &[Vec<Vec<bool>>]) -> Vec<Vec<Vec<bool>>> {

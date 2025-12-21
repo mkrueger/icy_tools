@@ -567,3 +567,15 @@ ask_unsaved_file_dialog-description=Deseja salvar as alterações nos seguintes 
 ask_unsaved_file_dialog-subdescription=Suas alterações serão perdidas se você não salvar.
 ask_unsaved_file_dialog-save_all_button=Salvar Tudo
 ask_unsaved_file_dialog-dont_save_button=Não Salvar
+
+# Save Changes Dialog (single file)
+save-changes-title=Salvar alterações em "{ $filename }"?
+save-changes-description=Suas alterações serão perdidas se você não salvá-las.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Carimbar (S)
+paste-tool-rotate=Girar (R)
+paste-tool-flip-x=Espelhar X
+paste-tool-flip-y=Espelhar Y
+paste-tool-transparent=Transparente (T)
+paste-tool-hint=Enter: Ancorar | Esc: Cancelar | Setas: Mover

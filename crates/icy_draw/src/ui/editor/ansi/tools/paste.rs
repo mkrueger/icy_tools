@@ -6,6 +6,7 @@
 //! - Keyboard shortcuts for layer manipulation (rotate, flip, stamp, anchor, cancel)
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
+use crate::fl;
 use clipboard_rs::Clipboard;
 use clipboard_rs::ContentFormat;
 use clipboard_rs::common::RustImage;
@@ -68,7 +69,7 @@ impl PasteTool {
         } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
             log::debug!("paste: Using image data");
 
-            let mut sixel = Sixel::new(Position::default());
+            let mut sixel: Sixel = Sixel::new(Position::default());
             sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
             let (w, h) = img.get_size();
             sixel.set_width(w as i32);
@@ -225,10 +226,11 @@ impl PasteTool {
                 self.abort();
                 state.set_layer_preview_offset(None);
 
-                // Discard the atomic undo group - this removes all paste operations
-                // (paste, move, rotate, flip, etc.) from the undo stack without committing.
+                // Discard AND undo all operations in the atomic group.
+                // This properly reverts all paste operations (layer insertion, moves, rotations, etc.)
+                // by executing their undo functions, not just removing them from the stack.
                 if let Some(ref mut guard) = self.paste_undo {
-                    guard.discard();
+                    guard.discard_and_undo(state);
                 }
 
                 self.active = false;
@@ -427,23 +429,24 @@ impl ToolHandler for PasteTool {
             }
         }
 
-        fn paste_icon_btn(icon: &'static str, tooltip_text: &'static str, msg: ToolMessage) -> Element<'static, ToolMessage> {
+        fn paste_icon_btn(icon: &'static str, tooltip_text: String, msg: ToolMessage) -> Element<'static, ToolMessage> {
             tooltip(
                 button(text(icon).size(16)).padding([4, 8]).on_press(msg).style(icon_btn_style),
-                tooltip_text,
+                text(tooltip_text),
                 tooltip::Position::Bottom,
             )
             .into()
         }
 
+        let hint_text = fl!("paste-tool-hint");
         let content = row![
-            paste_icon_btn("⌗", "Stamp (S)", ToolMessage::PasteStamp),
-            paste_icon_btn("↻", "Rotate (R)", ToolMessage::PasteRotate),
-            paste_icon_btn("⇆", "Flip X", ToolMessage::PasteFlipX),
-            paste_icon_btn("⇅", "Flip Y", ToolMessage::PasteFlipY),
-            paste_icon_btn("◐", "Transparent (T)", ToolMessage::PasteToggleTransparent),
+            paste_icon_btn("⌗", fl!("paste-tool-stamp"), ToolMessage::PasteStamp),
+            paste_icon_btn("↻", fl!("paste-tool-rotate"), ToolMessage::PasteRotate),
+            paste_icon_btn("⇆", fl!("paste-tool-flip-x"), ToolMessage::PasteFlipX),
+            paste_icon_btn("⇅", fl!("paste-tool-flip-y"), ToolMessage::PasteFlipY),
+            paste_icon_btn("◐", fl!("paste-tool-transparent"), ToolMessage::PasteToggleTransparent),
             Space::new().width(Length::Fill),
-            text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
+            text(hint_text).size(12).style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().secondary.base.color),
             }),
         ]

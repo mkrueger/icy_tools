@@ -294,7 +294,18 @@ impl DrawContext {
         let current_ch = current.map(|c| c.ch).unwrap_or(' ');
 
         // Find current shade level (-1 = empty/space, 0-3 = shade gradient)
-        let mut level = SHADE_GRADIENT.iter().position(|&c| c == current_ch).map(|i| i as i32).unwrap_or(-1); // -1 represents empty/space
+        let shade_level = SHADE_GRADIENT.iter().position(|&c| c == current_ch).map(|i| i as i32);
+        let is_empty_or_space = current_ch == ' ' || current_ch == '\0';
+
+        // Moebius-style behavior:
+        // - Shade up: Always works, converts any char to shade gradient
+        // - Shade down (reduce): Only affects shade chars and empty space, leaves other chars untouched
+        if !up && shade_level.is_none() && !is_empty_or_space {
+            // ShadeDown on a non-shade character: do nothing (Moebius behavior)
+            return;
+        }
+
+        let mut level = shade_level.unwrap_or(-1); // -1 represents empty/space
 
         // Adjust shade level
         if up {

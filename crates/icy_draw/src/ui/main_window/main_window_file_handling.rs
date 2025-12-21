@@ -160,11 +160,11 @@ impl MainWindow {
                 .file_path()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Untitled".to_string());
+                .unwrap_or_else(|| fl!("unsaved-title"));
 
             self.dialogs.push(confirm_yes_no_cancel(
-                format!("Save changes to \"{}\"?", filename),
-                "Your changes will be lost if you don't save them.",
+                fl!("save-changes-title", filename = filename),
+                fl!("save-changes-description"),
                 |result| match result {
                     DialogResult::Yes => Message::SaveAndCloseFile,
                     DialogResult::No => Message::ForceCloseFile,
@@ -209,13 +209,13 @@ impl MainWindow {
                 .file_path()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Untitled".to_string());
+                .unwrap_or_else(|| fl!("unsaved-title"));
 
             self.pending_open_path = Some(Some(PathBuf::new()));
 
             self.dialogs.push(confirm_yes_no_cancel(
-                format!("Save changes to \"{}\"?", filename),
-                "Your changes will be lost if you don't save them.",
+                fl!("save-changes-title", filename = filename),
+                fl!("save-changes-description"),
                 |result| match result {
                     DialogResult::Yes => Message::SaveFile,
                     DialogResult::No => Message::ForceShowOpenDialog,
@@ -263,12 +263,12 @@ impl MainWindow {
                 .file_path()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Untitled".to_string());
+                .unwrap_or_else(|| fl!("unsaved-title"));
 
             let open_path = path.clone();
             self.dialogs.push(confirm_yes_no_cancel(
-                format!("Save changes to \"{}\"?", filename),
-                "Your changes will be lost if you don't save them.",
+                fl!("save-changes-title", filename = filename),
+                fl!("save-changes-description"),
                 move |result| match result {
                     DialogResult::Yes => Message::SaveAndOpenFile(open_path.clone()),
                     DialogResult::No => Message::ForceOpenFile(open_path.clone()),

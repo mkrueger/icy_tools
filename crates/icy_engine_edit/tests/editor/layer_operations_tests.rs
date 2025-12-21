@@ -349,3 +349,98 @@ fn test_update_layer_properties() {
     assert!(!state.get_buffer().layers[0].properties.is_visible);
     assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
 }
+
+// ============================================================================
+// Paste Cancel Tests
+// ============================================================================
+
+/// Test that discard_and_undo properly reverts a paste operation by removing the pasted layer.
+#[test]
+fn test_discard_and_undo_removes_pasted_layer() {
+    let mut state = create_test_state(20, 10);
+
+    // Initial state: 1 layer
+    let initial_layer_count = state.get_buffer().layers.len();
+    assert_eq!(initial_layer_count, 1);
+
+    // Simulate paste: add a layer manually and use discard_and_undo
+    {
+        let mut guard = state.begin_atomic_undo("Paste");
+
+        // Use paste_text which uses the public API
+        state.paste_text("Test").unwrap();
+
+        // Verify paste layer was added
+        assert_eq!(state.get_buffer().layers.len(), 2, "Paste should add a layer");
+        assert_eq!(state.get_current_layer().unwrap(), 1, "Current layer should be the pasted one");
+
+        // Use discard_and_undo to properly revert all operations
+        guard.discard_and_undo(&mut state);
+    }
+
+    // After discard_and_undo: the pasted layer should be removed
+    assert_eq!(
+        state.get_buffer().layers.len(),
+        initial_layer_count,
+        "Pasted layer should be removed after discard_and_undo"
+    );
+}
+
+/// Test that discard_and_undo restores the current layer index after paste cancel.
+#[test]
+fn test_discard_and_undo_restores_current_layer() {
+    let mut state = create_test_state(20, 10);
+
+    // Start on layer 0
+    state.set_current_layer(0);
+    let initial_layer = state.get_current_layer().unwrap();
+    assert_eq!(initial_layer, 0);
+
+    // Simulate paste and discard
+    {
+        let mut guard = state.begin_atomic_undo("Paste");
+
+        // Use paste_text which uses the public API
+        state.paste_text("Test").unwrap();
+
+        // Verify we're on the new layer
+        assert_eq!(state.get_current_layer().unwrap(), 1);
+
+        // Use discard_and_undo
+        guard.discard_and_undo(&mut state);
+    }
+
+    // Current layer should be restored to 0
+    assert_eq!(
+        state.get_current_layer().unwrap(),
+        initial_layer,
+        "Current layer should be restored after discard_and_undo"
+    );
+}
+
+/// Test that discard_and_undo reverts multiple operations (paste + move).
+#[test]
+fn test_discard_and_undo_reverts_multiple_operations() {
+    let mut state = create_test_state(20, 10);
+
+    let initial_layer_count = state.get_buffer().layers.len();
+
+    {
+        let mut guard = state.begin_atomic_undo("Paste");
+
+        // Paste a layer using public API
+        state.paste_text("Test").unwrap();
+
+        // Move the pasted layer
+        state.move_layer(Position::new(10, 5)).unwrap();
+
+        // Verify the layer is at the new position
+        assert_eq!(state.get_buffer().layers[1].offset(), Position::new(10, 5));
+
+        // Discard and undo all operations
+        guard.discard_and_undo(&mut state);
+    }
+
+    // Everything should be reverted
+    assert_eq!(state.get_buffer().layers.len(), initial_layer_count, "All operations should be reverted");
+}

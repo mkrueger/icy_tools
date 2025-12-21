@@ -566,3 +566,15 @@ ask_unsaved_file_dialog-description=Voulez-vous enregistrer les modifications ap
 ask_unsaved_file_dialog-subdescription=Vos modifications seront perdues si vous ne les enregistrez pas.
 ask_unsaved_file_dialog-save_all_button=Tout enregistrer
 ask_unsaved_file_dialog-dont_save_button=Ne pas enregistrer
+
+# Save Changes Dialog (single file)
+save-changes-title=Enregistrer les modifications dans "{ $filename }" ?
+save-changes-description=Vos modifications seront perdues si vous ne les enregistrez pas.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Tamponner (S)
+paste-tool-rotate=Pivoter (R)
+paste-tool-flip-x=Retourner X
+paste-tool-flip-y=Retourner Y
+paste-tool-transparent=Transparent (T)
+paste-tool-hint=Entrée: Ancrer | Échap: Annuler | Flèches: Déplacer

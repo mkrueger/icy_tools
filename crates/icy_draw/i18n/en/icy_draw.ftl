@@ -872,6 +872,18 @@ ask_unsaved_file_dialog-subdescription=Your changes will be lost if you don't sa
 ask_unsaved_file_dialog-save_all_button=Save All
 ask_unsaved_file_dialog-dont_save_button=Don't Save
 
+# Save Changes Dialog (single file)
+save-changes-title=Save changes to "{ $filename }"?
+save-changes-description=Your changes will be lost if you don't save them.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Stamp (S)
+paste-tool-rotate=Rotate (R)
+paste-tool-flip-x=Flip X
+paste-tool-flip-y=Flip Y
+paste-tool-transparent=Transparent (T)
+paste-tool-hint=Enter: Anchor | Esc: Cancel | Arrows: Move
+
 # Font Import Dialog
 menu-import-font=Import Font…
 font-import-file=Import File

@@ -564,3 +564,15 @@ ask_unsaved_file_dialog-description=Szeretné menteni a módosításokat a köve
 ask_unsaved_file_dialog-subdescription=A módosítások elvesznek, ha nem menti őket.
 ask_unsaved_file_dialog-save_all_button=Összes mentése
 ask_unsaved_file_dialog-dont_save_button=Ne mentse
+
+# Save Changes Dialog (single file)
+save-changes-title=Menti a változtatásokat a(z) "{ $filename }" fájlban?
+save-changes-description=A módosítások elvesznek, ha nem menti őket.
+
+# Paste Tool Toolbar
+paste-tool-stamp=Bélyegző (S)
+paste-tool-rotate=Forgatás (R)
+paste-tool-flip-x=X tükrözés
+paste-tool-flip-y=Y tükrözés
+paste-tool-transparent=Átlátszó (T)
+paste-tool-hint=Enter: Rögzít | Esc: Mégse | Nyilak: Mozgatás

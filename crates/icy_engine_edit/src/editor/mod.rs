@@ -17,7 +17,7 @@ mod terminal_input;
 mod layer_operations;
 pub use layer_operations::*;
 mod area_operations;
-pub(crate) use area_operations::{generate_flipx_table, generate_flipy_table, map_char};
+pub(crate) use area_operations::{flip_layer_x, flip_layer_y, generate_flipx_table, generate_flipy_table};
 mod edit_operations;
 mod font_operations;
 mod selection_operations;
@@ -192,6 +192,9 @@ impl AtomicUndoGuard {
 
     /// Discard all operations in this atomic group without committing them.
     /// The operations are removed from the undo stack and the guard is marked as ended.
+    ///
+    /// NOTE: This only removes operations from the stack, it does NOT undo the actual
+    /// buffer changes. For paste operations, use `discard_and_undo()` instead.
     pub fn discard(&mut self) {
         if self.ended {
             return;
@@ -201,6 +204,32 @@ impl AtomicUndoGuard {
         while stack.undo_len() > self.base_count {
             stack.pop_undo();
         }
+        self.ended = true;
+    }
+
+    /// Discard all operations in this atomic group AND undo them.
+    /// This properly reverts all buffer changes made since the guard was created.
+    ///
+    /// Use this for operations like paste cancel where you need to undo the actual
+    /// changes (e.g., remove the pasted layer) not just clear the undo stack.
+    pub fn discard_and_undo(&mut self, edit_state: &mut super::EditState) {
+        if self.ended {
+            return;
+        }
+
+        let mut stack = self.undo_stack.lock().unwrap();
+        // Pop and undo all operations pushed since base_count (in reverse order)
+        while stack.undo_len() > self.base_count {
+            if let Some(mut op) = stack.pop_undo() {
+                // Need to drop the lock before calling undo to avoid deadlock
+                drop(stack);
+                if let Err(e) = op.undo(edit_state) {
+                    log::warn!("Failed to undo operation during discard: {}", e);
+                }
+                stack = self.undo_stack.lock().unwrap();
+            }
+        }
+        edit_state.mark_dirty();
         self.ended = true;
     }
 

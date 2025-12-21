@@ -100,3 +100,125 @@ fn test_mirror_horizontal() {
     assert_eq!(target.get_at(10, 5).ch, HALF_BLOCKS.full);
     assert_eq!(target.get_at(69, 5).ch, HALF_BLOCKS.full);
 }
+
+// =============================================================================
+// ShadeDown tests - verifying Moebius-style behavior
+// =============================================================================
+
+/// Test that ShadeDown reduces shade characters step by step
+#[test]
+fn test_shade_down_reduces_shade_chars() {
+    let mut target = TestTarget::new(80, 25);
+    let ctx = DrawContext::default().with_brush_mode(BrushMode::ShadeDown);
+    let pos = Position::new(10, 5);
+
+    // Start with full block (219 / SHADE_GRADIENT[3])
+    target.set_char(pos, AttributedChar::new(SHADE_GRADIENT[3], TextAttribute::default()));
+
+    // First stroke: full block -> dark shade
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[2], "Full block should reduce to dark shade");
+
+    // Second stroke: dark shade -> medium shade
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[1], "Dark shade should reduce to medium shade");
+
+    // Third stroke: medium shade -> light shade
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(10, 5).ch, SHADE_GRADIENT[0], "Medium shade should reduce to light shade");
+
+    // Fourth stroke: light shade -> empty space
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(10, 5).ch, ' ', "Light shade should reduce to empty space");
+}
+
+/// Test that ShadeDown does NOT affect normal characters (Moebius behavior)
+/// This is the key difference from the current behavior:
+/// In Moebius, right-click with shade tool only affects shade chars (176, 177, 178, 219),
+/// leaving all other characters untouched.
+#[test]
+fn test_shade_down_ignores_non_shade_chars() {
+    let mut target = TestTarget::new(80, 25);
+    let ctx = DrawContext::default().with_brush_mode(BrushMode::ShadeDown);
+    let pos = Position::new(10, 5);
+
+    // Set a normal character (letter 'A')
+    target.set_char(pos, AttributedChar::new('A', TextAttribute::default()));
+
+    // Apply ShadeDown - should NOT change the character
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+
+    // Character should remain 'A' (Moebius behavior)
+    assert_eq!(target.get_at(10, 5).ch, 'A', "ShadeDown should not affect non-shade characters");
+}
+
+/// Test that ShadeDown ignores various non-shade characters
+#[test]
+fn test_shade_down_ignores_various_chars() {
+    let mut target = TestTarget::new(80, 25);
+    let ctx = DrawContext::default().with_brush_mode(BrushMode::ShadeDown);
+
+    // Test various non-shade characters
+    let test_chars = ['A', 'Z', '0', '!', '#', '\u{00C4}', '\u{00DC}']; // Various CP437 chars
+
+    for (i, ch) in test_chars.iter().enumerate() {
+        let pos = Position::new(i as i32, 0);
+        target.set_char(pos, AttributedChar::new(*ch, TextAttribute::default()));
+
+        // Apply ShadeDown
+        ctx.plot_point(&mut target, pos, PointRole::Fill);
+
+        // Character should remain unchanged
+        assert_eq!(target.get_at(i as i32, 0).ch, *ch, "ShadeDown should not affect character {:?}", ch);
+    }
+}
+
+/// Test that ShadeDown correctly identifies shade characters
+#[test]
+fn test_shade_down_recognizes_all_shade_chars() {
+    let mut target = TestTarget::new(80, 25);
+    let ctx = DrawContext::default().with_brush_mode(BrushMode::ShadeDown);
+
+    // Test each shade character reduces correctly
+    for (i, shade_char) in SHADE_GRADIENT.iter().enumerate() {
+        let pos = Position::new(i as i32, 0);
+        target.set_char(pos, AttributedChar::new(*shade_char, TextAttribute::default()));
+
+        // Apply ShadeDown
+        ctx.plot_point(&mut target, pos, PointRole::Fill);
+
+        // Should reduce by one level
+        let expected = if i == 0 {
+            ' ' // Light shade becomes empty
+        } else {
+            SHADE_GRADIENT[i - 1]
+        };
+        assert_eq!(
+            target.get_at(i as i32, 0).ch,
+            expected,
+            "Shade char {:?} at level {} should reduce to {:?}",
+            shade_char,
+            i,
+            expected
+        );
+    }
+}
+
+/// Test that empty space is not further affected by ShadeDown
+#[test]
+fn test_shade_down_on_empty_space() {
+    let mut target = TestTarget::new(80, 25);
+    let ctx = DrawContext::default().with_brush_mode(BrushMode::ShadeDown);
+    let pos = Position::new(10, 5);
+
+    // Target starts with empty space by default
+    assert_eq!(target.get_at(10, 5).ch, ' ');
+
+    // Apply ShadeDown multiple times
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+    ctx.plot_point(&mut target, pos, PointRole::Fill);
+
+    // Should still be empty space
+    assert_eq!(target.get_at(10, 5).ch, ' ', "Empty space should remain empty");
+}
