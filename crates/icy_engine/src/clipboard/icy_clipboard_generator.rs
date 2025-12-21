@@ -1,4 +1,4 @@
-use crate::{AttributedChar, BufferType, Layer, Position, Role, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
+use crate::{AttributedChar, BufferType, Layer, Position, Selection, SelectionMask, TextAttribute, TextBuffer, TextPane};
 pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
 pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &SelectionMask, selection: &Option<Selection>) -> Option<Vec<u8>> {

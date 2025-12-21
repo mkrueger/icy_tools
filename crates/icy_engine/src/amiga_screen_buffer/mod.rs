@@ -4,9 +4,9 @@ pub mod sky_paint;
 pub mod skypix_impl;
 
 use crate::{
-    AnsiSaveOptionsV2, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette,
-    Position, Rectangle, RenderOptions, Result, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt,
-    TerminalState, TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
+    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
+    TextPane,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     igs, limits,
     rip_impl::RIP_SCREEN_SIZE,
@@ -446,7 +446,7 @@ impl Screen for AmigaScreenBuffer {
         &self.mouse_fields
     }
 
-    fn to_bytes(&mut self, _file_name: &str, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, _file_name: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
         // Return empty for now, could implement PNG export later
         Ok(Vec::new())
     }
@@ -586,7 +586,7 @@ impl EditableScreen for AmigaScreenBuffer {
         if self.caret.insert_mode {
             self.ins();
         }
-        let mut pos = self.caret.position();
+        let pos = self.caret.position();
 
         if self.render_char_to_buffer(pos, ch).is_some() {
             let advance_width = font_size.width;

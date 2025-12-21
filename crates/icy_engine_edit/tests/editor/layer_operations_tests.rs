@@ -1,6 +1,6 @@
 //! Tests for layer operations (add, remove, raise, lower, duplicate, merge, etc.)
 
-use icy_engine::{AttributedChar, Position, Properties, Size, TextAttribute, TextPane};
+use icy_engine::{AttributedChar, LayerProperties, Position, Size, TextAttribute, TextPane};
 use icy_engine_edit::EditState;
 
 /// Helper to create an EditState with a given size
@@ -337,7 +337,7 @@ fn test_make_layer_transparent_clears_transparent_chars() {
 fn test_update_layer_properties() {
     let mut state = create_test_state(20, 10);
 
-    let mut new_props = Properties::default();
+    let mut new_props = LayerProperties::default();
     new_props.title = "New Layer Name".to_string();
     new_props.is_visible = false;
 

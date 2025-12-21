@@ -1,8 +1,8 @@
 use crate::{EditableScreen, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{AnsiSaveOptionsV2, LoadData};
+use super::super::{LoadData, SaveOptions};
 
-pub(crate) fn save_renegade(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let _ = options;
     if buf.palette.len() != 16 {
         return Err(crate::EngineError::Only16ColorPalettesSupported);

@@ -1,8 +1,8 @@
-use icy_engine::{AnsiSaveOptionsV2, AttributedChar, Color, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
+use icy_engine::{AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
 
 fn test_ansi(data: &[u8]) {
     let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().screen.buffer;
-    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &AnsiSaveOptionsV2::new()).unwrap();
+    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
     let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
@@ -82,7 +82,7 @@ fn test_first_char_color() {
 fn test_ansi_ice(data: &[u8]) {
     let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().screen.buffer;
     buf.ice_mode = icy_engine::IceMode::Ice;
-    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &AnsiSaveOptionsV2::new()).unwrap();
+    let converted: Vec<u8> = FileFormat::Ansi.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
     // more gentle output.
     let b: Vec<u8> = converted.iter().map(|&x| if x == 27 { b'x' } else { x }).collect();
     let converted: std::borrow::Cow<'_, str> = String::from_utf8_lossy(b.as_slice());
@@ -112,7 +112,7 @@ fn test_palette_color_bug() {
         },
     );
 
-    let bytes = FileFormat::Ansi.to_bytes(&buf, &AnsiSaveOptionsV2::default()).unwrap();
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let str = String::from_utf8_lossy(&bytes).to_string();
 
     assert_eq!(" \u{1b}[1;211;211;211tA ", str);

@@ -221,7 +221,7 @@ impl AnsiEditorMainArea {
             let format = FileFormat::IcyDraw;
             let buffer = edit_state.get_buffer();
             // Skip thumbnail generation for faster autosave
-            let mut options = icy_engine::AnsiSaveOptionsV2::default();
+            let mut options = icy_engine::SaveOptions::default();
             options.skip_thumbnail = true;
             format.to_bytes(buffer, &options).map_err(|e| e.to_string())
         } else {
@@ -720,7 +720,6 @@ impl AnsiEditorMainArea {
                 offset_y: layer.offset().y,
                 width,
                 height,
-                transparency: layer.transparency,
                 mode: format!("{:?}", layer.properties.mode),
                 role: format!("{:?}", layer.role),
                 chars,
@@ -867,7 +866,7 @@ impl AnsiEditorMainArea {
                     Ok(out)
                 }
                 crate::mcp::types::AnsiScreenFormat::Ansi => {
-                    let options = icy_engine::AnsiSaveOptionsV2::default();
+                    let options = icy_engine::SaveOptions::default();
                     let bytes = FileFormat::Ansi.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
 
                     // Convert CP437 bytes to Unicode while preserving control codes and ESC sequences.
@@ -938,7 +937,6 @@ impl AnsiEditorMainArea {
                         offset_y: layer.offset().y,
                         width: size.width,
                         height: size.height,
-                        transparency: layer.transparency,
                         mode: format!("{:?}", layer.properties.mode),
                         role: format!("{:?}", layer.role),
                     }
@@ -1004,13 +1002,6 @@ impl AnsiEditorMainArea {
 
             if let Err(e) = state.update_layer_properties(req.layer, props) {
                 log::error!("MCP update_layer_properties failed: {}", e);
-            }
-
-            if let Some(transparency) = req.transparency {
-                // Not currently undo-tracked, but requested by MCP API.
-                if let Some(layer_mut) = state.get_buffer_mut().layers.get_mut(req.layer) {
-                    layer_mut.transparency = transparency;
-                }
             }
         });
         self.sync_ui();
@@ -1361,10 +1352,6 @@ impl AnsiEditorMainArea {
             AnsiEditorMessage::InverseSelection => {
                 let _ = self.with_edit_state(|state| state.inverse_selection());
                 self.refresh_selection_display();
-                Task::none()
-            }
-            AnsiEditorMessage::PasteAsNewImage => {
-                // TODO: implement paste as new image
                 Task::none()
             }
             AnsiEditorMessage::ExportFile => {

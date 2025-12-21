@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crc32fast::Hasher;
-use icy_engine::{AnsiSaveOptionsV2, Screen, formats::FileFormat};
+use icy_engine::{SaveOptions, Screen, formats::FileFormat};
 use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 
@@ -96,7 +96,7 @@ fn main() {
                     let animator = Animator::run(&parent, txt);
                     animator.lock().set_is_playing(true);
 
-                    let mut opt: AnsiSaveOptionsV2 = AnsiSaveOptionsV2::default();
+                    let mut opt: SaveOptions = SaveOptions::default();
                     if args.utf8 {
                         opt.modern_terminal_output = true;
                     }
@@ -182,7 +182,7 @@ fn show_buffer(
     terminal: &Terminal,
     skip_lines: Vec<usize>,
 ) -> anyhow::Result<()> {
-    let mut opt: AnsiSaveOptionsV2 = AnsiSaveOptionsV2::default();
+    let mut opt: SaveOptions = SaveOptions::default();
     if cli.utf8 {
         opt.modern_terminal_output = true;
     }

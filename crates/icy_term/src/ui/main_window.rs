@@ -1002,7 +1002,7 @@ impl MainWindow {
                         // Capture the current screen in the requested format
                         let data = {
                             let mut screen = self.terminal_window.terminal.screen.lock();
-                            let mut opt = icy_engine::AnsiSaveOptionsV2::default();
+                            let mut opt = icy_engine::SaveOptions::default();
                             opt.modern_terminal_output = true;
                             match format {
                                 ScreenCaptureFormat::Text => screen.to_bytes("asc", &opt).unwrap_or_default(),

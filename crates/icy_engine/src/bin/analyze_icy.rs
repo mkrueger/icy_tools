@@ -1,5 +1,5 @@
 use icy_engine::TextPane;
-use icy_engine::formats::{AnsiSaveOptionsV2, FileFormat};
+use icy_engine::formats::{FileFormat, SaveOptions};
 use std::fs;
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
     );
 
     // Save it back using the new format (V1 with icYD chunks)
-    let options = AnsiSaveOptionsV2::default();
+    let options = SaveOptions::default();
     let saved_data = FileFormat::IcyDraw.to_bytes(&loaded.screen.buffer, &options).expect("Failed to save .icy file");
     println!("Saved file size: {} bytes", saved_data.len());
 

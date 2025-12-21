@@ -29,19 +29,22 @@ impl VdiPaint {
         let (metrics, font) = load_atari_font(self.text_size);
         let is_outlined = self.text_effects.contains(TextEffects::OUTLINED);
         let outline_thickness = if is_outlined { 1 } else { 0 };
+        let scale = metrics.scale;
 
         let mut pos = pos;
 
         let color = self.text_color;
         let bg_color = 0;
         let font_size = font.size();
+        // Effective size after scaling
+        let scaled_size = Size::new(font_size.width * scale, font_size.height * scale);
 
         match self.text_rotation {
             TextRotation::Degrees90 => {
-                pos.y -= font_size.height - 1;
+                pos.y -= scaled_size.height - 1;
             }
             TextRotation::Degrees180 => {
-                pos.x -= font_size.width - 1;
+                pos.x -= scaled_size.width - 1;
             }
             _ => {}
         }
@@ -57,11 +60,18 @@ impl VdiPaint {
                         let pixel_set = glyph.get_pixel(x as usize, y as usize);
                         draw_mask = draw_mask.rotate_left(1);
                         if pixel_set && (1 & draw_mask) != 0 {
-                            let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
-                            for dy in -1..=1 {
-                                for dx in -1..=1 {
-                                    let p = pos + Position::new(rx + dx, ry + dy);
-                                    self.set_pixel(screen, p.x, p.y, color);
+                            // Draw scaled pixel with outline
+                            for sy in 0..scale {
+                                for sx in 0..scale {
+                                    let scaled_x = x * scale + sx;
+                                    let scaled_y = y * scale + sy;
+                                    let (rx, ry) = self.apply_rotation(scaled_x, scaled_y, scaled_size, 0, metrics.y_off);
+                                    for dy in -1..=1 {
+                                        for dx in -1..=1 {
+                                            let p = pos + Position::new(rx + dx, ry + dy);
+                                            self.set_pixel(screen, p.x, p.y, color);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -74,9 +84,16 @@ impl VdiPaint {
                         draw_mask = draw_mask.rotate_left(1);
 
                         if pixel_set && (1 & draw_mask) != 0 {
-                            let (rx, ry) = self.apply_rotation(x, y, font_size, 0, metrics.y_off);
-                            let p = pos + Position::new(rx, ry);
-                            self.set_pixel(screen, p.x, p.y, bg_color);
+                            // Draw scaled pixel (inner part of outline)
+                            for sy in 0..scale {
+                                for sx in 0..scale {
+                                    let scaled_x = x * scale + sx;
+                                    let scaled_y = y * scale + sy;
+                                    let (rx, ry) = self.apply_rotation(scaled_x, scaled_y, scaled_size, 0, metrics.y_off);
+                                    let p = pos + Position::new(rx, ry);
+                                    self.set_pixel(screen, p.x, p.y, bg_color);
+                                }
+                            }
                         }
                     }
                 }
@@ -88,36 +105,43 @@ impl VdiPaint {
                         let pixel_set = glyph.get_pixel(x as usize, y as usize);
                         if pixel_set {
                             if 1 & draw_mask != 0 {
-                                let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
-                                    (font_size.height - 1 - y) / 2 - (y % 2)
-                                } else {
-                                    0
-                                };
+                                // Draw scaled pixel
+                                for sy in 0..scale {
+                                    for sx in 0..scale {
+                                        let scaled_x = x * scale + sx;
+                                        let scaled_y = y * scale + sy;
+                                        let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
+                                            (scaled_size.height - 1 - scaled_y) / 2 - (scaled_y % 2)
+                                        } else {
+                                            0
+                                        };
 
-                                let (rx, ry) = self.apply_rotation(x, y, font_size, skew_offset, metrics.y_off);
-                                let p = pos + Position::new(rx, ry);
-                                self.set_pixel(screen, p.x, p.y, color);
+                                        let (rx, ry) = self.apply_rotation(scaled_x, scaled_y, scaled_size, skew_offset, metrics.y_off);
+                                        let p = pos + Position::new(rx, ry);
+                                        self.set_pixel(screen, p.x, p.y, color);
 
-                                if self.text_effects.contains(TextEffects::THICKENED) {
-                                    match self.text_rotation {
-                                        TextRotation::Degrees0 => {
-                                            for t in 1..=metrics.thicken {
-                                                self.set_pixel(screen, p.x + t, p.y, color);
-                                            }
-                                        }
-                                        TextRotation::Degrees90 => {
-                                            for t in 1..=metrics.thicken {
-                                                self.set_pixel(screen, p.x, p.y - t, color);
-                                            }
-                                        }
-                                        TextRotation::Degrees180 => {
-                                            for t in 1..=metrics.thicken {
-                                                self.set_pixel(screen, p.x - t, p.y, color);
-                                            }
-                                        }
-                                        TextRotation::Degrees270 => {
-                                            for t in 1..=metrics.thicken {
-                                                self.set_pixel(screen, p.x, p.y + t, color);
+                                        if self.text_effects.contains(TextEffects::THICKENED) {
+                                            match self.text_rotation {
+                                                TextRotation::Degrees0 => {
+                                                    for t in 1..=metrics.thicken {
+                                                        self.set_pixel(screen, p.x + t, p.y, color);
+                                                    }
+                                                }
+                                                TextRotation::Degrees90 => {
+                                                    for t in 1..=metrics.thicken {
+                                                        self.set_pixel(screen, p.x, p.y - t, color);
+                                                    }
+                                                }
+                                                TextRotation::Degrees180 => {
+                                                    for t in 1..=metrics.thicken {
+                                                        self.set_pixel(screen, p.x - t, p.y, color);
+                                                    }
+                                                }
+                                                TextRotation::Degrees270 => {
+                                                    for t in 1..=metrics.thicken {
+                                                        self.set_pixel(screen, p.x, p.y + t, color);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -143,12 +167,12 @@ impl VdiPaint {
                         if 1 & underline_mask != 0 {
                             let underline_y = metrics.underline_pos + y2;
                             let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
-                                (font_size.height - 1 - underline_y) / 2 - (underline_y % 2)
+                                (scaled_size.height - 1 - underline_y) / 2 - (underline_y % 2)
                             } else {
                                 0
                             };
 
-                            let (rx, ry) = self.apply_underline_rotation(x, underline_y, font_size, skew_offset, metrics.y_off);
+                            let (rx, ry) = self.apply_underline_rotation(x, underline_y, scaled_size, skew_offset, metrics.y_off);
                             let p = pos + Position::new(rx, ry);
                             self.set_pixel(screen, p.x, p.y, color);
                         }
@@ -157,9 +181,9 @@ impl VdiPaint {
             }
 
             let base_width = if is_outlined {
-                font_size.width + 2 * outline_thickness
+                scaled_size.width + 2 * outline_thickness
             } else {
-                font_size.width
+                scaled_size.width
             };
 
             let char_width = base_width;

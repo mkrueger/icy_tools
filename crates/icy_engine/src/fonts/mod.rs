@@ -329,52 +329,6 @@ impl BitFont {
         Err(FontError::UnknownFontFormat(data.len()).into())
     }
 
-    /// Double the size of this font by doubling each pixel point and line
-    /// Note: This only works for fonts up to 4x16 (result would be 8x32)
-    pub fn double_size(&self) -> Self {
-        // Can only double if result fits in 8x32
-        let new_width = (self.width as usize * 2).min(8);
-        let new_height = (self.height as usize * 2).min(32);
-
-        let mut new_glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(new_width as u8, new_height as u8));
-
-        for (i, old_glyph) in self.glyphs.iter().enumerate() {
-            let new_glyph = &mut new_glyphs[i];
-
-            for y in 0..self.height as usize {
-                if y * 2 >= 32 {
-                    break;
-                }
-
-                // Double the row horizontally
-                let old_row = old_glyph.data[y];
-                let mut new_row: u8 = 0;
-
-                // Each bit becomes two bits (but we only have 8 bits, so max 4 source bits)
-                for x in 0..(self.width as usize).min(4) {
-                    if old_row & (1 << (7 - x)) != 0 {
-                        new_row |= 0b11 << (6 - x * 2);
-                    }
-                }
-
-                // Each row appears twice vertically
-                new_glyph.data[y * 2] = new_row;
-                if y * 2 + 1 < 32 {
-                    new_glyph.data[y * 2 + 1] = new_row;
-                }
-            }
-        }
-
-        Self {
-            name: self.name.clone(),
-            width: new_width as u8,
-            height: new_height as u8,
-            glyphs: new_glyphs,
-            path_opt: None,
-            font_type: self.font_type,
-        }
-    }
-
     /// Load font from ANSI font slot (0-42)
     ///
     /// # Arguments

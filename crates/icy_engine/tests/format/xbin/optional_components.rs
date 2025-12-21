@@ -5,7 +5,7 @@
 //! - Font (can be omitted if default 16-line VGA font)
 //! - Compression (can be disabled)
 
-use icy_engine::{AnsiSaveOptionsV2, BitFont, FileFormat, Palette, TextBuffer, TextPane};
+use icy_engine::{BitFont, FileFormat, Palette, SaveOptions, TextBuffer, TextPane};
 
 /// Test helper: Creates a simple test buffer with default palette and font
 fn create_test_buffer_default() -> TextBuffer {
@@ -57,7 +57,7 @@ fn create_test_buffer_custom_font() -> TextBuffer {
 fn test_xbin_no_palette_no_font_no_compress() {
     let buffer = create_test_buffer_default();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = false;
     options.save_sauce = None;
 
@@ -81,7 +81,7 @@ fn test_xbin_no_palette_no_font_no_compress() {
 fn test_xbin_palette_no_font_no_compress() {
     let buffer = create_test_buffer_custom_palette();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = false;
     options.save_sauce = None;
 
@@ -105,7 +105,7 @@ fn test_xbin_palette_no_font_no_compress() {
 fn test_xbin_no_palette_font_no_compress() {
     let buffer = create_test_buffer_custom_font();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = false;
     options.save_sauce = None;
 
@@ -134,7 +134,7 @@ fn test_xbin_palette_font_no_compress() {
     let font = BitFont::from_basic(8, 14, &data);
     buffer.set_font(0, font);
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = false;
     options.save_sauce = None;
 
@@ -158,7 +158,7 @@ fn test_xbin_palette_font_no_compress() {
 fn test_xbin_no_palette_no_font_compress() {
     let buffer = create_test_buffer_default();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = true;
     options.save_sauce = None;
 
@@ -182,7 +182,7 @@ fn test_xbin_no_palette_no_font_compress() {
 fn test_xbin_palette_no_font_compress() {
     let buffer = create_test_buffer_custom_palette();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = true;
     options.save_sauce = None;
 
@@ -206,7 +206,7 @@ fn test_xbin_palette_no_font_compress() {
 fn test_xbin_no_palette_font_compress() {
     let buffer = create_test_buffer_custom_font();
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = true;
     options.save_sauce = None;
 
@@ -235,7 +235,7 @@ fn test_xbin_palette_font_compress() {
     let font = BitFont::from_basic(8, 14, &data);
     buffer.set_font(0, font);
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = true;
     options.save_sauce = None;
 

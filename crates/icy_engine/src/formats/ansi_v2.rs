@@ -14,6 +14,49 @@ use crate::{
 
 use super::{ControlCharHandling, ScreenPreperation};
 
+/// Settings for SIXEL image encoding.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SixelSettings {
+    /// Maximum number of colors in the palette (2-256).
+    /// Fewer colors = smaller SIXEL output but less accurate colors.
+    pub max_colors: u16,
+
+    /// Floyd-Steinberg error diffusion strength (0.0-1.0).
+    /// - 0.875: Default, best for photographs with smooth gradients
+    /// - 0.5: Reduced dithering, less noise, good for graphics
+    /// - 0.0: No dithering, sharp edges but may show color banding
+    pub diffusion: f32,
+
+    /// Use K-means clustering instead of Wu's quantizer.
+    /// K-means is slower but may be more accurate for some images.
+    pub use_kmeans: bool,
+}
+
+impl Default for SixelSettings {
+    fn default() -> Self {
+        Self {
+            max_colors: 256,
+            diffusion: 0.875, // FloydSteinberg::DEFAULT_ERROR_DIFFUSION
+            use_kmeans: false,
+        }
+    }
+}
+
+impl SixelSettings {
+    /// Convert to icy_sixel::EncodeOptions
+    pub fn to_encode_options(&self) -> icy_sixel::EncodeOptions {
+        icy_sixel::EncodeOptions {
+            max_colors: self.max_colors,
+            diffusion: self.diffusion,
+            quantize_method: if self.use_kmeans {
+                icy_sixel::QuantizeMethod::kmeans()
+            } else {
+                icy_sixel::QuantizeMethod::Wu
+            },
+        }
+    }
+}
+
 const COLOR_OFFSETS: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,7 +115,7 @@ impl AnsiCompatibilityLevel {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct AnsiSaveOptionsV2 {
+pub struct SaveOptions {
     pub format_type: i32,
 
     pub screen_preparation: ScreenPreperation,
@@ -132,9 +175,12 @@ pub struct AnsiSaveOptionsV2 {
     /// This is useful for autosave where rendering is expensive.
     #[serde(skip)]
     pub skip_thumbnail: bool,
+
+    /// Settings for SIXEL image encoding.
+    pub sixel_settings: SixelSettings,
 }
 
-impl Default for AnsiSaveOptionsV2 {
+impl Default for SaveOptions {
     fn default() -> Self {
         Self {
             format_type: 0,
@@ -156,11 +202,12 @@ impl Default for AnsiSaveOptionsV2 {
             alt_rgb: false,
             always_use_rgb: false,
             skip_thumbnail: false,
+            sixel_settings: SixelSettings::default(),
         }
     }
 }
 
-impl AnsiSaveOptionsV2 {
+impl SaveOptions {
     pub fn new() -> Self {
         Self::default()
     }
@@ -207,7 +254,7 @@ fn uses_ice_colors(buf: &TextBuffer) -> bool {
 }
 
 /// Save a `TextBuffer` to ANSI bytes using the new v2 compatibility-level API.
-pub fn save_ansi_v2(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub fn save_ansi_v2(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result: Vec<u8> = Vec::new();
 
     let mut generator = StringGeneratorV2::new(options.clone());
@@ -260,7 +307,7 @@ struct AnsiState {
 
 struct StringGeneratorV2 {
     output: Vec<u8>,
-    options: AnsiSaveOptionsV2,
+    options: SaveOptions,
     level: AnsiCompatibilityLevel,
     last_line_break: usize,
     max_output_line_length: usize,
@@ -272,7 +319,7 @@ struct StringGeneratorV2 {
 }
 
 impl StringGeneratorV2 {
-    fn new(options: AnsiSaveOptionsV2) -> Self {
+    fn new(options: SaveOptions) -> Self {
         let level = options.effective_level();
         let mut output = Vec::new();
 
@@ -998,14 +1045,10 @@ impl StringGeneratorV2 {
     }
 
     fn add_sixels(&mut self, buf: &TextBuffer) {
+        let encode_options = self.options.sixel_settings.to_encode_options();
         for layer in &buf.layers {
             for sixel in &layer.sixels {
-                match icy_sixel::sixel_encode(
-                    &sixel.picture_data,
-                    sixel.width() as usize,
-                    sixel.height() as usize,
-                    &icy_sixel::EncodeOptions::default(),
-                ) {
+                match icy_sixel::sixel_encode(&sixel.picture_data, sixel.width() as usize, sixel.height() as usize, &encode_options) {
                     Err(err) => log::error!("{err}"),
                     Ok(data) => {
                         let p = layer.offset() + sixel.position;

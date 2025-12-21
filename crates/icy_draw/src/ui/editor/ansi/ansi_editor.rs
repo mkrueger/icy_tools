@@ -985,8 +985,27 @@ impl AnsiEditorCore {
         self.with_edit_state_readonly(|state| state.selection().is_some())
     }
 
-    /// Cut selection to clipboard
+    /// Check if current layer is an Image layer
+    pub fn is_on_image_layer(&self) -> bool {
+        self.with_edit_state_readonly(|state| state.get_cur_layer().map(|l| matches!(l.role, icy_engine::Role::Image)).unwrap_or(false))
+    }
+
+    /// Cut selection to clipboard (for Image layers: cut the entire layer)
     pub fn cut(&mut self) -> Result<(), String> {
+        // Image layer: copy layer to clipboard and delete it
+        if self.is_on_image_layer() {
+            self.copy_layer_to_clipboard()?;
+            let layer_idx = self.with_edit_state_readonly(|state| state.get_current_layer().ok());
+            if let Some(idx) = layer_idx {
+                let mut screen = self.screen.lock();
+                if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                    edit_state.remove_layer(idx).map_err(|e| e.to_string())?;
+                }
+            }
+            return Ok(());
+        }
+
+        // Normal layer: standard cut behavior
         self.copy_without_deselect()?;
         {
             let mut screen = self.screen.lock();
@@ -1005,6 +1024,49 @@ impl AnsiEditorCore {
         Ok(())
     }
 
+    /// Copy the current layer to clipboard as an image
+    fn copy_layer_to_clipboard(&self) -> Result<(), String> {
+        use clipboard_rs::common::RustImage;
+        use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
+        use std::io::Cursor;
+
+        let image_data = self.with_edit_state_readonly(|state| {
+            let layer = state.get_cur_layer()?;
+            // Get sixel data if available
+            if let Some(sixel) = layer.sixels.first() {
+                let width = sixel.width() as u32;
+                let height = sixel.height() as u32;
+                let rgba = sixel.picture_data.clone();
+                Some((width, height, rgba))
+            } else {
+                None
+            }
+        });
+
+        let Some((width, height, rgba)) = image_data else {
+            return Err("No image data in layer".to_string());
+        };
+
+        let clipboard = ClipboardContext::new().map_err(|e| e.to_string())?;
+
+        // Encode RGBA data to PNG bytes, then use from_bytes which works across versions
+        let img_buf: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+            image::ImageBuffer::from_raw(width, height, rgba).ok_or_else(|| "Failed to create image buffer".to_string())?;
+
+        let mut png_bytes = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut png_bytes);
+            img_buf
+                .write_to(&mut cursor, image::ImageFormat::Png)
+                .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+        }
+
+        let img = RustImageData::from_bytes(&png_bytes).map_err(|e| format!("Failed to create image from PNG: {}", e))?;
+
+        clipboard.set(vec![ClipboardContent::Image(img)]).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Check if copy operation is available (selection exists)
     #[allow(dead_code)]
     pub fn can_copy(&self) -> bool {
@@ -1013,6 +1075,11 @@ impl AnsiEditorCore {
 
     /// Copy selection to clipboard in multiple formats (ICY, RTF, Text)
     pub fn copy(&mut self) -> Result<(), String> {
+        // Image layer: copy layer as image
+        if self.is_on_image_layer() {
+            return self.copy_layer_to_clipboard();
+        }
+
         self.copy_without_deselect()?;
         // Clear selection after copy
         {
@@ -1127,7 +1194,7 @@ impl AnsiEditorCore {
 
             // Get buffer and save with default options
             let buffer = edit_state.get_buffer();
-            let options = icy_engine::AnsiSaveOptionsV2::default();
+            let options = icy_engine::SaveOptions::default();
             let bytes = format.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
 
             std::fs::write(path, bytes).map_err(|e| e.to_string())?;

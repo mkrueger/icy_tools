@@ -1,9 +1,9 @@
 use bstr::BString;
 use icy_engine::{
-    AnsiSaveOptionsV2, AttributedChar, Layer, Line, Size, TextAttribute, TextBuffer, TextPane,
+    AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane,
     formats::{FileFormat, LoadData},
 };
-use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecord, SauceRecordBuilder};
+use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
 
 mod layer;
 
@@ -58,7 +58,7 @@ fn test_respect_sauce_width() {
         .unwrap()
         .build();
 
-    let mut opt = AnsiSaveOptionsV2::new();
+    let mut opt = SaveOptions::new();
     opt.save_sauce = Some(sauce);
     let ansi_bytes = FileFormat::Ansi.to_bytes(&buf, &opt).unwrap();
 

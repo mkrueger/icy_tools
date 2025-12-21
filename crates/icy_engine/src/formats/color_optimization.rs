@@ -1,4 +1,4 @@
-use crate::{AnsiSaveOptionsV2, BitFont, TextAttribute, TextBuffer, TextPane, fonts::CompactGlyph};
+use crate::{BitFont, SaveOptions, TextAttribute, TextBuffer, TextPane, fonts::CompactGlyph};
 use std::collections::HashMap;
 
 enum GlyphShape {
@@ -17,7 +17,7 @@ pub struct ColorOptimizer {
 }
 
 impl ColorOptimizer {
-    pub fn new(buf: &TextBuffer, opt: &AnsiSaveOptionsV2) -> Self {
+    pub fn new(buf: &TextBuffer, opt: &SaveOptions) -> Self {
         let shape_map = generate_shape_map(buf);
         Self {
             shape_map,
@@ -81,7 +81,7 @@ fn generate_shape_map(buf: &TextBuffer) -> HashMap<u8, HashMap<char, GlyphShape>
 
 fn get_shape(font: &BitFont, glyph: &CompactGlyph) -> GlyphShape {
     let mut ones = 0;
-    let size = font.size();
+    let _size = font.size();
 
     // Count set bits in the glyph
     for y in 0..glyph.height as usize {

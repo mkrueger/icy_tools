@@ -355,7 +355,7 @@ impl Palette {
                 let mut buf = crate::TextBuffer::new((0, 0));
                 buf.palette = self.clone();
                 buf.clear_font_table();
-                let options = crate::AnsiSaveOptionsV2::default();
+                let options = crate::SaveOptions::default();
                 return FileFormat::XBin.to_bytes(&buf, &options);
             }
             _ => Err(crate::EngineError::InvalidPaletteFormat {

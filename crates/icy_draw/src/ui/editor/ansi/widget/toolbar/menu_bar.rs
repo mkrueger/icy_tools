@@ -20,8 +20,8 @@ use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::area_cmd;
 use crate::ui::main_window::commands::selection_cmd;
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_style,
-    menu_item_submenu, menu_item_undo, separator,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_simple_enabled,
+    menu_item_style, menu_item_submenu, menu_item_undo, separator,
 };
 use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
@@ -59,7 +59,7 @@ pub struct AnsiMenu {
 
 impl AnsiMenu {
     /// Create the menu structure with current state
-    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Self {
+    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, has_image_clipboard: bool) -> Self {
         let undo_label = match undo_desc {
             Some(desc) => format!("{} {}", cmd::EDIT_UNDO.label_menu, desc),
             None => cmd::EDIT_UNDO.label_menu.clone(),
@@ -120,6 +120,14 @@ impl AnsiMenu {
                 MenuItem::cmd(&cmd::EDIT_CUT, Message::Cut),
                 MenuItem::cmd(&cmd::EDIT_COPY, Message::Copy),
                 MenuItem::cmd(&cmd::EDIT_PASTE, Message::Paste),
+                MenuItem::submenu(
+                    fl!("menu-paste-as"),
+                    vec![
+                        MenuItem::simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage),
+                        MenuItem::simple(fl!("menu-paste-as-sixel"), "", Message::PasteSixel).enabled(has_image_clipboard),
+                    ],
+                ),
+                MenuItem::simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile),
                 MenuItem::separator(),
                 // Area operations submenu
                 MenuItem::submenu(
@@ -315,7 +323,7 @@ pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_d
     };
 
     let hotkey = hotkey_from_iced(key, modifiers)?;
-    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode);
+    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode, false);
     menu.handle_hotkey(&hotkey)
 }
 
@@ -671,6 +679,7 @@ pub fn view_ansi(
     plugins: &[Plugin],
     mirror_mode: bool,
     is_connected: bool,
+    has_image_clipboard: bool,
 ) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
 
@@ -728,6 +737,14 @@ pub fn view_ansi(
                     (menu_item(&cmd::EDIT_CUT, Message::Cut)),
                     (menu_item(&cmd::EDIT_COPY, Message::Copy)),
                     (menu_item(&cmd::EDIT_PASTE, Message::Paste)),
+                    (
+                        menu_item_submenu(fl!("menu-paste-as")),
+                        menu_template(menu_items!(
+                            (menu_item_simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage)),
+                            (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
+                        ))
+                    ),
+                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile)),
                     (separator()),
                     (menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
                     (separator()),
@@ -891,6 +908,14 @@ pub fn view_ansi(
                     (menu_item(&cmd::EDIT_CUT, Message::Cut)),
                     (menu_item(&cmd::EDIT_COPY, Message::Copy)),
                     (menu_item(&cmd::EDIT_PASTE, Message::Paste)),
+                    (
+                        menu_item_submenu(fl!("menu-paste-as")),
+                        menu_template(menu_items!(
+                            (menu_item_simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage)),
+                            (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
+                        ))
+                    ),
+                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile)),
                     (separator()),
                     (menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
                     (separator()),

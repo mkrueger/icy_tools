@@ -148,6 +148,7 @@ impl EditState {
                 (sixel.height() as f32 / dims.height as f32).ceil() as i32,
             ),
         );
+        layer.role = Role::Image;
         layer.properties.has_alpha_channel = true;
         layer.sixels.push(sixel);
         // Position the pasted layer at the current caret position

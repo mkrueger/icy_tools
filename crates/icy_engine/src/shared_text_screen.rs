@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use crate::{
-    AnsiSaveOptionsV2, AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
-    Screen, Selection, SelectionMask, Size, TerminalState, TextPane, TextScreen,
+    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Screen,
+    Selection, SelectionMask, Size, TerminalState, TextPane, TextScreen,
 };
 
 /// A wrapper around `Arc<Mutex<TextScreen>>` that implements `Screen`.
@@ -210,7 +210,7 @@ impl Screen for SharedTextScreen {
         self.inner.lock().caret_position()
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
         let extension = extension.to_ascii_lowercase();
         if let Some(format) = crate::formats::FileFormat::from_extension(&extension) {
             format.to_bytes(&self.inner.lock().buffer, options)

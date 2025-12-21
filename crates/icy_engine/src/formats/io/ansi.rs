@@ -3,7 +3,7 @@
 use crate::{Result, TextBuffer, TextScreen};
 
 use super::super::ansi_v2::save_ansi_v2;
-use super::super::{AnsiSaveOptionsV2, LoadData};
+use super::super::{LoadData, SaveOptions};
 
 use crate::screen::EditableScreen;
 /// Load an ANSI file into a TextScreen.
@@ -28,6 +28,6 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>) -> Result
 }
 
 /// Save a TextBuffer to ANSI format using ANSI exporter v2.
-pub(crate) fn save_ansi(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     save_ansi_v2(buf, options)
 }

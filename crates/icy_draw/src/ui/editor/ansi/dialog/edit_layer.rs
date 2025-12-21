@@ -7,7 +7,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
-use icy_engine::{Mode, Properties, Size};
+use icy_engine::{LayerProperties, Mode, Size};
 use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
@@ -75,7 +75,7 @@ pub struct EditLayerResult {
     /// Layer index that was edited
     pub layer_index: usize,
     /// Updated properties
-    pub properties: Properties,
+    pub properties: LayerProperties,
     /// New size (if changed)
     pub new_size: Option<Size>,
 }
@@ -88,7 +88,7 @@ pub struct EditLayerDialog {
     /// Original size (for comparison)
     original_size: Size,
     /// Current properties being edited
-    properties: Properties,
+    properties: LayerProperties,
     /// Width input string
     width: String,
     /// Height input string
@@ -101,7 +101,7 @@ pub struct EditLayerDialog {
 
 impl EditLayerDialog {
     /// Create a new Edit Layer dialog
-    pub fn new(layer_index: usize, properties: Properties, size: Size) -> Self {
+    pub fn new(layer_index: usize, properties: LayerProperties, size: Size) -> Self {
         Self {
             layer_index,
             original_size: size,

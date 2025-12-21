@@ -531,7 +531,7 @@ fn process_icy_draw_v0_decoded_chunk(
             }
             let flags = u32::from_le_bytes(bytes[o..(o + 4)].try_into().unwrap());
             o += 4;
-            layer.transparency = bytes[o];
+            let _transparency = bytes[o];
             o += 1;
 
             if bytes.len() < o + 4 + 4 {

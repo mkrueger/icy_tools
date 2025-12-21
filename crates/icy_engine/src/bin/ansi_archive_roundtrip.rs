@@ -8,7 +8,7 @@ use icy_engine::{
     Rectangle, RenderOptions, Screen, Size, TextPane,
     formats::{
         FileFormat, LoadData,
-        ansi_v2::{AnsiCompatibilityLevel, AnsiSaveOptionsV2, save_ansi_v2},
+        ansi_v2::{AnsiCompatibilityLevel, SaveOptions, save_ansi_v2},
     },
 };
 
@@ -505,12 +505,12 @@ fn main() -> icy_engine::Result<()> {
         // Preserve SAUCE if present
         let sauce_opt = icy_sauce::SauceRecord::from_bytes(&file_bytes).ok().flatten();
 
-        let control_char_handling = AnsiSaveOptionsV2::default().control_char_handling;
+        let control_char_handling = SaveOptions::default().control_char_handling;
 
         // New v2 levels
         let mut v2_failed_icyterm = false;
         for &level in &levels {
-            let mut v2_opt = AnsiSaveOptionsV2::default();
+            let mut v2_opt = SaveOptions::default();
             v2_opt.level = Some(level);
             v2_opt.compress = true;
             v2_opt.preserve_line_length = false;

@@ -10,7 +10,7 @@ mod file_format;
 pub use file_format::*;
 
 pub mod ansi_v2;
-pub use ansi_v2::{AnsiCompatibilityLevel, AnsiSaveOptionsV2, save_ansi_v2};
+pub use ansi_v2::{AnsiCompatibilityLevel, SaveOptions, SixelSettings, save_ansi_v2};
 
 mod image_format;
 use icy_sauce::SauceRecord;

@@ -3,7 +3,7 @@
 //! Tests encoding performance for compressed and uncompressed XBin output.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use icy_engine::{AnsiSaveOptionsV2, FileFormat, TextPane};
+use icy_engine::{FileFormat, SaveOptions, TextPane};
 use std::fs;
 use std::hint::black_box;
 use std::path::Path;
@@ -52,7 +52,7 @@ fn bench_xbin_encode_uncompressed(c: &mut Criterion) {
     let total_cells: usize = buffers.iter().map(|b| (b.width() * b.height()) as usize).sum();
     group.throughput(Throughput::Elements(total_cells as u64));
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = false;
 
     group.bench_function("all_files", |b| {
@@ -80,7 +80,7 @@ fn bench_xbin_encode_compressed(c: &mut Criterion) {
     let total_cells: usize = buffers.iter().map(|b| (b.width() * b.height()) as usize).sum();
     group.throughput(Throughput::Elements(total_cells as u64));
 
-    let mut options = AnsiSaveOptionsV2::new();
+    let mut options = SaveOptions::new();
     options.compress = true;
 
     group.bench_function("all_files", |b| {

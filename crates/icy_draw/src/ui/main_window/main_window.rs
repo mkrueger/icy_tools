@@ -301,6 +301,16 @@ pub enum Message {
     Cut,
     Copy,
     Paste,
+    /// Paste clipboard image (or ICY buffer) as a new ANSI document with a Sixel layer
+    PasteAsNewImage,
+    /// Paste clipboard image as a Sixel layer in the current document
+    PasteSixel,
+    /// Open file dialog to insert a Sixel from an image file
+    InsertSixelFromFile,
+    /// Insert a Sixel from the selected image file path
+    InsertSixelFromPath(std::path::PathBuf),
+    /// Request WindowManager to open a new window with pending buffer
+    OpenNewWindowWithBuffer,
     SelectAll,
     Deselect,
 
@@ -578,6 +588,34 @@ impl MainWindow {
             menu_state: MenuBarState::new(),
             is_fullscreen: false,
             dialogs,
+            commands: MainWindowCommands::new(),
+            last_save,
+            close_after_save: false,
+            pending_open_path: None,
+            title: String::new(),
+            ui_revision: Cell::new(0),
+            plugins: Arc::new(Plugin::read_plugin_directory()),
+            toasts: Vec::new(),
+            collaboration_state: CollaborationState::new(),
+            remote_paste_preview_cache: HashMap::new(),
+        };
+        window.update_title();
+        window
+    }
+
+    /// Create a MainWindow with a pre-existing TextBuffer (e.g., from paste as new image)
+    pub fn with_buffer(id: usize, buffer: icy_engine::TextBuffer, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
+        let mode_state = ModeState::Ansi(AnsiEditorMainArea::with_buffer(buffer, None, options.clone(), font_library.clone()));
+        let last_save = mode_state.undo_stack_len();
+
+        let mut window = Self {
+            id,
+            mode_state,
+            options,
+            font_library,
+            menu_state: MenuBarState::new(),
+            is_fullscreen: false,
+            dialogs: DialogStack::new(),
             commands: MainWindowCommands::new(),
             last_save,
             close_after_save: false,
@@ -1220,6 +1258,144 @@ impl MainWindow {
                     ModeState::Animation(_) => {
                         // TODO: Implement paste for Animation
                     }
+                }
+                Task::none()
+            }
+            Message::PasteAsNewImage => {
+                use clipboard_rs::Clipboard;
+                use clipboard_rs::common::RustImage;
+                use icy_engine::{Layer, Position, Role, Sixel, Size, TextBuffer, TextPane, clipboard};
+                use icy_engine_gui::ICY_CLIPBOARD_TYPE;
+
+                // Try ICY binary format first (copied selection from icy_draw)
+                if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
+                    // Get buffer_type from current editor if available, otherwise use default
+                    let buffer_type = if let ModeState::Ansi(editor) = &mut self.mode_state {
+                        editor.with_edit_state(|state| state.get_buffer().buffer_type)
+                    } else {
+                        icy_engine::BufferType::CP437
+                    };
+
+                    if let Some(mut layer) = clipboard::from_clipboard_data(buffer_type, &data) {
+                        layer.set_offset((0, 0));
+                        layer.role = Role::Normal;
+                        let size = layer.size();
+                        let mut buf = TextBuffer::new(size);
+                        layer.set_title(buf.layers[0].title());
+                        buf.layers.clear();
+                        buf.layers.push(layer);
+                        buf.set_height(buf.line_count());
+
+                        // Store buffer in global static for WindowManager to pick up
+                        if let Ok(mut pending) = crate::PENDING_NEW_WINDOW_BUFFERS.lock() {
+                            pending.push(buf);
+                        }
+                        return Task::done(Message::OpenNewWindowWithBuffer);
+                    }
+                } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
+                    // Image from clipboard - create a new buffer with a Sixel layer
+                    let (w, h) = img.get_size();
+                    if let Ok(rgba_data) = img.to_rgba8() {
+                        let mut sixel = Sixel::new(Position::default());
+                        sixel.picture_data = rgba_data.as_raw().clone();
+                        sixel.set_width(w as i32);
+                        sixel.set_height(h as i32);
+
+                        // Calculate buffer size based on default font dimensions (8x16)
+                        let font_width = 8;
+                        let font_height = 16;
+                        let buf_width = ((w as i32 + font_width - 1) / font_width).max(1);
+                        let buf_height = ((h as i32 + font_height - 1) / font_height).max(1);
+
+                        let mut buf = TextBuffer::new(Size::new(buf_width, buf_height));
+
+                        // Create a dedicated image layer for the sixel
+                        let mut layer = Layer::new("Image".to_string(), (buf_width, buf_height));
+                        layer.role = Role::Image;
+                        layer.properties.has_alpha_channel = true;
+                        layer.sixels.push(sixel);
+                        buf.layers.push(layer);
+
+                        // Store buffer in global static for WindowManager to pick up
+                        if let Ok(mut pending) = crate::PENDING_NEW_WINDOW_BUFFERS.lock() {
+                            pending.push(buf);
+                        }
+                        return Task::done(Message::OpenNewWindowWithBuffer);
+                    }
+                }
+                Task::none()
+            }
+            Message::OpenNewWindowWithBuffer => {
+                // This message is handled by WindowManager, not here
+                Task::none()
+            }
+            Message::PasteSixel => {
+                use clipboard_rs::Clipboard;
+                use clipboard_rs::common::RustImage;
+                use icy_engine::{Position, Sixel};
+
+                // Only process if we have an image in the clipboard
+                if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
+                    let (w, h) = img.get_size();
+                    if let Ok(rgba_data) = img.to_rgba8() {
+                        let mut sixel = Sixel::new(Position::default());
+                        sixel.picture_data = rgba_data.as_raw().clone();
+                        sixel.set_width(w as i32);
+                        sixel.set_height(h as i32);
+
+                        if let ModeState::Ansi(editor) = &mut self.mode_state {
+                            editor.with_edit_state(|state| {
+                                if let Err(e) = state.paste_sixel(sixel) {
+                                    log::error!("Failed to paste sixel: {}", e);
+                                }
+                            });
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::InsertSixelFromFile => {
+                // Open file dialog to select an image file
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "ico"])
+                            .add_filter("All files", &["*"])
+                            .pick_file()
+                            .await
+                            .map(|h| h.path().to_path_buf())
+                    },
+                    |result| {
+                        if let Some(path) = result {
+                            Message::InsertSixelFromPath(path)
+                        } else {
+                            Message::Noop
+                        }
+                    },
+                )
+            }
+            Message::InsertSixelFromPath(path) => {
+                use icy_engine::{Position, Sixel};
+
+                // Load the image file
+                if let Ok(img) = image::open(&path) {
+                    let rgba = img.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+
+                    let mut sixel = Sixel::new(Position::default());
+                    sixel.picture_data = rgba.into_raw();
+                    sixel.set_width(w as i32);
+                    sixel.set_height(h as i32);
+
+                    if let ModeState::Ansi(editor) = &mut self.mode_state {
+                        editor.with_edit_state(|state| {
+                            if let Err(e) = state.paste_sixel(sixel) {
+                                log::error!("Failed to insert sixel from file: {}", e);
+                            }
+                        });
+                    }
+                } else {
+                    log::error!("Failed to load image from {:?}", path);
                 }
                 Task::none()
             }
@@ -1903,6 +2079,12 @@ impl MainWindow {
 
         let is_connected = self.collaboration_state.active;
 
+        // Check if there's an image in the clipboard for "Paste Sixel" menu item
+        let has_image_clipboard = {
+            use clipboard_rs::Clipboard;
+            crate::CLIPBOARD_CONTEXT.has(clipboard_rs::ContentFormat::Image)
+        };
+
         let menu_bar = self.menu_state.view(
             &self.mode_state.mode(),
             options,
@@ -1911,6 +2093,7 @@ impl MainWindow {
             self.plugins.clone(),
             mirror_mode,
             is_connected,
+            has_image_clipboard,
         );
 
         // Pass collaboration state to the ANSI editor; it builds the chat pane and splitter itself.
@@ -2807,7 +2990,6 @@ impl MainWindow {
                             offset_y: layer.offset().y,
                             width: layer.size().width,
                             height: layer.size().height,
-                            transparency: layer.transparency,
                             mode: mode.to_string(),
                             role: role.to_string(),
                         }

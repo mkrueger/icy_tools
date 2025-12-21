@@ -1,5 +1,5 @@
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AnsiSaveOptionsV2, AttributedChar, BitFont, Color, FileFormat, IceMode, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AttributedChar, BitFont, Color, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer, TextPane};
 
 #[test]
 pub fn test_ice() {
@@ -54,7 +54,7 @@ fn create_buffer() -> TextBuffer {
 
 fn test_artworx(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::Artworx;
-    let mut opt = AnsiSaveOptionsV2::default();
+    let mut opt = SaveOptions::default();
     opt.compress = false;
     opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();

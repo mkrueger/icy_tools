@@ -234,7 +234,6 @@ pub enum AnsiEditorMessage {
 
     // --- Selection with UI ---
     InverseSelection,
-    PasteAsNewImage,
 
     // --- Export ---
     ExportFile,

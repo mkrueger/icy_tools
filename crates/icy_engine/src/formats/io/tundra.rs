@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io};
 
-use super::super::{AnsiSaveOptionsV2, LoadData};
+use super::super::{LoadData, SaveOptions};
 use crate::{
     AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage,
 };
@@ -17,7 +17,7 @@ const TUNDRA_POSITION: u8 = 1;
 const TUNDRA_COLOR_FOREGROUND: u8 = 2;
 const TUNDRA_COLOR_BACKGROUND: u8 = 4;
 
-pub(crate) fn save_tundra(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result = vec![TUNDRA_VER]; // version
     result.extend(TUNDRA_HEADER);
     let mut attr = TextAttribute::from_u8(0, buf.ice_mode);

@@ -20,7 +20,7 @@ pub enum Role {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Properties {
+pub struct LayerProperties {
     pub title: String,
     pub color: Option<Color>,
     pub is_visible: bool,
@@ -35,8 +35,7 @@ pub struct Properties {
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub role: Role,
-    pub transparency: u8,
-    pub properties: Properties,
+    pub properties: LayerProperties,
 
     preview_offset: Option<Position>,
     size: Size,
@@ -134,7 +133,7 @@ impl Layer {
         lines.resize(size.height as usize, Line::create(size.width));
 
         Layer {
-            properties: Properties {
+            properties: LayerProperties {
                 title: title.into(),
                 is_visible: true,
                 ..Default::default()

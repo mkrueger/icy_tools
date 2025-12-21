@@ -439,6 +439,7 @@ struct MenuBarCacheKey {
     recent_files_hash: u64,
     plugins_hash: u64,
     is_connected: bool,
+    has_image_clipboard: bool,
 }
 
 fn hash_recent_files(recent_files: &MostRecentlyUsedFiles) -> u64 {
@@ -477,6 +478,7 @@ impl MenuBarState {
         plugins: std::sync::Arc<Vec<Plugin>>,
         mirror_mode: bool,
         is_connected: bool,
+        has_image_clipboard: bool,
     ) -> Element<'_, Message> {
         let recent_files_hash = {
             let options_guard = options.read();
@@ -506,6 +508,7 @@ impl MenuBarState {
             recent_files_hash,
             plugins_hash,
             is_connected,
+            has_image_clipboard,
         };
 
         // Cache the whole menu subtree. During resize, this avoids rebuilding all menu widgets and
@@ -529,11 +532,27 @@ impl MenuBarState {
             let recent_files = &options_guard.recent_files;
 
             match key.mode_tag {
-                0 => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
+                0 => ansi::widget::toolbar::menu_bar::view_ansi(
+                    recent_files,
+                    &undo_info,
+                    &marker_state,
+                    plugins.as_ref(),
+                    key.mirror_mode,
+                    key.is_connected,
+                    key.has_image_clipboard,
+                ),
                 1 => bitfont::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
                 2 => charfont::menu_bar::view_charfont(recent_files, &undo_info),
                 3 => animation::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
-                _ => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
+                _ => ansi::widget::toolbar::menu_bar::view_ansi(
+                    recent_files,
+                    &undo_info,
+                    &marker_state,
+                    plugins.as_ref(),
+                    key.mirror_mode,
+                    key.is_connected,
+                    key.has_image_clipboard,
+                ),
             }
         })
         .into()
@@ -661,6 +680,29 @@ pub fn menu_item_simple(label: String, hotkey: &str, msg: Message) -> Element<'s
     .style(menu_item_style)
     .on_press(msg)
     .into()
+}
+
+/// Create a menu item with direct label and hotkey that can be enabled/disabled
+pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabled: bool) -> Element<'static, Message> {
+    let hotkey_text = hotkey.to_string();
+
+    let btn = button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text(hotkey_text).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(if enabled { menu_item_style } else { menu_item_disabled_style });
+
+    if enabled { btn.on_press(msg).into() } else { btn.into() }
 }
 
 /// Create a menu item with checkbox indicator

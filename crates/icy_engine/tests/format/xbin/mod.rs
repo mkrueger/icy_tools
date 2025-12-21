@@ -2,7 +2,7 @@ mod optional_components;
 mod roundtrip;
 
 use super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{AnsiSaveOptionsV2, AttributedChar, BitFont, Color, FileFormat, IceMode, TextAttribute, TextBuffer, TextPane};
+use icy_engine::{AttributedChar, BitFont, Color, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer, TextPane};
 
 #[test]
 pub fn test_blink() {
@@ -97,7 +97,7 @@ pub fn test_extended_font_blink() {
     attr.set_font_page(1);
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', attr));
 
-    let mut opt = AnsiSaveOptionsV2::default();
+    let mut opt = SaveOptions::default();
     opt.compress = false;
 
     let res = test_xbin(&mut buffer);
@@ -122,7 +122,7 @@ fn create_xb_buffer() -> TextBuffer {
 
 fn test_xbin(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::XBin;
-    let mut opt = AnsiSaveOptionsV2::default();
+    let mut opt = SaveOptions::default();
     opt.compress = false;
     opt.lossles_output = true;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();

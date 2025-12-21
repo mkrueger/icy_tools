@@ -1,4 +1,4 @@
-use super::super::{AnsiSaveOptionsV2, LoadData};
+use super::super::{LoadData, SaveOptions};
 use crate::{
     AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute, TextBuffer, TextPane, TextScreen,
     analyze_font_usage, guess_font_name,
@@ -16,7 +16,7 @@ const IDF_V1_4_HEADER: &[u8] = b"\x041.4";
 const FONT_SIZE: usize = 4096;
 const PALETTE_SIZE: usize = 3 * 16;
 
-pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     if buf.ice_mode != IceMode::Ice {
         return Err(crate::EngineError::OnlyIceModeSupported);
     }

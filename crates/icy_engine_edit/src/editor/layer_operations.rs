@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use i18n_embed_fl::fl;
 
-use crate::{AttributedChar, Layer, Position, Properties, Result, Role, Size, TextPane};
+use crate::{AttributedChar, Layer, LayerProperties, Position, Result, Role, Size, TextPane};
 
 use super::{EditState, undo_operation::EditorUndoOp};
 
@@ -454,7 +454,7 @@ impl EditState {
     /// # Errors
     ///
     /// This function will return an error if .
-    pub fn update_layer_properties(&mut self, layer: usize, new_properties: Properties) -> Result<()> {
+    pub fn update_layer_properties(&mut self, layer: usize, new_properties: LayerProperties) -> Result<()> {
         let op = EditorUndoOp::UpdateLayerProperties {
             index: layer,
             old_properties: self.screen.buffer.layers[layer].properties.clone(),

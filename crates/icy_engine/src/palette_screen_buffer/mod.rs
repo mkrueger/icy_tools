@@ -7,8 +7,8 @@ pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 
 use crate::{
-    AnsiSaveOptionsV2, AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette,
-    Position, Rectangle, RenderOptions, Result, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
+    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
+    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
     bgi::{Bgi, DEFAULT_BITFONT, MouseField},
     limits,
@@ -432,7 +432,7 @@ impl Screen for PaletteScreenBuffer {
         self
     }
 
-    fn to_bytes(&mut self, _file_name: &str, _options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+    fn to_bytes(&mut self, _file_name: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
         // Return empty for now, could implement PNG export later
         Ok(Vec::new())
     }

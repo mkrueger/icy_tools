@@ -469,8 +469,6 @@ pub struct LayerInfo {
     pub width: i32,
     /// Layer height
     pub height: i32,
-    /// Layer transparency (0-255)
-    pub transparency: u8,
     /// Layer mode
     pub mode: String,
     /// Layer role
@@ -541,8 +539,6 @@ pub struct LayerData {
     pub width: i32,
     /// Layer height
     pub height: i32,
-    /// Layer transparency (0-255)
-    pub transparency: u8,
     /// Layer mode
     pub mode: String,
     /// Layer role

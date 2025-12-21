@@ -84,10 +84,14 @@ pub struct WindowManager {
 #[derive(Clone, Debug)]
 pub enum WindowManagerMessage {
     OpenWindow,
+    /// Open a new window with a pre-created buffer (e.g., from paste as new image)
+    OpenWindowWithBuffer,
     CloseWindow(window::Id),
     /// Window close button (X) was clicked - check for unsaved changes
     WindowCloseRequested(window::Id),
     WindowOpened(window::Id),
+    /// Window opened with a pending buffer
+    WindowOpenedWithBuffer(window::Id),
     FocusWindow(usize),
     /// Focus next widget (Tab)
     FocusNext,
@@ -426,6 +430,32 @@ impl WindowManager {
                     .map(WindowManagerMessage::WindowOpened)
             }
 
+            WindowManagerMessage::OpenWindowWithBuffer => {
+                // Open a new window with a pending buffer (from paste as new image)
+                let Some(last_window) = self.windows.keys().last() else {
+                    return Task::batch([mcp_task]);
+                };
+
+                window::position(*last_window)
+                    .then(|last_position| {
+                        let position = last_position.map_or(window::Position::Default, |last_position| {
+                            window::Position::Specific(last_position + Vector::new(20.0, 20.0))
+                        });
+                        let window_icon = load_window_icon(include_bytes!("../build/linux/256x256.png")).ok();
+                        let settings = window::Settings {
+                            position,
+                            icon: window_icon,
+                            size: DEFAULT_SIZE,
+                            exit_on_close_request: false,
+                            ..window::Settings::default()
+                        };
+
+                        let (_, open) = window::open(settings);
+                        open
+                    })
+                    .map(WindowManagerMessage::WindowOpenedWithBuffer)
+            }
+
             WindowManagerMessage::CloseWindow(id) => {
                 // Check if window has unsaved changes
                 if let Some(window) = self.windows.get(&id) {
@@ -532,6 +562,35 @@ impl WindowManager {
                 Task::none()
             }
 
+            WindowManagerMessage::WindowOpenedWithBuffer(id) => {
+                // Get buffer from global static (set by PasteAsNewImage handler)
+                let buffer = crate::PENDING_NEW_WINDOW_BUFFERS.lock().ok().and_then(|mut pending| pending.pop());
+
+                // Initialize with default geometry
+                self.window_geometry.insert(
+                    id,
+                    WindowGeometry {
+                        position: None,
+                        size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                    },
+                );
+
+                let window = if let Some(buf) = buffer {
+                    MainWindow::with_buffer(find_next_window_id(&self.windows), buf, self.options.clone(), self.font_library.clone())
+                } else {
+                    // Fallback to empty window if no buffer pending
+                    MainWindow::new(find_next_window_id(&self.windows), None, self.options.clone(), self.font_library.clone())
+                };
+
+                // Initialize autosave status
+                self.session_manager.get_autosave_status(id, window.undo_stack_len());
+
+                self.windows.insert(id, window);
+                self.request_session_save_debounced();
+
+                Task::none()
+            }
+
             WindowManagerMessage::WindowMoved(id, position) => {
                 // Update cached geometry
                 let geom = self.window_geometry.entry(id).or_insert_with(|| WindowGeometry {
@@ -615,6 +674,11 @@ impl WindowManager {
                         return self.save_session_and_close(id);
                     }
                     return window::close(id);
+                }
+
+                // Handle OpenNewWindowWithBuffer - open a new window with pending buffer from global static
+                if matches!(msg, crate::ui::Message::OpenNewWindowWithBuffer) {
+                    return Task::done(WindowManagerMessage::OpenWindowWithBuffer);
                 }
 
                 // Check if this is a confirmed save success message - clear autosave only then

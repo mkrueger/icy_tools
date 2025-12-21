@@ -14,7 +14,7 @@ use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use crate::{BufferType, EditableScreen, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
-use super::{AnsiSaveOptionsV2, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, io};
+use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions, io};
 
 /// Represents all supported file formats for ANSI art and related files.
 ///
@@ -963,7 +963,7 @@ impl FileFormat {
     /// # Errors
     /// Returns an error if the format doesn't support saving or if saving fails.
     /// Note: Image formats require `save_to_file` instead as they need a file path.
-    pub fn to_bytes(&self, buffer: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+    pub fn to_bytes(&self, buffer: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
         if let FileFormat::Image(img) = self {
             return Err(EngineError::FormatNotSupported {
                 name: img.name().to_string(),

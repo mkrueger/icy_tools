@@ -5,8 +5,8 @@ use std::{cmp::max, sync::Arc};
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AnsiSaveOptionsV2, AttributedChar, BitFont, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, Selection,
-    Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret, limits,
+    AttributedChar, BitFont, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Selection, Sixel,
+    Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret, limits,
 };
 
 #[repr(u8)]
@@ -137,7 +137,7 @@ pub trait Screen: TextPane + Send + Sync {
         self.caret().position()
     }
 
-    fn to_bytes(&mut self, extension: &str, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>>;
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>>;
 
     /// Whether to use 9px font (letter spacing) - from SAUCE data
     fn use_letter_spacing(&self) -> bool {

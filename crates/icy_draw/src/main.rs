@@ -40,6 +40,11 @@ lazy_static! {
 }
 
 lazy_static! {
+    /// Pending buffers to be opened in new windows (used by PasteAsNewImage)
+    pub static ref PENDING_NEW_WINDOW_BUFFERS: std::sync::Mutex<Vec<icy_engine::TextBuffer>> = std::sync::Mutex::new(Vec::new());
+}
+
+lazy_static! {
     static ref LATEST_VERSION: Version = {
         let github = github_release_check::GitHub::new().unwrap();
         if let Ok(ver) = github.get_all_versions("mkrueger/icy_tools") {

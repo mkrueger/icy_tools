@@ -3,21 +3,7 @@ use crate::BitFont;
 lazy_static::lazy_static! {
     pub static ref ATARI_ST_FONT_6x6: BitFont = BitFont::from_bytes("Atari ST 6x6", include_bytes!("../../../data/fonts/Atari/atari-st-6x6.psf")).unwrap();
     pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x8.psf")).unwrap();
-
-    pub static ref ATARI_ST_FONT_12x12: BitFont = {
-        ATARI_ST_FONT_6x6.double_size()
-    };
-
-    pub static ref ATARI_ST_FONT_16x16: BitFont = {
-        ATARI_ST_FONT_8x8.double_size()
-    };
-
-    pub static ref ATARI_ST_FONT_16x32: BitFont = {
-        ATARI_ST_FONT_8x16.double_size()
-    };
-
     pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_bytes("Atari ST 8x16", include_bytes!("../../../data/fonts/Atari/atari-st-8x16.psf")).unwrap();
-
 }
 
 pub struct FontMetrics {
@@ -26,6 +12,8 @@ pub struct FontMetrics {
     pub underline_height: i32,
     pub underline_width: i32,
     pub thicken: i32,
+    /// Scaling factor for upscaled fonts (1 = no scaling, 2 = double size)
+    pub scale: i32,
 }
 
 pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
@@ -37,6 +25,7 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_height: 1,
                 underline_width: 7,
                 thicken: 1,
+                scale: 1,
             },
             &ATARI_ST_FONT_6x6,
         );
@@ -49,13 +38,14 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_height: 1,
                 underline_width: 9,
                 thicken: 1,
+                scale: 1,
             },
             &ATARI_ST_FONT_8x8,
         );
     }
 
     if text_size <= 15 {
-        // 7x11 Font
+        // 8x16 Font
         return (
             FontMetrics {
                 y_off: 13,
@@ -63,13 +53,14 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_height: 1,
                 underline_width: 9,
                 thicken: 1,
+                scale: 1,
             },
             &ATARI_ST_FONT_8x16,
         );
     }
 
     if text_size <= 17 {
-        // 12x12 Font (upscaled 6x6)
+        // 12x12 Font (upscaled 6x6 with scale=2)
         return (
             FontMetrics {
                 y_off: 9,
@@ -77,13 +68,14 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_height: 2,
                 underline_width: 13,
                 thicken: 1,
+                scale: 2,
             },
-            &ATARI_ST_FONT_12x12,
+            &ATARI_ST_FONT_6x6,
         );
     }
 
     if text_size <= 19 {
-        // 16x16 Font (upscaled 8x8)
+        // 16x16 Font (upscaled 8x8 with scale=2)
         return (
             FontMetrics {
                 y_off: 13,
@@ -91,11 +83,13 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
                 underline_height: 2,
                 underline_width: 17,
                 thicken: 2,
+                scale: 2,
             },
-            &ATARI_ST_FONT_16x16,
+            &ATARI_ST_FONT_8x8,
         );
     }
 
+    // 16x32 Font (upscaled 8x16 with scale=2)
     (
         FontMetrics {
             y_off: 27,
@@ -103,7 +97,8 @@ pub fn load_atari_font(text_size: i32) -> (FontMetrics, &'static BitFont) {
             underline_height: 2,
             underline_width: 17,
             thicken: 2,
+            scale: 2,
         },
-        &ATARI_ST_FONT_16x32,
+        &ATARI_ST_FONT_8x16,
     )
 }

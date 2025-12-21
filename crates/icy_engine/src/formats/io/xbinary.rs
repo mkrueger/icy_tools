@@ -5,7 +5,7 @@ use crate::{
 
 use rayon::prelude::*;
 
-use super::super::{AnsiSaveOptionsV2, LoadData, TextAttribute};
+use super::super::{LoadData, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;
@@ -93,7 +93,7 @@ enum Compression {
     Full = 0b1100_0000,
 }
 
-pub(crate) fn save_xbin(buf: &TextBuffer, options: &AnsiSaveOptionsV2) -> Result<Vec<u8>> {
+pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     // Reserve a reasonable upper bound to avoid repeated reallocations.
     // For compressed output we reserve less to avoid a large upfront allocation.
     let pixel_bytes = (buf.width() as usize)

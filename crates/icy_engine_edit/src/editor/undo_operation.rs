@@ -6,8 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, Line, Palette, Position, Properties, Result, Role, SauceMetaData, Selection, SelectionMask, Size,
-    Tag, TextPane, stamp_layer,
+    AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, Role, SauceMetaData, Selection, SelectionMask,
+    Size, Tag, TextPane, stamp_layer,
 };
 
 use super::EditState;
@@ -218,8 +218,8 @@ pub enum EditorUndoOp {
     /// Update layer properties
     UpdateLayerProperties {
         index: usize,
-        old_properties: Properties,
-        new_properties: Properties,
+        old_properties: LayerProperties,
+        new_properties: LayerProperties,
     },
 
     /// Set use letter spacing
