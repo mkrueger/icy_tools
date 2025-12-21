@@ -41,10 +41,10 @@ pub enum EditorUndoOp {
     SwapChar { layer: usize, pos1: Position, pos2: Position },
 
     /// Add a new layer
-    AddLayer { index: usize, layer: Option<Layer> },
+    AddLayer { index: usize, layer: Box<Layer> },
 
     /// Remove a layer
-    RemoveLayer { layer_index: usize, layer: Option<Layer> },
+    RemoveLayer { layer_index: usize, layer: Box<Layer> },
 
     /// Raise layer in stack
     RaiseLayer { layer_index: usize },
@@ -356,25 +356,29 @@ impl EditorUndoOp {
             EditorUndoOp::SetChar {
                 pos, layer, old, undo_caret, ..
             } => {
-                edit_state.get_buffer_mut().layers[*layer].set_char(*pos, *old);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.set_char(*pos, *old);
+                }
                 if let Some(caret_pos) = undo_caret {
                     edit_state.set_caret_position(*caret_pos);
                 }
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
-                edit_state.get_buffer_mut().layers[*layer].swap_char(*pos1, *pos2);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.swap_char(*pos1, *pos2);
+                }
                 Ok(())
             }
-            EditorUndoOp::AddLayer { index, layer } => {
-                *layer = Some(edit_state.get_buffer_mut().layers.remove(*index));
-                edit_state.clamp_current_layer();
+            EditorUndoOp::AddLayer { index, .. } => {
+                if *index < edit_state.get_buffer().layers.len() {
+                    edit_state.get_buffer_mut().layers.remove(*index);
+                    edit_state.clamp_current_layer();
+                }
                 Ok(())
             }
             EditorUndoOp::RemoveLayer { layer_index, layer } => {
-                if let Some(l) = layer.take() {
-                    edit_state.get_buffer_mut().layers.insert(*layer_index, l);
-                }
+                edit_state.get_buffer_mut().layers.insert(*layer_index, (**layer).clone());
                 Ok(())
             }
             EditorUndoOp::RaiseLayer { layer_index } => {
@@ -456,49 +460,59 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::DeleteRow { layer, line, deleted_row } => {
-                edit_state.get_buffer_mut().layers[*layer].lines.insert(*line as usize, deleted_row.clone());
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines.insert(*line as usize, deleted_row.clone());
+                }
                 Ok(())
             }
             EditorUndoOp::InsertRow { layer, line, .. } => {
-                edit_state.get_buffer_mut().layers[*layer].lines.remove(*line as usize);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if (*line as usize) < l.lines.len() {
+                        l.lines.remove(*line as usize);
+                    }
+                }
                 Ok(())
             }
             EditorUndoOp::DeleteColumn { layer, column, deleted_chars } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                for (i, ch) in deleted_chars.iter().enumerate() {
-                    if let Some(c) = ch {
-                        if i < layer.lines.len() {
-                            layer.lines[i].insert_char(*column, *c);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    for (i, ch) in deleted_chars.iter().enumerate() {
+                        if let Some(c) = ch {
+                            if i < l.lines.len() {
+                                l.lines[i].insert_char(*column, *c);
+                            }
                         }
                     }
+                    let new_width = l.width() + 1;
+                    l.set_size((new_width, l.height()));
                 }
-                let new_width = layer.width() + 1;
-                layer.set_size((new_width, layer.height()));
                 Ok(())
             }
             EditorUndoOp::InsertColumn { layer, column } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                for line in &mut layer.lines {
-                    if (*column as usize) < line.chars.len() {
-                        line.chars.remove(*column as usize);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    for line in &mut l.lines {
+                        if (*column as usize) < line.chars.len() {
+                            line.chars.remove(*column as usize);
+                        }
                     }
+                    let new_width = l.width() - 1;
+                    l.set_size((new_width, l.height()));
                 }
-                let new_width = layer.width() - 1;
-                layer.set_size((new_width, layer.height()));
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerUp { layer } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                if let Some(line) = layer.lines.pop() {
-                    layer.lines.insert(0, line);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if let Some(line) = l.lines.pop() {
+                        l.lines.insert(0, line);
+                    }
                 }
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerDown { layer } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                if !layer.lines.is_empty() {
-                    let line = layer.lines.remove(0);
-                    layer.lines.push(line);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if !l.lines.is_empty() {
+                        let line = l.lines.remove(0);
+                        l.lines.push(line);
+                    }
                 }
                 Ok(())
             }
@@ -511,19 +525,24 @@ impl EditorUndoOp {
             } => {
                 std::mem::swap(old_lines, new_lines);
                 std::mem::swap(old_size, new_size);
-                let l = &mut edit_state.get_buffer_mut().layers[*layer];
-                l.lines = new_lines.clone();
-                l.set_size(*new_size);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                    l.set_size(*new_size);
+                }
                 Ok(())
             }
             EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
                 std::mem::swap(old_lines, new_lines);
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                }
                 Ok(())
             }
             EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
                 std::mem::swap(old_lines, new_lines);
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                }
                 Ok(())
             }
             EditorUndoOp::PasteAnchor { .. } => {
@@ -663,7 +682,9 @@ impl EditorUndoOp {
                 new_properties,
             } => {
                 std::mem::swap(old_properties, new_properties);
-                edit_state.get_buffer_mut().layers[*index].properties = new_properties.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*index) {
+                    l.properties = new_properties.clone();
+                }
                 Ok(())
             }
             EditorUndoOp::SetUseLetterSpacing { new_ls } => {
@@ -732,25 +753,27 @@ impl EditorUndoOp {
             EditorUndoOp::SetChar {
                 pos, layer, new, redo_caret, ..
             } => {
-                edit_state.get_buffer_mut().layers[*layer].set_char(*pos, *new);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.set_char(*pos, *new);
+                }
                 if let Some(caret_pos) = redo_caret {
                     edit_state.set_caret_position(*caret_pos);
                 }
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
-                edit_state.get_buffer_mut().layers[*layer].swap_char(*pos1, *pos2);
-                Ok(())
-            }
-            EditorUndoOp::AddLayer { index, layer } => {
-                if let Some(l) = layer.take() {
-                    edit_state.get_buffer_mut().layers.insert(*index, l);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.swap_char(*pos1, *pos2);
                 }
                 Ok(())
             }
-            EditorUndoOp::RemoveLayer { layer_index, layer } => {
+            EditorUndoOp::AddLayer { index, layer } => {
+                edit_state.get_buffer_mut().layers.insert(*index, (**layer).clone());
+                Ok(())
+            }
+            EditorUndoOp::RemoveLayer { layer_index, .. } => {
                 if *layer_index < edit_state.get_buffer().layers.len() {
-                    *layer = Some(edit_state.get_buffer_mut().layers.remove(*layer_index));
+                    edit_state.get_buffer_mut().layers.remove(*layer_index);
                     edit_state.clamp_current_layer();
                     Ok(())
                 } else {
@@ -836,51 +859,58 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::DeleteRow { layer, line, deleted_row } => {
-                let l = &mut edit_state.get_buffer_mut().layers[*layer];
-                if (*line as usize) < l.lines.len() {
-                    *deleted_row = l.lines.remove(*line as usize);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if (*line as usize) < l.lines.len() {
+                        *deleted_row = l.lines.remove(*line as usize);
+                    }
                 }
                 Ok(())
             }
             EditorUndoOp::InsertRow { layer, line, inserted_row } => {
-                edit_state.get_buffer_mut().layers[*layer].lines.insert(*line as usize, inserted_row.clone());
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines.insert(*line as usize, inserted_row.clone());
+                }
                 Ok(())
             }
             EditorUndoOp::DeleteColumn { layer, column, deleted_chars } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                deleted_chars.clear();
-                for line in &mut layer.lines {
-                    if (*column as usize) < line.chars.len() {
-                        deleted_chars.push(Some(line.chars.remove(*column as usize)));
-                    } else {
-                        deleted_chars.push(None);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    deleted_chars.clear();
+                    for line in &mut l.lines {
+                        if (*column as usize) < line.chars.len() {
+                            deleted_chars.push(Some(line.chars.remove(*column as usize)));
+                        } else {
+                            deleted_chars.push(None);
+                        }
                     }
+                    let new_width = l.width() - 1;
+                    l.set_size((new_width, l.height()));
                 }
-                let new_width = layer.width() - 1;
-                layer.set_size((new_width, layer.height()));
                 Ok(())
             }
             EditorUndoOp::InsertColumn { layer, column } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                for line in &mut layer.lines {
-                    line.insert_char(*column, AttributedChar::default());
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    for line in &mut l.lines {
+                        line.insert_char(*column, AttributedChar::default());
+                    }
+                    let new_width = l.width() + 1;
+                    l.set_size((new_width, l.height()));
                 }
-                let new_width = layer.width() + 1;
-                layer.set_size((new_width, layer.height()));
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerUp { layer } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                if !layer.lines.is_empty() {
-                    let line = layer.lines.remove(0);
-                    layer.lines.push(line);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if !l.lines.is_empty() {
+                        let line = l.lines.remove(0);
+                        l.lines.push(line);
+                    }
                 }
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerDown { layer } => {
-                let layer = &mut edit_state.get_buffer_mut().layers[*layer];
-                if let Some(line) = layer.lines.pop() {
-                    layer.lines.insert(0, line);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    if let Some(line) = l.lines.pop() {
+                        l.lines.insert(0, line);
+                    }
                 }
                 Ok(())
             }
@@ -892,22 +922,27 @@ impl EditorUndoOp {
                 new_size,
             } => {
                 // Set lines and size first, then swap for undo symmetry
-                let l = &mut edit_state.get_buffer_mut().layers[*layer];
-                l.lines = new_lines.clone();
-                l.set_size(*new_size);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                    l.set_size(*new_size);
+                }
                 std::mem::swap(old_lines, new_lines);
                 std::mem::swap(old_size, new_size);
                 Ok(())
             }
             EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
                 // Set lines first, then swap for undo symmetry
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                }
                 std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
             EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
                 // Set lines first, then swap for undo symmetry
-                edit_state.get_buffer_mut().layers[*layer].lines = new_lines.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.lines = new_lines.clone();
+                }
                 std::mem::swap(old_lines, new_lines);
                 Ok(())
             }
@@ -929,7 +964,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::ClearLayer { layer_index, layer } => {
-                std::mem::swap(layer, &mut edit_state.get_buffer_mut().layers[*layer_index].lines);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer_index) {
+                    std::mem::swap(layer, &mut l.lines);
+                }
                 Ok(())
             }
             EditorUndoOp::Deselect { sel } => {
@@ -1056,7 +1093,9 @@ impl EditorUndoOp {
                 new_properties,
             } => {
                 // Set properties first, then swap for undo symmetry
-                edit_state.get_buffer_mut().layers[*index].properties = new_properties.clone();
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*index) {
+                    l.properties = new_properties.clone();
+                }
                 std::mem::swap(old_properties, new_properties);
                 Ok(())
             }

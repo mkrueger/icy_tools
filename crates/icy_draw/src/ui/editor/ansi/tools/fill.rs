@@ -182,6 +182,7 @@ impl ToolHandler for FillTool {
                     } else {
                         start_block.lower_block_color
                     };
+                    // Don't fill if target color is the same as fill color
                     if target_color == fg {
                         return ToolResult::Commit("Bucket fill".to_string());
                     }
@@ -216,24 +217,44 @@ impl ToolHandler for FillTool {
                             stack.push((to, to + icy_engine::Position::new(0, -1)));
                             stack.push((to, to + icy_engine::Position::new(0, 1)));
                         } else if block.is_vertically_blocky() {
-                            let ch = if from.y == to.y - 1 && block.left_block_color == target_color {
-                                Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
-                            } else if from.y == to.y - 1 && block.right_block_color == target_color {
-                                Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
-                            } else if from.y == to.y + 1 && block.right_block_color == target_color {
-                                Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
-                            } else if from.y == to.y + 1 && block.left_block_color == target_color {
-                                Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
-                            } else if from.x == to.x - 1 && block.left_block_color == target_color {
+                            // Vertikale Half-Blocks (links/rechts geteilt)
+                            // Prüfe die Seite basierend auf der Richtung, aus der wir kommen
+                            let ch = if from.x == to.x - 1 && block.left_block_color == target_color {
+                                // Kommen von links, linke Seite hat target_color
                                 Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
                             } else if from.x == to.x + 1 && block.right_block_color == target_color {
+                                // Kommen von rechts, rechte Seite hat target_color
                                 Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
+                            } else if from.y != to.y {
+                                // Kommen von oben oder unten - prüfe beide Seiten
+                                if block.left_block_color == target_color {
+                                    Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
+                                } else if block.right_block_color == target_color {
+                                    Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
+                                } else {
+                                    None
+                                }
+                            } else if from == to {
+                                // Startpunkt - prüfe beide Seiten
+                                if block.left_block_color == target_color {
+                                    Some(AttributedChar::new(221 as char, TextAttribute::from_colors(fg, block.right_block_color)))
+                                } else if block.right_block_color == target_color {
+                                    Some(AttributedChar::new(222 as char, TextAttribute::from_colors(fg, block.left_block_color)))
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             };
 
                             if let Some(ch) = ch {
                                 let _ = ctx.state.set_char_in_atomic(text_pos, ch);
+
+                                // WICHTIG: Nachbarn auf den Stack pushen, damit Fill weitergeht!
+                                stack.push((to, to + icy_engine::Position::new(-1, 0)));
+                                stack.push((to, to + icy_engine::Position::new(1, 0)));
+                                stack.push((to, to + icy_engine::Position::new(0, -1)));
+                                stack.push((to, to + icy_engine::Position::new(0, 1)));
                             }
                         }
                     }

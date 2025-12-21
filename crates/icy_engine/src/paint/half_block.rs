@@ -218,3 +218,256 @@ impl HalfBlock {
         block
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== HalfBlock Parsing Tests ====================
+
+    #[test]
+    fn test_from_char_empty_block() {
+        let ch = AttributedChar::new(' ', TextAttribute::from_colors(AttributeColor::Palette(7), AttributeColor::Palette(1)));
+        let pos = Position::new(0, 0); // top half
+        let block = HalfBlock::from_char(ch, pos);
+
+        assert_eq!(block.block_type, HalfBlockType::Empty);
+        assert_eq!(block.upper_block_color, AttributeColor::Palette(1)); // background
+        assert_eq!(block.lower_block_color, AttributeColor::Palette(1)); // background
+        assert!(block.is_top);
+        assert!(block.is_blocky());
+    }
+
+    #[test]
+    fn test_from_char_full_block() {
+        let ch = AttributedChar::new(FULL_BLOCK, TextAttribute::from_colors(AttributeColor::Palette(4), AttributeColor::Palette(0)));
+        let pos = Position::new(0, 0);
+        let block = HalfBlock::from_char(ch, pos);
+
+        assert_eq!(block.block_type, HalfBlockType::Full);
+        assert_eq!(block.upper_block_color, AttributeColor::Palette(4)); // foreground
+        assert_eq!(block.lower_block_color, AttributeColor::Palette(4)); // foreground
+        assert!(block.is_blocky());
+    }
+
+    #[test]
+    fn test_from_char_half_block_top() {
+        let ch = AttributedChar::new(
+            HALF_BLOCK_TOP,
+            TextAttribute::from_colors(AttributeColor::Palette(2), AttributeColor::Palette(5)),
+        );
+        let pos_top = Position::new(0, 0);
+        let block_top = HalfBlock::from_char(ch, pos_top);
+
+        assert_eq!(block_top.block_type, HalfBlockType::Upper);
+        assert_eq!(block_top.upper_block_color, AttributeColor::Palette(2)); // foreground
+        assert_eq!(block_top.lower_block_color, AttributeColor::Palette(5)); // background
+        assert!(block_top.is_top);
+
+        let pos_bottom = Position::new(0, 1);
+        let block_bottom = HalfBlock::from_char(ch, pos_bottom);
+        assert!(!block_bottom.is_top);
+    }
+
+    #[test]
+    fn test_from_char_half_block_bottom() {
+        let ch = AttributedChar::new(
+            HALF_BLOCK_BOTTOM,
+            TextAttribute::from_colors(AttributeColor::Palette(3), AttributeColor::Palette(6)),
+        );
+        let pos = Position::new(0, 0);
+        let block = HalfBlock::from_char(ch, pos);
+
+        assert_eq!(block.block_type, HalfBlockType::Lower);
+        assert_eq!(block.upper_block_color, AttributeColor::Palette(6)); // background
+        assert_eq!(block.lower_block_color, AttributeColor::Palette(3)); // foreground
+    }
+
+    #[test]
+    fn test_from_char_left_block() {
+        let ch = AttributedChar::new(LEFT_BLOCK, TextAttribute::from_colors(AttributeColor::Palette(1), AttributeColor::Palette(2)));
+        let pos = Position::new(0, 0);
+        let block = HalfBlock::from_char(ch, pos);
+
+        assert_eq!(block.block_type, HalfBlockType::Left);
+        assert_eq!(block.left_block_color, AttributeColor::Palette(1)); // foreground
+        assert_eq!(block.right_block_color, AttributeColor::Palette(2)); // background
+        assert!(block.is_vertically_blocky());
+        assert!(!block.is_blocky());
+    }
+
+    #[test]
+    fn test_from_char_right_block() {
+        let ch = AttributedChar::new(RIGHT_BLOCK, TextAttribute::from_colors(AttributeColor::Palette(3), AttributeColor::Palette(4)));
+        let pos = Position::new(0, 0);
+        let block = HalfBlock::from_char(ch, pos);
+
+        assert_eq!(block.block_type, HalfBlockType::Right);
+        assert_eq!(block.left_block_color, AttributeColor::Palette(4)); // background
+        assert_eq!(block.right_block_color, AttributeColor::Palette(3)); // foreground
+        assert!(block.is_vertically_blocky());
+    }
+
+    // ==================== Transparent Block Tests ====================
+
+    #[test]
+    fn test_from_char_transparent_invisible() {
+        let ch = AttributedChar::invisible();
+        let pos = Position::new(0, 0);
+        let block = HalfBlock::from_char(ch, pos);
+
+        // Invisible char has transparent colors
+        assert_eq!(block.upper_block_color, AttributeColor::Transparent);
+        assert_eq!(block.lower_block_color, AttributeColor::Transparent);
+        assert_eq!(block.block_type, HalfBlockType::Empty);
+        assert!(block.is_blocky());
+    }
+
+    #[test]
+    fn test_transparent_vs_colored_detection() {
+        // A transparent cell
+        let transparent_ch = AttributedChar::invisible();
+        let transparent_block = HalfBlock::from_char(transparent_ch, Position::new(0, 0));
+
+        // A colored cell (red foreground on black background)
+        let colored_ch = AttributedChar::new(FULL_BLOCK, TextAttribute::from_colors(AttributeColor::Palette(4), AttributeColor::Palette(0)));
+        let colored_block = HalfBlock::from_char(colored_ch, Position::new(0, 0));
+
+        // They should have different colors - this is key for fill boundaries
+        assert_eq!(transparent_block.upper_block_color, AttributeColor::Transparent);
+        assert_eq!(colored_block.upper_block_color, AttributeColor::Palette(4));
+        assert_ne!(transparent_block.upper_block_color, colored_block.upper_block_color);
+    }
+
+    #[test]
+    fn test_transparent_boundary_detection() {
+        // Simulate fill boundary detection:
+        // When filling transparent areas, a non-transparent cell should be a boundary
+        let target_color = AttributeColor::Transparent;
+
+        // Transparent cell - should match target (fill continues)
+        let transparent_ch = AttributedChar::invisible();
+        let transparent_block = HalfBlock::from_char(transparent_ch, Position::new(0, 0));
+        assert_eq!(transparent_block.upper_block_color, target_color);
+
+        // Colored cell - should NOT match target (fill stops)
+        let barrier_ch = AttributedChar::new(' ', TextAttribute::from_colors(AttributeColor::Palette(7), AttributeColor::Palette(1)));
+        let barrier_block = HalfBlock::from_char(barrier_ch, Position::new(0, 0));
+        assert_ne!(barrier_block.upper_block_color, target_color);
+
+        // Any visible block character - should be a barrier
+        let full_block_ch = AttributedChar::new(FULL_BLOCK, TextAttribute::from_colors(AttributeColor::Palette(4), AttributeColor::Palette(0)));
+        let full_block = HalfBlock::from_char(full_block_ch, Position::new(0, 0));
+        assert_ne!(full_block.upper_block_color, target_color);
+    }
+
+    // ==================== Block Type Detection Tests ====================
+
+    #[test]
+    fn test_is_blocky_variants() {
+        // Horizontal half blocks should be blocky
+        let empty = HalfBlock::from_char(AttributedChar::new(' ', TextAttribute::default()), Position::new(0, 0));
+        assert!(empty.is_blocky());
+
+        let full = HalfBlock::from_char(AttributedChar::new(FULL_BLOCK, TextAttribute::default()), Position::new(0, 0));
+        assert!(full.is_blocky());
+
+        let top = HalfBlock::from_char(AttributedChar::new(HALF_BLOCK_TOP, TextAttribute::default()), Position::new(0, 0));
+        assert!(top.is_blocky());
+
+        let bottom = HalfBlock::from_char(AttributedChar::new(HALF_BLOCK_BOTTOM, TextAttribute::default()), Position::new(0, 0));
+        assert!(bottom.is_blocky());
+    }
+
+    #[test]
+    fn test_is_vertically_blocky_variants() {
+        // Vertical half blocks should be vertically blocky (but not blocky)
+        let left = HalfBlock::from_char(AttributedChar::new(LEFT_BLOCK, TextAttribute::default()), Position::new(0, 0));
+        assert!(left.is_vertically_blocky());
+        assert!(!left.is_blocky());
+
+        let right = HalfBlock::from_char(AttributedChar::new(RIGHT_BLOCK, TextAttribute::default()), Position::new(0, 0));
+        assert!(right.is_vertically_blocky());
+        assert!(!right.is_blocky());
+    }
+
+    #[test]
+    fn test_non_block_character() {
+        // Regular ASCII character with different fg/bg should not be blocky
+        let letter = HalfBlock::from_char(
+            AttributedChar::new('A', TextAttribute::from_colors(AttributeColor::Palette(7), AttributeColor::Palette(0))),
+            Position::new(0, 0),
+        );
+        assert_eq!(letter.block_type, HalfBlockType::None);
+        assert!(!letter.is_blocky());
+        assert!(!letter.is_vertically_blocky());
+    }
+
+    #[test]
+    fn test_same_fg_bg_becomes_full() {
+        // Character with same fg and bg is treated as full block
+        let same_colors = HalfBlock::from_char(
+            AttributedChar::new('X', TextAttribute::from_colors(AttributeColor::Palette(5), AttributeColor::Palette(5))),
+            Position::new(0, 0),
+        );
+        assert_eq!(same_colors.block_type, HalfBlockType::Full);
+        assert!(same_colors.is_blocky());
+    }
+
+    // ==================== Position-based Tests ====================
+
+    #[test]
+    fn test_is_top_based_on_position() {
+        let ch = AttributedChar::new(HALF_BLOCK_TOP, TextAttribute::default());
+
+        // Even y positions (0, 2, 4, ...) are top half
+        assert!(HalfBlock::from_char(ch, Position::new(0, 0)).is_top);
+        assert!(HalfBlock::from_char(ch, Position::new(0, 2)).is_top);
+        assert!(HalfBlock::from_char(ch, Position::new(0, 4)).is_top);
+
+        // Odd y positions (1, 3, 5, ...) are bottom half
+        assert!(!HalfBlock::from_char(ch, Position::new(0, 1)).is_top);
+        assert!(!HalfBlock::from_char(ch, Position::new(0, 3)).is_top);
+        assert!(!HalfBlock::from_char(ch, Position::new(0, 5)).is_top);
+    }
+
+    // ==================== get_half_block_char Tests ====================
+
+    #[test]
+    fn test_get_half_block_char_fill_top() {
+        // Empty cell, fill top half with red
+        let ch = AttributedChar::new(' ', TextAttribute::from_colors(AttributeColor::Palette(0), AttributeColor::Palette(0)));
+        let pos = Position::new(0, 0); // top half
+        let block = HalfBlock::from_char(ch, pos);
+
+        let result = block.get_half_block_char(AttributeColor::Palette(4), false);
+        // Should create a half block with red top
+        assert_eq!(result.ch, HALF_BLOCK_TOP);
+    }
+
+    #[test]
+    fn test_get_half_block_char_fill_bottom() {
+        // Empty cell, fill bottom half with blue
+        let ch = AttributedChar::new(' ', TextAttribute::from_colors(AttributeColor::Palette(0), AttributeColor::Palette(0)));
+        let pos = Position::new(0, 1); // bottom half
+        let block = HalfBlock::from_char(ch, pos);
+
+        let result = block.get_half_block_char(AttributeColor::Palette(1), false);
+        // Should create a half block with blue bottom
+        assert_eq!(result.ch, HALF_BLOCK_BOTTOM);
+    }
+
+    #[test]
+    fn test_get_half_block_char_merge_to_full() {
+        // Half block with red top, fill bottom with red -> should become full block
+        let ch = AttributedChar::new(
+            HALF_BLOCK_TOP,
+            TextAttribute::from_colors(AttributeColor::Palette(4), AttributeColor::Palette(0)),
+        );
+        let pos = Position::new(0, 1); // bottom half
+        let block = HalfBlock::from_char(ch, pos);
+
+        let result = block.get_half_block_char(AttributeColor::Palette(4), false);
+        assert_eq!(result.ch, FULL_BLOCK);
+    }
+}

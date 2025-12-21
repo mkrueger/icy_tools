@@ -15,7 +15,7 @@ impl EditState {
         let idx = (layer + 1).clamp(0, self.screen.buffer.layers.len());
         let op = EditorUndoOp::AddLayer {
             index: idx,
-            layer: Some(new_layer),
+            layer: Box::new(new_layer),
         };
         self.push_undo_action(op)?;
         self.screen.current_layer = idx;
@@ -26,9 +26,10 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
+        let removed = self.screen.buffer.layers[layer].clone();
         let op = EditorUndoOp::RemoveLayer {
             layer_index: layer,
-            layer: None,
+            layer: Box::new(removed),
         };
         self.push_undo_action(op)
     }
@@ -65,7 +66,7 @@ impl EditState {
         new_layer.properties.title = fl!(crate::LANGUAGE_LOADER, "layer-duplicate-name", name = new_layer.properties.title);
         let op = EditorUndoOp::AddLayer {
             index: layer + 1,
-            layer: Some(new_layer),
+            layer: Box::new(new_layer),
         };
         self.push_undo_action(op)?;
         self.screen.current_layer = layer + 1;
