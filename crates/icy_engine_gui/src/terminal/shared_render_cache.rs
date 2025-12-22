@@ -88,12 +88,41 @@ impl SharedRenderCache {
         self.tiles.clear();
     }
 
-    /// Invalidate cache due to content change
+    /// Invalidate cache due to content change (clears all tiles)
     pub fn invalidate(&mut self, new_version: u64) {
         if new_version != self.content_version {
             self.content_version = new_version;
             self.tiles.clear();
         }
+    }
+
+    /// Invalidate only specific tiles based on dirty line range.
+    /// This is more efficient than full invalidation when only a few lines changed.
+    ///
+    /// - `new_version`: The new buffer version
+    /// - `dirty_start_tile`: First tile index to invalidate (inclusive)
+    /// - `dirty_end_tile`: Last tile index to invalidate (inclusive)
+    ///
+    /// Returns true if any tiles were invalidated.
+    pub fn invalidate_tiles(&mut self, new_version: u64, dirty_start_tile: i32, dirty_end_tile: i32) -> bool {
+        if new_version == self.content_version {
+            return false;
+        }
+
+        self.content_version = new_version;
+
+        let mut removed_any = false;
+        for tile_idx in dirty_start_tile..=dirty_end_tile {
+            // Remove both blink states for this tile
+            if self.tiles.remove(&TileCacheKey::new(tile_idx, true)).is_some() {
+                removed_any = true;
+            }
+            if self.tiles.remove(&TileCacheKey::new(tile_idx, false)).is_some() {
+                removed_any = true;
+            }
+        }
+
+        removed_any
     }
 
     /// Invalidate cache due to selection change

@@ -148,6 +148,14 @@ impl Screen for SharedTextScreen {
         self.inner.lock().version()
     }
 
+    fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        self.inner.lock().get_dirty_lines()
+    }
+
+    fn clear_dirty_lines(&self) {
+        self.inner.lock().clear_dirty_lines()
+    }
+
     fn default_foreground_color(&self) -> u32 {
         self.inner.lock().default_foreground_color()
     }

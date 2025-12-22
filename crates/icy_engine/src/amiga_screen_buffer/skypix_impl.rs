@@ -203,7 +203,5 @@ impl super::AmigaScreenBuffer {
         let paint = unsafe { &mut *paint_ptr };
 
         execute_skypix_command(self, paint, cmd);
-
-        self.mark_dirty();
     }
 }

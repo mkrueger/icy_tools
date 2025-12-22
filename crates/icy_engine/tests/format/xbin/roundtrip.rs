@@ -43,14 +43,6 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
         .load(&icy_path, None)
         .unwrap_or_else(|e| panic!("Failed to load {}: {:?}", filename, e));
 
-    println!(
-        "  Loaded .icy: {}x{}, {} fonts, ice_mode={:?}",
-        original.screen.buffer.width(),
-        original.screen.buffer.height(),
-        original.screen.buffer.font_count(),
-        original.screen.buffer.ice_mode
-    );
-
     // Step 2: Save as XBin (uncompressed)
     let xbin_format = FileFormat::XBin;
     let mut save_options = SaveOptions::default();
@@ -65,13 +57,6 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
     let reloaded = xbin_format
         .from_bytes(&xbin_bytes, None)
         .unwrap_or_else(|e| panic!("Failed to reload XBin for {}: {:?}", filename, e));
-
-    println!(
-        "  Reloaded XBin: {}x{}, {} fonts",
-        reloaded.screen.buffer.width(),
-        reloaded.screen.buffer.height(),
-        reloaded.screen.buffer.font_count()
-    );
 
     // Step 4: Compare original with reloaded
     compare_buffers(&original.screen.buffer, &reloaded.screen.buffer, CompareOptions::ALL);

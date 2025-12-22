@@ -338,16 +338,36 @@ impl<'a> CRTShaderProgram<'a> {
                 }
             }
 
-            // Check for content changes that require full cache invalidation
+            // Check for content changes that require cache invalidation
             // Use the shared render cache from Terminal
             {
                 let mut cache: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, crate::SharedRenderCache> = self.term.render_cache.write();
                 let cache_version = cache.content_version();
-                // Cache invalidation when buffer version changes
+
+                // Selective tile invalidation based on dirty lines
                 if current_buffer_version != cache_version {
-                    // Tiles will be cleared by invalidate()
+                    // Try to get dirty lines from screen, then calculate affected tiles
+                    if let Some((first_dirty_line, last_dirty_line)) = screen.get_dirty_lines() {
+                        // Calculate tile indices from dirty line range
+                        let tile_height = crate::TILE_HEIGHT;
+                        let font_height = screen.font_dimensions().height.max(1) as u32;
+                        let tile_height_lines = tile_height / font_height;
+                        if tile_height_lines > 0 {
+                            let first_tile = (first_dirty_line as u32 / tile_height_lines) as i32;
+                            let last_tile = ((last_dirty_line as u32).saturating_sub(1) / tile_height_lines) as i32;
+                            // Selective invalidation: only remove tiles in dirty range
+                            cache.invalidate_tiles(current_buffer_version, first_tile, last_tile);
+                        } else {
+                            cache.invalidate(current_buffer_version);
+                        }
+                        // Clear dirty range after processing
+                        screen.clear_dirty_lines();
+                    } else {
+                        // No dirty tracking available or full invalidation needed
+                        cache.invalidate(current_buffer_version);
+                    }
                 }
-                cache.invalidate(current_buffer_version);
+
                 cache.content_height = full_content_height;
                 cache.content_width = texture_width;
                 cache.last_blink_state = blink_on;

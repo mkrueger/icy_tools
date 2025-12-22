@@ -227,17 +227,6 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
                     let (r, g, b) = buffer.palette.rgb(i as u32);
                     palette[i] = [r, g, b];
                 }
-
-                println!(
-                    "{}",
-                    i18n_embed_fl::fl!(
-                        crate::LANGUAGE_LOADER,
-                        "server-loaded",
-                        path = path.display().to_string(),
-                        cols = cols.to_string(),
-                        rows = rws.to_string()
-                    )
-                );
                 (cols, rws, Some(doc), ice, false, font, sauce, palette)
             }
             Err(e) => {

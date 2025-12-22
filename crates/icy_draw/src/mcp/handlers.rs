@@ -799,7 +799,6 @@ impl IcyDrawMcpHandler {
 
 impl ServerHandler for IcyDrawMcpHandler {
     fn get_info(&self) -> InitializeResult {
-        println!("[MCP DEBUG] get_info called - returning server capabilities");
         let result = InitializeResult {
             protocol_version: ProtocolVersion::V_2025_06_18,
             capabilities: ServerCapabilities::builder().enable_tools().build(),
@@ -812,7 +811,6 @@ impl ServerHandler for IcyDrawMcpHandler {
             },
             instructions: Some("icy_draw MCP server for ANSI/ASCII art editing automation".to_string()),
         };
-        println!("[MCP DEBUG] get_info response: {:?}", result);
         result
     }
 
@@ -821,12 +819,8 @@ impl ServerHandler for IcyDrawMcpHandler {
         _request: Option<PaginatedRequestParam>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        println!("[MCP DEBUG] list_tools called");
         let tools = self.tool_router.list_all();
-        println!("[MCP DEBUG] list_tools response: {} tools available", tools.len());
-        for tool in &tools {
-            println!("[MCP DEBUG]   - {}: {:?}", tool.name, tool.description);
-        }
+
         std::future::ready(Ok(ListToolsResult::with_all_items(tools)))
     }
 
@@ -835,29 +829,14 @@ impl ServerHandler for IcyDrawMcpHandler {
         request: CallToolRequestParam,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
-        println!("[MCP DEBUG] call_tool RECEIVED:");
-        println!("[MCP DEBUG]   tool_name: {}", request.name);
-        println!("[MCP DEBUG]   arguments: {:?}", request.arguments);
         let tool_ctx = ToolCallContext::new(self, request, context);
         async move {
             let result = self.tool_router.call(tool_ctx).await.map_err(Into::into);
-            match &result {
-                Ok(r) => {
-                    println!("[MCP DEBUG] call_tool RESPONSE: success={}", !r.is_error.unwrap_or(false));
-                    for content in &r.content {
-                        println!("[MCP DEBUG]   content: {:?}", content);
-                    }
-                }
-                Err(e) => {
-                    println!("[MCP DEBUG] call_tool ERROR: {:?}", e);
-                }
-            }
             result
         }
     }
 
     fn on_initialized(&self, _context: rmcp::service::NotificationContext<rmcp::RoleServer>) -> impl std::future::Future<Output = ()> + Send + '_ {
-        println!("[MCP DEBUG] on_initialized - MCP client connected and initialized");
         log::info!("MCP client initialized successfully");
         std::future::ready(())
     }
@@ -867,7 +846,6 @@ impl ServerHandler for IcyDrawMcpHandler {
         notification: rmcp::model::CancelledNotificationParam,
         _context: rmcp::service::NotificationContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = ()> + Send + '_ {
-        println!("[MCP DEBUG] on_cancelled - Request cancelled: {:?}", notification);
         log::info!("Request cancelled: {:?}", notification);
         std::future::ready(())
     }

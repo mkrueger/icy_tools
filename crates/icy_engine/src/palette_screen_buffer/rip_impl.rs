@@ -543,7 +543,6 @@ impl crate::PaletteScreenBuffer {
         unsafe {
             execute_rip_command(self, &mut *bgi_ptr, cmd);
         }
-        self.mark_dirty();
     }
 }
 

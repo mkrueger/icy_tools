@@ -1,6 +1,8 @@
+use std::backtrace;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Alignment;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -219,10 +221,15 @@ pub struct TextBuffer {
     font_cell_size: Size,
 
     /// Dirty flag: set when buffer content changes, cleared when rendered
-    buffer_dirty: std::sync::atomic::AtomicBool,
+    buffer_dirty: AtomicBool,
 
     /// Generation counter: incremented on every buffer change for cache invalidation
-    buffer_version: std::sync::atomic::AtomicU64,
+    buffer_version: AtomicU64,
+
+    /// Dirty line range: tracks which lines have been modified since last render.
+    /// -1 means no dirty lines. These are updated atomically for thread-safety.
+    dirty_line_start: AtomicI32,
+    dirty_line_end: AtomicI32,
 }
 
 impl std::fmt::Debug for TextBuffer {
@@ -271,8 +278,10 @@ impl Clone for TextBuffer {
             tags: self.tags.clone(),
             max_scrollback_lines: self.max_scrollback_lines,
             font_cell_size: self.font_cell_size,
-            buffer_dirty: std::sync::atomic::AtomicBool::new(self.buffer_dirty.load(std::sync::atomic::Ordering::Relaxed)),
-            buffer_version: std::sync::atomic::AtomicU64::new(self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)),
+            buffer_dirty: AtomicBool::new(self.buffer_dirty.load(Ordering::Relaxed)),
+            buffer_version: AtomicU64::new(self.buffer_version.load(Ordering::Relaxed)),
+            dirty_line_start: AtomicI32::new(self.dirty_line_start.load(Ordering::Relaxed)),
+            dirty_line_end: AtomicI32::new(self.dirty_line_end.load(Ordering::Relaxed)),
         }
     }
 }
@@ -572,32 +581,120 @@ impl TextBuffer {
             max_scrollback_lines: 10000,      // Reasonable default
             font_cell_size: Size::new(8, 16), // Default VGA 8x16 font
 
-            buffer_dirty: std::sync::atomic::AtomicBool::new(true),
-            buffer_version: std::sync::atomic::AtomicU64::new(0),
+            buffer_dirty: AtomicBool::new(true),
+            buffer_version: AtomicU64::new(0),
+            dirty_line_start: AtomicI32::new(-1),
+            dirty_line_end: AtomicI32::new(-1),
         }
     }
 
     /// Mark the buffer as dirty (content changed). This increments the version counter.
     /// Should be called by any method that modifies buffer content.
+    /// For more efficient cache invalidation, use `mark_line_dirty()` when possible.
     pub fn mark_dirty(&self) {
-        self.buffer_dirty.store(true, std::sync::atomic::Ordering::Release);
-        self.buffer_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.buffer_dirty.store(true, Ordering::Release);
+        self.buffer_version.fetch_add(1, Ordering::Relaxed);
+        // Mark all lines as dirty (full invalidation)
+        self.dirty_line_start.store(0, Ordering::Relaxed);
+        self.dirty_line_end.store(self.height(), Ordering::Relaxed);
+    }
+
+    /// Mark a specific line as dirty. This is more efficient than `mark_dirty()`
+    /// as it allows partial cache invalidation.
+    pub fn mark_line_dirty(&self, line: i32) {
+        self.buffer_dirty.store(true, Ordering::Release);
+        self.buffer_version.fetch_add(1, Ordering::Relaxed);
+
+        // Atomically extend the dirty range to include this line
+        loop {
+            let current_start = self.dirty_line_start.load(Ordering::Relaxed);
+            let new_start = if current_start < 0 { line } else { current_start.min(line) };
+            if self
+                .dirty_line_start
+                .compare_exchange_weak(current_start, new_start, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
+
+        loop {
+            let current_end = self.dirty_line_end.load(Ordering::Relaxed);
+            let new_end = if current_end < 0 { line + 1 } else { current_end.max(line + 1) };
+            if self
+                .dirty_line_end
+                .compare_exchange_weak(current_end, new_end, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
+    /// Mark a range of lines as dirty.
+    pub fn mark_lines_dirty(&self, start_line: i32, end_line: i32) {
+        self.buffer_dirty.store(true, Ordering::Release);
+        self.buffer_version.fetch_add(1, Ordering::Relaxed);
+
+        // Atomically extend the dirty range
+        loop {
+            let current_start = self.dirty_line_start.load(Ordering::Relaxed);
+            let new_start = if current_start < 0 { start_line } else { current_start.min(start_line) };
+            if self
+                .dirty_line_start
+                .compare_exchange_weak(current_start, new_start, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
+
+        loop {
+            let current_end = self.dirty_line_end.load(Ordering::Relaxed);
+            let new_end = if current_end < 0 { end_line } else { current_end.max(end_line) };
+            if self
+                .dirty_line_end
+                .compare_exchange_weak(current_end, new_end, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
     }
 
     /// Check if the buffer is dirty (needs re-rendering)
     pub fn is_dirty(&self) -> bool {
-        self.buffer_dirty.load(std::sync::atomic::Ordering::Acquire)
+        self.buffer_dirty.load(Ordering::Acquire)
     }
 
     /// Clear the dirty flag (called after rendering)
     pub fn clear_dirty(&self) {
-        self.buffer_dirty.store(false, std::sync::atomic::Ordering::Release);
+        self.buffer_dirty.store(false, Ordering::Release);
     }
 
     /// Get the current buffer version (increments on each modification)
     /// Used for cache invalidation
     pub fn version(&self) -> u64 {
-        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
+        self.buffer_version.load(Ordering::Relaxed)
+    }
+
+    /// Get the dirty line range and clear it atomically.
+    /// Returns (start_line, end_line) or None if no lines are dirty.
+    /// end_line is exclusive.
+    pub fn get_and_clear_dirty_lines(&self) -> Option<(i32, i32)> {
+        let start = self.dirty_line_start.swap(-1, Ordering::Relaxed);
+        let end = self.dirty_line_end.swap(-1, Ordering::Relaxed);
+
+        if start < 0 || end < 0 { None } else { Some((start, end)) }
+    }
+
+    /// Get the dirty line range without clearing it.
+    /// Returns (start_line, end_line) or None if no lines are dirty.
+    /// end_line is exclusive.
+    pub fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        let start = self.dirty_line_start.load(Ordering::Relaxed);
+        let end = self.dirty_line_end.load(Ordering::Relaxed);
+        if start < 0 || end < 0 { None } else { Some((start, end)) }
     }
 
     pub fn clear_font_table(&mut self) {
@@ -862,7 +959,6 @@ impl TextBuffer {
     pub fn set_font_dimensions(&mut self, size: Size) {
         if self.font_cell_size != size {
             self.font_cell_size = size;
-            self.mark_dirty();
         }
     }
 

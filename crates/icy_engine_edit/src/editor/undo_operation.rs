@@ -356,8 +356,11 @@ impl EditorUndoOp {
             EditorUndoOp::SetChar {
                 pos, layer, old, undo_caret, ..
             } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.set_char(*pos, *old);
+                    // Mark only the affected line as dirty for efficient tile cache invalidation
+                    buf.mark_line_dirty(pos.y);
                 }
                 if let Some(caret_pos) = undo_caret {
                     edit_state.set_caret_position(*caret_pos);
@@ -365,8 +368,13 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.swap_char(*pos1, *pos2);
+                    // Mark affected lines as dirty
+                    let min_y = pos1.y.min(pos2.y);
+                    let max_y = pos1.y.max(pos2.y) + 1;
+                    buf.mark_lines_dirty(min_y, max_y);
                 }
                 Ok(())
             }
@@ -375,18 +383,22 @@ impl EditorUndoOp {
                     edit_state.get_buffer_mut().layers.remove(*index);
                     edit_state.clamp_current_layer();
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveLayer { layer_index, layer } => {
                 edit_state.get_buffer_mut().layers.insert(*layer_index, (**layer).clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RaiseLayer { layer_index } => {
                 edit_state.get_buffer_mut().layers.swap(*layer_index, *layer_index + 1);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::LowerLayer { layer_index } => {
                 edit_state.get_buffer_mut().layers.swap(*layer_index, *layer_index - 1);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::MergeLayerDown {
@@ -405,6 +417,7 @@ impl EditorUndoOp {
                     *merged_layer = Some(removed);
                     edit_state.set_current_layer(*index);
                     edit_state.clamp_current_layer();
+                    edit_state.get_buffer_mut().mark_dirty();
                 }
                 Ok(())
             }
@@ -412,18 +425,21 @@ impl EditorUndoOp {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     layer.properties.is_visible = !layer.properties.is_visible;
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::MoveLayer { index, from, .. } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     layer.set_offset(*from);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetLayerSize { index, from, .. } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     layer.set_size(*from);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Paste { layer, current_layer } => {
@@ -431,17 +447,20 @@ impl EditorUndoOp {
                 let removed = edit_state.get_buffer_mut().layers.remove(*current_layer + 1);
                 *layer = Box::new(removed);
                 edit_state.set_current_layer(*current_layer);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddFloatingLayer { current_layer } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*current_layer) {
                     layer.properties.title = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "layer-pasted-name");
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ResizeBuffer { orig_size, .. } => {
                 edit_state.get_buffer_mut().set_size(*orig_size);
                 edit_state.set_mask_size();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::LayerChange {
@@ -457,26 +476,32 @@ impl EditorUndoOp {
                         stamp_layer(target_layer, *pos, old_chars);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Crop { orig_size, layers, .. } => {
                 edit_state.get_buffer_mut().set_size(*orig_size);
                 std::mem::swap(layers, &mut edit_state.get_buffer_mut().layers);
                 edit_state.set_mask_size();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::DeleteRow { layer, line, deleted_row } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.lines.insert(*line as usize, deleted_row.clone());
                 }
+                buf.mark_lines_dirty(*line, buf.height());
                 Ok(())
             }
             EditorUndoOp::InsertRow { layer, line, .. } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     if (*line as usize) < l.lines.len() {
                         l.lines.remove(*line as usize);
                     }
                 }
+                buf.mark_lines_dirty(*line, buf.height());
                 Ok(())
             }
             EditorUndoOp::DeleteColumn { layer, column, deleted_chars } => {
@@ -491,6 +516,7 @@ impl EditorUndoOp {
                     let new_width = l.width() + 1;
                     l.set_size((new_width, l.height()));
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::InsertColumn { layer, column } => {
@@ -503,6 +529,7 @@ impl EditorUndoOp {
                     let new_width = l.width() - 1;
                     l.set_size((new_width, l.height()));
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerUp { layer } => {
@@ -511,6 +538,7 @@ impl EditorUndoOp {
                         l.lines.insert(0, line);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerDown { layer } => {
@@ -520,6 +548,7 @@ impl EditorUndoOp {
                         l.lines.push(line);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteRotate {
@@ -535,6 +564,7 @@ impl EditorUndoOp {
                     l.lines = new_lines.clone();
                     l.set_size(*new_size);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
@@ -542,6 +572,7 @@ impl EditorUndoOp {
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
@@ -549,6 +580,7 @@ impl EditorUndoOp {
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteAnchor { .. } => {
@@ -561,6 +593,7 @@ impl EditorUndoOp {
                 if *old_value > 0 {
                     edit_state.get_buffer_mut().ice_mode = icy_engine::IceMode::Ice;
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Reversed { op, .. } => op.redo(edit_state),
@@ -570,6 +603,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::ClearLayer { layer_index, layer } => {
                 std::mem::swap(layer, &mut edit_state.get_buffer_mut().layers[*layer_index].lines);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Deselect { sel } => {
@@ -607,6 +641,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::SwitchPalettte { pal } => {
                 std::mem::swap(pal, &mut edit_state.get_buffer_mut().palette);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetSauceData { old, new } => {
@@ -622,6 +657,7 @@ impl EditorUndoOp {
             EditorUndoOp::SetFont { font_page, old, new } => {
                 std::mem::swap(old, new);
                 edit_state.get_buffer_mut().set_font(*font_page, new.clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddFont {
@@ -629,6 +665,7 @@ impl EditorUndoOp {
             } => {
                 edit_state.get_caret_mut().set_font_page(*old_font_page);
                 edit_state.get_buffer_mut().remove_font(*new_font_page);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SwitchPalette {
@@ -655,6 +692,7 @@ impl EditorUndoOp {
                 std::mem::swap(old_layers, new_layers);
                 edit_state.get_buffer_mut().ice_mode = *new_mode;
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ReplaceFontUsage {
@@ -667,6 +705,7 @@ impl EditorUndoOp {
                 std::mem::swap(old_layers, new_layers);
                 edit_state.get_caret_mut().set_font_page(*new_caret_page);
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveFont { font_slot, font } => {
@@ -674,6 +713,7 @@ impl EditorUndoOp {
                 if let Some(f) = font.as_ref() {
                     edit_state.get_buffer_mut().set_font(*font_slot, (**f).clone());
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ChangeFontSlot { from, to } => {
@@ -681,6 +721,7 @@ impl EditorUndoOp {
                 if let Some(font) = edit_state.get_buffer_mut().remove_font(*from) {
                     edit_state.get_buffer_mut().set_font(*to, font);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::UpdateLayerProperties {
@@ -692,23 +733,27 @@ impl EditorUndoOp {
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     l.properties = new_properties.clone();
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetUseLetterSpacing { new_ls } => {
                 let old = edit_state.get_buffer().use_letter_spacing();
                 edit_state.get_buffer_mut().set_use_letter_spacing(*new_ls);
                 *new_ls = old;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetUseAspectRatio { new_ar } => {
                 let old = edit_state.get_buffer().use_aspect_ratio();
                 edit_state.get_buffer_mut().set_use_aspect_ratio(*new_ar);
                 *new_ar = old;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetFontDimensions { old_size, new_size } => {
                 std::mem::swap(old_size, new_size);
                 edit_state.get_buffer_mut().set_font_dimensions(*new_size);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddTag { new_tag, .. } => {
@@ -760,8 +805,11 @@ impl EditorUndoOp {
             EditorUndoOp::SetChar {
                 pos, layer, new, redo_caret, ..
             } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.set_char(*pos, *new);
+                    // Mark only the affected line as dirty for efficient tile cache invalidation
+                    buf.mark_line_dirty(pos.y);
                 }
                 if let Some(caret_pos) = redo_caret {
                     edit_state.set_caret_position(*caret_pos);
@@ -769,19 +817,26 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwapChar { layer, pos1, pos2 } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.swap_char(*pos1, *pos2);
+                    // Mark affected lines as dirty
+                    let min_y = pos1.y.min(pos2.y);
+                    let max_y = pos1.y.max(pos2.y) + 1;
+                    buf.mark_lines_dirty(min_y, max_y);
                 }
                 Ok(())
             }
             EditorUndoOp::AddLayer { index, layer } => {
                 edit_state.get_buffer_mut().layers.insert(*index, (**layer).clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveLayer { layer_index, .. } => {
                 if *layer_index < edit_state.get_buffer().layers.len() {
                     edit_state.get_buffer_mut().layers.remove(*layer_index);
                     edit_state.clamp_current_layer();
+                    edit_state.get_buffer_mut().mark_dirty();
                     Ok(())
                 } else {
                     Err(EngineError::Generic(format!("Invalid layer: {}", layer_index)))
@@ -811,6 +866,7 @@ impl EditorUndoOp {
                     // Insert a clone of the merged layer
                     edit_state.get_buffer_mut().layers.insert(*index - 1, layer.clone());
                     edit_state.set_current_layer(*index - 1);
+                    edit_state.get_buffer_mut().mark_dirty();
                 }
                 Ok(())
             }
@@ -818,12 +874,14 @@ impl EditorUndoOp {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     layer.properties.is_visible = !layer.properties.is_visible;
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::MoveLayer { index, to, .. } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     layer.set_offset(*to);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetLayerSize { index, from, to } => {
@@ -831,23 +889,27 @@ impl EditorUndoOp {
                     *from = layer.size();
                     layer.set_size(*to);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Paste { layer, current_layer } => {
                 // Insert a clone of the stored layer (dereference the Box)
                 edit_state.get_buffer_mut().layers.insert(*current_layer + 1, (*layer).as_ref().clone());
                 edit_state.set_current_layer(*current_layer + 1);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddFloatingLayer { current_layer } => {
                 if let Some(layer) = edit_state.get_buffer_mut().layers.get_mut(*current_layer) {
                     layer.properties.title = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "layer-new-name");
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ResizeBuffer { size, .. } => {
                 edit_state.get_buffer_mut().set_size(*size);
                 edit_state.set_mask_size();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::LayerChange {
@@ -863,26 +925,32 @@ impl EditorUndoOp {
                         stamp_layer(target_layer, *pos, new_chars);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Crop { size, layers, .. } => {
                 edit_state.get_buffer_mut().set_size(*size);
                 std::mem::swap(layers, &mut edit_state.get_buffer_mut().layers);
                 edit_state.set_mask_size();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::DeleteRow { layer, line, deleted_row } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     if (*line as usize) < l.lines.len() {
                         *deleted_row = l.lines.remove(*line as usize);
                     }
                 }
+                buf.mark_lines_dirty(*line, buf.height());
                 Ok(())
             }
             EditorUndoOp::InsertRow { layer, line, inserted_row } => {
-                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                let buf = edit_state.get_buffer_mut();
+                if let Some(l) = buf.layers.get_mut(*layer) {
                     l.lines.insert(*line as usize, inserted_row.clone());
                 }
+                buf.mark_lines_dirty(*line, buf.height());
                 Ok(())
             }
             EditorUndoOp::DeleteColumn { layer, column, deleted_chars } => {
@@ -898,6 +966,7 @@ impl EditorUndoOp {
                     let new_width = l.width() - 1;
                     l.set_size((new_width, l.height()));
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::InsertColumn { layer, column } => {
@@ -908,6 +977,7 @@ impl EditorUndoOp {
                     let new_width = l.width() + 1;
                     l.set_size((new_width, l.height()));
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerUp { layer } => {
@@ -917,6 +987,7 @@ impl EditorUndoOp {
                         l.lines.push(line);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ScrollWholeLayerDown { layer } => {
@@ -925,6 +996,7 @@ impl EditorUndoOp {
                         l.lines.insert(0, line);
                     }
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteRotate {
@@ -941,6 +1013,7 @@ impl EditorUndoOp {
                 }
                 std::mem::swap(old_lines, new_lines);
                 std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
@@ -949,6 +1022,7 @@ impl EditorUndoOp {
                     l.lines = new_lines.clone();
                 }
                 std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
@@ -957,6 +1031,7 @@ impl EditorUndoOp {
                     l.lines = new_lines.clone();
                 }
                 std::mem::swap(old_lines, new_lines);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteAnchor { .. } => {
@@ -969,6 +1044,7 @@ impl EditorUndoOp {
                 if *new_value > 0 {
                     edit_state.get_buffer_mut().ice_mode = icy_engine::IceMode::Ice;
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Reversed { op, .. } => op.undo(edit_state),
@@ -980,6 +1056,7 @@ impl EditorUndoOp {
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer_index) {
                     std::mem::swap(layer, &mut l.lines);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::Deselect { sel } => {
@@ -1040,11 +1117,13 @@ impl EditorUndoOp {
                 // Set font first, then swap for undo symmetry
                 edit_state.get_buffer_mut().set_font(*font_page, new.clone());
                 std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddFont { new_font_page, font, .. } => {
                 edit_state.get_caret_mut().set_font_page(*new_font_page);
                 edit_state.get_buffer_mut().set_font(*new_font_page, font.clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SwitchPalette {
@@ -1073,6 +1152,7 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().layers = new_layers.clone();
                 std::mem::swap(old_mode, new_mode);
                 std::mem::swap(old_layers, new_layers);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ReplaceFontUsage {
@@ -1086,6 +1166,7 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().layers = new_layers.clone();
                 std::mem::swap(old_caret_page, new_caret_page);
                 std::mem::swap(old_layers, new_layers);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveFont { font_slot, font } => {
@@ -1096,6 +1177,7 @@ impl EditorUndoOp {
                     // Already have the font stored, just remove from buffer
                     edit_state.get_buffer_mut().remove_font(*font_slot);
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ChangeFontSlot { from, to } => {
@@ -1104,6 +1186,7 @@ impl EditorUndoOp {
                     edit_state.get_buffer_mut().set_font(*to, font);
                 }
                 std::mem::swap(from, to);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::UpdateLayerProperties {
@@ -1116,24 +1199,28 @@ impl EditorUndoOp {
                     l.properties = new_properties.clone();
                 }
                 std::mem::swap(old_properties, new_properties);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetUseLetterSpacing { new_ls } => {
                 let old = edit_state.get_buffer().use_letter_spacing();
                 edit_state.get_buffer_mut().set_use_letter_spacing(*new_ls);
                 *new_ls = old;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetUseAspectRatio { new_ar } => {
                 let old = edit_state.get_buffer().use_aspect_ratio();
                 edit_state.get_buffer_mut().set_use_aspect_ratio(*new_ar);
                 *new_ar = old;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetFontDimensions { old_size, new_size } => {
                 // Set dimensions first, then swap for undo symmetry
                 edit_state.get_buffer_mut().set_font_dimensions(*new_size);
                 std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::AddTag { new_tag, .. } => {

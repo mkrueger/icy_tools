@@ -637,8 +637,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Clear the freed bottom region
         self.screen[movable_rows * row_len..screen_height * row_len].fill(0);
-
-        self.mark_dirty();
     }
 
     /// Scroll the screen down by one line (move content down, clear top line)
@@ -660,8 +658,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Clear the freed top region
         self.screen[0..line_height * row_len].fill(0);
-
-        self.mark_dirty();
     }
 
     /// Scroll the screen left by one column (move content left, clear right column)
@@ -682,8 +678,6 @@ impl EditableScreen for PaletteScreenBuffer {
             // Clear vacated right area
             self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(0);
         }
-
-        self.mark_dirty();
     }
 
     /// Scroll the screen right by one column (move content right, clear left column)
@@ -705,8 +699,6 @@ impl EditableScreen for PaletteScreenBuffer {
             // Clear vacated left area
             self.screen[row_start..row_start + char_width].fill(0);
         }
-
-        self.mark_dirty();
     }
 
     fn clear_screen(&mut self) {
@@ -721,7 +713,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Clear pixel buffer
         self.screen.fill(self.caret.attribute.background() as u8);
-        self.mark_dirty();
     }
 
     fn clear_scrollback(&mut self) {
@@ -743,9 +734,6 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Render directly to RGBA buffer
         self.render_char_to_buffer(pos, ch);
-
-        // Mark buffer as dirty
-        self.mark_dirty();
     }
 
     fn set_width(&mut self, width: i32) {

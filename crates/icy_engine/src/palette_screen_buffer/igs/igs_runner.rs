@@ -445,16 +445,13 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                 ScreenClearMode::ClearAndHome => {
                     paint.clear_screen(buf);
                     buf.home();
-                    buf.mark_dirty();
                 }
                 ScreenClearMode::ClearWholeScreen => {
                     paint.clear_screen(buf);
-                    buf.mark_dirty();
                 }
                 ScreenClearMode::ClearWholeScreenAndHome => {
                     paint.clear_screen(buf);
                     buf.home();
-                    buf.mark_dirty();
                 }
                 ScreenClearMode::QuickVt52Reset => {
                     buf.clear_screen();
@@ -683,7 +680,5 @@ impl crate::PaletteScreenBuffer {
         let mut paint = self.igs_state.take().unwrap();
         run_igs_command(self, &mut paint, cmd);
         self.igs_state = Some(paint);
-
-        self.mark_dirty();
     }
 }

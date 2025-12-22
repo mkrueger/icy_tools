@@ -99,6 +99,19 @@ pub trait Screen: TextPane + Send + Sync {
     // Version for change tracking
     fn version(&self) -> u64;
 
+    /// Get dirty line range that needs to be re-rendered.
+    /// Returns (first_dirty_line, last_dirty_line) or None if no lines are dirty.
+    /// The caller should clear the dirty range after processing.
+    fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        // Default: no dirty line tracking, returns None meaning full invalidation is needed
+        None
+    }
+
+    /// Clear the dirty line range after lines have been invalidated.
+    fn clear_dirty_lines(&self) {
+        // Default: no-op
+    }
+
     // Default foreground color
     fn default_foreground_color(&self) -> u32;
     fn max_base_colors(&self) -> u32;
@@ -257,6 +270,14 @@ pub trait EditableScreen: Screen {
 
     // Change tracking
     fn mark_dirty(&self);
+
+    fn mark_line_dirty(&self, _line: i32) {
+        self.mark_dirty(); // Default: mark entire buffer as dirty
+    }
+
+    fn mark_lines_dirty(&self, _start_line: i32, _end_line: i32) {
+        self.mark_dirty(); // Default: mark entire buffer as dirty
+    }
 
     /// Apply SAUCE record settings to the screen.
     /// This extracts and applies character capabilities from the SAUCE record,

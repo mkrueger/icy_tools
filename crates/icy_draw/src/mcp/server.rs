@@ -38,10 +38,6 @@ impl McpServer {
         let app = Router::new().route_service("/", mcp_service);
 
         let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-        println!("[MCP DEBUG] ========================================");
-        println!("[MCP DEBUG] MCP Server starting on http://127.0.0.1:{}", port);
-        println!("[MCP DEBUG] Waiting for connections...");
-        println!("[MCP DEBUG] ========================================");
         log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{}", port);
 
         axum::serve(listener, app).await?;

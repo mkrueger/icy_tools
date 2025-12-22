@@ -214,6 +214,15 @@ impl Screen for TextScreen {
         self.buffer.version()
     }
 
+    fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        self.buffer.get_dirty_lines()
+    }
+
+    fn clear_dirty_lines(&self) {
+        // Clear the dirty line range
+        let _ = self.buffer.get_and_clear_dirty_lines();
+    }
+
     fn default_foreground_color(&self) -> u32 {
         7
     }
@@ -250,7 +259,6 @@ impl Screen for TextScreen {
         // Only mark dirty if selection actually changed
         if self.selection_opt.as_ref() != Some(&sel) {
             self.selection_opt = Some(sel);
-            self.mark_dirty();
         }
         Ok(())
     }
@@ -259,7 +267,6 @@ impl Screen for TextScreen {
         // Only mark dirty if there was a selection to clear
         if self.selection_opt.is_some() {
             self.selection_opt = None;
-            self.mark_dirty();
         }
         Ok(())
     }
@@ -389,12 +396,10 @@ impl EditableScreen for TextScreen {
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
         self.buffer.layers[self.current_layer].set_char(pos, ch);
-        self.buffer.mark_dirty();
     }
 
     fn set_size(&mut self, size: Size) {
         self.buffer.set_size(size);
-        self.buffer.mark_dirty();
     }
 
     fn scroll_up(&mut self) {
@@ -423,8 +428,6 @@ impl EditableScreen for TextScreen {
                 layer_ref.set_char((x, end_line), AttributedChar::default());
             }
         }
-        self.buffer.mark_dirty();
-
         let layer_ref = &mut self.buffer.layers[self.current_layer];
 
         let mut remove_indices: Vec<usize> = Vec::new();
@@ -590,7 +593,6 @@ impl EditableScreen for TextScreen {
             }
         }
         vec.push(sixel);
-        self.buffer.mark_dirty();
     }
 
     fn insert_line(&mut self, line: usize, new_line: crate::Line) {
@@ -719,11 +721,18 @@ impl EditableScreen for TextScreen {
         if self.terminal_state().is_terminal_buffer {
             self.buffer.set_size(self.terminal_state().size());
         }
-        self.buffer.mark_dirty();
     }
 
     fn mark_dirty(&self) {
         self.buffer.mark_dirty()
+    }
+
+    fn mark_line_dirty(&self, line: i32) {
+        self.buffer.mark_line_dirty(line);
+    }
+
+    fn mark_lines_dirty(&self, start_line: i32, end_line: i32) {
+        self.buffer.mark_lines_dirty(start_line, end_line);
     }
 
     fn layer_count(&self) -> usize {

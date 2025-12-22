@@ -700,11 +700,10 @@ impl EditState {
     }
 
     /// Push an undo operation without executing it
+    ///
+    /// Note: Each operation is responsible for calling mark_dirty() or mark_line_dirty()
+    /// on the buffer as needed. This allows fine-grained cache invalidation.
     pub(crate) fn push_plain_undo(&mut self, op: EditorUndoOp) -> Result<()> {
-        if op.changes_data() {
-            self.mark_dirty();
-            self.screen.mark_dirty();
-        }
         self.undo_stack.lock().unwrap().push(op);
         Ok(())
     }
@@ -943,6 +942,14 @@ impl Screen for EditState {
 
     fn version(&self) -> u64 {
         self.screen.version()
+    }
+
+    fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        self.screen.get_dirty_lines()
+    }
+
+    fn clear_dirty_lines(&self) {
+        self.screen.clear_dirty_lines()
     }
 
     fn default_foreground_color(&self) -> u32 {

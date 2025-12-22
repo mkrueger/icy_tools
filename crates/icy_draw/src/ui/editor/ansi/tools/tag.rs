@@ -1062,7 +1062,6 @@ impl TagTool {
             tag_state.selection_drag_active = true;
             tag_state.drag_start = pos;
             tag_state.drag_cur = pos;
-            println!("Start selection drag at {:?}", pos);
 
             ToolResult::StartCapture.and(ToolResult::Redraw)
         } else if button == icy_engine::MouseButton::Right {
