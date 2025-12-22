@@ -21,7 +21,7 @@ impl ColorOptimizer {
         let shape_map = generate_shape_map(buf);
         Self {
             shape_map,
-            normalize_whitespace: opt.normalize_whitespaces,
+            normalize_whitespace: opt.preprocess.normalize_whitespaces,
         }
     }
 

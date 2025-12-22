@@ -2,7 +2,8 @@ use std::{env, fs, path::PathBuf};
 
 use codepages::tables::CP437_TO_UNICODE;
 
-use icy_engine::formats::{FileFormat, ansi_v2::AnsiCompatibilityLevel, ansi_v2::SaveOptions, ansi_v2::save_ansi_v2};
+use icy_engine::formats::{FileFormat, ansi_v2::save_ansi_v2};
+use icy_engine::{AnsiCompatibilityLevel, SaveOptions};
 
 fn cp437_ansi_bytes_to_utf8_with_bom(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len() + 3);
@@ -50,12 +51,7 @@ fn main() -> icy_engine::Result<()> {
 
     let screen = FileFormat::Ansi.load(&input, None)?;
 
-    let mut opt = SaveOptions::default();
-    opt.level = Some(AnsiCompatibilityLevel::Utf8Terminal);
-    opt.compress = true;
-    opt.preserve_line_length = false;
-    opt.output_line_length = None;
-    opt.longer_terminal_output = false;
+    let opt = SaveOptions::ansi(AnsiCompatibilityLevel::Utf8Terminal);
 
     let bytes_cp437 = save_ansi_v2(&screen.screen.buffer, &opt)?;
     let bytes_utf8 = cp437_ansi_bytes_to_utf8_with_bom(&bytes_cp437);

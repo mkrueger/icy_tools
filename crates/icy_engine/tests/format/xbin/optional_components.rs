@@ -58,8 +58,8 @@ fn test_xbin_no_palette_no_font_no_compress() {
     let buffer = create_test_buffer_default();
 
     let mut options = SaveOptions::new();
-    options.compress = false;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -82,8 +82,8 @@ fn test_xbin_palette_no_font_no_compress() {
     let buffer = create_test_buffer_custom_palette();
 
     let mut options = SaveOptions::new();
-    options.compress = false;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -106,8 +106,8 @@ fn test_xbin_no_palette_font_no_compress() {
     let buffer = create_test_buffer_custom_font();
 
     let mut options = SaveOptions::new();
-    options.compress = false;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -135,8 +135,8 @@ fn test_xbin_palette_font_no_compress() {
     buffer.set_font(0, font);
 
     let mut options = SaveOptions::new();
-    options.compress = false;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -159,8 +159,8 @@ fn test_xbin_no_palette_no_font_compress() {
     let buffer = create_test_buffer_default();
 
     let mut options = SaveOptions::new();
-    options.compress = true;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: true });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -183,8 +183,8 @@ fn test_xbin_palette_no_font_compress() {
     let buffer = create_test_buffer_custom_palette();
 
     let mut options = SaveOptions::new();
-    options.compress = true;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: true });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -207,8 +207,8 @@ fn test_xbin_no_palette_font_compress() {
     let buffer = create_test_buffer_custom_font();
 
     let mut options = SaveOptions::new();
-    options.compress = true;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: true });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 
@@ -236,8 +236,8 @@ fn test_xbin_palette_font_compress() {
     buffer.set_font(0, font);
 
     let mut options = SaveOptions::new();
-    options.compress = true;
-    options.save_sauce = None;
+    options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: true });
+    options.sauce = None;
 
     let xbin_data = FileFormat::XBin.to_bytes(&buffer, &options).unwrap();
 

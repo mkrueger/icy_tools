@@ -147,7 +147,7 @@ impl PaletteEditorDialog {
                 let mut buffer = TextBuffer::new((1, 1));
                 buffer.palette = self.palette.clone();
                 let mut options = SaveOptions::default();
-                options.compress = false;
+                options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
                 let bytes = FileFormat::XBin.to_bytes(&buffer, &options).map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| e.to_string())
             }

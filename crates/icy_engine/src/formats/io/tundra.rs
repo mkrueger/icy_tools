@@ -1,9 +1,10 @@
 use std::{collections::HashSet, io};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
 use crate::{
     AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage,
 };
+use icy_sauce::CharacterFormat;
 
 // http://fileformats.archiveteam.org/wiki/TUNDRA
 // ANSI code for 24 bit: ESC[(0|1);R;G;Bt
@@ -126,7 +127,8 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
         result.resize(result.len() + skip_len as usize, 0);
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::TundraDraw);
         sauce.write(&mut result)?;
     }
     Ok(result)

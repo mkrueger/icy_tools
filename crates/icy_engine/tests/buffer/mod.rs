@@ -3,7 +3,7 @@ use icy_engine::{
     AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane,
     formats::{FileFormat, LoadData},
 };
-use icy_sauce::{AspectRatio, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
+use icy_sauce::MetaData as SauceMetaData;
 
 mod layer;
 
@@ -39,27 +39,16 @@ fn test_respect_sauce_width() {
         buf.layers[0].set_char((x, 2), AttributedChar::new('3', TextAttribute::default()));
     }
 
-    // Create a SAUCE record with the correct width
-    let char_caps = CharacterCapabilities::with_font(
-        CharacterFormat::Ansi,
-        10, // columns
-        3,  // lines
-        false,
-        LetterSpacing::EightPixel,
-        AspectRatio::Square,
-        Some(BString::from("IBM VGA")),
-    )
-    .unwrap();
-
-    let sauce = SauceRecordBuilder::default()
-        .title(BString::from("Test"))
-        .unwrap()
-        .capabilities(Capabilities::Character(char_caps))
-        .unwrap()
-        .build();
+    // Create SAUCE metadata with title
+    let sauce = SauceMetaData {
+        title: BString::from("Test"),
+        author: BString::default(),
+        group: BString::default(),
+        comments: Vec::new(),
+    };
 
     let mut opt = SaveOptions::new();
-    opt.save_sauce = Some(sauce);
+    opt.sauce = Some(sauce);
     let ansi_bytes = FileFormat::Ansi.to_bytes(&buf, &opt).unwrap();
 
     // Extract SAUCE from the bytes - SAUCE is now returned in LoadedDocument, not passed in

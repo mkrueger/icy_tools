@@ -98,7 +98,7 @@ pub fn test_extended_font_blink() {
     buffer.layers[0].set_char((1, 0), AttributedChar::new('B', attr));
 
     let mut opt = SaveOptions::default();
-    opt.compress = false;
+    opt.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
 
     let res = test_xbin(&mut buffer);
 
@@ -123,13 +123,13 @@ fn create_xb_buffer() -> TextBuffer {
 fn test_xbin(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::XBin;
     let mut opt = SaveOptions::default();
-    opt.compress = false;
-    opt.lossles_output = true;
+    opt.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    opt.preprocess.optimize_colors = false;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
     let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);
 
-    opt.compress = true;
+    opt.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: true });
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
     let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);

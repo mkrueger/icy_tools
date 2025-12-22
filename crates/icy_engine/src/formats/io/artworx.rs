@@ -1,8 +1,9 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
 use crate::{
     AttributedChar, BitFont, BufferType, Color, EGA_PALETTE, FontMode, IceMode, LoadingError, Palette, Position, Result, SavingError, TextAttribute,
     TextBuffer, TextPane, TextScreen, analyze_font_usage, guess_font_name,
 };
+use icy_sauce::CharacterFormat;
 
 // http://fileformats.archiveteam.org/wiki/ArtWorx_Data_Format
 
@@ -57,7 +58,8 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
             result.push(attr);
         }
     }
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::Ansi);
         sauce.write(&mut result)?;
     }
     Ok(result)

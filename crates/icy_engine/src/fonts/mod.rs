@@ -249,9 +249,10 @@ impl BitFont {
     pub fn to_psf2_bytes(&self) -> crate::Result<Vec<u8>> {
         let psf = PsfFont {
             name: Some(self.name.clone()),
-            glyphs: self.glyphs.clone(),
+            glyphs: self.glyphs.to_vec(),
             width: self.width,
             height: self.height,
+            unicode_table: Vec::new(),
         };
         Ok(psf.to_psf2_bytes())
     }
@@ -305,11 +306,16 @@ impl BitFont {
 
         // Try to parse as PSF font first
         if let Ok(psf) = PsfFont::from_bytes(data) {
+            // Convert Vec<CompactGlyph> to [CompactGlyph; 256], taking first 256 glyphs
+            let mut glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(psf.width, psf.height));
+            for (i, glyph) in psf.glyphs.iter().take(256).enumerate() {
+                glyphs[i] = glyph.clone();
+            }
             return Ok(Self {
                 name,
                 width: psf.width,
                 height: psf.height,
-                glyphs: psf.glyphs,
+                glyphs,
                 path_opt: None,
                 font_type: BitFontType::BuiltIn,
             });

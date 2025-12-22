@@ -5,11 +5,8 @@ use std::{
 };
 
 use icy_engine::{
-    Rectangle, RenderOptions, Screen, Size, TextPane,
-    formats::{
-        FileFormat, LoadData,
-        ansi_v2::{AnsiCompatibilityLevel, SaveOptions, save_ansi_v2},
-    },
+    AnsiCompatibilityLevel, ControlCharHandling, Rectangle, RenderOptions, SaveOptions, Screen, Size, TextPane,
+    formats::{FileFormat, LoadData, ansi_v2::save_ansi_v2},
 };
 
 const DEFAULT_ROOT: &str = "/home/mkrueger/work/sixteencolors-archive/all";
@@ -502,22 +499,20 @@ fn main() -> icy_engine::Result<()> {
         let original_buf = terminalize_for_compare(&original.screen.buffer);
         let orig_lines = original_buf.line_count().min(original_buf.height());
 
-        // Preserve SAUCE if present
-        let sauce_opt = icy_sauce::SauceRecord::from_bytes(&file_bytes).ok().flatten();
+        // Preserve SAUCE metadata if present
+        let sauce_opt = icy_sauce::SauceRecord::from_bytes(&file_bytes).ok().flatten().map(|record| record.metadata());
 
-        let control_char_handling = SaveOptions::default().control_char_handling;
+        let control_char_handling = ControlCharHandling::default();
 
         // New v2 levels
         let mut v2_failed_icyterm = false;
         for &level in &levels {
-            let mut v2_opt = SaveOptions::default();
-            v2_opt.level = Some(level);
-            v2_opt.compress = true;
-            v2_opt.preserve_line_length = false;
-            v2_opt.output_line_length = None;
-            v2_opt.longer_terminal_output = false;
-            v2_opt.control_char_handling = control_char_handling;
-            v2_opt.save_sauce = sauce_opt.clone();
+            let mut v2_opt = SaveOptions::ansi(level);
+            v2_opt.preprocess.optimize_colors = true;
+            if let icy_engine::FormatOptions::Ansi(ref mut ansi_opts) = v2_opt.format {
+                ansi_opts.control_char_handling = control_char_handling;
+            }
+            v2_opt.sauce = sauce_opt.clone();
 
             let v2_bytes = match save_ansi_v2(&original_buf, &v2_opt) {
                 Ok(b) => b,

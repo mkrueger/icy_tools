@@ -164,7 +164,10 @@ fn test_iced_v1_compression_off_writes_uncompressed_records() {
     buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
 
     let mut options = SaveOptions::default();
-    options.compress = false;
+    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+        skip_thumbnail: false,
+        compress: false,
+    });
 
     let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &options).unwrap();
@@ -199,7 +202,10 @@ fn test_iced_v1_compression_on_writes_zstd_records() {
     buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
 
     let mut options = SaveOptions::default();
-    options.compress = true;
+    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+        skip_thumbnail: false,
+        compress: true,
+    });
 
     let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &options).unwrap();
@@ -294,7 +300,10 @@ fn test_sixel_layer_roundtrip() {
 
     // Save with compression
     let mut options = SaveOptions::default();
-    options.compress = true;
+    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+        skip_thumbnail: false,
+        compress: true,
+    });
 
     let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &options).unwrap();
@@ -365,7 +374,10 @@ fn test_sixel_layer_roundtrip_uncompressed() {
 
     // Save WITHOUT compression
     let mut options = SaveOptions::default();
-    options.compress = false;
+    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+        skip_thumbnail: false,
+        compress: false,
+    });
 
     let draw = FileFormat::IcyDraw;
     let bytes = draw.to_bytes(&mut buf, &options).unwrap();
@@ -672,7 +684,7 @@ fn test_0_255_chars() {
 
     let draw = FileFormat::IcyDraw;
     let mut opt = SaveOptions::default();
-    opt.lossles_output = true;
+    opt.preprocess.optimize_colors = false;
     let bytes = draw.to_bytes(&mut buf, &opt).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 

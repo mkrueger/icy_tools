@@ -1,7 +1,8 @@
 //! ASCII format (.asc, .txt) I/O implementation.
 use crate::{EditableScreen, Position, Result, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
+use icy_sauce::CharacterFormat;
 
 /// Load an ASCII file into a TextScreen.
 ///
@@ -27,9 +28,10 @@ pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
 
     while pos.y < height {
         let line_length = buf.line_length(pos.y);
+        let unicode = options.character_options().unicode;
         while pos.x < line_length {
             let ch = buf.char_at(pos);
-            if options.modern_terminal_output {
+            if unicode {
                 let char_to_write = if ch.ch == '\0' { ' ' } else { ch.ch };
                 let uni = buf.buffer_type.convert_to_unicode(char_to_write);
                 for byte in uni.to_string().as_bytes() {
@@ -50,7 +52,8 @@ pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
         pos.y += 1;
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::Ascii);
         sauce.write(&mut result)?;
     }
     Ok(result)

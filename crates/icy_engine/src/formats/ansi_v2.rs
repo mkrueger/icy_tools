@@ -115,7 +115,7 @@ impl AnsiCompatibilityLevel {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct SaveOptions {
+pub struct AnsiSaveOptions {
     pub format_type: i32,
 
     pub screen_preparation: ScreenPreperation,
@@ -125,9 +125,9 @@ pub struct SaveOptions {
     /// When `None`, the exporter will choose a reasonable default based on other options.
     pub level: Option<AnsiCompatibilityLevel>,
 
-    /// Optional SAUCE record to append.
+    /// Optional SAUCE metadata to append.
     #[serde(skip)]
-    pub save_sauce: Option<icy_sauce::SauceRecord>,
+    pub save_sauce: Option<super::save_options::SauceMetaData>,
 
     /// When set, the output will be compressed (subject to `level` capabilities).
     pub compress: bool,
@@ -180,7 +180,7 @@ pub struct SaveOptions {
     pub sixel_settings: SixelSettings,
 }
 
-impl Default for SaveOptions {
+impl Default for AnsiSaveOptions {
     fn default() -> Self {
         Self {
             format_type: 0,
@@ -207,7 +207,7 @@ impl Default for SaveOptions {
     }
 }
 
-impl SaveOptions {
+impl AnsiSaveOptions {
     pub fn new() -> Self {
         Self::default()
     }
@@ -230,6 +230,61 @@ impl SaveOptions {
         }
 
         AnsiCompatibilityLevel::Vt100
+    }
+
+    /// Create from the new SaveOptions structure.
+    pub fn from_save_options(options: &super::SaveOptions) -> Self {
+        let ansi_opts = options.ansi_options();
+
+        // Map AnsiCompatibilityLevel from new to old
+        let level = Some(match ansi_opts.level {
+            super::save_options::AnsiCompatibilityLevel::AnsiSys => AnsiCompatibilityLevel::AnsiSys,
+            super::save_options::AnsiCompatibilityLevel::Vt100 => AnsiCompatibilityLevel::Vt100,
+            super::save_options::AnsiCompatibilityLevel::IcyTerm => AnsiCompatibilityLevel::IcyTerm,
+            super::save_options::AnsiCompatibilityLevel::Utf8Terminal => AnsiCompatibilityLevel::Utf8Terminal,
+        });
+
+        let modern_terminal_output = ansi_opts.level.supports_utf8();
+        let use_extended_colors = ansi_opts.level.supports_256_colors();
+
+        let (preserve_line_length, output_line_length) = match ansi_opts.line_length {
+            super::save_options::LineLength::Default => (false, None),
+            super::save_options::LineLength::Minimum(len) => (true, Some(len as usize)),
+            super::save_options::LineLength::Maximum(len) => (false, Some(len as usize)),
+        };
+
+        let longer_terminal_output = matches!(ansi_opts.line_break, super::save_options::LineBreakBehavior::GotoXY);
+
+        Self {
+            format_type: 0,
+            screen_preparation: ansi_opts.screen_prep,
+            modern_terminal_output,
+            level,
+            save_sauce: options.sauce.clone(),
+            compress: true, // ANSI uses compression sequences when available
+            use_cursor_forward: ansi_opts.level.supports_cursor_forward(),
+            use_repeat_sequences: ansi_opts.level.supports_repeat(),
+            preserve_line_length,
+            output_line_length,
+            longer_terminal_output,
+            lossles_output: !options.preprocess.optimize_colors,
+            use_extended_colors,
+            normalize_whitespaces: options.preprocess.normalize_whitespaces,
+            control_char_handling: ansi_opts.control_char_handling,
+            skip_lines: if ansi_opts.skip_lines.is_empty() {
+                None
+            } else {
+                Some(ansi_opts.skip_lines.clone())
+            },
+            alt_rgb: false,
+            always_use_rgb: false,
+            skip_thumbnail: false,
+            sixel_settings: SixelSettings {
+                max_colors: ansi_opts.sixel.max_colors,
+                diffusion: ansi_opts.sixel.diffusion,
+                use_kmeans: ansi_opts.sixel.use_kmeans,
+            },
+        }
     }
 }
 
@@ -254,7 +309,13 @@ fn uses_ice_colors(buf: &TextBuffer) -> bool {
 }
 
 /// Save a `TextBuffer` to ANSI bytes using the new v2 compatibility-level API.
-pub fn save_ansi_v2(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+pub fn save_ansi_v2(buf: &TextBuffer, options: &super::SaveOptions) -> Result<Vec<u8>> {
+    let ansi_options = AnsiSaveOptions::from_save_options(options);
+    save_ansi_v2_internal(buf, &ansi_options)
+}
+
+/// Internal save function using legacy AnsiSaveOptions.
+fn save_ansi_v2_internal(buf: &TextBuffer, options: &AnsiSaveOptions) -> Result<Vec<u8>> {
     let mut result: Vec<u8> = Vec::new();
 
     let mut generator = StringGeneratorV2::new(options.clone());
@@ -271,7 +332,9 @@ pub fn save_ansi_v2(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> 
 
     result.extend(generator.data());
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.save_sauce {
+        use super::save_options::SauceBuilder;
+        let sauce = buf.build_character_sauce(meta, icy_sauce::CharacterFormat::Ansi);
         sauce.write(&mut result)?;
     }
 
@@ -307,7 +370,7 @@ struct AnsiState {
 
 struct StringGeneratorV2 {
     output: Vec<u8>,
-    options: SaveOptions,
+    options: AnsiSaveOptions,
     level: AnsiCompatibilityLevel,
     last_line_break: usize,
     max_output_line_length: usize,
@@ -319,7 +382,7 @@ struct StringGeneratorV2 {
 }
 
 impl StringGeneratorV2 {
-    fn new(options: SaveOptions) -> Self {
+    fn new(options: AnsiSaveOptions) -> Self {
         let level = options.effective_level();
         let mut output = Vec::new();
 

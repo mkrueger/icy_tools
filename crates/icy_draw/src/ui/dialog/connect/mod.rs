@@ -85,8 +85,8 @@ impl ConnectDialog {
     pub fn with_settings(settings: &Settings) -> Self {
         let recent_servers = settings.collaboration_servers_list();
         let last_server = settings.last_collaboration_server().unwrap_or_default();
-        let nick = settings.get_collaboration_nick();
-        let group = settings.get_collaboration_group();
+        let nick = settings.collaboration.nick.clone();
+        let group = settings.collaboration.group.clone();
 
         Self {
             url: last_server,

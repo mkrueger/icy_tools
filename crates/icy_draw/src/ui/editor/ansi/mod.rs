@@ -165,7 +165,6 @@ pub enum AnsiEditorCoreMessage {
     NextBgColor,
     PrevBgColor,
     PickAttributeUnderCaret,
-    ToggleColor,
     SwitchToDefaultColor,
 
     // --- Display Mode Operations ---

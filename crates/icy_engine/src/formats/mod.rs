@@ -3,14 +3,19 @@ pub(crate) mod io;
 mod bitfont_format;
 pub use bitfont_format::*;
 
+mod capabilities;
+pub use capabilities::*;
+
 mod character_font_format;
 pub use character_font_format::*;
 
 mod file_format;
 pub use file_format::*;
 
+mod save_options;
+pub use save_options::*;
+
 pub mod ansi_v2;
-pub use ansi_v2::{AnsiCompatibilityLevel, SaveOptions, SixelSettings, save_ansi_v2};
 
 mod image_format;
 use icy_sauce::SauceRecord;
@@ -31,7 +36,7 @@ use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScreenPreperation {
     #[default]
     None,
@@ -39,12 +44,21 @@ pub enum ScreenPreperation {
     Home,
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum ControlCharHandling {
-    #[default]
-    Ignore,
-    IcyTerm,
-    FilterOut,
+impl std::fmt::Display for ScreenPreperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScreenPreperation::None => write!(f, "None"),
+            ScreenPreperation::ClearScreen => write!(f, "Clear Screen"),
+            ScreenPreperation::Home => write!(f, "Home"),
+        }
+    }
+}
+
+impl ScreenPreperation {
+    /// Returns all variants for use in pick lists.
+    pub fn all() -> &'static [ScreenPreperation] {
+        &[ScreenPreperation::None, ScreenPreperation::ClearScreen, ScreenPreperation::Home]
+    }
 }
 
 /// Options for loading files.

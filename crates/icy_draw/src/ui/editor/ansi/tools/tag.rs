@@ -3,7 +3,7 @@
 //! Creates and manages annotation tags on the canvas.
 //! Tags are rectangular regions with optional labels.
 
-use std::sync::Arc;
+use std::{fs, path::PathBuf, sync::Arc};
 
 use iced::Element;
 use iced::widget::{Space, button, row, text};
@@ -24,6 +24,7 @@ use crate::ui::editor::ansi::dialog::tag::TagDialogMessage;
 use crate::ui::editor::ansi::dialog::tag_list::TagListDialog;
 use crate::ui::editor::ansi::dialog::tag_list::TagListDialogMessage;
 use crate::ui::editor::ansi::dialog::tag_list::TagListItem;
+use crate::util::{get_available_taglists, load_taglist};
 use icy_engine::{Tag, TagPlacement, TagRole, TextPane};
 /// Consolidated state for the Tag tool system.
 ///
@@ -66,6 +67,8 @@ pub struct TagToolState {
     pub double_click_detector: DoubleClickDetector<usize>,
     /// Currently selected taglist (from settings)
     pub selected_taglist: String,
+    /// Effective taglist directory (from settings)
+    pub taglists_dir: Option<PathBuf>,
 }
 
 impl TagToolState {
@@ -153,7 +156,7 @@ impl TagToolState {
         let tag = state.get_buffer().tags.get(index).cloned();
         if let Some(tag) = tag {
             self.list_dialog = None;
-            self.dialog = Some(TagDialog::edit(&tag, index, selected_taglist));
+            self.dialog = Some(TagDialog::edit(&tag, index, selected_taglist, self.taglists_dir.clone()));
         }
     }
 
@@ -266,6 +269,8 @@ impl TagToolState {
             return ToolResult::None;
         };
 
+        let taglists_dir = self.taglists_dir.clone();
+
         match msg {
             TagDialogMessage::SetPreview(s) => {
                 dialog.preview = s;
@@ -289,6 +294,23 @@ impl TagToolState {
             }
             TagDialogMessage::ToggleReplacements => {
                 dialog.show_replacements = !dialog.show_replacements;
+
+                // On opening the replacement browser: reload taglists on-demand.
+                if dialog.show_replacements {
+                    if let Some(dir) = taglists_dir.as_deref() {
+                        dialog.available_taglists = get_available_taglists(Some(dir));
+
+                        // Ensure selected taglist still exists
+                        let selected_id = dialog.selected_taglist.id.clone();
+                        if !dialog.available_taglists.iter().any(|t| t.id.eq_ignore_ascii_case(&selected_id)) {
+                            if let Some(first) = dialog.available_taglists.first().cloned() {
+                                dialog.selected_taglist = first;
+                            }
+                        }
+
+                        dialog.replacement_list = load_taglist(&dialog.selected_taglist.id, Some(dir));
+                    }
+                }
                 ToolResult::Redraw
             }
             TagDialogMessage::SelectReplacement(example, tag) => {
@@ -298,15 +320,63 @@ impl TagToolState {
                 ToolResult::Redraw
             }
             TagDialogMessage::SelectTaglist(name) => {
-                dialog.selected_taglist = name.clone();
-                dialog.replacement_list = crate::util::load_taglist(&name);
+                let id = name.id.clone();
+                dialog.selected_taglist = name;
+                dialog.replacement_list = load_taglist(&id, taglists_dir.as_deref());
+
                 // Store in state so it persists for the next dialog
-                self.selected_taglist = name.clone();
-                // Save to settings
+                self.selected_taglist = id.clone();
+
+                // Save to settings (persist immediately)
                 if let Some(settings) = settings {
-                    *settings.read().selected_taglist.write() = name;
+                    settings.write().selected_taglist = id;
+                    settings.read().store_persistent();
                 }
                 ToolResult::Redraw
+            }
+            TagDialogMessage::ImportTaglist => {
+                let Some(dir) = taglists_dir else {
+                    log::error!("Cannot import taglist: taglist directory is not configured");
+                    return ToolResult::None;
+                };
+
+                let file = rfd::FileDialog::new().add_filter("Taglist", &["toml"]).pick_file();
+                let Some(src_path) = file else {
+                    return ToolResult::None;
+                };
+
+                if let Err(err) = fs::create_dir_all(&dir) {
+                    log::error!("Failed to create taglists directory {:?}: {}", dir, err);
+                    return ToolResult::None;
+                }
+
+                let Some(file_name) = src_path.file_name() else {
+                    log::error!("Invalid taglist file path (no filename): {:?}", src_path);
+                    return ToolResult::None;
+                };
+
+                let dest_path = dir.join(file_name);
+                match fs::copy(&src_path, &dest_path) {
+                    Ok(_) => {
+                        // Refresh available lists (on-demand)
+                        dialog.available_taglists = get_available_taglists(Some(dir.as_path()));
+
+                        // Ensure selected taglist still exists
+                        let selected_id = dialog.selected_taglist.id.clone();
+                        if !dialog.available_taglists.iter().any(|t| t.id.eq_ignore_ascii_case(&selected_id)) {
+                            if let Some(first) = dialog.available_taglists.first().cloned() {
+                                dialog.selected_taglist = first;
+                            }
+                        }
+
+                        dialog.replacement_list = load_taglist(&dialog.selected_taglist.id, Some(dir.as_path()));
+                        ToolResult::Redraw
+                    }
+                    Err(err) => {
+                        log::error!("Failed to import taglist {:?} -> {:?}: {}", src_path, dest_path, err);
+                        ToolResult::None
+                    }
+                }
             }
             TagDialogMessage::SetFilter(s) => {
                 dialog.filter = s;
@@ -427,30 +497,26 @@ impl TagToolState {
             return None;
         };
 
-        let edit_btn = button(text("Edit").size(TEXT_SIZE_NORMAL))
+        let edit_btn = button(text(fl!("tag-toolbar-edit")).size(TEXT_SIZE_NORMAL))
             .padding([4, 12])
             .style(iced::widget::button::text)
             .on_press(ToolMessage::TagEdit(tag_index));
 
-        let clone_btn = button(text("Clone").size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .style(iced::widget::button::text)
-            .on_press(ToolMessage::TagClone(tag_index));
+        let mut menu_items: Vec<Element<'_, ToolMessage>> = vec![edit_btn.into()];
 
-        let delete_btn = button(text("Delete").size(TEXT_SIZE_NORMAL))
-            .padding([4, 12])
-            .style(iced::widget::button::text)
-            .on_press(ToolMessage::TagDelete(tag_index));
-
-        let mut menu_items: Vec<Element<'_, ToolMessage>> = vec![edit_btn.into(), clone_btn.into(), delete_btn.into()];
-
-        // Add "Delete Selected" option if multiple tags are selected
+        // Show "Delete X Selected" if multiple tags selected, otherwise just "Delete"
         if self.selection.len() > 1 {
-            let delete_selected_btn = button(text(format!("Delete {} Selected", self.selection.len())).size(TEXT_SIZE_NORMAL))
+            let delete_selected_btn = button(text(fl!("tag-toolbar-delete-selected", count = self.selection.len())).size(TEXT_SIZE_NORMAL))
                 .padding([4, 12])
                 .style(iced::widget::button::text)
                 .on_press(ToolMessage::TagDeleteSelected);
             menu_items.push(delete_selected_btn.into());
+        } else {
+            let delete_btn = button(text(fl!("tag-toolbar-delete")).size(TEXT_SIZE_NORMAL))
+                .padding([4, 12])
+                .style(iced::widget::button::text)
+                .on_press(ToolMessage::TagDelete(tag_index));
+            menu_items.push(delete_btn.into());
         }
 
         let menu_content = container(column(menu_items).spacing(2).width(Length::Fixed(150.0)))
@@ -741,6 +807,12 @@ impl ToolHandler for TagTool {
     }
 
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
+        if let Some(options) = ctx.options.as_ref() {
+            let guard = options.read();
+            self.state.selected_taglist = guard.selected_taglist.clone();
+            self.state.taglists_dir = crate::Settings::taglists_dir();
+        }
+
         match msg {
             TerminalMessage::Press(evt) => {
                 let Some(pos) = evt.text_position else {
@@ -795,10 +867,18 @@ impl ToolHandler for TagTool {
     }
 
     fn handle_message(&mut self, ctx: &mut ToolContext, msg: &ToolMessage) -> ToolResult {
-        let selected_taglist = ctx.options.as_ref().map(|o| o.read().selected_taglist.read().clone()).unwrap_or_default();
+        let (selected_taglist, taglists_dir) = ctx
+            .options
+            .as_ref()
+            .map(|o| {
+                let guard = o.read();
+                (guard.selected_taglist.clone(), crate::Settings::taglists_dir())
+            })
+            .unwrap_or_default();
 
         // Keep taglist in sync with settings
         self.state.selected_taglist = selected_taglist.clone();
+        self.state.taglists_dir = taglists_dir;
 
         match *msg {
             ToolMessage::TagEdit(index) => {
@@ -945,7 +1025,7 @@ impl TagTool {
                     tag_state.pending_click = None;
                     // Open edit dialog for this tag
                     if let Some(tag) = state.get_buffer().tags.get(index).cloned() {
-                        tag_state.dialog = Some(TagDialog::edit(&tag, index, &tag_state.selected_taglist));
+                        tag_state.dialog = Some(TagDialog::edit(&tag, index, &tag_state.selected_taglist, tag_state.taglists_dir.clone()));
                     }
                     return ToolResult::Redraw;
                 }*/
@@ -1103,7 +1183,12 @@ impl TagTool {
 
             // Open edit dialog for the newly placed tag
             if let Some(tag) = state.get_buffer().tags.get(new_tag_index).cloned() {
-                tag_state.dialog = Some(TagDialog::edit(&tag, new_tag_index, &tag_state.selected_taglist));
+                tag_state.dialog = Some(TagDialog::edit(
+                    &tag,
+                    new_tag_index,
+                    &tag_state.selected_taglist,
+                    tag_state.taglists_dir.clone(),
+                ));
             }
             return ToolResult::EndCapture.and(ToolResult::Redraw);
         }

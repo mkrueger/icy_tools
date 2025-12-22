@@ -55,7 +55,7 @@ impl FontTool {
 
         let char_availability: Vec<(char, bool)> = ('!'..='~').map(|ch| (ch, self.font_tool.has_char(ch))).collect();
 
-        let outline_style = *options.font_outline_style.read();
+        let outline_style = options.font_outline_style;
 
         crate::ui::editor::ansi::widget::toolbar::top::FontPanelInfo {
             font_name,
@@ -76,7 +76,7 @@ impl FontTool {
     pub fn handle_outline_selector_message(&mut self, options: &std::sync::Arc<parking_lot::RwLock<Settings>>, msg: OutlineSelectorMessage) {
         match msg {
             OutlineSelectorMessage::SelectOutline(style) => {
-                *options.read().font_outline_style.write() = style;
+                options.write().font_outline_style = style;
                 self.outline_selector_open = false;
                 self.outline_style_cache = style;
             }
@@ -92,7 +92,7 @@ impl FontTool {
     }
 
     fn outline_style_from_ctx(ctx: &ToolContext) -> usize {
-        ctx.options.and_then(|opts| Some(*opts.read().font_outline_style.read())).unwrap_or(0)
+        ctx.options.and_then(|opts| Some(opts.read().font_outline_style)).unwrap_or(0)
     }
 
     fn render_char(&mut self, ctx: &mut ToolContext, ch: char) -> ToolResult {
@@ -242,7 +242,7 @@ impl ToolHandler for FontTool {
                 ToolResult::None
             }
             ToolMessage::FontSetOutline(style) => {
-                *ctx.options.as_ref().expect("FontTool requires options").read().font_outline_style.write() = style;
+                ctx.options.as_ref().expect("FontTool requires options").write().font_outline_style = style;
                 self.outline_style_cache = style;
                 ToolResult::None
             }

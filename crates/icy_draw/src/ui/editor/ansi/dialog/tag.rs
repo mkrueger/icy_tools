@@ -7,7 +7,7 @@ use icy_engine_gui::settings::{effect_box, left_label};
 use icy_engine_gui::ui::*;
 
 use crate::fl;
-use crate::util::{TagReplacementList, get_available_taglists, load_taglist};
+use crate::util::{TagReplacementList, TaglistInfo, get_available_taglists, load_taglist};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TagPlacementChoice {
@@ -44,7 +44,8 @@ pub enum TagDialogMessage {
     SetPlacement(TagPlacementChoice),
     ToggleReplacements,
     SelectReplacement(String, String),
-    SelectTaglist(String),
+    SelectTaglist(TaglistInfo),
+    ImportTaglist,
     SetFilter(String),
     Ok,
     Cancel,
@@ -67,9 +68,9 @@ pub struct TagDialog {
     /// Whether the replacement list browser is shown
     pub show_replacements: bool,
     /// Available tag lists (name, path)
-    pub available_taglists: Vec<String>,
-    /// Currently selected taglist name
-    pub selected_taglist: String,
+    pub available_taglists: Vec<TaglistInfo>,
+    /// Currently selected taglist
+    pub selected_taglist: TaglistInfo,
     /// Loaded replacement entries
     pub replacement_list: TagReplacementList,
     /// Filter text for replacement list
@@ -78,19 +79,28 @@ pub struct TagDialog {
 
 impl TagDialog {
     /// Create a dialog for editing an existing tag
-    pub fn edit(tag: &icy_engine::Tag, index: usize, selected_taglist: &str) -> Self {
+    pub fn edit(tag: &icy_engine::Tag, index: usize, selected_taglist: &str, taglists_dir: Option<std::path::PathBuf>) -> Self {
         let placement = match tag.tag_placement {
             TagPlacement::InText => TagPlacementChoice::InText,
             TagPlacement::WithGotoXY => TagPlacementChoice::WithGotoXY,
         };
 
-        let available_taglists: Vec<String> = get_available_taglists().into_iter().map(|(name, _)| name).collect();
-        let taglist_name = if selected_taglist.is_empty() {
-            available_taglists.first().cloned().unwrap_or_default()
+        let available_taglists: Vec<TaglistInfo> = get_available_taglists(taglists_dir.as_deref());
+
+        let selected_id = if selected_taglist.is_empty() {
+            available_taglists.first().map(|t| t.id.clone()).unwrap_or_default()
         } else {
             selected_taglist.to_string()
         };
-        let replacement_list = load_taglist(&taglist_name);
+
+        let selected_info = available_taglists
+            .iter()
+            .find(|t| t.id.eq_ignore_ascii_case(&selected_id))
+            .cloned()
+            .or_else(|| available_taglists.first().cloned())
+            .unwrap_or_default();
+
+        let replacement_list = load_taglist(&selected_info.id, taglists_dir.as_deref());
 
         Self {
             position: tag.position,
@@ -104,7 +114,7 @@ impl TagDialog {
             from_selection: false,
             show_replacements: false,
             available_taglists,
-            selected_taglist: taglist_name,
+            selected_taglist: selected_info,
             replacement_list,
             filter: String::new(),
         }
@@ -192,7 +202,22 @@ impl TagDialog {
             .width(Length::Fill)
             .on_input(TagDialogMessage::SetFilter);
 
-        let header = row![taglist_picker, filter_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center);
+        let import_btn = secondary_button("Import…".to_string(), Some(TagDialogMessage::ImportTaglist));
+
+        let header = row![taglist_picker, filter_input, import_btn]
+            .spacing(DIALOG_SPACING)
+            .align_y(iced::Alignment::Center);
+
+        let description = if !self.replacement_list.description.trim().is_empty() {
+            Some(
+                text(&self.replacement_list.description)
+                    .size(TEXT_SIZE_NORMAL)
+                    .wrapping(iced::widget::text::Wrapping::Word)
+                    .width(Length::Fill),
+            )
+        } else {
+            None
+        };
 
         // Build list of replacements
         let filter_lower = self.filter.to_lowercase();
@@ -220,15 +245,37 @@ impl TagDialog {
             .width(Length::Fill)
             .height(Length::Fixed(300.0));
 
+        let comments_box = if !self.replacement_list.comments.trim().is_empty() {
+            let comments = text(&self.replacement_list.comments)
+                .size(TEXT_SIZE_SMALL)
+                .wrapping(iced::widget::text::Wrapping::Word)
+                .width(Length::Fill);
+
+            Some(effect_box(container(comments).padding(8).width(Length::Fill).into()))
+        } else {
+            None
+        };
+
+        let mut info_column = column![header].spacing(DIALOG_SPACING);
+        if let Some(desc) = description {
+            info_column = info_column.push(desc);
+        }
+
         let content = column![
             Space::new().height(DIALOG_SPACING),
-            effect_box(
-                column![header, container(list).height(Length::Fill).width(Length::Fill)]
-                    .spacing(DIALOG_SPACING)
-                    .into()
-            ),
+            effect_box({
+                let inner = column![info_column, container(list).height(Length::Fill).width(Length::Fill)].spacing(DIALOG_SPACING);
+
+                inner.into()
+            }),
         ]
         .spacing(0);
+
+        let content = if let Some(c) = comments_box {
+            content.push(Space::new().height(DIALOG_SPACING)).push(c)
+        } else {
+            content
+        };
 
         let dialog_content: Element<'_, TagDialogMessage> = dialog_area(container(content).width(Length::Fill).height(Length::Fill).into());
 

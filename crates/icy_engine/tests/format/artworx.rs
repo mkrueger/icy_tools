@@ -55,8 +55,8 @@ fn create_buffer() -> TextBuffer {
 fn test_artworx(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::Artworx;
     let mut opt = SaveOptions::default();
-    opt.compress = false;
-    opt.lossles_output = true;
+    opt.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+    opt.preprocess.optimize_colors = false;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
     let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);

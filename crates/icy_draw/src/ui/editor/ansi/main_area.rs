@@ -221,8 +221,10 @@ impl AnsiEditorMainArea {
             let format = FileFormat::IcyDraw;
             let buffer = edit_state.get_buffer();
             // Skip thumbnail generation for faster autosave
-            let mut options = icy_engine::SaveOptions::default();
-            options.skip_thumbnail = true;
+            let mut options = icy_engine::SaveOptions::icy_draw();
+            if let icy_engine::FormatOptions::IcyDraw(ref mut icy_opts) = options.format {
+                icy_opts.skip_thumbnail = true;
+            }
             format.to_bytes(buffer, &options).map_err(|e| e.to_string())
         } else {
             Err("Could not access edit state".to_string())

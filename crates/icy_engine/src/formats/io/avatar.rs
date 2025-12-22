@@ -2,7 +2,8 @@ use icy_parser_core::avatar_constants;
 
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
+use icy_sauce::CharacterFormat;
 
 pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     if buf.palette.len() != 16 {
@@ -14,8 +15,9 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
     let mut pos = Position::default();
     let height = buf.line_count();
     let mut first_char = true;
+    let char_opts = options.character_options();
 
-    match options.screen_preparation {
+    match char_opts.screen_prep {
         super::super::ScreenPreperation::None => {}
         super::super::ScreenPreperation::ClearScreen => {
             result.push(avatar_constants::CLEAR_SCREEN);
@@ -116,7 +118,8 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
         result.extend_from_slice(b"\x1b[u");
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::Avatar);
         sauce.write(&mut result)?;
     }
     Ok(result)

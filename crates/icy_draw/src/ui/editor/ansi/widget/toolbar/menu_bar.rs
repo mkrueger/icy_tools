@@ -12,7 +12,6 @@ use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
 
-use crate::MostRecentlyUsedFiles;
 use crate::Plugin;
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
@@ -23,6 +22,7 @@ use crate::ui::main_window::menu::{
     MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_simple_enabled,
     menu_item_style, menu_item_submenu, menu_item_undo, separator,
 };
+use crate::{MostRecentlyUsedFiles, ui::PaletteGridMessage};
 use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 /// Current state of guides/raster for menu display
@@ -281,7 +281,7 @@ impl AnsiMenu {
                 MenuItem::simple(
                     fl!("menu-toggle_color"),
                     "Alt+X",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)),
+                    Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
                 ),
                 MenuItem::simple(
                     fl!("menu-default_color"),
@@ -510,25 +510,23 @@ fn build_view_menu(
     // Only show chat panel toggle if connected
     if is_connected {
         items.push(iced_aw::menu::Item::new(separator()));
-        items.push(iced_aw::menu::Item::new(menu_item_simple(
-            fl!("menu-toggle-chat"),
-            "",
-            Message::ToggleChatPanel,
-        )));
+        items.push(iced_aw::menu::Item::new(menu_item_simple(fl!("menu-toggle-chat"), Message::ToggleChatPanel)));
     }
 
     items.push(iced_aw::menu::Item::new(separator()));
 
     // Reference image
-    items.push(iced_aw::menu::Item::new(menu_item_simple(
+    items.push(iced_aw::menu::Item::new(menu_item_simple_enabled(
         fl!("menu-reference-image"),
         "Ctrl+Shift+O",
         Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog),
+        true,
     )));
-    items.push(iced_aw::menu::Item::new(menu_item_simple(
+    items.push(iced_aw::menu::Item::new(menu_item_simple_enabled(
         fl!("menu-toggle-reference-image"),
         "Ctrl+Tab",
         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)),
+        true,
     )));
 
     Menu::new(items).width(300.0).offset(5.0)
@@ -712,18 +710,18 @@ pub fn view_ansi(
                     (separator()),
                     (
                         menu_item_submenu(fl!("menu-import")),
-                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog))))
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog))))
                     ),
                     (
                         menu_item_submenu(fl!("menu-export")),
                         menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
                     ),
                     (separator()),
-                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
+                    (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
                     (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
-                    (menu_item_simple(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor)),
+                    (menu_item_simple_enabled(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor, true)),
                     (menu_item(&cmd::APP_QUIT, Message::QuitApp))
                 ))
             ),
@@ -740,15 +738,15 @@ pub fn view_ansi(
                     (
                         menu_item_submenu(fl!("menu-paste-as")),
                         menu_template(menu_items!(
-                            (menu_item_simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage)),
+                            (menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage)),
                             (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
                         ))
                     ),
-                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile)),
+                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), Message::InsertSixelFromFile)),
                     (separator()),
                     (menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
                     (separator()),
-                    (menu_item_simple(fl!("menu-open_font_selector"), "", Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))),
+                    (menu_item_simple(fl!("menu-open_font_selector"), Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))),
                     (separator()),
                     (menu_item_checkbox(
                         fl!("menu-mirror_mode"),
@@ -757,7 +755,7 @@ pub fn view_ansi(
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode))
                     )),
                     (separator()),
-                    (menu_item_simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog))
+                    (menu_item_simple(fl!("menu-file-settings"), Message::ShowFileSettingsDialog))
                 ))
             ),
             // Selection menu
@@ -798,43 +796,48 @@ pub fn view_ansi(
             (
                 menu_button(fl!("menu-colors")),
                 menu_template(menu_items!(
-                    (menu_item_simple(fl!("menu-edit_palette"), "", Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
+                    (menu_item_simple(fl!("menu-edit_palette"), Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-next_fg_color"),
                         "Ctrl+Down",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-prev_fg_color"),
                         "Ctrl+Up",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                        true
                     )),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-next_bg_color"),
                         "Ctrl+Right",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-prev_bg_color"),
                         "Ctrl+Left",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                        true
                     )),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-pick_attribute_under_caret"),
                         "Alt+U",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-toggle_color"),
                         "Alt+X",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))
+                        Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
+                        true
                     )),
                     (menu_item_simple(
                         fl!("menu-default_color"),
-                        "",
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))
                     ))
                 ))
@@ -853,8 +856,8 @@ pub fn view_ansi(
             (
                 menu_button(fl!("menu-help")),
                 menu_template(menu_items!(
-                    (menu_item_simple(fl!("menu-discuss"), "", Message::OpenDiscussions)),
-                    (menu_item_simple(fl!("menu-report-bug"), "", Message::ReportBug)),
+                    (menu_item_simple(fl!("menu-discuss"), Message::OpenDiscussions)),
+                    (menu_item_simple(fl!("menu-report-bug"), Message::ReportBug)),
                     (separator()),
                     (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
                 ))
@@ -883,18 +886,18 @@ pub fn view_ansi(
                     (separator()),
                     (
                         menu_item_submenu(fl!("menu-import")),
-                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog))))
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog))))
                     ),
                     (
                         menu_item_submenu(fl!("menu-export")),
                         menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
                     ),
                     (separator()),
-                    (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
+                    (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
                     (separator()),
                     (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                     (separator()),
-                    (menu_item_simple(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor)),
+                    (menu_item_simple_enabled(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor, true)),
                     (menu_item(&cmd::APP_QUIT, Message::QuitApp))
                 ))
             ),
@@ -911,15 +914,15 @@ pub fn view_ansi(
                     (
                         menu_item_submenu(fl!("menu-paste-as")),
                         menu_template(menu_items!(
-                            (menu_item_simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage)),
+                            (menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage)),
                             (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
                         ))
                     ),
-                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile)),
+                    (menu_item_simple(fl!("menu-insert-sixel-from-file"), Message::InsertSixelFromFile)),
                     (separator()),
                     (menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
                     (separator()),
-                    (menu_item_simple(fl!("menu-open_font_selector"), "", Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))),
+                    (menu_item_simple(fl!("menu-open_font_selector"), Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))),
                     (separator()),
                     (menu_item_checkbox(
                         fl!("menu-mirror_mode"),
@@ -928,7 +931,7 @@ pub fn view_ansi(
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode))
                     )),
                     (separator()),
-                    (menu_item_simple(fl!("menu-file-settings"), "", Message::ShowFileSettingsDialog))
+                    (menu_item_simple(fl!("menu-file-settings"), Message::ShowFileSettingsDialog))
                 ))
             ),
             // Selection menu
@@ -969,43 +972,48 @@ pub fn view_ansi(
             (
                 menu_button(fl!("menu-colors")),
                 menu_template(menu_items!(
-                    (menu_item_simple(fl!("menu-edit_palette"), "", Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
+                    (menu_item_simple(fl!("menu-edit_palette"), Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-next_fg_color"),
                         "Ctrl+Down",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-prev_fg_color"),
                         "Ctrl+Up",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                        true
                     )),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-next_bg_color"),
                         "Ctrl+Right",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-prev_bg_color"),
                         "Ctrl+Left",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                        true
                     )),
                     (separator()),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-pick_attribute_under_caret"),
                         "Alt+U",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret))
+                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
+                        true
                     )),
-                    (menu_item_simple(
+                    (menu_item_simple_enabled(
                         fl!("menu-toggle_color"),
                         "Alt+X",
-                        Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))
+                        Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
+                        true
                     )),
                     (menu_item_simple(
                         fl!("menu-default_color"),
-                        "",
                         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))
                     ))
                 ))
@@ -1026,8 +1034,8 @@ pub fn view_ansi(
             (
                 menu_button(fl!("menu-help")),
                 menu_template(menu_items!(
-                    (menu_item_simple(fl!("menu-discuss"), "", Message::OpenDiscussions)),
-                    (menu_item_simple(fl!("menu-report-bug"), "", Message::ReportBug)),
+                    (menu_item_simple(fl!("menu-discuss"), Message::OpenDiscussions)),
+                    (menu_item_simple(fl!("menu-report-bug"), Message::ReportBug)),
                     (separator()),
                     (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
                 ))

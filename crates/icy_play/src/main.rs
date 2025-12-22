@@ -96,10 +96,11 @@ fn main() {
                     let animator = Animator::run(&parent, txt);
                     animator.lock().set_is_playing(true);
 
-                    let mut opt: SaveOptions = SaveOptions::default();
-                    if args.utf8 {
-                        opt.modern_terminal_output = true;
-                    }
+                    let opt = if args.utf8 {
+                        SaveOptions::ansi(icy_engine::AnsiCompatibilityLevel::Utf8Terminal)
+                    } else {
+                        SaveOptions::default()
+                    };
                     match args.command.unwrap_or(Commands::Play) {
                         Commands::Play => {
                             io.write(b"\x1B[0c").unwrap();
@@ -182,25 +183,33 @@ fn show_buffer(
     terminal: &Terminal,
     skip_lines: Vec<usize>,
 ) -> anyhow::Result<()> {
-    let mut opt: SaveOptions = SaveOptions::default();
-    if cli.utf8 {
-        opt.modern_terminal_output = true;
-    }
-    opt.control_char_handling = icy_engine::ControlCharHandling::FilterOut;
-    opt.longer_terminal_output = !cli.use_lf;
-    opt.compress = true;
-    opt.use_cursor_forward = false;
-    opt.preserve_line_length = true;
-    opt.use_repeat_sequences = terminal.can_repeat_rle();
-    opt.lossles_output = true;
-    opt.skip_lines = Some(skip_lines);
-    opt.alt_rgb = cli.utf8;
-    opt.save_sauce = None;
-    opt.always_use_rgb = cli.utf8;
+    let level = if cli.utf8 {
+        icy_engine::AnsiCompatibilityLevel::Utf8Terminal
+    } else if matches!(terminal, Terminal::IcyTerm) {
+        icy_engine::AnsiCompatibilityLevel::IcyTerm
+    } else {
+        icy_engine::AnsiCompatibilityLevel::Vt100
+    };
 
-    if matches!(terminal, Terminal::IcyTerm) {
-        opt.control_char_handling = icy_engine::ControlCharHandling::IcyTerm;
+    let mut opt = SaveOptions::ansi(level);
+    opt.preprocess.optimize_colors = false; // lossless output
+
+    if let icy_engine::FormatOptions::Ansi(ref mut ansi_opts) = opt.format {
+        ansi_opts.control_char_handling = if matches!(terminal, Terminal::IcyTerm) {
+            icy_engine::ControlCharHandling::IcyTerm
+        } else {
+            icy_engine::ControlCharHandling::FilterOut
+        };
+        ansi_opts.line_break = if cli.use_lf {
+            icy_engine::LineBreakBehavior::Wrap
+        } else {
+            icy_engine::LineBreakBehavior::GotoXY
+        };
+        ansi_opts.line_length = icy_engine::LineLength::Minimum(80);
+        ansi_opts.skip_lines = skip_lines;
     }
+    opt.sauce = None;
+
     let bytes = if cli.utf8 && screen.ice_mode() == icy_engine::IceMode::Ice {
         // Convert ice mode to unlimited for proper UTF8 output
         if let Some(editable) = screen.as_editable() {

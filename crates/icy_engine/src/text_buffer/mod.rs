@@ -120,10 +120,9 @@ impl Tag {
     }
 
     pub fn len(&self) -> usize {
-        if self.length == 0 {
-            return self.preview.chars().count();
-        }
-        self.length
+        // Always use the preview length for display purposes
+        // The length field is reserved for future use
+        self.preview.chars().count()
     }
 
     fn get_char_at(&self, x: i32) -> AttributedChar {
@@ -321,6 +320,107 @@ impl TextBuffer {
         result.use_extended_colors = self.palette.len() > 16;
 
         result
+    }
+
+    /// Analyze what capabilities this buffer requires from a file format.
+    pub fn analyze_capability_requirements(&self) -> crate::formats::BufferCapabilityRequirements {
+        use crate::formats::FormatCapabilities as C;
+
+        let features = self.scan_buffer_features();
+        let mut required: C = C::empty();
+
+        // Check if palette differs from default DOS palette
+        let has_custom_palette = !self.palette.is_default();
+        if has_custom_palette {
+            required |= C::CUSTOM_PALETTE;
+        }
+
+        // Check for truecolor usage (RGB colors, not palette indices)
+        let uses_truecolor = self.scan_for_truecolor();
+        if uses_truecolor {
+            required |= C::TRUECOLOR;
+        }
+
+        // Check for ice colors (IceMode::Ice or IceMode::Unlimited with high bg colors)
+        let uses_ice_colors = matches!(self.ice_mode, IceMode::Ice | IceMode::Unlimited);
+        if uses_ice_colors {
+            required |= C::ICE_COLORS;
+        }
+
+        // Check for custom font (non-default font in slot 0)
+        let has_custom_font = self.font_table.get(&0).is_some_and(|f| !f.is_default());
+        if has_custom_font {
+            required |= C::CUSTOM_FONT;
+        }
+
+        // Check for multiple fonts
+        if features.font_count > 1 {
+            required |= C::UNLIMITED_FONTS;
+        }
+
+        // Check for sixels
+        if features.use_sixels {
+            required |= C::SIXEL;
+        }
+
+        // Check for extended attributes
+        if features.use_extended_attributes {
+            required |= C::XBIN_EXTENDED;
+        }
+
+        // Check for control characters (0x00-0x1F)
+        let has_control_chars = self.scan_for_control_chars();
+        if has_control_chars {
+            required |= C::CONTROL_CHARS;
+        }
+
+        crate::formats::BufferCapabilityRequirements {
+            required,
+            width: self.width(),
+            height: self.height(),
+            font_count: features.font_count,
+            has_custom_palette,
+            uses_truecolor,
+            uses_ice_colors,
+            has_sixels: features.use_sixels,
+            has_custom_font,
+            uses_extended_attributes: features.use_extended_attributes,
+            has_control_chars,
+        }
+    }
+
+    /// Scan buffer for any truecolor (RGB) usage.
+    fn scan_for_truecolor(&self) -> bool {
+        for layer in &self.layers {
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let ch = layer.char_at((x, y).into());
+                    let attr = ch.attribute;
+                    if attr.is_foreground_rgb() || attr.is_background_rgb() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Scan buffer for control characters (0x00-0x1F).
+    fn scan_for_control_chars(&self) -> bool {
+        for layer in &self.layers {
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let ch = layer.char_at((x, y).into());
+                    if !ch.is_transparent() {
+                        let code = ch.ch as u32;
+                        if code < 32 {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {

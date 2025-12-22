@@ -5,7 +5,7 @@ use crate::{
 
 use rayon::prelude::*;
 
-use super::super::{LoadData, SaveOptions, TextAttribute};
+use super::super::{LoadData, SauceBuilder, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;
@@ -96,11 +96,12 @@ enum Compression {
 pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     // Reserve a reasonable upper bound to avoid repeated reallocations.
     // For compressed output we reserve less to avoid a large upfront allocation.
+    let compress = options.compressed_options().compress;
     let pixel_bytes = (buf.width() as usize)
         .checked_mul(buf.height() as usize)
         .and_then(|v| v.checked_mul(2))
         .unwrap_or(0);
-    let reserve_pixels = if options.compress { pixel_bytes / 2 } else { pixel_bytes };
+    let reserve_pixels = if compress { pixel_bytes / 2 } else { pixel_bytes };
     let mut result = Vec::with_capacity(XBIN_HEADER_SIZE + XBIN_PALETTE_LENGTH + reserve_pixels);
 
     result.extend_from_slice(b"XBIN");
@@ -164,7 +165,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
         flags |= FLAG_PALETTE;
     }
 
-    if options.compress {
+    if compress {
         flags |= FLAG_COMPRESS;
     }
 
@@ -223,7 +224,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
         }
     }
 
-    if options.compress {
+    if compress {
         compress_backtrack(&mut result, buf, &fonts)?;
     } else {
         for y in 0..buf.height() {
@@ -240,7 +241,8 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
         }
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_binary_sauce(meta);
         sauce.write(&mut result)?;
     }
     Ok(result)

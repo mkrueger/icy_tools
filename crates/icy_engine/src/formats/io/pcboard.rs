@@ -1,6 +1,7 @@
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions, ScreenPreperation};
+use super::super::{LoadData, SauceBuilder, SaveOptions, ScreenPreperation};
+use icy_sauce::CharacterFormat;
 
 pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     if buf.palette.len() != 16 {
@@ -11,12 +12,13 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
     let mut pos = Position::default();
     let height = buf.line_count();
     let mut first_char = true;
-    if options.modern_terminal_output {
+    let char_opts = options.character_options();
+    if char_opts.unicode {
         // write UTF-8 BOM as unicode indicator.
         result.extend([0xEF, 0xBB, 0xBF]);
     }
 
-    match options.screen_preparation {
+    match char_opts.screen_prep {
         ScreenPreperation::None | ScreenPreperation::Home => {} // home not supported
         ScreenPreperation::ClearScreen => {
             result.extend(b"@CLS@");
@@ -51,7 +53,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
                 last_attr = ch.attribute;
             }
 
-            if options.modern_terminal_output {
+            if char_opts.unicode {
                 if ch.ch == '\0' {
                     result.push(b' ')
                 } else {
@@ -97,7 +99,8 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
         result.extend_from_slice(b"\x1b[u");
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::PCBoard);
         sauce.write(&mut result)?;
     }
     Ok(result)

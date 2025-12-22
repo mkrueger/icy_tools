@@ -13,8 +13,7 @@ pub fn test_ice() {
 fn test_tundra(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::TundraDraw;
     let mut opt = SaveOptions::default();
-    opt.compress = false;
-    opt.lossles_output = true;
+    opt.preprocess.optimize_colors = false;
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
     let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     let mut opt = CompareOptions::ALL;

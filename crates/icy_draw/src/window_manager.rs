@@ -907,7 +907,7 @@ impl WindowManager {
 
     /// Poll MCP commands from the receiver (called from update)
     pub fn poll_mcp_commands(&mut self) -> Task<WindowManagerMessage> {
-        if let Some(ref mut rx) = self.mcp_rx {
+        /*if let Some(ref mut rx) = self.mcp_rx {
             // Try to receive without blocking
             match rx.try_recv() {
                 Ok(cmd) => {
@@ -919,7 +919,7 @@ impl WindowManager {
                     self.mcp_rx = None;
                 }
             }
-        }
+        }*/
         Task::none()
     }
 }

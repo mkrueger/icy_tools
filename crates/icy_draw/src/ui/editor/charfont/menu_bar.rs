@@ -13,7 +13,8 @@ use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_submenu, menu_item_undo, separator,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_simple_enabled, menu_item_submenu,
+    menu_item_undo, separator,
 };
 use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
@@ -129,7 +130,7 @@ impl CharFontMenu {
                 MenuItem::simple(
                     fl!("menu-toggle_color"),
                     "Alt+X",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor)),
+                    Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
                 ),
                 MenuItem::simple(
                     fl!("menu-default_color"),
@@ -203,22 +204,22 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
                 (
                     menu_item_submenu(fl!("menu-import")),
                     menu_template(menu_items!(
-                        (menu_item_simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)),
-                        (menu_item_simple(fl!("menu-import-fonts"), "", Message::CharFontEditor(super::CharFontEditorMessage::ImportFonts)))
+                        (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
+                        (menu_item_simple(fl!("menu-import-fonts"), Message::CharFontEditor(super::CharFontEditorMessage::ImportFonts)))
                     ))
                 ),
                 (
                     menu_item_submenu(fl!("menu-export")),
                     menu_template(menu_items!(
-                        (menu_item_simple(fl!("menu-export-font"), "", Message::CharFontEditor(super::CharFontEditorMessage::ExportFont)))
+                        (menu_item_simple(fl!("menu-export-font"), Message::CharFontEditor(super::CharFontEditorMessage::ExportFont)))
                     ))
                 ),
                 (separator()),
-                (menu_item_simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog)),
+                (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
                 (separator()),
                 (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
                 (separator()),
-                (menu_item_simple(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor)),
+                (menu_item_simple_enabled(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor, true)),
                 (menu_item(&cmd::APP_QUIT, Message::QuitApp))
             ))
         ),
@@ -238,36 +239,40 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
         (
             menu_button(fl!("menu-colors")),
             menu_template(menu_items!(
-                (menu_item_simple(
+                (menu_item_simple_enabled(
                     fl!("menu-next_fg_color"),
                     "Ctrl+Down",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor))
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                    true
                 )),
-                (menu_item_simple(
+                (menu_item_simple_enabled(
                     fl!("menu-prev_fg_color"),
                     "Ctrl+Up",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor))
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                    true
                 )),
                 (separator()),
-                (menu_item_simple(
+                (menu_item_simple_enabled(
                     fl!("menu-next_bg_color"),
                     "Ctrl+Right",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor))
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                    true
                 )),
-                (menu_item_simple(
+                (menu_item_simple_enabled(
                     fl!("menu-prev_bg_color"),
                     "Ctrl+Left",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor))
+                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                    true
                 )),
                 (separator()),
-                (menu_item_simple(
+                (menu_item_simple_enabled(
                     fl!("menu-toggle_color"),
                     "Alt+X",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleColor))
+                    Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
+                    true
                 )),
                 (menu_item_simple(
                     fl!("menu-default_color"),
-                    "",
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))
                 ))
             ))
@@ -280,11 +285,11 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
                 (menu_item(&cmd::VIEW_ZOOM_IN, Message::ZoomIn)),
                 (menu_item(&cmd::VIEW_ZOOM_OUT, Message::ZoomOut)),
                 (separator()),
-                (menu_item_simple("4:1 400%".to_string(), "", Message::SetZoom(4.0))),
-                (menu_item_simple("2:1 200%".to_string(), "", Message::SetZoom(2.0))),
-                (menu_item_simple("1:1 100%".to_string(), "", Message::SetZoom(1.0))),
-                (menu_item_simple("1:2 50%".to_string(), "", Message::SetZoom(0.5))),
-                (menu_item_simple("1:4 25%".to_string(), "", Message::SetZoom(0.25))),
+                (menu_item_simple("4:1 400%".to_string(), Message::SetZoom(4.0))),
+                (menu_item_simple("2:1 200%".to_string(), Message::SetZoom(2.0))),
+                (menu_item_simple("1:1 100%".to_string(), Message::SetZoom(1.0))),
+                (menu_item_simple("1:2 50%".to_string(), Message::SetZoom(0.5))),
+                (menu_item_simple("1:4 25%".to_string(), Message::SetZoom(0.25))),
                 (separator()),
                 (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen))
             ))
@@ -293,8 +298,8 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo)
         (
             menu_button(fl!("menu-help")),
             menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-discuss"), "", Message::OpenDiscussions)),
-                (menu_item_simple(fl!("menu-report-bug"), "", Message::ReportBug)),
+                (menu_item_simple(fl!("menu-discuss"), Message::OpenDiscussions)),
+                (menu_item_simple(fl!("menu-report-bug"), Message::ReportBug)),
                 (separator()),
                 (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
             ))

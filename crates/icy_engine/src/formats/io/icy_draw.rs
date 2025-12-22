@@ -1,12 +1,12 @@
 use std::fmt::Alignment;
 use std::io::Cursor;
 
-use icy_sauce::SauceRecord;
+use icy_sauce::{CharacterFormat, SauceRecord};
 use zstd::stream::encode_all as zstd_encode_all;
 
 use crate::{BitFont, Color, Layer, LayerProperties, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
 
 mod constants {
     pub const ICED_VERSION: u16 = 1;
@@ -615,8 +615,9 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     let mut last_line = 0;
 
     let font_dims = buf.font_dimensions();
+    let icy_opts = options.icy_draw_options();
     // Absolute fast path for IcyDraw autosave: no thumbnail rendering.
-    let fast_save = options.skip_thumbnail;
+    let fast_save = icy_opts.skip_thumbnail;
 
     let (width, height, image_empty) = if fast_save {
         (1, 1, true)
@@ -656,7 +657,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
     // ICED v1: compression is a file-level choice recorded in the ICED header.
     // For autosave and debug scenarios we support fully uncompressed records.
-    let file_compression = if options.compress {
+    let file_compression = if icy_opts.compress {
         constants::compression::ZSTD
     } else {
         constants::compression::NONE
@@ -681,7 +682,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         write_icyd_record(&mut writer, "ICED", &result)?;
     }
 
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::Ansi);
         let mut sauce_vec: Vec<u8> = Vec::new();
         sauce.write(&mut sauce_vec)?;
         write_compressed_chunk(&mut writer, "SAUCE", file_compression, &sauce_vec)?;

@@ -1,8 +1,9 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions};
 use crate::{
     AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute, TextBuffer, TextPane, TextScreen,
     analyze_font_usage, guess_font_name,
 };
+use icy_sauce::CharacterFormat;
 
 // http://fileformats.archiveteam.org/wiki/ICEDraw
 
@@ -51,10 +52,11 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
     for y in 0..buf.height() {
         let mut x = 0;
+        let compress = options.compressed_options().compress;
         while x < buf.width() {
             let ch = buf.char_at((x, y).into());
             let mut rle_count = 1;
-            if options.compress {
+            if compress {
                 while x + rle_count < buf.width() && rle_count < (u16::MAX) as i32 {
                     if ch != buf.char_at((x + rle_count, y).into()) {
                         break;
@@ -100,7 +102,8 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
     // palette
     result.extend(buf.palette.as_vec_63());
-    if let Some(sauce) = &options.save_sauce {
+    if let Some(meta) = &options.sauce {
+        let sauce = buf.build_character_sauce(meta, CharacterFormat::Ansi);
         sauce.write(&mut result)?;
     }
     Ok(result)

@@ -1,8 +1,7 @@
 use icy_engine_gui::MonitorSettings;
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::{fs, io::Write, path::PathBuf, sync::Arc};
+use std::{fs, io::Write, path::PathBuf};
 
 use crate::{MostRecentlyUsedFiles, ui::FKeySets};
 
@@ -18,33 +17,13 @@ const PROJECT_APPLICATION: &str = "icy_draw";
 pub(crate) static PROJECT_DIRS: Lazy<Option<directories::ProjectDirs>> =
     Lazy::new(|| directories::ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_ORGANIZATION, PROJECT_APPLICATION));
 
-// =============================================================================
-// TagRenderMode
-// =============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TagRenderMode {
-    Buffer,
-    Overlay,
-}
-
-impl Default for TagRenderMode {
-    fn default() -> Self {
-        Self::Buffer
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistedOptions {
+struct PersistedSettings {
     #[serde(default)]
     pub monitor_settings: MonitorSettings,
 
     #[serde(default)]
     pub font_outline_style: usize,
-
-    #[serde(default)]
-    pub tag_render_mode: TagRenderMode,
 
     #[serde(default = "default_true")]
     pub show_layer_borders: bool,
@@ -52,21 +31,27 @@ struct PersistedOptions {
     #[serde(default)]
     pub show_line_numbers: bool,
 
-    /// Collaboration nickname
-    #[serde(default = "default_nick")]
-    pub collaboration_nick: String,
-
-    /// Collaboration group (like Moebius)
     #[serde(default)]
-    pub collaboration_group: String,
-
-    /// Most recently used collaboration servers (last = most recent)
-    #[serde(default)]
-    pub collaboration_servers: Vec<String>,
+    pub collaboration: CollaborationSettings,
 
     /// Selected tag replacement list name (without extension)
     #[serde(default)]
     pub selected_taglist: String,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct CollaborationSettings {
+    /// Collaboration nickname
+    #[serde(default = "default_nick")]
+    pub nick: String,
+
+    /// Collaboration group (like Moebius)
+    #[serde(default)]
+    pub group: String,
+
+    /// Most recently used collaboration servers (last = most recent)
+    #[serde(default)]
+    pub servers: Vec<String>,
 }
 
 fn default_nick() -> String {
@@ -77,17 +62,14 @@ fn default_true() -> bool {
     true
 }
 
-impl Default for PersistedOptions {
+impl Default for PersistedSettings {
     fn default() -> Self {
         Self {
             monitor_settings: MonitorSettings::default(),
             font_outline_style: 0,
-            tag_render_mode: TagRenderMode::default(),
             show_layer_borders: true,
             show_line_numbers: false,
-            collaboration_nick: default_nick(),
-            collaboration_group: String::new(),
-            collaboration_servers: Vec::new(),
+            collaboration: Default::default(),
             selected_taglist: String::new(),
         }
     }
@@ -104,31 +86,22 @@ pub struct Settings {
     pub fkeys: FKeySets,
 
     /// Shared monitor/CRT settings (persisted)
-    pub monitor_settings: Arc<RwLock<MonitorSettings>>,
+    pub monitor_settings: MonitorSettings,
 
     /// Shared outline style for drawing/TDFFont outlines (persisted)
-    pub font_outline_style: Arc<RwLock<usize>>,
-
-    /// Tag rendering mode (persisted)
-    pub tag_render_mode: Arc<RwLock<TagRenderMode>>,
+    pub font_outline_style: usize,
 
     /// Whether layer borders are shown (persisted, default: true)
-    pub show_layer_borders: Arc<RwLock<bool>>,
+    pub show_layer_borders: bool,
 
     /// Whether line numbers are shown (persisted, default: false)
-    pub show_line_numbers: Arc<RwLock<bool>>,
+    pub show_line_numbers: bool,
 
-    /// Collaboration nickname (persisted)
-    pub collaboration_nick: Arc<RwLock<String>>,
-
-    /// Collaboration group (persisted)
-    pub collaboration_group: Arc<RwLock<String>>,
-
-    /// Most recently used collaboration servers (persisted, last = most recent)
-    pub collaboration_servers: Arc<RwLock<Vec<String>>>,
+    /// Collaboration settings (persisted)
+    pub collaboration: CollaborationSettings,
 
     /// Selected tag replacement list name (persisted)
-    pub selected_taglist: Arc<RwLock<String>>,
+    pub selected_taglist: String,
 }
 
 impl Settings {
@@ -139,42 +112,36 @@ impl Settings {
         Self {
             recent_files: MostRecentlyUsedFiles::load(),
             fkeys: FKeySets::load(),
-            monitor_settings: Arc::new(RwLock::new(persistent.monitor_settings)),
-            font_outline_style: Arc::new(RwLock::new(persistent.font_outline_style)),
-            tag_render_mode: Arc::new(RwLock::new(persistent.tag_render_mode)),
-            show_layer_borders: Arc::new(RwLock::new(persistent.show_layer_borders)),
-            show_line_numbers: Arc::new(RwLock::new(persistent.show_line_numbers)),
-            collaboration_nick: Arc::new(RwLock::new(persistent.collaboration_nick)),
-            collaboration_group: Arc::new(RwLock::new(persistent.collaboration_group)),
-            collaboration_servers: Arc::new(RwLock::new(persistent.collaboration_servers)),
-            selected_taglist: Arc::new(RwLock::new(persistent.selected_taglist)),
+            monitor_settings: persistent.monitor_settings,
+            font_outline_style: persistent.font_outline_style,
+            show_layer_borders: persistent.show_layer_borders,
+            show_line_numbers: persistent.show_line_numbers,
+            collaboration: persistent.collaboration,
+            selected_taglist: persistent.selected_taglist,
         }
     }
 
     pub fn store_persistent(&self) {
-        let settings = PersistedOptions {
-            monitor_settings: self.monitor_settings.read().clone(),
-            font_outline_style: *self.font_outline_style.read(),
-            tag_render_mode: *self.tag_render_mode.read(),
-            show_layer_borders: *self.show_layer_borders.read(),
-            show_line_numbers: *self.show_line_numbers.read(),
-            collaboration_nick: self.collaboration_nick.read().clone(),
-            collaboration_group: self.collaboration_group.read().clone(),
-            collaboration_servers: self.collaboration_servers.read().clone(),
-            selected_taglist: self.selected_taglist.read().clone(),
+        let settings = PersistedSettings {
+            monitor_settings: self.monitor_settings.clone(),
+            font_outline_style: self.font_outline_style,
+            show_layer_borders: self.show_layer_borders,
+            show_line_numbers: self.show_line_numbers,
+            collaboration: self.collaboration.clone(),
+            selected_taglist: self.selected_taglist.clone(),
         };
         Self::store_options_file(&settings);
     }
 
-    fn load_settings_file() -> PersistedOptions {
+    fn load_settings_file() -> PersistedSettings {
         let Some(config_dir) = Self::config_dir() else {
-            return PersistedOptions::default();
+            return PersistedSettings::default();
         };
 
         if !config_dir.exists() {
             if let Err(err) = fs::create_dir_all(&config_dir) {
                 log::error!("Can't create configuration directory {:?}: {}", config_dir, err);
-                return PersistedOptions::default();
+                return PersistedSettings::default();
             }
         }
 
@@ -182,7 +149,7 @@ impl Settings {
         if options_file.exists() {
             match fs::read_to_string(&options_file) {
                 Ok(txt) => {
-                    if let Ok(mut result) = toml::from_str::<PersistedOptions>(&txt) {
+                    if let Ok(mut result) = toml::from_str::<PersistedSettings>(&txt) {
                         result.monitor_settings = normalize_monitor_settings(result.monitor_settings);
                         return result;
                     }
@@ -191,12 +158,12 @@ impl Settings {
             }
         }
 
-        PersistedOptions::default()
+        PersistedSettings::default()
     }
 
     /// Atomically write settings to file (write to temp, then rename).
     /// This prevents data loss if the app crashes during write.
-    fn store_options_file(options: &PersistedOptions) {
+    fn store_options_file(options: &PersistedSettings) {
         let Some(config_dir) = Self::config_dir() else {
             log::error!("Cannot determine config directory for saving settings");
             return;
@@ -275,60 +242,43 @@ impl Settings {
     }
 
     pub fn taglists_dir() -> Option<PathBuf> {
-        Self::config_dir().map(|d| d.join("data/taglists"))
+        let dir = Self::plugin_dir()?.join("taglists");
+
+        if !dir.exists() {
+            if let Err(err) = fs::create_dir_all(&dir) {
+                log::error!("Can't create taglists directory {:?}: {}", dir, err);
+            }
+        }
+
+        Some(dir)
     }
 
-    /// Add a collaboration server to the MRU list and save
-    pub fn add_collaboration_server(&self, url: &str) {
+    /// Add a collaboration server to the MRU list
+    pub fn add_collaboration_server(&mut self, url: &str) {
         const MAX_SERVERS: usize = 10;
         let url = url.trim().to_string();
         if url.is_empty() {
             return;
         }
 
-        let mut servers = self.collaboration_servers.write();
         // Remove if exists (to move to end)
-        servers.retain(|s| s != &url);
+        self.collaboration.servers.retain(|s| s != &url);
         // Add to end (most recent)
-        servers.push(url);
+        self.collaboration.servers.push(url);
         // Trim to max
-        while servers.len() > MAX_SERVERS {
-            servers.remove(0);
+        while self.collaboration.servers.len() > MAX_SERVERS {
+            self.collaboration.servers.remove(0);
         }
-        drop(servers);
-        self.store_persistent();
     }
 
     /// Get the most recent collaboration server (last in list)
     pub fn last_collaboration_server(&self) -> Option<String> {
-        self.collaboration_servers.read().last().cloned()
+        self.collaboration.servers.last().cloned()
     }
 
     /// Get all collaboration servers (oldest first)
     pub fn collaboration_servers_list(&self) -> Vec<String> {
-        self.collaboration_servers.read().clone()
-    }
-
-    /// Set and save the collaboration nickname
-    pub fn set_collaboration_nick(&self, nick: &str) {
-        *self.collaboration_nick.write() = nick.to_string();
-        self.store_persistent();
-    }
-
-    /// Get the collaboration nickname
-    pub fn get_collaboration_nick(&self) -> String {
-        self.collaboration_nick.read().clone()
-    }
-
-    /// Set and save the collaboration group
-    pub fn set_collaboration_group(&self, group: &str) {
-        *self.collaboration_group.write() = group.to_string();
-        self.store_persistent();
-    }
-
-    /// Get the collaboration group
-    pub fn get_collaboration_group(&self) -> String {
-        self.collaboration_group.read().clone()
+        self.collaboration.servers.clone()
     }
 }
 

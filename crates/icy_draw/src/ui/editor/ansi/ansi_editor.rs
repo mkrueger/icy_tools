@@ -179,7 +179,7 @@ impl AnsiEditorCore {
 
         if let Some(font) = self.active_font_tool() {
             if font.is_outline_selector_open() {
-                let current_style = *self.options.read().font_outline_style.read();
+                let current_style = self.options.read().font_outline_style;
                 let selector_canvas = OutlineSelector::new(current_style)
                     .view()
                     .map(move |m| map_msg(AnsiEditorCoreMessage::OutlineSelector(m)));
@@ -674,7 +674,7 @@ impl AnsiEditorCore {
         let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(edit_state)));
 
         // Initialize outline style from shared settings
-        let outline_style = { *options.read().font_outline_style.read() };
+        let outline_style = { options.read().font_outline_style };
         {
             let mut guard = screen.lock();
             if let Some(state) = guard.as_any_mut().downcast_mut::<EditState>() {
@@ -686,7 +686,7 @@ impl AnsiEditorCore {
         color_switcher.sync_palette(&palette);
 
         // Create canvas with cloned Arc to screen + shared monitor settings
-        let shared_monitor_settings = { options.read().monitor_settings.clone() };
+        let shared_monitor_settings = Arc::new(RwLock::new(options.read().monitor_settings.clone()));
         let mut canvas = CanvasView::new(screen.clone(), shared_monitor_settings);
         // Enable caret blinking by default (Click tool is the default)
         canvas.set_has_focus(true);
@@ -696,7 +696,7 @@ impl AnsiEditorCore {
         // Read display settings before moving options
         let (show_line_numbers, show_layer_borders) = {
             let opts = options.read();
-            (*opts.show_line_numbers.read(), *opts.show_layer_borders.read())
+            (opts.show_line_numbers, opts.show_layer_borders)
         };
 
         // Current tool is provided by the wrapper (which owns the registry).
@@ -1419,7 +1419,7 @@ impl AnsiEditorCore {
                     }
                     TopToolbarMessage::SelectOutline(index) => {
                         // Update outline style in options
-                        *self.options.read().font_outline_style.write() = index;
+                        self.options.write().font_outline_style = index;
                         Task::none()
                     }
                     TopToolbarMessage::OpenOutlineSelector => {
@@ -1718,14 +1718,14 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::ToggleLineNumbers => {
                 self.show_line_numbers = !self.show_line_numbers;
                 // Persist to settings
-                *self.options.read().show_line_numbers.write() = self.show_line_numbers;
+                self.options.write().show_line_numbers = self.show_line_numbers;
                 self.options.read().store_persistent();
                 Task::none()
             }
             AnsiEditorCoreMessage::ToggleLayerBorders => {
                 self.show_layer_borders = !self.show_layer_borders;
                 // Persist to settings
-                *self.options.read().show_layer_borders.write() = self.show_layer_borders;
+                self.options.write().show_layer_borders = self.show_layer_borders;
                 self.options.read().store_persistent();
                 self.task_none_with_markers_update()
             }
@@ -1964,13 +1964,6 @@ impl AnsiEditorCore {
                     };
                     state.set_caret_foreground(attr.foreground());
                     state.set_caret_background(attr.background());
-                });
-                self.sync_ui();
-                Task::none()
-            }
-            AnsiEditorCoreMessage::ToggleColor => {
-                self.with_edit_state(|state| {
-                    state.swap_caret_colors();
                 });
                 self.sync_ui();
                 Task::none()
@@ -2386,6 +2379,68 @@ impl AnsiEditorCore {
                     if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
                         self.char_selector_target = None;
                         return true;
+                    }
+                }
+
+                // Outline selector keyboard handling (Escape = Cancel)
+                if let Some(font_tool) = self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>() {
+                    if font_tool.is_outline_selector_open() {
+                        if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                            font_tool.handle_outline_selector_message(&self.options, widget::outline_selector::OutlineSelectorMessage::Cancel);
+                            return true;
+                        }
+                    }
+                }
+
+                // Tag dialog keyboard handling (Escape = Cancel, Enter = Ok)
+                if let Some(tag_tool) = self.current_tool.as_any_mut().downcast_mut::<tools::TagTool>() {
+                    if tag_tool.state().dialog.is_some() {
+                        use iced::keyboard::key::Named;
+                        match key {
+                            iced::keyboard::Key::Named(Named::Escape) => {
+                                // Send Cancel message
+                                let screen = Arc::clone(&self.screen);
+                                let mut screen_guard = screen.lock();
+                                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                                    let result = tag_tool
+                                        .state_mut()
+                                        .handle_dialog_message(state, dialog::tag::TagDialogMessage::Cancel, Some(&self.options));
+                                    let _ = self.process_tool_result(result);
+
+                                    self.update_tag_overlays();
+                                }
+                                return true;
+                            }
+                            iced::keyboard::Key::Named(Named::Enter) => {
+                                // Send Ok message
+                                let screen = Arc::clone(&self.screen);
+                                let mut screen_guard = screen.lock();
+                                if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                                    let result = tag_tool
+                                        .state_mut()
+                                        .handle_dialog_message(state, dialog::tag::TagDialogMessage::Ok, Some(&self.options));
+                                    let _ = self.process_tool_result(result);
+                                    self.update_tag_overlays();
+                                }
+                                return true;
+                            }
+                            _ => {}
+                        }
+                    }
+                    // Tag list dialog keyboard handling (Escape = Close)
+                    if tag_tool.state().list_dialog.is_some() {
+                        if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                            let screen = Arc::clone(&self.screen);
+                            let mut screen_guard = screen.lock();
+                            if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                                let result = tag_tool
+                                    .state_mut()
+                                    .handle_list_dialog_message(state, dialog::tag_list::TagListDialogMessage::Close);
+                                let _ = self.process_tool_result(result);
+                                self.update_tag_overlays();
+                            }
+                            return true;
+                        }
                     }
                 }
 

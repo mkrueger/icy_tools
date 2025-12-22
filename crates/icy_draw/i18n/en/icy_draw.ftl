@@ -964,6 +964,7 @@ tag-toolbar-add=Add
 tag-toolbar-tags=Tags…
 tag-toolbar-edit=Edit
 tag-toolbar-delete=Delete
+tag-toolbar-delete-selected=Delete { $count } Selected
 tag-toolbar-selected-tags={ $count } tags selected
 tag-toolbar-no-replacement=(no replacement)
 tag-toolbar-add-hint=Click to place tag, ESC to cancel

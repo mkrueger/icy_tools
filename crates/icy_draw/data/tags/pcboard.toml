@@ -1,0 +1,534 @@
+name = "PCBoard"
+description = "PCBoard macro replacement list"
+comments = """Formatting
+
+Most macros can be formatted with a maximum field length and optional justification.
+
+Examples:
+- @USER:30@   (30 chars, left)
+- @USER:30C@  (30 chars, centered)
+- @USER:30R@  (30 chars, right)
+
+Note: Action related macros are typically not formattable.
+"""
+version = "1.0.0"
+
+[[entries]]
+tag = "@AUTOMORE@"
+example = ""
+description = "Subsequent more prompts are treated as @PAUSE@."
+
+[[entries]]
+tag = "@BEEP@"
+example = ""
+description = "Send a beep to the caller."
+
+[[entries]]
+tag = "@CLREOL@"
+example = ""
+description = "Clear all text on the current line to the right of the cursor."
+
+[[entries]]
+tag = "@CLS@"
+example = ""
+description = "Clear the screen."
+
+[[entries]]
+tag = "@DELAY:nn@"
+example = ""
+description = "Pause for the nn tenths of a second."
+
+[[entries]]
+tag = "@HANGUP@"
+example = ""
+description = "Disconnect the caller."
+
+[[entries]]
+tag = "@MORE@"
+example = ""
+description = "Interrupt display asking caller if they wish to see more."
+
+[[entries]]
+tag = "@PAUSE@"
+example = ""
+description = "Same as @MORE@ but continues after 10 seconds."
+
+[[entries]]
+tag = "@POFF@"
+example = ""
+description = "Disable normal more prompts when screen fills up."
+
+[[entries]]
+tag = "@PON@"
+example = ""
+description = "Enable normal more prompting usage."
+
+[[entries]]
+tag = "@POS:nn@"
+example = ""
+description = "Advance cursor to position nn."
+
+[[entries]]
+tag = "@QOFF@"
+example = ""
+description = "Do not allow the display of the file to be aborted."
+
+[[entries]]
+tag = "@QON@"
+example = ""
+description = "Allow the file display to be aborted."
+
+[[entries]]
+tag = "@WAIT@"
+example = ""
+description = "Interrupt display of file with a Press Enter prompt."
+
+[[entries]]
+tag = "@XOFF@"
+example = ""
+description = "Turn graphics off"
+
+[[entries]]
+tag = "@XON@"
+example = ""
+description = "Turn graphics on"
+
+[[entries]]
+tag = "@BYTELIMIT@"
+example = "10000000"
+description = "Number of bytes that can be downloaded on a daily basis."
+
+[[entries]]
+tag = "@BYTERATIO@"
+example = "1.0"
+description = "Current byte ratio of caller."
+
+[[entries]]
+tag = "@BYTESLEFT@"
+example = "10000000"
+description = "Number of bytes user can download during current call."
+
+[[entries]]
+tag = "@DAYBYTES@"
+example = "2000000"
+description = "Number of bytes downloaded today."
+
+[[entries]]
+tag = "@DLBYTES@"
+example = "1000000000"
+description = "Total number of bytes downloaded by the caller."
+
+[[entries]]
+tag = "@DLFILES@"
+example = "1000"
+description = "Total number of files download by the caller."
+
+[[entries]]
+tag = "@FILERATIO@"
+example = "1.0"
+description = "Current file ratio of the caller."
+
+[[entries]]
+tag = "@KBLEFT@"
+example = "4096"
+description = "@BYTESLEFT@ expressed in kilobytes."
+
+[[entries]]
+tag = "@KBLIMIT@"
+example = "4096"
+description = "@BYTELIMIT@ expressed in kilobytes."
+
+[[entries]]
+tag = "@NUMDIR@"
+example = "12"
+description = "Number of file directories in current conference."
+
+[[entries]]
+tag = "@PRODESC@"
+example = "Z Modem (Batch)"
+description = "Description of the default protocol selected."
+
+[[entries]]
+tag = "@PROLTR@"
+example = "Z"
+description = "Default protocol selected by the current caller."
+
+[[entries]]
+tag = "@UPBYTES@"
+example = "1000000000"
+description = "Total number of bytes uploaded by the caller."
+
+[[entries]]
+tag = "@UPFILES@"
+example = "1000"
+description = "Total number of files uploaded by the caller."
+
+[[entries]]
+tag = "@BICPS@"
+example = "1023"
+description = "Last upload & download cps"
+
+[[entries]]
+tag = "@RCPS@"
+example = "1023"
+description = "Download cps"
+
+[[entries]]
+tag = "@RBYTES@"
+example = "100000"
+description = "Received bytes"
+
+[[entries]]
+tag = "@RFILES@"
+example = "100"
+description = "Received files"
+
+[[entries]]
+tag = "@SCPS@"
+example = "1023"
+description = "Upload cps"
+
+[[entries]]
+tag = "@SBYTES@"
+example = "100000"
+description = "Uploaded bytes"
+
+[[entries]]
+tag = "@SFILES@"
+example = "100"
+description = "Uploaded files"
+
+[[entries]]
+tag = "@CURMSGNUM@"
+example = "4095"
+description = "Current message number being read."
+
+[[entries]]
+tag = "@HIGHMSGNUM@"
+example = "8123"
+description = "High message number in message base."
+
+[[entries]]
+tag = "@LMR@"
+example = "2032"
+description = "Last message read by user in the current conference."
+
+[[entries]]
+tag = "@LOWMSGNUM@"
+example = "1"
+description = "Low message number in the message base."
+
+[[entries]]
+tag = "@MSGLEFT@"
+example = "42"
+description = "Total number of messages entered by the user."
+
+[[entries]]
+tag = "@MSGREAD@"
+example = "9009"
+description = "Total number of messages read by the user."
+
+[[entries]]
+tag = "@BOARDNAME@"
+example = "Coolest PCBoard in the world"
+description = "The name of the bulletin board system."
+
+[[entries]]
+tag = "@CONFNAME@"
+example = "Main Board"
+description = "The name of the current conference."
+
+[[entries]]
+tag = "@CONFNUM@"
+example = "0"
+description = "The number of the current conference."
+
+[[entries]]
+tag = "@EVENT@"
+example = "Erase Disk"
+description = "The time that the next event is scheduled to take place."
+
+[[entries]]
+tag = "@FREESPACE@"
+example = "123124231"
+description = "Bytes available for uploading in the current conference."
+
+[[entries]]
+tag = "@INCONF@"
+example = "0 Main Board"
+description = "Current conference number and name."
+
+[[entries]]
+tag = "@LASTCALLERNODE@"
+example = "Dude"
+description = "The last user that called the current node."
+
+[[entries]]
+tag = "@LASTCALLERSYSTEM@"
+example = "Dude"
+description = "The last user that called the system."
+
+[[entries]]
+tag = "@NODE@"
+example = "1"
+description = "The current node number."
+
+[[entries]]
+tag = "@NUMBLT@"
+example = "5"
+description = "The number of bulletins defined in the current conference."
+
+[[entries]]
+tag = "@NUMCALLS@"
+example = "3244"
+description = "Total number of calls answered by the BBS."
+
+[[entries]]
+tag = "@OFFHOURS@"
+example = "10"
+description = "Hours that lower speed callers can call into the system."
+
+[[entries]]
+tag = "@OPTEXT@"
+example = "1-2"
+description = "Used in PCBTEXT to transfer information by PCBoard."
+
+[[entries]]
+tag = "@SYSDATE@"
+example = "04/23/24"
+description = "The current system date."
+
+[[entries]]
+tag = "@SYSOPIN@"
+example = "00:00"
+description = "Beginning time when the SysOp is available for chat."
+
+[[entries]]
+tag = "@SYSOPOUT@"
+example = "24:00"
+description = "Ending time when the SysOp is available for chat."
+
+[[entries]]
+tag = "@SYSTIME@"
+example = "07:11"
+description = "The current system time."
+
+[[entries]]
+tag = "@WHO@"
+example = ""
+description = "Prints a list of who is currently online."
+
+[[entries]]
+tag = "@BPS@"
+example = "9600"
+description = "Carrier speed of caller as reported by PCBoard."
+
+[[entries]]
+tag = "@CARRIER@"
+example = "9600"
+description = "Carrier speed of caller as reported by the modem."
+
+[[entries]]
+tag = "@CITY@"
+example = "Gotham"
+description = "Information entered in the city field of user's record."
+
+[[entries]]
+tag = "@DATAPHONE@"
+example = "001"
+description = "Information entered in the data phone field of user's record."
+
+[[entries]]
+tag = "@EXPDATE@"
+example = "09/09/99"
+description = "Expiration date of the caller."
+
+[[entries]]
+tag = "@EXPDAYS@"
+example = "999"
+description = "Number of days until the user's subscription will expire"
+
+[[entries]]
+tag = "@FIRST@"
+example = "John"
+description = "First name of caller displayed in mixed case."
+
+[[entries]]
+tag = "@FIRSTU@"
+example = "JOHN"
+description = "First name of caller displayed in all upper case."
+
+[[entries]]
+tag = "@HOMEPHONE@"
+example = "001"
+description = "Information entered in the home phone field of user record."
+
+[[entries]]
+tag = "@LASTDATEON@"
+example = "01/01/23"
+description = "Last date the caller called the system."
+
+[[entries]]
+tag = "@LASTTIMEON@"
+example = "21:11"
+description = "Last time the caller called the system."
+
+[[entries]]
+tag = "@MINLEFT@"
+example = "400"
+description = "Minutes left on system (includes download time estimates)."
+
+[[entries]]
+tag = "@NUMTIMESON@"
+example = "129"
+description = "Number of times user has called the system."
+
+[[entries]]
+tag = "@SECURITY@"
+example = "10"
+description = "Current security level of the caller."
+
+[[entries]]
+tag = "@TIMELEFT@"
+example = "1000"
+description = "Minutes left on system (excludes download time estimates)."
+
+[[entries]]
+tag = "@TIMELIMIT@"
+example = "1000"
+description = "The daily/session time limit of the caller."
+
+[[entries]]
+tag = "@TIMEUSED@"
+example = "3232"
+description = "Total number of minutes used during current call."
+
+[[entries]]
+tag = "@TOTALTIME@"
+example = "1223"
+description = "Total number of minutes used during current day."
+
+[[entries]]
+tag = "@USER@"
+example = "JOHN DOE"
+description = "The caller's name displayed in uppercase."
+
+[[entries]]
+tag = "@ALIAS@"
+example = "Janne Doe"
+description = "The caller's alias"
+
+[[entries]]
+tag = "@REAL@"
+example = "John Doe"
+description = "The caller's real name"
+
+[[entries]]
+tag = "@NUMCONF@"
+example = "12"
+description = "The number of conferences"
+
+[[entries]]
+tag = "@BYTECREDIT@"
+example = "100"
+description = "Byte credit"
+
+[[entries]]
+tag = "@CREDLEFT@"
+example = "100"
+description = "Credits left"
+
+[[entries]]
+tag = "@CREDNOW@"
+example = "100"
+description = "Credits now"
+
+[[entries]]
+tag = "@CREDSTART@"
+example = "100"
+description = "Credits start"
+
+[[entries]]
+tag = "@CREDUSED@"
+example = "100"
+description = "Credits used"
+
+[[entries]]
+tag = "@DIRNAME@"
+example = "0-Day WareZ"
+description = "Name of current Directory"
+
+[[entries]]
+tag = "@DIRNUM@"
+example = "0"
+description = "Number of current Directory"
+
+[[entries]]
+tag = "@FBYTES@"
+example = "100"
+description = "TODO"
+
+[[entries]]
+tag = "@FFBYTES@"
+example = "100"
+description = "TODO"
+
+[[entries]]
+tag = "@FILECREDIT@"
+example = "100"
+description = "TODO"
+
+[[entries]]
+tag = "@RATIOBYTES@"
+example = "1.0"
+description = "TODO"
+
+[[entries]]
+tag = "@RATIOFILES@"
+example = "1.0"
+description = "TODO"
+
+[[entries]]
+tag = "@FNUM@"
+example = "1"
+description = "TODO"
+
+[[entries]]
+tag = "@INAME@"
+example = "Name"
+description = "TODO"
+
+[[entries]]
+tag = "@LOGDATE@"
+example = "01/01/01"
+description = "TODO"
+
+[[entries]]
+tag = "@LOGTIME@"
+example = "10:10"
+description = "TODO"
+
+[[entries]]
+tag = "@MAXBYTES@"
+example = "1100"
+description = "TODO"
+
+[[entries]]
+tag = "@MAXFILES@"
+example = "100"
+description = "TODO"
+
+[[entries]]
+tag = "@PWXDATE@"
+example = "01/01/01"
+description = "TODO"
+
+[[entries]]
+tag = "@NOCHAR@"
+example = "N"
+description = "Char for 'No'"
+
+[[entries]]
+tag = "@YESCHAR@"
+example = "Y"
+description = "Char for 'Yes'"

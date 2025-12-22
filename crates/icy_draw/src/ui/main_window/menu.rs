@@ -660,26 +660,13 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
 }
 
 /// Create a menu item with direct label and hotkey (without CommandDef)
-pub fn menu_item_simple(label: String, hotkey: &str, msg: Message) -> Element<'static, Message> {
-    let hotkey_text = hotkey.to_string();
-
-    button(
-        row![
-            text(label).size(14).width(Length::Fill),
-            text(hotkey_text).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
-                }
-            }),
-        ]
-        .spacing(16)
-        .align_y(alignment::Vertical::Center),
-    )
-    .width(Length::Fill)
-    .padding([4, 8])
-    .style(menu_item_style)
-    .on_press(msg)
-    .into()
+pub fn menu_item_simple(label: String, msg: Message) -> Element<'static, Message> {
+    button(row![text(label).size(14).width(Length::Fill),].spacing(16).align_y(alignment::Vertical::Center))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .style(menu_item_style)
+        .on_press(msg)
+        .into()
 }
 
 /// Create a menu item with direct label and hotkey that can be enabled/disabled

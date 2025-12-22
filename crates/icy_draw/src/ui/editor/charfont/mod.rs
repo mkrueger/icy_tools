@@ -316,7 +316,7 @@ impl CharFontEditor {
             }
         }
 
-        let shared_monitor_settings = { options.read().monitor_settings.clone() };
+        let shared_monitor_settings = Arc::new(RwLock::new(options.read().monitor_settings.clone()));
         let mut outline_preview_canvas = CanvasView::new(outline_preview_screen.clone(), shared_monitor_settings);
         outline_preview_canvas.set_has_focus(false);
 
@@ -1046,14 +1046,8 @@ impl CharFontEditor {
                     self.sync_canvas_focus();
                 }
 
-                // ToggleColor needs special handling for color switcher animation
-                if let AnsiEditorCoreMessage::ToggleColor = &msg {
-                    self.toggle_color();
-                    Task::none()
-                } else {
-                    // Forward all other messages to the AnsiEditorCore
-                    self.ansi_core.update(msg).map(CharFontEditorMessage::AnsiEditor)
-                }
+                // Forward all other messages to the AnsiEditorCore
+                self.ansi_core.update(msg).map(CharFontEditorMessage::AnsiEditor)
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -1369,26 +1363,6 @@ impl CharFontEditor {
             String::new()
         };
         (left, center, right)
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Color operations (special handling for color switcher animation)
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /// Toggle (swap) foreground and background colors with animation
-    fn toggle_color(&mut self) {
-        self.color_switcher.start_swap_animation();
-        self.ansi_core.with_edit_state(|state| {
-            state.swap_caret_colors();
-        });
-        // Sync palette grid after swap
-        let (fg, bg) = self.ansi_core.with_edit_state(|state| {
-            let caret = state.get_caret();
-            (caret.attribute.foreground(), caret.attribute.background())
-        });
-        self.palette_grid.set_foreground(fg);
-        self.palette_grid.set_background(bg);
-        self.color_switcher.confirm_swap();
     }
 }
 

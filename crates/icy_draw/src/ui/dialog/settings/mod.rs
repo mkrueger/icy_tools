@@ -3,7 +3,7 @@ use std::sync::Arc;
 use iced::{
     Border, Color, Element, Event, Length,
     keyboard::{Key, key::Named},
-    widget::{Space, button, checkbox, column, container, row, scrollable, text, text_input},
+    widget::{Space, button, column, container, row, scrollable, text, text_input},
 };
 use icy_engine::BitFont;
 use icy_engine_gui::settings::{MonitorSettingsMessage, effect_box, left_label, show_monitor_settings_with_options, update_monitor_settings};
@@ -11,9 +11,9 @@ use icy_engine_gui::ui::*;
 use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use parking_lot::RwLock;
 
+use crate::Settings;
 use crate::fl;
 use crate::ui::FKeySets;
-use crate::{Settings, TagRenderMode};
 
 mod charset_picker;
 mod outline_picker;
@@ -65,8 +65,7 @@ pub enum SettingsDialogMessage {
     OpenLogFile,
     OpenFontDir,
     OpenPluginDir,
-
-    SetTagRenderMode(TagRenderMode),
+    OpenTaglistsDir,
 
     Save,
     Cancel,
@@ -83,7 +82,6 @@ pub struct SettingsDialog {
     temp_outline_style: usize,
     outline_cursor: usize,
     temp_fkeys: FKeySets,
-    temp_tag_render_mode: TagRenderMode,
 
     charset_font: BitFont,
     selected_charset_slot: Option<usize>,
@@ -92,14 +90,9 @@ pub struct SettingsDialog {
 
 impl SettingsDialog {
     pub fn new(options: Arc<RwLock<Settings>>, preview_font: Option<BitFont>) -> Self {
-        let (monitor_settings, outline_style, fkeys, tag_render_mode) = {
+        let (monitor_settings, outline_style, fkeys) = {
             let guard = options.read();
-            (
-                guard.monitor_settings.read().clone(),
-                *guard.font_outline_style.read(),
-                guard.fkeys.clone(),
-                *guard.tag_render_mode.read(),
-            )
+            (guard.monitor_settings.clone(), guard.font_outline_style, guard.fkeys.clone())
         };
 
         let mut temp_fkeys = fkeys;
@@ -114,7 +107,6 @@ impl SettingsDialog {
             temp_outline_style: outline_style,
             outline_cursor: outline_style,
             temp_fkeys,
-            temp_tag_render_mode: tag_render_mode,
             charset_font,
             selected_charset_slot: None,
             charset_cursor: 0,
@@ -213,27 +205,7 @@ impl SettingsDialog {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "N/A".to_string());
         let plugin_dir = Settings::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-
-        let tag_overlay_checked = self.temp_tag_render_mode == TagRenderMode::Overlay;
-        let tag_render_row = row![
-            left_label("Tag rendering".to_string()),
-            row![
-                checkbox(tag_overlay_checked)
-                    .on_toggle(|v| {
-                        crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::SetTagRenderMode(if v {
-                            TagRenderMode::Overlay
-                        } else {
-                            TagRenderMode::Buffer
-                        }))
-                    })
-                    .size(16),
-                text("Overlay (Option C)").size(TEXT_SIZE_NORMAL),
-            ]
-            .spacing(6)
-            .align_y(iced::Alignment::Center),
-        ]
-        .spacing(DIALOG_SPACING)
-        .align_y(iced::Alignment::Center);
+        let taglists_dir = Settings::taglists_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
 
         let inner: Element<'_, crate::ui::main_window::Message> = column![
             row![
@@ -275,7 +247,13 @@ impl SettingsDialog {
             .align_y(iced::Alignment::Center),
             Space::new().height(Length::Fixed(8.0)),
             section_header("Tags".to_string()),
-            tag_render_row,
+            row![
+                left_label("Taglists".to_string()),
+                text_input("", &taglists_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
+                browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenTaglistsDir)),
+            ]
+            .spacing(DIALOG_SPACING)
+            .align_y(iced::Alignment::Center),
         ]
         .spacing(DIALOG_SPACING)
         .into();
@@ -478,17 +456,21 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 }
                 Some(DialogAction::None)
             }
-            SettingsDialogMessage::SetTagRenderMode(mode) => {
-                self.temp_tag_render_mode = *mode;
+            SettingsDialogMessage::OpenTaglistsDir => {
+                if let Some(dir) = Settings::taglists_dir() {
+                    let _ = std::fs::create_dir_all(&dir);
+                    if let Err(err) = open::that(&dir) {
+                        log::error!("Failed to open taglists dir: {}", err);
+                    }
+                }
                 Some(DialogAction::None)
             }
             SettingsDialogMessage::Save => {
                 // Apply to shared options + persist
                 {
                     let mut guard = self.options.write();
-                    *guard.monitor_settings.write() = self.temp_monitor_settings.clone();
-                    *guard.font_outline_style.write() = self.temp_outline_style;
-                    *guard.tag_render_mode.write() = self.temp_tag_render_mode;
+                    guard.monitor_settings = self.temp_monitor_settings.clone();
+                    guard.font_outline_style = self.temp_outline_style;
                     guard.fkeys = self.temp_fkeys.clone();
                     guard.store_persistent();
                     if let Err(err) = guard.fkeys.save() {
@@ -509,9 +491,8 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
     fn request_confirm(&mut self) -> DialogAction<crate::ui::main_window::Message> {
         {
             let mut guard = self.options.write();
-            *guard.monitor_settings.write() = self.temp_monitor_settings.clone();
-            *guard.font_outline_style.write() = self.temp_outline_style;
-            *guard.tag_render_mode.write() = self.temp_tag_render_mode;
+            guard.monitor_settings = self.temp_monitor_settings.clone();
+            guard.font_outline_style = self.temp_outline_style;
             guard.fkeys = self.temp_fkeys.clone();
             guard.store_persistent();
             if let Err(err) = guard.fkeys.save() {

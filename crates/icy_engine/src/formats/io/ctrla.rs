@@ -11,8 +11,9 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
     let mut last_attr = TextAttribute::default();
     let mut pos = Position::default();
     let height = buf.line_count();
+    let char_opts = options.character_options();
 
-    match options.screen_preparation {
+    match char_opts.screen_prep {
         ScreenPreperation::None => {}
         ScreenPreperation::Home => {
             result.extend(b"\x01'");

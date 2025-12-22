@@ -968,7 +968,7 @@ impl MainWindow {
         if let Some(theme) = self.dialogs.theme() {
             return theme;
         }
-        self.options.read().monitor_settings.read().get_theme()
+        self.options.read().monitor_settings.get_theme()
     }
 
     /// Get current edit mode
@@ -1691,7 +1691,7 @@ impl MainWindow {
             Message::SettingsSaved(_) => {
                 // Apply outline style to current ANSI editor (if any)
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    let outline_style = { *self.options.read().font_outline_style.read() };
+                    let outline_style = { self.options.read().font_outline_style };
                     editor.with_edit_state(|state| state.set_outline_style(outline_style));
                 }
                 Task::none()
@@ -1787,10 +1787,10 @@ impl MainWindow {
 
                 // Save server, nick and group to settings for next time
                 {
-                    let opts = self.options.read();
+                    let mut opts = self.options.write();
                     opts.add_collaboration_server(&result.url);
-                    opts.set_collaboration_nick(&result.nick);
-                    opts.set_collaboration_group(&result.group);
+                    opts.collaboration.nick = result.nick.clone();
+                    opts.collaboration.group = result.group.clone();
                 }
 
                 // Store connection info and start connecting

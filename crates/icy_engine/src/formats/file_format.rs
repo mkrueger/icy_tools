@@ -496,6 +496,206 @@ impl FileFormat {
         }
     }
 
+    /// Get the capabilities this format supports.
+    pub fn capabilities(&self) -> super::FormatCapabilities {
+        use super::FormatCapabilities as C;
+        match self {
+            // Modern ANSI terminal output - supports almost everything
+            FileFormat::Ansi | FileFormat::AnsiMusic => C::UNICODE | C::TRUECOLOR | C::ICE_COLORS | C::SIXEL | C::CONTROL_CHARS,
+
+            // ASCII - minimal features
+            FileFormat::Ascii => C::UNICODE,
+
+            // Avatar - basic ANSI-like
+            FileFormat::Avatar => C::ICE_COLORS | C::CONTROL_CHARS,
+
+            // PCBoard - no custom palette, no ice colors
+            FileFormat::PCBoard => C::CONTROL_CHARS,
+
+            // CtrlA - basic colors only
+            FileFormat::CtrlA => C::CONTROL_CHARS,
+
+            // Renegade - similar to PCBoard
+            FileFormat::Renegade => C::CONTROL_CHARS,
+
+            // PETSCII - native charset only
+            FileFormat::Petscii => C::empty(),
+
+            // ATASCII - native charset only
+            FileFormat::Atascii => C::empty(),
+
+            // Viewdata/Mode7
+            FileFormat::ViewData | FileFormat::Mode7 => C::empty(),
+
+            // Binary format - requires even width
+            FileFormat::Bin => C::ICE_COLORS | C::REQUIRE_EVEN_WIDTH,
+
+            // XBin - full DOS features plus extended attributes
+            FileFormat::XBin => C::CUSTOM_PALETTE | C::ICE_COLORS | C::CUSTOM_FONT | C::XBIN_EXTENDED | C::REQUIRE_EVEN_WIDTH,
+
+            // TundraDraw - 24-bit color support
+            FileFormat::TundraDraw => C::TRUECOLOR | C::ICE_COLORS,
+
+            // Artworx - basic DOS format
+            FileFormat::Artworx => C::ICE_COLORS,
+
+            // iCE Draw - DOS features with custom palette/font
+            FileFormat::IceDraw => C::CUSTOM_PALETTE | C::ICE_COLORS | C::CUSTOM_FONT,
+
+            // IcyDraw native - supports everything
+            FileFormat::IcyDraw | FileFormat::IcyAnim => {
+                C::UNICODE | C::TRUECOLOR | C::CUSTOM_PALETTE | C::ICE_COLORS | C::CUSTOM_FONT | C::UNLIMITED_FONTS | C::SIXEL | C::CONTROL_CHARS
+            }
+
+            // Graphics/special formats
+            FileFormat::Rip | FileFormat::SkyPix | FileFormat::Vt52 | FileFormat::Igs => C::empty(),
+
+            // Non-buffer formats
+            FileFormat::Palette(_) | FileFormat::BitFont(_) | FileFormat::CharacterFont(_) | FileFormat::Image(_) | FileFormat::Archive(_) => C::empty(),
+        }
+    }
+
+    /// Maximum width this format supports (None = unlimited).
+    pub fn max_width(&self) -> Option<i32> {
+        match self {
+            FileFormat::Bin => Some(255),    // BIN uses 1 byte for width in SAUCE
+            FileFormat::XBin => Some(65535), // 2 bytes
+            _ => None,
+        }
+    }
+
+    /// Maximum height this format supports (None = unlimited).
+    pub fn max_height(&self) -> Option<i32> {
+        match self {
+            FileFormat::Bin => Some(65535),
+            FileFormat::XBin => Some(65535),
+            _ => None,
+        }
+    }
+
+    /// Check compatibility between a buffer and this format.
+    ///
+    /// Returns a list of issues found. Empty list means fully compatible.
+    pub fn check_compatibility(&self, buffer: &TextBuffer) -> Vec<super::CompatibilityIssue> {
+        use super::{CompatibilityIssue, FormatCapabilities, IssueType};
+
+        let requirements = buffer.analyze_capability_requirements();
+        let caps = self.capabilities();
+        let mut issues = Vec::new();
+
+        // Check width constraints
+        if caps.contains(FormatCapabilities::REQUIRE_EVEN_WIDTH) && requirements.width % 2 != 0 {
+            issues.push(CompatibilityIssue::error(
+                IssueType::OddWidthNotAllowed { width: requirements.width },
+                format!("Format requires even width, buffer has {} columns", requirements.width),
+            ));
+        }
+
+        // Check max dimensions for specific formats
+        if let Some(max_width) = self.max_width() {
+            if requirements.width > max_width {
+                issues.push(CompatibilityIssue::error(
+                    IssueType::WidthExceeded {
+                        width: requirements.width,
+                        max: max_width,
+                    },
+                    format!("Buffer width {} exceeds format maximum of {}", requirements.width, max_width),
+                ));
+            }
+        }
+
+        if let Some(max_height) = self.max_height() {
+            if requirements.height > max_height {
+                issues.push(CompatibilityIssue::error(
+                    IssueType::HeightExceeded {
+                        height: requirements.height,
+                        max: max_height,
+                    },
+                    format!("Buffer height {} exceeds format maximum of {}", requirements.height, max_height),
+                ));
+            }
+        }
+
+        // Check truecolor
+        if requirements.uses_truecolor && !caps.contains(FormatCapabilities::TRUECOLOR) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::TruecolorUnsupported,
+                "Format doesn't support 24-bit colors, will be quantized to palette",
+            ));
+        }
+
+        // Check custom palette
+        if requirements.has_custom_palette && !caps.contains(FormatCapabilities::CUSTOM_PALETTE) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::CustomPaletteUnsupported,
+                "Format doesn't support custom palettes, default palette will be used",
+            ));
+        }
+
+        // Check ice colors
+        if requirements.uses_ice_colors && !caps.contains(FormatCapabilities::ICE_COLORS) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::IceColorsUnsupported,
+                "Format doesn't support iCE colors, high-intensity backgrounds will be lost",
+            ));
+        }
+
+        // Check custom font
+        if requirements.has_custom_font && !caps.contains(FormatCapabilities::CUSTOM_FONT) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::CustomFontUnsupported,
+                "Format doesn't support custom fonts, default font will be used",
+            ));
+        }
+
+        // Check multiple fonts
+        if requirements.font_count > 1 && !caps.contains(FormatCapabilities::UNLIMITED_FONTS) {
+            // XBin supports 2 fonts via XBIN_EXTENDED
+            let max_fonts = if caps.contains(FormatCapabilities::XBIN_EXTENDED) { 2 } else { 1 };
+            if requirements.font_count > max_fonts {
+                issues.push(CompatibilityIssue::warning(
+                    IssueType::MultipleFontsUnsupported {
+                        font_count: requirements.font_count,
+                    },
+                    format!("Format supports max {} font(s), buffer uses {}", max_fonts, requirements.font_count),
+                ));
+            }
+        }
+
+        // Check sixels
+        if requirements.has_sixels && !caps.contains(FormatCapabilities::SIXEL) {
+            issues.push(CompatibilityIssue::error(
+                IssueType::SixelUnsupported,
+                "Format doesn't support SIXEL graphics, images will be lost",
+            ));
+        }
+
+        // Check extended attributes
+        if requirements.uses_extended_attributes && !caps.contains(FormatCapabilities::XBIN_EXTENDED) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::ExtendedAttributesUnsupported,
+                "Format doesn't support extended attributes (underline, etc.)",
+            ));
+        }
+
+        // Check control characters
+        if requirements.has_control_chars && !caps.contains(FormatCapabilities::CONTROL_CHARS) {
+            issues.push(CompatibilityIssue::warning(
+                IssueType::ControlCharsUnsupported,
+                "Format doesn't support control characters (0x00-0x1F), they will be replaced",
+            ));
+        }
+
+        issues
+    }
+
+    /// Check if this format can save the buffer without errors (warnings are OK).
+    pub fn can_save_lossless(&self, buffer: &TextBuffer) -> bool {
+        self.check_compatibility(buffer)
+            .iter()
+            .all(|issue| issue.severity != super::IssueSeverity::Error)
+    }
+
     /// Check if this is an image format.
     pub fn is_image(&self) -> bool {
         matches!(self, FileFormat::Image(_))
@@ -975,7 +1175,7 @@ impl FileFormat {
         let buffer = if self == &FileFormat::IcyDraw {
             // IcyDraw native format
             buffer.clone()
-        } else if options.lossles_output {
+        } else if options.is_lossless() {
             let mut buffer = buffer.clone();
             buffer.show_tags = false;
             buffer

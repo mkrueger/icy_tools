@@ -818,6 +818,7 @@ tag-toolbar-add=Hinzufügen
 tag-toolbar-tags=Tags…
 tag-toolbar-edit=Bearbeiten
 tag-toolbar-delete=Löschen
+tag-toolbar-delete-selected={ $count } Ausgewählte löschen
 tag-toolbar-selected-tags={ $count } Tags ausgewählt
 tag-toolbar-no-replacement=(kein Ersetzungstext)
 tag-toolbar-add-hint=Klicken zum Platzieren, ESC zum Abbrechen
