@@ -303,8 +303,6 @@ pub enum Message {
     Paste,
     /// Paste clipboard image (or ICY buffer) as a new ANSI document with a Sixel layer
     PasteAsNewImage,
-    /// Paste clipboard image as a Sixel layer in the current document
-    PasteSixel,
     /// Open file dialog to insert a Sixel from an image file
     InsertSixelFromFile,
     /// Insert a Sixel from the selected image file path
@@ -1329,31 +1327,6 @@ impl MainWindow {
                 // This message is handled by WindowManager, not here
                 Task::none()
             }
-            Message::PasteSixel => {
-                use clipboard_rs::Clipboard;
-                use clipboard_rs::common::RustImage;
-                use icy_engine::{Position, Sixel};
-
-                // Only process if we have an image in the clipboard
-                if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
-                    let (w, h) = img.get_size();
-                    if let Ok(rgba_data) = img.to_rgba8() {
-                        let mut sixel = Sixel::new(Position::default());
-                        sixel.picture_data = rgba_data.as_raw().clone();
-                        sixel.set_width(w as i32);
-                        sixel.set_height(h as i32);
-
-                        if let ModeState::Ansi(editor) = &mut self.mode_state {
-                            editor.with_edit_state(|state| {
-                                if let Err(e) = state.paste_sixel(sixel) {
-                                    log::error!("Failed to paste sixel: {}", e);
-                                }
-                            });
-                        }
-                    }
-                }
-                Task::none()
-            }
             Message::InsertSixelFromFile => {
                 // Open file dialog to select an image file
                 Task::perform(
@@ -2079,12 +2052,6 @@ impl MainWindow {
 
         let is_connected = self.collaboration_state.active;
 
-        // Check if there's an image in the clipboard for "Paste Sixel" menu item
-        let has_image_clipboard = {
-            use clipboard_rs::Clipboard;
-            crate::CLIPBOARD_CONTEXT.has(clipboard_rs::ContentFormat::Image)
-        };
-
         let menu_bar = self.menu_state.view(
             &self.mode_state.mode(),
             options,
@@ -2093,7 +2060,6 @@ impl MainWindow {
             self.plugins.clone(),
             mirror_mode,
             is_connected,
-            has_image_clipboard,
         );
 
         // Pass collaboration state to the ANSI editor; it builds the chat pane and splitter itself.

@@ -401,6 +401,8 @@ cmd-bitfont-show_preview-desc = Show font preview screen
 cmd-bitfont-show_preview-menu = Show Preview
 
 cmd-category-bitfont = BitFont
+cmd-category-selection = Selection
+cmd-category-area = Area Operations
 
 # BitFont Tools menu
 menu-tools=Tools

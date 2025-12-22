@@ -59,7 +59,7 @@ pub struct AnsiMenu {
 
 impl AnsiMenu {
     /// Create the menu structure with current state
-    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, has_image_clipboard: bool) -> Self {
+    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Self {
         let undo_label = match undo_desc {
             Some(desc) => format!("{} {}", cmd::EDIT_UNDO.label_menu, desc),
             None => cmd::EDIT_UNDO.label_menu.clone(),
@@ -100,11 +100,8 @@ impl AnsiMenu {
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
                 MenuItem::separator(),
-                MenuItem::submenu(
-                    fl!("menu-import"),
-                    vec![MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog)],
-                ),
-                MenuItem::submenu(fl!("menu-export"), vec![MenuItem::cmd(&cmd::FILE_EXPORT, Message::ExportFile)]),
+                MenuItem::cmd(&cmd::FILE_EXPORT, Message::ExportFile),
+                MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
                 MenuItem::separator(),
                 MenuItem::simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog),
                 MenuItem::separator(),
@@ -122,10 +119,7 @@ impl AnsiMenu {
                 MenuItem::cmd(&cmd::EDIT_PASTE, Message::Paste),
                 MenuItem::submenu(
                     fl!("menu-paste-as"),
-                    vec![
-                        MenuItem::simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage),
-                        MenuItem::simple(fl!("menu-paste-as-sixel"), "", Message::PasteSixel).enabled(has_image_clipboard),
-                    ],
+                    vec![MenuItem::simple(fl!("menu-paste-as-new-image"), "", Message::PasteAsNewImage)],
                 ),
                 MenuItem::simple(fl!("menu-insert-sixel-from-file"), "", Message::InsertSixelFromFile),
                 MenuItem::separator(),
@@ -323,7 +317,7 @@ pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_d
     };
 
     let hotkey = hotkey_from_iced(key, modifiers)?;
-    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode, false);
+    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode);
     menu.handle_hotkey(&hotkey)
 }
 
@@ -677,7 +671,6 @@ pub fn view_ansi(
     plugins: &[Plugin],
     mirror_mode: bool,
     is_connected: bool,
-    has_image_clipboard: bool,
 ) -> Element<'static, Message> {
     let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
 
@@ -708,14 +701,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
                     (separator()),
-                    (
-                        menu_item_submenu(fl!("menu-import")),
-                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog))))
-                    ),
-                    (
-                        menu_item_submenu(fl!("menu-export")),
-                        menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
-                    ),
+                    (menu_item(&cmd::FILE_EXPORT, Message::ExportFile)),
+                    (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
                     (separator()),
                     (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
                     (separator()),
@@ -737,10 +724,7 @@ pub fn view_ansi(
                     (menu_item(&cmd::EDIT_PASTE, Message::Paste)),
                     (
                         menu_item_submenu(fl!("menu-paste-as")),
-                        menu_template(menu_items!(
-                            (menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage)),
-                            (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
-                        ))
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage))))
                     ),
                     (menu_item_simple(fl!("menu-insert-sixel-from-file"), Message::InsertSixelFromFile)),
                     (separator()),
@@ -884,14 +868,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
                     (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
                     (separator()),
-                    (
-                        menu_item_submenu(fl!("menu-import")),
-                        menu_template(menu_items!((menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog))))
-                    ),
-                    (
-                        menu_item_submenu(fl!("menu-export")),
-                        menu_template(menu_items!((menu_item(&cmd::FILE_EXPORT, Message::ExportFile))))
-                    ),
+                    (menu_item(&cmd::FILE_EXPORT, Message::ExportFile)),
+                    (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
                     (separator()),
                     (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
                     (separator()),
@@ -913,10 +891,7 @@ pub fn view_ansi(
                     (menu_item(&cmd::EDIT_PASTE, Message::Paste)),
                     (
                         menu_item_submenu(fl!("menu-paste-as")),
-                        menu_template(menu_items!(
-                            (menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage)),
-                            (menu_item_simple_enabled(fl!("menu-paste-as-sixel"), "", Message::PasteSixel, has_image_clipboard))
-                        ))
+                        menu_template(menu_items!((menu_item_simple(fl!("menu-paste-as-new-image"), Message::PasteAsNewImage))))
                     ),
                     (menu_item_simple(fl!("menu-insert-sixel-from-file"), Message::InsertSixelFromFile)),
                     (separator()),

@@ -273,6 +273,116 @@ cmd-bitfont-show_preview-menu = Vorschau anzeigen
 
 cmd-category-bitfont = BitFont
 
+# Selection Commands
+cmd-select-none-action = Auswahl aufheben
+cmd-select-none-desc = Aktuelle Auswahl aufheben
+cmd-select-none-menu = Auswahl aufheben
+
+cmd-select-inverse-action = Auswahl umkehren
+cmd-select-inverse-desc = Auswahl umkehren
+cmd-select-inverse-menu = Auswahl umkehren
+
+cmd-select-erase-action = Löschen
+cmd-select-erase-desc = Ausgewählten Bereich löschen
+cmd-select-erase-menu = Löschen
+
+cmd-select-flip_x-action = X spiegeln
+cmd-select-flip_x-desc = Auswahl horizontal spiegeln
+cmd-select-flip_x-menu = X spiegeln
+
+cmd-select-flip_y-action = Y spiegeln
+cmd-select-flip_y-desc = Auswahl vertikal spiegeln
+cmd-select-flip_y-menu = Y spiegeln
+
+cmd-select-crop-action = Zuschneiden
+cmd-select-crop-desc = Auf Auswahl zuschneiden
+cmd-select-crop-menu = Zuschneiden
+
+cmd-select-justify_left-action = Linksbündig
+cmd-select-justify_left-desc = Auswahl linksbündig ausrichten
+cmd-select-justify_left-menu = Linksbündig
+
+cmd-select-justify_center-action = Zentriert
+cmd-select-justify_center-desc = Auswahl zentrieren
+cmd-select-justify_center-menu = Zentriert
+
+cmd-select-justify_right-action = Rechtsbündig
+cmd-select-justify_right-desc = Auswahl rechtsbündig ausrichten
+cmd-select-justify_right-menu = Rechtsbündig
+
+cmd-category-selection = Auswahl
+
+# Area Operations Commands
+cmd-area-justify_line_left-action = Zeile linksbündig
+cmd-area-justify_line_left-desc = Aktuelle Zeile linksbündig ausrichten
+cmd-area-justify_line_left-menu = Zeile linksbündig
+
+cmd-area-justify_line_center-action = Zeile zentrieren
+cmd-area-justify_line_center-desc = Aktuelle Zeile zentrieren
+cmd-area-justify_line_center-menu = Zeile zentrieren
+
+cmd-area-justify_line_right-action = Zeile rechtsbündig
+cmd-area-justify_line_right-desc = Aktuelle Zeile rechtsbündig ausrichten
+cmd-area-justify_line_right-menu = Zeile rechtsbündig
+
+cmd-area-insert_row-action = Zeile einfügen
+cmd-area-insert_row-desc = Neue Zeile an Cursorposition einfügen
+cmd-area-insert_row-menu = Zeile einfügen
+
+cmd-area-delete_row-action = Zeile löschen
+cmd-area-delete_row-desc = Zeile an Cursorposition löschen
+cmd-area-delete_row-menu = Zeile löschen
+
+cmd-area-insert_column-action = Spalte einfügen
+cmd-area-insert_column-desc = Neue Spalte an Cursorposition einfügen
+cmd-area-insert_column-menu = Spalte einfügen
+
+cmd-area-delete_column-action = Spalte löschen
+cmd-area-delete_column-desc = Spalte an Cursorposition löschen
+cmd-area-delete_column-menu = Spalte löschen
+
+cmd-area-erase_row-action = Zeile leeren
+cmd-area-erase_row-desc = Gesamte Zeile am Cursor leeren
+cmd-area-erase_row-menu = Zeile leeren
+
+cmd-area-erase_row_to_start-action = Zeile bis Anfang leeren
+cmd-area-erase_row_to_start-desc = Von Zeilenanfang bis Cursor leeren
+cmd-area-erase_row_to_start-menu = Zeile bis Anfang leeren
+
+cmd-area-erase_row_to_end-action = Zeile bis Ende leeren
+cmd-area-erase_row_to_end-desc = Von Cursor bis Zeilenende leeren
+cmd-area-erase_row_to_end-menu = Zeile bis Ende leeren
+
+cmd-area-erase_column-action = Spalte leeren
+cmd-area-erase_column-desc = Gesamte Spalte am Cursor leeren
+cmd-area-erase_column-menu = Spalte leeren
+
+cmd-area-erase_column_to_start-action = Spalte bis Anfang leeren
+cmd-area-erase_column_to_start-desc = Von Spaltenanfang bis Cursor leeren
+cmd-area-erase_column_to_start-menu = Spalte bis Anfang leeren
+
+cmd-area-erase_column_to_end-action = Spalte bis Ende leeren
+cmd-area-erase_column_to_end-desc = Von Cursor bis Spaltenende leeren
+cmd-area-erase_column_to_end-menu = Spalte bis Ende leeren
+
+cmd-area-scroll_up-action = Bereich nach oben rollen
+cmd-area-scroll_up-desc = Ausgewählten Bereich nach oben rollen
+cmd-area-scroll_up-menu = Bereich nach oben rollen
+
+cmd-area-scroll_down-action = Bereich nach unten rollen
+cmd-area-scroll_down-desc = Ausgewählten Bereich nach unten rollen
+cmd-area-scroll_down-menu = Bereich nach unten rollen
+
+cmd-area-scroll_left-action = Bereich nach links rollen
+cmd-area-scroll_left-desc = Ausgewählten Bereich nach links rollen
+cmd-area-scroll_left-menu = Bereich nach links rollen
+
+cmd-area-scroll_right-action = Bereich nach rechts rollen
+cmd-area-scroll_right-desc = Ausgewählten Bereich nach rechts rollen
+cmd-area-scroll_right-menu = Bereich nach rechts rollen
+
+cmd-category-area = Bereichsoperationen
+
 # BitFont Werkzeuge Menü
 menu-tools=Werkzeuge
 menu-tool-click=Klick-Werkzeug
