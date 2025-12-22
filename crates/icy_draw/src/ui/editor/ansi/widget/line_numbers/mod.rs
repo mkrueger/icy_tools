@@ -5,7 +5,7 @@
 //! Draws as an overlay on top of the terminal widget.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{Color, Element, Length, Renderer, Theme, widget::canvas};
+use iced::{Element, Length, Renderer, Theme, widget::canvas};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -59,7 +59,7 @@ struct LineNumbersOverlayState {
 impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: iced::Rectangle, _cursor: iced::mouse::Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: iced::Rectangle, _cursor: iced::mouse::Cursor) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         // Get the effective zoom from RenderInfo (works for both Auto and Manual modes)
@@ -88,9 +88,10 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
         let offset_x = ((bounds.width - content_width) / 2.0).max(0.0);
         let offset_y = ((bounds.height - content_height) / 2.0).max(0.0);
 
-        // Text colors - dimmed for normal, bright for caret position
-        let text_color = Color::from_rgb(0.5, 0.5, 0.5);
-        let highlight_color = Color::from_rgb(0.95, 0.95, 0.95);
+        // Text colors - derived from theme
+        let palette = theme.extended_palette();
+        let text_color = palette.background.weak.text.scale_alpha(0.8);
+        let highlight_color = palette.background.base.text;
 
         // Font size for line numbers (scales with zoom)
         let line_number_font_size = (12.0 * scaled_font_height / 16.0).max(8.0).min(16.0);

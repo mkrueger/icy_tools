@@ -797,16 +797,20 @@ impl AnsiEditorCore {
             return;
         };
 
-        // Get font dimensions and foreground color from caret
+        // Get brush settings for computing preview color
+        let brush_settings = shape.brush_settings();
+
+        // Get font dimensions and compute preview color using shared helper
         let (font_width, font_height, paint_color) = {
             let screen = self.screen.lock();
             let size = screen.font_dimensions();
             let (fw, fh) = (size.width as f32, size.height as f32);
 
-            // Get the foreground color from the caret attribute
+            // Use shared color computation from paint module
             let caret_fg = screen.caret().attribute.foreground();
+            let caret_bg = screen.caret().attribute.background();
             let palette = screen.palette();
-            let rgb = palette.rgb(caret_fg);
+            let rgb = tools::paint::compute_preview_color(&brush_settings, caret_fg, caret_bg, &palette, snapshot.draw_button);
 
             (fw, fh, rgb)
         };

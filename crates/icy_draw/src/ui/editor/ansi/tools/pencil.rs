@@ -342,7 +342,7 @@ impl ToolHandler for PencilTool {
 
         // Brush size arrows
         let secondary_color = _ctx.theme.extended_palette().secondary.base.color;
-        let base_color = _ctx.theme.extended_palette().primary.base.color;
+        let base_color = _ctx.theme.extended_palette().primary.base.text;
         let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
             .width(Length::Fixed(32.0))
             .height(Length::Fixed(32.0))

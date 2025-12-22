@@ -207,14 +207,15 @@ pub struct OutlineSelectorState {
 impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
     type State = OutlineSelectorState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let hovered = state.hovered;
         let keyboard_cursor = state.cursor;
 
         // Background with dotted pattern (like CharSelector)
-        let bg_panel = Color::from_rgb8(40, 40, 45);
-        let dot_color = Color::from_rgb8(50, 50, 55);
+        let palette = theme.extended_palette();
+        let bg_panel = palette.background.base.color;
+        let dot_color = palette.background.strong.color.scale_alpha(0.12);
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_panel);
 
         // Draw subtle dot pattern in padding area
@@ -234,17 +235,17 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
             y += dot_spacing;
         }
 
-        // Colors for the outline preview
-        let fg_normal = Color::from_rgb8(200, 200, 200);
-        let bg_normal = Color::from_rgb8(30, 30, 35);
-        let bg_hovered = Color::from_rgb8(60, 60, 70);
-        let bg_selected = Color::from_rgb8(40, 60, 100);
-        let bg_cursor = Color::from_rgb8(50, 70, 90);
-        let fg_selected = Color::WHITE;
-        let border_selected = Color::WHITE;
-        let border_cursor = Color::from_rgb8(100, 140, 180);
-        let label_color = Color::from_rgb8(120, 120, 130);
-        let label_selected = Color::WHITE;
+        // Colors derived from theme
+        let fg_normal = palette.background.base.text;
+        let bg_normal = palette.background.weak.color;
+        let bg_hovered = palette.primary.weak.color.scale_alpha(0.35);
+        let bg_selected = palette.primary.base.color.scale_alpha(0.45);
+        let bg_cursor = palette.primary.strong.color.scale_alpha(0.30);
+        let fg_selected = palette.background.base.text;
+        let border_selected = palette.background.base.text;
+        let border_cursor = palette.primary.strong.color;
+        let label_color = palette.background.weak.text.scale_alpha(0.75);
+        let label_selected = palette.background.base.text;
 
         for style in 0..OUTLINE_STYLES {
             let rect = self.cell_rect(style);

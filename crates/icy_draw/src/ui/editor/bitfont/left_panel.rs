@@ -134,8 +134,8 @@ impl BitFontToolPanel {
     }
 
     /// Render the tool panel with the given available width and background color
-    pub fn view_with_config(&self, available_width: f32, bg_color: Color) -> Element<'_, BitFontToolPanelMessage> {
-        self.inner.view(available_width, bg_color).map(|msg| match msg {
+    pub fn view_with_config(&self, available_width: f32, bg_color: Color, icon_color: Color) -> Element<'_, BitFontToolPanelMessage> {
+        self.inner.view(available_width, bg_color, icon_color).map(|msg| match msg {
             ToolPanelMessage::ClickSlot(slot) => BitFontToolPanelMessage::ClickSlot(slot),
             ToolPanelMessage::Tick(delta) => BitFontToolPanelMessage::Tick(delta),
         })

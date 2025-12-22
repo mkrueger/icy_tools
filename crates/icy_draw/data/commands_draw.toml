@@ -180,6 +180,54 @@ hotkey = ["Ctrl+Alt+Right"]
 category = "area"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Colors
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "color.next_fg"
+hotkey = ["Ctrl+Down"]
+category = "colors"
+
+[[commands]]
+id = "color.prev_fg"
+hotkey = ["Ctrl+Up"]
+category = "colors"
+
+[[commands]]
+id = "color.next_bg"
+hotkey = ["Ctrl+Right"]
+category = "colors"
+
+[[commands]]
+id = "color.prev_bg"
+hotkey = ["Ctrl+Left"]
+category = "colors"
+
+[[commands]]
+id = "color.pick_attribute_under_caret"
+hotkey = ["Alt+U"]
+category = "colors"
+
+[[commands]]
+id = "color.swap"
+hotkey = ["Alt+X"]
+category = "colors"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# View
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "view.reference_image"
+hotkey = ["Ctrl+Shift+O"]
+category = "view"
+
+[[commands]]
+id = "view.toggle_reference_image"
+hotkey = ["Ctrl+Tab"]
+category = "view"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Tools
 # ═══════════════════════════════════════════════════════════════════════════════
 

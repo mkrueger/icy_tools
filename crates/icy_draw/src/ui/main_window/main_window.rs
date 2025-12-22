@@ -48,13 +48,23 @@ pub enum EditMode {
     Animation,
 }
 
-use super::commands::{area_cmd, selection_cmd};
+use super::commands::{area_cmd, color_cmd, selection_cmd, view_cmd};
 
 // Command handler for MainWindow keyboard shortcuts
 command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     // View
     cmd::VIEW_FULLSCREEN => Message::ToggleFullscreen,
+    view_cmd::REFERENCE_IMAGE => Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog),
+    view_cmd::TOGGLE_REFERENCE_IMAGE => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)),
     cmd::HELP_ABOUT => Message::ShowAbout,
+
+    // Colors
+    color_cmd::NEXT_FG => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+    color_cmd::PREV_FG => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+    color_cmd::NEXT_BG => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+    color_cmd::PREV_BG => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+    color_cmd::PICK_ATTRIBUTE_UNDER_CARET => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
+    color_cmd::SWAP => Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
     // Selection
     selection_cmd::SELECT_NONE => Message::Deselect,
     selection_cmd::SELECT_INVERSE => Message::AnsiEditor(AnsiEditorMessage::InverseSelection),
@@ -2035,6 +2045,9 @@ impl MainWindow {
         // Build the UI based on current mode
         let options = self.options.clone();
 
+        // Cache current theme for this view pass
+        let theme = self.theme();
+
         // Get undo/redo descriptions for menu
         let undo_info = self.get_undo_info();
 
@@ -2066,7 +2079,7 @@ impl MainWindow {
         let content: Element<'_, Message> = match &self.mode_state {
             ModeState::Ansi(editor) => {
                 let collab = self.collaboration_state.active.then_some(&self.collaboration_state);
-                editor.view(collab).map(Message::AnsiEditor)
+                editor.view(collab, &theme).map(Message::AnsiEditor)
             }
             ModeState::BitFont(editor) => editor.view(None).map(Message::BitFontEditor),
             ModeState::CharFont(editor) => editor.view(None).map(Message::CharFontEditor),

@@ -15,6 +15,8 @@ struct Uniforms {
     checker_color1: vec4<f32>,   // First checkerboard color (RGBA)
     checker_color2: vec4<f32>,   // Second checkerboard color (RGBA)
     checker_params: vec4<f32>,   // x=cell_size, y=enabled (>0.5), z=unused, w=unused
+
+    canvas_bg: vec4<f32>,        // Solid minimap background (RGBA)
 }
 
 // 10 texture slots for sliding window
@@ -98,13 +100,13 @@ fn get_background_color(screen_pos: vec2<f32>) -> vec4<f32> {
         }
     } else {
         // Fallback to solid background
-        return vec4<f32>(0.12, 0.12, 0.14, 1.0);
+        return uniforms.canvas_bg;
     }
 }
 
 fn get_canvas_background() -> vec4<f32> {
     // Outside the minimap content we keep a solid background.
-    return vec4<f32>(0.12, 0.12, 0.14, 1.0);
+    return uniforms.canvas_bg;
 }
 
 fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
@@ -126,7 +128,7 @@ fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
 fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     let total_height = uniforms.total_image_height;
     if total_height <= 0.0 {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        return get_canvas_background();
     }
 
     // uv.y is in texture space (0-1 over the rendered *window*)
@@ -144,7 +146,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     
     // If outside our rendered window (after last tile), show transparent/black
     if window_y >= total_window_height {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        return get_canvas_background();
     }
     
     // Find which slice contains this Y coordinate

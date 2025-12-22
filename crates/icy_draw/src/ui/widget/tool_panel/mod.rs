@@ -158,7 +158,7 @@ impl GenericToolPanel {
     }
 
     /// Render the tool panel
-    pub fn view(&self, available_width: f32, bg_color: Color) -> Element<'_, ToolPanelMessage> {
+    pub fn view(&self, available_width: f32, bg_color: Color, icon_color: Color) -> Element<'_, ToolPanelMessage> {
         // Calculate columns based on available width
         let cols = ((available_width - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)).floor() as usize;
         let cols = cols.max(1).min(self.num_slots);
@@ -168,6 +168,7 @@ impl GenericToolPanel {
         let total_height = rows as f32 * (ICON_SIZE + ICON_PADDING) + ICON_PADDING;
 
         let bg_color_arr = [bg_color.r, bg_color.g, bg_color.b];
+        let icon_color_arr = [icon_color.r, icon_color.g, icon_color.b];
 
         // Build button data for the shader
         let buttons: Vec<ButtonData> = self
@@ -192,6 +193,7 @@ impl GenericToolPanel {
             rows,
             num_buttons: self.num_slots,
             bg_color: bg_color_arr,
+            icon_color: icon_color_arr,
         })
         .width(Length::Fixed(total_width))
         .height(Length::Fixed(total_height))
@@ -220,6 +222,7 @@ struct ToolPanelProgram {
     rows: usize,
     num_buttons: usize,
     bg_color: [f32; 3],
+    icon_color: [f32; 3],
 }
 
 impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
@@ -235,6 +238,7 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
             rows: self.rows,
             num_buttons: self.num_buttons,
             bg_color: self.bg_color,
+            icon_color: self.icon_color,
         }
     }
 
@@ -313,8 +317,8 @@ struct ToolPanelUniforms {
     cols: u32,             // offset 20, 4 bytes
     rows: u32,             // offset 24, 4 bytes
     num_buttons: u32,      // offset 28, 4 bytes
-    bg_color: [f32; 4],    // offset 32, 16 bytes (vec3 in std140 takes 16 bytes) → offset 48
-    _padding: [f32; 4],    // offset 48, 16 bytes (pad to 64 for array alignment)
+    bg_color: [f32; 4],    // offset 32, 16 bytes
+    icon_color: [f32; 4],  // offset 48, 16 bytes (pad to 64 for array alignment)
     // Per-button data (packed) - offset 64
     button_data: [[f32; 4]; MAX_BUTTONS],
 }
@@ -329,6 +333,7 @@ struct ToolPanelPrimitive {
     rows: usize,
     num_buttons: usize,
     bg_color: [f32; 3],
+    icon_color: [f32; 3],
 }
 
 impl shader::Primitive for ToolPanelPrimitive {
@@ -365,7 +370,7 @@ impl shader::Primitive for ToolPanelPrimitive {
             rows: self.rows as u32,
             num_buttons: self.num_buttons as u32,
             bg_color: [self.bg_color[0], self.bg_color[1], self.bg_color[2], 1.0],
-            _padding: [0.0; 4],
+            icon_color: [self.icon_color[0], self.icon_color[1], self.icon_color[2], 1.0],
             button_data,
         };
 

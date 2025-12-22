@@ -1164,9 +1164,10 @@ impl CharFontEditor {
 
         let palette_view = self.palette_grid.view_with_width(sidebar_width, None).map(CharFontEditorMessage::PaletteGrid);
         let bg_weakest = main_area_background(&Theme::Dark);
+        let icon_color = Theme::Dark.extended_palette().background.base.text;
         let tool_panel = self
             .tool_panel
-            .view_with_config(sidebar_width, bg_weakest)
+            .view_with_config(sidebar_width, bg_weakest, icon_color)
             .map(CharFontEditorMessage::ToolPanel);
 
         let left_sidebar = column![palette_view, tool_panel].spacing(4);

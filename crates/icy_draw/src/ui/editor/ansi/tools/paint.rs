@@ -1,10 +1,15 @@
 //! Shared paint helpers for tool handlers.
 
-use icy_engine::{MouseButton, Position, TextPane};
+use icy_engine::{MouseButton, Palette, Position, TextPane};
 use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
 use icy_engine_edit::{AtomicUndoGuard, AttributedChar, EditState};
 
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
+
+/// Default FG color index when filter is disabled (light gray)
+pub const DEFAULT_FG: u32 = 7;
+/// Default BG color index when filter is disabled (black)
+pub const DEFAULT_BG: u32 = 0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct BrushSettings {
@@ -18,11 +23,13 @@ pub struct BrushSettings {
 impl Default for BrushSettings {
     fn default() -> Self {
         Self {
-            primary: BrushPrimaryMode::Char,
-            paint_char: ' ',
+            // Moebius default: Half Block mode
+            primary: BrushPrimaryMode::HalfBlock,
+            paint_char: '\u{00B0}', // Light shade block (░)
             brush_size: 1,
+            // Moebius default: FG on, BG off
             colorize_fg: true,
-            colorize_bg: true,
+            colorize_bg: false,
         }
     }
 }
@@ -100,20 +107,17 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
                 BrushPrimaryMode::Colorize => EngineBrushMode::Colorize,
             };
 
-            let color_mode = if matches!(settings.primary, BrushPrimaryMode::Colorize) {
-                match (settings.colorize_fg, settings.colorize_bg) {
-                    (true, true) => EngineColorMode::Both,
-                    (true, false) => EngineColorMode::Foreground,
-                    (false, true) => EngineColorMode::Background,
-                    (false, false) => EngineColorMode::None,
-                }
-            } else {
-                EngineColorMode::Both
-            };
+            // FG/BG filter logic (like old icy_draw):
+            // - If FG filter is ON: use caret FG, otherwise keep existing cell's FG
+            // - If BG filter is ON: use caret BG, otherwise keep existing cell's BG
+            // This applies to ALL drawing modes.
+            let existing_attr = state.get_cur_layer().map(|l| l.char_at(layer_pos).attribute).unwrap_or(caret_attr);
 
-            let mut template = caret_attr;
-            template.set_foreground(fg);
-            template.set_background(bg);
+            let effective_fg = if settings.colorize_fg { fg } else { existing_attr.foreground() };
+            let effective_bg = if settings.colorize_bg { bg } else { existing_attr.background() };
+
+            // ColorMode for engine: Both means it will apply both colors from template
+            let color_mode = EngineColorMode::Both;
 
             struct LayerTarget<'a> {
                 state: &'a mut EditState,
@@ -135,11 +139,16 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
                 }
             }
 
+            let mut template = caret_attr;
+            template.attr &= !icy_engine::attribute::INVISIBLE;
+            template.set_foreground(effective_fg);
+            template.set_background(effective_bg);
+
             let ctx = DrawContext::default()
                 .with_brush_mode(brush_mode)
                 .with_color_mode(color_mode)
-                .with_foreground(fg)
-                .with_background(bg)
+                .with_foreground(effective_fg)
+                .with_background(effective_bg)
                 .with_template_attribute(template)
                 .with_half_block_is_top(half_block_is_top);
 
@@ -173,4 +182,25 @@ pub fn clear_at_doc_pos(state: &mut EditState, doc_pos: Position) {
     }
 
     let _ = state.set_char_in_atomic(layer_pos, AttributedChar::invisible());
+}
+
+/// Compute the preview color for overlay rendering based on current brush settings.
+/// Returns (r, g, b) tuple for display.
+///
+/// This ensures that the overlay preview uses the same color logic as actual painting.
+pub fn compute_preview_color(settings: &BrushSettings, caret_fg: u32, caret_bg: u32, palette: &Palette, button: MouseButton) -> (u8, u8, u8) {
+    let swap_colors = button == MouseButton::Right;
+
+    // For shape preview, use FG color (what will be painted)
+    // In modes that swap colors on right-click, show the swapped color
+    let swap_for_colors = swap_colors && !matches!(settings.primary, BrushPrimaryMode::Shading | BrushPrimaryMode::Char);
+
+    let (fg_idx, bg_idx) = if swap_for_colors { (caret_bg, caret_fg) } else { (caret_fg, caret_bg) };
+
+    // Preview uses the effective FG color (respecting FG filter)
+    // If FG filter is off, we'd use existing cell's color, but for preview we just show caret FG
+    // For Colorize with only BG selected, show BG color instead
+    let preview_idx = if !settings.colorize_fg && settings.colorize_bg { bg_idx } else { fg_idx };
+
+    palette.rgb(preview_idx)
 }

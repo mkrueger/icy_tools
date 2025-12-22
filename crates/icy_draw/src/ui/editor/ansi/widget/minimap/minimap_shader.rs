@@ -43,6 +43,9 @@ struct MinimapUniforms {
     checker_color2: [f32; 4],
     /// Checkerboard params: x=cell_size, y=enabled, z=unused, w=unused
     checker_params: [f32; 4],
+
+    /// Solid background color for the minimap canvas (RGBA)
+    canvas_bg: [f32; 4],
 }
 
 /// Viewport information for the minimap overlay
@@ -204,6 +207,12 @@ pub struct MinimapProgram {
     pub shared_state: Arc<Mutex<SharedMinimapState>>,
     /// Checkerboard colors for transparency (from MonitorSettings)
     pub checkerboard_colors: CheckerboardColors,
+
+    /// Viewport overlay color (RGBA)
+    pub viewport_color: [f32; 4],
+
+    /// Solid minimap canvas background color (RGBA)
+    pub canvas_bg: [f32; 4],
 }
 
 /// State for tracking mouse dragging in the minimap
@@ -387,6 +396,8 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             full_content_height: self.full_content_height,
             first_slice_start_y: self.first_slice_start_y,
             checkerboard_colors: self.checkerboard_colors.clone(),
+            viewport_color: self.viewport_color,
+            canvas_bg: self.canvas_bg,
         }
     }
 
@@ -475,6 +486,12 @@ pub struct MinimapPrimitive {
     pub first_slice_start_y: f32,
     /// Checkerboard colors for transparency (from MonitorSettings)
     pub checkerboard_colors: CheckerboardColors,
+
+    /// Viewport overlay color (RGBA)
+    pub viewport_color: [f32; 4],
+
+    /// Solid minimap canvas background color (RGBA)
+    pub canvas_bg: [f32; 4],
 }
 
 impl MinimapPrimitive {
@@ -855,8 +872,7 @@ impl shader::Primitive for MinimapPrimitive {
 
         let uniforms = MinimapUniforms {
             viewport_rect: [self.viewport_info.x, viewport_y_tex, self.viewport_info.width, viewport_h_tex],
-            // Modern cyan accent color - vibrant but not overwhelming
-            viewport_color: [0.2, 0.8, 0.9, 0.9],
+            viewport_color: self.viewport_color,
             visible_uv_range: [visible_uv_min_y, visible_uv_max_y, 0.0, 0.0],
             // Pass texture and available dimensions for aspect-ratio-correct rendering
             render_dimensions: [tex_w as f32, tex_h as f32, bounds.width, bounds.height],
@@ -868,6 +884,7 @@ impl shader::Primitive for MinimapPrimitive {
             checker_color1: self.checkerboard_colors.color1_rgba(),
             checker_color2: self.checkerboard_colors.color2_rgba(),
             checker_params: [self.checkerboard_colors.cell_size, 1.0, 0.0, 0.0],
+            canvas_bg: self.canvas_bg,
         };
 
         let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniforms as *const MinimapUniforms as *const u8, std::mem::size_of::<MinimapUniforms>()) };

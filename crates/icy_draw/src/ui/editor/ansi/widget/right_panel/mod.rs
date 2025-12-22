@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Task,
+    Element, Length, Task, Theme,
     widget::{container, pane_grid},
 };
 
@@ -85,6 +85,7 @@ impl RightPanel {
     /// `network_mode` indicates collaboration mode (hides layers - not compatible with Moebius)
     pub fn view<'a>(
         &'a self,
+        theme: &Theme,
         screen: &'a Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&'a SharedRenderCacheHandle>,
@@ -104,14 +105,14 @@ impl RightPanel {
         // Use pane_grid for resizable split view (minimap + layers)
         // In network mode, only show minimap (layers not compatible with Moebius)
         if network_mode {
-            let minimap = self.minimap.view(screen, viewport_info, render_cache).map(RightPanelMessage::Minimap);
+            let minimap = self.minimap.view(theme, screen, viewport_info, render_cache).map(RightPanelMessage::Minimap);
             return container(minimap).width(Length::Fill).height(Length::Fill).into();
         }
 
         let pane_grid: Element<'a, RightPanelMessage> = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized| {
             let content: Element<'a, RightPanelMessage> = match pane {
-                RightPane::Minimap => self.minimap.view(screen, viewport_info, render_cache).map(RightPanelMessage::Minimap),
-                RightPane::Layers => self.layers.view(screen, current_font_page, paste_mode).map(RightPanelMessage::Layers),
+                RightPane::Minimap => self.minimap.view(theme, screen, viewport_info, render_cache).map(RightPanelMessage::Minimap),
+                RightPane::Layers => self.layers.view(theme, screen, current_font_page, paste_mode).map(RightPanelMessage::Layers),
             };
             pane_grid::Content::new(content)
         })

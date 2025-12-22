@@ -5,8 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use iced::widget::shader;
-use iced::{Element, Length, Task};
+use iced::{Element, Length, Task, Theme};
 use icy_engine::Screen;
+use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
 use icy_engine_gui::{CheckerboardColors, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
 use parking_lot::Mutex;
@@ -222,10 +223,21 @@ impl MinimapView {
     /// The Terminal will render them on the next frame.
     pub fn view(
         &self,
+        theme: &Theme,
         _screen: &Arc<Mutex<Box<dyn Screen>>>,
         viewport_info: &ViewportInfo,
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
+        let palette = theme.extended_palette();
+        let viewport_color = {
+            let c = palette.primary.base.color;
+            [c.r, c.g, c.b, 0.9]
+        };
+        let canvas_bg = {
+            let c = main_area_background(theme);
+            [c.r, c.g, c.b, c.a]
+        };
+
         // Get available space from shared state (updated by shader in previous frame)
         let (avail_width, avail_height) = self.available_size();
 
@@ -383,6 +395,8 @@ impl MinimapView {
                         viewport_info,
                         local_scroll_offset,
                         first_slice_start_y,
+                        viewport_color,
+                        canvas_bg,
                     );
                 }
             }
@@ -406,6 +420,8 @@ impl MinimapView {
             first_slice_start_y: 0.0,
             shared_state: Arc::clone(&self.shared_state),
             checkerboard_colors: self.checkerboard_colors.clone(),
+            viewport_color,
+            canvas_bg,
         };
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()
@@ -421,6 +437,8 @@ impl MinimapView {
         viewport_info: &ViewportInfo,
         scroll_offset: f32,
         first_slice_start_y: f32,
+        viewport_color: [f32; 4],
+        canvas_bg: [f32; 4],
     ) -> Element<'_, MinimapMessage> {
         // The shader renders a sliding window of texture slices.
         // `total_rendered_height` is the sum of the slice heights in pixels.
@@ -438,6 +456,8 @@ impl MinimapView {
             first_slice_start_y,
             shared_state: Arc::clone(&self.shared_state),
             checkerboard_colors: self.checkerboard_colors.clone(),
+            viewport_color,
+            canvas_bg,
         };
 
         shader(shader_program).width(Length::Fill).height(Length::Fill).into()

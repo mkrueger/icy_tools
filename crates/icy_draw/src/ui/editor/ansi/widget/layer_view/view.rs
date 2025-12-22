@@ -145,6 +145,7 @@ struct LabelTexture {
 struct LabelKey {
     font_key: u64,
     text: String,
+    fg_rgba8: u32,
 }
 
 /// Layer view state
@@ -312,14 +313,26 @@ impl LayerView {
         Some(PreviewTexture::new(rgba_128x80))
     }
 
-    fn icon_button<'a>(icon_data: &'static [u8], message: LayerMessage) -> Element<'a, LayerMessage> {
-        let icon = svg(svg::Handle::from_memory(icon_data)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
+    fn icon_button<'a>(icon_data: &'static [u8], icon_color: Color, message: LayerMessage) -> Element<'a, LayerMessage> {
+        let icon = svg(svg::Handle::from_memory(icon_data))
+            .width(Length::Fixed(20.0))
+            .height(Length::Fixed(20.0))
+            .style(move |_theme: &Theme, _status| svg::Style {
+                color: Some(icon_color),
+                ..Default::default()
+            });
 
         button(icon).on_press(message).padding(4).style(button::text).into()
     }
 
-    fn icon_button_opt<'a>(icon_data: &'static [u8], message: Option<LayerMessage>) -> Element<'a, LayerMessage> {
-        let icon = svg(svg::Handle::from_memory(icon_data)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
+    fn icon_button_opt<'a>(icon_data: &'static [u8], icon_color: Color, message: Option<LayerMessage>) -> Element<'a, LayerMessage> {
+        let icon = svg(svg::Handle::from_memory(icon_data))
+            .width(Length::Fixed(20.0))
+            .height(Length::Fixed(20.0))
+            .style(move |_theme: &Theme, _status| svg::Style {
+                color: Some(icon_color),
+                ..Default::default()
+            });
         let mut b = button(icon).padding(4).style(button::text);
         if let Some(msg) = message {
             b = b.on_press(msg);
@@ -624,7 +637,7 @@ impl LayerView {
     /// - Add button anchors the paste layer
     /// - Up/Down move the paste layer position
     /// - Delete cancels the paste operation
-    pub fn view<'a>(&'a self, screen: &'a Arc<Mutex<Box<dyn Screen>>>, font_page: Option<usize>, paste_mode: bool) -> Element<'a, LayerMessage> {
+    pub fn view<'a>(&'a self, theme: &Theme, screen: &'a Arc<Mutex<Box<dyn Screen>>>, font_page: Option<usize>, paste_mode: bool) -> Element<'a, LayerMessage> {
         // Read layer data (no per-frame preview cloning)
         let (rows, current_layer, layer_count, buffer_version, font_key) = {
             let mut screen_guard = screen.lock();
@@ -701,14 +714,15 @@ impl LayerView {
         let list_with_scrollbar = wrap_with_scrollbars(list_widget, &self.viewport, needs_scrollbar, false);
 
         let scroll_y = self.viewport.borrow().scroll_y;
-        let palette = Theme::Dark.extended_palette();
+        let palette = theme.extended_palette();
+        let icon_color = palette.background.base.text;
         let shader_bg: Element<'a, LayerMessage> = iced::widget::shader(LayerListBackgroundProgram {
             row_count: layer_count as u32,
             row_height: LAYER_ROW_HEIGHT,
             scroll_y,
             selected_row: selected_list_idx,
             hovered_row: self.hovered_list_idx.clone(),
-            bg_color: main_area_background(&Theme::Dark),
+            bg_color: main_area_background(theme),
             preview_bg_color: palette.background.weak.color,
             preview_border_color: palette.background.strong.color.scale_alpha(0.7),
             preview_border_width: 1.0,
@@ -737,10 +751,10 @@ impl LayerView {
         // Button bar - changes behavior in paste mode
         let button_bar = if paste_mode {
             // Paste mode: Add=Keep as layer, Up/Down=Move layer order, Delete=Cancel
-            let keep_layer_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::PasteKeepAsLayer);
-            let move_up_btn = Self::icon_button(MOVE_UP_SVG, LayerMessage::MoveUp(current_layer));
-            let move_down_btn = Self::icon_button(MOVE_DOWN_SVG, LayerMessage::MoveDown(current_layer));
-            let cancel_btn = Self::icon_button(DELETE_SVG, LayerMessage::PasteCancel);
+            let keep_layer_btn = Self::icon_button(ADD_LAYER_SVG, icon_color, LayerMessage::PasteKeepAsLayer);
+            let move_up_btn = Self::icon_button(MOVE_UP_SVG, icon_color, LayerMessage::MoveUp(current_layer));
+            let move_down_btn = Self::icon_button(MOVE_DOWN_SVG, icon_color, LayerMessage::MoveDown(current_layer));
+            let cancel_btn = Self::icon_button(DELETE_SVG, icon_color, LayerMessage::PasteCancel);
 
             container(row![keep_layer_btn, move_up_btn, move_down_btn, cancel_btn].spacing(0))
                 .padding([2, 0])
@@ -755,11 +769,11 @@ impl LayerView {
                 })
         } else {
             // Normal mode
-            let add_btn = Self::icon_button(ADD_LAYER_SVG, LayerMessage::Add);
+            let add_btn = Self::icon_button(ADD_LAYER_SVG, icon_color, LayerMessage::Add);
             let has_layers = layer_count > 0;
-            let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
-            let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
-            let delete_btn = Self::icon_button_opt(DELETE_SVG, has_layers.then(|| LayerMessage::Remove(current_layer)));
+            let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, icon_color, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
+            let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, icon_color, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
+            let delete_btn = Self::icon_button_opt(DELETE_SVG, icon_color, has_layers.then(|| LayerMessage::Remove(current_layer)));
 
             container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
                 .padding([2, 0])
@@ -887,10 +901,19 @@ impl<'a> LayerListWidget<'a> {
         list_bounds: Rectangle,
         row_bounds: Rectangle,
         row: &LayerRowInfo,
-        _is_hovered: bool,
-        _is_selected: bool,
+        is_hovered: bool,
+        is_selected: bool,
     ) {
         let palette = theme.extended_palette();
+
+        let title_fg = if is_selected {
+            // Selected row background comes from primary; use its text color.
+            palette.primary.base.text
+        } else if is_hovered {
+            palette.background.base.text
+        } else {
+            palette.background.base.text
+        };
 
         let _preview_bounds = self.preview_bounds(row_bounds);
         // Previews (including border/background) are rendered by the background WGSL shader via the atlas.
@@ -954,18 +977,16 @@ impl<'a> LayerListWidget<'a> {
                 wrapping: iced::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
-            renderer.fill_text(
-                title_text,
-                Point::new(title_bounds.x, title_bounds.y),
-                palette.background.base.text,
-                list_bounds,
-            );
+            renderer.fill_text(title_text, Point::new(title_bounds.x, title_bounds.y), title_fg, list_bounds);
             return;
         };
 
+        let [r, g, b, a] = title_fg.into_rgba8();
+        let fg_rgba8: u32 = (r as u32) | ((g as u32) << 8) | ((b as u32) << 16) | ((a as u32) << 24);
         let key = LabelKey {
             font_key,
             text: row.title.chars().take(MAX_LABEL_CHARS).collect(),
+            fg_rgba8,
         };
 
         let label = {
@@ -973,7 +994,7 @@ impl<'a> LayerListWidget<'a> {
             cache.get(&key).cloned()
         }
         .or_else(|| {
-            let fg = palette.background.base.text;
+            let fg = title_fg;
 
             let Some(label) = ({
                 let mut screen_guard = self.screen.lock();
@@ -1026,12 +1047,7 @@ impl<'a> LayerListWidget<'a> {
                 wrapping: iced::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
-            renderer.fill_text(
-                title_text,
-                Point::new(title_bounds.x, title_bounds.y),
-                palette.background.base.text,
-                list_bounds,
-            );
+            renderer.fill_text(title_text, Point::new(title_bounds.x, title_bounds.y), title_fg, list_bounds);
         }
     }
 }

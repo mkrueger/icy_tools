@@ -1424,10 +1424,14 @@ impl BitFontEditor {
         // === LEFT SIDEBAR (like ANSI editor) ===
         // Use theme's main area background color
         let bg_weakest = main_area_background(&Theme::Dark);
+        let icon_color = Theme::Dark.extended_palette().background.base.text;
 
         // Palette grid + Tool panel
         let palette_view = self.palette_grid.view_with_width(SIDEBAR_WIDTH, None).map(BitFontEditorMessage::PaletteGrid);
-        let tool_panel = self.tool_panel.view_with_config(SIDEBAR_WIDTH, bg_weakest).map(BitFontEditorMessage::ToolPanel);
+        let tool_panel = self
+            .tool_panel
+            .view_with_config(SIDEBAR_WIDTH, bg_weakest, icon_color)
+            .map(BitFontEditorMessage::ToolPanel);
         let left_sidebar = column![palette_view, tool_panel,].spacing(4);
 
         // === TOP TOOLBAR (color switcher + tool options) ===

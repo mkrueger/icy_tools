@@ -673,6 +673,30 @@ pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabl
     if enabled { btn.on_press(msg).into() } else { btn.into() }
 }
 
+/// Create a menu item that uses CommandDef hotkey display but a custom label.
+/// Useful when labels live in `menu-*` i18n keys, but hotkeys must be real commands.
+pub fn menu_item_cmd_label_enabled(label: String, cmd: &icy_engine_gui::commands::CommandDef, msg: Message, enabled: bool) -> Element<'static, Message> {
+    let hotkey_text = cmd.primary_hotkey_display().unwrap_or_default();
+
+    let btn = button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text(hotkey_text).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(if enabled { menu_item_style } else { menu_item_disabled_style });
+
+    if enabled { btn.on_press(msg).into() } else { btn.into() }
+}
+
 /// Create a menu item with checkbox indicator
 pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Message) -> Element<'static, Message> {
     let hotkey_text = hotkey.to_string();

@@ -392,7 +392,7 @@ impl ToolHandler for ShapeTool {
         let is_filled = matches!(self.tool, Tool::RectangleFilled | Tool::EllipseFilled);
 
         let secondary_color = ctx.theme.extended_palette().secondary.base.color;
-        let base_color = ctx.theme.extended_palette().primary.base.color;
+        let base_color = ctx.theme.extended_palette().primary.base.text;
         let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
             .width(Length::Fixed(32.0))
             .height(Length::Fixed(32.0))

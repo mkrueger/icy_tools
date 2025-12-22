@@ -23,6 +23,40 @@ pub fn create_draw_commands() -> CommandSet {
     commands
 }
 
+/// Color-related command definitions
+pub mod color_cmd {
+    use icy_engine_gui::define_commands;
+
+    const TOML: &str = include_str!("../../../data/commands_draw.toml");
+
+    define_commands! {
+        loader: crate::LANGUAGE_LOADER,
+        commands: TOML,
+
+        NEXT_FG = "color.next_fg",
+        PREV_FG = "color.prev_fg",
+        NEXT_BG = "color.next_bg",
+        PREV_BG = "color.prev_bg",
+        PICK_ATTRIBUTE_UNDER_CARET = "color.pick_attribute_under_caret",
+        SWAP = "color.swap",
+    }
+}
+
+/// View-related (draw-specific) command definitions
+pub mod view_cmd {
+    use icy_engine_gui::define_commands;
+
+    const TOML: &str = include_str!("../../../data/commands_draw.toml");
+
+    define_commands! {
+        loader: crate::LANGUAGE_LOADER,
+        commands: TOML,
+
+        REFERENCE_IMAGE = "view.reference_image",
+        TOGGLE_REFERENCE_IMAGE = "view.toggle_reference_image",
+    }
+}
+
 /// Selection command definitions
 pub mod selection_cmd {
     use icy_engine_gui::define_commands;

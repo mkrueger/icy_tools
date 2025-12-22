@@ -12,17 +12,17 @@ use iced_aw::menu::{self, Menu};
 use iced_aw::style::{Status, menu_bar::primary};
 use iced_aw::{menu_bar, menu_items};
 
+use crate::MostRecentlyUsedFiles;
 use crate::Plugin;
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::main_window::Message;
-use crate::ui::main_window::commands::area_cmd;
 use crate::ui::main_window::commands::selection_cmd;
+use crate::ui::main_window::commands::{area_cmd, color_cmd, view_cmd};
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_redo, menu_item_simple, menu_item_simple_enabled,
-    menu_item_style, menu_item_submenu, menu_item_undo, separator,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_cmd_label_enabled, menu_item_redo, menu_item_simple,
+    menu_item_simple_enabled, menu_item_style, menu_item_submenu, menu_item_undo, separator,
 };
-use crate::{MostRecentlyUsedFiles, ui::PaletteGridMessage};
 use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
 /// Current state of guides/raster for menu display
@@ -245,37 +245,37 @@ impl AnsiMenu {
             colors: vec![
                 MenuItem::simple(fl!("menu-edit_palette"), "", Message::AnsiEditor(AnsiEditorMessage::EditPalette)),
                 MenuItem::separator(),
-                MenuItem::simple(
-                    fl!("menu-next_fg_color"),
-                    "Ctrl+Down",
+                MenuItem::cmd_with_label(
+                    &color_cmd::NEXT_FG,
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
+                    fl!("menu-next_fg_color"),
                 ),
-                MenuItem::simple(
-                    fl!("menu-prev_fg_color"),
-                    "Ctrl+Up",
+                MenuItem::cmd_with_label(
+                    &color_cmd::PREV_FG,
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
+                    fl!("menu-prev_fg_color"),
                 ),
                 MenuItem::separator(),
-                MenuItem::simple(
-                    fl!("menu-next_bg_color"),
-                    "Ctrl+Right",
+                MenuItem::cmd_with_label(
+                    &color_cmd::NEXT_BG,
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
+                    fl!("menu-next_bg_color"),
                 ),
-                MenuItem::simple(
-                    fl!("menu-prev_bg_color"),
-                    "Ctrl+Left",
+                MenuItem::cmd_with_label(
+                    &color_cmd::PREV_BG,
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
+                    fl!("menu-prev_bg_color"),
                 ),
                 MenuItem::separator(),
-                MenuItem::simple(
-                    fl!("menu-pick_attribute_under_caret"),
-                    "Alt+U",
+                MenuItem::cmd_with_label(
+                    &color_cmd::PICK_ATTRIBUTE_UNDER_CARET,
                     Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
+                    fl!("menu-pick_attribute_under_caret"),
                 ),
-                MenuItem::simple(
-                    fl!("menu-toggle_color"),
-                    "Alt+X",
+                MenuItem::cmd_with_label(
+                    &color_cmd::SWAP,
                     Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
+                    fl!("menu-toggle_color"),
                 ),
                 MenuItem::simple(
                     fl!("menu-default_color"),
@@ -510,15 +510,15 @@ fn build_view_menu(
     items.push(iced_aw::menu::Item::new(separator()));
 
     // Reference image
-    items.push(iced_aw::menu::Item::new(menu_item_simple_enabled(
+    items.push(iced_aw::menu::Item::new(menu_item_cmd_label_enabled(
         fl!("menu-reference-image"),
-        "Ctrl+Shift+O",
+        &view_cmd::REFERENCE_IMAGE,
         Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog),
         true,
     )));
-    items.push(iced_aw::menu::Item::new(menu_item_simple_enabled(
+    items.push(iced_aw::menu::Item::new(menu_item_cmd_label_enabled(
         fl!("menu-toggle-reference-image"),
-        "Ctrl+Tab",
+        &view_cmd::TOGGLE_REFERENCE_IMAGE,
         Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)),
         true,
     )));

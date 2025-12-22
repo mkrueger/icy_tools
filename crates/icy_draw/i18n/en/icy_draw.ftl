@@ -127,7 +127,7 @@ menu-paste-as=Paste as
 menu-paste-as-new-image=New image
 menu-paste-as-sixel=Sixel layer
 menu-paste-as-brush=Brush
-menu-insert-sixel-from-file=Insert Sixel from File...
+menu-insert-sixel-from-file=Insert Sixel from File…
 menu-erase=Erase
 menu-flipx=Flip X
 menu-flipy=Flip Y
@@ -217,7 +217,7 @@ font-selector-title-single=Select Font
 font-selector-title-dual=Select Fonts (2 Slots)
 font-selector-title-full=Font Manager
 font-selector-available=available
-font-selector-filter-placeholder=Filter fonts...
+font-selector-filter-placeholder=Filter fonts…
 font-selector-sauce=SAUCE
 font-selector-ansi=ANSI
 font-selector-library=Library
@@ -946,17 +946,17 @@ animation-export-no-frames=No frames to export
 animation-export-failed=Export failed: { $error }
 
 # Animation Editor
-animation-compiling=Compiling script...
+animation-compiling=Compiling script…
 animation-no-frames=No frames generated
-animation-preparing=Preparing preview...
+animation-preparing=Preparing preview…
 animation-no-log=No log entries
 animation-frame-display=Frame { $current } / { $total }
 
 # Reference Image Dialog
 reference-image-dialog-title=Reference Image
 reference-image-path=Path
-reference-image-path-placeholder=Select an image file...
-reference-image-browse=Browse...
+reference-image-path-placeholder=Select an image file…
+reference-image-browse=Browse…
 reference-image-alpha=Opacity
 reference-image-info=The reference image will be displayed as an overlay on the canvas.
 reference-image-clear=Clear

@@ -1584,7 +1584,7 @@ impl AnsiEditorMainArea {
     ///
     /// In collaboration mode (`collaboration` is Some), the editor can show a Moebius-style
     /// bottom chat pane with a draggable splitter.
-    pub fn view<'a>(&'a self, collaboration: Option<&'a crate::ui::collaboration::state::CollaborationState>) -> Element<'a, AnsiEditorMessage> {
+    pub fn view<'a>(&'a self, collaboration: Option<&'a crate::ui::collaboration::state::CollaborationState>, theme: &Theme) -> Element<'a, AnsiEditorMessage> {
         let editor = &self.core;
         // === LEFT SIDEBAR ===
         // Fixed sidebar width - palette and tool panel adapt to this
@@ -1611,15 +1611,19 @@ impl AnsiEditorMainArea {
         let palette_view = self.palette_grid.view_with_width(sidebar_width, None).map(AnsiEditorMessage::PaletteGrid);
 
         // Tool panel - calculate columns based on sidebar width
-        // Use theme's main area background color
-        let bg_weakest = main_area_background(&Theme::Dark);
+        // Use the active theme's main area background color
+        let bg_weakest = main_area_background(theme);
+        let icon_color = theme.extended_palette().background.base.text;
 
         // In paste mode, show paste controls instead of tool panel
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
             let paste_controls = self.paste_controls.view(sidebar_width, bg_weakest).map(AnsiEditorMessage::PasteControls);
             column![palette_view, paste_controls].spacing(4)
         } else {
-            let tool_panel = self.tool_panel.view_with_config(sidebar_width, bg_weakest).map(AnsiEditorMessage::ToolPanel);
+            let tool_panel = self
+                .tool_panel
+                .view_with_config(sidebar_width, bg_weakest, icon_color)
+                .map(AnsiEditorMessage::ToolPanel);
             column![palette_view, tool_panel].spacing(4)
         };
 
@@ -1672,7 +1676,7 @@ impl AnsiEditorMainArea {
         };
 
         let view_ctx = tools::ToolViewContext {
-            theme: Theme::Dark,
+            theme: theme.clone(),
             fkeys: fkeys.clone(),
             font: current_font,
             palette: palette.clone(),
@@ -1739,7 +1743,7 @@ impl AnsiEditorMainArea {
         let network_mode = collaboration.is_some();
         let right_panel = self
             .right_panel
-            .view(&editor.screen, &viewport_info, Some(render_cache), paste_mode, network_mode)
+            .view(theme, &editor.screen, &viewport_info, Some(render_cache), paste_mode, network_mode)
             .map(AnsiEditorMessage::RightPanel);
 
         // Main layout:

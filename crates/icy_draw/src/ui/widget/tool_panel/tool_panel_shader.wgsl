@@ -14,7 +14,7 @@ struct Uniforms {
     rows: u32,                 // offset 24, 4 bytes
     num_buttons: u32,          // offset 28, 4 bytes
     bg_color: vec4<f32>,       // offset 32, 16 bytes (use vec4 for alignment simplicity)
-    _padding: vec4<f32>,       // offset 48, 16 bytes (pad to 64 for array alignment)
+    icon_color: vec4<f32>,     // offset 48, 16 bytes (pad to 64 for array alignment)
     // Per-button data: [blend_progress, is_selected, is_hovered, tool_index]
     button_data: array<vec4<f32>, 16>,  // offset 64
 }
@@ -133,8 +133,9 @@ fn sample_icon_with_shadow(uv: vec2<f32>, tool_index: u32, icon_size: f32) -> ve
     // Composite shadow under icon
     let shadow_color = vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
     
-    // Blend: icon over shadow
-    let result_rgb = icon.rgb * icon.a + shadow_color.rgb * shadow_color.a * (1.0 - icon.a);
+    // Blend: tinted icon over shadow
+    let icon_rgb = uniforms.icon_color.rgb;
+    let result_rgb = icon_rgb * icon.a + shadow_color.rgb * shadow_color.a * (1.0 - icon.a);
     let result_a = icon.a + shadow_color.a * (1.0 - icon.a);
     
     return vec4<f32>(result_rgb, result_a);

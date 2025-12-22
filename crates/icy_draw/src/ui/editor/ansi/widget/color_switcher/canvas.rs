@@ -120,7 +120,7 @@ impl ColorSwitcherProgram {
 impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let height = SWITCHER_SIZE;
 
@@ -177,7 +177,8 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
             builder.line_to(Point::new(cx - r + 3.0, cy + r * 0.5 + 3.0));
         });
 
-        frame.stroke(&arrow_path, Stroke::default().with_color(Color::WHITE).with_width(1.5));
+        let arrow_color = theme.extended_palette().background.base.text;
+        frame.stroke(&arrow_path, Stroke::default().with_color(arrow_color).with_width(1.5));
 
         vec![frame.into_geometry()]
     }

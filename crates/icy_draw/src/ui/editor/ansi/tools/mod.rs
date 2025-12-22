@@ -39,7 +39,7 @@ mod click;
 mod fill;
 mod font;
 mod outline_click;
-mod paint;
+pub mod paint;
 mod paste;
 mod pencil;
 mod pipette;

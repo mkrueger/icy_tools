@@ -74,6 +74,16 @@ struct CharSelectorProgram {
 }
 
 impl CharSelectorProgram {
+    fn blend(a: Color, b: Color, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        Color {
+            r: a.r + (b.r - a.r) * t,
+            g: a.g + (b.g - a.g) * t,
+            b: a.b + (b.b - a.b) * t,
+            a: a.a + (b.a - a.a) * t,
+        }
+    }
+
     /// Get the character code at a grid position
     fn code_at_pos(&self, cursor_pos: Point) -> Option<u16> {
         let x = cursor_pos.x - PADDING;
@@ -139,12 +149,13 @@ type HoverState = Option<u16>;
 impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
     type State = HoverState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Background with dotted pattern
-        let bg_panel = Color::from_rgb8(40, 40, 45);
-        let dot_color = Color::from_rgb8(50, 50, 55);
+        let palette = theme.extended_palette();
+        let bg_panel = palette.background.base.color;
+        let dot_color = palette.background.strong.color.scale_alpha(0.12);
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_panel);
 
         // Draw subtle dot pattern in padding area
@@ -170,8 +181,8 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
         let (bg_r, bg_g, bg_b) = self.palette.rgb(self.bg_color);
         let fg = Color::from_rgb8(fg_r, fg_g, fg_b);
         let bg = Color::from_rgb8(bg_r, bg_g, bg_b);
-        let hover_bg = Color::from_rgb8(80, 80, 90);
-        let selected_border = Color::WHITE;
+        let hover_tint = palette.primary.weak.color;
+        let selected_border = palette.background.base.text;
 
         // Calculate scale to fit cells
         let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
@@ -192,7 +203,7 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
                 let is_current = code == self.current_code;
 
                 // Draw character with appropriate background
-                let cell_bg = if is_hovered { hover_bg } else { bg };
+                let cell_bg = if is_hovered { Self::blend(bg, hover_tint, 0.35) } else { bg };
                 self.draw_glyph(&mut frame, x, y, ch, fg, cell_bg, scale);
 
                 // Draw selection border for current character
