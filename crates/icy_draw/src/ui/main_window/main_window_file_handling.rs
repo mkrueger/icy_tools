@@ -240,15 +240,31 @@ impl MainWindow {
             .copied()
             .collect();
 
+        // Get the default directory: current file's directory or most recent file's directory
+        let default_directory = self
+            .file_path()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .or_else(|| {
+                self.options
+                    .read()
+                    .recent_files
+                    .files()
+                    .first()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            });
+
         Task::perform(
             async move {
-                rfd::AsyncFileDialog::new()
+                let mut dialog = rfd::AsyncFileDialog::new()
                     .add_filter("Supported Files", &extensions)
                     .add_filter("All Files", &["*"])
-                    .set_title("Open File")
-                    .pick_file()
-                    .await
-                    .map(|f| f.path().to_path_buf())
+                    .set_title("Open File");
+
+                if let Some(dir) = default_directory {
+                    dialog = dialog.set_directory(dir);
+                }
+
+                dialog.pick_file().await.map(|f| f.path().to_path_buf())
             },
             |result| {
                 if let Some(path) = result { Message::FileOpened(path) } else { Message::Noop }

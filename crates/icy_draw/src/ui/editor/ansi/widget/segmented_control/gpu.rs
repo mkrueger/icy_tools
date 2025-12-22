@@ -14,7 +14,7 @@ use iced::wgpu::util::DeviceExt;
 use iced::{
     Color, Element, Length, Rectangle, Theme,
     mouse::{self, Cursor},
-    widget::{self, shader},
+    widget::{self, canvas, shader},
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
@@ -79,6 +79,7 @@ struct SegmentedOnePassProgram<T: Clone> {
     // For CharClicked in single-select: the current selected index
     selected_index: usize,
     multi_select: bool,
+    render_text_labels: bool,
 }
 
 impl<T: Clone> SegmentedOnePassProgram<T> {
@@ -138,6 +139,10 @@ impl<T: Clone> SegmentedOnePassProgram<T> {
 
             match &seg.content {
                 SegmentContent::Text(text) => {
+                    if !self.render_text_labels {
+                        seg_start_x += seg_w;
+                        continue;
+                    }
                     let fg = if is_selected { selected_text } else { default_text };
                     let chars: Vec<char> = text.chars().collect();
                     let text_w_px = (chars.len() as f32 * text_glyph_w_px).round();
@@ -237,6 +242,7 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
             char_colors: self.char_colors.clone(),
             selected_index: self.selected_index,
             multi_select: self.multi_select,
+            render_text_labels: self.render_text_labels,
             viewport_x: Arc::new(AtomicU32::new(0)),
             viewport_y: Arc::new(AtomicU32::new(0)),
             viewport_w: Arc::new(AtomicU32::new(0)),
@@ -321,6 +327,7 @@ struct SegmentedOnePassPrimitive<T: Clone> {
     char_colors: Option<CharColors>,
     selected_index: usize,
     multi_select: bool,
+    render_text_labels: bool,
     viewport_x: Arc<AtomicU32>,
     viewport_y: Arc<AtomicU32>,
     viewport_w: Arc<AtomicU32>,
@@ -408,6 +415,7 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Primitive for S
             char_colors: self.char_colors.clone(),
             selected_index: self.selected_index,
             multi_select: self.multi_select,
+            render_text_labels: self.render_text_labels,
         };
         let instances = program.build_instances(scale, bounds, glyph_w, glyph_h);
 
@@ -999,6 +1007,9 @@ impl ShaderSegmentedControl {
         // Clone segment values for message mapping
         let segment_values: Vec<T> = segments.iter().map(|s| s.value.clone()).collect();
 
+        // Keep segment contents for the TTF overlay (before `segments` gets moved).
+        let overlay_segments: Vec<SegmentContent> = segments.iter().map(|s| s.content.clone()).collect();
+
         // Convert segments to usize-valued segments for the shader widget.
         let segments_idx: Vec<Segment<usize>> = segments
             .into_iter()
@@ -1019,13 +1030,31 @@ impl ShaderSegmentedControl {
             char_colors,
             selected_index: first_selected_index,
             multi_select: true,
+            render_text_labels: false,
         })
         .width(Length::Fixed(total_width))
         .height(Length::Fixed(total_height))
         .into();
 
+        let overlay: Element<'_, SegmentedControlMessage<usize>> = canvas(SegmentedTtfOverlay {
+            segment_widths: segment_widths.clone(),
+            segments: overlay_segments,
+            selected_mask,
+            hovered_index: self.hovered_index.clone(),
+            text_color_selected,
+            text_color_unselected,
+        })
+        .width(Length::Fixed(total_width))
+        .height(Length::Fixed(total_height))
+        .into();
+
+        let stacked: Element<'_, SegmentedControlMessage<usize>> = iced::widget::stack![shader_onepass, overlay]
+            .width(Length::Fixed(total_width))
+            .height(Length::Fixed(total_height))
+            .into();
+
         // Map shader messages from usize to T (use Toggled for multi-select)
-        shader_onepass.map(move |msg| match msg {
+        stacked.map(move |msg| match msg {
             SegmentedControlMessage::Selected(idx) => SegmentedControlMessage::Toggled(segment_values[idx].clone()),
             SegmentedControlMessage::Toggled(idx) => SegmentedControlMessage::Toggled(segment_values[idx].clone()),
             SegmentedControlMessage::CharClicked(idx) => SegmentedControlMessage::CharClicked(segment_values[idx].clone()),
@@ -1065,6 +1094,9 @@ impl ShaderSegmentedControl {
         // Clone segment values for message mapping
         let segment_values: Vec<T> = segments.iter().map(|s| s.value.clone()).collect();
 
+        // Keep segment contents for the TTF overlay (before `segments` gets moved).
+        let overlay_segments: Vec<SegmentContent> = segments.iter().map(|s| s.content.clone()).collect();
+
         // Convert segments to usize-valued segments for the shader widget.
         let segments_idx: Vec<Segment<usize>> = segments
             .into_iter()
@@ -1085,16 +1117,92 @@ impl ShaderSegmentedControl {
             char_colors,
             selected_index,
             multi_select: false,
+            render_text_labels: false,
         })
         .width(Length::Fixed(total_width))
         .height(Length::Fixed(total_height))
         .into();
 
-        shader_onepass.map(move |msg| match msg {
+        let overlay: Element<'_, SegmentedControlMessage<usize>> = canvas(SegmentedTtfOverlay {
+            segment_widths: segment_widths.clone(),
+            segments: overlay_segments,
+            selected_mask,
+            hovered_index: self.hovered_index.clone(),
+            text_color_selected,
+            text_color_unselected,
+        })
+        .width(Length::Fixed(total_width))
+        .height(Length::Fixed(total_height))
+        .into();
+
+        let stacked: Element<'_, SegmentedControlMessage<usize>> = iced::widget::stack![shader_onepass, overlay]
+            .width(Length::Fixed(total_width))
+            .height(Length::Fixed(total_height))
+            .into();
+
+        stacked.map(move |msg| match msg {
             SegmentedControlMessage::Selected(idx) => SegmentedControlMessage::Selected(segment_values[idx].clone()),
             SegmentedControlMessage::Toggled(idx) => SegmentedControlMessage::Toggled(segment_values[idx].clone()),
             SegmentedControlMessage::CharClicked(idx) => SegmentedControlMessage::CharClicked(segment_values[idx].clone()),
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SegmentedTtfOverlay {
+    segment_widths: Vec<f32>,
+    segments: Vec<SegmentContent>,
+    selected_mask: u32,
+    hovered_index: Arc<AtomicU32>,
+    text_color_selected: Color,
+    text_color_unselected: Color,
+}
+
+impl canvas::Program<SegmentedControlMessage<usize>> for SegmentedTtfOverlay {
+    type State = ();
+
+    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        let hovered_raw = self.hovered_index.load(Ordering::Relaxed);
+        let hovered_idx = if hovered_raw == NO_HOVER { None } else { Some(hovered_raw as usize) };
+
+        let content_x = SHADOW_PADDING + BORDER_WIDTH;
+        let content_y = SHADOW_PADDING + BORDER_WIDTH;
+        let content_h = (bounds.height - SHADOW_PADDING * 2.0 - BORDER_WIDTH * 2.0).max(1.0);
+
+        let mut seg_x = content_x;
+        for (idx, seg_w) in self.segment_widths.iter().copied().enumerate() {
+            let Some(content) = self.segments.get(idx) else {
+                seg_x += seg_w;
+                continue;
+            };
+
+            if let SegmentContent::Text(text) = content {
+                let is_selected = (self.selected_mask & (1u32 << idx)) != 0;
+                let is_hovered = hovered_idx == Some(idx);
+
+                let mut color = if is_selected { self.text_color_selected } else { self.text_color_unselected };
+                if is_hovered {
+                    color = Color::from_rgba((color.r * 1.08).min(1.0), (color.g * 1.08).min(1.0), (color.b * 1.08).min(1.0), color.a);
+                }
+
+                frame.fill_text(canvas::Text {
+                    content: text.clone(),
+                    position: iced::Point::new(seg_x + seg_w / 2.0, content_y + content_h / 2.0),
+                    color,
+                    size: 14.0.into(),
+                    font: iced::Font::default(),
+                    align_x: iced::alignment::Horizontal::Center.into(),
+                    align_y: iced::alignment::Vertical::Center.into(),
+                    ..Default::default()
+                });
+            }
+
+            seg_x += seg_w;
+        }
+
+        vec![frame.into_geometry()]
     }
 }
 

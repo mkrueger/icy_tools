@@ -97,6 +97,25 @@ collab-connection-error-message=The connection to the collaboration server faile
 
     Error: { $error }
 
+# Collaboration chat panel
+collab-user-joined={ $nick } has joined
+collab-user-joined-group={ $nick } <{ $group }> has joined
+collab-user-left={ $nick } has left
+collab-user-left-group={ $nick } <{ $group }> has left
+collab-no-other-users=No other users
+collab-you=You
+collab-guest=Guest
+collab-no-messages=No messages yet
+collab-type-message=Type a message...
+collab-yesterday=yesterday
+collab-days-ago={ $days }d ago
+
+# Collaboration user status
+collab-status-active=Active
+collab-status-idle=Idle
+collab-status-away=Away
+collab-status-web=Web
+
 # File dialogs
 file-dialog-save-as-title=Save File As
 file-dialog-filter-all-files=All Files

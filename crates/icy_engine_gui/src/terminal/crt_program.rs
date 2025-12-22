@@ -30,12 +30,16 @@ use std::time::Duration;
 /// * `bounds_height` - The widget bounds height in logical pixels
 /// * `scan_lines` - Whether scanlines are enabled (doubles effective cell height)
 /// * `scale_factor` - The display scale factor (e.g., 2.0 for HiDPI)
+/// * `zoom` - The zoom level (e.g., 0.5 for 50%, 1.0 for 100%, 2.0 for 200%)
 ///
 /// # Returns
 /// `true` if the terminal height was changed, `false` otherwise.
-pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, bounds_height: f32, scan_lines: bool, scale_factor: f32) -> bool {
+pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, bounds_height: f32, scan_lines: bool, scale_factor: f32, zoom: f32) -> bool {
     let scale_factor = scale_factor.max(0.001);
-    let avail_h_px = bounds_height.max(1.0) * scale_factor;
+    let zoom = zoom.max(0.001);
+    // At lower zoom levels, more rows fit in the viewport
+    // At 50% zoom, each row takes half the pixels, so double the rows fit
+    let avail_h_px = bounds_height.max(1.0) * scale_factor / zoom;
 
     let font_h = editable.font_dimensions().height as f32;
     let scan_mult = if scan_lines { 2.0 } else { 1.0 };
@@ -144,13 +148,23 @@ impl<'a> CRTShaderProgram<'a> {
             // This is needed for proper centering calculation.
             let original_resolution = screen.resolution();
             let original_res_h = original_resolution.height as f32;
+            let original_res_w = original_resolution.width as f32;
+
+            // Pre-compute the zoom level (needed for clamp_terminal_height_to_viewport)
+            let pre_zoom = if self.monitor_settings.scaling_mode.is_auto() {
+                1.0
+            } else {
+                self.monitor_settings.scaling_mode
+                    .compute_zoom(original_res_w, original_res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
+                    .max(0.001)
+            };
 
             // Optional: Clamp the terminal window height to fit within bounds.
             // For small documents, this preserves their height (enabling centering).
             // For large documents, this shrinks to viewport (using full screen).
             if self.term.fit_terminal_height_to_bounds && !self.monitor_settings.scaling_mode.is_auto() {
                 if let Some(editable) = screen.as_editable() {
-                    clamp_terminal_height_to_viewport(editable, bounds.height, scan_lines, get_scale_factor());
+                    clamp_terminal_height_to_viewport(editable, bounds.height, scan_lines, get_scale_factor(), pre_zoom);
                 }
             }
 

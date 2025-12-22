@@ -2,6 +2,7 @@
 //!
 //! SVG icons are embedded at compile time.
 
+use crate::fl;
 use iced::Length;
 use iced::widget::Svg;
 
@@ -141,12 +142,12 @@ impl UserStatus {
 
     /// Display name for this status
     #[allow(dead_code)]
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            UserStatus::Active => "Active",
-            UserStatus::Idle => "Idle",
-            UserStatus::Away => "Away",
-            UserStatus::Web => "Web",
+            UserStatus::Active => fl!("collab-status-active"),
+            UserStatus::Idle => fl!("collab-status-idle"),
+            UserStatus::Away => fl!("collab-status-away"),
+            UserStatus::Web => fl!("collab-status-web"),
         }
     }
 }

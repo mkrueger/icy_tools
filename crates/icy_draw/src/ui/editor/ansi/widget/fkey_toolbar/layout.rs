@@ -35,13 +35,13 @@ pub const SLOT_WIDTH: f32 = 40.0;
 pub const SLOT_SPACING: f32 = 5.0;
 
 /// Navigation button size (clickable area).
-pub const NAV_SIZE: f32 = 28.0;
+pub const NAV_SIZE: f32 = 26.0;
 
 /// Arrow icon size (visual triangle).
 pub const ARROW_SIZE: f32 = 14.0;
 
 /// Desired visual gap between arrow icon edge and set number digits.
-pub const SET_NUM_ICON_GAP: f32 = 8.0;
+pub const SET_NUM_ICON_GAP: f32 = 6.0;
 
 /// Fine-tuning: shift the set number digits left.
 pub const NAV_NUM_SHIFT_X: f32 = -4.0;
@@ -53,7 +53,7 @@ pub const NAV_NEXT_SHIFT_X: f32 = -8.0;
 pub const NAV_LABEL_SPACE: f32 = 16.0;
 
 /// Gap before nav section.
-pub const NAV_GAP: f32 = -4.0;
+pub const NAV_GAP: f32 = 0.0;
 
 /// Corner radius for rounded rectangles.
 pub const CORNER_RADIUS: f32 = 6.0;

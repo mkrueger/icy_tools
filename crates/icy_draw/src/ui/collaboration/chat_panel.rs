@@ -12,6 +12,7 @@ use iced::{
 use icy_engine_edit::collaboration::ChatMessage;
 
 use super::icons::{Avatar, UserStatus};
+use crate::fl;
 use crate::ui::collaboration::state::{CollaborationState, RemoteUser};
 use crate::ui::main_window::Message;
 
@@ -86,7 +87,7 @@ fn group_messages(messages: &[ChatMessage], state: &CollaborationState) -> Vec<C
         if should_start_new {
             items.push(ChatItem::UserMessages(MessageGroup {
                 user_id: msg.id,
-                nick: if msg.nick.is_empty() { "Guest".to_string() } else { msg.nick.clone() },
+                nick: if msg.nick.is_empty() { fl!("collab-guest") } else { msg.nick.clone() },
                 group: msg.group.clone(),
                 avatar: state.user_avatar(msg.id),
                 first_time: msg.time,
@@ -121,10 +122,10 @@ fn format_time(timestamp: u64) -> String {
         if hours_ago < 24 {
             format!("{:02}:{:02}", hours, minutes)
         } else if hours_ago < 48 {
-            format!("yesterday {:02}:{:02}", hours, minutes)
+            format!("{} {:02}:{:02}", fl!("collab-yesterday"), hours, minutes)
         } else {
             let days = hours_ago / 24;
-            format!("{}d ago", days)
+            fl!("collab-days-ago", days = days.to_string())
         }
     } else {
         format!("{:02}:{:02}", hours, minutes)
@@ -182,7 +183,7 @@ fn view_user_list(state: &CollaborationState) -> Element<'_, Message> {
 
     // Show hint if no other users
     if state.remote_users().is_empty() {
-        user_column = user_column.push(container(text("No other users").size(14).color(SECONDARY_COLOR)).padding([8, 8]));
+        user_column = user_column.push(container(text(fl!("collab-no-other-users")).size(14).color(SECONDARY_COLOR)).padding([8, 8]));
     }
 
     let scrollable_users = scrollable(user_column)
@@ -212,7 +213,7 @@ fn view_own_user(state: &CollaborationState) -> Element<'_, Message> {
 
     let avatar_with_badge = view_avatar_with_status(avatar, status, AVATAR_SIZE, STATUS_BADGE_SIZE);
 
-    let display_name = if nick.is_empty() { "You".to_string() } else { nick };
+    let display_name = if nick.is_empty() { fl!("collab-you") } else { nick };
 
     // Name column: Nick (14pt bold) + Group (12pt secondary)
     let mut name_column = Column::new().spacing(0);
@@ -245,7 +246,7 @@ fn view_user_entry<'a>(remote_user: &'a RemoteUser, state: &'a CollaborationStat
 
     // Username + Group
     let nick = &remote_user.user.nick;
-    let display_name = if nick.is_empty() { "Guest".to_string() } else { nick.clone() };
+    let display_name = if nick.is_empty() { fl!("collab-guest") } else { nick.clone() };
     let user_group = &remote_user.user.group;
 
     // Name column: Nick (14pt bold) + Group (12pt secondary)
@@ -302,7 +303,7 @@ fn view_chat_area<'a>(messages: &'a [ChatMessage], state: &'a CollaborationState
     });
 
     if messages.is_empty() {
-        content_column = content_column.push(text("No messages yet").size(11).color(Color::from_rgb(0.5, 0.5, 0.5)));
+        content_column = content_column.push(text(fl!("collab-no-messages")).size(11).color(Color::from_rgb(0.5, 0.5, 0.5)));
     } else {
         // Group messages by user
         let items = group_messages(messages, state);
@@ -401,7 +402,7 @@ fn view_message_group(group: MessageGroup) -> Element<'static, Message> {
 
 /// View the input area
 fn view_input_area(input_text: &str) -> Element<'_, Message> {
-    let input = text_input("Type a message...", input_text)
+    let input = text_input(&fl!("collab-type-message"), input_text)
         .on_input(|s| Message::ChatPanel(ChatPanelMessage::InputChanged(s)))
         .on_submit(Message::ChatPanel(ChatPanelMessage::SendMessage))
         .padding(0.0)

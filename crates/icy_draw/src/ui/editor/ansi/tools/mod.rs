@@ -379,6 +379,32 @@ pub enum NavResult {
     Commit(&'static str),
 }
 
+fn clamp_caret_to_current_layer(ctx: &mut ToolContext) {
+    let Some(layer) = ctx.state.get_cur_layer() else {
+        return;
+    };
+
+    let size = layer.size();
+    let max_x = (size.width.saturating_sub(1)).max(0);
+    let max_y = (size.height.saturating_sub(1)).max(0);
+
+    let pos = ctx.state.get_caret().position();
+    let x = pos.x.clamp(0, max_x);
+    let y = pos.y.clamp(0, max_y);
+
+    if x != pos.x || y != pos.y {
+        ctx.state.set_caret_position(Position::new(x, y));
+    }
+}
+
+fn current_layer_max_pos(ctx: &mut ToolContext) -> Option<Position> {
+    let layer = ctx.state.get_cur_layer()?;
+    let size = layer.size();
+    let max_x = (size.width.saturating_sub(1)).max(0);
+    let max_y = (size.height.saturating_sub(1)).max(0);
+    Some(Position::new(max_x, max_y))
+}
+
 impl NavResult {
     /// Convert to ToolResult
     pub fn to_tool_result(self) -> ToolResult {
@@ -413,7 +439,7 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, m
         return NavResult::NotHandled;
     };
 
-    match named {
+    let result = match named {
         Named::ArrowUp => {
             if modifiers.shift() {
                 ctx.state.extend_selection(0, -1);
@@ -447,7 +473,15 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, m
             NavResult::Redraw
         }
         Named::Home => {
-            if modifiers.shift() {
+            if modifiers.control() {
+                let cur = ctx.state.get_caret().position();
+                let target = Position::new(0, 0);
+                if modifiers.shift() {
+                    ctx.state.extend_selection(target.x - cur.x, target.y - cur.y);
+                } else {
+                    ctx.state.set_caret_position(target);
+                }
+            } else if modifiers.shift() {
                 let cur_x = ctx.state.get_caret().x;
                 ctx.state.extend_selection(-cur_x, 0);
             } else {
@@ -456,13 +490,23 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, m
             NavResult::Redraw
         }
         Named::End => {
-            let width = ctx.state.get_buffer().width();
-            if modifiers.shift() {
-                let cur_x = ctx.state.get_caret().x;
-                let dx = width.saturating_sub(1) - cur_x;
-                ctx.state.extend_selection(dx, 0);
+            if modifiers.control() {
+                let cur = ctx.state.get_caret().position();
+                let target = current_layer_max_pos(ctx).unwrap_or(cur);
+                if modifiers.shift() {
+                    ctx.state.extend_selection(target.x - cur.x, target.y - cur.y);
+                } else {
+                    ctx.state.set_caret_position(target);
+                }
             } else {
-                ctx.state.set_caret_x(width.saturating_sub(1));
+                let width = ctx.state.get_buffer().width();
+                if modifiers.shift() {
+                    let cur_x = ctx.state.get_caret().x;
+                    let dx = width.saturating_sub(1) - cur_x;
+                    ctx.state.extend_selection(dx, 0);
+                } else {
+                    ctx.state.set_caret_x(width.saturating_sub(1));
+                }
             }
             NavResult::Redraw
         }
@@ -503,7 +547,13 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, m
             NavResult::Redraw
         }
         _ => NavResult::NotHandled,
+    };
+
+    if result.is_handled() {
+        clamp_caret_to_current_layer(ctx);
     }
+
+    result
 }
 
 // ============================================================================

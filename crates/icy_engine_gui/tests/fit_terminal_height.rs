@@ -22,11 +22,12 @@ fn small_document_stays_small() {
     let bounds_height = 800.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
     let initial_height = screen.terminal_state().height();
     assert_eq!(initial_height, 25);
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     // min(50, 25) = 25 -> no change
     assert!(!changed, "Small document should not change");
@@ -43,11 +44,12 @@ fn large_document_shrinks_to_viewport() {
     let bounds_height = 480.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
     let initial_height = screen.terminal_state().height();
     assert_eq!(initial_height, 100);
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     // min(30, 100) = 30 -> shrinks to viewport
     assert!(changed, "Large document should shrink");
@@ -63,8 +65,9 @@ fn no_change_when_viewport_matches_document() {
     let bounds_height = 400.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     assert!(!changed, "No change when viewport matches document");
     assert_eq!(screen.terminal_state().height(), 25);
@@ -80,10 +83,11 @@ fn scanlines_reduce_viewport_capacity() {
     // With scanlines: 640 / 32 = 20 rows
     let bounds_height = 640.0;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
     // With scanlines: viewport can only show 20 rows, document has 25
     // min(20, 25) = 20 -> shrinks
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, true, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, true, scale_factor, zoom);
 
     assert!(changed, "Should shrink to 20 rows with scanlines");
     assert_eq!(screen.terminal_state().height(), 20);
@@ -102,8 +106,9 @@ fn scale_factor_affects_calculation() {
     // min(50, 25) = 25 -> no change (small doc stays small)
     let bounds_height = 400.0;
     let scan_lines = false;
+    let zoom = 1.0;
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     assert!(!changed, "Small doc should stay at 25");
     assert_eq!(screen.terminal_state().height(), 25);
@@ -117,14 +122,15 @@ fn idempotent_when_called_multiple_times() {
     let bounds_height = 480.0; // 30 rows
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
     // First call - should shrink to 30
-    let changed1 = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed1 = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
     assert!(changed1);
     assert_eq!(screen.terminal_state().height(), 30);
 
     // Second call - no change
-    let changed2 = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed2 = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
     assert!(!changed2);
     assert_eq!(screen.terminal_state().height(), 30);
 }
@@ -138,8 +144,9 @@ fn tiny_viewport_clamps_to_one_row() {
     let bounds_height = 10.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     // viewport_rows = floor(10 / 16) = 0 -> clamped to 1
     // min(1, 25) = 1 -> shrinks to 1
@@ -156,8 +163,9 @@ fn zero_bounds_handled_gracefully() {
     let bounds_height = 0.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     // min(1, 25) = 1
     assert!(changed);
@@ -176,14 +184,84 @@ fn realistic_80x25_in_large_viewport() {
     let bounds_height = 855.0;
     let scan_lines = false;
     let scale_factor = 1.0;
+    let zoom = 1.0;
 
     let initial_height = screen.terminal_state().height();
     assert_eq!(initial_height, 25);
 
-    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor);
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
 
     // min(53, 25) = 25 -> NO CHANGE! Document stays at 25.
     // This enables proper centering.
     assert!(!changed, "Small document must NOT expand");
+    assert_eq!(screen.terminal_state().height(), 25);
+}
+
+/// Test: Zoom factor affects viewport capacity.
+/// At 50% zoom, each row takes half the pixels, so double the rows fit.
+#[test]
+fn zoom_50_percent_doubles_viewport_capacity() {
+    let mut screen = create_test_screen(80, 100);
+
+    // At 100% zoom: 480px / 16px = 30 rows
+    // At 50% zoom: 480px / 16px / 0.5 = 60 rows
+    let bounds_height = 480.0;
+    let scan_lines = false;
+    let scale_factor = 1.0;
+    let zoom = 0.5;
+
+    let initial_height = screen.terminal_state().height();
+    assert_eq!(initial_height, 100);
+
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
+
+    // At 50% zoom: viewport can show 60 rows
+    // min(60, 100) = 60 -> shrinks to 60
+    assert!(changed, "Document should shrink to 60 at 50% zoom");
+    assert_eq!(screen.terminal_state().height(), 60);
+}
+
+/// Test: At 200% zoom, rows take double the pixels, half the rows fit.
+#[test]
+fn zoom_200_percent_halves_viewport_capacity() {
+    let mut screen = create_test_screen(80, 100);
+
+    // At 100% zoom: 480px / 16px = 30 rows
+    // At 200% zoom: 480px / 16px / 2.0 = 15 rows
+    let bounds_height = 480.0;
+    let scan_lines = false;
+    let scale_factor = 1.0;
+    let zoom = 2.0;
+
+    let initial_height = screen.terminal_state().height();
+    assert_eq!(initial_height, 100);
+
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
+
+    // At 200% zoom: viewport can show 15 rows
+    // min(15, 100) = 15 -> shrinks to 15
+    assert!(changed, "Document should shrink to 15 at 200% zoom");
+    assert_eq!(screen.terminal_state().height(), 15);
+}
+
+/// Test: Small document stays small regardless of zoom.
+#[test]
+fn small_document_stays_small_at_any_zoom() {
+    let mut screen = create_test_screen(80, 25);
+
+    // Large viewport at 50% zoom
+    // At 50% zoom: 800px / 16px / 0.5 = 100 rows capacity
+    let bounds_height = 800.0;
+    let scan_lines = false;
+    let scale_factor = 1.0;
+    let zoom = 0.5;
+
+    let initial_height = screen.terminal_state().height();
+    assert_eq!(initial_height, 25);
+
+    let changed = clamp_terminal_height_to_viewport(&mut screen, bounds_height, scan_lines, scale_factor, zoom);
+
+    // min(100, 25) = 25 -> no change (small doc stays small)
+    assert!(!changed, "Small document should not change at 50% zoom");
     assert_eq!(screen.terminal_state().height(), 25);
 }

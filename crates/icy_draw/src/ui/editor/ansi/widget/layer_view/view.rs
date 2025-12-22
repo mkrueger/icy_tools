@@ -639,7 +639,7 @@ impl LayerView {
     /// - Delete cancels the paste operation
     pub fn view<'a>(&'a self, theme: &Theme, screen: &'a Arc<Mutex<Box<dyn Screen>>>, font_page: Option<usize>, paste_mode: bool) -> Element<'a, LayerMessage> {
         // Read layer data (no per-frame preview cloning)
-        let (rows, current_layer, layer_count, buffer_version, font_key) = {
+        let (rows, current_layer, layer_count, buffer_version, _font_key) = {
             let mut screen_guard = screen.lock();
             let state: &mut EditState = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
             let buffer = state.get_buffer();
@@ -670,6 +670,10 @@ impl LayerView {
 
             (rows, current, layer_count, buffer_version, font_key)
         };
+
+        // UI text in the layer list should use high-resolution TrueType rendering.
+        // The widget already has a TTF fallback path when `font_key` is None.
+        let font_key: Option<u64> = None;
 
         // Invalidate preview cache when buffer changes or layers change
         let needs_invalidate = buffer_version != *self.last_buffer_version.borrow() || layer_count != *self.last_layer_count.borrow();
@@ -964,20 +968,27 @@ impl<'a> LayerListWidget<'a> {
             height: row_bounds.height,
         };
 
+        let title_font_px: f32 = 14.0;
+        let title_text_y = title_bounds.y + (title_bounds.height - title_font_px).max(0.0) * 0.5;
+        let title_text_bounds = Size {
+            width: title_bounds.width,
+            height: title_font_px,
+        };
+
         let Some(font_key) = self.font_key else {
             let title_text = iced::advanced::text::Text {
                 content: row.title.clone(),
-                bounds: title_bounds.size(),
-                size: iced::Pixels(14.0),
+                bounds: title_text_bounds,
+                size: iced::Pixels(title_font_px),
                 line_height: iced::advanced::text::LineHeight::Relative(1.0),
                 font: iced::Font::default(),
                 align_x: iced::advanced::text::Alignment::Left,
-                align_y: iced::alignment::Vertical::Center,
+                align_y: iced::alignment::Vertical::Top,
                 shaping: iced::advanced::text::Shaping::Advanced,
                 wrapping: iced::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
-            renderer.fill_text(title_text, Point::new(title_bounds.x, title_bounds.y), title_fg, list_bounds);
+            renderer.fill_text(title_text, Point::new(title_bounds.x, title_text_y), title_fg, list_bounds);
             return;
         };
 
@@ -1037,17 +1048,17 @@ impl<'a> LayerListWidget<'a> {
             // Fallback (e.g. first frame or unsupported glyphs)
             let title_text = iced::advanced::text::Text {
                 content: row.title.clone(),
-                bounds: title_bounds.size(),
-                size: iced::Pixels(14.0),
+                bounds: title_text_bounds,
+                size: iced::Pixels(title_font_px),
                 line_height: iced::advanced::text::LineHeight::Relative(1.0),
                 font: iced::Font::default(),
                 align_x: iced::advanced::text::Alignment::Left,
-                align_y: iced::alignment::Vertical::Center,
+                align_y: iced::alignment::Vertical::Top,
                 shaping: iced::advanced::text::Shaping::Advanced,
                 wrapping: iced::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
-            renderer.fill_text(title_text, Point::new(title_bounds.x, title_bounds.y), title_fg, list_bounds);
+            renderer.fill_text(title_text, Point::new(title_bounds.x, title_text_y), title_fg, list_bounds);
         }
     }
 }

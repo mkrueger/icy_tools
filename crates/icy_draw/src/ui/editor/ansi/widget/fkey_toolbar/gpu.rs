@@ -10,12 +10,11 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
-use codepages::tables::CP437_TO_UNICODE;
 use iced::wgpu::util::DeviceExt;
 use iced::{
     Color, Element, Length, Point, Rectangle, Theme,
     mouse::{self, Cursor},
-    widget::{self, container, shader},
+    widget::{self, canvas, container, shader},
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
@@ -183,6 +182,7 @@ struct FKeyOnePassProgram {
     hovered_slot: Arc<AtomicU32>,
     hover_type: Arc<AtomicU32>,
     nav_label_space_bits: Arc<AtomicU32>,
+    render_bitfont_labels: bool,
 }
 
 impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
@@ -199,6 +199,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
             bg_color_themed: self.bg_color_themed,
             hovered_slot: self.hovered_slot.clone(),
             hover_type: self.hover_type.clone(),
+            render_bitfont_labels: self.render_bitfont_labels,
             viewport_x: Arc::new(AtomicU32::new(0)),
             viewport_y: Arc::new(AtomicU32::new(0)),
             viewport_w: Arc::new(AtomicU32::new(0)),
@@ -269,6 +270,7 @@ struct FKeyOnePassPrimitive {
     bg_color_themed: Color,
     hovered_slot: Arc<AtomicU32>,
     hover_type: Arc<AtomicU32>,
+    render_bitfont_labels: bool,
     viewport_x: Arc<AtomicU32>,
     viewport_y: Arc<AtomicU32>,
     viewport_w: Arc<AtomicU32>,
@@ -461,34 +463,36 @@ impl shader::Primitive for FKeyOnePassPrimitive {
                 (1u32, 2u32)
             };
 
-            for (i, &d) in [d1, d2].iter().enumerate() {
-                let glyph = char::from_digit(d, 10).unwrap_or('0') as u32;
-                let y_off = glyph_y_offset(d, &self.font);
-                let x = label_x + i as f32 * label_char_w;
-                let y = label_y + y_off;
+            if self.render_bitfont_labels {
+                for (i, &d) in [d1, d2].iter().enumerate() {
+                    let glyph = char::from_digit(d, 10).unwrap_or('0') as u32;
+                    let y_off = glyph_y_offset(d, &self.font);
+                    let x = label_x + i as f32 * label_char_w;
+                    let y = label_y + y_off;
 
-                let label_w = label_render_w.floor().max(1.0);
-                let label_h = label_render_h.floor().max(1.0);
+                    let label_w = label_render_w.floor().max(1.0);
+                    let label_h = label_render_h.floor().max(1.0);
 
-                instances.push(GlyphInstance {
-                    pos: [(x + 1.0).floor(), (y + 1.0).floor()],
-                    size: [label_w, label_h],
-                    fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
-                    bg: [0.0, 0.0, 0.0, 0.0],
-                    glyph,
-                    flags: FLAG_LINEAR_SAMPLE,
-                    _pad: [0, 0],
-                });
+                    instances.push(GlyphInstance {
+                        pos: [(x + 1.0).floor(), (y + 1.0).floor()],
+                        size: [label_w, label_h],
+                        fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+                        bg: [0.0, 0.0, 0.0, 0.0],
+                        glyph,
+                        flags: FLAG_LINEAR_SAMPLE,
+                        _pad: [0, 0],
+                    });
 
-                instances.push(GlyphInstance {
-                    pos: [x.floor(), y.floor()],
-                    size: [label_w, label_h],
-                    fg: [label_color.r, label_color.g, label_color.b, label_color.a],
-                    bg: [0.0, 0.0, 0.0, 0.0],
-                    glyph,
-                    flags: FLAG_LINEAR_SAMPLE,
-                    _pad: [0, 0],
-                });
+                    instances.push(GlyphInstance {
+                        pos: [x.floor(), y.floor()],
+                        size: [label_w, label_h],
+                        fg: [label_color.r, label_color.g, label_color.b, label_color.a],
+                        bg: [0.0, 0.0, 0.0, 0.0],
+                        glyph,
+                        flags: FLAG_LINEAR_SAMPLE,
+                        _pad: [0, 0],
+                    });
+                }
             }
 
             instances.push(GlyphInstance {
@@ -602,34 +606,36 @@ impl shader::Primitive for FKeyOnePassPrimitive {
             _pad: [0, 0],
         });
 
-        for (i, ch) in num_str.chars().enumerate() {
-            let digit = ch.to_digit(10).unwrap_or(0);
-            let y_off = glyph_y_offset(digit, &self.font);
-            let x = num_x + i as f32 * label_char_w;
-            let y = label_y + y_off;
-            let glyph = ch as u32;
+        if self.render_bitfont_labels {
+            for (i, ch) in num_str.chars().enumerate() {
+                let digit = ch.to_digit(10).unwrap_or(0);
+                let y_off = glyph_y_offset(digit, &self.font);
+                let x = num_x + i as f32 * label_char_w;
+                let y = label_y + y_off;
+                let glyph = ch as u32;
 
-            let label_w = label_render_w.floor().max(1.0);
-            let label_h = label_render_h.floor().max(1.0);
+                let label_w = label_render_w.floor().max(1.0);
+                let label_h = label_render_h.floor().max(1.0);
 
-            instances.push(GlyphInstance {
-                pos: [(x + 1.0).floor(), (y + 1.0).floor()],
-                size: [label_w, label_h],
-                fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
-                bg: [0.0, 0.0, 0.0, 0.0],
-                glyph,
-                flags: 0,
-                _pad: [0, 0],
-            });
-            instances.push(GlyphInstance {
-                pos: [x.floor(), y.floor()],
-                size: [label_w, label_h],
-                fg: [label_color.r, label_color.g, label_color.b, label_color.a],
-                bg: [0.0, 0.0, 0.0, 0.0],
-                glyph,
-                flags: 0,
-                _pad: [0, 0],
-            });
+                instances.push(GlyphInstance {
+                    pos: [(x + 1.0).floor(), (y + 1.0).floor()],
+                    size: [label_w, label_h],
+                    fg: [shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a],
+                    bg: [0.0, 0.0, 0.0, 0.0],
+                    glyph,
+                    flags: 0,
+                    _pad: [0, 0],
+                });
+                instances.push(GlyphInstance {
+                    pos: [x.floor(), y.floor()],
+                    size: [label_w, label_h],
+                    fg: [label_color.r, label_color.g, label_color.b, label_color.a],
+                    bg: [0.0, 0.0, 0.0, 0.0],
+                    glyph,
+                    flags: 0,
+                    _pad: [0, 0],
+                });
+            }
         }
 
         // Upload instances
@@ -1135,8 +1141,10 @@ impl ShaderFKeyToolbar {
 
         let bg_color_themed = main_area_background(theme);
 
+        let current_set = fkeys.current_set();
+
         // Create one-pass shader (background + glyphs combined)
-        let onepass: Element<'_, FKeyToolbarMessage> = widget::shader(FKeyOnePassProgram {
+        let shader_onepass: Element<'_, FKeyToolbarMessage> = widget::shader(FKeyOnePassProgram {
             fkeys,
             font,
             palette,
@@ -1146,16 +1154,143 @@ impl ShaderFKeyToolbar {
             hovered_slot: self.hovered_slot.clone(),
             hover_type: self.hover_type.clone(),
             nav_label_space_bits: self.nav_label_space_bits.clone(),
+            // Labels are drawn via TTF overlay for higher resolution.
+            render_bitfont_labels: false,
         })
         .width(Length::Fixed(layout.total_width))
         .height(Length::Fixed(layout.total_height))
         .into();
 
+        let overlay: Element<'_, FKeyToolbarMessage> = canvas(FKeyTtfLabelOverlay {
+            layout: layout.clone(),
+            current_set,
+            hovered_slot: self.hovered_slot.clone(),
+            hover_type: self.hover_type.clone(),
+        })
+        .width(Length::Fixed(layout.total_width))
+        .height(Length::Fixed(layout.total_height))
+        .into();
+
+        let stacked: Element<'_, FKeyToolbarMessage> = iced::widget::stack![shader_onepass, overlay]
+            .width(Length::Fixed(layout.total_width))
+            .height(Length::Fixed(layout.total_height))
+            .into();
+
         // Wrap in container to center horizontally in parent
-        container(onepass)
+        container(stacked)
             .width(Length::Fill)
             .height(Length::Fixed(layout.total_height))
             .center_x(Length::Fill)
             .into()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FKeyTtfLabelOverlay {
+    layout: FKeyLayout,
+    current_set: usize,
+    hovered_slot: Arc<AtomicU32>,
+    hover_type: Arc<AtomicU32>,
+}
+
+impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
+    type State = ();
+
+    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // Keep font sizes in one place so it is easy to tune.
+        // (Logical pixels; DPI scaling is handled by the renderer.)
+        let slot_label_font_size: f32 = 18.0;
+        let set_label_font_size: f32 = 18.0;
+
+        let hovered_raw = self.hovered_slot.load(Ordering::Relaxed);
+        let hover_type = self.hover_type.load(Ordering::Relaxed);
+        let hovered = HoverState::from_uniforms(hovered_raw, hover_type);
+
+        let label_color = Color::from_rgba(0.55, 0.55, 0.58, 1.0);
+        let label_hover_color = Color::from_rgba(0.85, 0.85, 0.88, 1.0);
+        let shadow_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
+
+        // Slot number labels ("01".."12")
+        for slot in 0..12usize {
+            let slot_x = self.layout.slot_x(slot);
+            let is_label_hovered = matches!(hovered, HoverState::Slot(s, false) if s == slot);
+            let c = if is_label_hovered { label_hover_color } else { label_color };
+
+            let text = format!("{:02}", slot + 1);
+            // Match the shader's label start, but center only across the digit area.
+            // The shader adds n extra gap between the digits and the char preview; that
+            // gap must NOT affeact the centering of the digits themselves.
+            let x = slot_x - 1.0;
+            let y = SHADOW_PADDING;
+            let w = (LABEL_WIDTH * 2.0).min(SLOT_WIDTH);
+            let h = self.layout.control_height;
+
+            let center = iced::Point::new(x + w / 2.0, y + h / 2.0);
+
+            // Shadow
+            frame.fill_text(canvas::Text {
+                content: text.clone(),
+                position: iced::Point::new(center.x + 1.0, center.y + 1.0),
+                color: shadow_color,
+                size: slot_label_font_size.into(),
+                font: iced::Font::default(),
+                align_x: iced::alignment::Horizontal::Center.into(),
+                align_y: iced::alignment::Vertical::Center.into(),
+                ..Default::default()
+            });
+
+            // Main
+            frame.fill_text(canvas::Text {
+                content: text,
+                position: center,
+                color: c,
+                size: slot_label_font_size.into(),
+                font: iced::Font::default(),
+                align_x: iced::alignment::Horizontal::Center.into(),
+                align_y: iced::alignment::Vertical::Center.into(),
+                ..Default::default()
+            });
+        }
+
+        // Set number label between arrows
+        let nav_prev = self.layout.nav_prev_rect();
+        // Important: `next_nav_x` includes `NAV_NEXT_SHIFT_X` (a visual tweak for the next button).
+        // The set label should be centered in the reserved label space, not in the distance between
+        // the shifted button rectangles.
+        let label_rect = Rectangle {
+            x: self.layout.nav_x + NAV_SIZE,
+            y: nav_prev.y,
+            width: self.layout.nav_label_space.max(1.0),
+            height: nav_prev.height,
+        };
+
+        let set_text = (self.current_set + 1).to_string();
+        let center = iced::Point::new(label_rect.x + label_rect.width / 2.0, label_rect.y + label_rect.height / 2.0);
+
+        frame.fill_text(canvas::Text {
+            content: set_text.clone(),
+            position: iced::Point::new(center.x + 1.0, center.y + 1.0),
+            color: shadow_color,
+            size: set_label_font_size.into(),
+            font: iced::Font::default(),
+            align_x: iced::alignment::Horizontal::Center.into(),
+            align_y: iced::alignment::Vertical::Center.into(),
+            ..Default::default()
+        });
+
+        frame.fill_text(canvas::Text {
+            content: set_text,
+            position: center,
+            color: label_color,
+            size: set_label_font_size.into(),
+            font: iced::Font::default(),
+            align_x: iced::alignment::Horizontal::Center.into(),
+            align_y: iced::alignment::Vertical::Center.into(),
+            ..Default::default()
+        });
+
+        vec![frame.into_geometry()]
     }
 }

@@ -39,7 +39,7 @@ struct PersistedSettings {
     pub selected_taglist: String,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollaborationSettings {
     /// Collaboration nickname
     #[serde(default = "default_nick")]
@@ -50,12 +50,26 @@ pub struct CollaborationSettings {
     pub group: String,
 
     /// Most recently used collaboration servers (last = most recent)
-    #[serde(default)]
+    #[serde(default = "default_servers")]
     pub servers: Vec<String>,
+}
+
+impl Default for CollaborationSettings {
+    fn default() -> Self {
+        Self {
+            nick: default_nick(),
+            group: String::new(),
+            servers: default_servers(),
+        }
+    }
 }
 
 fn default_nick() -> String {
     "Anonymous".to_string()
+}
+
+fn default_servers() -> Vec<String> {
+    vec!["localhost".to_string()]
 }
 
 fn default_true() -> bool {

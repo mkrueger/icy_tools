@@ -3,6 +3,7 @@
 //! `icy_draw` owns the UI/connection wrapper state.
 //! The UI-free collaboration core lives in `icy_engine_edit` for unit testing.
 
+use crate::fl;
 use icy_engine_edit::EditorUndoStack;
 use icy_engine_edit::collaboration::{ChatMessage, CollaborationCoreState, ConnectedDocument, ServerStatus, User};
 use std::collections::HashMap;
@@ -95,9 +96,9 @@ impl CollaborationState {
         // Show system message for user joining (unless it's us or a guest)
         if show_join && Some(user.id) != self.core.our_user_id && !user.nick.is_empty() {
             let msg = if user.group.is_empty() {
-                format!("{} has joined", user.nick)
+                fl!("collab-user-joined", nick = user.nick.clone())
             } else {
-                format!("{} <{}> has joined", user.nick, user.group)
+                fl!("collab-user-joined-group", nick = user.nick.clone(), group = user.group.clone())
             };
             self.core.add_system_message(&msg);
         }
@@ -114,9 +115,9 @@ impl CollaborationState {
             if let Some(remote_user) = self.core.get_user(user_id) {
                 if !remote_user.user.nick.is_empty() {
                     let msg = if remote_user.user.group.is_empty() {
-                        format!("{} has left", remote_user.user.nick)
+                        fl!("collab-user-left", nick = remote_user.user.nick.clone())
                     } else {
-                        format!("{} <{}> has left", remote_user.user.nick, remote_user.user.group)
+                        fl!("collab-user-left-group", nick = remote_user.user.nick.clone(), group = remote_user.user.group.clone())
                     };
                     self.core.add_system_message(&msg);
                 }

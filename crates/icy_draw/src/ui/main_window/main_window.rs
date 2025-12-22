@@ -1774,6 +1774,7 @@ impl MainWindow {
                     opts.add_collaboration_server(&result.url);
                     opts.collaboration.nick = result.nick.clone();
                     opts.collaboration.group = result.group.clone();
+                    opts.store_persistent();
                 }
 
                 // Store connection info and start connecting
