@@ -117,7 +117,11 @@ impl CollaborationState {
                     let msg = if remote_user.user.group.is_empty() {
                         fl!("collab-user-left", nick = remote_user.user.nick.clone())
                     } else {
-                        fl!("collab-user-left-group", nick = remote_user.user.nick.clone(), group = remote_user.user.group.clone())
+                        fl!(
+                            "collab-user-left-group",
+                            nick = remote_user.user.nick.clone(),
+                            group = remote_user.user.group.clone()
+                        )
                     };
                     self.core.add_system_message(&msg);
                 }

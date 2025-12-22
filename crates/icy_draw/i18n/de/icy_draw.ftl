@@ -95,6 +95,25 @@ collab-connection-error-message=Die Verbindung zum Collaboration-Server ist fehl
 
     Fehler: { $error }
 
+# Collaboration Chat-Panel
+collab-user-joined={ $nick } ist beigetreten
+collab-user-joined-group={ $nick } <{ $group }> ist beigetreten
+collab-user-left={ $nick } hat den Chat verlassen
+collab-user-left-group={ $nick } <{ $group }> hat den Chat verlassen
+collab-no-other-users=Keine anderen Benutzer
+collab-you=Du
+collab-guest=Gast
+collab-no-messages=Noch keine Nachrichten
+collab-type-message=Nachricht eingeben...
+collab-yesterday=gestern
+collab-days-ago=vor { $days }T
+
+# Collaboration Benutzerstatus
+collab-status-active=Aktiv
+collab-status-idle=Inaktiv
+collab-status-away=Abwesend
+collab-status-web=Web
+
 # Dateidialoge
 file-dialog-save-as-title=Speichern unter
 file-dialog-filter-all-files=Alle Dateien

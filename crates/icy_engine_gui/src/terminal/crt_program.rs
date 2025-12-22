@@ -154,8 +154,15 @@ impl<'a> CRTShaderProgram<'a> {
             let pre_zoom = if self.monitor_settings.scaling_mode.is_auto() {
                 1.0
             } else {
-                self.monitor_settings.scaling_mode
-                    .compute_zoom(original_res_w, original_res_h, bounds.width, bounds.height, self.monitor_settings.use_integer_scaling)
+                self.monitor_settings
+                    .scaling_mode
+                    .compute_zoom(
+                        original_res_w,
+                        original_res_h,
+                        bounds.width,
+                        bounds.height,
+                        self.monitor_settings.use_integer_scaling,
+                    )
                     .max(0.001)
             };
 

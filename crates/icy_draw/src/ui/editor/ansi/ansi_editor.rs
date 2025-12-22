@@ -3080,16 +3080,10 @@ mod scroll_caret_tests {
     fn caret_at_top_scrolled_down_scrolls_up() {
         // Viewport shows rows 1..N (scroll_y = 16.0 means row 0 is clipped).
         let result = compute_scroll_to_keep_caret_visible(
-            0,
-            0, // caret at (0, 0)
-            FONT_W,
-            FONT_H,
-            0.0,
-            16.0, // scroll_y = 1 row down
-            640.0,
-            400.0, // visible area
-            640.0,
-            4432.0, // content (80x277)
+            0, 0, // caret at (0, 0)
+            FONT_W, FONT_H, 0.0, 16.0, // scroll_y = 1 row down
+            640.0, 400.0, // visible area
+            640.0, 4432.0, // content (80x277)
         );
 
         assert!(result.is_some(), "Expected scrolling to be triggered");
@@ -3130,10 +3124,7 @@ mod scroll_caret_tests {
         // Caret bottom = 277 * 16 = 4432. Visible height = 400.
         // new_scroll_y should be caret_bottom - visible_height = 4432 - 400 = 4032.
         let expected = 276.0 * FONT_H + FONT_H - visible_height;
-        assert!(
-            (new_scroll_y - expected).abs() < 1.0,
-            "Expected scroll_y near {expected}, got {new_scroll_y}"
-        );
+        assert!((new_scroll_y - expected).abs() < 1.0, "Expected scroll_y near {expected}, got {new_scroll_y}");
     }
 
     /// Caret at right edge when scrolled left - should scroll right.
@@ -3159,26 +3150,15 @@ mod scroll_caret_tests {
         let (new_scroll_x, _) = result.unwrap();
         // caret_right = 80 * 8 = 640. new_scroll_x = 640 - 400 = 240.
         let expected = 80.0 * FONT_W - visible_width;
-        assert!(
-            (new_scroll_x - expected).abs() < 1.0,
-            "Expected scroll_x near {expected}, got {new_scroll_x}"
-        );
+        assert!((new_scroll_x - expected).abs() < 1.0, "Expected scroll_x near {expected}, got {new_scroll_x}");
     }
 
     /// Caret at left edge when scrolled right - should scroll left.
     #[test]
     fn caret_at_left_edge_scrolls_left() {
         let result = compute_scroll_to_keep_caret_visible(
-            0,
-            10,
-            FONT_W,
-            FONT_H,
-            100.0, // viewport scrolled right
-            0.0,
-            400.0,
-            400.0,
-            640.0,
-            4432.0,
+            0, 10, FONT_W, FONT_H, 100.0, // viewport scrolled right
+            0.0, 400.0, 400.0, 640.0, 4432.0,
         );
 
         assert!(result.is_some(), "Expected horizontal scrolling");

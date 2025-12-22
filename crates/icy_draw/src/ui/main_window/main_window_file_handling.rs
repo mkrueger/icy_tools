@@ -241,17 +241,14 @@ impl MainWindow {
             .collect();
 
         // Get the default directory: current file's directory or most recent file's directory
-        let default_directory = self
-            .file_path()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .or_else(|| {
-                self.options
-                    .read()
-                    .recent_files
-                    .files()
-                    .first()
-                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            });
+        let default_directory = self.file_path().and_then(|p| p.parent().map(|p| p.to_path_buf())).or_else(|| {
+            self.options
+                .read()
+                .recent_files
+                .files()
+                .first()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        });
 
         Task::perform(
             async move {
