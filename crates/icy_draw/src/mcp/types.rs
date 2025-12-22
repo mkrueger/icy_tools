@@ -151,6 +151,7 @@ pub struct AnsiRunScriptRequest {
 
 /// Response from running a Lua script
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(dead_code)]
 pub struct AnsiRunScriptResponse {
     /// Whether the script executed successfully
     pub success: bool,

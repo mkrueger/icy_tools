@@ -78,7 +78,7 @@ pub struct WindowManager {
     session_save_counter: u64,
     commands: WindowCommands,
     /// MCP command receiver (optional)
-    mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
+    _mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
 }
 
 #[derive(Clone, Debug)]
@@ -241,7 +241,7 @@ impl WindowManager {
             restoring_session: true,
             session_save_counter: 0,
             commands,
-            mcp_rx,
+            _mcp_rx: mcp_rx,
         };
 
         // Store first window info for later
@@ -297,7 +297,7 @@ impl WindowManager {
                 restoring_session: false,
                 session_save_counter: 0,
                 commands,
-                mcp_rx,
+                _mcp_rx: mcp_rx,
             },
             open.map(WindowManagerMessage::WindowOpened),
         )

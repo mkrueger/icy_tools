@@ -547,7 +547,7 @@ impl TopToolbar {
         caret_fg: u32,
         caret_bg: u32,
         palette: &Palette,
-        show_filled_toggle: bool,
+        _show_filled_toggle: bool,
     ) -> Element<'_, TopToolbarMessage> {
         let primary = self.brush_options.primary;
 

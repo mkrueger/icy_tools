@@ -385,11 +385,11 @@ impl ToolHandler for ShapeTool {
                 _ => ToolMessage::ToggleForeground(self.brush.colorize_fg),
             });
 
-        let show_filled_toggle = matches!(
+        let _show_filled_toggle = matches!(
             self.tool,
             Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
         );
-        let is_filled = matches!(self.tool, Tool::RectangleFilled | Tool::EllipseFilled);
+        let _is_filled = matches!(self.tool, Tool::RectangleFilled | Tool::EllipseFilled);
 
         let secondary_color = ctx.theme.extended_palette().secondary.base.color;
         let base_color = ctx.theme.extended_palette().primary.base.text;
@@ -618,7 +618,10 @@ impl ToolHandler for ShapeTool {
     fn handle_event(&mut self, _ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                key, modifiers, physical_key, ..
+                key: _,
+                modifiers,
+                physical_key,
+                ..
             }) => {
                 use iced::keyboard::Key;
                 use iced::keyboard::key::Named;

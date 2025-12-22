@@ -448,7 +448,7 @@ impl Dialog<Message> for FontExportDialog {
 /// Export font to raw bitmap format (8 pixels wide)
 fn export_to_raw_bytes(font: &BitFont) -> Result<Vec<u8>, String> {
     let height = font.size().height as usize;
-    let width = font.size().width as usize;
+    let _width = font.size().width as usize;
     let mut data = Vec::with_capacity(256 * height);
 
     for ch_code in 0..256u32 {

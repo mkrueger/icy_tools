@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct RemotePastePreview {
-    pub user_id: u32,
-    pub nick: String,
+    pub _user_id: u32,
+    pub _nick: String,
     /// Display label (e.g. "nick" or "nick <group>")
     pub label: String,
     /// Highlight color for outline/label
@@ -30,8 +30,8 @@ pub struct RemotePastePreview {
     /// Pre-rendered RGBA image.
     pub handle: image::Handle,
     /// Size of the preview image in *unscaled* pixels (font cell pixels).
-    pub width_px: u32,
-    pub height_px: u32,
+    pub _width_px: u32,
+    pub _height_px: u32,
     /// Size in cells.
     pub columns: u32,
     pub rows: u32,

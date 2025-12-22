@@ -707,15 +707,15 @@ impl MainWindow {
             self.remote_paste_preview_cache.insert(user.user.id, entry.clone());
 
             previews.push(RemotePastePreview {
-                user_id: user.user.id,
-                nick: user.user.nick.clone(),
+                _user_id: user.user.id,
+                _nick: user.user.nick.clone(),
                 label,
                 color,
                 col,
                 row,
                 handle: entry.handle.clone(),
-                width_px: entry.width_px,
-                height_px: entry.height_px,
+                _width_px: entry.width_px,
+                _height_px: entry.height_px,
                 columns: entry.columns,
                 rows: entry.rows,
             });

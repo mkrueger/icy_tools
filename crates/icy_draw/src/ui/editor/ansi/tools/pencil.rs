@@ -138,7 +138,10 @@ impl ToolHandler for PencilTool {
     fn handle_event(&mut self, _ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                key, modifiers, physical_key, ..
+                key: _,
+                modifiers,
+                physical_key,
+                ..
             }) => {
                 use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
