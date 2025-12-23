@@ -394,7 +394,7 @@ impl FileFormat {
                 }
             }
             FileFormat::XBin => {
-                let screen = load_xbin(bytes, None)?;
+                let screen = load_xbin(bytes, None, None)?;
                 return Ok(screen.palette().clone());
             }
 

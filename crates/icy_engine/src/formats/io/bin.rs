@@ -2,14 +2,18 @@
 
 use crate::{AttributedChar, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
 
 /// Load a binary file into a TextScreen.
-///
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((160, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
+
+    // Apply SAUCE settings early to get correct dimensions
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut screen.buffer, sauce);
+    }
+
     let max_height = load_data_opt.and_then(|ld| ld.max_height());
 
     let mut o = 0;

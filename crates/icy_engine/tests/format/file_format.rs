@@ -38,6 +38,32 @@ fn file_format_is_animated() {
 }
 
 #[test]
+fn file_format_is_supported() {
+    // Parser-based formats
+    assert!(FileFormat::Ansi.is_supported());
+    assert!(FileFormat::Avatar.is_supported());
+
+    // Saveable formats
+    assert!(FileFormat::XBin.is_supported());
+    assert!(FileFormat::IcyDraw.is_supported());
+
+    // Animation formats
+    assert!(FileFormat::IcyAnim.is_supported());
+
+    // Image formats
+    assert!(FileFormat::Image(icy_engine::formats::ImageFormat::Png).is_supported());
+    assert!(FileFormat::Image(icy_engine::formats::ImageFormat::Gif).is_supported());
+
+    // Font formats
+    assert!(FileFormat::CharacterFont(icy_engine::formats::CharacterFontFormat::Tdf).is_supported());
+    assert!(FileFormat::CharacterFont(icy_engine::formats::CharacterFontFormat::Figlet).is_supported());
+    assert!(FileFormat::BitFont(icy_engine::formats::BitFontFormat::Psf).is_supported());
+
+    // Archives are NOT supported (need to be extracted first)
+    assert!(!FileFormat::Archive(unarc_rs::unified::ArchiveFormat::Zip).is_supported());
+}
+
+#[test]
 fn file_format_all_extensions_contain_primary() {
     for format in FileFormat::ALL {
         let exts = format.all_extensions();

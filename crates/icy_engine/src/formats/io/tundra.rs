@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
 use crate::{
     AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage,
 };
@@ -134,11 +134,15 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
     Ok(result)
 }
 
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
     let max_height = load_data_opt.and_then(|ld| ld.max_height());
+
+    // Apply SAUCE settings early
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut screen.buffer, sauce);
+    }
 
     if data.len() < 1 + TUNDRA_HEADER.len() {
         return Err(LoadingError::FileTooShort.into());

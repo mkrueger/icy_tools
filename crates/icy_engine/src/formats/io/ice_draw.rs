@@ -1,4 +1,4 @@
-use super::super::{LoadData, SauceBuilder, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
 use crate::{
     AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute, TextBuffer, TextPane, TextScreen,
     analyze_font_usage, guess_font_name,
@@ -109,12 +109,16 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     Ok(result)
 }
 
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut result = TextBuffer::new((80, 25));
     result.ice_mode = IceMode::Ice;
     result.terminal_state.is_terminal_buffer = false;
     let max_height = load_data_opt.and_then(|ld| ld.max_height());
+
+    // Apply SAUCE settings early
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut result, sauce);
+    }
 
     if data.len() < HEADER_SIZE + FONT_SIZE + PALETTE_SIZE {
         return Err(LoadingError::FileTooShort.into());

@@ -1,4 +1,4 @@
-use super::super::{LoadData, SauceBuilder, SaveOptions};
+use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
 use crate::{
     AttributedChar, BitFont, BufferType, Color, EGA_PALETTE, FontMode, IceMode, LoadingError, Palette, Position, Result, SavingError, TextAttribute,
     TextBuffer, TextPane, TextScreen, analyze_font_usage, guess_font_name,
@@ -65,11 +65,15 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
     Ok(result)
 }
 
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_artworx(data: &[u8], load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_artworx(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
     let max_height = load_data_opt.and_then(|ld| ld.max_height());
+
+    // Apply SAUCE settings early
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut screen.buffer, sauce);
+    }
 
     screen.buffer.set_width(80);
     screen.buffer.buffer_type = BufferType::CP437;

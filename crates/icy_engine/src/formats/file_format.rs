@@ -1096,31 +1096,29 @@ impl FileFormat {
         // Extract SAUCE record from the data (appended at end of file)
         let sauce_opt: Option<icy_sauce::SauceRecord> = icy_sauce::SauceRecord::from_bytes(data).ok().flatten();
 
+        // Strip SAUCE data from file content for binary formats that don't handle it internally
+        let stripped_data = icy_sauce::strip_sauce(data, icy_sauce::StripMode::All);
+
         let mut screen = match self {
-            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(data, load_data.as_ref()),
-            FileFormat::Ascii => io::load_ascii(data, load_data.as_ref()),
-            FileFormat::Avatar => io::load_avatar(data, load_data.as_ref()),
-            FileFormat::PCBoard => io::load_pcboard(data, load_data.as_ref()),
-            FileFormat::CtrlA => io::load_ctrla(data, load_data.as_ref()),
-            FileFormat::Renegade => io::load_renegade(data, load_data.as_ref()),
-            FileFormat::Atascii => io::load_atascii(data, load_data.as_ref()),
-            FileFormat::Petscii => io::load_seq(data, load_data.as_ref()),
-            FileFormat::Bin => io::load_bin(data, load_data.as_ref()),
-            FileFormat::XBin => io::load_xbin(data, load_data.as_ref()),
+            FileFormat::Ansi | FileFormat::AnsiMusic => io::load_ansi(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Ascii => io::load_ascii(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Avatar => io::load_avatar(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::PCBoard => io::load_pcboard(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::CtrlA => io::load_ctrla(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Renegade => io::load_renegade(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Atascii => io::load_atascii(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Petscii => io::load_seq(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Bin => io::load_bin(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::XBin => io::load_xbin(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::IcyDraw => unreachable!(), // Handled above
-            FileFormat::IceDraw => io::load_ice_draw(data, load_data.as_ref()),
-            FileFormat::TundraDraw => io::load_tundra(data, load_data.as_ref()),
-            FileFormat::Artworx => io::load_artworx(data, load_data.as_ref()),
+            FileFormat::IceDraw => io::load_ice_draw(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::TundraDraw => io::load_tundra(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Artworx => io::load_artworx(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "loading".to_string(),
             }),
         }?;
-
-        // Apply SAUCE settings to the screen
-        if let Some(ref sauce) = sauce_opt {
-            screen.apply_sauce(sauce);
-        }
 
         // Apply max height limit if specified
         if let Some(max_height) = load_data.as_ref().and_then(|ld| ld.max_height()) {
@@ -1213,6 +1211,9 @@ impl FileFormat {
     /// A format is considered supported if it either:
     /// - Uses a streaming parser (can be played back with baud emulation)
     /// - Has a direct loader implementation
+    /// - Is an animation format (.icyanim)
+    /// - Is an image format (PNG, GIF, etc.)
+    /// - Is a font format (.tdf, .flf, .psf, etc.)
     ///
     /// # Returns
     /// `true` if the format can be loaded/viewed, `false` otherwise.
@@ -1227,11 +1228,19 @@ impl FileFormat {
     /// // XBin files are supported (direct load)
     /// assert!(FileFormat::XBin.is_supported());
     ///
+    /// // Animation files are supported
+    /// assert!(FileFormat::IcyAnim.is_supported());
+    ///
     /// // Archives are not directly viewable
     /// assert!(!FileFormat::Archive(unarc_rs::unified::ArchiveFormat::Zip).is_supported());
     /// ```
     pub fn is_supported(&self) -> bool {
-        self.uses_parser() || self.supports_save()
+        self.uses_parser()
+            || self.supports_save()
+            || self.is_animated()
+            || self.is_image()
+            || self.is_character_font()
+            || self.is_bitfont()
     }
 
     pub fn bitfont_format(&self) -> Option<BitFontFormat> {

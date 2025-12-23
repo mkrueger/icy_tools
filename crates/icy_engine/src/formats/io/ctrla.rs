@@ -1,7 +1,7 @@
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::{ctrla_bg, ctrla_fg};
 
-use super::super::{LoadData, SaveOptions, ScreenPreperation};
+use super::super::{LoadData, SaveOptions, ScreenPreperation, apply_sauce_to_buffer};
 
 pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     if buf.palette.len() != 16 {
@@ -170,11 +170,15 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
     Ok(result)
 }
 
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_ctrla(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_ctrla(data: &[u8], _load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut result = TextScreen::new((80, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;
+
+    // Apply SAUCE settings early
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut result.buffer, sauce);
+    }
 
     let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
     if is_unicode {

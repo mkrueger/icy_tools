@@ -1,4 +1,4 @@
-use super::super::{LoadData, SaveOptions};
+use super::super::{LoadData, SaveOptions, apply_sauce_to_buffer};
 use crate::{AttributedChar, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, EditableScreen, Palette, Result, TextBuffer, TextScreen};
 
 #[allow(unused)]
@@ -12,8 +12,7 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u
     Err(crate::EngineError::not_implemented("Seq export"))
 }
 
-/// Note: SAUCE is applied externally by FileFormat::from_bytes().
-pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<TextScreen> {
+pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut result = TextScreen::new((40, 25));
 
     result.buffer.clear_font_table();
@@ -23,6 +22,11 @@ pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result
     result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
     result.buffer.buffer_type = crate::BufferType::Petscii;
     result.buffer.terminal_state.is_terminal_buffer = false;
+
+    // Apply SAUCE settings early
+    if let Some(sauce) = sauce_opt {
+        apply_sauce_to_buffer(&mut result.buffer, sauce);
+    }
 
     seq_prepare(&mut result);
     crate::load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), data, true, 25)?;
