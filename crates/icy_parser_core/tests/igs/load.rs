@@ -34,7 +34,6 @@ pub fn test_igs_load() {
 
         let mut errors = 0;
         if output_lines != expected_lines {
-            eprintln!("\n=== Mismatch in file: {} ===", filename);
             eprintln!("Expected {} lines, got {} lines\n", expected_lines.len(), output_lines.len());
 
             let max_lines = output_lines.len().max(expected_lines.len());

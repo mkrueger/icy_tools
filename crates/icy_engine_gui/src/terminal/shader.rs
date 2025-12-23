@@ -413,10 +413,7 @@ fn create_texture_array(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, 
             dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        return TextureArray {
-            texture,
-            texture_view,
-        };
+        return TextureArray { texture, texture_view };
     }
 
     // Find the maximum dimensions across all slices
@@ -473,10 +470,7 @@ fn create_texture_array(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, 
         ..Default::default()
     });
 
-    TextureArray {
-        texture,
-        texture_view,
-    }
+    TextureArray { texture, texture_view }
 }
 
 /// Texture slice for GPU
@@ -1183,15 +1177,6 @@ impl shader::Primitive for TerminalShader {
                         } else {
                             [0.0, 0.0, 0.0, 0.0]
                         };
-                        eprintln!(
-                            "[tool_overlay_gpu] upload instance={} tex=({}, {}) bytes={} rect={:?} params={:?}",
-                            id,
-                            w,
-                            h,
-                            data.len(),
-                            rect,
-                            params
-                        );
                     }
 
                     let label = format!("Tool Overlay Mask Instance {}", id);
@@ -1199,10 +1184,6 @@ impl shader::Primitive for TerminalShader {
                     resources.tool_overlay_mask_texture = Some(slice);
                 } else {
                     resources.tool_overlay_mask_texture = None;
-
-                    if debug_overlay {
-                        eprintln!("[tool_overlay_gpu] cleared instance={} (no mask data)", id);
-                    }
                 }
 
                 // Helper to create bind group
@@ -1322,14 +1303,6 @@ impl shader::Primitive for TerminalShader {
         let width_n = scaled_w / avail_w;
         let height_n = scaled_h / avail_h;
         let terminal_rect = [start_x, start_y, width_n, height_n];
-
-        // Debug output for centering issue
-        if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TERMINAL_RECT").is_ok() {
-            eprintln!(
-                "[terminal_rect] term=({:.1},{:.1}) avail=({:.1},{:.1}) scale={:.2} scaled=({:.1},{:.1}) offset=({:.1},{:.1}) rect=[{:.3},{:.3},{:.3},{:.3}]",
-                term_w, term_h, avail_w, avail_h, final_scale, scaled_w, scaled_h, offset_x, offset_y, start_x, start_y, width_n, height_n
-            );
-        }
 
         // Mouse events are handled in widget-local logical coordinates.
         // Keep RenderInfo in the same space (do NOT use clip/scissor rectangles).

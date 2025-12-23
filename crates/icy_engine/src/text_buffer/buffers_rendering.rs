@@ -229,7 +229,6 @@ impl TextBuffer {
     }
 
     fn render_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, px_width: i32, px_height: i32) {
-        println!("render_to_rgba_into: rect={:?}, px_width={}, px_height={}", rect, px_width, px_height);
         // Bail out early if buffer mismatched
         if pixels.len() != (px_width * px_height) as usize {
             log::error!(

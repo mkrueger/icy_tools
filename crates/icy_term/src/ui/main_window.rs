@@ -1521,7 +1521,6 @@ impl MainWindow {
             TerminalEvent::RequestRedraw => {
                 // Trigger redraw by incrementing effect counter
                 self.effect = self.effect.wrapping_add(1);
-                println!("trigger redraWZ");
                 Task::none()
             }
         }

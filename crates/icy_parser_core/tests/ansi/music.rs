@@ -155,11 +155,6 @@ fn test_single_note() {
 
     parser.parse(b"\x1B[NC\x0E", &mut sink);
 
-    eprintln!("Commands received: {}", sink.commands.len());
-    for (i, cmd) in sink.commands.iter().enumerate() {
-        eprintln!("  Command {}: {:?}", i, std::mem::discriminant(cmd));
-    }
-
     let music = sink.get_music().expect("Should have music");
     assert_eq!(1, music.music_actions.len());
 

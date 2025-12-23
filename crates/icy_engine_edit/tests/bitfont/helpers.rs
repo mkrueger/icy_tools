@@ -67,11 +67,3 @@ pub fn assert_glyph_equals(actual: &Vec<Vec<bool>>, expected: &Vec<Vec<bool>>, m
 pub fn count_pixels(pattern: &Vec<Vec<bool>>) -> usize {
     pattern.iter().flat_map(|row| row.iter()).filter(|&&p| p).count()
 }
-
-/// Print a glyph pattern for debugging (useful in test failures)
-pub fn print_glyph(pattern: &Vec<Vec<bool>>) {
-    for row in pattern {
-        let line: String = row.iter().map(|&p| if p { '#' } else { '.' }).collect();
-        println!("{}", line);
-    }
-}
