@@ -1,4 +1,24 @@
-use icy_engine::{AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
+use icy_engine::{AttributeColor, AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
+
+#[cfg(test)]
+fn resolve_fg_color(buf: &TextBuffer, attr: &TextAttribute) -> Color {
+    match attr.foreground_color() {
+        AttributeColor::Palette(n) => buf.palette.color(n as u32),
+        AttributeColor::ExtendedPalette(n) => buf.palette.color(n as u32),
+        AttributeColor::Rgb(r, g, b) => Color::new(r, g, b),
+        AttributeColor::Transparent => Color::new(0, 0, 0),
+    }
+}
+
+#[cfg(test)]
+fn resolve_bg_color(buf: &TextBuffer, attr: &TextAttribute) -> Color {
+    match attr.background_color() {
+        AttributeColor::Palette(n) => buf.palette.color(n as u32),
+        AttributeColor::ExtendedPalette(n) => buf.palette.color(n as u32),
+        AttributeColor::Rgb(r, g, b) => Color::new(r, g, b),
+        AttributeColor::Transparent => Color::new(0, 0, 0),
+    }
+}
 
 fn test_ansi(data: &[u8]) {
     let mut buf = FileFormat::Ansi.from_bytes(data, None).unwrap().screen.buffer;
@@ -221,23 +241,27 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
                     continue;
                 }
 
+                let old_fg = resolve_fg_color(buf_old, &ch.attribute);
+                let new_fg = resolve_fg_color(buf_new, &ch2.attribute);
                 assert_eq!(
-                    buf_old.palette.color(ch.attribute.foreground()),
-                    buf_new.palette.color(ch2.attribute.foreground()),
-                    "fg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
-                    ch.attribute.foreground(),
-                    buf_old.palette.color(ch.attribute.foreground()),
-                    ch2.attribute.foreground(),
-                    buf_new.palette.color(ch2.attribute.foreground())
+                    old_fg,
+                    new_fg,
+                    "fg differs at layer: {layer}, line: {line}, char: {i} (old:{:?}={}, new:{:?}={})",
+                    ch.attribute.foreground_color(),
+                    old_fg,
+                    ch2.attribute.foreground_color(),
+                    new_fg
                 );
+                let old_bg = resolve_bg_color(buf_old, &ch.attribute);
+                let new_bg = resolve_bg_color(buf_new, &ch2.attribute);
                 assert_eq!(
-                    buf_old.palette.color(ch.attribute.background()),
-                    buf_new.palette.color(ch2.attribute.background()),
-                    "bg differs at layer: {layer}, line: {line}, char: {i} (old:{}={}, new:{}={})",
-                    ch.attribute.background(),
-                    buf_old.palette.color(ch.attribute.background()),
-                    ch2.attribute.background(),
-                    buf_new.palette.color(ch2.attribute.background())
+                    old_bg,
+                    new_bg,
+                    "bg differs at layer: {layer}, line: {line}, char: {i} (old:{:?}={}, new:{:?}={})",
+                    ch.attribute.background_color(),
+                    old_bg,
+                    ch2.attribute.background_color(),
+                    new_bg
                 );
 
                 ch.attribute.set_foreground(0);
