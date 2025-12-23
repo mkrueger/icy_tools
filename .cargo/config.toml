@@ -1,0 +1,7 @@
+[build]
+# Increase stack size to 8MB for debug builds (default is 1MB on Windows)
+# This helps prevent stack overflows in deeply nested function calls
+rustflags = ["-C", "link-args=-Wl,-zstack-size=8388608"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608"]

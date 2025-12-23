@@ -284,23 +284,26 @@ impl WindowManager {
             vec![]
         };
 
-        (
-            Self {
-                windows: BTreeMap::new(),
-                window_geometry: BTreeMap::new(),
-                options: Arc::new(RwLock::new(options)),
-                font_library,
-                pending_restores: pending,
-                session_manager,
-                session_save_tx,
-                session_save_deadline: None,
-                restoring_session: false,
-                session_save_counter: 0,
-                commands,
-                _mcp_rx: mcp_rx,
-            },
-            open.map(WindowManagerMessage::WindowOpened),
-        )
+        let options_arc = Arc::new(RwLock::new(options));
+
+        let manager = Self {
+            windows: BTreeMap::new(),
+            window_geometry: BTreeMap::new(),
+            options: options_arc,
+            font_library,
+            pending_restores: pending,
+            session_manager,
+            session_save_tx,
+            session_save_deadline: None,
+            restoring_session: false,
+            session_save_counter: 0,
+            commands,
+            _mcp_rx: mcp_rx,
+        };
+
+        let task: Task<WindowManagerMessage> = open.map(WindowManagerMessage::WindowOpened);
+
+        (manager, task)
     }
 
     fn request_session_save_debounced(&mut self) {
