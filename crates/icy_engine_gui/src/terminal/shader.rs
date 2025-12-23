@@ -1162,23 +1162,8 @@ impl shader::Primitive for TerminalShader {
 
         if needs_tool_mask_update {
             if let Some(resources) = pipeline.instances.get_mut(&id) {
-                let debug_overlay = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_TOOL_OVERLAY").is_ok_and(|v| v != "0");
-
                 // Create or update tool overlay mask texture
                 if let Some((data, width, height)) = &self.tool_overlay_mask_data {
-                    if debug_overlay {
-                        let w = (*width).max(1).min(MAX_TEXTURE_DIMENSION);
-                        let h = (*height).max(1).min(MAX_TEXTURE_DIMENSION);
-                        let rect = self.tool_overlay_rect;
-                        let params = if let Some([x0, y0, x1, y1]) = rect {
-                            let rw = (x1 - x0).max(0.0);
-                            let rh = (y1 - y0).max(0.0);
-                            [x0, y0, rw, rh]
-                        } else {
-                            [0.0, 0.0, 0.0, 0.0]
-                        };
-                    }
-
                     let label = format!("Tool Overlay Mask Instance {}", id);
                     let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), iced::wgpu::TextureFormat::Rgba8UnormSrgb);
                     resources.tool_overlay_mask_texture = Some(slice);

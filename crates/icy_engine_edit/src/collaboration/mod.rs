@@ -17,6 +17,7 @@
 //! Moebius clients ignore unknown fields, so we use an optional `protocol_version`
 //! field in the CONNECTED message for feature negotiation.
 
+mod autosave;
 mod client;
 mod compression;
 mod connector;
@@ -25,6 +26,7 @@ mod server;
 mod session;
 mod state;
 
+pub use autosave::*;
 pub use client::*;
 pub use compression::*;
 pub use connector::*;

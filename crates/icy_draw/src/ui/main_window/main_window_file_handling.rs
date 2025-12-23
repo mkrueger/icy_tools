@@ -19,7 +19,13 @@ impl MainWindow {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// Handle SaveFile message - save to current path or trigger SaveAs
+    /// Disabled in collaboration mode (server handles persistence)
     pub(super) fn save_file(&mut self) -> Task<Message> {
+        // In collaboration mode, don't save - the server handles persistence
+        if self.collaboration_state.is_connected() {
+            return Task::none();
+        }
+
         if let Some(path) = self.mode_state.file_path().cloned() {
             // Save to the current path in its original format.
             // The format is determined by the file extension.
@@ -31,7 +37,13 @@ impl MainWindow {
     }
 
     /// Handle SaveFileAs message - show save dialog
+    /// Disabled in collaboration mode (use Export instead)
     pub(super) fn save_file_as(&mut self) -> Task<Message> {
+        // In collaboration mode, don't save - use Export instead
+        if self.collaboration_state.is_connected() {
+            return Task::none();
+        }
+
         let (default_ext, filter_name) = self.mode_state.file_format();
         let all_files = fl!("file-dialog-filter-all-files");
         let title = fl!("file-dialog-save-as-title");

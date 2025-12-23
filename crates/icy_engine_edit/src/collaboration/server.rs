@@ -38,7 +38,7 @@ use super::session::{Session, SessionEvent, SharedSession, UserId};
 use crate::SauceMetaData;
 
 // ANSI color codes for server output
-mod colors {
+pub(crate) mod colors {
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
     pub const CYAN: &str = "\x1b[1;36m";
@@ -106,6 +106,9 @@ pub struct ServerConfig {
     /// SAUCE metadata
     pub sauce: SauceMetaData,
 
+    /// Autosave configuration
+    pub autosave: super::autosave::AutosaveConfig,
+
     // UI strings for localization (defaults to English)
     /// Server banner title (default: "icy_draw Collaboration Server")
     pub ui_title: String,
@@ -161,6 +164,7 @@ impl Default for ServerConfig {
                 [0xFF, 0xFF, 0xFF], // 15: White
             ],
             sauce: SauceMetaData::default(),
+            autosave: super::autosave::AutosaveConfig::default(),
             // Default English UI strings
             ui_title: "icy_draw Collaboration Server".to_string(),
             ui_bind_address: "Bind Address".to_string(),
@@ -181,13 +185,13 @@ pub struct ServerState {
     /// The collaboration session
     pub session: SharedSession,
     /// Document data (column-major: blocks[col][row])
-    document: RwLock<Vec<Vec<Block>>>,
+    pub(crate) document: RwLock<Vec<Vec<Block>>>,
     /// Connected client senders (for broadcasting)
     clients: RwLock<HashMap<UserId, mpsc::Sender<String>>>,
     /// Event broadcaster
     event_tx: broadcast::Sender<SessionEvent>,
     /// Server configuration
-    config: ServerConfig,
+    pub(crate) config: ServerConfig,
 }
 
 impl ServerState {
@@ -814,6 +818,55 @@ pub async fn run_server(config: ServerConfig) -> Result<(), ServerError> {
     println!();
 
     log::info!("Server listening on {}", local_addr);
+
+    // Start autosave manager (always created, saves at least on shutdown)
+    let autosave_manager = Arc::new(super::autosave::AutosaveManager::new(config.autosave.clone(), state.clone()));
+
+    // Print autosave status
+    if config.autosave.has_periodic_saves() {
+        println!(
+            "{GREEN}[Autosave]{RESET} Enabled, saving to {:?} every {:?}",
+            config.autosave.backup_folder,
+            config.autosave.interval.unwrap(),
+            GREEN = GREEN,
+            RESET = RESET
+        );
+    } else {
+        println!(
+            "{GREEN}[Autosave]{RESET} Saving to {:?} on shutdown",
+            config.autosave.backup_folder,
+            GREEN = GREEN,
+            RESET = RESET
+        );
+    }
+
+    // Start periodic autosave task if interval is configured
+    let _autosave_handle = autosave_manager.clone().start();
+
+    // Set up Ctrl+C handler for graceful shutdown
+    let _shutdown_state = state.clone(); // Reserved for future use (e.g., notifying clients)
+    let shutdown_autosave = autosave_manager.clone();
+
+    tokio::spawn(async move {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            println!();
+            println!("{YELLOW}[Server]{RESET} Shutting down...", YELLOW = YELLOW, RESET = RESET);
+
+            // Always save on shutdown
+            let shutdown_path = shutdown_autosave.generate_filename();
+            match shutdown_autosave.save_to(&shutdown_path).await {
+                Ok(()) => {
+                    println!("{GREEN}[Autosave]{RESET} Final save to {:?}", shutdown_path, GREEN = GREEN, RESET = RESET);
+                }
+                Err(e) => {
+                    println!("{RED}[Autosave]{RESET} Failed to save on shutdown: {}", e, RED = RED, RESET = RESET);
+                }
+            }
+
+            log::info!("Server shutdown complete");
+            std::process::exit(0);
+        }
+    });
 
     loop {
         let (stream, addr) = listener.accept().await.map_err(|e| ServerError::ServerError(e.to_string()))?;

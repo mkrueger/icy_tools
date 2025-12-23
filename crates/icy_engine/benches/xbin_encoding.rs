@@ -52,8 +52,10 @@ fn bench_xbin_encode_uncompressed(c: &mut Criterion) {
     let total_cells: usize = buffers.iter().map(|b| (b.width() * b.height()) as usize).sum();
     group.throughput(Throughput::Elements(total_cells as u64));
 
-    let mut options = SaveOptions::new();
-    options.compress = false;
+    let options = SaveOptions {
+        format: icy_engine::formats::FormatOptions::Compressed(icy_engine::formats::CompressedFormatOptions { compress: false }),
+        ..Default::default()
+    };
 
     group.bench_function("all_files", |b| {
         b.iter(|| {
@@ -80,8 +82,10 @@ fn bench_xbin_encode_compressed(c: &mut Criterion) {
     let total_cells: usize = buffers.iter().map(|b| (b.width() * b.height()) as usize).sum();
     group.throughput(Throughput::Elements(total_cells as u64));
 
-    let mut options = SaveOptions::new();
-    options.compress = true;
+    let options = SaveOptions {
+        format: icy_engine::formats::FormatOptions::Compressed(icy_engine::formats::CompressedFormatOptions { compress: true }),
+        ..Default::default()
+    };
 
     group.bench_function("all_files", |b| {
         b.iter(|| {

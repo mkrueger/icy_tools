@@ -650,6 +650,30 @@ pub fn menu_item_simple(label: String, msg: Message) -> Element<'static, Message
         .into()
 }
 
+/// Create a menu item from a command definition that can be enabled/disabled
+pub fn menu_item_enabled(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, enabled: bool) -> Element<'static, Message> {
+    let label = if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() };
+    let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
+
+    let btn = button(
+        row![
+            text(label).size(14).width(Length::Fill),
+            text(hotkey).size(12).style(|theme: &Theme| {
+                iced::widget::text::Style {
+                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                }
+            }),
+        ]
+        .spacing(16)
+        .align_y(alignment::Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 8])
+    .style(if enabled { menu_item_style } else { menu_item_disabled_style });
+
+    if enabled { btn.on_press(msg).into() } else { btn.into() }
+}
+
 /// Create a menu item with direct label and hotkey that can be enabled/disabled
 pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabled: bool) -> Element<'static, Message> {
     let hotkey_text = hotkey.to_string();

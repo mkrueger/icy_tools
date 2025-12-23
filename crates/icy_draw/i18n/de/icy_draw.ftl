@@ -12,6 +12,8 @@ arg-host-bind-help = Bind-Adresse (Standard: 0.0.0.0)
 arg-host-password-help = Session-Passwort (optional)
 arg-host-max-users-help = Maximale Benutzerzahl (0 = unbegrenzt)
 arg-host-file-help = Datei, die gehostet wird (optional; sonst leere 80x25-Leinwand)
+arg-host-backup-folder-help = Ordner für Autosave-Backups (Standard: aktuelles Verzeichnis)
+arg-host-interval-help = Autosave-Intervall in Minuten (Standard: 60, 0 = nur bei Shutdown speichern)
 
 # Server banner
 server-title = Icy Draw Kollaborations-Server

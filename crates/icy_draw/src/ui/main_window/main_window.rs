@@ -937,8 +937,14 @@ impl MainWindow {
     }
 
     /// Check if the document is modified (dirty)
-    /// Compares current undo stack length with the length at last save
+    /// Compares current undo stack length with the length at last save.
+    /// Always returns false in collaboration mode (server handles persistence).
     pub fn is_modified(&self) -> bool {
+        // In collaboration mode, the server handles document persistence
+        // so we don't show dirty state to the user
+        if self.collaboration_state.is_connected() {
+            return false;
+        }
         self.mode_state.undo_stack_len() != self.last_save
     }
 
@@ -2396,9 +2402,14 @@ impl MainWindow {
                 let undo_desc = editor.undo_description();
                 let redo_desc = editor.redo_description();
                 let mirror_mode = editor.mirror_mode();
-                if let Some(msg) =
-                    crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref(), mirror_mode)
-                {
+                let is_connected = self.collaboration_state.is_connected();
+                if let Some(msg) = crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(
+                    event,
+                    undo_desc.as_deref(),
+                    redo_desc.as_deref(),
+                    mirror_mode,
+                    is_connected,
+                ) {
                     return (Some(msg), Task::none());
                 }
             }

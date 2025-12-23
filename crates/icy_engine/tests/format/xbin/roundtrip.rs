@@ -2,7 +2,7 @@
 // Run with: cargo test --package icy_engine --test mod -- format::xbin::roundtrip --nocapture
 
 use super::super::ansi2::{CompareOptions, compare_buffers};
-use icy_engine::{FileFormat, SaveOptions, TextPane};
+use icy_engine::{FileFormat, SaveOptions};
 use std::path::Path;
 
 /// Test roundtrip for AK-TORCH.icy

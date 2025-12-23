@@ -9,7 +9,7 @@ pub fn test_igs_load() {
             continue;
         }
 
-        let filename = cur_entry.file_name().unwrap().to_string_lossy().to_string();
+        let _filename = cur_entry.file_name().unwrap().to_string_lossy().to_string();
 
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
 

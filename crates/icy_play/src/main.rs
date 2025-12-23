@@ -21,7 +21,7 @@ impl Terminal {
         matches!(self, Terminal::IcyTerm)
     }
 
-    fn can_repeat_rle(&self) -> bool {
+    fn _can_repeat_rle(&self) -> bool {
         matches!(self, Terminal::IcyTerm | Terminal::SyncTerm)
     }
 }
@@ -96,7 +96,7 @@ fn main() {
                     let animator = Animator::run(&parent, txt);
                     animator.lock().set_is_playing(true);
 
-                    let opt = if args.utf8 {
+                    let _opt = if args.utf8 {
                         SaveOptions::ansi(icy_engine::AnsiCompatibilityLevel::Utf8Terminal)
                     } else {
                         SaveOptions::default()

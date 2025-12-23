@@ -77,8 +77,13 @@ fn bench_icy_draw_saving_skip_thumbnail(c: &mut Criterion) {
     group.bench_function("save (fast_save/skip_thumbnail)", |b| {
         b.iter(|| {
             let mut buf_clone = buf.clone();
-            let mut opts = SaveOptions::default();
-            opts.skip_thumbnail = true;
+            let opts = SaveOptions {
+                format: icy_engine::formats::FormatOptions::IcyDraw(icy_engine::formats::IcyDrawFormatOptions {
+                    skip_thumbnail: true,
+                    compress: true,
+                }),
+                ..Default::default()
+            };
             let result = FileFormat::IcyDraw.to_bytes(black_box(&mut buf_clone), black_box(&opts));
             black_box(result)
         })

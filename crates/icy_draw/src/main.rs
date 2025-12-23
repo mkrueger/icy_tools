@@ -127,6 +127,14 @@ pub enum Command {
         /// File to host (optional; starts with an empty 80x25 canvas if omitted)
         #[arg(value_name = "FILE", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-file-help"))]
         file: Option<PathBuf>,
+
+        /// Backup folder for autosave (default: current directory)
+        #[arg(long, help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-backup-folder-help"))]
+        backup_folder: Option<PathBuf>,
+
+        /// Autosave interval in minutes (default: 60, use 0 for shutdown-only saves)
+        #[arg(long, default_value = "60", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-host-interval-help"))]
+        interval: u64,
     },
 }
 
@@ -163,10 +171,10 @@ fn default_ega_palette() -> [[u8; 3]; 16] {
 }
 
 /// Run the collaboration server in headless mode.
-fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>) {
+fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>, backup_folder: Option<PathBuf>, interval: u64) {
     use icy_engine::{FileFormat, IceMode, TextPane};
     use icy_engine_edit::SauceMetaData;
-    use icy_engine_edit::collaboration::{Block, ServerConfig, run_server as run_collab_server};
+    use icy_engine_edit::collaboration::{AutosaveConfig, Block, ServerConfig, run_server as run_collab_server};
 
     // Load document from file or create empty 80x25 canvas
     let (columns, rows, initial_document, ice_colors, use_9px_font, font_name, sauce, palette) = if let Some(ref path) = file {
@@ -296,6 +304,15 @@ fn run_server(bind: String, port: u16, password: Option<String>, max_users: usiz
         font_name,
         palette,
         sauce,
+        autosave: AutosaveConfig {
+            backup_folder: backup_folder.unwrap_or_else(|| std::path::PathBuf::from(".")),
+            interval: if interval == 0 {
+                None
+            } else {
+                Some(std::time::Duration::from_secs(interval * 60))
+            },
+            ..Default::default()
+        },
         // Localized UI strings for server banner
         ui_title: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-title"),
         ui_bind_address: i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "server-bind-address"),
@@ -328,9 +345,11 @@ fn main() {
         password,
         max_users,
         file,
+        backup_folder,
+        interval,
     }) = args.command
     {
-        run_server(bind, port, password, max_users, file);
+        run_server(bind, port, password, max_users, file, backup_folder, interval);
         return;
     }
 

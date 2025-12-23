@@ -20,8 +20,8 @@ use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::selection_cmd;
 use crate::ui::main_window::commands::{area_cmd, color_cmd, view_cmd};
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_cmd_label_enabled, menu_item_redo, menu_item_simple,
-    menu_item_simple_enabled, menu_item_style, menu_item_submenu, menu_item_undo, separator,
+    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_cmd_label_enabled, menu_item_enabled, menu_item_redo,
+    menu_item_simple, menu_item_simple_enabled, menu_item_style, menu_item_submenu, menu_item_undo, separator,
 };
 use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
 
@@ -59,7 +59,7 @@ pub struct AnsiMenu {
 
 impl AnsiMenu {
     /// Create the menu structure with current state
-    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Self {
+    pub fn new(undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, is_connected: bool) -> Self {
         let undo_label = match undo_desc {
             Some(desc) => format!("{} {}", cmd::EDIT_UNDO.label_menu, desc),
             None => cmd::EDIT_UNDO.label_menu.clone(),
@@ -97,8 +97,8 @@ impl AnsiMenu {
                     }
                 }),
                 MenuItem::separator(),
-                MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
-                MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
+                MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile).enabled(!is_connected),
+                MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs).enabled(!is_connected),
                 MenuItem::separator(),
                 MenuItem::cmd(&cmd::FILE_EXPORT, Message::ExportFile),
                 MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
@@ -310,14 +310,14 @@ impl AnsiMenu {
 }
 
 /// Handle keyboard event by checking all ANSI menu commands
-pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool) -> Option<Message> {
+pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, is_connected: bool) -> Option<Message> {
     let (key, modifiers) = match event {
         iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
         _ => return None,
     };
 
     let hotkey = hotkey_from_iced(key, modifiers)?;
-    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode);
+    let menu = AnsiMenu::new(undo_desc, redo_desc, mirror_mode, is_connected);
     menu.handle_hotkey(&hotkey)
 }
 
@@ -698,8 +698,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
-                    (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
-                    (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
+                    (menu_item_enabled(&cmd::FILE_SAVE, Message::SaveFile, !is_connected)),
+                    (menu_item_enabled(&cmd::FILE_SAVE_AS, Message::SaveFileAs, !is_connected)),
                     (separator()),
                     (menu_item(&cmd::FILE_EXPORT, Message::ExportFile)),
                     (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
@@ -865,8 +865,8 @@ pub fn view_ansi(
                     (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
                     (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
                     (separator()),
-                    (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
-                    (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
+                    (menu_item_enabled(&cmd::FILE_SAVE, Message::SaveFile, !is_connected)),
+                    (menu_item_enabled(&cmd::FILE_SAVE_AS, Message::SaveFileAs, !is_connected)),
                     (separator()),
                     (menu_item(&cmd::FILE_EXPORT, Message::ExportFile)),
                     (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
