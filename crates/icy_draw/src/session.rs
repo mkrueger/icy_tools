@@ -126,7 +126,7 @@ pub struct WindowState {
     pub has_unsaved_changes: bool,
     /// Autosave file path (if unsaved changes exist)
     pub autosave_path: Option<PathBuf>,
-    /// Path to the editor session data file (bincode serialized)
+    /// Path to the editor session data file (bitcode serialized)
     #[serde(default)]
     pub session_data_path: Option<PathBuf>,
 }
@@ -144,7 +144,7 @@ pub struct WindowRestoreInfo {
     pub position: Option<(f32, f32)>,
     /// Window size
     pub size: (f32, f32),
-    /// Path to the serialized editor session data (bincode)
+    /// Path to the serialized editor session data (bitcode)
     pub session_data_path: Option<PathBuf>,
 }
 
@@ -374,9 +374,9 @@ impl SessionManager {
         self.session_dir.join(format!("untitled_{}.session", untitled_index))
     }
 
-    /// Save editor session data using bincode
+    /// Save editor session data using bitcode
     pub fn save_session_data(&self, path: &PathBuf, data: &EditorSessionData) -> Result<(), String> {
-        let bytes = bincode::serialize(data).map_err(|e| format!("Failed to serialize session data: {}", e))?;
+        let bytes = bitcode::serialize(data).map_err(|e| format!("Failed to serialize session data: {}", e))?;
 
         // Atomic write
         let temp_path = path.with_extension("tmp");
@@ -387,14 +387,14 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Load editor session data using bincode
+    /// Load editor session data using bitcode
     pub fn load_session_data(&self, path: &PathBuf) -> Option<EditorSessionData> {
         if !path.exists() {
             return None;
         }
 
         match fs::read(path) {
-            Ok(bytes) => match bincode::deserialize(&bytes) {
+            Ok(bytes) => match bitcode::deserialize(&bytes) {
                 Ok(data) => {
                     log::debug!("Session data loaded from {:?}", path);
                     Some(data)

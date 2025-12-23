@@ -16,6 +16,34 @@ use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
 use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions, io};
 
+/// Map file extension to archive format (replacement for private ArchiveFormat::from_extension)
+fn archive_format_from_extension(ext: &str) -> Option<ArchiveFormat> {
+    match ext {
+        "ace" => Some(ArchiveFormat::Ace),
+        "arc" => Some(ArchiveFormat::Arc),
+        "arj" => Some(ArchiveFormat::Arj),
+        "zoo" => Some(ArchiveFormat::Zoo),
+        "sq" | "sq2" | "qqq" => Some(ArchiveFormat::Sq),
+        "sqz" => Some(ArchiveFormat::Sqz),
+        "z" => Some(ArchiveFormat::Z),
+        "gz" => Some(ArchiveFormat::Gz),
+        "bz2" => Some(ArchiveFormat::Bz2),
+        "ice" => Some(ArchiveFormat::Ice),
+        "hyp" => Some(ArchiveFormat::Hyp),
+        "ha" => Some(ArchiveFormat::Ha),
+        "lha" | "lzh" => Some(ArchiveFormat::Lha),
+        "zip" => Some(ArchiveFormat::Zip),
+        "rar" => Some(ArchiveFormat::Rar),
+        "7z" => Some(ArchiveFormat::SevenZ),
+        "tar" => Some(ArchiveFormat::Tar),
+        "tgz" | "tar.gz" => Some(ArchiveFormat::Tgz),
+        "tbz" | "tbz2" | "tar.bz2" => Some(ArchiveFormat::Tbz),
+        "tar.z" => Some(ArchiveFormat::TarZ),
+        "uc2" => Some(ArchiveFormat::Uc2),
+        _ => None,
+    }
+}
+
 /// Represents all supported file formats for ANSI art and related files.
 ///
 /// Each variant corresponds to a specific file format with its own
@@ -303,7 +331,7 @@ impl FileFormat {
                 } else if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
                     Some(FileFormat::BitFont(font_fmt))
                 } else {
-                    ArchiveFormat::from_extension(&ext_lower).map(FileFormat::Archive)
+                    archive_format_from_extension(&ext_lower).map(FileFormat::Archive)
                 }
             }
         }
@@ -380,18 +408,27 @@ impl FileFormat {
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.extension(),
             FileFormat::Image(img) => img.extension(),
             FileFormat::Archive(arc) => match arc {
-                ArchiveFormat::Zip => "zip",
+                ArchiveFormat::Ace => "ace",
                 ArchiveFormat::Arc => "arc",
                 ArchiveFormat::Arj => "arj",
                 ArchiveFormat::Zoo => "zoo",
-                ArchiveFormat::Lha => "lha",
-                ArchiveFormat::Rar => "rar",
                 ArchiveFormat::Sq => "sq",
                 ArchiveFormat::Sqz => "sqz",
                 ArchiveFormat::Z => "z",
+                ArchiveFormat::Gz => "gz",
+                ArchiveFormat::Bz2 => "bz2",
+                ArchiveFormat::Ice => "ice",
                 ArchiveFormat::Hyp => "hyp",
-                ArchiveFormat::Uc2 => "uc2",
+                ArchiveFormat::Ha => "ha",
+                ArchiveFormat::Lha => "lha",
+                ArchiveFormat::Zip => "zip",
+                ArchiveFormat::Rar => "rar",
                 ArchiveFormat::SevenZ => "7z",
+                ArchiveFormat::Tar => "tar",
+                ArchiveFormat::Tgz => "tgz",
+                ArchiveFormat::Tbz => "tbz",
+                ArchiveFormat::TarZ => "tar.z",
+                ArchiveFormat::Uc2 => "uc2",
             },
         }
     }
@@ -437,16 +474,27 @@ impl FileFormat {
             FileFormat::Image(ImageFormat::Sixel) => &["six", "sixel"],
             FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
             FileFormat::Archive(ArchiveFormat::Arc) => &["arc"],
+            FileFormat::Archive(ArchiveFormat::Ace) => &["ace"],
+            FileFormat::Archive(ArchiveFormat::Arc) => &["arc"],
             FileFormat::Archive(ArchiveFormat::Arj) => &["arj"],
             FileFormat::Archive(ArchiveFormat::Zoo) => &["zoo"],
-            FileFormat::Archive(ArchiveFormat::Lha) => &["lha", "lzh"],
-            FileFormat::Archive(ArchiveFormat::Rar) => &["rar"],
             FileFormat::Archive(ArchiveFormat::Sq) => &["sq", "sq2", "qqq"],
             FileFormat::Archive(ArchiveFormat::Sqz) => &["sqz"],
             FileFormat::Archive(ArchiveFormat::Z) => &["z"],
+            FileFormat::Archive(ArchiveFormat::Gz) => &["gz"],
+            FileFormat::Archive(ArchiveFormat::Bz2) => &["bz2"],
+            FileFormat::Archive(ArchiveFormat::Ice) => &["ice"],
             FileFormat::Archive(ArchiveFormat::Hyp) => &["hyp"],
-            FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
+            FileFormat::Archive(ArchiveFormat::Ha) => &["ha"],
+            FileFormat::Archive(ArchiveFormat::Lha) => &["lha", "lzh"],
+            FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
+            FileFormat::Archive(ArchiveFormat::Rar) => &["rar"],
             FileFormat::Archive(ArchiveFormat::SevenZ) => &["7z"],
+            FileFormat::Archive(ArchiveFormat::Tar) => &["tar"],
+            FileFormat::Archive(ArchiveFormat::Tgz) => &["tgz", "tar.gz"],
+            FileFormat::Archive(ArchiveFormat::Tbz) => &["tbz", "tbz2", "tar.bz2"],
+            FileFormat::Archive(ArchiveFormat::TarZ) => &["tar.z"],
+            FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
         }
     }
 
@@ -480,18 +528,27 @@ impl FileFormat {
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.name(),
             FileFormat::Image(img) => img.name(),
             FileFormat::Archive(arc) => match arc {
-                ArchiveFormat::Zip => "ZIP Archive",
+                ArchiveFormat::Ace => "ACE Archive",
                 ArchiveFormat::Arc => "ARC Archive",
                 ArchiveFormat::Arj => "ARJ Archive",
                 ArchiveFormat::Zoo => "ZOO Archive",
-                ArchiveFormat::Lha => "LHA Archive",
-                ArchiveFormat::Rar => "RAR Archive",
                 ArchiveFormat::Sq => "Squeezed File",
                 ArchiveFormat::Sqz => "SQZ Archive",
                 ArchiveFormat::Z => "Unix Compress",
+                ArchiveFormat::Gz => "Gzip",
+                ArchiveFormat::Bz2 => "Bzip2",
+                ArchiveFormat::Ice => "ICE Compressed",
                 ArchiveFormat::Hyp => "Hyper Archive",
-                ArchiveFormat::Uc2 => "UC2 Archive",
+                ArchiveFormat::Ha => "HA Archive",
+                ArchiveFormat::Lha => "LHA Archive",
+                ArchiveFormat::Zip => "ZIP Archive",
+                ArchiveFormat::Rar => "RAR Archive",
                 ArchiveFormat::SevenZ => "7-Zip Archive",
+                ArchiveFormat::Tar => "TAR Archive",
+                ArchiveFormat::Tgz => "TGZ Archive",
+                ArchiveFormat::Tbz => "TBZ Archive",
+                ArchiveFormat::TarZ => "TAR.Z Archive",
+                ArchiveFormat::Uc2 => "UC2 Archive",
             },
         }
     }

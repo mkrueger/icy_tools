@@ -352,7 +352,7 @@ impl WindowManager {
                 Some(self.session_manager.get_untitled_session_data_path(window.id))
             };
 
-            // Save session data to disk (bincode serialization)
+            // Save session data to disk (bitcode serialization)
             if let Some(ref session_path) = session_data_path {
                 if let Some(session_data) = window.get_session_data() {
                     if let Err(e) = self.session_manager.save_session_data(session_path, &session_data) {

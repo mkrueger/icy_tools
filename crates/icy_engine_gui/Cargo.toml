@@ -35,7 +35,7 @@ rust-embed = { workspace = true }
 once_cell = { workspace = true } 
 regex = { workspace = true }
 
-bytemuck = { version = "1.0", features = ["derive"] }
+bytemuck = { workspace = true, features = ["derive"] }
 
 # Sound/Music dependencies
 anyhow = { workspace = true }

@@ -15,9 +15,9 @@ iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 
 tokio = { workspace = true }
 serde = { workspace = true }
-versions = "7.0.0"
+versions = { workspace = true }
 regex = { workspace = true }
-github_release_check = "0.2.1"
+github_release_check = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
 icy_engine_gui = { workspace = true }

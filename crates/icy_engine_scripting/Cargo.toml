@@ -13,7 +13,7 @@ icy_parser_core = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 mlua = { workspace = true }
-image = { version = "0.25.1", features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
+image = { workspace = true, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
 regex = { workspace = true }
 web-time = "1.1"
 parking_lot = { workspace = true }

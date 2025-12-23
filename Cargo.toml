@@ -16,7 +16,7 @@ members = [
 
 [workspace.package]
 version = "0.3.0"
-edition = "2024"
+edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 license = "MIT or Apache-2.0"
 
@@ -32,7 +32,7 @@ icy_sixel = "0.4.3"
 icy_net = { git ="https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
-unarc-rs = "0.5.1"
+unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
 retrofont = { git = "https://github.com/mkrueger/retrofont" }
 #retrofont = { path ="../retrofont/crates/retrofont" }
 
@@ -43,7 +43,7 @@ icy_engine_edit = { path = "crates/icy_engine_edit" }
 libyaff = { git = "https://github.com/mkrueger/libyaff" }
 
 codepages = { git ="https://github.com/mkrueger/icy_board" }
-zip = { version = "6.0.0"}
+zip = "7.0.0"
 lazy_static = "1.5.0"
 semver = "1.0.27"
 thiserror = "2.0.17"
@@ -63,12 +63,13 @@ bstr = "1.12.1"
 fastrand = "2.3.0"
 base64 = "0.22.1"
 clipboard-rs = "0.3.1"
-rmcp = "0.9.1"
-serde_json = "1.0"
+rmcp = "0.11.0"
+serde_json = "1.0.146"
 image = "0.25.9"
 bitflags = "2.10.0"
 rfd = "0.16.0"
 open = "5.3.3"
+bytemuck = "1.24.0"
 
 regex = "1.12.2"
 directories = "6.0.0"
@@ -84,6 +85,9 @@ notify = "8.2.0"
 mlua = { version = "0.11.5", features = ["lua54", "vendored"] }
 string-interner = "0.19.0"
 cascada = "0.3.0"
+gif = "0.14.1"
+quantette = "0.5.1"
+crc32fast = "1.5.0"
 
 # SVG and font rendering
 resvg = "0.45"
@@ -113,3 +117,7 @@ strip = false
 ## The `vendor/iced_aw` directory is not present in this repo checkout, which breaks
 ## `cargo fetch/check` in clean environments. If you keep a local vendor, re-add this
 ## patch locally.
+[patch.crates-io]
+# sevenz-rust2 v0.20.0 pins lzma-rust2 = "=0.15.3" which is incompatible with crc v2.x
+# Override to v0.15.4 which has the fix
+lzma-rust2 = { git = "https://github.com/hasenbanck/lzma-rust2", branch = "master" }
