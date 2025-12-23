@@ -1235,12 +1235,7 @@ impl FileFormat {
     /// assert!(!FileFormat::Archive(unarc_rs::unified::ArchiveFormat::Zip).is_supported());
     /// ```
     pub fn is_supported(&self) -> bool {
-        self.uses_parser()
-            || self.supports_save()
-            || self.is_animated()
-            || self.is_image()
-            || self.is_character_font()
-            || self.is_bitfont()
+        self.uses_parser() || self.supports_save() || self.is_animated() || self.is_image() || self.is_character_font() || self.is_bitfont()
     }
 
     pub fn bitfont_format(&self) -> Option<BitFontFormat> {

@@ -73,11 +73,7 @@ impl CharFontMenu {
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
                 MenuItem::separator(),
-                MenuItem::simple(
-                    fl!("menu-export-font"),
-                    "",
-                    Message::CharFontEditor(super::CharFontEditorMessage::ExportFont),
-                ),
+                MenuItem::simple(fl!("menu-export-font"), "", Message::CharFontEditor(super::CharFontEditorMessage::ExportFont)),
                 MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
                 MenuItem::simple(fl!("menu-import-fonts"), "", Message::CharFontEditor(super::CharFontEditorMessage::ImportFonts)),
                 MenuItem::separator(),

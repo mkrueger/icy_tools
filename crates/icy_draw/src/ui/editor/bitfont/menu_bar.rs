@@ -79,11 +79,7 @@ impl BitFontMenu {
                 MenuItem::cmd(&cmd::FILE_SAVE, Message::SaveFile),
                 MenuItem::cmd(&cmd::FILE_SAVE_AS, Message::SaveFileAs),
                 MenuItem::separator(),
-                MenuItem::simple(
-                    fl!("menu-export-font"),
-                    "",
-                    Message::BitFontEditor(BitFontEditorMessage::ShowExportFontDialog),
-                ),
+                MenuItem::simple(fl!("menu-export-font"), "", Message::BitFontEditor(BitFontEditorMessage::ShowExportFontDialog)),
                 MenuItem::simple(fl!("menu-import-font"), "", Message::ShowImportFontDialog),
                 MenuItem::separator(),
                 MenuItem::simple(fl!("menu-connect-to-server"), "", Message::ShowConnectDialog),

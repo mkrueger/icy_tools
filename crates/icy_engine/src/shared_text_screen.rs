@@ -260,7 +260,8 @@ impl Screen for SharedTextScreen {
     }
 
     fn clone_box(&self) -> Box<dyn Screen> {
-        Box::new(self.clone())
+        // Deep clone - clone the actual TextScreen content, not just the Arc
+        Box::new(self.inner.lock().clone())
     }
 }
 

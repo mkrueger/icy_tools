@@ -1179,7 +1179,7 @@ impl MainWindow {
                         Task::none()
                     }
                     ModeState::CharFont(_) => Task::none(),
-                    ModeState::Animation(_) => Task::none(), // Animation uses text_editor's built-in undo
+                    ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Undo, &mut self.dialogs).map(Message::AnimationEditor),
                 }
             }
             Message::Redo => {
@@ -1200,7 +1200,7 @@ impl MainWindow {
                         Task::none()
                     }
                     ModeState::CharFont(_) => Task::none(),
-                    ModeState::Animation(_) => Task::none(), // Animation uses text_editor's built-in redo
+                    ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Redo, &mut self.dialogs).map(Message::AnimationEditor),
                 }
             }
             Message::Cut => {

@@ -611,20 +611,33 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
             }
         }
 
-        // Chroma (subsampled)
+        // Chroma (subsampled) - average 2x2 block for proper subsampling
         let u_plane = frame.planes[1].data_origin_mut();
         for cy in 0..(height / 2) {
             for cx in 0..(width / 2) {
                 let x = cx * 2;
                 let y = cy * 2;
 
-                let src_x = x.min(orig_w.saturating_sub(1));
-                let src_y = y.min(orig_h.saturating_sub(1));
-                let idx = (src_y * orig_w + src_x) * 4;
+                // Average 4 pixels in 2x2 block for chroma
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
 
-                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
-                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
-                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let src_x = (x + dx).min(orig_w.saturating_sub(1));
+                        let src_y = (y + dy).min(orig_h.saturating_sub(1));
+                        let idx = (src_y * orig_w + src_x) * 4;
+
+                        r_sum += rgba_data.get(idx).copied().unwrap_or(0) as f32;
+                        g_sum += rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
+                        b_sum += rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                    }
+                }
+
+                let r = r_sum / 4.0;
+                let g = g_sum / 4.0;
+                let b = b_sum / 4.0;
 
                 let u = (128.0 - 0.169 * r - 0.331 * g + 0.500 * b).round().clamp(0.0, 255.0) as u8;
                 u_plane[cy * stride_u + cx] = u;
@@ -637,13 +650,26 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
                 let x = cx * 2;
                 let y = cy * 2;
 
-                let src_x = x.min(orig_w.saturating_sub(1));
-                let src_y = y.min(orig_h.saturating_sub(1));
-                let idx = (src_y * orig_w + src_x) * 4;
+                // Average 4 pixels in 2x2 block for chroma
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
 
-                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
-                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
-                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let src_x = (x + dx).min(orig_w.saturating_sub(1));
+                        let src_y = (y + dy).min(orig_h.saturating_sub(1));
+                        let idx = (src_y * orig_w + src_x) * 4;
+
+                        r_sum += rgba_data.get(idx).copied().unwrap_or(0) as f32;
+                        g_sum += rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
+                        b_sum += rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                    }
+                }
+
+                let r = r_sum / 4.0;
+                let g = g_sum / 4.0;
+                let b = b_sum / 4.0;
 
                 let v = (128.0 + 0.500 * r - 0.419 * g - 0.081 * b).round().clamp(0.0, 255.0) as u8;
                 v_plane[cy * stride_v + cx] = v;
@@ -667,7 +693,8 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
             Ok(packet) => {
                 // Write IVF frame header (12 bytes)
                 let frame_size = packet.data.len() as u32;
-                file.write_all(&frame_size.to_le_bytes()).map_err(|e| format!("Failed to write frame size: {}", e))?;
+                file.write_all(&frame_size.to_le_bytes())
+                    .map_err(|e| format!("Failed to write frame size: {}", e))?;
                 file.write_all(&pts.to_le_bytes()).map_err(|e| format!("Failed to write PTS: {}", e))?;
                 file.write_all(&packet.data).map_err(|e| format!("Failed to write frame data: {}", e))?;
                 pts += 1;
