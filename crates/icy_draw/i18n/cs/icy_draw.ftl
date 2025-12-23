@@ -580,3 +580,13 @@ paste-tool-flip-x=Překlopit X
 paste-tool-flip-y=Překlopit Y
 paste-tool-transparent=Průhledné (T)
 paste-tool-hint=Enter: Ukotvit | Esc: Zrušit | Šipky: Přesunout
+# Animation Export Dialog
+animation-export-format=Formát
+animation-export-path=Exportovat do
+animation-export-no-path=Nebyla vybrána cesta
+animation-export-success=Export úspěšně dokončen
+animation-export-exporting-frame=Exportování snímku { $current } / { $total }
+animation-export-encoding=Kódování videa…
+animation-export-cancelled=Export zrušen
+animation-export-no-frames=Žádné snímky k exportu
+animation-export-failed=Export se nezdařil: { $error }

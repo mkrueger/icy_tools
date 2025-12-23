@@ -578,3 +578,14 @@ paste-tool-flip-x=X tükrözés
 paste-tool-flip-y=Y tükrözés
 paste-tool-transparent=Átlátszó (T)
 paste-tool-hint=Enter: Rögzít | Esc: Mégse | Nyilak: Mozgatás
+
+# Animation Export Dialog
+animation-export-format=Formátum
+animation-export-path=Exportálás ide
+animation-export-no-path=Nincs útvonal kiválasztva
+animation-export-success=Exportálás sikeresen befejeződött
+animation-export-exporting-frame=Képkocka exportálása { $current } / { $total }
+animation-export-encoding=Videó kódolása…
+animation-export-cancelled=Exportálás megszakítva
+animation-export-no-frames=Nincs exportálandó képkocka
+animation-export-failed=Exportálási hiba: { $error }

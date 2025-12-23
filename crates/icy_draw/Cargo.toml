@@ -88,6 +88,9 @@ quantette = { version = "0.5.1", features = ["image"] }
 rav1e = { version = "0.8", default-features = false, features = ["asm"] }
 num_cpus = "1.16"
 
+# Parallel iteration for performance
+rayon = "1.11"
+
 # TTF font rasterization
 fontdue = "0.9"
 

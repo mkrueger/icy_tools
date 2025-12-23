@@ -580,3 +580,13 @@ paste-tool-flip-x=Capgirar X
 paste-tool-flip-y=Capgirar Y
 paste-tool-transparent=Transparent (T)
 paste-tool-hint=Enter: Ancorar | Esc: Cancel·lar | Fletxes: Moure
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Exportar a
+animation-export-no-path=Cap ruta seleccionada
+animation-export-success=Exportació completada correctament
+animation-export-exporting-frame=Exportant fotograma { $current } / { $total }
+animation-export-encoding=Codificant vídeo…
+animation-export-cancelled=Exportació cancel·lada
+animation-export-no-frames=No hi ha fotogrames per exportar
+animation-export-failed=Error d'exportació: { $error }

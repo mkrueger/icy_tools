@@ -580,3 +580,13 @@ paste-tool-flip-x=Odbij X
 paste-tool-flip-y=Odbij Y
 paste-tool-transparent=Przezroczysty (T)
 paste-tool-hint=Enter: Zakotwicz | Esc: Anuluj | Strzałki: Przesuń
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Eksportuj do
+animation-export-no-path=Nie wybrano ścieżki
+animation-export-success=Eksport zakończony pomyślnie
+animation-export-exporting-frame=Eksportowanie klatki { $current } / { $total }
+animation-export-encoding=Kodowanie wideo…
+animation-export-cancelled=Eksport anulowany
+animation-export-no-frames=Brak klatek do eksportu
+animation-export-failed=Błąd eksportu: { $error }

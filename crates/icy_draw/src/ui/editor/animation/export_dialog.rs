@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use rayon::prelude::*;
+
 use iced::{
     Alignment, Element, Length, Task,
     widget::{Space, column, container, pick_list, progress_bar, row, text, text_input},
@@ -77,6 +79,8 @@ pub struct ExportProgress {
     pub cancelled: AtomicBool,
     /// Whether export is complete
     pub complete: AtomicBool,
+    /// Whether we're in the encoding phase (after all frames sent)
+    pub encoding_phase: AtomicBool,
     /// Error message if export failed
     pub error: Mutex<Option<String>>,
 }
@@ -88,6 +92,7 @@ impl ExportProgress {
             total_frames: AtomicUsize::new(total_frames),
             cancelled: AtomicBool::new(false),
             complete: AtomicBool::new(false),
+            encoding_phase: AtomicBool::new(false),
             error: Mutex::new(None),
         }
     }
@@ -230,19 +235,30 @@ impl Dialog<Message> for AnimationExportDialog {
         let status_element: Element<'_, Message> = if let Some(ref progress) = self.progress {
             let current = progress.current_frame.load(Ordering::Relaxed);
             let total = progress.total_frames.load(Ordering::Relaxed);
+            let encoding = progress.encoding_phase.load(Ordering::Relaxed);
             let percentage = if total > 0 { current as f32 / total as f32 } else { 0.0 };
 
-            column![
-                row![
-                    text(fl!("animation-export-exporting-frame", current = (current as i32), total = (total as i32))).size(TEXT_SIZE_SMALL),
-                    Space::new().width(Length::Fill),
-                    text(format!("{}%", (percentage * 100.0) as u32)).size(TEXT_SIZE_SMALL),
+            if encoding {
+                // Show encoding phase with indeterminate-style progress
+                column![
+                    row![text(fl!("animation-export-encoding")).size(TEXT_SIZE_SMALL), Space::new().width(Length::Fill),].align_y(Alignment::Center),
+                    container(progress_bar(0.0..=1.0, 1.0)).height(Length::Fixed(8.0)),
                 ]
-                .align_y(Alignment::Center),
-                container(progress_bar(0.0..=1.0, percentage)).height(Length::Fixed(8.0)),
-            ]
-            .spacing(4)
-            .into()
+                .spacing(4)
+                .into()
+            } else {
+                column![
+                    row![
+                        text(fl!("animation-export-exporting-frame", current = (current as i32), total = (total as i32))).size(TEXT_SIZE_SMALL),
+                        Space::new().width(Length::Fill),
+                        text(format!("{}%", (percentage * 100.0) as u32)).size(TEXT_SIZE_SMALL),
+                    ]
+                    .align_y(Alignment::Center),
+                    container(progress_bar(0.0..=1.0, percentage)).height(Length::Fixed(8.0)),
+                ]
+                .spacing(4)
+                .into()
+            }
         } else if let Some(ref err) = self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
@@ -477,25 +493,33 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     progress.total_frames.store(frame_count, Ordering::Relaxed);
     progress.current_frame.store(0, Ordering::Relaxed);
 
-    // Pre-render all frames to RGBA
-    let mut rendered_frames: Vec<(Vec<u8>, u32, u32, u32)> = Vec::with_capacity(frame_count);
+    // Pre-render all frames to RGBA in parallel
+    let cancelled = &progress.cancelled;
 
-    for (screen, _settings, delay_ms) in animator_guard.frames.iter() {
-        if progress.cancelled.load(Ordering::Relaxed) {
-            return Err("Export cancelled".to_string());
-        }
+    let rendered_frames: Vec<(Vec<u8>, u32, u32, u32)> = animator_guard
+        .frames
+        .par_iter()
+        .filter_map(|(screen, _settings, delay_ms)| {
+            if cancelled.load(Ordering::Relaxed) {
+                return None;
+            }
 
-        let screen_width = screen.width();
-        let screen_height = screen.height();
-        let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
-        let options = RenderOptions {
-            rect: full_rect.into(),
-            blink_on: true,
-            ..Default::default()
-        };
+            let screen_width = screen.width();
+            let screen_height = screen.height();
+            let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
+            let options = RenderOptions {
+                rect: full_rect.into(),
+                blink_on: true,
+                ..Default::default()
+            };
 
-        let (render_size, rgba_data) = screen.render_to_rgba(&options);
-        rendered_frames.push((rgba_data, render_size.width as u32, render_size.height as u32, *delay_ms));
+            let (render_size, rgba_data) = screen.render_to_rgba(&options);
+            Some((rgba_data, render_size.width as u32, render_size.height as u32, *delay_ms))
+        })
+        .collect();
+
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("Export cancelled".to_string());
     }
 
     // Release lock before encoding
@@ -592,7 +616,7 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
         let orig_w = orig_w as usize;
         let orig_h = orig_h as usize;
 
-        // Luma (Y)
+        // Luma (Y) - BT.601 with integer arithmetic: Y = (77*R + 150*G + 29*B) >> 8
         let y_plane = frame.planes[0].data_origin_mut();
         for y in 0..height {
             for x in 0..width {
@@ -601,78 +625,61 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
                 let src_y = y.min(orig_h.saturating_sub(1));
                 let idx = (src_y * orig_w + src_x) * 4;
 
-                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
-                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
-                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                let r = rgba_data.get(idx).copied().unwrap_or(0) as u32;
+                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as u32;
+                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as u32;
 
-                // BT.601 conversion
-                let y_val = (0.299 * r + 0.587 * g + 0.114 * b).round() as u8;
+                // BT.601 conversion with integer arithmetic
+                let y_val = ((77 * r + 150 * g + 29 * b) >> 8) as u8;
                 y_plane[y * stride_y + x] = y_val;
             }
         }
 
-        // Chroma (subsampled) - average 2x2 block for proper subsampling
-        let u_plane = frame.planes[1].data_origin_mut();
-        for cy in 0..(height / 2) {
-            for cx in 0..(width / 2) {
-                let x = cx * 2;
-                let y = cy * 2;
+        // Chroma U and V (subsampled) - average 2x2 block with integer arithmetic
+        // Combined U/V pass for better cache locality
+        {
+            let (y_slice, uv_slices) = frame.planes.split_at_mut(1);
+            let _ = y_slice; // Y already processed
+            let (u_slice, v_slice) = uv_slices.split_at_mut(1);
+            let u_plane = u_slice[0].data_origin_mut();
+            let v_plane = v_slice[0].data_origin_mut();
 
-                // Average 4 pixels in 2x2 block for chroma
-                let mut r_sum = 0.0f32;
-                let mut g_sum = 0.0f32;
-                let mut b_sum = 0.0f32;
+            for cy in 0..(height / 2) {
+                for cx in 0..(width / 2) {
+                    let x = cx * 2;
+                    let y = cy * 2;
 
-                for dy in 0..2 {
-                    for dx in 0..2 {
-                        let src_x = (x + dx).min(orig_w.saturating_sub(1));
-                        let src_y = (y + dy).min(orig_h.saturating_sub(1));
-                        let idx = (src_y * orig_w + src_x) * 4;
+                    // Average 4 pixels in 2x2 block for chroma using integer arithmetic
+                    let mut r_sum = 0u32;
+                    let mut g_sum = 0u32;
+                    let mut b_sum = 0u32;
 
-                        r_sum += rgba_data.get(idx).copied().unwrap_or(0) as f32;
-                        g_sum += rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
-                        b_sum += rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            let src_x = (x + dx).min(orig_w.saturating_sub(1));
+                            let src_y = (y + dy).min(orig_h.saturating_sub(1));
+                            let idx = (src_y * orig_w + src_x) * 4;
+
+                            r_sum += rgba_data.get(idx).copied().unwrap_or(0) as u32;
+                            g_sum += rgba_data.get(idx + 1).copied().unwrap_or(0) as u32;
+                            b_sum += rgba_data.get(idx + 2).copied().unwrap_or(0) as u32;
+                        }
                     }
+
+                    // Divide by 4 (>> 2) to get average
+                    let r = r_sum >> 2;
+                    let g = g_sum >> 2;
+                    let b = b_sum >> 2;
+
+                    // BT.601 chroma with integer arithmetic:
+                    // U = 128 + (-43*R - 85*G + 128*B) >> 8
+                    // V = 128 + (128*R - 107*G - 21*B) >> 8
+                    let u = (128i32 + ((-(43i32 * r as i32) - 85 * g as i32 + 128 * b as i32) >> 8)).clamp(0, 255) as u8;
+                    let v = (128i32 + ((128i32 * r as i32 - 107 * g as i32 - 21 * b as i32) >> 8)).clamp(0, 255) as u8;
+
+                    u_plane[cy * stride_u + cx] = u;
+                    v_plane[cy * stride_v + cx] = v;
                 }
-
-                let r = r_sum / 4.0;
-                let g = g_sum / 4.0;
-                let b = b_sum / 4.0;
-
-                let u = (128.0 - 0.169 * r - 0.331 * g + 0.500 * b).round().clamp(0.0, 255.0) as u8;
-                u_plane[cy * stride_u + cx] = u;
-            }
-        }
-
-        let v_plane = frame.planes[2].data_origin_mut();
-        for cy in 0..(height / 2) {
-            for cx in 0..(width / 2) {
-                let x = cx * 2;
-                let y = cy * 2;
-
-                // Average 4 pixels in 2x2 block for chroma
-                let mut r_sum = 0.0f32;
-                let mut g_sum = 0.0f32;
-                let mut b_sum = 0.0f32;
-
-                for dy in 0..2 {
-                    for dx in 0..2 {
-                        let src_x = (x + dx).min(orig_w.saturating_sub(1));
-                        let src_y = (y + dy).min(orig_h.saturating_sub(1));
-                        let idx = (src_y * orig_w + src_x) * 4;
-
-                        r_sum += rgba_data.get(idx).copied().unwrap_or(0) as f32;
-                        g_sum += rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
-                        b_sum += rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
-                    }
-                }
-
-                let r = r_sum / 4.0;
-                let g = g_sum / 4.0;
-                let b = b_sum / 4.0;
-
-                let v = (128.0 + 0.500 * r - 0.419 * g - 0.081 * b).round().clamp(0.0, 255.0) as u8;
-                v_plane[cy * stride_v + cx] = v;
             }
         }
 
@@ -681,6 +688,9 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
 
     // Flush encoder
     ctx.flush();
+
+    // Signal that we're now in the encoding phase
+    progress.encoding_phase.store(true, Ordering::Relaxed);
 
     // Receive and write packets
     let mut pts = 0u64;

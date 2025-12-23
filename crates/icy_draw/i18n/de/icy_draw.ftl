@@ -924,6 +924,7 @@ animation-export-path=Exportieren nach
 animation-export-no-path=Kein Pfad ausgewählt
 animation-export-success=Export erfolgreich abgeschlossen
 animation-export-exporting-frame=Exportiere Frame { $current } / { $total }
+animation-export-encoding=Kodiere Video…
 animation-export-cancelled=Export abgebrochen
 animation-export-no-frames=Keine Frames zum Exportieren
 animation-export-failed=Export fehlgeschlagen: { $error }

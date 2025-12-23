@@ -580,3 +580,14 @@ paste-tool-flip-x=Retourner X
 paste-tool-flip-y=Retourner Y
 paste-tool-transparent=Transparent (T)
 paste-tool-hint=Entrée: Ancrer | Échap: Annuler | Flèches: Déplacer
+
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Exporter vers
+animation-export-no-path=Aucun chemin sélectionné
+animation-export-success=Exportation terminée avec succès
+animation-export-exporting-frame=Exportation de l'image { $current } / { $total }
+animation-export-encoding=Encodage de la vidéo…
+animation-export-cancelled=Exportation annulée
+animation-export-no-frames=Aucune image à exporter
+animation-export-failed=Échec de l'exportation: { $error }

@@ -579,3 +579,13 @@ paste-tool-flip-x=Capovolgi X
 paste-tool-flip-y=Capovolgi Y
 paste-tool-transparent=Trasparente (T)
 paste-tool-hint=Invio: Ancora | Esc: Annulla | Frecce: Sposta
+# Animation Export Dialog
+animation-export-format=Formato
+animation-export-path=Esporta in
+animation-export-no-path=Nessun percorso selezionato
+animation-export-success=Esportazione completata con successo
+animation-export-exporting-frame=Esportazione frame { $current } / { $total }
+animation-export-encoding=Codifica video…
+animation-export-cancelled=Esportazione annullata
+animation-export-no-frames=Nessun frame da esportare
+animation-export-failed=Esportazione fallita: { $error }

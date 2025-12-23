@@ -580,3 +580,13 @@ paste-tool-flip-x=Răsturnare X
 paste-tool-flip-y=Răsturnare Y
 paste-tool-transparent=Transparent (T)
 paste-tool-hint=Enter: Ancorare | Esc: Anulare | Săgeți: Mutare
+# Animation Export Dialog
+animation-export-format=Format
+animation-export-path=Exportă în
+animation-export-no-path=Nicio cale selectată
+animation-export-success=Exportul a fost finalizat cu succes
+animation-export-exporting-frame=Se exportă cadrul { $current } / { $total }
+animation-export-encoding=Se codifică videoclipul…
+animation-export-cancelled=Export anulat
+animation-export-no-frames=Nu există cadre de exportat
+animation-export-failed=Exportul a eșuat: { $error }
