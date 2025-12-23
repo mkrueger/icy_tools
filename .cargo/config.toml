@@ -1,7 +1,16 @@
-[build]
 # Increase stack size to 8MB for debug builds (default is 1MB on Windows)
 # This helps prevent stack overflows in deeply nested function calls
+
+# Linux: use -zstack-size
+[target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-args=-Wl,-zstack-size=8388608"]
 
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-args=-Wl,-zstack-size=8388608"]
+
+# Windows MSVC: use /STACK
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+# macOS: stack size is set at runtime, not via linker flags
+# The default stack size on macOS is 8MB which is sufficient
