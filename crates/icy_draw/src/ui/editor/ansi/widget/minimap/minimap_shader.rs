@@ -513,8 +513,6 @@ impl MinimapPrimitive {
 struct TextureArray {
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
-    layer_count: u32,
-    layer_height: u32,
 }
 
 /// Per-instance GPU resources with texture slicing
@@ -540,8 +538,6 @@ pub struct MinimapShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
-    /// 1x1 transparent texture for unused texture slots
-    dummy_texture_view: iced::wgpu::TextureView,
     instances: HashMap<usize, InstanceResources>,
 }
 
@@ -642,31 +638,10 @@ impl shader::Pipeline for MinimapShaderRenderer {
             ..Default::default()
         });
 
-        // Create 1x1 transparent dummy texture array for fallback
-        let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-            label: Some("Minimap Dummy Texture Array"),
-            size: iced::wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8Unorm,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor {
-            dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-
         MinimapShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
-            dummy_texture_view,
             instances: HashMap::new(),
         }
     }

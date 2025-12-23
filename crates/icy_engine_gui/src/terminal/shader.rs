@@ -416,8 +416,6 @@ fn create_texture_array(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, 
         return TextureArray {
             texture,
             texture_view,
-            layer_count: 1,
-            layer_height: 1,
         };
     }
 
@@ -478,8 +476,6 @@ fn create_texture_array(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, 
     TextureArray {
         texture,
         texture_view,
-        layer_count,
-        layer_height: max_height,
     }
 }
 
@@ -496,8 +492,6 @@ struct TextureArray {
     #[allow(dead_code)]
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
-    layer_count: u32,
-    layer_height: u32,
 }
 
 /// Per-instance GPU resources with texture slicing
@@ -550,8 +544,6 @@ pub struct TerminalShaderRenderer {
     sampler: iced::wgpu::Sampler,
     /// 1x1 transparent texture for unused 2D texture slots
     dummy_texture_view: iced::wgpu::TextureView,
-    /// 1x1x1 dummy texture array for unused array slots
-    dummy_texture_array_view: iced::wgpu::TextureView,
     instances: HashMap<u64, InstanceResources>,
 }
 
@@ -719,32 +711,11 @@ impl shader::Pipeline for TerminalShaderRenderer {
         });
         let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
-        // Create 1x1x1 dummy texture array for the texture array slot
-        let dummy_texture_array = device.create_texture(&iced::wgpu::TextureDescriptor {
-            label: Some("Terminal Dummy Texture Array"),
-            size: iced::wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8Unorm,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let dummy_texture_array_view = dummy_texture_array.create_view(&iced::wgpu::TextureViewDescriptor {
-            dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-
         TerminalShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
             dummy_texture_view,
-            dummy_texture_array_view,
             instances: HashMap::new(),
         }
     }

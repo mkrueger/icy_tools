@@ -12,7 +12,7 @@ use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::{BufferType, EditableScreen, EngineError, Result, ScreenMode, TextBuffer, TextPane};
+use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
 use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions, io};
 
