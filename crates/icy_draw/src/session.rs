@@ -152,11 +152,18 @@ impl WindowState {
     /// Convert to restore info - determines what to load and how
     pub fn to_restore_info(&self) -> WindowRestoreInfo {
         if self.has_unsaved_changes {
-            // Has unsaved changes - load from autosave if available
+            // Has unsaved changes - load from autosave if available AND exists
+            let autosave_exists = self.autosave_path.as_ref().map_or(false, |p| p.exists());
+            let load_path = if autosave_exists {
+                self.autosave_path.clone()
+            } else {
+                // Autosave file doesn't exist anymore, fall back to original
+                self.file_path.clone()
+            };
             WindowRestoreInfo {
                 original_path: self.file_path.clone(),
-                load_path: self.autosave_path.clone().or(self.file_path.clone()),
-                mark_dirty: true,
+                load_path,
+                mark_dirty: autosave_exists, // Only mark dirty if we're actually loading autosave
                 position: self.position,
                 size: self.size,
                 session_data_path: self.session_data_path.clone(),
@@ -352,11 +359,11 @@ impl SessionManager {
 
     /// Check if autosave should be triggered for a window
     pub fn should_autosave(&mut self, window_id: window::Id, current_undo_len: usize) -> bool {
-        if let Some(status) = self.autosave_status.get_mut(&window_id) {
-            status.should_autosave(current_undo_len, self.autosave_delay_secs)
-        } else {
-            false
-        }
+        let status = self
+            .autosave_status
+            .entry(window_id)
+            .or_insert_with(|| AutosaveStatus::new(current_undo_len));
+        status.should_autosave(current_undo_len, self.autosave_delay_secs)
     }
 
     /// Get session data file path for a given file

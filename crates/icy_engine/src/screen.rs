@@ -96,9 +96,6 @@ pub trait Screen: TextPane + Send + Sync {
     fn font(&self, font_number: usize) -> Option<&BitFont>;
     fn font_count(&self) -> usize;
 
-    // Version for change tracking
-    fn version(&self) -> u64;
-
     /// Get dirty line range that needs to be re-rendered.
     /// Returns (first_dirty_line, last_dirty_line) or None if no lines are dirty.
     /// The caller should clear the dirty range after processing.

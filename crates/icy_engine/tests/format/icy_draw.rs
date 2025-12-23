@@ -159,6 +159,21 @@ fn test_empty_buffer() {
 }
 
 #[test]
+fn test_icy_draw_load_syncs_terminal_state_size() {
+    let mut buf = TextBuffer::new((300, 453));
+    buf.layers[0].set_char((0, 0), AttributedChar::new('X', TextAttribute::default()));
+
+    let draw = FileFormat::IcyDraw;
+    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let loaded = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
+
+    assert_eq!(loaded.width(), 300);
+    assert_eq!(loaded.height(), 453);
+    assert_eq!(loaded.terminal_state.width(), loaded.width());
+    assert_eq!(loaded.terminal_state.height(), loaded.height());
+}
+
+#[test]
 fn test_iced_v1_compression_off_writes_uncompressed_records() {
     let mut buf = TextBuffer::new((2, 2));
     buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));

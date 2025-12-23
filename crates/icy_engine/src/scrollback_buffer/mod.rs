@@ -343,10 +343,6 @@ impl Screen for ScrollbackBuffer {
         0
     }
 
-    fn version(&self) -> u64 {
-        self.version
-    }
-
     fn default_foreground_color(&self) -> u32 {
         7
     }

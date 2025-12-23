@@ -386,11 +386,13 @@ impl WindowManager {
             return String::new();
         };
 
+        // Compute title dynamically to ensure dirty state is always current
+        let base_title = w.compute_title();
         let zoom_info = w.get_zoom_info_string();
         let title_with_zoom = if zoom_info.is_empty() {
-            w.title.clone()
+            base_title
         } else {
-            format!("{} {}", w.title, zoom_info)
+            format!("{} {}", base_title, zoom_info)
         };
 
         if self.windows.len() == 1 {
@@ -755,20 +757,21 @@ impl WindowManager {
 
                     if self.session_manager.should_autosave(*window_id, undo_len) {
                         // Perform autosave
-                        if let Some(path) = window.file_path() {
-                            let autosave_path = self.session_manager.get_autosave_path(path);
-                            if let Ok(bytes) = window.get_autosave_bytes() {
-                                if let Err(e) = self.session_manager.save_autosave(&autosave_path, &bytes) {
-                                    log::warn!("Autosave failed: {}", e);
-                                }
-                            }
+                        let autosave_path = if let Some(path) = window.file_path() {
+                            self.session_manager.get_autosave_path(path)
                         } else {
                             // Untitled document - use window's id (1-based display id)
-                            let autosave_path = self.session_manager.get_untitled_autosave_path(window.id);
-                            if let Ok(bytes) = window.get_autosave_bytes() {
+                            self.session_manager.get_untitled_autosave_path(window.id)
+                        };
+
+                        match window.get_autosave_bytes() {
+                            Ok(bytes) => {
                                 if let Err(e) = self.session_manager.save_autosave(&autosave_path, &bytes) {
-                                    log::warn!("Autosave failed for untitled: {}", e);
+                                    log::error!("Autosave failed for {:?}: {}", autosave_path, e);
                                 }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to get autosave bytes for {:?}: {}", autosave_path, e);
                             }
                         }
                     }
@@ -886,9 +889,10 @@ impl WindowManager {
         ];
 
         // Debounced session-save tick (only when something scheduled)
-        if self.session_save_deadline.is_some() {
-            subs.push(iced::time::every(Duration::from_millis(50)).map(|_| WindowManagerMessage::SessionSaveTick));
-        }
+        // Keep session-save ticking even if nothing is scheduled.
+        // This avoids edge cases where a deadline is set but the subscription
+        // doesn't get activated soon enough due to update timing.
+        subs.push(iced::time::every(Duration::from_millis(200)).map(|_| WindowManagerMessage::SessionSaveTick));
 
         // Animation tick - only active when an animation editor is playing
         let needs_animation = self.windows.values().any(|w| w.needs_animation_tick());

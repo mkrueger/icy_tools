@@ -236,8 +236,9 @@ pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>, sauce_o
         screen.buffer.layers[0].set_char(pos, AttributedChar::new(cmd as char, attr));
         advance_pos(&screen.buffer, &mut pos);
     }
+    screen.buffer.terminal_state.set_size(screen.buffer.layers[0].size());
     screen.buffer.set_size(screen.buffer.layers[0].size());
-
+    
     Ok(screen)
 }
 

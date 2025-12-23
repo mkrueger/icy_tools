@@ -220,6 +220,9 @@ pub struct TerminalShader {
     pub monitor_settings: Arc<MonitorSettings>,
     /// Unique instance ID
     pub instance_id: u64,
+    /// Render generation counter - incremented each time tiles are re-rendered
+    /// Used to detect content changes instead of Arc pointer hashing
+    pub render_generation: u64,
     /// Zoom level (1.0 = 100%)
     pub zoom: f32,
     /// Shared render info for mouse mapping
@@ -526,10 +529,8 @@ struct InstanceResources {
     total_height: u32,
     /// Number of slices for cache validation
     num_slices: usize,
-    /// Hash of texture data pointers for blink_on=false
-    texture_data_hash_blink_off: u64,
-    /// Hash of texture data pointers for blink_on=true
-    texture_data_hash_blink_on: u64,
+    /// Render generation counter for cache validation
+    render_generation: u64,
     /// Reference image texture (optional)
     reference_image_texture: Option<TextureSlice>,
     /// Hash of reference image data for cache validation
@@ -759,18 +760,6 @@ impl shader::Pipeline for TerminalShaderRenderer {
 }
 
 impl TerminalShader {
-    /// Compute a hash of the texture data pointers for a slice set
-    fn compute_data_hash(slices: &[TextureSliceData]) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        for slice in slices {
-            let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
-            ptr.hash(&mut hasher);
-        }
-        hasher.finish()
-    }
-
     /// Compute a hash for reference image data
     fn compute_ref_image_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
         use std::collections::hash_map::DefaultHasher;
@@ -883,24 +872,24 @@ impl shader::Primitive for TerminalShader {
         }
 
         let id = self.instance_id;
-        let hash_blink_off = Self::compute_data_hash(&self.slices_blink_off);
-        let hash_blink_on = Self::compute_data_hash(&self.slices_blink_on);
+        let render_generation = self.render_generation;
         let num_slices = self.slices_blink_off.len(); // Both should have same count
         let texture_width = self.texture_width.min(MAX_TEXTURE_DIMENSION);
         let total_height = self.total_content_height as u32;
 
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
-            None => true,
+            None => {
+                true
+            }
             Some(resources) => {
-                // Recreate if any structural parameter changed or if either blink state data changed
-                let hash_off_changed = resources.texture_data_hash_blink_off != hash_blink_off;
-                let hash_on_changed = resources.texture_data_hash_blink_on != hash_blink_on;
+                // Recreate if render_generation changed (tiles were re-rendered) or structural parameters changed
+                let generation_changed = resources.render_generation != render_generation;
                 let slices_changed = resources.num_slices != num_slices;
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
 
-                hash_off_changed || hash_on_changed || slices_changed || width_changed || height_changed
+                generation_changed || slices_changed || width_changed || height_changed
             }
         };
 
@@ -1014,8 +1003,7 @@ impl shader::Primitive for TerminalShader {
                     texture_width,
                     total_height,
                     num_slices,
-                    texture_data_hash_blink_off: hash_blink_off,
-                    texture_data_hash_blink_on: hash_blink_on,
+                    render_generation,
                     reference_image_texture: None,
                     reference_image_hash: 0,
                     selection_mask_texture: None,

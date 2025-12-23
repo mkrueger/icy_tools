@@ -388,9 +388,6 @@ impl Screen for PaletteScreenBuffer {
         &self.mouse_fields
     }
 
-    fn version(&self) -> u64 {
-        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
-    }
 
     fn default_foreground_color(&self) -> u32 {
         self.graphics_type.default_fg_color()

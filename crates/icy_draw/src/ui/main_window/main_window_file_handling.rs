@@ -21,21 +21,8 @@ impl MainWindow {
     /// Handle SaveFile message - save to current path or trigger SaveAs
     pub(super) fn save_file(&mut self) -> Task<Message> {
         if let Some(path) = self.mode_state.file_path().cloned() {
-            // Enforce per-editor standard save format/extension.
-            // If the associated path isn't the standard extension, save to a sibling
-            // path with the standard extension (import -> native workflow).
-            let (default_ext, _) = self.mode_state.file_format();
-            let current_ext_matches = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case(default_ext))
-                .unwrap_or(false);
-
-            if !current_ext_matches {
-                let target = enforce_extension(path, default_ext);
-                return self.save_to_path(target);
-            }
-
+            // Save to the current path in its original format.
+            // The format is determined by the file extension.
             self.save_to_path(path)
         } else {
             // No file path - trigger SaveAs

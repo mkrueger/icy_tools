@@ -131,6 +131,8 @@ pub enum TerminalEvent {
     SerialBaudDetected(u32),
     /// Serial auto-detection complete (even if failed)
     SerialAutoDetectComplete,
+    /// Request UI redraw after screen changes
+    RequestRedraw,
 }
 
 #[derive(Debug, Clone)]
@@ -1239,7 +1241,7 @@ impl TerminalThread {
     /// Async commands (delays, sound) are processed outside of locks
     async fn process_command_queue(&mut self) {
         const MAX_LOCK_DURATION_MS: u64 = 10;
-
+        let mut had_updates = false;
         loop {
             // Get next command
             let Some(cmd) = self.command_queue.pop_front() else {
@@ -1285,6 +1287,8 @@ impl TerminalThread {
 
                     // Update hyperlinks before releasing lock
                     editable.update_hyperlinks();
+                    had_updates = true;
+                    
                 }
             }
 
@@ -1296,6 +1300,14 @@ impl TerminalThread {
                 }
             }
         }
+
+        if had_updates  {
+            if let Some(editable) = self.edit_screen.lock().as_editable() {
+                editable.mark_dirty();
+            }
+            self.send_event(TerminalEvent::RequestRedraw);
+        }
+
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocol, files: Vec<PathBuf>) {
@@ -1974,6 +1986,9 @@ impl TerminalThread {
             *screen = new_screen;
         }
         self.parser = parser;
+        
+        // Request UI redraw
+        self.send_event(TerminalEvent::RequestRedraw);
 
         // Update terminal emulation for scripting
         *self.terminal_emulation.lock() = terminal_type;

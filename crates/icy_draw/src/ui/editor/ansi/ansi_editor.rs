@@ -1270,13 +1270,15 @@ impl AnsiEditorCore {
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let mut screen = self.screen.lock();
         if let Some(edit_state) = screen.as_any_mut().downcast_ref::<EditState>() {
-            // Always save ANSI editor as full-fidelity IcyDraw format.
-            // Other formats are handled via Export.
-            let format = FileFormat::IcyDraw;
+            // Determine format from file extension
+            let format = FileFormat::from_path(path).unwrap_or(FileFormat::IcyDraw);
 
-            // Get buffer and save with default options
+            // Get buffer and save with appropriate options for the format
             let buffer = edit_state.get_buffer();
-            let options = icy_engine::SaveOptions::default();
+            let options = match &format {
+                FileFormat::IcyDraw => icy_engine::SaveOptions::icy_draw(),
+                _ => icy_engine::SaveOptions::default(),
+            };
             let bytes = format.to_bytes(buffer, &options).map_err(|e| e.to_string())?;
 
             std::fs::write(path, bytes).map_err(|e| e.to_string())?;

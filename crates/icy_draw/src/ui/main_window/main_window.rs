@@ -950,6 +950,11 @@ impl MainWindow {
 
     /// Update the cached title based on current file path and dirty state
     fn update_title(&mut self) {
+        self.title = self.compute_title();
+    }
+
+    /// Compute the title dynamically based on current file path and dirty state
+    pub fn compute_title(&self) -> String {
         let file_name = self
             .file_path()
             .and_then(|p| p.file_name())
@@ -959,7 +964,7 @@ impl MainWindow {
 
         let modified = if self.is_modified() { "*" } else { "" };
 
-        self.title = format!("{}{}", file_name, modified);
+        format!("{}{}", file_name, modified)
     }
 
     /// Get zoom info string for display in title bar (e.g., "[AUTO]" or "[150%]")
@@ -1172,15 +1177,19 @@ impl MainWindow {
                         });
                         // Sync UI after undo (palette may have changed)
                         editor.sync_ui();
-                        Task::none()
                     }
                     ModeState::BitFont(editor) => {
                         editor.undo();
-                        Task::none()
                     }
-                    ModeState::CharFont(_) => Task::none(),
-                    ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Undo, &mut self.dialogs).map(Message::AnimationEditor),
+                    ModeState::CharFont(_) => {}
+                    ModeState::Animation(editor) => {
+                        let task = editor.update(AnimationEditorMessage::Undo, &mut self.dialogs).map(Message::AnimationEditor);
+                        self.update_title();
+                        return task;
+                    }
                 }
+                self.update_title();
+                Task::none()
             }
             Message::Redo => {
                 // Dispatch redo to the current editor mode
@@ -1193,15 +1202,19 @@ impl MainWindow {
                         });
                         // Sync UI after redo (palette may have changed)
                         editor.sync_ui();
-                        Task::none()
                     }
                     ModeState::BitFont(editor) => {
                         editor.redo();
-                        Task::none()
                     }
-                    ModeState::CharFont(_) => Task::none(),
-                    ModeState::Animation(editor) => editor.update(AnimationEditorMessage::Redo, &mut self.dialogs).map(Message::AnimationEditor),
+                    ModeState::CharFont(_) => {}
+                    ModeState::Animation(editor) => {
+                        let task = editor.update(AnimationEditorMessage::Redo, &mut self.dialogs).map(Message::AnimationEditor);
+                        self.update_title();
+                        return task;
+                    }
                 }
+                self.update_title();
+                Task::none()
             }
             Message::Cut => {
                 match &mut self.mode_state {

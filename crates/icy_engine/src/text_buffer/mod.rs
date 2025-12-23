@@ -603,6 +603,7 @@ impl TextBuffer {
         // Mark all lines as dirty (full invalidation)
         self.dirty_line_start.store(0, Ordering::Relaxed);
         self.dirty_line_end.store(self.height(), Ordering::Relaxed);
+        println!("Buffer marked dirty: version {}", self.buffer_version.load(Ordering::Relaxed));   
     }
 
     /// Mark a specific line as dirty. This is more efficient than `mark_dirty()`

@@ -210,9 +210,6 @@ impl Screen for TextScreen {
         &self.mouse_fields
     }
 
-    fn version(&self) -> u64 {
-        self.buffer.version()
-    }
 
     fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         self.buffer.get_dirty_lines()

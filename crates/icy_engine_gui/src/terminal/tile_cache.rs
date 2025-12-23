@@ -105,8 +105,6 @@ pub struct CachedTile {
     pub size: (u32, u32),
     /// Timestamp of last access (for LRU eviction)
     pub last_access: Instant,
-    /// Content version when this tile was rendered
-    pub content_version: u64,
     /// Start line of this tile in the document (inclusive)
     pub start_line: u32,
     /// End line of this tile in the document (exclusive)
@@ -137,8 +135,6 @@ pub struct TileCache {
     pub config: TileCacheConfig,
     /// Cached tiles keyed by TileId
     tiles: HashMap<TileId, CachedTile>,
-    /// Current content version (incremented on any content change)
-    content_version: u64,
     /// Font dimensions in pixels (width, height)
     font_size: (u32, u32),
     /// Whether scanlines are enabled (doubles vertical resolution)
@@ -160,7 +156,6 @@ impl TileCache {
         Self {
             config,
             tiles: HashMap::new(),
-            content_version: 0,
             font_size: (8, 16),
             scan_lines: false,
             total_lines: 0,
@@ -182,23 +177,6 @@ impl TileCache {
         // Invalidate all tiles if font or scanlines changed
         if font_changed || scanlines_changed {
             self.invalidate_all();
-        }
-    }
-
-    /// Get current content version
-    pub fn content_version(&self) -> u64 {
-        self.content_version
-    }
-
-    /// Increment content version (call when content changes)
-    pub fn bump_version(&mut self) {
-        self.content_version += 1;
-    }
-
-    /// Set content version to a specific value (for syncing with buffer version)
-    pub fn set_version(&mut self, version: u64) {
-        if version != self.content_version {
-            self.content_version = version;
         }
     }
 
@@ -234,30 +212,12 @@ impl TileCache {
         if self.scan_lines { base_height * 2 } else { base_height }
     }
 
-    /// Check if a cached tile is still valid
-    pub fn is_tile_valid(&self, tile: &CachedTile) -> bool {
-        tile.content_version == self.content_version
-    }
-
-    /// Get a cached tile if it exists and is valid
+    /// Get a cached tile if it exists
     pub fn get_tile(&mut self, id: TileId) -> Option<&CachedTile> {
-        // First check if tile exists and is valid
-        let is_valid = if let Some(tile) = self.tiles.get(&id) {
-            tile.content_version == self.content_version
-        } else {
-            false
-        };
-
-        if is_valid {
-            // Now we can safely get mutable access and update
-            if let Some(tile) = self.tiles.get_mut(&id) {
-                tile.last_access = Instant::now();
-            }
-            // Return immutable reference
-            self.tiles.get(&id)
-        } else {
-            None
+        if let Some(tile) = self.tiles.get_mut(&id) {
+            tile.last_access = Instant::now();
         }
+        self.tiles.get(&id)
     }
 
     /// Insert a tile into the cache, performing LRU eviction if needed
@@ -287,7 +247,6 @@ impl TileCache {
         TileCacheStats {
             cached_tile_count: self.tiles.len(),
             total_tile_count: self.total_tile_count() as usize,
-            content_version: self.content_version,
             total_cached_bytes: self.tiles.values().map(|t| t.rgba_data.len()).sum(),
         }
     }
@@ -343,10 +302,6 @@ impl TileCache {
         for idx in start_tile..=end_tile {
             let id = TileId::new(idx, blink_on);
             if let Some(tile) = self.tiles.get(&id) {
-                if !self.is_tile_valid(tile) {
-                    continue;
-                }
-
                 let tile_height = tile.size.1;
 
                 // Check if adding this tile would exceed slice limit
@@ -396,7 +351,6 @@ impl Default for TileCache {
 pub struct TileCacheStats {
     pub cached_tile_count: usize,
     pub total_tile_count: usize,
-    pub content_version: u64,
     pub total_cached_bytes: usize,
 }
 
@@ -467,7 +421,6 @@ mod tests {
                 rgba_data: Arc::new(vec![0u8; 100]),
                 size: (10, 10),
                 last_access: Instant::now(),
-                content_version: 0,
                 start_line: i * 100,
                 end_line: (i + 1) * 100,
             });
@@ -482,7 +435,6 @@ mod tests {
             rgba_data: Arc::new(vec![0u8; 100]),
             size: (10, 10),
             last_access: Instant::now(),
-            content_version: 0,
             start_line: 300,
             end_line: 400,
         });

@@ -46,8 +46,6 @@ pub struct SharedCachedTile {
 pub struct SharedRenderCache {
     /// Cached tiles keyed by (tile_index, blink_state)
     tiles: HashMap<TileCacheKey, SharedCachedTile>,
-    /// Content version for cache invalidation
-    content_version: u64,
     /// Total content height in pixels
     pub content_height: f32,
     /// Content width in pixels
@@ -61,8 +59,6 @@ pub struct SharedRenderCache {
     pub scroll_offset_x: f32,
     /// Effective scroll offset Y in content pixels used by the terminal shader
     pub scroll_offset_y: f32,
-    /// Selection version (changes when selection changes)
-    selection_version: u64,
     /// Last blink state used by Terminal (so Minimap can use the same)
     pub last_blink_state: bool,
 }
@@ -71,14 +67,12 @@ impl SharedRenderCache {
     pub fn new() -> Self {
         Self {
             tiles: HashMap::new(),
-            content_version: 0,
             content_height: 0.0,
             content_width: 0,
             visible_width: 0.0,
             visible_height: 0.0,
             scroll_offset_x: 0.0,
             scroll_offset_y: 0.0,
-            selection_version: 0,
             last_blink_state: false,
         }
     }
@@ -89,28 +83,18 @@ impl SharedRenderCache {
     }
 
     /// Invalidate cache due to content change (clears all tiles)
-    pub fn invalidate(&mut self, new_version: u64) {
-        if new_version != self.content_version {
-            self.content_version = new_version;
-            self.tiles.clear();
-        }
+    pub fn invalidate(&mut self) {
+        self.tiles.clear();
     }
 
     /// Invalidate only specific tiles based on dirty line range.
     /// This is more efficient than full invalidation when only a few lines changed.
     ///
-    /// - `new_version`: The new buffer version
     /// - `dirty_start_tile`: First tile index to invalidate (inclusive)
     /// - `dirty_end_tile`: Last tile index to invalidate (inclusive)
     ///
     /// Returns true if any tiles were invalidated.
-    pub fn invalidate_tiles(&mut self, new_version: u64, dirty_start_tile: i32, dirty_end_tile: i32) -> bool {
-        if new_version == self.content_version {
-            return false;
-        }
-
-        self.content_version = new_version;
-
+    pub fn invalidate_tiles(&mut self, dirty_start_tile: i32, dirty_end_tile: i32) -> bool {
         let mut removed_any = false;
         for tile_idx in dirty_start_tile..=dirty_end_tile {
             // Remove both blink states for this tile
@@ -121,16 +105,12 @@ impl SharedRenderCache {
                 removed_any = true;
             }
         }
-
         removed_any
     }
 
     /// Invalidate cache due to selection change
-    pub fn invalidate_selection(&mut self, new_version: u64) {
-        if new_version != self.selection_version {
-            self.selection_version = new_version;
-            self.tiles.clear();
-        }
+    pub fn invalidate_selection(&mut self) {
+        self.tiles.clear();
     }
 
     /// Get a cached tile if available
@@ -141,11 +121,6 @@ impl SharedRenderCache {
     /// Insert a new tile into the cache
     pub fn insert(&mut self, key: TileCacheKey, tile: SharedCachedTile) {
         self.tiles.insert(key, tile);
-    }
-
-    /// Get current content version
-    pub fn content_version(&self) -> u64 {
-        self.content_version
     }
 
     /// Get number of cached tiles

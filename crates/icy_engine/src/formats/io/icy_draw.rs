@@ -345,7 +345,10 @@ fn process_icy_draw_v1_decoded_chunk(
             let width: i32 = i32::try_from(width_u32).map_err(|_| IcedError::InvalidHeader(format!("width out of range: {width_u32}")))?;
             let height: i32 = i32::try_from(height_u32).map_err(|_| IcedError::InvalidHeader(format!("height out of range: {height_u32}")))?;
             result.set_size((width, height));
-
+            // Keep terminal state dimensions in sync with the buffer size.
+            // Some UI/layout code uses TerminalState sizes even for non-terminal buffers.
+            result.terminal_state.set_width(width);
+            result.terminal_state.set_height(height);
             let font_width = bytes[o] as i32;
             o += 1;
             let font_height = bytes[o] as i32;
@@ -458,7 +461,7 @@ fn process_icy_draw_v1_decoded_chunk(
                 1 => crate::Mode::Chars,
                 2 => crate::Mode::Attributes,
                 _ => crate::Mode::Normal,
-            };
+                };
             o += 1;
 
             // Read color (RGBA, where A=0xFF means color is set)
@@ -501,7 +504,6 @@ fn process_icy_draw_v1_decoded_chunk(
                     title, char_data_size, width, height, min_expected, max_expected
                 )));
             }
-
             let mut layer = Layer::new(title.clone(), (width, height));
             let mut cur = &bytes[o..];
             for y in 0..height {

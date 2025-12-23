@@ -165,15 +165,6 @@ fn test_screen_default_foreground_color() {
 }
 
 #[test]
-fn test_screen_get_version() {
-    let screen = TextScreen::new(Size::new(80, 25));
-    let v1 = screen.version();
-    screen.mark_dirty();
-    let v2 = screen.version();
-    assert!(v2 > v1);
-}
-
-#[test]
 fn test_screen_selection() {
     let mut screen = TextScreen::new(Size::new(80, 25));
 
@@ -748,16 +739,6 @@ fn test_editable_buffer_type_mut() {
     // Just ensure it doesn't panic
 }
 
-#[test]
-fn test_editable_mark_dirty() {
-    let screen = TextScreen::new(Size::new(80, 25));
-
-    let v1 = screen.version();
-    screen.mark_dirty();
-    let v2 = screen.version();
-
-    assert!(v2 > v1);
-}
 
 #[test]
 fn test_editable_update_hyperlinks() {

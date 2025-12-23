@@ -1518,6 +1518,12 @@ impl MainWindow {
                 self.terminal_window.ansi_music = ansi_music;
                 Task::none()
             }
+            TerminalEvent::RequestRedraw => {
+                // Trigger redraw by incrementing effect counter
+                self.effect = self.effect.wrapping_add(1);
+                println!("trigger redraWZ");
+                Task::none()
+            }
         }
     }
 

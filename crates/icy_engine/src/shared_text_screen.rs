@@ -144,10 +144,6 @@ impl Screen for SharedTextScreen {
         self.inner.lock().font_count()
     }
 
-    fn version(&self) -> u64 {
-        self.inner.lock().version()
-    }
-
     fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         self.inner.lock().get_dirty_lines()
     }

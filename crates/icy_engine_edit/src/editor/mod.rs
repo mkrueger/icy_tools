@@ -945,10 +945,6 @@ impl Screen for EditState {
         self.screen.mouse_fields()
     }
 
-    fn version(&self) -> u64 {
-        self.screen.version()
-    }
-
     fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         self.screen.get_dirty_lines()
     }

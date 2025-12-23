@@ -76,8 +76,6 @@ pub struct CachedScreenInfo {
     pub render_size: (u32, u32),
     /// Last selection state for cache invalidation (anchor, lead, locked)
     pub last_selection_state: (Option<Position>, Option<Position>, bool),
-    /// Last buffer version for cache invalidation
-    pub last_buffer_version: u64,
     /// Graphics type of the screen (Text, IGS, Skypix, Rip)
     pub graphics_type: GraphicsType,
     /// Last bounds size for detecting window resize
@@ -97,7 +95,6 @@ impl Clone for CachedScreenInfo {
             scan_lines: self.scan_lines,
             render_size: self.render_size,
             last_selection_state: self.last_selection_state,
-            last_buffer_version: self.last_buffer_version,
             graphics_type: self.graphics_type,
             last_bounds_size: self.last_bounds_size,
             last_scroll_y: std::sync::atomic::AtomicU32::new(self.last_scroll_y.load(std::sync::atomic::Ordering::Relaxed)),
@@ -116,7 +113,6 @@ impl Default for CachedScreenInfo {
             scan_lines: false,
             render_size: (0, 0),
             last_selection_state: (None, None, false),
-            last_buffer_version: u64::MAX,
             graphics_type: GraphicsType::Text,
             last_bounds_size: (0.0, 0.0),
             last_scroll_y: std::sync::atomic::AtomicU32::new(0),

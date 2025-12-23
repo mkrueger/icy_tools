@@ -14,7 +14,12 @@ use iced::widget::shader;
 use iced::{Rectangle, mouse, window};
 use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+/// Global render generation counter - incremented each time tiles are re-rendered
+/// Used to detect content changes in the shader instead of Arc pointer hashing
+static RENDER_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Clamps the terminal height to fit within the viewport bounds.
 ///
@@ -108,6 +113,8 @@ impl<'a> CRTShaderProgram<'a> {
         let mut slice_heights: Vec<u32> = Vec::new();
         #[allow(unused_assignments)]
         let mut first_slice_start_y: f32 = 0.0;
+        // Track if any tiles were re-rendered this frame
+        let mut tiles_rendered = false;
 
         // Caret rendering data (computed from screen, rendered in shader)
         let mut caret_pos: [f32; 2] = [0.0, 0.0];
@@ -178,7 +185,6 @@ impl<'a> CRTShaderProgram<'a> {
             state.update_cached_screen_info(&**screen);
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
 
-            let current_buffer_version = screen.version();
             char_blink_supported = screen.ice_mode().has_blink();
             blink_on = if char_blink_supported { state.character_blink.is_on() } else { false };
 
@@ -342,30 +348,23 @@ impl<'a> CRTShaderProgram<'a> {
             // Use the shared render cache from Terminal
             {
                 let mut cache: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, crate::SharedRenderCache> = self.term.render_cache.write();
-                let cache_version = cache.content_version();
 
                 // Selective tile invalidation based on dirty lines
-                if current_buffer_version != cache_version {
-                    // Try to get dirty lines from screen, then calculate affected tiles
-                    if let Some((first_dirty_line, last_dirty_line)) = screen.get_dirty_lines() {
-                        // Calculate tile indices from dirty line range
-                        let tile_height = crate::TILE_HEIGHT;
-                        let font_height = screen.font_dimensions().height.max(1) as u32;
-                        let tile_height_lines = tile_height / font_height;
-                        if tile_height_lines > 0 {
-                            let first_tile = (first_dirty_line as u32 / tile_height_lines) as i32;
-                            let last_tile = ((last_dirty_line as u32).saturating_sub(1) / tile_height_lines) as i32;
-                            // Selective invalidation: only remove tiles in dirty range
-                            cache.invalidate_tiles(current_buffer_version, first_tile, last_tile);
-                        } else {
-                            cache.invalidate(current_buffer_version);
-                        }
-                        // Clear dirty range after processing
-                        screen.clear_dirty_lines();
+                if let Some((first_dirty_line, last_dirty_line)) = screen.get_dirty_lines() {
+                    // Calculate tile indices from dirty line range
+                    let tile_height = crate::TILE_HEIGHT;
+                    let font_height = screen.font_dimensions().height.max(1) as u32;
+                    let tile_height_lines = tile_height / font_height;
+                    if tile_height_lines > 0 {
+                        let first_tile = (first_dirty_line as u32 / tile_height_lines) as i32;
+                        let last_tile = ((last_dirty_line as u32).saturating_sub(1) / tile_height_lines) as i32;
+                        // Selective invalidation: only remove tiles in dirty range
+                        cache.invalidate_tiles(first_tile, last_tile);
                     } else {
-                        // No dirty tracking available or full invalidation needed
-                        cache.invalidate(current_buffer_version);
+                        cache.invalidate();
                     }
+                    // Clear dirty range after processing
+                    screen.clear_dirty_lines();
                 }
 
                 cache.content_height = full_content_height;
@@ -381,9 +380,8 @@ impl<'a> CRTShaderProgram<'a> {
 
                 // Selection is now rendered in the shader, so we don't need to invalidate
                 // the cache when selection changes. This significantly improves performance.
-                let mut info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
-                info.last_buffer_version = current_buffer_version;
-                info.last_bounds_size = (bounds.width, bounds.height);
+                let info: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, crate::CachedScreenInfo> = state.cached_screen_info.lock();
+                let _ = info; // bounds size tracking removed along with version tracking
             }
 
             // TODO: Compute layer bounds from screen directly in shader
@@ -536,7 +534,7 @@ impl<'a> CRTShaderProgram<'a> {
             let has_selection = selection.is_some();
 
             // Helper to get or render tiles for a specific blink state
-            let get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
+            let mut get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
                 for &tile_idx in &tile_indices {
                     let tile_start_y = tile_idx as f32 * tile_height;
                     let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height_raw);
@@ -556,6 +554,7 @@ impl<'a> CRTShaderProgram<'a> {
                             heights.push(cached.height);
                         }
                     } else {
+                        tiles_rendered = true;
                         // Render this tile
                         let tile_region: icy_engine::Rectangle =
                             icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
@@ -683,6 +682,13 @@ impl<'a> CRTShaderProgram<'a> {
         let tool_overlay_cell_height_scale = markers.map_or(1.0, |m| m.tool_overlay_cell_height_scale);
         let brush_preview_rect = markers.and_then(|m| m.brush_preview_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
 
+        // Calculate render generation - increment if any tiles were re-rendered
+        let render_generation = if tiles_rendered {
+            RENDER_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
+        } else {
+            RENDER_GENERATION.load(Ordering::Relaxed)
+        };
+
         TerminalShader {
             slices_blink_off,
             slices_blink_on,
@@ -691,6 +697,7 @@ impl<'a> CRTShaderProgram<'a> {
             total_content_height: full_content_height,
             monitor_settings: self.monitor_settings.clone(),
             instance_id: state.instance_id,
+            render_generation,
             zoom,
             render_info: self.term.render_info.clone(),
             font_width: font_w as f32,

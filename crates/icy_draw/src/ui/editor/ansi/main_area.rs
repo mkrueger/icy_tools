@@ -114,6 +114,10 @@ impl AnsiEditorMainArea {
         Ok(Self::with_buffer(loaded_doc.screen.buffer, Some(path), options, font_library))
     }
 
+    /// Load from an autosave file, using the original path for file association
+    ///
+    /// Autosave files are always saved in IcyDraw format (to preserve all data),
+    /// so we always load them as IcyDraw regardless of the original file extension.
     pub fn load_from_autosave(
         autosave_path: &Path,
         original_path: PathBuf,
@@ -121,7 +125,8 @@ impl AnsiEditorMainArea {
         font_library: SharedFontLibrary,
     ) -> Result<Self, String> {
         let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
-        let format = FileFormat::from_path(&original_path).unwrap_or(FileFormat::Ansi);
+        // Autosave is always in IcyDraw format
+        let format = FileFormat::IcyDraw;
         let loaded_doc = format.from_bytes(&data, Some(LoadData::default())).map_err(|e| e.to_string())?;
 
         let mut editor = Self::with_buffer(loaded_doc.screen.buffer, Some(original_path), options, font_library);

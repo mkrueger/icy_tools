@@ -405,11 +405,7 @@ impl Screen for AmigaScreenBuffer {
     fn hyperlinks(&self) -> &Vec<HyperLink> {
         &self.hyperlinks
     }
-
-    fn version(&self) -> u64 {
-        self.buffer_version.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
+    
     fn default_foreground_color(&self) -> u32 {
         2
     }

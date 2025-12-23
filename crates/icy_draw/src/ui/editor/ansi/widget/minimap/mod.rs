@@ -33,8 +33,6 @@ pub struct SharedMinimapState {
 /// Cache state for optimizing minimap rendering
 #[derive(Debug, Clone)]
 struct MinimapCacheState {
-    /// Last buffer version we rendered for
-    last_buffer_version: u64,
     /// Cached texture slices
     cached_slices: Vec<TextureSliceData>,
     /// Cached slice heights
@@ -244,13 +242,12 @@ impl MinimapView {
         // Try to use tiles from shared render cache
         if let Some(cache_handle) = render_cache {
             // Read metadata without holding the lock for long
-            let (content_width_u32, content_height_f32, blink_state, cache_version) = {
+            let (content_width_u32, content_height_f32, blink_state) = {
                 let shared_cache = cache_handle.read();
                 (
                     shared_cache.content_width,
                     shared_cache.content_height,
                     shared_cache.last_blink_state,
-                    shared_cache.content_version(),
                 )
             };
 
@@ -297,7 +294,7 @@ impl MinimapView {
 
                     cache_state.is_none()
                         || cache_state.as_ref().map_or(true, |cs| {
-                            cs.last_buffer_version != cache_version || cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
+                            cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
                         })
                         || last_first != first_tile_idx
                         || last_count != desired_count
@@ -341,7 +338,6 @@ impl MinimapView {
                     // Update cache state
                     if !slices.is_empty() {
                         *self.cache_state.borrow_mut() = Some(MinimapCacheState {
-                            last_buffer_version: cache_version,
                             cached_slices: slices.clone(),
                             cached_heights: heights.clone(),
                             cached_total_height: total_height,
@@ -371,17 +367,26 @@ impl MinimapView {
                     let full_size = (content_width_u32, content_height as u32);
 
                     // Calculate local scroll offset for shader
+                    // The shader needs to know where the viewport is within the loaded tile window.
+                    // scroll_pixel_y is the top of the viewport in document space.
+                    // first_slice_start_y is where our loaded tiles start in document space.
+                    // We calculate how far into the loaded tiles the viewport starts.
                     let window_h = total_height as f32;
                     let scaled_window_h = window_h * scale;
                     let window_visible_uv_h = (avail_height / scaled_window_h).min(1.0);
                     let window_max_scroll_uv = (1.0 - window_visible_uv_h).max(0.0);
-                    let mut window_scroll_uv = if window_h > 0.0 {
-                        ((scroll_pixel_y - first_slice_start_y) / window_h).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    window_scroll_uv = window_scroll_uv.clamp(0.0, window_max_scroll_uv);
-                    let local_scroll_offset = if window_max_scroll_uv > 0.0 {
+                    
+                    // Calculate the offset within the tile window
+                    let offset_in_window = scroll_pixel_y - first_slice_start_y;
+                    // Calculate the maximum scroll offset within the window
+                    // (how much of the window extends beyond the visible area)
+                    let scrollable_window_height = (window_h - (visible_uv_height * content_height)).max(0.0);
+                    
+                    let local_scroll_offset = if scrollable_window_height > 0.0 {
+                        (offset_in_window / scrollable_window_height).clamp(0.0, 1.0)
+                    } else if window_max_scroll_uv > 0.0 {
+                        // Fallback to old calculation
+                        let window_scroll_uv = (offset_in_window / window_h).clamp(0.0, window_max_scroll_uv);
                         window_scroll_uv / window_max_scroll_uv
                     } else {
                         0.0
