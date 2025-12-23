@@ -510,6 +510,7 @@ impl MinimapPrimitive {
 }
 
 /// Texture array for GPU
+#[allow(dead_code)]
 struct TextureArray {
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
@@ -698,12 +699,7 @@ impl shader::Primitive for MinimapPrimitive {
                 ..Default::default()
             });
 
-            let texture_array = TextureArray {
-                texture,
-                texture_view,
-                layer_count,
-                layer_height: max_slice_h,
-            };
+            let texture_array = TextureArray { texture, texture_view };
 
             // Create uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
