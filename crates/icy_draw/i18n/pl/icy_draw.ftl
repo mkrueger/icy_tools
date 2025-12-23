@@ -167,6 +167,7 @@ menu-plugins=Wtyczki
 menu-open_plugin_directory=Otwórz katalog wtyczek…
 
 menu-upgrade_version=Uaktualnij do { $version }
+menu-update-available=⬆ Dostępna aktualizacja: { $version }
 
 tool-fg=Pierwszy plan
 tool-bg=Tło

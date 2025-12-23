@@ -167,6 +167,7 @@ menu-plugins=Plugins
 menu-open_plugin_directory=Obrir directori de plugins…
 
 menu-upgrade_version=Actualitzar a { $version }
+menu-update-available=⬆ Actualització disponible: { $version }
 
 tool-fg=Primer pla
 tool-bg=Fons

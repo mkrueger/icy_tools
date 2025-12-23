@@ -167,6 +167,7 @@ menu-plugins=Pluginuri
 menu-open_plugin_directory=Deschide directorul de pluginuri…
 
 menu-upgrade_version=Actualizează la { $version }
+menu-update-available=⬆ Actualizare disponibilă: { $version }
 
 tool-fg=Prim-plan
 tool-bg=Fundal

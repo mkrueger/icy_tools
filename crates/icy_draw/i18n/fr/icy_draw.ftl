@@ -167,6 +167,7 @@ menu-plugins=Plugins
 menu-open_plugin_directory=Ouvrir le répertoire des plugins…
 
 menu-upgrade_version=Mettre à jour vers { $version }
+menu-update-available=⬆ Mise à jour disponible: { $version }
 
 tool-fg=Premier plan
 tool-bg=Fond

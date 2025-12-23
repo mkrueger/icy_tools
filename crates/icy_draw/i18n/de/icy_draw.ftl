@@ -248,6 +248,7 @@ menu-about=Info…
 menu-plugins=Erweiterungen
 menu-open_plugin_directory=Erweiterungsverzeichnis öffnen…
 menu-upgrade_version=Neue Version { $version }
+menu-update-available=⬆ Update verfügbar: { $version }
 
 # BitFont Editor Menü
 menu-clear-glyph=Zeichen löschen

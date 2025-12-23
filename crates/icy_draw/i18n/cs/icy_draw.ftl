@@ -167,6 +167,7 @@ menu-plugins=Pluginy
 menu-open_plugin_directory=Otevřít adresář pluginů…
 
 menu-upgrade_version=Aktualizovat na { $version }
+menu-update-available=⬆ Dostupná aktualizace: { $version }
 
 tool-fg=Popředí
 tool-bg=Pozadí

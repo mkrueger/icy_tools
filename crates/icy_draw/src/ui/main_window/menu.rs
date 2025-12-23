@@ -6,7 +6,7 @@
 use iced::{
     Border, Color, Element, Length, Theme, alignment,
     border::Radius,
-    widget::{button, row, text},
+    widget::{Space, button, row, text},
 };
 use iced_aw::menu::Menu;
 use iced_aw::{quad, widget::InnerBounds};
@@ -510,7 +510,7 @@ impl MenuBarState {
 
         // Cache the whole menu subtree. During resize, this avoids rebuilding all menu widgets and
         // regenerating strings/translations.
-        iced::widget::lazy(key, move |key: &MenuBarCacheKey| {
+        let menu = iced::widget::lazy(key, move |key: &MenuBarCacheKey| {
             let undo_info = UndoInfo {
                 undo_description: key.undo_description.clone(),
                 redo_description: key.redo_description.clone(),
@@ -535,8 +535,24 @@ impl MenuBarState {
                 3 => animation::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
                 _ => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
             }
-        })
-        .into()
+        });
+
+        // Check if a newer version is available
+        let update_available = *crate::VERSION < *crate::LATEST_VERSION;
+
+        if update_available {
+            let update_text = fl!("menu-update-available", version = crate::LATEST_VERSION.to_string());
+            let update_btn = button(text(update_text).size(12))
+                .padding([4, 8])
+                .style(update_link_style)
+                .on_press(Message::OpenReleasesPage);
+
+            row![menu, Space::new().width(Length::Fill), update_btn, Space::new().width(8),]
+                .align_y(iced::Alignment::Center)
+                .into()
+        } else {
+            menu.into()
+        }
     }
 }
 
@@ -871,6 +887,29 @@ pub fn menu_item_disabled_style(theme: &Theme, _status: button::Status) -> butto
         text_color: palette.background.base.text.scale_alpha(0.5),
         border: Border::default().rounded(6.0),
         background: Some(Color::TRANSPARENT.into()),
+        ..Default::default()
+    }
+}
+
+/// Style for the update available link button
+fn update_link_style(_theme: &Theme, status: button::Status) -> button::Style {
+    // Use a nice info blue color
+    let info_color = Color::from_rgb(0.2, 0.6, 1.0);
+
+    let (bg, text_color) = match status {
+        button::Status::Active => (Color::TRANSPARENT, info_color),
+        button::Status::Hovered => (Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1), info_color),
+        button::Status::Pressed => (Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15), info_color),
+        button::Status::Disabled => (Color::TRANSPARENT, info_color.scale_alpha(0.3)),
+    };
+    button::Style {
+        background: Some(iced::Background::Color(bg)),
+        text_color,
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 4.0.into(),
+        },
         ..Default::default()
     }
 }

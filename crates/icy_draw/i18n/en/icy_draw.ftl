@@ -266,6 +266,7 @@ menu-plugins=Plugins
 menu-no_plugins=No plugins found
 
 menu-upgrade_version=Upgrade to { $version }
+menu-update-available=⬆ Update available: { $version }
 
 # Plugin errors
 error-plugin-title=Plugin Error

@@ -341,6 +341,8 @@ pub enum Message {
     OpenDiscussions,
     ReportBug,
     ShowAbout,
+    /// Open the GitHub releases page for the latest version
+    OpenReleasesPage,
     AboutDialog(icy_engine_gui::ui::AboutDialogMessage),
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1736,6 +1738,16 @@ impl MainWindow {
             Message::OpenDiscussions => {
                 if let Err(e) = open::that("https://github.com/mkrueger/icy_tools/discussions") {
                     log::error!("Failed to open discussions URL: {}", e);
+                }
+                Task::none()
+            }
+            Message::OpenReleasesPage => {
+                let url = format!(
+                    "https://github.com/mkrueger/icy_tools/releases/tag/IcyDraw{}",
+                    crate::LATEST_VERSION.to_string()
+                );
+                if let Err(e) = open::that(&url) {
+                    log::error!("Failed to open releases URL: {}", e);
                 }
                 Task::none()
             }

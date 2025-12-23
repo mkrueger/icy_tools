@@ -166,8 +166,7 @@ menu-about=Névjegy…
 menu-plugins=Pluginok
 menu-open_plugin_directory=Plugin könyvtár megnyitása…
 
-menu-upgrade_version=Frissítés { $version } verzióra
-
+menu-upgrade_version=Frissítés { $version } verzióramenu-update-available=⬆ Elérhető frissítés: { $version }
 tool-fg=Előtér
 tool-bg=Háttér
 tool-solid=Szilárd
