@@ -2,15 +2,15 @@ use std::path::PathBuf;
 
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, container, row, text, text_input, tooltip, Space},
     Element, Event, Length,
-    widget::{Space, button, container, row, text, text_input, tooltip},
 };
 use icy_engine_gui::command_handler;
 
 use super::icons::{arrow_back_icon, arrow_forward_icon, language_icon, refresh_icon, search_icon, settings_icon};
 use crate::commands::{cmd, create_icy_view_commands};
 use crate::items::ProviderType;
-use crate::{LANGUAGE_LOADER, ViewMode};
+use crate::{ViewMode, LANGUAGE_LOADER};
 use crate::{LATEST_VERSION, VERSION};
 
 /// A point in navigation history

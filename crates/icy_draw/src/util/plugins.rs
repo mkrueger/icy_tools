@@ -6,7 +6,7 @@
 use std::{collections::HashMap, fs, path::Path};
 
 use i18n_embed_fl::fl;
-use icy_engine::{AttributedChar, Position, TextPane, attribute};
+use icy_engine::{attribute, AttributedChar, Position, TextPane};
 use icy_engine_edit::EditState;
 use mlua::{Lua, UserData};
 use parking_lot::Mutex;
@@ -14,8 +14,8 @@ use regex::Regex;
 use std::sync::Arc;
 use walkdir::WalkDir;
 
-use crate::LANGUAGE_LOADER;
 use crate::Settings;
+use crate::LANGUAGE_LOADER;
 
 /// A Lua plugin that can be run on the buffer
 #[derive(Clone)]

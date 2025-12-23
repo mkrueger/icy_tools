@@ -9,19 +9,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use iced::{
-    Alignment, Color, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme,
-    keyboard::{Key, key::Named},
+    keyboard::{key::Named, Key},
     mouse,
     widget::{
-        Space,
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, image, row, text, text_input,
+        column, container, image, row, text, text_input, Space,
     },
+    Alignment, Color, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme,
 };
-use icy_engine::{AttributedChar, BitFont, FileFormat, FontMode, RenderOptions, TextAttribute, TextBuffer, get_sauce_font_names};
+use icy_engine::{get_sauce_font_names, AttributedChar, BitFont, FileFormat, FontMode, RenderOptions, TextAttribute, TextBuffer};
 use icy_engine_edit::FormatMode;
-use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
-use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
+use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
+use icy_engine_gui::{focus, ButtonType, ScrollbarOverlay, Viewport};
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
@@ -110,7 +109,11 @@ pub struct FontSource {
 
 impl FontSource {
     fn primary_category(&self) -> FontCategory {
-        if self.sauce_name.is_some() { FontCategory::Sauce } else { FontCategory::Ansi }
+        if self.sauce_name.is_some() {
+            FontCategory::Sauce
+        } else {
+            FontCategory::Ansi
+        }
     }
 }
 
@@ -632,7 +635,11 @@ impl SetFontDialog {
             fonts.push(font);
         }
 
-        if fonts.is_empty() { Err(fl!("set-font-xbin-no-fonts")) } else { Ok(fonts) }
+        if fonts.is_empty() {
+            Err(fl!("set-font-xbin-no-fonts"))
+        } else {
+            Ok(fonts)
+        }
     }
 
     fn get_visible_fonts(&self) -> Vec<usize> {
@@ -658,7 +665,11 @@ impl SetFontDialog {
         }
 
         if let Some(current_pos) = visible_fonts.iter().position(|&i| i == self.selected_index) {
-            if current_pos > 0 { Some(visible_fonts[current_pos - 1]) } else { None }
+            if current_pos > 0 {
+                Some(visible_fonts[current_pos - 1])
+            } else {
+                None
+            }
         } else {
             visible_fonts.last().copied()
         }
@@ -1179,8 +1190,8 @@ impl Dialog<Message> for SetFontDialog {
     fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
         match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
 
                 match key {
                     // Only handle Enter globally for applying the selection

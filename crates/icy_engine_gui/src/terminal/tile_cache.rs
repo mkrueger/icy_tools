@@ -183,7 +183,11 @@ impl TileCache {
     /// Calculate tile height in pixels (accounting for scanlines)
     pub fn tile_height_pixels(&self) -> u32 {
         let base_height = self.config.tile_height_lines * self.font_size.1;
-        if self.scan_lines { base_height * 2 } else { base_height }
+        if self.scan_lines {
+            base_height * 2
+        } else {
+            base_height
+        }
     }
 
     /// Calculate the tile index containing a given line
@@ -209,7 +213,11 @@ impl TileCache {
     /// Get total content height in pixels
     pub fn total_content_height(&self) -> u32 {
         let base_height = self.total_lines * self.font_size.1;
-        if self.scan_lines { base_height * 2 } else { base_height }
+        if self.scan_lines {
+            base_height * 2
+        } else {
+            base_height
+        }
     }
 
     /// Get a cached tile if it exists

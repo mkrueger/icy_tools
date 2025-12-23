@@ -4,8 +4,8 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::commands::CommandDef;
 use icy_engine_gui::ui::{HelpDialogMessage, HelpDialogState, HelpDialogWrapper};
 
-use crate::LANGUAGE_LOADER;
 use crate::commands::cmd;
+use crate::LANGUAGE_LOADER;
 
 /// Get all commands for the help dialog
 fn get_help_commands() -> Vec<CommandDef> {

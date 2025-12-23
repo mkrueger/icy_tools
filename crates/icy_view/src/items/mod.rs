@@ -16,7 +16,7 @@ pub use sixteencolors::*;
 
 use crate::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 use async_trait::async_trait;
-use icy_engine::{AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
+use icy_engine::{formats::FileFormat, AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane};
 pub use icy_engine_gui::ui::FileIcon;
 use tokio_util::sync::CancellationToken;
 

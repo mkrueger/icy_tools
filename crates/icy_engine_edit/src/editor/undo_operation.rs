@@ -6,12 +6,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, SauceMetaData, Selection, SelectionMask, Size, Tag,
-    TextPane, stamp_layer,
+    stamp_layer, AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, SauceMetaData, Selection,
+    SelectionMask, Size, Tag, TextPane,
 };
 
-use super::EditState;
 use super::undo_stack::OperationType;
+use super::EditState;
 
 /// Serializable editor undo operation enum
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1280,7 +1280,11 @@ mod collab_mapping {
                             cmds.extend(sub_cmds);
                         }
                     }
-                    if cmds.is_empty() { None } else { Some(cmds) }
+                    if cmds.is_empty() {
+                        None
+                    } else {
+                        Some(cmds)
+                    }
                 }
 
                 EditorUndoOp::SetChar { pos, layer: _, new, .. } => Some(vec![ClientCommand::Draw {
@@ -1310,7 +1314,11 @@ mod collab_mapping {
                             });
                         }
                     }
-                    if cmds.is_empty() { None } else { Some(cmds) }
+                    if cmds.is_empty() {
+                        None
+                    } else {
+                        Some(cmds)
+                    }
                 }
 
                 EditorUndoOp::ResizeBuffer { size, .. } => Some(vec![ClientCommand::SetCanvasSize {
@@ -1416,7 +1424,11 @@ mod collab_mapping {
                             cmds.extend(sub_cmds);
                         }
                     }
-                    if cmds.is_empty() { None } else { Some(cmds) }
+                    if cmds.is_empty() {
+                        None
+                    } else {
+                        Some(cmds)
+                    }
                 }
 
                 EditorUndoOp::SetChar { pos, layer: _, old, .. } => Some(vec![ClientCommand::Draw {
@@ -1446,7 +1458,11 @@ mod collab_mapping {
                             });
                         }
                     }
-                    if cmds.is_empty() { None } else { Some(cmds) }
+                    if cmds.is_empty() {
+                        None
+                    } else {
+                        Some(cmds)
+                    }
                 }
 
                 EditorUndoOp::ResizeBuffer { orig_size, .. } => Some(vec![ClientCommand::SetCanvasSize {

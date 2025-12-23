@@ -5,24 +5,24 @@ use std::{
 };
 
 use iced::{
-    Alignment, Element, Length, Task, Theme,
     widget::{column, container, pane_grid, row},
+    Alignment, Element, Length, Task, Theme,
 };
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{BitFont, TextPane};
+use icy_engine_edit::tools::Tool;
 use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
-use icy_engine_edit::tools::Tool;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::ui::{DialogStack, export_dialog_with_defaults_from_msg};
+use icy_engine_gui::ui::{export_dialog_with_defaults_from_msg, DialogStack};
 use parking_lot::RwLock;
 
-use crate::Plugin;
-use crate::Settings;
-use crate::SharedFontLibrary;
 use crate::ui::editor::palette::PaletteEditorDialog;
 use crate::ui::main_window::Message;
 use crate::ui::{LayerMessage, MinimapMessage};
+use crate::Plugin;
+use crate::Settings;
+use crate::SharedFontLibrary;
 
 use crate::ui::widget::paste_controls::{PasteControls, PasteControlsMessage};
 
@@ -852,8 +852,8 @@ impl AnsiEditorMainArea {
 
     /// Get the current screen as ANSI or ASCII
     pub fn get_screen(&self, format: &crate::mcp::types::AnsiScreenFormat) -> Result<String, String> {
-        use icy_engine::TextPane;
         use icy_engine::formats::FileFormat;
+        use icy_engine::TextPane;
 
         self.with_edit_state_readonly(|state| {
             let buffer = state.get_buffer();

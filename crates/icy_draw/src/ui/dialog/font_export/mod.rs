@@ -8,24 +8,24 @@
 
 mod image_export;
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use std::path::PathBuf;
 
 use iced::{
+    widget::{column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::MAX_FONT_HEIGHT;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
-    left_label_small, modal_container, primary_button, secondary_button, separator,
+    browse_button, button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
+    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
-use icy_engine_gui::{ButtonType, settings::effect_box};
+use icy_engine_gui::{settings::effect_box, ButtonType};
 
 use crate::fl;
-use crate::ui::Message;
 use crate::ui::editor::bitfont::BitFontEditorMessage;
+use crate::ui::Message;
 
 use super::font_import::FontPreviewCanvas;
 

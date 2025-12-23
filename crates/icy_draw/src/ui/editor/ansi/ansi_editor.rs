@@ -3,8 +3,8 @@ use super::{tool_registry, tools};
 use tools::ToolHandler;
 
 use crate::Settings;
-use icy_engine_edit::EditState;
 use icy_engine_edit::tools::Tool;
+use icy_engine_edit::EditState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -12,10 +12,10 @@ use clipboard_rs::{Clipboard, ClipboardContent};
 use iced::{Element, Length, Task};
 use icy_engine::formats::FileFormat;
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
-use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
+use icy_engine_gui::{TerminalMessage, ICY_CLIPBOARD_TYPE};
 use parking_lot::{Mutex, RwLock};
 
-use super::widget::outline_selector::{OutlineSelector, outline_selector_width};
+use super::widget::outline_selector::{outline_selector_width, OutlineSelector};
 
 // ============================================================================
 // Pure scroll calculation (testable without full editor)
@@ -1534,7 +1534,11 @@ impl AnsiEditorCore {
                             let prev = {
                                 let opts = self.options.read();
                                 let count = opts.fkeys.set_count();
-                                if count == 0 { 0 } else { (cur + count - 1) % count }
+                                if count == 0 {
+                                    0
+                                } else {
+                                    (cur + count - 1) % count
+                                }
                             };
                             self.set_current_fkey_set(prev);
                         }

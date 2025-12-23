@@ -6,7 +6,7 @@
 //! Supports different cursor modes: Editing, Selection, Operation.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{Color, Element, Length, Renderer, Theme, widget::canvas};
+use iced::{widget::canvas, Color, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -110,7 +110,11 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
         // Get the effective zoom from RenderInfo
         let zoom = {
             let info = self.render_info.read();
-            if info.display_scale > 0.0 { info.display_scale } else { 1.0 }
+            if info.display_scale > 0.0 {
+                info.display_scale
+            } else {
+                1.0
+            }
         };
 
         // Calculate scaled font dimensions

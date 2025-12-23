@@ -1,15 +1,15 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io;
-use std::io::Cursor;
 use std::io::prelude::*;
+use std::io::Cursor;
 
 use crate::{EditableScreen, Result, Size};
 
-use super::Bgi;
-use super::Direction;
 use super::character::Character;
 use super::character::SCALE_DOWN;
 use super::character::SCALE_UP;
+use super::Bgi;
+use super::Direction;
 
 pub struct Font {
     pub name: String,

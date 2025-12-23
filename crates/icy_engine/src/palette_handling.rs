@@ -135,7 +135,7 @@ impl From<Color> for [f32; 3] {
     }
 }
 
-use crate::{FileFormat, formats::PaletteFormat};
+use crate::{formats::PaletteFormat, FileFormat};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Palette {

@@ -4,10 +4,10 @@ use std::{collections::HashSet, io::Cursor, path::PathBuf, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use super::{ArchiveFolder, ArchiveItem, parse_archive, render_diz_to_thumbnail};
+use super::{parse_archive, render_diz_to_thumbnail, ArchiveFolder, ArchiveItem};
+use crate::items::{sort_folder, FileIcon, Item, ItemError};
+use crate::thumbnail::{scale_to_thumbnail_width, RgbaData};
 use crate::LANGUAGE_LOADER;
-use crate::items::{FileIcon, Item, ItemError, sort_folder};
-use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
 use i18n_embed_fl::fl;
 
 /// An archive file (ZIP, RAR, ARJ, etc.)

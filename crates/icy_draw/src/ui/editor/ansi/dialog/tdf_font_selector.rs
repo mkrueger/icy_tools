@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use iced::{
-    Alignment, Background, Border, Color, Element, Event, Length, Point, Rectangle, Size, Theme,
     advanced::{
         image::{self as adv_image, Renderer as _},
         layout::{self, Layout},
@@ -23,21 +22,21 @@ use iced::{
         widget::{self, Widget},
     },
     mouse,
-    widget::{Space, button, column, container, row, text, text_input},
+    widget::{button, column, container, row, text, text_input, Space},
+    Alignment, Background, Border, Color, Element, Event, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine_gui::{
-    Viewport,
     ui::{
-        ButtonType, DIALOG_SPACING, DIALOG_WIDTH_XARGLE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, modal_container, primary_button,
-        secondary_button, separator,
+        dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
+        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
-    wrap_with_scrollbars,
+    wrap_with_scrollbars, Viewport,
 };
 
-use crate::LANGUAGE_LOADER;
-use crate::SharedFontLibrary;
-use crate::ui::Message;
 use crate::ui::editor::ansi::AnsiEditorMessage;
+use crate::ui::Message;
+use crate::SharedFontLibrary;
+use crate::LANGUAGE_LOADER;
 use i18n_embed_fl::fl;
 
 /// Helper function to wrap TdfFontSelectorMessage in the full Message path
@@ -964,8 +963,8 @@ impl TdfFontSelectorDialog {
 
     /// Handle keyboard navigation
     fn handle_key(&mut self, key: &iced::keyboard::Key, _modifiers: &iced::keyboard::Modifiers) -> bool {
-        use iced::keyboard::Key;
         use iced::keyboard::key::Named;
+        use iced::keyboard::Key;
 
         if self.filtered_fonts.is_empty() {
             return false;
@@ -1205,8 +1204,8 @@ impl Dialog<Message> for TdfFontSelectorDialog {
     }
 
     fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
-        use iced::keyboard::Key;
         use iced::keyboard::key::Named;
+        use iced::keyboard::Key;
 
         if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
             let msg = match key {

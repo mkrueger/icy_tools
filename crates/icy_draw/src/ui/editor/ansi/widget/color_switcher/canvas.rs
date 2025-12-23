@@ -14,8 +14,9 @@
 #![allow(dead_code)]
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme, mouse,
+    mouse,
     widget::canvas::{Action, Canvas, Frame, Geometry, Path, Program, Stroke},
+    Color, Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::{Palette, TextAttribute};
 

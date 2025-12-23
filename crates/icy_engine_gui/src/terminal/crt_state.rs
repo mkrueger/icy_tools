@@ -1,11 +1,11 @@
 use parking_lot::Mutex;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use super::{CRTShaderProgram, TextureSliceData};
 use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
-use iced::Element;
 use iced::widget::shader;
+use iced::Element;
 use icy_engine::GraphicsType;
 use icy_engine::MouseState;
 use icy_engine::Position;

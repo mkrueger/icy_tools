@@ -1,16 +1,17 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, checkbox, column, container, row, scrollable, svg, text, text_input, tooltip, Space},
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, checkbox, column, container, row, scrollable, svg, text, text_input, tooltip},
 };
 use icy_engine_gui::{
-    SECTION_PADDING, TEXT_SIZE_NORMAL, section_header,
+    section_header,
     settings::effect_box,
-    ui::{DIALOG_SPACING, TEXT_SIZE_SMALL, left_label_small, secondary_button_style},
+    ui::{left_label_small, secondary_button_style, DIALOG_SPACING, TEXT_SIZE_SMALL},
+    SECTION_PADDING, TEXT_SIZE_NORMAL,
 };
 use icy_net::modem::ModemCommand;
 
-use crate::ui::settings_dialog::{SettingsDialogMessage, SettingsDialogState, modem_command_input_generic};
+use crate::ui::settings_dialog::{modem_command_input_generic, SettingsDialogMessage, SettingsDialogState};
 
 const ADD_SVG: &[u8] = include_bytes!("../../../../data/icons/add.svg");
 const DELETE_SVG: &[u8] = include_bytes!("../../../../data/icons/delete.svg");

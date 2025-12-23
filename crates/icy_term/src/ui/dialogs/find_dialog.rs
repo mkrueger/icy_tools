@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::{
-    Border, Color, Element, Length, Shadow, Theme,
     alignment::{Horizontal, Vertical},
-    widget::{Id, button, column, container, row, text, text_input},
+    widget::{button, column, container, row, text, text_input, Id},
+    Border, Color, Element, Length, Shadow, Theme,
 };
 use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection, TextPane};
 use icy_engine_gui::ui::{
-    BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, danger_button_style, primary_button_style, secondary_button_style,
+    danger_button_style, primary_button_style, secondary_button_style, BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 
 use crate::ui::{MainWindowMode, Message};

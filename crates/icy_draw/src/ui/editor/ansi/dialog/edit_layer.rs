@@ -4,20 +4,20 @@
 //! Replaces the separate EditLayerDialog and ResizeLayerDialog from the egui version.
 
 use iced::{
+    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::{LayerProperties, Mode, Size};
-use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, dialog_title, left_label_small,
-    modal_container, primary_button, secondary_button, separator,
+    button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
+    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::ButtonType;
 
 use crate::fl;
-use crate::ui::Message;
 use crate::ui::editor::ansi::AnsiEditorMessage;
+use crate::ui::Message;
 
 /// Helper function to wrap edit layer dialog messages
 fn msg(m: EditLayerDialogMessage) -> Message {

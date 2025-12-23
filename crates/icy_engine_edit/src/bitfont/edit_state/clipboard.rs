@@ -4,8 +4,8 @@
 //!
 //! Clipboard format is custom BitFont data that preserves pixel data dimensions.
 
-use crate::Result;
 use crate::bitfont::BitFontUndoOp;
+use crate::Result;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -40,7 +40,7 @@ impl BitFontEditState {
     ///
     /// Clears edit and charset selections after copying.
     pub fn copy(&mut self) -> Result<()> {
-        use crate::bitfont::{BitFontClipboardData, BitFontClipboardError, copy_to_clipboard};
+        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData, BitFontClipboardError};
 
         let pixels = self.get_copy_data();
         let data = BitFontClipboardData::new(pixels);
@@ -65,7 +65,7 @@ impl BitFontEditState {
     /// Copies to clipboard then erases the selection.
     /// Clears edit and charset selections after cutting.
     pub fn cut(&mut self) -> Result<()> {
-        use crate::bitfont::{BitFontClipboardData, BitFontClipboardError, copy_to_clipboard};
+        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData, BitFontClipboardError};
 
         // Copy data to clipboard first (before erasing)
         let pixels = self.get_copy_data();
@@ -94,7 +94,7 @@ impl BitFontEditState {
     /// **EditGrid focus**: Pastes at cursor position, clipping if necessary.
     /// **CharSet focus**: Pastes to all selected characters at top-left (0, 0).
     pub fn paste(&mut self) -> Result<()> {
-        use crate::bitfont::{BitFontClipboardError, get_from_clipboard};
+        use crate::bitfont::{get_from_clipboard, BitFontClipboardError};
 
         let clipboard_data = get_from_clipboard().map_err(|e| {
             crate::EngineError::Generic(match e {

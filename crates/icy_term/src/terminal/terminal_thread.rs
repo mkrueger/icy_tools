@@ -1,9 +1,9 @@
-use crate::ConnectionInformation;
-use crate::TransferProtocol;
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::{AutoTransferScanner, IEmsiAutoLogin};
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
+use crate::ConnectionInformation;
+use crate::TransferProtocol;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_engine_gui::music::sound_effects::sound_data;
@@ -13,13 +13,13 @@ use icy_engine_gui::util::QueueingSink;
 use icy_net::iemsi::EmsiISI;
 use icy_net::rlogin::RloginConfig;
 use icy_net::{
-    Connection, ConnectionState, ConnectionType,
     modem::{ModemConfiguration, ModemConnection, ModemResponseType},
     protocol::{Protocol, TransferState},
     raw::RawConnection,
     serial::{Serial, SerialConnection},
     ssh::{Credentials, SSHConnection},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
+    Connection, ConnectionState, ConnectionType,
 };
 use icy_parser_core::*;
 use icy_parser_core::{AnsiMusic, CommandParser, TerminalRequest};

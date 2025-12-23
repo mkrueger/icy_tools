@@ -3,10 +3,10 @@
 //! Provides an iced Subscription that wraps the collaboration client
 //! and delivers events to the main application.
 
-use iced::Subscription;
-use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender;
+use iced::futures::SinkExt;
 use iced::stream::channel;
+use iced::Subscription;
 use icy_engine_edit::collaboration::{ClientConfig, ClientHandle, CollaborationEvent};
 use std::sync::OnceLock;
 

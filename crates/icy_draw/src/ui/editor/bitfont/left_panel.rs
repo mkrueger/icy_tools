@@ -5,7 +5,7 @@
 
 use iced::{Color, Element};
 
-use super::{BITFONT_TOOL_SLOTS, BitFontTool};
+use super::{BitFontTool, BITFONT_TOOL_SLOTS};
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage};
 
 // ═══════════════════════════════════════════════════════════════════════════

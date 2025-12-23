@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use icy_engine::{
-    AttributedChar, BufferType, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane,
     formats::{FileFormat, ImageFormat},
+    AttributedChar, BufferType, LoadData, Rectangle, RenderOptions, Screen, ScreenMode, TextAttribute, TextBuffer, TextPane,
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_sauce::SauceRecord;
@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::items::Item;
 use crate::ui::preview::prepare_parser_data;
 
-use super::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH, ThumbnailResult, ThumbnailState, get_width_multiplier};
+use super::thumbnail::{get_width_multiplier, RgbaData, ThumbnailResult, ThumbnailState, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 
 /// Maximum characters per line for label tag
 const TAG_MAX_CHARS_PER_LINE: usize = 28;
@@ -671,7 +671,7 @@ fn render_screen_to_thumbnail(
     // Render based on buffer type
     let (size_on, rgba_on, size_off, rgba_off) = if is_unicode {
         // Use unicode renderer for Unicode screens
-        use icy_engine_gui::{RenderUnicodeOptions, render_unicode_to_rgba};
+        use icy_engine_gui::{render_unicode_to_rgba, RenderUnicodeOptions};
 
         let glyph_cache = Arc::new(Mutex::new(None));
 

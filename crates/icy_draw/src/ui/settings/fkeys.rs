@@ -3,7 +3,7 @@
 //! Moebius treats F1..F12 as 12 slots within a selectable character set.
 //! Default sets and initial set index are derived from the embedded Moebius defaults.
 
-use std::fs::{File, create_dir_all};
+use std::fs::{create_dir_all, File};
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 

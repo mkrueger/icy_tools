@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{get_file_name, read_folder};
 use crate::items::{FileIcon, Item, ItemError};
-use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
+use crate::thumbnail::{scale_to_thumbnail_width, RgbaData};
 
 pub struct ItemFolder {
     pub path: PathBuf,

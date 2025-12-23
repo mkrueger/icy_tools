@@ -1,7 +1,7 @@
 //! Tests for brush size expansion utilities
 
 use icy_engine::Position;
-use icy_engine_edit::brushes::{PointRole, expand_points_by_brush_size, expand_points_with_role_by_brush_size};
+use icy_engine_edit::brushes::{expand_points_by_brush_size, expand_points_with_role_by_brush_size, PointRole};
 
 #[test]
 fn test_expand_points_by_brush_size_1() {

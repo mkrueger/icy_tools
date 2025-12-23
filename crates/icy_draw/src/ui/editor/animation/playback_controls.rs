@@ -3,12 +3,12 @@
 //! Professional video player-style controls with modern styling
 
 use iced::{
+    widget::{button, column, container, row, slider, Space},
     Alignment, Background, Border, Element, Length, Shadow, Theme,
-    widget::{Space, button, column, container, row, slider},
 };
 use icy_engine_gui::theme::main_area_background;
 
-use super::{AnimationEditor, AnimationEditorMessage, icons};
+use super::{icons, AnimationEditor, AnimationEditorMessage};
 
 // === Button Size Constants ===
 const TRANSPORT_BUTTON_SIZE: f32 = 28.0;

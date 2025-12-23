@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use icy_engine::BitFont;
-use quantette::{Image, PaletteSize, Pipeline, deps::palette::Srgb, dither::FloydSteinberg};
+use quantette::{deps::palette::Srgb, dither::FloydSteinberg, Image, PaletteSize, Pipeline};
 
 /// Import a font from an image file
 ///
@@ -65,7 +65,11 @@ pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32, us
     let white_index = if palette.len() >= 2 {
         let luma0 = palette[0].red as u32 + palette[0].green as u32 + palette[0].blue as u32;
         let luma1 = palette[1].red as u32 + palette[1].green as u32 + palette[1].blue as u32;
-        if luma1 > luma0 { 1u8 } else { 0u8 }
+        if luma1 > luma0 {
+            1u8
+        } else {
+            0u8
+        }
     } else if !palette.is_empty() {
         0u8
     } else {

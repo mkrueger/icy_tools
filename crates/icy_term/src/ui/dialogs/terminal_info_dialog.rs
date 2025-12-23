@@ -1,17 +1,17 @@
 use clipboard_rs::{Clipboard, ClipboardContent};
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, container, row, text, tooltip, Space},
     Alignment, Background, Element, Length, Theme,
-    widget::{Space, column, container, row, text, tooltip},
 };
 use icy_engine::{Position, ScreenMode, Size, TerminalScrolling};
-use icy_engine_gui::StateResult;
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, SECTION_SPACING, SPACE_4, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row_with_left, dialog_area, modal_container,
-    primary_button, secondary_button, section_header, separator,
+    button_row_with_left, dialog_area, modal_container, primary_button, secondary_button, section_header, separator, DIALOG_SPACING, DIALOG_WIDTH_LARGE,
+    SECTION_SPACING, SPACE_4, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::StateResult;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{BaudEmulation, CaretShape, MusicOption};
 

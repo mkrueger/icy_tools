@@ -1,6 +1,6 @@
 use std::cell::RefCell;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::Mutex;
@@ -15,11 +15,11 @@ use tokio::sync::mpsc;
 use icy_engine_gui::{ScrollbarOverlayCallback, Viewport};
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
-use super::thumbnail::{ERROR_PLACEHOLDER, LOADING_PLACEHOLDER, Thumbnail, ThumbnailResult, ThumbnailState};
-use super::thumbnail_loader::{ThumbnailLoader, ThumbnailRequest, create_labeled_placeholder, render_label_tag};
-use super::tile_shader::{TILE_PADDING, TILE_SPACING, TILE_WIDTH, TileGridShader, TileTexture, new_tile_id};
-use crate::ScrollSpeed;
+use super::thumbnail::{Thumbnail, ThumbnailResult, ThumbnailState, ERROR_PLACEHOLDER, LOADING_PLACEHOLDER};
+use super::thumbnail_loader::{create_labeled_placeholder, render_label_tag, ThumbnailLoader, ThumbnailRequest};
+use super::tile_shader::{new_tile_id, TileGridShader, TileTexture, TILE_PADDING, TILE_SPACING, TILE_WIDTH};
 use crate::items::{Item, ItemError};
+use crate::ScrollSpeed;
 
 /// Base tile width for layout calculations (full tile including borders)
 const TILE_BASE_WIDTH: f32 = TILE_WIDTH;

@@ -668,7 +668,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         // Type field: [compression: u8][reserved: u16]
         result.push(file_compression); // compression method
         result.extend([0, 0]); // reserved
-        // Modes
+                               // Modes
         result.extend(u16::to_le_bytes(buf.buffer_type.to_byte() as u16));
         result.push(buf.ice_mode.to_byte());
         result.push(buf.font_mode.to_byte());

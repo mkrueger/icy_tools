@@ -24,10 +24,11 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 use iced::widget::canvas;
 use iced::widget::canvas::Canvas;
 use iced::{
-    Background, Border, Element, Length, Task, Theme, highlighter, mouse,
-    widget::{Space, column, container, pane_grid, row, rule, scrollable, stack, text, text_editor},
+    highlighter, mouse,
+    widget::{column, container, pane_grid, row, rule, scrollable, stack, text, text_editor, Space},
+    Background, Border, Element, Length, Task, Theme,
 };
-use icy_engine_gui::{MonitorSettings, ScalingMode, Terminal, TerminalView, theme::main_area_background, ui::DialogStack};
+use icy_engine_gui::{theme::main_area_background, ui::DialogStack, MonitorSettings, ScalingMode, Terminal, TerminalView};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
@@ -1042,7 +1043,11 @@ impl AnimationEditor {
     /// Get script errors
     pub fn get_errors(&self) -> Vec<String> {
         let animator = self.animator.lock();
-        if animator.error.is_empty() { vec![] } else { vec![animator.error.clone()] }
+        if animator.error.is_empty() {
+            vec![]
+        } else {
+            vec![animator.error.clone()]
+        }
     }
 
     /// Whether animation is playing

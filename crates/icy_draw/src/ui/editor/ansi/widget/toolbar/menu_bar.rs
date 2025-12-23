@@ -4,26 +4,26 @@
 //! This allows hotkey handling and menu generation from a single source.
 
 use iced::{
-    Border, Element, Length, Theme,
     border::Radius,
     widget::{button, text},
+    Border, Element, Length, Theme,
 };
 use iced_aw::menu::{self, Menu};
-use iced_aw::style::{Status, menu_bar::primary};
+use iced_aw::style::{menu_bar::primary, Status};
 use iced_aw::{menu_bar, menu_items};
 
-use crate::MostRecentlyUsedFiles;
-use crate::Plugin;
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
-use crate::ui::main_window::Message;
 use crate::ui::main_window::commands::selection_cmd;
 use crate::ui::main_window::commands::{area_cmd, color_cmd, view_cmd};
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_cmd_label_enabled, menu_item_enabled, menu_item_redo,
-    menu_item_simple, menu_item_simple_enabled, menu_item_style, menu_item_submenu, menu_item_undo, separator,
+    build_recent_files_menu, menu_button, menu_item, menu_item_checkbox, menu_item_cmd_label_enabled, menu_item_enabled, menu_item_redo, menu_item_simple,
+    menu_item_simple_enabled, menu_item_style, menu_item_submenu, menu_item_undo, separator, MenuItem, UndoInfo,
 };
-use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
+use crate::ui::main_window::Message;
+use crate::MostRecentlyUsedFiles;
+use crate::Plugin;
+use icy_engine_gui::commands::{cmd, hotkey_from_iced, Hotkey};
 
 /// Current state of guides/raster for menu display
 #[derive(Clone, Debug, Default)]

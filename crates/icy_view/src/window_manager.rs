@@ -2,10 +2,10 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{Element, Event, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
+use iced::{keyboard, widget::space, window, Element, Event, Size, Subscription, Task, Theme, Vector};
 
-use crate::Options;
 use crate::ui::{MainWindow, Message};
+use crate::Options;
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
@@ -245,7 +245,7 @@ impl WindowManager {
                         let alt = mods.alt();
                         let shift = mods.shift();
                         let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
-                        // Also store globally for cross-widget access
+                                                      // Also store globally for cross-widget access
                         icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
                         None
                     }

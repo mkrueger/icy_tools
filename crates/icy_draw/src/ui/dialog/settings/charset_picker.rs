@@ -8,13 +8,14 @@
 //! - Set navigation (multiple character sets)
 
 use iced::{
-    Element, Length, Point, Rectangle, Size, Theme, mouse,
+    mouse,
     mouse::Cursor,
     widget::{
         button,
         canvas::{self, Action, Cache, Frame, Geometry, Program},
         column, container, row, text,
     },
+    Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::BitFont;
 

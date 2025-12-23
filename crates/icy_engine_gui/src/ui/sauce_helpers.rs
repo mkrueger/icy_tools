@@ -3,7 +3,7 @@
 //! Provides consistent styling for SAUCE metadata fields (title, author, group)
 //! across all icy_tools applications.
 
-use iced::{Color, Theme, widget::text_input};
+use iced::{widget::text_input, Color, Theme};
 
 /// SAUCE field color category for dialog styling
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

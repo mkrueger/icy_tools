@@ -1,13 +1,14 @@
 use crate::EXTERNAL_COMMAND_COUNT;
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Element, Length, Theme,
     widget::{column, row, text, text_input},
+    Alignment, Element, Length, Theme,
 };
 use icy_engine_gui::{
-    SECTION_PADDING, section_header,
+    section_header,
     settings::effect_box,
-    ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, left_label_small},
+    ui::{left_label_small, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
+    SECTION_PADDING,
 };
 
 use super::SettingsDialogMessage;

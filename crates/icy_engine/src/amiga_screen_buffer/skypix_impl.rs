@@ -1,7 +1,7 @@
 use icy_parser_core::{DisplayMode, SkypixCommand};
 
 use super::sky_paint::SkyPaint;
-use crate::{BitFont, EditableScreen, Palette, SKYPIX_PALETTE, SKYPIX_PALETTE_8, Screen, Size, get_amiga_font_by_name};
+use crate::{get_amiga_font_by_name, BitFont, EditableScreen, Palette, Screen, Size, SKYPIX_PALETTE, SKYPIX_PALETTE_8};
 
 /// Resets font page from a custom font (page 1) back to the default font (page 0).
 /// Corrects the Y position so the caret stays at the baseline rather than the top

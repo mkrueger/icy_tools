@@ -3,7 +3,7 @@
 //! Tests TextScreen, PaletteScreenBuffer, and ScrollbackBuffer performance
 //! for various region sizes and offsets.
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use icy_engine::{
     AttributedChar, GraphicsType, PaletteScreenBuffer, Position, Rectangle, RenderOptions, Screen, ScrollbackBuffer, ScrollbackChunk, Size, TextScreen,
 };

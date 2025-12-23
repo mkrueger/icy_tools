@@ -5,16 +5,16 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData, compute_viewport_auto,
-    compute_viewport_manual, get_scale_factor, is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
-    shared_render_cache::{SharedCachedTile, TILE_HEIGHT, TileCacheKey},
+    compute_viewport_auto, compute_viewport_manual, get_scale_factor, is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
+    shared_render_cache::{SharedCachedTile, TileCacheKey, TILE_HEIGHT},
     tile_cache::MAX_TEXTURE_SLICES,
+    CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData,
 };
 use iced::widget::shader;
-use iced::{Rectangle, mouse, window};
+use iced::{mouse, window, Rectangle};
 use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Global render generation counter - incremented each time tiles are re-rendered

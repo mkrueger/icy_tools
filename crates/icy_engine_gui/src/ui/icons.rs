@@ -1,4 +1,4 @@
-use iced::{Length, Theme, widget::svg};
+use iced::{widget::svg, Length, Theme};
 use icy_engine::formats::FileFormat;
 
 // Status icons

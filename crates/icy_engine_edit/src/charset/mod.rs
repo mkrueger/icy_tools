@@ -21,5 +21,5 @@ pub use undo_operations::*;
 pub use undo_stack::*;
 
 // Re-export retrofont types for convenience
-pub use retrofont::Glyph;
 pub use retrofont::tdf::TdfFont;
+pub use retrofont::Glyph;

@@ -4,7 +4,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, BitFont, IceMode, Layer, Palette, Result, TextPane};
 
-use super::{EditState, undo_operation::EditorUndoOp};
+use super::{undo_operation::EditorUndoOp, EditState};
 
 impl EditState {
     pub fn switch_to_font_page(&mut self, page: u8) -> Result<()> {

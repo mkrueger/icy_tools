@@ -1,6 +1,6 @@
 //! Messages for BitFont editor
 
-use iced::{Point, keyboard::Modifiers};
+use iced::{keyboard::Modifiers, Point};
 use icy_engine_edit::bitfont::BitFontFocusedPanel;
 
 use super::{BitFontTool, BitFontToolPanelMessage, BitFontTopToolbarMessage};

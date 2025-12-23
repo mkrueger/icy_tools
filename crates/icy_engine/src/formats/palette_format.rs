@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{Color, FileFormat, Palette, Screen, formats::io::load_xbin};
+use crate::{formats::io::load_xbin, Color, FileFormat, Palette, Screen};
 
 use regex::Regex;
 

@@ -5,11 +5,11 @@ use std::{
 };
 
 use directories::UserDirs;
-use icy_engine_gui::{MonitorSettings, music::music::DialTone};
+use icy_engine_gui::{music::music::DialTone, MonitorSettings};
 use icy_net::{modem::ModemConfiguration, serial::Serial};
 use serde::{Deserialize, Serialize};
 
-use crate::{TerminalResult, TransferProtocol, default_protocols};
+use crate::{default_protocols, TerminalResult, TransferProtocol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Scaling {

@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use iced::{
+    widget::{column, container, row, stack, text, Space},
     Color, Element, Length,
-    widget::{Space, column, container, row, stack, text},
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;

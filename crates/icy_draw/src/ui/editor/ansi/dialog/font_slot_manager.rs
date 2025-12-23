@@ -8,18 +8,18 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use iced::{
-    Alignment, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
-    keyboard::{Key, key::Named},
+    keyboard::{key::Named, Key},
     mouse,
     widget::{
-        Space, button,
+        button,
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, row, text,
+        column, container, row, text, Space,
     },
+    Alignment, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
 use icy_engine::BitFont;
-use icy_engine_gui::ui::{DIALOG_SPACING, Dialog, DialogAction, dialog_area, modal_container, primary_button, secondary_button, separator};
-use icy_engine_gui::{ButtonType, ScrollbarOverlay, Viewport, focus};
+use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
+use icy_engine_gui::{focus, ButtonType, ScrollbarOverlay, Viewport};
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::Message;

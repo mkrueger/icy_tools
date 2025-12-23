@@ -133,9 +133,9 @@ impl std::fmt::Display for FormatMode {
 }
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result,
-    SauceMetaData, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, TextScreen, clipboard,
-    overlay_mask::OverlayMask,
+    clipboard, overlay_mask::OverlayMask, AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position,
+    Rectangle, RenderOptions, Result, SauceMetaData, SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer,
+    TextPane, TextScreen,
 };
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 use parking_lot::Mutex as ParkingMutex;
@@ -658,7 +658,11 @@ impl EditState {
 
     pub fn get_current_tag(&self) -> Result<usize> {
         let len = self.screen.buffer.tags.len();
-        if len > 0 { Ok(self.current_tag.clamp(0, len - 1)) } else { Ok(0) }
+        if len > 0 {
+            Ok(self.current_tag.clamp(0, len - 1))
+        } else {
+            Ok(0)
+        }
     }
 
     pub fn set_current_tag(&mut self, tag: usize) {

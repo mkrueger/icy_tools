@@ -8,14 +8,14 @@
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use iced::keyboard::key::Physical;
-use iced::widget::{Space, button, column, row, svg, text};
+use iced::widget::{button, column, row, svg, text, Space};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position};
 use icy_engine_edit::brushes;
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::TerminalMessage;
 
-use super::paint::{BrushSettings, apply_stamp_at_doc_pos, begin_paint_undo};
+use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 use crate::ui::editor::ansi::widget::toolbar::top::{ARROW_LEFT_SVG, ARROW_RIGHT_SVG};
@@ -143,8 +143,8 @@ impl ToolHandler for PencilTool {
                 physical_key,
                 ..
             }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
 
                 // - Alt+= increase
                 // - Alt+- decrease

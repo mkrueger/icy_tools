@@ -1,4 +1,4 @@
-use icy_engine::{BufferType, formats::FileFormat};
+use icy_engine::{formats::FileFormat, BufferType};
 use std::path::Path;
 
 #[test]

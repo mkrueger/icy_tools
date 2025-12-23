@@ -1,11 +1,11 @@
 use crate::{
-    AttributeColor, AttributedChar, BitFont, FontMode, IceMode, LoadingError, Palette, Result, SavingError, TextBuffer, TextPane, TextScreen,
-    analyze_font_usage, attribute, guess_font_name,
+    analyze_font_usage, attribute, guess_font_name, AttributeColor, AttributedChar, BitFont, FontMode, IceMode, LoadingError, Palette, Result, SavingError,
+    TextBuffer, TextPane, TextScreen,
 };
 
 use rayon::prelude::*;
 
-use super::super::{LoadData, SauceBuilder, SaveOptions, TextAttribute, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;

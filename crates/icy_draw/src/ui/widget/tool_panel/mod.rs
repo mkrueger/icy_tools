@@ -9,8 +9,9 @@
 //! - Scale factor aware
 
 use iced::{
-    Color, Element, Length, Rectangle, mouse,
+    mouse,
     widget::shader::{self, Shader},
+    Color, Element, Length, Rectangle,
 };
 
 use crate::ui::editor::ansi::constants::{TOOL_BLEND_ANIMATION_DURATION, TOOL_ICON_PADDING, TOOL_ICON_SIZE};
@@ -279,7 +280,11 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
             }
 
             let slot = row * cols + col;
-            if slot < num_buttons { Some(slot) } else { None }
+            if slot < num_buttons {
+                Some(slot)
+            } else {
+                None
+            }
         };
 
         match event {

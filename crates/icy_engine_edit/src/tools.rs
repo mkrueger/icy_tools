@@ -70,7 +70,11 @@ impl ToolPair {
 
     /// Get the other tool in the pair (toggle)
     pub fn toggle(&self, current: Tool) -> Tool {
-        if current == self.primary { self.secondary } else { self.primary }
+        if current == self.primary {
+            self.secondary
+        } else {
+            self.primary
+        }
     }
 
     /// Check if this is a single tool (no toggle partner)
@@ -233,7 +237,11 @@ pub fn get_slot_display_tool(slot: usize, current_tool: Tool) -> Tool {
     }
 
     let pair = &TOOL_SLOTS[slot];
-    if pair.contains(current_tool) { current_tool } else { pair.primary }
+    if pair.contains(current_tool) {
+        current_tool
+    } else {
+        pair.primary
+    }
 }
 
 #[cfg(test)]

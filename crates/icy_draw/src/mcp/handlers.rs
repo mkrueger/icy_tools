@@ -1,6 +1,5 @@
 //! MCP tool handlers for icy_draw
 
-use crate::mcp::McpCommand;
 use crate::mcp::types::{
     AnimationGetScreenRequest, AnimationGetTextRequest, AnimationReplaceTextRequest, AnsiAddLayerRequest, AnsiDeleteLayerRequest, AnsiGetLayerRequest,
     AnsiGetRegionRequest, AnsiGetScreenRequest, AnsiMergeDownLayerRequest, AnsiMoveLayerRequest, AnsiResizeRequest, AnsiRunScriptRequest,
@@ -8,10 +7,10 @@ use crate::mcp::types::{
     AnsiSetSelectionRequest, BitFontGetCharRequest, BitFontSetCharRequest, CharListResponse, EditorStatus, GetHelpRequest, LoadDocumentRequest,
     NewDocumentRequest,
 };
+use crate::mcp::McpCommand;
 
 use parking_lot::Mutex;
 use rmcp::{
-    ErrorData as McpError, ServerHandler,
     handler::server::{
         tool::{ToolCallContext, ToolRouter},
         wrapper::Parameters,
@@ -20,7 +19,7 @@ use rmcp::{
         CallToolRequestParam, CallToolResult, Content, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
         ServerCapabilities,
     },
-    tool, tool_router,
+    tool, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};

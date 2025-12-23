@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use i18n_embed_fl::fl;
-use icy_engine::TextBuffer;
 use icy_engine::char_set::TdfBufferRenderer;
+use icy_engine::TextBuffer;
 use icy_engine_gui::ui::FileIcon;
 use retrofont::{Font, RenderOptions};
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{Item, ItemError, create_text_buffer_preview, sort_folder};
+use crate::items::{create_text_buffer_preview, sort_folder, Item, ItemError};
 use crate::thumbnail::RgbaData;
 
-use super::{API_PATH, SixteenColorsPack, cache::fetch_json_async, get_cache};
+use super::{cache::fetch_json_async, get_cache, SixteenColorsPack, API_PATH};
 
 /// Embedded ZETRAX.TDF font data
 const ZETRAX_TDF: &[u8] = include_bytes!("ZETRAX.TDF");

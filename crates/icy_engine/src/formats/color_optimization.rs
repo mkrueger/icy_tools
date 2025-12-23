@@ -1,4 +1,4 @@
-use crate::{BitFont, SaveOptions, TextAttribute, TextBuffer, TextPane, fonts::CompactGlyph};
+use crate::{fonts::CompactGlyph, BitFont, SaveOptions, TextAttribute, TextBuffer, TextPane};
 use std::collections::HashMap;
 
 enum GlyphShape {

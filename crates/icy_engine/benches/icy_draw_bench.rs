@@ -5,7 +5,7 @@
 //! - Saving performance (with thumbnail)
 //! - Saving performance (skip_thumbnail)
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use icy_engine::{FileFormat, SaveOptions, TextPane};
 use std::fs;
 use std::hint::black_box;

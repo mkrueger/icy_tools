@@ -166,7 +166,11 @@ impl ToolRegistry {
             return Tool::Click;
         }
         let pair = &self.slots[slot];
-        if pair.contains(current_tool) { current_tool } else { pair.primary }
+        if pair.contains(current_tool) {
+            current_tool
+        } else {
+            pair.primary
+        }
     }
 
     /// Click on a tool slot - returns the new tool to use

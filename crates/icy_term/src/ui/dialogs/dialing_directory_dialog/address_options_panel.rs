@@ -1,18 +1,18 @@
-use crate::ConnectionInformation;
-use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
+use crate::ui::Message;
+use crate::ConnectionInformation;
 use i18n_embed_fl::fl;
-use iced::Padding;
 use iced::widget::tooltip;
+use iced::Padding;
 use iced::{
+    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input},
 };
 use icy_engine::{ScreenMode, TerminalResolutionExt, VGA_MODES};
 use icy_engine_gui::settings::{effect_box, left_label};
-use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button, text_button_style};
-use icy_engine_gui::{LABEL_WIDTH, SECTION_SPACING, section_header};
-use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_engine_gui::ui::{primary_button, secondary_button, text_button_style, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
+use icy_engine_gui::{section_header, LABEL_WIDTH, SECTION_SPACING};
+use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use once_cell::sync::Lazy;
 use std::fmt;

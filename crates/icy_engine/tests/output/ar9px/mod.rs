@@ -1,6 +1,6 @@
 use std::fs;
 
-use icy_engine::{TextBuffer, formats::FileFormat};
+use icy_engine::{formats::FileFormat, TextBuffer};
 
 const TEST_FILE: &str = "tests/output/ar9px/files/aeleus-usta1.ans";
 

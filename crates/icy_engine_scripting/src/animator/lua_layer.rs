@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use icy_engine::{AttributedChar, Position, Screen, ScreenSink, TextPane, attribute};
+use icy_engine::{attribute, AttributedChar, Position, Screen, ScreenSink, TextPane};
 use icy_parser_core::{CommandParser, PcBoardParser};
 use mlua::UserData;
 use parking_lot::Mutex;

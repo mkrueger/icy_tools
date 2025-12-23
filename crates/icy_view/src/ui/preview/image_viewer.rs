@@ -1,8 +1,8 @@
 //! Image viewer widget with zoom and scroll support
 //! Provides similar UX to the Terminal view for a consistent experience
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use iced::advanced::image::Renderer as ImageRenderer;
 use iced::advanced::layout::{self, Layout};
@@ -10,7 +10,7 @@ use iced::advanced::renderer::{self, Renderer as _};
 use iced::advanced::widget::{self, Widget};
 use iced::mouse::ScrollDelta;
 use iced::widget::{container, image as iced_image, stack};
-use iced::{Element, Event, Length, Rectangle, Size, Theme, mouse};
+use iced::{mouse, Element, Event, Length, Rectangle, Size, Theme};
 use icy_engine_gui::{HorizontalScrollbarOverlayCallback, ScalingMode, ScrollbarOverlayCallback, ScrollbarState, Viewport, ZoomMessage};
 use parking_lot::RwLock;
 
@@ -624,7 +624,7 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
                 }
             }
             Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::{Key, key::Named};
+                use iced::keyboard::{key::Named, Key};
                 match key {
                     Key::Named(Named::Home) => {
                         shell.publish((self.on_message)(ImageViewerMessage::Home));

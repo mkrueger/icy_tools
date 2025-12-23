@@ -8,8 +8,8 @@ use std::{
 };
 
 use crate::{
-    EditableScreen, Position, Result, Size,
     bgi::{Bgi, ButtonStyle2, Direction, FontType, LabelOrientation, LineStyle as BgiLineStyle, MouseField, WriteMode as BgiWriteMode},
+    EditableScreen, Position, Result, Size,
 };
 use byteorder::{LittleEndian, ReadBytesExt};
 use icy_parser_core::{FillStyle, ImagePasteMode, LineStyle, RipCommand, WriteMode as RipWriteMode};

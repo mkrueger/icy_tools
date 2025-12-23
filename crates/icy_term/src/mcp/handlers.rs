@@ -1,10 +1,9 @@
-use crate::Address;
 use crate::mcp::types::{CaptureScreenRequest, ConnectionRequest, RunScriptRequest, SendKeyRequest, SendTextRequest, TerminalState};
 use crate::mcp::{McpCommand, ScriptResult, SenderType};
+use crate::Address;
 
 use parking_lot::Mutex;
 use rmcp::{
-    ErrorData as McpError, ServerHandler,
     handler::server::{
         tool::{ToolCallContext, ToolRouter},
         wrapper::Parameters,
@@ -13,7 +12,7 @@ use rmcp::{
         Annotated, CallToolRequestParam, CallToolResult, Content, Implementation, InitializeResult, ListResourcesResult, ListToolsResult,
         PaginatedRequestParam, ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
     },
-    tool, tool_router,
+    tool, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};

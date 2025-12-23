@@ -4,12 +4,12 @@
 //! Supports very tall images (up to 80,000px) by splitting into multiple texture slices.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
-use iced::Rectangle;
 use iced::widget::shader;
+use iced::Rectangle;
 
 // ============================================================================
 // Texture Slicing Constants

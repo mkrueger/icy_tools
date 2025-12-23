@@ -324,7 +324,11 @@ impl TextBuffer {
                             Palette::rgb_to_rgba_u32(r, g, b)
                         } else {
                             let bg_idx = bg as usize;
-                            if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                            if bg_idx < palette_cache.len() {
+                                palette_cache[bg_idx]
+                            } else {
+                                default_bg
+                            }
                         };
                         let bg_color = if fg_is_rgb {
                             let (r, g, b) = ch.attribute.foreground_rgb();
@@ -335,7 +339,11 @@ impl TextBuffer {
                             Palette::rgb_to_rgba_u32(r, g, b)
                         } else {
                             let fg_idx = fg as usize;
-                            if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                            if fg_idx < palette_cache.len() {
+                                palette_cache[fg_idx]
+                            } else {
+                                default_fg
+                            }
                         };
                         (fg_color, bg_color)
                     }
@@ -349,7 +357,11 @@ impl TextBuffer {
                         Palette::rgb_to_rgba_u32(r, g, b)
                     } else {
                         let fg_idx = fg as usize;
-                        if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                        if fg_idx < palette_cache.len() {
+                            palette_cache[fg_idx]
+                        } else {
+                            default_fg
+                        }
                     };
                     let bg_color = if bg_is_rgb {
                         let (r, g, b) = ch.attribute.background_rgb();
@@ -360,7 +372,11 @@ impl TextBuffer {
                         Palette::rgb_to_rgba_u32(r, g, b)
                     } else {
                         let bg_idx = bg as usize;
-                        if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                        if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            default_bg
+                        }
                     };
                     (fg_color, bg_color)
                 };
@@ -510,7 +526,11 @@ impl TextBuffer {
                             Palette::rgb_to_rgba_u32(r, g, b)
                         } else {
                             let bg_idx = bg as usize;
-                            if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                            if bg_idx < palette_cache.len() {
+                                palette_cache[bg_idx]
+                            } else {
+                                default_bg
+                            }
                         };
                         let bg_color = if fg_is_rgb {
                             let (r, g, b) = ch.attribute.foreground_rgb();
@@ -521,7 +541,11 @@ impl TextBuffer {
                             Palette::rgb_to_rgba_u32(r, g, b)
                         } else {
                             let fg_idx = fg as usize;
-                            if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                            if fg_idx < palette_cache.len() {
+                                palette_cache[fg_idx]
+                            } else {
+                                default_fg
+                            }
                         };
                         (fg_color, bg_color)
                     }
@@ -535,7 +559,11 @@ impl TextBuffer {
                         Palette::rgb_to_rgba_u32(r, g, b)
                     } else {
                         let fg_idx = fg as usize;
-                        if fg_idx < palette_cache.len() { palette_cache[fg_idx] } else { default_fg }
+                        if fg_idx < palette_cache.len() {
+                            palette_cache[fg_idx]
+                        } else {
+                            default_fg
+                        }
                     };
                     let bg_color = if bg_is_rgb {
                         let (r, g, b) = ch.attribute.background_rgb();
@@ -546,7 +574,11 @@ impl TextBuffer {
                         Palette::rgb_to_rgba_u32(r, g, b)
                     } else {
                         let bg_idx = bg as usize;
-                        if bg_idx < palette_cache.len() { palette_cache[bg_idx] } else { default_bg }
+                        if bg_idx < palette_cache.len() {
+                            palette_cache[bg_idx]
+                        } else {
+                            default_bg
+                        }
                     };
                     (fg_color, bg_color)
                 };

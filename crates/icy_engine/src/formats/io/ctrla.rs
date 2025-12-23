@@ -1,7 +1,7 @@
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 use icy_parser_core::{ctrla_bg, ctrla_fg};
 
-use super::super::{LoadData, SaveOptions, ScreenPreperation, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions, ScreenPreperation};
 
 pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     if buf.palette.len() != 16 {

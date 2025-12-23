@@ -1,19 +1,20 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, tooltip, Space},
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, pick_list, row, scrollable, svg, text, text_input, tooltip},
 };
 use icy_engine_gui::{
-    SECTION_PADDING, TEXT_SIZE_NORMAL, section_header,
+    section_header,
     settings::effect_box,
-    ui::{DIALOG_SPACING, TEXT_SIZE_SMALL, left_label_small, secondary_button_style},
+    ui::{left_label_small, secondary_button_style, DIALOG_SPACING, TEXT_SIZE_SMALL},
+    SECTION_PADDING, TEXT_SIZE_NORMAL,
 };
 use icy_net::modem::ModemCommand;
 
 use crate::ui::{
     select_bps_dialog::STANDARD_RATES,
     settings_dialog::{
-        CharSizeOption, FlowControlOption, ParityOption, SettingsDialogMessage, SettingsDialogState, StopBitsOption, modem_command_input_generic,
+        modem_command_input_generic, CharSizeOption, FlowControlOption, ParityOption, SettingsDialogMessage, SettingsDialogState, StopBitsOption,
     },
 };
 

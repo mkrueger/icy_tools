@@ -4,17 +4,17 @@
 //! and format compatibility options. Has two pages: settings and comments editor.
 
 use iced::{
+    widget::{checkbox, column, container, pick_list, row, text, text_editor, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, checkbox, column, container, pick_list, row, text, text_editor, text_input},
 };
 use icy_engine::TextPane;
 use icy_engine_edit::bitfont::{MAX_FONT_HEIGHT, MIN_FONT_HEIGHT};
-use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, SauceFieldColor, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, dialog_title, modal_container,
-    primary_button, sauce_input_style, secondary_button, section_header, separator, validated_input_style,
+    dialog_area, dialog_title, modal_container, primary_button, sauce_input_style, secondary_button, section_header, separator, validated_input_style, Dialog,
+    DialogAction, SauceFieldColor, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::ButtonType;
 
 use crate::fl;
 use crate::ui::Message;

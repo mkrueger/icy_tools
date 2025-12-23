@@ -3,15 +3,15 @@
 //! Simple dialog to connect to Moebius-compatible collaboration servers.
 
 use iced::{
-    Element, Length,
     widget::{button, column, container, pick_list, row, svg, text, text_input},
+    Element, Length,
 };
 use icy_engine_gui::ui::*;
 use icy_engine_gui::{Dialog, DialogAction};
 
-use crate::Settings;
 use crate::fl;
 use crate::ui::main_window::Message;
+use crate::Settings;
 
 const VISIBILITY_SVG: &[u8] = include_bytes!("../../../../data/icons/visibility.svg");
 const VISIBILITY_OFF_SVG: &[u8] = include_bytes!("../../../../data/icons/visibility_off.svg");

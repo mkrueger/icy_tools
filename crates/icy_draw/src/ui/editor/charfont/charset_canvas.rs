@@ -3,9 +3,10 @@
 //! Similar to the BitFont editor's charset grid, but displays TDF font characters.
 
 use iced::{
-    Color, Point, Rectangle, Size, keyboard,
+    keyboard,
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Frame, Path, Stroke},
+    Color, Point, Rectangle, Size,
 };
 
 use icy_engine_edit::charset::TdfFont;
@@ -43,7 +44,11 @@ fn grid_to_char(col: i32, row: i32) -> Option<char> {
     }
     let index = row * 16 + col;
     let ch_code = b'!' + index as u8;
-    if ch_code <= b'~' { Some(ch_code as char) } else { None }
+    if ch_code <= b'~' {
+        Some(ch_code as char)
+    } else {
+        None
+    }
 }
 
 /// Map from character to grid position

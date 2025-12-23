@@ -4,12 +4,13 @@ use std::time::Duration;
 use human_bytes::human_bytes;
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Border, Color, Element, Length, Padding, gradient,
-    widget::{Space, button, column, container, progress_bar, row, scrollable, text},
+    gradient,
+    widget::{button, column, container, progress_bar, row, scrollable, text, Space},
+    Alignment, Border, Color, Element, Length, Padding,
 };
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, danger_button_style, dialog_area, dialog_title, modal_container,
-    primary_button, secondary_button, separator, success_button_style,
+    button_row, danger_button_style, dialog_area, dialog_title, modal_container, primary_button, secondary_button, separator, success_button_style,
+    DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_net::protocol::{OutputLogMessage, TransferState};
 

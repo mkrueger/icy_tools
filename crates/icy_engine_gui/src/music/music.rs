@@ -1,8 +1,8 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
+        mpsc::{channel, Receiver, SendError, Sender, TryRecvError},
         Arc,
-        mpsc::{Receiver, SendError, Sender, TryRecvError, channel},
     },
     time::{Duration, Instant},
 };
@@ -16,8 +16,8 @@ use wasm_thread as thread;
 
 use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
-    Source,
     source::{Function, SignalGenerator, SineWave},
+    Source,
 };
 use ym2149::{AudioDevice, RingBuffer, StreamConfig};
 use ym2149_gist_replayer::{GistPlayer, GistSound};
@@ -1157,7 +1157,11 @@ impl PulseClick {
 impl Iterator for PulseClick {
     type Item = f32;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.total_samples { None } else { Some(self.next_sample()) }
+        if self.index >= self.total_samples {
+            None
+        } else {
+            Some(self.next_sample())
+        }
     }
 }
 

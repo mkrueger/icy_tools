@@ -3,8 +3,8 @@
 //! Tests the performance of generating character flip tables for horizontal and vertical flipping.
 //! These tables are used to map characters to their mirrored equivalents when flipping ANSI art.
 
-use criterion::{Criterion, criterion_group, criterion_main};
-use icy_engine_edit::{BitFont, generate_flipx_table, generate_flipy_table};
+use criterion::{criterion_group, criterion_main, Criterion};
+use icy_engine_edit::{generate_flipx_table, generate_flipy_table, BitFont};
 use std::hint::black_box;
 
 fn load_default_font() -> BitFont {

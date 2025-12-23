@@ -3,8 +3,8 @@
 //! Shows keyboard shortcut hints for actions not in the menu.
 
 use iced::{
-    Element, Length, Task,
     widget::{container, row, text},
+    Element, Length, Task,
 };
 
 use crate::ui::editor::ansi::{ColorSwitcher, ColorSwitcherMessage};

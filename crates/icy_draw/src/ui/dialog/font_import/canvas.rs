@@ -3,12 +3,12 @@
 //! Similar to the CharSetCanvas in the bitfont editor
 
 use iced::{
-    Point, Rectangle, Size,
     mouse::Cursor,
     widget::canvas::{self, Frame},
+    Point, Rectangle, Size,
 };
 
-use crate::ui::editor::bitfont::style::{RulerState, draw_rulers};
+use crate::ui::editor::bitfont::style::{draw_rulers, RulerState};
 
 /// Canvas for previewing a font in the import dialog (16x16 grid)
 pub struct FontPreviewCanvas<'a> {

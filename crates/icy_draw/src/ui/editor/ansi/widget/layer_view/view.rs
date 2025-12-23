@@ -11,12 +11,11 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::usize;
 
 use iced::{
-    Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
     advanced::{
         image::{self as adv_image, Renderer as _},
         layout::{self, Layout},
@@ -26,15 +25,16 @@ use iced::{
     },
     mouse,
     widget::{button, column, container, image, row, svg, text},
+    Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
 };
 
 use iced_aw::ContextMenu;
 use icy_engine::{BitFont, Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
+use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::DoubleClickDetector;
-use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::{Viewport, wrap_with_scrollbars};
+use icy_engine_gui::{wrap_with_scrollbars, Viewport};
 use parking_lot::Mutex;
 
 use crate::fl;

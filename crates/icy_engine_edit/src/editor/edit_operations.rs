@@ -5,7 +5,7 @@ use std::mem;
 use i18n_embed_fl::fl;
 
 use crate::{
-    AnsiParser, AttributedChar, EditableScreen, Layer, Line, Palette, Position, Rectangle, Result, Role, Sixel, Size, TextPane, clipboard, load_with_parser,
+    clipboard, load_with_parser, AnsiParser, AttributedChar, EditableScreen, Layer, Line, Palette, Position, Rectangle, Result, Role, Sixel, Size, TextPane,
 };
 
 use super::{EditState, EditorUndoOp};

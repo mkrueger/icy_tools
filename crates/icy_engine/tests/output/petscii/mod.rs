@@ -1,4 +1,4 @@
-use icy_engine::{ScreenMode, formats::FileFormat};
+use icy_engine::{formats::FileFormat, ScreenMode};
 use icy_net::telnet::TerminalEmulation;
 use std::fs::{self};
 

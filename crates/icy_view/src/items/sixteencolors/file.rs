@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::items::{Item, ItemError, load_image_to_rgba};
+use crate::items::{load_image_to_rgba, Item, ItemError};
 use crate::thumbnail::RgbaData;
 
-use super::{MAIN_PATH, get_cache};
+use super::{get_cache, MAIN_PATH};
 
 /// A single file from 16colors.rs
 pub struct SixteenColorsFile {

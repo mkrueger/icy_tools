@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::json;
 use std::net::SocketAddr;
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 
 // ============================================================================
 // Helper functions for broadcast testing

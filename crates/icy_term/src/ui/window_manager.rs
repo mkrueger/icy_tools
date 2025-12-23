@@ -8,15 +8,15 @@ use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_titl
 use parking_lot::Mutex;
 
 use iced::{
-    Element, Event, Size, Subscription, Task, Theme, Vector,
     advanced::graphics::core::keyboard,
     widget::{operation, space},
-    window,
+    window, Element, Event, Size, Subscription, Task, Theme, Vector,
 };
 
 use crate::{
-    AddressBook, McpHandler, Options, load_window_icon,
+    load_window_icon,
     ui::{MainWindow, MainWindowMode, Message},
+    AddressBook, McpHandler, Options,
 };
 
 // Generate the WindowCommands struct with handle() method
@@ -316,7 +316,7 @@ impl WindowManager {
                         let alt = mods.alt();
                         let shift = mods.shift();
                         let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
-                        // Also store globally for cross-widget access
+                                                      // Also store globally for cross-widget access
                         icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
                         None
                     }

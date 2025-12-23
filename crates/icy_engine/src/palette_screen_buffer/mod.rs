@@ -7,12 +7,12 @@ pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
-    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
-    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    bgi::{Bgi, MouseField, DEFAULT_BITFONT},
     limits,
     palette_screen_buffer::rip_impl::RIP_SCREEN_SIZE,
+    AttributedChar, BitFont, BufferType, Caret, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle, RenderOptions, Result,
+    SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane, DOS_DEFAULT_PALETTE,
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -335,7 +335,11 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn font_dimensions(&self) -> Size {
-        if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
+        if let Some(font) = self.font(0) {
+            font.size()
+        } else {
+            Size::new(8, 16)
+        }
     }
     fn set_font_dimensions(&mut self, _size: Size) {
         // nothing

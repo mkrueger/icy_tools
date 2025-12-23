@@ -1,20 +1,20 @@
 mod minimap_shader;
 
 use std::cell::RefCell;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use iced::widget::shader;
 use iced::{Element, Length, Task, Theme};
 use icy_engine::Screen;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
-use icy_engine_gui::{CheckerboardColors, SharedRenderCacheHandle, TILE_HEIGHT, TileCacheKey};
+use icy_engine_gui::{CheckerboardColors, SharedRenderCacheHandle, TileCacheKey, TILE_HEIGHT};
 use parking_lot::Mutex;
 
+pub(crate) use minimap_shader::viewport_info_from_effective_view;
 use minimap_shader::MinimapProgram;
 pub use minimap_shader::ViewportInfo;
-pub(crate) use minimap_shader::viewport_info_from_effective_view;
 
 static MINIMAP_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 

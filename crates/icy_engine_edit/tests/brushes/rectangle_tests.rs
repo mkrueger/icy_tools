@@ -1,7 +1,7 @@
 //! Tests for rectangle drawing algorithms
 
 use icy_engine::{AttributedChar, Position};
-use icy_engine_edit::brushes::{DrawContext, DrawTarget, draw_rectangle, get_filled_rectangle_points, get_rectangle_points};
+use icy_engine_edit::brushes::{draw_rectangle, get_filled_rectangle_points, get_rectangle_points, DrawContext, DrawTarget};
 
 /// Mock target for rectangle tests
 struct MockTarget {

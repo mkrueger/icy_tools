@@ -282,5 +282,9 @@ fn to_utf8_mouse_coord(val: i32) -> String {
 }
 */
 fn generate_focus_event(focused: bool) -> String {
-    if focused { "\x1B[I".to_string() } else { "\x1B[O".to_string() }
+    if focused {
+        "\x1B[I".to_string()
+    } else {
+        "\x1B[O".to_string()
+    }
 }

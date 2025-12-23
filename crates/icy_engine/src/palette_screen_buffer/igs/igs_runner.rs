@@ -1,6 +1,6 @@
-use super::{TerminalResolutionExt, vdi_paint::VdiPaint};
+use super::{vdi_paint::VdiPaint, TerminalResolutionExt};
 use crate::bgi::{ButtonStyle2, MouseField};
-use crate::{ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, AutoWrapMode, EditableScreen, GraphicsType, IGS_DESKTOP_PALETTE, IGS_PALETTE};
+use crate::{AutoWrapMode, EditableScreen, GraphicsType, ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, IGS_DESKTOP_PALETTE, IGS_PALETTE};
 use icy_parser_core::{DrawingMode, IgsCommand, LineMarkerStyle, PatternType, PenType};
 
 static IGS_LOW_COLOR_MAP: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];

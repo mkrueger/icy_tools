@@ -52,11 +52,11 @@ mod toml_loader;
 
 pub use command_def::CommandDef;
 pub use command_handler::CommandHandler;
-pub use command_set::{CategoryMeta, CommandSet, HelpCommandInfo, format_command_set_debug};
+pub use command_set::{format_command_set_debug, CategoryMeta, CommandSet, HelpCommandInfo};
 pub use defaults::{cmd, create_common_commands};
 pub use hotkey::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
-pub use iced_adapter::{IntoHotkey, from_iced_key, from_iced_modifiers, from_iced_mouse_button, hotkey_from_iced, mouse_binding_from_iced};
-pub use toml_loader::{CommandLoadError, CommandToml, load_commands_from_file, load_commands_from_str};
+pub use iced_adapter::{from_iced_key, from_iced_modifiers, from_iced_mouse_button, hotkey_from_iced, mouse_binding_from_iced, IntoHotkey};
+pub use toml_loader::{load_commands_from_file, load_commands_from_str, CommandLoadError, CommandToml};
 
 #[cfg(test)]
 mod tests;

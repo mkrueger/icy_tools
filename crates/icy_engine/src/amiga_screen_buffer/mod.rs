@@ -4,12 +4,12 @@ pub mod sky_paint;
 pub mod skypix_impl;
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
-    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState,
-    TextPane,
-    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    bgi::{Bgi, MouseField, DEFAULT_BITFONT},
     igs, limits,
     rip_impl::RIP_SCREEN_SIZE,
+    AttributedChar, BitFont, BufferType, Caret, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle, RenderOptions, Result,
+    SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalResolutionExt, TerminalState, TextPane,
+    DOS_DEFAULT_PALETTE,
 };
 use parking_lot::Mutex;
 use skypix_impl::{SKYPIX_DEFAULT_FONT, SKYPIX_SCREEN_SIZE};

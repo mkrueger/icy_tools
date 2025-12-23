@@ -5,7 +5,7 @@
 //!
 //! Commands are loaded from `data/commands_common.toml`.
 
-use super::{CommandSet, toml_loader};
+use super::{toml_loader, CommandSet};
 
 /// The embedded default commands TOML
 const COMMON_COMMANDS_TOML: &str = include_str!("../../data/commands_common.toml");
@@ -82,7 +82,7 @@ pub mod cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{KeyCode, Modifiers, macros::CommandId};
+    use crate::commands::{macros::CommandId, KeyCode, Modifiers};
 
     #[test]
     fn test_common_commands_created() {

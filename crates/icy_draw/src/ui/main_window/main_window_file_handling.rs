@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use iced::Task;
 use icy_engine::formats::FileFormat;
-use icy_engine_gui::ui::{DialogResult, confirm_yes_no_cancel, error_dialog};
+use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult};
 
-use super::main_window::{MainWindow, Message, ModeState, enforce_extension};
+use super::main_window::{enforce_extension, MainWindow, Message, ModeState};
 use crate::fl;
 use crate::ui::editor::animation::AnimationEditor;
 use crate::ui::editor::bitfont::BitFontEditor;
@@ -263,7 +263,11 @@ impl MainWindow {
                 dialog.pick_file().await.map(|f| f.path().to_path_buf())
             },
             |result| {
-                if let Some(path) = result { Message::FileOpened(path) } else { Message::Noop }
+                if let Some(path) = result {
+                    Message::FileOpened(path)
+                } else {
+                    Message::Noop
+                }
             },
         )
     }

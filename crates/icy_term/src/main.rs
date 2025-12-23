@@ -14,7 +14,7 @@
 //mod ui;
 use std::{
     path::PathBuf,
-    sync::{Arc, atomic::AtomicU16},
+    sync::{atomic::AtomicU16, Arc},
     time::Instant,
 };
 

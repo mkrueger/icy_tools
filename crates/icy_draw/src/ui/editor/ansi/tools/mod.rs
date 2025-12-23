@@ -59,22 +59,22 @@ pub use select::SelectTool;
 pub use shape::ShapeTool;
 pub use tag::{TagTool, TagToolState};
 
-use iced::Element;
 use iced::widget::{column, text};
+use iced::Element;
 use icy_engine::Position;
 use icy_engine::{BitFont, Palette, TextPane};
+use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
-use icy_engine_edit::tools::Tool;
 use icy_engine_gui::TerminalMessage;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-use crate::Settings;
-use crate::ui::FKeySets;
-use crate::ui::editor::ansi::FKeyToolbarMessage;
 use crate::ui::editor::ansi::widget::toolbar::top::SelectedTagInfo;
 use crate::ui::editor::ansi::widget::toolbar::top::{BrushPrimaryMode, SelectionMode};
+use crate::ui::editor::ansi::FKeyToolbarMessage;
+use crate::ui::FKeySets;
+use crate::Settings;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HalfBlockMapper {
@@ -573,7 +573,7 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, m
 // Shared Selection Mouse State
 // ============================================================================
 
-use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
+use crate::ui::editor::ansi::selection_drag::{compute_dragged_selection, hit_test_selection, DragParameters, SelectionDrag};
 use icy_engine::Selection;
 
 /// Shared state for mouse-based selection handling.

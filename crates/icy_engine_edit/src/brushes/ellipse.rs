@@ -123,7 +123,11 @@ pub fn get_filled_ellipse_points(center: Position, radius_x: i32, radius_y: i32)
 
             // Determine role
             let role = if dy == -radius_y || dy == radius_y {
-                if dy < 0 { PointRole::TopSide } else { PointRole::BottomSide }
+                if dy < 0 {
+                    PointRole::TopSide
+                } else {
+                    PointRole::BottomSide
+                }
             } else if dx == -x_extent {
                 PointRole::LeftSide
             } else if dx == x_extent {

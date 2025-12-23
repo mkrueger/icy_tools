@@ -1,9 +1,9 @@
 //! Tile view canvas for BitFont editor
 
 use iced::{
-    Color, Point, Rectangle, Size,
     mouse::Cursor,
     widget::canvas::{self, Frame},
+    Color, Point, Rectangle, Size,
 };
 
 use super::{BitFontEditor, BitFontEditorMessage};

@@ -6,21 +6,21 @@
 
 use std::num::NonZeroU64;
 use std::sync::{
-    Arc,
     atomic::{AtomicU32, Ordering},
+    Arc,
 };
 
 use iced::wgpu::util::DeviceExt;
 use iced::{
-    Color, Element, Length, Point, Rectangle, Theme,
     mouse::{self, Cursor},
     widget::{self, canvas, container, shader},
+    Color, Element, Length, Point, Rectangle, Theme,
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
 
 use super::layout::{
-    ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, FKeyLayout, HoverState, LABEL_HEIGHT, LABEL_WIDTH, LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X,
+    FKeyLayout, HoverState, ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, LABEL_HEIGHT, LABEL_WIDTH, LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X,
     NAV_SIZE, NO_HOVER, SET_NUM_ICON_GAP, SHADOW_PADDING, SLOT_CHAR_HEIGHT, SLOT_SPACING, SLOT_WIDTH,
 };
 use crate::ui::FKeySets;

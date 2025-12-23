@@ -11,8 +11,9 @@
 #![allow(dead_code)]
 
 use iced::{
-    Element, Length, Rectangle, mouse,
+    mouse,
     widget::shader::{self, Shader},
+    Element, Length, Rectangle,
 };
 use icy_engine::Palette;
 use std::time::Instant;

@@ -8,8 +8,8 @@ use codepages::tables::UNICODE_TO_CP437;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ANSI_FONTS, AttributedChar, BitFont, Color, DOS_DEFAULT_PALETTE, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, XTERM_256_PALETTE,
-    analyze_font_usage,
+    analyze_font_usage, AttributedChar, BitFont, Color, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
+    XTERM_256_PALETTE,
 };
 
 use super::{ControlCharHandling, ScreenPreperation};
@@ -770,7 +770,11 @@ impl StringGeneratorV2 {
                     }
                 }
                 let last = last + 1;
-                if last >= area.width() - 1 { area.width() } else { last }
+                if last >= area.width() - 1 {
+                    area.width()
+                } else {
+                    last
+                }
             } else {
                 area.width()
             };

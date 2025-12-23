@@ -14,11 +14,11 @@
 use iced::widget::{column, container, row, text};
 use iced::{Element, Font};
 use icy_engine::{Position, Selection, TextPane};
-use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
+use icy_engine_gui::TerminalMessage;
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext};
-use crate::ui::editor::ansi::selection_drag::{DragParameters, SelectionDrag, compute_dragged_selection, hit_test_selection};
+use crate::ui::editor::ansi::selection_drag::{compute_dragged_selection, hit_test_selection, DragParameters, SelectionDrag};
 
 /// Valid outline font input codes (17 placeholders A-Q, plus @, &, space)
 pub const OUTLINE_VALID_CHARS: &[char] = &[

@@ -1,15 +1,15 @@
 //! Edit grid canvas for BitFont editor
 
 use iced::{
-    Color, Point, Rectangle, Size,
     keyboard::{self, Key},
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Path, Stroke},
+    Color, Point, Rectangle, Size,
 };
-use icy_engine_edit::bitfont::{BitFontFocusedPanel, brushes};
+use icy_engine_edit::bitfont::{brushes, BitFontFocusedPanel};
 use icy_engine_gui::theme::main_area_background;
 
-use super::super::{ArrowDirection, BitFontEditor, BitFontEditorMessage, BitFontTool, CanvasEvent, style::*};
+use super::super::{style::*, ArrowDirection, BitFontEditor, BitFontEditorMessage, BitFontTool, CanvasEvent};
 
 /// State for EditGridCanvas to track hover position
 #[derive(Default)]
@@ -96,9 +96,17 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                     let is_cursor_cell = is_focused && x as i32 == cursor_x && y as i32 == cursor_y;
 
                     let color = if is_set {
-                        if is_cursor_cell { cursor_color.0 } else { fg_iced_color }
+                        if is_cursor_cell {
+                            cursor_color.0
+                        } else {
+                            fg_iced_color
+                        }
                     } else {
-                        if is_cursor_cell { cursor_color.1 } else { bg_iced_color }
+                        if is_cursor_cell {
+                            cursor_color.1
+                        } else {
+                            bg_iced_color
+                        }
                     };
 
                     frame.fill_rectangle(Point::new(cell_x, cell_y), Size::new(cell_size, cell_size), color);

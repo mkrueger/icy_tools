@@ -11,13 +11,13 @@
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Task,
     widget::{container, stack},
+    Alignment, Element, Length, Task,
 };
 use icy_engine::Screen;
 
-use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::theme::main_area_background;
+use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::{EditorMarkers, HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
 

@@ -1,5 +1,5 @@
-use crate::TransferProtocol;
 use crate::util::PatternRecognizer;
+use crate::TransferProtocol;
 
 /// A scanner for a single protocol's signature
 struct SignatureScanner {

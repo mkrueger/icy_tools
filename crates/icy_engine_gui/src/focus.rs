@@ -11,12 +11,12 @@
 //! https://github.com/bradysimon/iced_focus
 
 use iced::advanced::renderer::Quad;
-use iced::advanced::widget::{Tree, operation, tree};
-use iced::advanced::{self, Clipboard, Layout, Shell, Widget, layout, overlay, renderer, widget};
+use iced::advanced::widget::{operation, tree, Tree};
+use iced::advanced::{self, layout, overlay, renderer, widget, Clipboard, Layout, Shell, Widget};
 use iced::border::Radius;
 use iced::keyboard::key;
 use iced::widget::Id;
-use iced::{Border, Color, Element, Event, Font, Length, Padding, Rectangle, Shadow, Size, Vector, keyboard, mouse as iced_mouse, touch};
+use iced::{keyboard, mouse as iced_mouse, touch, Border, Color, Element, Event, Font, Length, Padding, Rectangle, Shadow, Size, Vector};
 
 /// A boxed closure that takes an [`Event`] and an [`Id`], and produces an optional message.
 /// The event is only sent if the widget is focused, and returning `None` ignores the event.

@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
-use super::EditState;
 use super::undo_operation::EditorUndoOp;
+use super::EditState;
 
 pub trait UndoState {
     fn undo_description(&self) -> Option<String>;

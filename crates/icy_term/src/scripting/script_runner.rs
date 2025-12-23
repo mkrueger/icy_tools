@@ -77,7 +77,11 @@ impl ScriptRunner {
 
     /// Check if a script is currently running
     pub fn is_running(&self) -> bool {
-        if let Some(handle) = &self.run_thread { !handle.is_finished() } else { false }
+        if let Some(handle) = &self.run_thread {
+            !handle.is_finished()
+        } else {
+            false
+        }
     }
 
     /// Stop the currently running script

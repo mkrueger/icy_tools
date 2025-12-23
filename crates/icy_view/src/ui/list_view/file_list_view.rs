@@ -5,21 +5,22 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Instant;
 
 use iced::{
-    Element, Length, mouse,
+    mouse,
     widget::{column, container, row, shader, stack, text},
+    Element, Length,
 };
-use icy_engine_gui::{ScrollbarOverlayCallback, ScrollbarState, Viewport, ui::FileIcon};
+use icy_engine_gui::{ui::FileIcon, ScrollbarOverlayCallback, ScrollbarState, Viewport};
 use parking_lot::Mutex;
 
 use crate::items::Item;
 
 use super::file_list_shader::{
-    FileListShaderPrimitive, FileListThemeColors, ListItemRenderData, invalidate_gpu_cache, render_list_item, render_list_item_with_sauce,
+    invalidate_gpu_cache, render_list_item, render_list_item_with_sauce, FileListShaderPrimitive, FileListThemeColors, ListItemRenderData,
 };
 use super::sauce_loader::{SauceInfo, SharedSauceCache};
 
@@ -722,7 +723,11 @@ where
             let item_y = cursor_pos.y + self.scroll_y;
             let index = (item_y / ITEM_HEIGHT) as usize;
             let item_count = (self.content_height / ITEM_HEIGHT) as usize;
-            if index < item_count { Some(index) } else { None }
+            if index < item_count {
+                Some(index)
+            } else {
+                None
+            }
         } else {
             None
         };

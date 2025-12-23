@@ -1,4 +1,4 @@
-use base64::{Engine, engine::general_purpose};
+use base64::{engine::general_purpose, Engine};
 #[allow(unused_imports)]
 use lazy_static::lazy_static;
 use libyaff::YaffFont;
@@ -21,9 +21,9 @@ pub use psf_parser::PsfFont;
 use super::Size;
 
 // Re-export key items from submodules
-pub use ansi::{ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME, font_height_for_lines, get_ansi_font};
+pub use ansi::{font_height_for_lines, get_ansi_font, ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME};
 pub use legacy::{ATARI, ATARI_XEP80, ATARI_XEP80_INT, C64_SHIFTED, C64_UNSHIFTED, VIEWDATA};
-pub use sauce::{SAUCE_FONT_MAP, get_sauce_font_names, load_sauce_font};
+pub use sauce::{get_sauce_font_names, load_sauce_font, SAUCE_FONT_MAP};
 // Re-export byte data with short names for screen_modes compatibility
 pub use skypix::get_amiga_font_by_name;
 

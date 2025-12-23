@@ -1,7 +1,7 @@
 use bstr::BString;
 use icy_engine::{
-    AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane,
     formats::{FileFormat, LoadData},
+    AttributedChar, Layer, Line, SaveOptions, Size, TextAttribute, TextBuffer, TextPane,
 };
 use icy_sauce::MetaData as SauceMetaData;
 

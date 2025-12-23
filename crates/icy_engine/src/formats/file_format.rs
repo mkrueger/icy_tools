@@ -14,7 +14,7 @@ use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
-use super::{BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions, io};
+use super::{io, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions};
 
 /// Map file extension to archive format (replacement for private ArchiveFormat::from_extension)
 fn archive_format_from_extension(ext: &str) -> Option<ArchiveFormat> {

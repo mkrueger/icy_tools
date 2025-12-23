@@ -8,13 +8,13 @@ use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{BaudEmulation, MusicOption};
 
 use crate::{
-    Address, TransferProtocol,
     terminal_thread::TerminalEvent,
     ui::dialogs::about_dialog::AboutDialogMessage,
     ui::dialogs::capture_dialog::CaptureDialogMessage,
     ui::dialogs::protocol_selector::ProtocolSelectorMessage,
     ui::dialogs::terminal_info_dialog::TerminalInfoDialogMessage,
-    ui::{MainWindowMode, find_dialog, open_serial_dialog, select_bps_dialog, up_download_dialog},
+    ui::{find_dialog, open_serial_dialog, select_bps_dialog, up_download_dialog, MainWindowMode},
+    Address, TransferProtocol,
 };
 
 #[derive(Debug, Clone)]

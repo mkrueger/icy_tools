@@ -5,13 +5,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use iced::Rectangle;
 use iced::mouse;
 use iced::widget::shader;
+use iced::Rectangle;
 use parking_lot::Mutex;
 
-use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
+use icy_engine_gui::CheckerboardColors;
 
 use super::{MinimapMessage, SharedMinimapState, TextureSliceData};
 

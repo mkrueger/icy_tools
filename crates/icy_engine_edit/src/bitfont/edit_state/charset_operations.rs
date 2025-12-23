@@ -9,8 +9,8 @@
 //! - Erase/Clear (set all pixels to off)
 //! - Inverse (toggle all pixels)
 
-use crate::Result;
 use crate::bitfont::BitFontUndoOp;
+use crate::Result;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 

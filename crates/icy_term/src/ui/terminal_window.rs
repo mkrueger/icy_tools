@@ -1,16 +1,16 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, column, container, row, svg, text, Space},
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, svg, text},
 };
 use icy_engine::Screen;
-use icy_engine_gui::HorizontalScrollbarOverlay;
 use icy_engine_gui::ui::settings_icon;
-use icy_engine_gui::{MonitorSettings, ScrollbarOverlay, Terminal, terminal::view::TerminalView};
+use icy_engine_gui::HorizontalScrollbarOverlay;
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
 };
+use icy_engine_gui::{terminal::view::TerminalView, MonitorSettings, ScrollbarOverlay, Terminal};
 use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 // use iced_aw::{menu, menu_bar, menu_items};
 
-use crate::{Address, LATEST_VERSION, Options, VERSION, ui::Message};
+use crate::{ui::Message, Address, Options, LATEST_VERSION, VERSION};
 
 // Icon SVG constants
 const DISCONNECT_SVG: &[u8] = include_bytes!("../../data/icons/logout.svg");

@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, column, container, row, scrollable, text, Space},
     Border, Color, Element, Event, Length,
-    widget::{Space, button, column, container, row, scrollable, text},
 };
-use icy_engine_gui::settings::{MonitorSettingsMessage, show_monitor_settings, update_monitor_settings};
+use icy_engine_gui::settings::{show_monitor_settings, update_monitor_settings, MonitorSettingsMessage};
 use icy_engine_gui::ui::*;
-use icy_engine_gui::{Dialog, DialogAction, dialog_wrapper};
+use icy_engine_gui::{dialog_wrapper, Dialog, DialogAction};
 use icy_net::{
     modem::ModemConfiguration,
     serial::{CharSize, Parity, StopBits},

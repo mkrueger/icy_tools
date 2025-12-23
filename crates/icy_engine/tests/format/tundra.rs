@@ -1,4 +1,4 @@
-use super::ansi2::{CompareOptions, compare_buffers};
+use super::ansi2::{compare_buffers, CompareOptions};
 use icy_engine::{AttributedChar, FileFormat, IceMode, SaveOptions, TextAttribute, TextBuffer};
 
 #[test]

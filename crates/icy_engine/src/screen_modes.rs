@@ -1,15 +1,15 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE, AutoWrapMode, BitFont, BufferType, C64_DEFAULT_PALETTE, C64_SHIFTED,
-    C64_UNSHIFTED, CP437, EditableScreen, GraphicsType, Palette, PaletteScreenBuffer, SKYPIX_PALETTE, Size, TerminalResolution, TextScreen, VIEWDATA,
-    VIEWDATA_PALETTE, amiga_screen_buffer, fonts::ansi::font_height_for_lines, seq_prepare,
+    amiga_screen_buffer, fonts::ansi::font_height_for_lines, seq_prepare, AutoWrapMode, BitFont, BufferType, EditableScreen, GraphicsType, Palette,
+    PaletteScreenBuffer, Size, TerminalResolution, TextScreen, ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE,
+    C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, SKYPIX_PALETTE, VIEWDATA, VIEWDATA_PALETTE,
 };
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CaretShape, CommandParser, MusicOption};
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

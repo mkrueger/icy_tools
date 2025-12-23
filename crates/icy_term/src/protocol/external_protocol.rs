@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use icy_net::Connection;
 use icy_net::protocol::{Protocol, TransferState};
+use icy_net::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
@@ -46,7 +46,11 @@ impl ExternalProtocol {
             .iter()
             .map(|p| {
                 let s = p.to_string_lossy();
-                if s.contains(' ') { format!("\"{}\"", s) } else { s.to_string() }
+                if s.contains(' ') {
+                    format!("\"{}\"", s)
+                } else {
+                    s.to_string()
+                }
             })
             .collect::<Vec<_>>()
             .join(" ");

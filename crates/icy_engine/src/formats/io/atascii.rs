@@ -1,5 +1,5 @@
-use super::super::{LoadData, SaveOptions, apply_sauce_to_buffer};
-use crate::{ATARI, ATARI_DEFAULT_PALETTE, Palette, Position, Result, TextBuffer, TextPane, TextScreen};
+use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
+use crate::{Palette, Position, Result, TextBuffer, TextPane, TextScreen, ATARI, ATARI_DEFAULT_PALETTE};
 
 #[allow(unused)]
 pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {

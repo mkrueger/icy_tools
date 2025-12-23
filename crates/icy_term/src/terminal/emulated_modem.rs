@@ -385,5 +385,9 @@ fn parse_numeric_param(s: &str, default: u8) -> (usize, u8) {
         }
     }
 
-    if consumed == 0 { (0, default) } else { (consumed, value) }
+    if consumed == 0 {
+        (0, default)
+    } else {
+        (consumed, value)
+    }
 }

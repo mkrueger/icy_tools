@@ -3,8 +3,8 @@
 //! SVG icons are embedded at compile time.
 
 use crate::fl;
-use iced::Length;
 use iced::widget::Svg;
+use iced::Length;
 
 // ============================================================================
 // Avatar Icons (13 total)

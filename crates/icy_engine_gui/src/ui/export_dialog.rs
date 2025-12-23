@@ -5,12 +5,12 @@
 
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{checkbox, column, container, pick_list, row, scrollable, text, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, checkbox, column, container, pick_list, row, scrollable, text, text_input},
 };
 use icy_engine::{
-    AnsiCompatibilityLevel, BufferType, SaveOptions, Screen, ScreenPreperation,
     formats::{FileFormat, FormatOptions, ImageFormat, SauceMetaData, SixelSettings},
+    AnsiCompatibilityLevel, BufferType, SaveOptions, Screen, ScreenPreperation,
 };
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
@@ -18,12 +18,12 @@ use std::sync::Arc;
 
 use super::dialog::StateResult;
 use super::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row_with_left, dialog_area, error_tooltip,
-    left_label_small, modal_container, primary_button, restore_defaults_button, secondary_button, separator,
+    browse_button, button_row_with_left, dialog_area, error_tooltip, left_label_small, modal_container, primary_button, restore_defaults_button,
+    secondary_button, separator, DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
-use crate::LANGUAGE_LOADER;
 use crate::dialog_wrapper;
 use crate::settings::effect_box;
+use crate::LANGUAGE_LOADER;
 
 /// Messages for the export dialog
 #[derive(Debug, Clone)]
@@ -159,7 +159,11 @@ impl ExportDialogState {
             .and_then(|ext| FileFormat::from_extension(&ext.to_lowercase()))
             .and_then(|fmt| {
                 // Only use the detected format if it's compatible with the buffer type
-                if available_formats.contains(&fmt) { Some(fmt) } else { None }
+                if available_formats.contains(&fmt) {
+                    Some(fmt)
+                } else {
+                    None
+                }
             })
             .unwrap_or_else(|| available_formats.first().copied().unwrap_or(FileFormat::Image(ImageFormat::Png)));
 
@@ -602,13 +606,11 @@ impl ExportDialogState {
             ]
             .into()
         } else {
-            row![
-                text(format!("→ {}", self.get_temp_full_path().display()))
-                    .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                    })
-            ]
+            row![text(format!("→ {}", self.get_temp_full_path().display()))
+                .size(TEXT_SIZE_SMALL)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().secondary.base.color),
+                })]
             .into()
         };
 

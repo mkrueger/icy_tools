@@ -6,7 +6,7 @@
 //! - Helper functions for common window manager operations
 //! - Subscription builders for event handling
 
-use iced::{Element, Task, Theme, window};
+use iced::{window, Element, Task, Theme};
 use std::collections::{BTreeMap, HashSet};
 
 // ============================================================================
@@ -237,7 +237,11 @@ pub fn focus_window_by_id<W: Window, T: 'static>(windows: &BTreeMap<window::Id, 
 /// Removes the window and returns `iced::exit()` if no windows remain.
 pub fn handle_window_closed<W, T: 'static>(windows: &mut BTreeMap<window::Id, W>, id: window::Id) -> Task<T> {
     windows.remove(&id);
-    if windows.is_empty() { iced::exit() } else { Task::none() }
+    if windows.is_empty() {
+        iced::exit()
+    } else {
+        Task::none()
+    }
 }
 
 /// Result of keyboard handling for window manager actions.

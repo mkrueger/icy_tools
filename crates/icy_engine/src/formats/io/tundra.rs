@@ -1,8 +1,8 @@
 use std::{collections::HashSet, io};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use crate::{
-    AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen, analyze_font_usage,
+    analyze_font_usage, AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen,
 };
 use icy_sauce::CharacterFormat;
 

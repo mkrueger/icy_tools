@@ -1,4 +1,4 @@
-use crate::{MonitorSettings, MonitorType, ScalingMode, settings::iced_to_icy_color};
+use crate::{settings::iced_to_icy_color, MonitorSettings, MonitorType, ScalingMode};
 use iced::{Color, Theme};
 
 #[derive(Debug, Clone)]

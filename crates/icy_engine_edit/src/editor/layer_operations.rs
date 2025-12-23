@@ -5,7 +5,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, Layer, LayerProperties, Position, Result, Role, Size, TextPane};
 
-use super::{EditState, undo_operation::EditorUndoOp};
+use super::{undo_operation::EditorUndoOp, EditState};
 
 impl EditState {
     pub fn add_new_layer(&mut self, layer: usize) -> Result<()> {

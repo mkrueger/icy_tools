@@ -8,8 +8,8 @@ use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use crate::mcp::McpCommand;
 use crate::mcp::handlers::IcyDrawMcpHandler;
+use crate::mcp::McpCommand;
 
 /// MCP server instance
 pub struct McpServer {

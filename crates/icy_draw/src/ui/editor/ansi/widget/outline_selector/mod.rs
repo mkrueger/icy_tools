@@ -5,12 +5,12 @@
 
 use codepages::tables::UNICODE_TO_CP437;
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme,
     mouse::{self, Cursor},
     widget::{
-        Action,
         canvas::{self, Canvas, Frame, Geometry, Path, Stroke},
+        Action,
     },
+    Color, Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::BitFont;
 
@@ -317,8 +317,8 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 None
             }
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
 
                 match key {
                     Key::Named(Named::Escape) => {

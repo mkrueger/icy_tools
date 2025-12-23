@@ -1,5 +1,5 @@
 use crate::{MCP_PORT, VERSION};
-use icy_engine::{AttributedChar, Position, TextAttribute, TextPane, TextScreen, formats::FileFormat};
+use icy_engine::{formats::FileFormat, AttributedChar, Position, TextAttribute, TextPane, TextScreen};
 use icy_engine_gui::version_helper::replace_version_marker;
 
 const MAIN_SCREEN_ANSI1: &[u8] = include_bytes!("../../data/welcome_screen.1.icy");

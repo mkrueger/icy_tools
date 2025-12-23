@@ -10,14 +10,14 @@
 //! schedules the next redraw automatically when animating, like iced's text_input cursor blink.
 
 use std::cell::RefCell;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse,
+    mouse,
     widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Stroke},
-    window,
+    window, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
 use parking_lot::RwLock;
 

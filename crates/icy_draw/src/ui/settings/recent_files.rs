@@ -7,7 +7,7 @@
 //! - Atomic file saving to prevent corruption on crash
 
 use std::cell::RefCell;
-use std::fs::{File, create_dir_all, rename};
+use std::fs::{create_dir_all, rename, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

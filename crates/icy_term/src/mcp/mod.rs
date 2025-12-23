@@ -9,8 +9,8 @@ pub use server::*;
 use tokio::sync::oneshot;
 
 use crate::{
-    Address,
     mcp::types::{ScreenCaptureFormat, TerminalState},
+    Address,
 };
 
 pub type SenderType<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;

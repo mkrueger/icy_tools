@@ -32,11 +32,11 @@ use std::path::PathBuf;
 
 use icy_engine::Position;
 use retrofont::{
-    Glyph,
     tdf::{TdfFont, TdfFontType},
+    Glyph,
 };
 
-use super::{CharSetUndoOperation, CharSetUndoStack, load_tdf_fonts_from_file};
+use super::{load_tdf_fonts_from_file, CharSetUndoOperation, CharSetUndoStack};
 
 /// Which panel currently has focus in the CharSet editor
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -771,7 +771,11 @@ pub fn grid_to_char(col: i32, row: i32) -> Option<char> {
     }
     let index = row * 16 + col;
     let ch_code = b'!' + index as u8;
-    if ch_code <= b'~' { Some(ch_code as char) } else { None }
+    if ch_code <= b'~' {
+        Some(ch_code as char)
+    } else {
+        None
+    }
 }
 
 /// Map from character to grid position

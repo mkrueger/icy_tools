@@ -10,9 +10,8 @@ use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
 use super::{ItemFile, ItemFolder};
 use crate::items::{
-    Item,
     archive::{ArchiveContainer, ArchiveFolder, ArchiveItem},
-    sort_folder,
+    sort_folder, Item,
 };
 
 #[cfg(windows)]

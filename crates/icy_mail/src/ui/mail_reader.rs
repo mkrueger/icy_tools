@@ -3,7 +3,7 @@ use crate::{
     qwk::{MessageDescriptor, QwkPackage},
     ui::Message,
 };
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_editor};
+use iced::widget::{button, column, container, row, scrollable, text, text_editor, Space};
 use iced::{Alignment, Element, Length};
 
 impl MainWindow {

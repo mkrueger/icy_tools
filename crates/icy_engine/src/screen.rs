@@ -5,8 +5,8 @@ use std::{cmp::max, sync::Arc};
 use icy_parser_core::{IgsCommand, RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions, Selection, Sixel,
-    Size, TerminalResolution, TerminalState, TextAttribute, TextPane, caret, limits,
+    caret, limits, AttributedChar, BitFont, HyperLink, IceMode, Layer, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions,
+    Selection, Sixel, Size, TerminalResolution, TerminalState, TextAttribute, TextPane,
 };
 
 #[repr(u8)]

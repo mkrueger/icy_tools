@@ -19,7 +19,7 @@ pub use layer::*;
 mod buffer_type;
 pub use buffer_type::*;
 
-use crate::{Color, HalfBlock, Position, Rectangle, TerminalState, TextAttribute, TextPane, attribute};
+use crate::{attribute, Color, HalfBlock, Position, Rectangle, TerminalState, TextAttribute, TextPane};
 
 use super::{AttributedChar, BitFont, Palette, Size};
 
@@ -690,7 +690,11 @@ impl TextBuffer {
         let start = self.dirty_line_start.swap(-1, Ordering::Relaxed);
         let end = self.dirty_line_end.swap(-1, Ordering::Relaxed);
 
-        if start < 0 || end < 0 { None } else { Some((start, end)) }
+        if start < 0 || end < 0 {
+            None
+        } else {
+            Some((start, end))
+        }
     }
 
     /// Get the dirty line range without clearing it.
@@ -699,7 +703,11 @@ impl TextBuffer {
     pub fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         let start = self.dirty_line_start.load(Ordering::Relaxed);
         let end = self.dirty_line_end.load(Ordering::Relaxed);
-        if start < 0 || end < 0 { None } else { Some((start, end)) }
+        if start < 0 || end < 0 {
+            None
+        } else {
+            Some((start, end))
+        }
     }
 
     /// Mark the overlay as dirty (selection, markers changed).

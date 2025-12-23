@@ -176,8 +176,8 @@ fn default_ega_palette() -> [[u8; 3]; 16] {
 /// Run the collaboration server in headless mode.
 fn run_server(bind: String, port: u16, password: Option<String>, max_users: usize, file: Option<PathBuf>, backup_folder: Option<PathBuf>, interval: u64) {
     use icy_engine::{FileFormat, IceMode, TextPane};
+    use icy_engine_edit::collaboration::{run_server as run_collab_server, AutosaveConfig, Block, ServerConfig};
     use icy_engine_edit::SauceMetaData;
-    use icy_engine_edit::collaboration::{AutosaveConfig, Block, ServerConfig, run_server as run_collab_server};
 
     // Load document from file or create empty 80x25 canvas
     let (columns, rows, initial_document, ice_colors, use_9px_font, font_name, sauce, palette) = if let Some(ref path) = file {

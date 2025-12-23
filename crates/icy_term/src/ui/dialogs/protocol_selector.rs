@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, column, container, row, scrollable, text, Space},
     Alignment, Border, Color, Element, Length,
-    widget::{Space, button, column, container, row, scrollable, text},
 };
 use icy_engine_gui::{
     dialog_wrapper,

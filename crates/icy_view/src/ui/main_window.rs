@@ -2,36 +2,36 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use i18n_embed_fl::fl;
 use iced::{
+    keyboard::{key::Named, Key},
+    widget::{column, container, image as iced_image, mouse_area, row, text, Space},
     Element, Event, Length, Task, Theme,
-    keyboard::{Key, key::Named},
-    widget::{Space, column, container, image as iced_image, mouse_area, row, text},
 };
 use icy_engine_gui::{
-    MonitorSettings, Toast, ToastManager, command_handler, dialog_msg, error_dialog,
-    ui::{DialogStack, ExportDialogMessage, HelpDialogMessage, export_dialog_with_defaults_from_msg},
+    command_handler, dialog_msg, error_dialog,
+    ui::{export_dialog_with_defaults_from_msg, DialogStack, ExportDialogMessage, HelpDialogMessage},
     version_helper::replace_version_marker,
+    MonitorSettings, Toast, ToastManager,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DEFAULT_TITLE, Options, ScrollSpeed, VERSION, ViewMode,
     commands::{cmd, create_icy_view_commands},
-    items::{Item, ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot, load_item_data, load_subitems},
+    items::{load_item_data, load_subitems, Item, ItemError, ProviderType, SixteenColorsProvider, SixteenColorsRoot},
+    Options, ScrollSpeed, ViewMode, DEFAULT_TITLE, VERSION,
 };
 use icy_engine::formats::FileFormat;
 
 use super::{
-    FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup, FilterPopupMessage, HistoryPoint,
-    NavigationBar, NavigationBarMessage, NavigationHistory, PreviewMessage, PreviewView, SauceLoader, SauceRequest, SauceResult, StatusBar, StatusBarMessage,
-    StatusInfo, TileGridMessage, TileGridView,
-    dialogs::about_dialog::{AboutDialogMessage, about_dialog},
+    dialogs::about_dialog::{about_dialog, AboutDialogMessage},
     dialogs::help_dialog::help_dialog,
-    dialogs::sauce_dialog::{SauceDialogMessage, sauce_dialog_from_msg},
-    dialogs::settings_dialog::{SettingsDialogMessage, settings_dialog_from_msg},
+    dialogs::sauce_dialog::{sauce_dialog_from_msg, SauceDialogMessage},
+    dialogs::settings_dialog::{settings_dialog_from_msg, SettingsDialogMessage},
     file_list_toolbar::TOOLBAR_HOVER_ZONE_WIDTH,
-    is_image_file, is_sixel_file, theme,
+    is_image_file, is_sixel_file, theme, FileBrowser, FileBrowserMessage, FileListToolbar, FileListToolbarMessage, FileListViewMessage, FilterPopup,
+    FilterPopupMessage, HistoryPoint, NavigationBar, NavigationBarMessage, NavigationHistory, PreviewMessage, PreviewView, SauceLoader, SauceRequest,
+    SauceResult, StatusBar, StatusBarMessage, StatusInfo, TileGridMessage, TileGridView,
 };
 use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
@@ -2335,9 +2335,9 @@ impl MainWindow {
 
     /// View for shuffle mode - fullscreen preview with SAUCE info overlay
     fn view_shuffle_mode(&self) -> Element<'_, Message> {
-        use iced::Event;
-        use iced::keyboard::{Key, key::Named};
+        use iced::keyboard::{key::Named, Key};
         use iced::widget::stack;
+        use iced::Event;
 
         // Preview takes full screen - use monitor settings for proper display
         let monitor_settings = self.get_current_monitor_settings();

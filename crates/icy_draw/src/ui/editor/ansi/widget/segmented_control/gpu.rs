@@ -9,19 +9,19 @@
 use super::layout::{
     BORDER_WIDTH, CORNER_RADIUS, MAX_SEGMENTS, NO_HOVER, PREVIEW_GLYPH_HEIGHT, SEGMENT_FONT_SCALE, SEGMENT_HEIGHT, SEGMENT_PADDING_H, SHADOW_PADDING,
 };
-use crate::ui::editor::ansi::widget::layer_view::glyph_renderer::{FLAG_DRAW_BG, GlyphInstance, QuadVertex, build_glyph_atlas_rgba, cp437_index, font_key};
+use crate::ui::editor::ansi::widget::layer_view::glyph_renderer::{build_glyph_atlas_rgba, cp437_index, font_key, GlyphInstance, QuadVertex, FLAG_DRAW_BG};
 use iced::wgpu::util::DeviceExt;
 use iced::{
-    Color, Element, Length, Rectangle, Theme,
     mouse::{self, Cursor},
     widget::{self, canvas, shader},
+    Color, Element, Length, Rectangle, Theme,
 };
 use icy_engine::{BitFont, Palette};
 use icy_engine_gui::theme::main_area_background;
 use std::num::NonZeroU64;
 use std::sync::{
-    Arc,
     atomic::{AtomicU32, Ordering},
+    Arc,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

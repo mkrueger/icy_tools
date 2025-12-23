@@ -1,15 +1,15 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use iced::Event;
 use iced::{
+    widget::{column, container, image as iced_image, stack, text, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, column, container, image as iced_image, stack, text},
 };
 use icy_engine::{Screen, Size, TextScreen};
-use icy_engine_gui::{HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView, command_handler};
+use icy_engine_gui::{command_handler, HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
@@ -20,10 +20,10 @@ use super::drag_scroll::DragScrollState;
 use super::image_content_view::ImageContentView;
 use super::image_viewer::{ImageViewer, ImageViewerMessage};
 use super::terminal_content_view::TerminalContentView;
-use super::view_thread::{ScrollMode, ViewCommand, ViewEvent, create_view_thread};
-use crate::ScrollSpeed;
+use super::view_thread::{create_view_thread, ScrollMode, ViewCommand, ViewEvent};
 use crate::commands::{cmd, create_icy_view_commands};
 use crate::ui::theme;
+use crate::ScrollSpeed;
 use icy_engine::formats::{FileFormat, ImageFormat};
 
 /// Counter for image load requests to handle cancellation
@@ -655,7 +655,11 @@ impl PreviewView {
                 }
 
                 // Return any extra tasks
-                if extra_tasks.is_empty() { Task::none() } else { Task::batch(extra_tasks) }
+                if extra_tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(extra_tasks)
+                }
             }
             PreviewMessage::ScrollViewport(dx, dy) => {
                 // User is scrolling manually, disable auto-scroll modes

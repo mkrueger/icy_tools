@@ -1,15 +1,15 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{button, column, container, row, text, Space},
     Alignment, Border, Color, Element, Event, Length, Theme,
-    widget::{Space, button, column, container, row, text},
 };
 use std::fmt;
 
 use crate::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, LANGUAGE_LOADER, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, danger_button, dialog_area, modal_container,
-    modal_overlay, primary_button, secondary_button,
+    button_row, danger_button, dialog_area, modal_container, modal_overlay, primary_button, secondary_button,
     ui::dialog::{Dialog, DialogAction},
     ui::icons::{error_icon, warning_icon},
+    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, LANGUAGE_LOADER, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

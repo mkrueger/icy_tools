@@ -1,8 +1,8 @@
 use icy_engine::formats::FileFormat;
 
-use crate::items::{ArchiveContainer, Item, ItemError, sort_folder};
+use crate::items::{sort_folder, ArchiveContainer, Item, ItemError};
 
-use super::{API_PATH, SixteenColorsFile, SixteenColorsPack, SixteenColorsYear, cache::fetch_json_async, get_cache};
+use super::{cache::fetch_json_async, get_cache, SixteenColorsFile, SixteenColorsPack, SixteenColorsYear, API_PATH};
 
 /// Provider for 16colors.rs web browsing
 /// Uses the global cache for all API responses

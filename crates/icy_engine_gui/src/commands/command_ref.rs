@@ -22,8 +22,8 @@
 
 use i18n_embed::fluent::FluentLanguageLoader;
 
-use super::CommandDef;
 use super::toml_loader::CommandToml;
+use super::CommandDef;
 
 /// Parse a TOML string and find the command definition for the given ID
 fn find_command_in_toml(toml_str: &str, id: &str) -> Option<CommandDef> {

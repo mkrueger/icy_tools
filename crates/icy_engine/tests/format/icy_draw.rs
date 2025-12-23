@@ -1,4 +1,4 @@
-use super::ansi2::{CompareOptions, compare_buffers};
+use super::ansi2::{compare_buffers, CompareOptions};
 use icy_engine::{AttributedChar, Color, FileFormat, Layer, Position, Role, SaveOptions, Sixel, TextAttribute, TextBuffer, TextPane};
 
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -523,7 +523,7 @@ fn test_escape_char() {
 
 #[test]
 fn test_rejects_newer_iced_versions() {
-    use base64::{Engine, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine};
 
     // ICED header (v2) with v1-sized payload (21 bytes) so only the version triggers the error.
     let mut header = Vec::new();
@@ -549,7 +549,7 @@ fn test_rejects_newer_iced_versions() {
 
 #[test]
 fn test_tag_roundtrip_short_and_long() {
-    use icy_engine::{AttributeColor, Position, Tag, TagPlacement, TagRole, attribute};
+    use icy_engine::{attribute, AttributeColor, Position, Tag, TagPlacement, TagRole};
 
     let mut buf = TextBuffer::default();
 

@@ -4,23 +4,23 @@
 //! Supports async export with progress indication and cancellation.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use rayon::prelude::*;
 
 use iced::{
+    widget::{column, container, pick_list, progress_bar, row, text, text_input, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, column, container, pick_list, progress_bar, row, text, text_input},
 };
 use icy_engine::{Position, Rectangle, RenderOptions, Screen};
-use icy_engine_gui::ButtonType;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
-    left_label_small, modal_container, primary_button, secondary_button, separator,
+    browse_button, button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
+    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::ButtonType;
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
@@ -284,9 +284,11 @@ impl Dialog<Message> for AnimationExportDialog {
         // Buttons
         let buttons = if is_exporting {
             // Show cancel button during export
-            button_row(vec![
-                secondary_button(format!("{}", ButtonType::Cancel), Some(msg(AnimationExportMessage::Close))).into(),
-            ])
+            button_row(vec![secondary_button(
+                format!("{}", ButtonType::Cancel),
+                Some(msg(AnimationExportMessage::Close)),
+            )
+            .into()])
         } else {
             let can_export = self.export_path.is_some() && frame_count > 0;
             button_row(vec![

@@ -1,6 +1,6 @@
 //! Undo operations for CharSet (TDF) editor
 
-use retrofont::{Glyph, tdf::TdfFont};
+use retrofont::{tdf::TdfFont, Glyph};
 use serde::{Deserialize, Serialize};
 
 /// Undo operation types for the CharSet editor

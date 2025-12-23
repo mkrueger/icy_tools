@@ -3,10 +3,10 @@
 //! Provides an async Subscription that wraps the terminal event receiver
 //! and delivers events without polling, saving CPU.
 
-use iced::Subscription;
-use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender;
+use iced::futures::SinkExt;
 use iced::stream::channel;
+use iced::Subscription;
 use std::sync::OnceLock;
 use tokio::sync::mpsc::UnboundedReceiver;
 

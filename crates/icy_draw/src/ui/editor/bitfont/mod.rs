@@ -32,24 +32,24 @@ use std::{path::PathBuf, sync::Arc};
 
 use codepages::tables::CP437_TO_UNICODE;
 use iced::{
-    Element, Length, Point, Task, Theme,
     alignment::Horizontal,
     keyboard::{self, Key},
     mouse,
-    widget::{Canvas, Space, column, container, row, text},
+    widget::{column, container, row, text, Canvas, Space},
+    Element, Length, Point, Task, Theme,
 };
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::{BitFontEditState, BitFontFocusedPanel, BitFontUndoState};
 use icy_engine_gui::{
-    MonitorSettings, Terminal, TerminalView,
     theme::{self, main_area_background},
     ui::DialogStack,
+    MonitorSettings, Terminal, TerminalView,
 };
 use parking_lot::Mutex;
 
 use crate::ui::main_window::Message;
 use crate::ui::{
-    editor::ansi::{PaletteGrid, PaletteGridMessage, SWITCHER_SIZE, constants::SIDEBAR_WIDTH},
+    editor::ansi::{constants::SIDEBAR_WIDTH, PaletteGrid, PaletteGridMessage, SWITCHER_SIZE},
     editor::bitfont::tile_view::TileViewCanvas,
 };
 
@@ -1198,7 +1198,11 @@ impl BitFontEditor {
         let y = ((pos.y - RULER_SIZE) / (scaled_cell_size + scaled_cell_gap)) as i32;
 
         let (width, height) = self.state.font_size();
-        if x >= 0 && x < width && y >= 0 && y < height { Some((x, y)) } else { None }
+        if x >= 0 && x < width && y >= 0 && y < height {
+            Some((x, y))
+        } else {
+            None
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════

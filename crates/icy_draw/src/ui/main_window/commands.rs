@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use icy_engine_gui::commands::{CommandSet, create_common_commands, load_commands_from_str};
+use icy_engine_gui::commands::{create_common_commands, load_commands_from_str, CommandSet};
 
 /// The embedded draw-specific commands TOML
 const DRAW_COMMANDS_TOML: &str = include_str!("../../../data/commands_draw.toml");

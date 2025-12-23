@@ -147,7 +147,11 @@ impl DragScrollState {
             return None;
         }
 
-        if dx.abs() > 0.01 || dy.abs() > 0.01 { Some((dx, dy)) } else { None }
+        if dx.abs() > 0.01 || dy.abs() > 0.01 {
+            Some((dx, dy))
+        } else {
+            None
+        }
     }
 
     /// Check if animation updates are needed

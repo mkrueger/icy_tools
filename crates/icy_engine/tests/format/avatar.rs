@@ -1,4 +1,4 @@
-use icy_engine::{SaveOptions, TextPane, formats::FileFormat};
+use icy_engine::{formats::FileFormat, SaveOptions, TextPane};
 
 #[test]
 fn test_clear() {

@@ -2,7 +2,7 @@
 
 use crate::{AttributedChar, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 
 /// Load a binary file into a TextScreen.
 pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {

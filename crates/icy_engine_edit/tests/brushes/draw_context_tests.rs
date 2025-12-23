@@ -3,7 +3,7 @@
 mod test_target;
 
 use icy_engine::{AttributedChar, Position, TextAttribute};
-use icy_engine_edit::brushes::{BrushMode, DrawContext, DrawTarget, HALF_BLOCKS, MirrorMode, PointRole, SHADE_GRADIENT};
+use icy_engine_edit::brushes::{BrushMode, DrawContext, DrawTarget, MirrorMode, PointRole, HALF_BLOCKS, SHADE_GRADIENT};
 use test_target::TestTarget;
 
 #[test]

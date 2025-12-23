@@ -1,13 +1,13 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, container, row, scrollable, text, text_input, Space},
     Alignment, Element, Length, Theme,
-    widget::{Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::{
     dialog_wrapper, section_header,
     ui::{
-        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, SauceFieldColor, StateResult, TEXT_SIZE_NORMAL, button_row_with_left, dialog_area, left_label_small,
-        modal_container, primary_button, sauce_input_style, secondary_button, separator,
+        button_row_with_left, dialog_area, left_label_small, modal_container, primary_button, sauce_input_style, secondary_button, separator, SauceFieldColor,
+        StateResult, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL,
     },
 };
 use icy_sauce::{ArchiveFormat, AudioFormat, BitmapFormat, Capabilities, CharacterFormat, SauceDataType, SauceRecord, VectorFormat};

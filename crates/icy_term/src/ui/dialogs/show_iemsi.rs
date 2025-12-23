@@ -1,13 +1,13 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, container, row, scrollable, text, text_input, Space},
     Alignment, Element, Length, Theme,
-    widget::{Space, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::{
     dialog_wrapper,
     ui::{
-        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, StateResult, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, modal_container, primary_button,
-        section_header, separator,
+        button_row, dialog_area, modal_container, primary_button, section_header, separator, StateResult, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM,
+        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
 };
 use icy_net::iemsi::EmsiISI;

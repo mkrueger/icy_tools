@@ -83,10 +83,18 @@ fn determine_start_role(p0: Position, p1: Position) -> PointRole {
 
     if dx.abs() > dy.abs() {
         // More horizontal
-        if dx > 0 { PointRole::LeftSide } else { PointRole::RightSide }
+        if dx > 0 {
+            PointRole::LeftSide
+        } else {
+            PointRole::RightSide
+        }
     } else {
         // More vertical
-        if dy > 0 { PointRole::TopSide } else { PointRole::BottomSide }
+        if dy > 0 {
+            PointRole::TopSide
+        } else {
+            PointRole::BottomSide
+        }
     }
 }
 
@@ -96,9 +104,17 @@ fn determine_end_role(p0: Position, p1: Position) -> PointRole {
 
     if dx.abs() > dy.abs() {
         // More horizontal
-        if dx > 0 { PointRole::RightSide } else { PointRole::LeftSide }
+        if dx > 0 {
+            PointRole::RightSide
+        } else {
+            PointRole::LeftSide
+        }
     } else {
         // More vertical
-        if dy > 0 { PointRole::BottomSide } else { PointRole::TopSide }
+        if dy > 0 {
+            PointRole::BottomSide
+        } else {
+            PointRole::TopSide
+        }
     }
 }

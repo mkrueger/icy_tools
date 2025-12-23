@@ -4,12 +4,12 @@ use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
 use iced::keyboard;
 use iced::{
+    widget::{button, column, container, row, svg, text, Space},
     Alignment, Element, Event, Length, Task,
-    widget::{Space, button, column, container, row, svg, text},
 };
 use icy_engine::ScreenMode;
 use icy_engine_gui::ui::*;
-use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use parking_lot::Mutex;
 use std::sync::Arc;

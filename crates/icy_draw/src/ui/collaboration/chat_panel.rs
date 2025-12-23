@@ -6,8 +6,8 @@
 //! - Bottom: Input field
 
 use iced::{
+    widget::{column, container, row, scrollable, stack, text, text_input, Column, Row, Space},
     Border, Color, Element, Length, Padding, Theme,
-    widget::{Column, Row, Space, column, container, row, scrollable, stack, text, text_input},
 };
 use icy_engine_edit::collaboration::ChatMessage;
 

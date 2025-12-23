@@ -1,5 +1,5 @@
 #![allow(static_mut_refs)]
-use crate::{MonitorSettings, Terminal, ZoomMessage, create_crt_shader};
+use crate::{create_crt_shader, MonitorSettings, Terminal, ZoomMessage};
 use iced::Element;
 use icy_engine::{KeyModifiers, MouseButton, Position};
 use std::sync::Arc;

@@ -7,8 +7,8 @@
 //! - Duplicate line
 //! - Swap characters
 
-use crate::Result;
 use crate::bitfont::BitFontUndoOp;
+use crate::Result;
 
 use super::BitFontEditState;
 

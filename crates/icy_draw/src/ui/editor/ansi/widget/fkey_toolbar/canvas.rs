@@ -9,12 +9,12 @@
 #![allow(dead_code)]
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme,
     mouse::{self, Cursor},
     widget::{
-        Action,
         canvas::{self, Cache, Canvas, Frame, Geometry, Path},
+        Action,
     },
+    Color, Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::{BitFont, Palette};
 

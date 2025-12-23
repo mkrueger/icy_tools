@@ -3,7 +3,7 @@
 //! These commands are specific to icy_term and are merged with
 //! the common commands from icy_engine_gui.
 
-use icy_engine_gui::commands::{CommandSet, load_commands_from_str};
+use icy_engine_gui::commands::{load_commands_from_str, CommandSet};
 
 /// The embedded icy_term specific commands TOML
 const ICY_TERM_COMMANDS_TOML: &str = include_str!("../data/commands_icy_term.toml");

@@ -5,8 +5,8 @@
 //! - Multi-character operations use `begin_atomic_undo()`/`end()` to group operations
 //! - Atomic groups are undone/redone as a single unit
 
-use crate::Result;
 use crate::bitfont::{BitFontOperationType, BitFontUndoOp, BitFontUndoState};
+use crate::Result;
 
 use super::{BitFontAtomicUndoGuard, BitFontEditState};
 

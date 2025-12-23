@@ -2,7 +2,7 @@
 //!
 //! Tests loading performance for compressed and uncompressed XBin files.
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use icy_engine::FileFormat;
 use std::fs;
 use std::hint::black_box;

@@ -31,7 +31,7 @@ pub use color_optimization::*;
 
 pub use io::seq::seq_prepare;
 
-use crate::{ANSI_FONTS, BitFont, EditableScreen, Layer, Result, Role, Screen, Size, TextPane, TextScreen, get_sauce_font_names};
+use crate::{get_sauce_font_names, BitFont, EditableScreen, Layer, Result, Role, Screen, Size, TextPane, TextScreen, ANSI_FONTS};
 use icy_parser_core::{CommandParser, MusicOption};
 
 use super::{Position, TextAttribute};
@@ -125,7 +125,7 @@ pub struct LoadedDocument {
     pub sauce_opt: Option<icy_sauce::SauceRecord>,
 }
 
-use crate::{IceMode, TextBuffer, limits};
+use crate::{limits, IceMode, TextBuffer};
 use icy_sauce::prelude::*;
 
 /// Apply SAUCE record settings directly to a TextBuffer.

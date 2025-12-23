@@ -7,15 +7,15 @@
 use std::fmt;
 
 use iced::{
+    widget::{column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, column, container, pick_list, row, text, text_input},
 };
-use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_SMALL, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, button_row, dialog_area, dialog_title, left_label_small,
-    modal_container, primary_button, secondary_button, separator,
+    button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
+    DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::ButtonType;
 
 use super::CharFontEditorMessage;
 use crate::fl;

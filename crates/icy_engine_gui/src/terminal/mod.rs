@@ -24,12 +24,12 @@ pub mod render_info;
 pub use render_info::*;
 
 use parking_lot::{Mutex, RwLock};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::ScalingMode;
 use crate::{EditorMarkers, ScrollbarState, Viewport};
-use iced::{Color, mouse, widget};
+use iced::{mouse, widget, Color};
 use icy_engine::Screen;
 
 pub struct Terminal {

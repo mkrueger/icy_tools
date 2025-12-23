@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use icy_engine::{AttributedChar, SaveOptions, Size, TextAttribute, TextBuffer, formats::FileFormat};
+use icy_engine::{formats::FileFormat, AttributedChar, SaveOptions, Size, TextAttribute, TextBuffer};
 use icy_sauce::MetaData as SauceMetaData;
 use tokio::sync::RwLock;
 

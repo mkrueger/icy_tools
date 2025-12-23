@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::widget::{Space, button, column, container, row, space, text, tooltip};
+use iced::widget::{button, column, container, row, space, text, tooltip, Space};
 use iced::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
 mod icons;

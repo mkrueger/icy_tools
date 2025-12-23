@@ -5,8 +5,8 @@ use std::{sync::Arc, u32};
 use icy_parser_core::{RipCommand, SkypixCommand};
 
 use crate::{
-    AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle, RenderOptions, Result, SaveOptions,
-    SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane, bgi::MouseField, clipboard, limits,
+    bgi::MouseField, clipboard, limits, AttributedChar, BitFont, Caret, EditableScreen, HyperLink, IceMode, Layer, Line, Palette, Position, Rectangle,
+    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Sixel, Size, TerminalState, TextBuffer, TextPane,
 };
 
 #[derive(Clone, Default)]

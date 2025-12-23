@@ -9,14 +9,14 @@
 //! Animation is self-driven: the widget listens for RedrawRequested events and
 //! schedules the next redraw automatically when animating.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse,
+    mouse,
     widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Stroke},
-    window,
+    window, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
 
 use super::overlay::ViewportAccess;

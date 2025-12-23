@@ -7,16 +7,16 @@
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 use crate::fl;
+use clipboard_rs::common::RustImage;
 use clipboard_rs::Clipboard;
 use clipboard_rs::ContentFormat;
-use clipboard_rs::common::RustImage;
-use iced::widget::{Space, button, row, text, tooltip};
+use iced::widget::{button, row, text, tooltip, Space};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
+use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
-use icy_engine_edit::tools::Tool;
-use icy_engine_gui::{ICY_CLIPBOARD_TYPE, TerminalMessage};
+use icy_engine_gui::{TerminalMessage, ICY_CLIPBOARD_TYPE};
 
 /// State for the paste/floating layer tool
 #[derive(Default)]
@@ -342,8 +342,8 @@ impl PasteTool {
     /// Handle a keyboard event in paste mode
     /// Returns the action to perform
     pub fn handle_key(&self, key: &iced::keyboard::Key) -> PasteAction {
-        use iced::keyboard::Key;
         use iced::keyboard::key::Named;
+        use iced::keyboard::Key;
 
         match key {
             // Escape - cancel paste

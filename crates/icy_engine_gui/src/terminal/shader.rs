@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::tile_cache::MAX_TEXTURE_SLICES;
-use crate::{MonitorSettings, PENDING_INSTANCE_REMOVALS, RenderInfo, TextureSliceData, now_ms, set_scale_factor};
-use iced::Rectangle;
+use crate::{now_ms, set_scale_factor, MonitorSettings, RenderInfo, TextureSliceData, PENDING_INSTANCE_REMOVALS};
 use iced::widget::shader;
+use iced::Rectangle;
 
 /// Maximum texture dimension supported by most GPUs
 const MAX_TEXTURE_DIMENSION: u32 = 8192;

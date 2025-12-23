@@ -109,7 +109,7 @@ fn test_rectangle_outline_small() {
     assert!(points.contains(&(2, 2))); // bottom-right
     assert!(points.contains(&(0, 1))); // left-middle
     assert!(points.contains(&(2, 1))); // right-middle
-    // Should NOT contain interior
+                                       // Should NOT contain interior
     assert!(!points.contains(&(1, 1))); // center should NOT be in outline
 }
 

@@ -1,8 +1,8 @@
 use iced::{
+    widget::{row, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, row, text_input},
 };
-use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, error_tooltip, left_label_small};
+use icy_engine_gui::ui::{error_tooltip, left_label_small, DIALOG_SPACING, TEXT_SIZE_NORMAL};
 use icy_net::modem::ModemCommand;
 
 /// Creates a row with a label, text input for ModemCommand editing, and error indicator (generic version).
@@ -145,7 +145,11 @@ fn format_validation_error(result: &icy_net::modem::ModemCommandValidationResult
 /// Returns `None` if the string is valid, `Some(error_message)` otherwise.
 pub fn validate_modem_command(input: &str) -> Option<String> {
     let result = ModemCommand::validate(input);
-    if result.is_valid() { None } else { Some(format_validation_error(&result)) }
+    if result.is_valid() {
+        None
+    } else {
+        Some(format_validation_error(&result))
+    }
 }
 
 /// Updates a ModemCommand from a string value, returning the updated command.

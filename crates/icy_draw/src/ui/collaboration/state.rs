@@ -4,8 +4,8 @@
 //! The UI-free collaboration core lives in `icy_engine_edit` for unit testing.
 
 use crate::fl;
-use icy_engine_edit::EditorUndoStack;
 use icy_engine_edit::collaboration::{ChatMessage, CollaborationCoreState, ConnectedDocument, ServerStatus, User};
+use icy_engine_edit::EditorUndoStack;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 

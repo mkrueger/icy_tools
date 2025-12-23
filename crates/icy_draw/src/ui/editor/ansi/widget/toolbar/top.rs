@@ -6,14 +6,14 @@
 #![allow(dead_code)]
 
 use iced::{
+    widget::{button, column, container, row, svg, text, toggler, Space},
     Element, Length, Task, Theme,
-    widget::{Space, button, column, container, row, svg, text, toggler},
 };
-use icy_engine_gui::ui::{SPACE_8, SPACE_16, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button, secondary_button};
+use icy_engine_gui::ui::{primary_button, secondary_button, SPACE_16, SPACE_8, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 
 use crate::fl;
-use crate::ui::FKeySets;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
+use crate::ui::FKeySets;
 use icy_engine::{BitFont, BufferType, Palette};
 use icy_engine_edit::tools::Tool;
 

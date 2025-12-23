@@ -2,13 +2,13 @@ use std::time::Instant;
 
 use i18n_embed_fl::fl;
 use iced::{
-    Element, Length,
     widget::{button, container, row, text, tooltip},
+    Element, Length,
 };
 
 use super::icons;
-use crate::LANGUAGE_LOADER;
 use crate::sort_order::SortOrder;
+use crate::LANGUAGE_LOADER;
 use crate::{Options, ViewMode};
 
 /// Duration before toolbar auto-hides on first show (generous)

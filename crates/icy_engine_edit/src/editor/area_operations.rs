@@ -9,7 +9,7 @@ use i18n_embed_fl::fl;
 
 use crate::{AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
-use super::{EditState, undo_operation::EditorUndoOp};
+use super::{undo_operation::EditorUndoOp, EditState};
 
 fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
     if let Some(selection) = sel {
@@ -809,8 +809,8 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use crate::{
-        BitFont, Layer, Position, Rectangle, Size, TextPane,
         editor::{EditState, UndoState},
+        BitFont, Layer, Position, Rectangle, Size, TextPane,
     };
 
     use super::{generate_flipx_table, generate_flipy_table};

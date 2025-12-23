@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Element, Length,
     widget::{column, container, pick_list, row, text, text_input},
+    Alignment, Element, Length,
 };
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;

@@ -299,7 +299,7 @@ macro_rules! command_handlers {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::{Hotkey, cmd, create_common_commands, macros::CommandId};
+    use crate::commands::{cmd, create_common_commands, macros::CommandId, Hotkey};
 
     #[derive(Debug, Clone, PartialEq)]
     enum TestMessage {

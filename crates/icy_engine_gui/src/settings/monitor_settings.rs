@@ -1,8 +1,8 @@
 use super::*;
-use crate::{LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING, section_header};
+use crate::{section_header, LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING};
 use crate::{MonitorSettings, MonitorType};
 use i18n_embed_fl::fl;
-use iced::widget::{Space, checkbox, column, container, pick_list, row, text};
+use iced::widget::{checkbox, column, container, pick_list, row, text, Space};
 use iced::{Alignment, Background, Border, Element, Length, Theme};
 
 pub const CHECKBOX_SIZE: f32 = 18.0;

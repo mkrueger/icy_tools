@@ -7,21 +7,21 @@
 //! adding font-specific character rendering, backspace, and enter handling.
 
 use i18n_embed_fl::fl;
+use iced::widget::{button, column, container, row, text, Space};
 use iced::Element;
-use iced::widget::{Space, button, column, container, row, text};
 use iced::{Length, Theme};
 use icy_engine::Position;
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::{OperationType, TdfEditStateRenderer};
 use icy_engine_gui::TerminalMessage;
 
-use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
+use super::{handle_navigation_key, SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 
-use crate::LANGUAGE_LOADER;
-use crate::Settings;
-use crate::SharedFontLibrary;
 use crate::ui::editor::ansi::widget::font_tool::FontToolState;
 use crate::ui::editor::ansi::widget::outline_selector::OutlineSelectorMessage;
+use crate::Settings;
+use crate::SharedFontLibrary;
+use crate::LANGUAGE_LOADER;
 
 /// Font tool state
 pub struct FontTool {

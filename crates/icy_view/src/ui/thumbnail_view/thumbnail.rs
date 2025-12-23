@@ -2,10 +2,10 @@ use i18n_embed_fl::fl;
 use icy_sauce::SauceRecord;
 use once_cell::sync::Lazy;
 
-use crate::LANGUAGE_LOADER;
 use crate::items::create_text_preview;
 use crate::thumbnail::scale_to_thumbnail_width;
 pub use crate::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
+use crate::LANGUAGE_LOADER;
 
 // ============================================================================
 // Thumbnail Rendering Constants

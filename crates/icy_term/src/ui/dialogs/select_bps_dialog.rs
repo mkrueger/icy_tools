@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, container, radio, row, text, text_input, Space},
     Alignment, Border, Color, Element, Length,
-    widget::{Space, column, container, radio, row, text, text_input},
 };
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::ui::*;
@@ -64,7 +64,11 @@ impl SelectBpsDialogState {
             BaudEmulation::Off
         } else if self.selected_index == CUSTOM_INDEX {
             if let Ok(rate) = self.custom_rate.parse::<u32>() {
-                if rate > 0 { BaudEmulation::Rate(rate) } else { BaudEmulation::Off }
+                if rate > 0 {
+                    BaudEmulation::Rate(rate)
+                } else {
+                    BaudEmulation::Off
+                }
             } else {
                 BaudEmulation::Off
             }

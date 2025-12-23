@@ -5,10 +5,10 @@
 //! transformed into screen space using the same math as the terminal renderer.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::advanced::Renderer as _;
 use iced::advanced::image::Renderer as _;
 use iced::advanced::text::Renderer as _;
 use iced::advanced::widget::tree::{self, Tree};
+use iced::advanced::Renderer as _;
 use iced::advanced::{layout, renderer, widget};
 use iced::widget::image;
 use iced::{Border, Color, Element, Length, Point, Rectangle, Theme};
@@ -100,7 +100,11 @@ impl<Message> widget::Widget<Message, Theme, iced::Renderer> for RemotePastePrev
         // Effective zoom (matches the terminal renderer).
         let zoom = {
             let info = self.render_info.read();
-            if info.display_scale > 0.0 { info.display_scale } else { 1.0 }
+            if info.display_scale > 0.0 {
+                info.display_scale
+            } else {
+                1.0
+            }
         };
 
         let scaled_font_width = self.font_width * zoom;

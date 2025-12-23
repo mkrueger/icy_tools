@@ -12,6 +12,6 @@ pub mod icons;
 pub mod state;
 pub mod subscription;
 
-pub use chat_panel::{ChatPanelMessage, view_chat_panel};
+pub use chat_panel::{view_chat_panel, ChatPanelMessage};
 pub use state::*;
 pub use subscription::*;

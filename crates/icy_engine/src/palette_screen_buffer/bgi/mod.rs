@@ -1,6 +1,6 @@
 use std::{f64::consts, path::PathBuf};
 
-use crate::{BitFont, EGA_PALETTE, EditableScreen, Palette, Position, Rectangle, Size};
+use crate::{BitFont, EditableScreen, Palette, Position, Rectangle, Size, EGA_PALETTE};
 
 mod character;
 pub use character::*;

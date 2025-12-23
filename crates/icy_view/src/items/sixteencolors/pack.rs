@@ -3,12 +3,12 @@ use icy_engine::formats::FileFormat;
 use icy_engine_gui::ui::FileIcon;
 use tokio_util::sync::CancellationToken;
 
+use crate::items::{load_image_to_rgba, sort_folder, ArchiveContainer, Item, ItemError};
+use crate::thumbnail::{scale_to_thumbnail_width, RgbaData};
 use crate::LANGUAGE_LOADER;
-use crate::items::{ArchiveContainer, Item, ItemError, load_image_to_rgba, sort_folder};
-use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
 use i18n_embed_fl::fl;
 
-use super::{API_PATH, SixteenColorsFile, cache::fetch_json_async, get_cache};
+use super::{cache::fetch_json_async, get_cache, SixteenColorsFile, API_PATH};
 
 /// A release pack folder containing individual files
 pub struct SixteenColorsPack {

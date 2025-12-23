@@ -1,9 +1,9 @@
 //! Character set canvas for BitFont editor
 
 use iced::{
-    Color, Point, Rectangle, Size,
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Frame, Path, Stroke},
+    Color, Point, Rectangle, Size,
 };
 use icy_engine_edit::bitfont::BitFontFocusedPanel;
 

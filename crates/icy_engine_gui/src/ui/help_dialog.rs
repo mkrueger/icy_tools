@@ -1,11 +1,11 @@
 use iced::{
+    widget::{column, container, row, scrollable, text, Space},
     Alignment, Border, Color, Element, Length, Padding, Theme,
-    widget::{Space, column, container, row, scrollable, text},
 };
 
 use super::dialog::StateResult;
-use super::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, primary_button};
-use crate::{ButtonType, commands::CommandDef, dialog_wrapper};
+use super::{primary_button, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
+use crate::{commands::CommandDef, dialog_wrapper, ButtonType};
 
 /// Messages for the help dialog
 #[derive(Debug, Clone)]
@@ -340,7 +340,11 @@ pub fn help_dialog<'a, Message: Clone + 'static>(
 /// Returns the modifier symbol for the current platform
 /// Returns "⌘" on macOS, "Ctrl" on other platforms
 pub fn platform_mod_symbol() -> &'static str {
-    if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" }
+    if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl"
+    }
 }
 
 /// Returns true if running on macOS

@@ -5,8 +5,8 @@
 use icy_engine::{Position, Selection};
 use serde::{Deserialize, Serialize};
 
-use crate::Result;
 use crate::bitfont::BitFontEditState;
+use crate::Result;
 
 /// Type of operation for grouping related undos
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

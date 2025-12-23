@@ -10,12 +10,12 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use parking_lot::RwLock;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use iced::{Element, Event, Point, Size, Subscription, Task, Theme, Vector, keyboard, widget::space, window};
+use iced::{keyboard, widget::space, window, Element, Event, Point, Size, Subscription, Task, Theme, Vector};
 
 use crate::mcp::McpCommand;
-use crate::session::{SessionManager, SessionState, WindowRestoreInfo, WindowState, edit_mode_to_string};
-use crate::ui::{MainWindow, main_window::commands::create_draw_commands};
-use crate::{Settings, SharedFontLibrary, load_window_icon};
+use crate::session::{edit_mode_to_string, SessionManager, SessionState, WindowRestoreInfo, WindowState};
+use crate::ui::{main_window::commands::create_draw_commands, MainWindow};
+use crate::{load_window_icon, Settings, SharedFontLibrary};
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::{find_next_window_id, focus_window_by_id};
@@ -655,7 +655,11 @@ impl WindowManager {
                 self.windows.remove(&id);
                 self.window_geometry.remove(&id);
 
-                if self.windows.is_empty() { iced::exit() } else { Task::none() }
+                if self.windows.is_empty() {
+                    iced::exit()
+                } else {
+                    Task::none()
+                }
             }
 
             WindowManagerMessage::WindowMessage(id, msg) => {

@@ -1,4 +1,4 @@
-use icy_engine::{AttributedChar, EditableScreen, Size, TextAttribute, TextScreen, formats::FileFormat};
+use icy_engine::{formats::FileFormat, AttributedChar, EditableScreen, Size, TextAttribute, TextScreen};
 
 use super::BitFontEditState;
 

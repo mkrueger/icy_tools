@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use icy_engine::{Screen, TextScreen, formats::FileFormat};
+use icy_engine::{formats::FileFormat, Screen, TextScreen};
 use mlua::{Lua, Value};
 use parking_lot::Mutex;
 use regex::Regex;

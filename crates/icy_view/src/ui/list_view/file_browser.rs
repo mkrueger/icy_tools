@@ -2,16 +2,16 @@ use std::{env, path::PathBuf};
 
 use directories::UserDirs;
 use iced::{
-    Element, Event, Length,
-    keyboard::{Key, key::Named},
+    keyboard::{key::Named, Key},
     widget::container,
+    Element, Event, Length,
 };
 use icy_engine::formats::FileFormat;
 
 use super::file_list_view::{FileListView, FileListViewMessage};
 use super::sauce_loader::SharedSauceCache;
 use crate::items::Item;
-use crate::items::{NavPoint, ProviderType, SixteenColorsProvider, get_items_at_path, is_directory, path_exists, sort_items};
+use crate::items::{get_items_at_path, is_directory, path_exists, sort_items, NavPoint, ProviderType, SixteenColorsProvider};
 use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
 

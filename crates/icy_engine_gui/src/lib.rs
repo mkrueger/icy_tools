@@ -6,7 +6,7 @@ pub use double_click::*;
 
 pub mod focus;
 pub use focus::{
-    Catalog as FocusCatalog, Focus, OnEvent, Style as FocusStyle, StyleFn as FocusStyleFn, default_style, focus, list_focus_style, no_border_style,
+    default_style, focus, list_focus_style, no_border_style, Catalog as FocusCatalog, Focus, OnEvent, Style as FocusStyle, StyleFn as FocusStyleFn,
 };
 
 pub mod terminal;
@@ -15,7 +15,7 @@ pub use terminal::*;
 
 pub mod commands;
 pub use commands::{
-    CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers, cmd, create_common_commands, load_commands_from_file, load_commands_from_str,
+    cmd, create_common_commands, load_commands_from_file, load_commands_from_str, CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers,
 };
 
 // Re-export proc macros
@@ -508,8 +508,8 @@ impl ReferenceImageSettings {
         self.cached_path_hash = 0;
     }
 } // ============================================================================
-// Editor Markers - active marker state for current editor session
-// ============================================================================
+  // Editor Markers - active marker state for current editor session
+  // ============================================================================
 
 /// Active marker state for current editor session
 /// This is NOT serialized in app settings - raster/guide are per-session,
@@ -808,8 +808,8 @@ impl MonitorSettings {
 }
 
 use i18n_embed::{
+    fluent::{fluent_language_loader, FluentLanguageLoader},
     DesktopLanguageRequester,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
 };
 use rust_embed::RustEmbed;
 

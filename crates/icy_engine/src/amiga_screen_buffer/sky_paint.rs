@@ -63,7 +63,11 @@ impl SkyPaint {
         let width = buf.resolution().width;
         let offset = (y * width + x) as usize;
         let screen = buf.screen();
-        if offset < screen.len() { screen[offset] } else { 0 }
+        if offset < screen.len() {
+            screen[offset]
+        } else {
+            0
+        }
     }
 
     pub fn line(&mut self, buf: &mut dyn EditableScreen, x0: i32, y0: i32, x1: i32, y1: i32, color: u8) {

@@ -51,7 +51,7 @@ pub mod limits;
 pub mod char_set;
 
 pub mod gif_encoder;
-pub use gif_encoder::{GifEncoder, GifFrame, RepeatCount, encode_animated_gif, encode_animated_gif_with_progress, encode_static_gif};
+pub use gif_encoder::{encode_animated_gif, encode_animated_gif_with_progress, encode_static_gif, GifEncoder, GifFrame, RepeatCount};
 
 // Re-export parsers from icy_parser_core
 pub use icy_parser_core::{IgsParser, MusicOption, SkypixParser};

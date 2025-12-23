@@ -1,6 +1,6 @@
 use iced::{
+    widget::{button, column, container, row, scrollable, text, Space},
     Element, Length, Theme,
-    widget::{Space, button, column, container, row, scrollable, text},
 };
 use icy_engine::{Position, TagPlacement};
 use icy_engine_gui::settings::effect_box;

@@ -15,17 +15,17 @@ pub mod tools;
 pub mod collaboration;
 
 use i18n_embed::{
+    fluent::{fluent_language_loader, FluentLanguageLoader},
     DesktopLanguageRequester,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
 };
 use rust_embed::RustEmbed;
 
 // Re-export all necessary types from icy_engine
 pub use icy_engine::{
-    AddType, AttributedChar, BitFont, BufferType, Caret, CompactGlyph, DOS_DEFAULT_PALETTE, EditableScreen, EngineError, FontMode, GraphicsType, HyperLink,
-    IceMode, Layer, LayerProperties, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, Role, SaveOptions, SavedCaretState, Screen,
-    Selection, SelectionMask, Shape, Sixel, Size, Tag, TerminalState, TextAttribute, TextBuffer, TextPane, TextScreen, clipboard, load_with_parser,
-    overlay_mask, parsers,
+    clipboard, load_with_parser, overlay_mask, parsers, AddType, AttributedChar, BitFont, BufferType, Caret, CompactGlyph, EditableScreen, EngineError,
+    FontMode, GraphicsType, HyperLink, IceMode, Layer, LayerProperties, Line, MouseField, Palette, Position, Rectangle, RenderOptions, Result, Role,
+    SaveOptions, SavedCaretState, Screen, Selection, SelectionMask, Shape, Sixel, Size, Tag, TerminalState, TextAttribute, TextBuffer, TextPane, TextScreen,
+    DOS_DEFAULT_PALETTE,
 };
 
 // Re-export AnsiParser directly for convenient use

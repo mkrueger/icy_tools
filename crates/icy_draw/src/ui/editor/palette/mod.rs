@@ -8,18 +8,18 @@
 use std::path::PathBuf;
 
 use iced::{
+    widget::{column, container, mouse_area, row, slider, text, text_input, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, column, container, mouse_area, row, slider, text, text_input},
 };
 
 use icy_engine::formats::PaletteFormat;
-use icy_engine::{Color, DOS_DEFAULT_PALETTE, FileFormat, Palette, SaveOptions, Screen, TextBuffer};
+use icy_engine::{Color, FileFormat, Palette, SaveOptions, Screen, TextBuffer, DOS_DEFAULT_PALETTE};
 use icy_engine_gui::{
-    ButtonType,
     ui::{
-        DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, dialog_title, modal_container,
-        primary_button, restore_defaults_button, secondary_button, separator, validated_input_style,
+        dialog_area, dialog_title, modal_container, primary_button, restore_defaults_button, secondary_button, separator, validated_input_style, Dialog,
+        DialogAction, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
+    ButtonType,
 };
 
 use crate::ui::editor::ansi::AnsiEditorMessage;

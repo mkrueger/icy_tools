@@ -5,8 +5,9 @@
 //! Ported from egui palette_editor_16.
 
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme, mouse,
+    mouse,
     widget::canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke},
+    Color, Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::{FontMode, IceMode, Palette};
 

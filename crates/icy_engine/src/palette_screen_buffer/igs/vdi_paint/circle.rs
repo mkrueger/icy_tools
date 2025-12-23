@@ -1,6 +1,6 @@
 use icy_parser_core::TerminalResolution;
 
-use super::super::util::{TWOPI, gdp_curve};
+use super::super::util::{gdp_curve, TWOPI};
 use super::VdiPaint;
 use crate::EditableScreen;
 

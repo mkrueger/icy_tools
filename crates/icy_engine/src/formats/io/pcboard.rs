@@ -1,6 +1,6 @@
 use crate::{EditableScreen, Position, Result, TagPlacement, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions, ScreenPreperation, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions, ScreenPreperation};
 use icy_sauce::CharacterFormat;
 
 pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {

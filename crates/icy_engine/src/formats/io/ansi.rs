@@ -3,7 +3,7 @@
 use crate::{Result, TextBuffer, TextScreen};
 
 use super::super::ansi_v2::save_ansi_v2;
-use super::super::{LoadData, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
 
 use crate::screen::EditableScreen;
 /// Load an ANSI file into a TextScreen.

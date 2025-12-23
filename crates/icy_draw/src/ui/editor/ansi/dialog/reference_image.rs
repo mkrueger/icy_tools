@@ -5,15 +5,15 @@
 use std::path::PathBuf;
 
 use iced::{
+    widget::{button, column, container, row, slider, text, text_input, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, button, column, container, row, slider, text, text_input},
 };
-use icy_engine_gui::ButtonType;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, dialog_title, modal_container, primary_button,
-    secondary_button, separator,
+    dialog_area, dialog_title, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM,
+    TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
+use icy_engine_gui::ButtonType;
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
@@ -90,7 +90,11 @@ impl ReferenceImageDialog {
             return None;
         }
         let path = PathBuf::from(&self.path);
-        if path.exists() && path.is_file() { Some(path) } else { None }
+        if path.exists() && path.is_file() {
+            Some(path)
+        } else {
+            None
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{EditableScreen, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
 
 pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let _ = options;

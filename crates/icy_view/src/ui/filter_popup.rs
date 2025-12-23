@@ -1,7 +1,7 @@
 use iced::{
-    Border, Color, Element, Length, Shadow, Theme,
     alignment::{Horizontal, Vertical},
-    widget::{Id, button, container, row, text, text_input},
+    widget::{button, container, row, text, text_input, Id},
+    Border, Color, Element, Length, Shadow, Theme,
 };
 
 /// Messages for the filter popup

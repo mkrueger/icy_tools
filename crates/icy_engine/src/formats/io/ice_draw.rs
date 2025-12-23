@@ -1,7 +1,7 @@
-use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute, TextBuffer, TextPane, TextScreen,
-    analyze_font_usage, guess_font_name,
+    analyze_font_usage, guess_font_name, AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute,
+    TextBuffer, TextPane, TextScreen,
 };
 use icy_sauce::CharacterFormat;
 

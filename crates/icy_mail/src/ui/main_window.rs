@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::ui::NavigateDirection;
 use crate::{qwk::QwkPackage, ui::Message};
-use iced::widget::{Space, button, column, container, pane_grid, progress_bar, text, text_editor};
-use iced::{Alignment, Element, Length, Task, Theme, window};
+use iced::widget::{button, column, container, pane_grid, progress_bar, text, text_editor, Space};
+use iced::{window, Alignment, Element, Length, Task, Theme};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
@@ -193,7 +193,8 @@ impl MainWindow {
                             current_idx.saturating_sub(5) // Move 5 items up
                         }
                         NavigateDirection::PageDown => {
-                            (current_idx + 5).min(available_conferences.len() - 1) // Move 5 items down
+                            (current_idx + 5).min(available_conferences.len() - 1)
+                            // Move 5 items down
                         }
                     };
 
@@ -240,14 +241,22 @@ impl MainWindow {
                     let new_position = match direction {
                         NavigateDirection::Up => {
                             if let Some(pos) = current_position {
-                                if pos > 0 { pos - 1 } else { pos }
+                                if pos > 0 {
+                                    pos - 1
+                                } else {
+                                    pos
+                                }
                             } else {
                                 0
                             }
                         }
                         NavigateDirection::Down => {
                             if let Some(pos) = current_position {
-                                if pos < messages.len() - 1 { pos + 1 } else { pos }
+                                if pos < messages.len() - 1 {
+                                    pos + 1
+                                } else {
+                                    pos
+                                }
                             } else {
                                 0
                             }

@@ -1,12 +1,12 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, container, row, text, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, column, container, row, text, text_input},
 };
-use icy_engine_gui::StateResult;
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;
+use icy_engine_gui::StateResult;
 use std::path::{Path, PathBuf};
 
 /// Result from the capture dialog

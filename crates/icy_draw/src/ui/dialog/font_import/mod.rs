@@ -15,20 +15,20 @@ pub use canvas::*;
 use std::path::PathBuf;
 
 use iced::{
+    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length, Task,
-    widget::{Space, checkbox, column, container, pick_list, row, text, text_input},
 };
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::MAX_FONT_HEIGHT;
 use icy_engine_gui::ui::{
-    DIALOG_SPACING, DIALOG_WIDTH_LARGE, Dialog, DialogAction, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, browse_button, button_row, dialog_area, dialog_title,
-    left_label_small, modal_container, primary_button, secondary_button, separator,
+    browse_button, button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
+    DIALOG_SPACING, DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
-use icy_engine_gui::{ButtonType, settings::effect_box};
+use icy_engine_gui::{settings::effect_box, ButtonType};
 
 use crate::fl;
-use crate::ui::Message;
 use crate::ui::editor::bitfont::BitFontEditorMessage;
+use crate::ui::Message;
 
 /// Helper to wrap FontImportMessage in Message
 fn msg(m: FontImportMessage) -> Message {

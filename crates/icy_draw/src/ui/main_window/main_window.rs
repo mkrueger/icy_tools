@@ -14,26 +14,26 @@ use std::{
 
 use parking_lot::RwLock;
 
-use crate::{SharedFontLibrary, fl};
+use crate::{fl, SharedFontLibrary};
 use iced::{
+    widget::{button, column, container, mouse_area, row, rule, text, Space},
     Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
-    widget::{Space, button, column, container, mouse_area, row, rule, text},
 };
-use icy_engine::TextPane;
 use icy_engine::formats::FileFormat;
+use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
-use icy_engine_gui::ui::{DialogResult, DialogStack, ExportDialogMessage, confirm_yes_no_cancel, error_dialog};
-use icy_engine_gui::{Toast, ToastManager, command_handler, command_handlers};
+use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage};
+use icy_engine_gui::{command_handler, command_handlers, Toast, ToastManager};
 
 use super::commands::create_draw_commands;
 use super::menu::{MenuBarState, UndoInfo};
-use crate::Plugin;
-use crate::Settings;
 use crate::ui::collaboration::CollaborationState;
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
+use crate::Plugin;
+use crate::Settings;
 
 /// The editing mode of a window
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1078,7 +1078,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::NewFileCreated(template, width, height) => {
-                use crate::ui::dialog::new_file::{FileTemplate, create_buffer_for_template};
+                use crate::ui::dialog::new_file::{create_buffer_for_template, FileTemplate};
                 use retrofont::tdf::TdfFontType;
 
                 match template {
@@ -1291,9 +1291,9 @@ impl MainWindow {
                 Task::none()
             }
             Message::PasteAsNewImage => {
-                use clipboard_rs::Clipboard;
                 use clipboard_rs::common::RustImage;
-                use icy_engine::{Layer, Position, Role, Sixel, Size, TextBuffer, TextPane, clipboard};
+                use clipboard_rs::Clipboard;
+                use icy_engine::{clipboard, Layer, Position, Role, Sixel, Size, TextBuffer, TextPane};
                 use icy_engine_gui::ICY_CLIPBOARD_TYPE;
 
                 // Try ICY binary format first (copied selection from icy_draw)

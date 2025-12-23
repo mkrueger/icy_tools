@@ -1,7 +1,7 @@
 //! ASCII format (.asc, .txt) I/O implementation.
 use crate::{EditableScreen, Position, Result, TextBuffer, TextPane, TextScreen};
 
-use super::super::{LoadData, SauceBuilder, SaveOptions, apply_sauce_to_buffer};
+use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use icy_sauce::CharacterFormat;
 
 /// Load an ASCII file into a TextScreen.

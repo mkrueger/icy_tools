@@ -84,7 +84,7 @@ macro_rules! dialog_msg {
     };
 }
 
-use iced::{Event, Task, Theme, keyboard};
+use iced::{keyboard, Event, Task, Theme};
 
 /// Style for how a dialog is displayed
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

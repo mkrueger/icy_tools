@@ -5,7 +5,7 @@
 //! Draws as an overlay on top of the terminal widget.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{Element, Length, Renderer, Theme, widget::canvas};
+use iced::{widget::canvas, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;

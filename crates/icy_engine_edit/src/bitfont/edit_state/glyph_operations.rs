@@ -12,8 +12,8 @@
 
 use icy_engine::Selection;
 
-use crate::Result;
 use crate::bitfont::BitFontUndoOp;
+use crate::Result;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -168,7 +168,11 @@ impl BitFontEditState {
         let selection = self.get_edit_selection_or_all();
 
         let description = if dx != 0 {
-            if dx > 0 { "Slide right" } else { "Slide left" }
+            if dx > 0 {
+                "Slide right"
+            } else {
+                "Slide left"
+            }
         } else if dy > 0 {
             "Slide down"
         } else {

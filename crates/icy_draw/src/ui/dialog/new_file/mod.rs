@@ -11,24 +11,24 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use iced::{
-    Alignment, Element, Length, Point, Rectangle, Renderer, Size, Theme,
-    keyboard::{Key, key::Named},
+    keyboard::{key::Named, Key},
     mouse,
     widget::{
-        Space,
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, row, text, text_input,
+        column, container, row, text, text_input, Space,
     },
+    Alignment, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
 
 use icy_engine::{BitFont, FontMode, IceMode, TextBuffer};
 use icy_engine_gui::{
-    ButtonType, ScrollbarOverlay, Viewport, focus,
+    focus,
     settings::effect_box,
     ui::{
-        DIALOG_SPACING, Dialog, DialogAction, HEADER_TEXT_SIZE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL, dialog_area, left_label_small, modal_container,
-        primary_button, secondary_button, separator,
+        dialog_area, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING, HEADER_TEXT_SIZE,
+        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
+    ButtonType, ScrollbarOverlay, Viewport,
 };
 
 use crate::{fl, ui::Message};
@@ -421,7 +421,11 @@ impl NewFileDialog {
         }
 
         if let Some(pos) = visible.iter().position(|&t| t == self.selected_template) {
-            if pos > 0 { Some(visible[pos - 1]) } else { None }
+            if pos > 0 {
+                Some(visible[pos - 1])
+            } else {
+                None
+            }
         } else {
             visible.last().copied()
         }
@@ -434,7 +438,11 @@ impl NewFileDialog {
         }
 
         if let Some(pos) = visible.iter().position(|&t| t == self.selected_template) {
-            if pos + 1 < visible.len() { Some(visible[pos + 1]) } else { None }
+            if pos + 1 < visible.len() {
+                Some(visible[pos + 1])
+            } else {
+                None
+            }
         } else {
             visible.first().copied()
         }

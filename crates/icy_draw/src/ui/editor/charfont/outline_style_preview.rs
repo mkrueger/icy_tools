@@ -5,12 +5,12 @@
 
 use codepages::tables::UNICODE_TO_CP437;
 use iced::{
-    Color, Element, Length, Point, Rectangle, Size, Theme,
     mouse::{self, Cursor},
     widget::{
-        Action,
         canvas::{self, Canvas, Frame, Geometry},
+        Action,
     },
+    Color, Element, Length, Point, Rectangle, Size, Theme,
 };
 use icy_engine::BitFont;
 

@@ -1,4 +1,4 @@
-use icy_engine::{AttributeColor, AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane, formats::FileFormat};
+use icy_engine::{formats::FileFormat, AttributeColor, AttributedChar, Color, SaveOptions, TextAttribute, TextBuffer, TextPane};
 
 #[cfg(test)]
 fn resolve_fg_color(buf: &TextBuffer, attr: &TextAttribute) -> Color {

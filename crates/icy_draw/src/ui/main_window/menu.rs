@@ -4,9 +4,10 @@
 //! Ported from the egui version in src_egui/ui/top_bar.rs
 
 use iced::{
-    Border, Color, Element, Length, Theme, alignment,
+    alignment,
     border::Radius,
-    widget::{Space, button, row, text},
+    widget::{button, row, text, Space},
+    Border, Color, Element, Length, Theme,
 };
 use iced_aw::menu::Menu;
 use iced_aw::{quad, widget::InnerBounds};
@@ -18,8 +19,9 @@ use std::sync::Arc;
 use super::main_window::{EditMode, Message};
 use crate::Settings;
 use crate::{
-    MostRecentlyUsedFiles, Plugin, fl,
+    fl,
     ui::editor::{animation, ansi, bitfont, charfont},
+    MostRecentlyUsedFiles, Plugin,
 };
 pub use ansi::widget::toolbar::menu_bar::MarkerMenuState;
 use icy_engine_gui::commands::{CommandDef, Hotkey};
@@ -179,9 +181,11 @@ impl MenuItem {
     /// Get the display label
     pub fn label(&self) -> String {
         match self {
-            Self::Command { cmd, label_override, .. } => label_override
-                .clone()
-                .unwrap_or_else(|| if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() }),
+            Self::Command { cmd, label_override, .. } => {
+                label_override
+                    .clone()
+                    .unwrap_or_else(|| if cmd.label_menu.is_empty() { cmd.id.clone() } else { cmd.label_menu.clone() })
+            }
             Self::Simple { label, .. } => label.clone(),
             Self::Toggle { label, .. } => label.clone(),
             Self::SubMenu { label, .. } => label.clone(),
@@ -687,7 +691,11 @@ pub fn menu_item_enabled(cmd: &icy_engine_gui::commands::CommandDef, msg: Messag
     .padding([4, 8])
     .style(if enabled { menu_item_style } else { menu_item_disabled_style });
 
-    if enabled { btn.on_press(msg).into() } else { btn.into() }
+    if enabled {
+        btn.on_press(msg).into()
+    } else {
+        btn.into()
+    }
 }
 
 /// Create a menu item with direct label and hotkey that can be enabled/disabled
@@ -710,7 +718,11 @@ pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabl
     .padding([4, 8])
     .style(if enabled { menu_item_style } else { menu_item_disabled_style });
 
-    if enabled { btn.on_press(msg).into() } else { btn.into() }
+    if enabled {
+        btn.on_press(msg).into()
+    } else {
+        btn.into()
+    }
 }
 
 /// Create a menu item that uses CommandDef hotkey display but a custom label.
@@ -734,7 +746,11 @@ pub fn menu_item_cmd_label_enabled(label: String, cmd: &icy_engine_gui::commands
     .padding([4, 8])
     .style(if enabled { menu_item_style } else { menu_item_disabled_style });
 
-    if enabled { btn.on_press(msg).into() } else { btn.into() }
+    if enabled {
+        btn.on_press(msg).into()
+    } else {
+        btn.into()
+    }
 }
 
 /// Create a menu item with checkbox indicator

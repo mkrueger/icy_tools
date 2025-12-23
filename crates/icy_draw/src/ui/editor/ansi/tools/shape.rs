@@ -6,13 +6,13 @@
 //! This tool handles: Line, RectangleOutline, RectangleFilled, EllipseOutline, EllipseFilled
 
 use iced::keyboard::key::Physical;
-use iced::widget::{Space, button, row, svg, text, toggler};
+use iced::widget::{button, row, svg, text, toggler, Space};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, TextPane};
 use icy_engine_edit::AttributedChar;
 use icy_engine_gui::TerminalMessage;
 
-use super::paint::{BrushSettings, apply_stamp_at_doc_pos, begin_paint_undo};
+use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings};
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::shape_points::shape_points;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
@@ -623,8 +623,8 @@ impl ToolHandler for ShapeTool {
                 physical_key,
                 ..
             }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
 
                 // - Alt+= increase
                 // - Alt+- decrease

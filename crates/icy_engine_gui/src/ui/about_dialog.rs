@@ -4,19 +4,20 @@
 //! clickable hyperlinks.
 
 use iced::{
-    Element, Length,
     widget::{column, container},
+    Element, Length,
 };
-use icy_engine::{Screen, formats::FileFormat};
+use icy_engine::{formats::FileFormat, Screen};
 use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use semver::Version;
 use std::sync::Arc;
 
 use crate::{
-    MonitorSettings, Terminal, TerminalView, dialog_wrapper,
-    ui::{StateResult, button_row, dialog_area, primary_button, separator},
+    dialog_wrapper,
+    ui::{button_row, dialog_area, primary_button, separator, StateResult},
     version_helper::replace_version_marker,
+    MonitorSettings, Terminal, TerminalView,
 };
 
 /// Messages for the about dialog

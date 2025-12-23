@@ -1,7 +1,7 @@
 use crate::Address;
 use crate::TransferProtocol;
 use icy_engine::ScreenMode;
-use icy_net::{ConnectionType, modem::ModemConfiguration, telnet::TermCaps};
+use icy_net::{modem::ModemConfiguration, telnet::TermCaps, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use std::{path::PathBuf, time::Duration};
 

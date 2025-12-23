@@ -5,8 +5,8 @@
 //! - Rectangle drawing (outline and filled)
 //! - Flood fill
 
+use crate::bitfont::{brushes, BitFontUndoOp};
 use crate::Result;
-use crate::bitfont::{BitFontUndoOp, brushes};
 
 use super::BitFontEditState;
 

@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 
 use clap::Parser;
 use iced::{
-    Element, Event, Subscription, Task, Theme, Vector,
     advanced::graphics::core::keyboard,
     widget::{operation, space},
-    window,
+    window, Element, Event, Subscription, Task, Theme, Vector,
 };
 
-use icy_engine_gui::{KeyboardAction, handle_window_manager_keyboard_press};
+use icy_engine_gui::{handle_window_manager_keyboard_press, KeyboardAction};
 
 use crate::{
-    Args, load_window_icon,
+    load_window_icon,
     ui::{MainWindow, MainWindowMode, Message},
+    Args,
 };
 
 pub struct WindowManager {
@@ -101,7 +101,11 @@ impl WindowManager {
             }
             WindowManagerMessage::WindowClosed(id) => {
                 self.windows.remove(&id);
-                if self.windows.is_empty() { iced::exit() } else { Task::none() }
+                if self.windows.is_empty() {
+                    iced::exit()
+                } else {
+                    Task::none()
+                }
             }
 
             WindowManagerMessage::WindowMessage(id, msg) => {

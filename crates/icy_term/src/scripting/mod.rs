@@ -7,4 +7,4 @@ mod script_runner;
 mod terminal_extension;
 
 pub use script_runner::{ScriptResult, ScriptRunner};
-pub use terminal_extension::{TerminalLuaExtension, parse_key_string};
+pub use terminal_extension::{parse_key_string, TerminalLuaExtension};

@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Length,
     widget::{column, pick_list, row},
+    Alignment, Length,
 };
 use icy_engine::{ScreenMode, VGA_MODES};
 use icy_engine_gui::settings::left_label;
@@ -115,11 +115,9 @@ pub fn build_terminal_settings_ui<'a, M: Clone + 'static>(
     .width(Length::Fixed(COMBO_WIDTH))
     .text_size(TEXT_SIZE_NORMAL);
 
-    let mut content = column![
-        row![left_label(terminal_type_label), term_pick]
-            .spacing(DIALOG_SPACING)
-            .align_y(Alignment::Center),
-    ]
+    let mut content = column![row![left_label(terminal_type_label), term_pick]
+        .spacing(DIALOG_SPACING)
+        .align_y(Alignment::Center),]
     .spacing(SPACE_4);
 
     // Screen mode picker (only for certain terminal types)

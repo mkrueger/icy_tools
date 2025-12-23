@@ -7,8 +7,9 @@
 //! - Consistent visual style with tool panel
 
 use iced::{
-    Color, Element, Length, Rectangle, mouse,
+    mouse,
     widget::shader::{self, Shader},
+    Color, Element, Length, Rectangle,
 };
 
 use crate::ui::editor::ansi::constants::{TOOL_ICON_PADDING, TOOL_ICON_SIZE};
@@ -152,7 +153,11 @@ impl shader::Program<PasteControlsMessage> for PasteControlsProgram {
             }
 
             let slot = row * cols + col;
-            if slot < NUM_BUTTONS { Some(slot) } else { None }
+            if slot < NUM_BUTTONS {
+                Some(slot)
+            } else {
+                None
+            }
         };
 
         match event {

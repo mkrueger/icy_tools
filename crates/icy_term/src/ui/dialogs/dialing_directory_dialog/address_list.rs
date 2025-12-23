@@ -1,12 +1,12 @@
-use crate::Address;
-use crate::ui::Message;
 use crate::ui::dialing_directory_dialog::{DialingDirectoryFilter, DialingDirectoryMsg};
+use crate::ui::Message;
+use crate::Address;
 use i18n_embed_fl::fl;
-use iced::Padding;
 use iced::widget::space;
+use iced::Padding;
 use iced::{
+    widget::{button, column, container, row, scrollable, text, text_input, Column, Space},
     Alignment, Element, Length,
-    widget::{Column, Space, button, column, container, row, scrollable, text, text_input},
 };
 use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use once_cell::sync::Lazy;

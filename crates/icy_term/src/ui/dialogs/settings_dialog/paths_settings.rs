@@ -1,16 +1,16 @@
 use i18n_embed_fl::fl;
 use iced::{
+    widget::{column, row, text_input, Space},
     Alignment, Element, Length,
-    widget::{Space, column, row, text_input},
 };
 use icy_engine_gui::{
     section_header,
     settings::{effect_box, left_label},
-    ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, browse_button, secondary_button},
+    ui::{browse_button, secondary_button, DIALOG_SPACING, TEXT_SIZE_NORMAL},
 };
 
-use crate::Options;
 use crate::ui::dialogs::settings_dialog::SettingsDialogMessage;
+use crate::Options;
 
 pub fn paths_settings_content_generic<'a, M: Clone + 'static>(
     download_path: String,

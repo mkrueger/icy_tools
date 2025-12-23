@@ -7,18 +7,18 @@
 //! - Cursor navigation (arrows, home, end, etc.)
 //! - Layer dragging (Ctrl+Click+Drag, or always for Image layers)
 
-use iced::Element;
 use iced::keyboard::key::Physical;
+use iced::Element;
 use icy_engine::{BufferType, Role};
 use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
-use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
+use icy_engine_gui::TerminalMessage;
 
-use super::{SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction, handle_navigation_key};
-use crate::Settings;
-use crate::ui::FKeySets;
+use super::{handle_navigation_key, SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};
+use crate::ui::FKeySets;
+use crate::Settings;
 
 /// Click tool state
 #[derive(Default)]
@@ -137,7 +137,11 @@ impl ClickTool {
                 let prev = {
                     let opts = options.read();
                     let count = opts.fkeys.set_count();
-                    if count == 0 { 0 } else { (cur + count - 1) % count }
+                    if count == 0 {
+                        0
+                    } else {
+                        (cur + count - 1) % count
+                    }
                 };
                 self.set_current_fkey_set(options, prev);
                 ToolResult::Redraw
@@ -314,8 +318,8 @@ impl ToolHandler for ClickTool {
                 physical_key,
                 ..
             }) => {
-                use iced::keyboard::Key;
                 use iced::keyboard::key::Named;
+                use iced::keyboard::Key;
 
                 // - Ctrl+,  => previous set
                 // - Ctrl+.  => next set
@@ -330,7 +334,11 @@ impl ToolHandler for ClickTool {
                             let prev = {
                                 let opts = options.read();
                                 let count = opts.fkeys.set_count();
-                                if count == 0 { 0 } else { (cur + count - 1) % count }
+                                if count == 0 {
+                                    0
+                                } else {
+                                    (cur + count - 1) % count
+                                }
                             };
                             self.set_current_fkey_set(options, prev);
                             return ToolResult::Redraw;

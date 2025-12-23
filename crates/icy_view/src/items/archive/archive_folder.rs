@@ -4,8 +4,8 @@ use std::{collections::HashMap, collections::HashSet, path::PathBuf};
 use tokio_util::sync::CancellationToken;
 
 use super::{ArchiveContainer, ArchiveItem};
-use crate::items::{FileIcon, Item, ItemError, sort_folder};
-use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
+use crate::items::{sort_folder, FileIcon, Item, ItemError};
+use crate::thumbnail::{scale_to_thumbnail_width, RgbaData};
 
 /// A folder inside an archive
 #[derive(Clone)]

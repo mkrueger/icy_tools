@@ -97,7 +97,11 @@ impl NavPoint {
             ProviderType::File => self.path.clone(),
             ProviderType::Web => {
                 // Show web paths with leading / (e.g., "/2011" or "/2011/pack")
-                if self.path.is_empty() { "/".to_string() } else { format!("/{}", self.path) }
+                if self.path.is_empty() {
+                    "/".to_string()
+                } else {
+                    format!("/{}", self.path)
+                }
             }
         }
     }

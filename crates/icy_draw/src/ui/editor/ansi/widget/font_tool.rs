@@ -23,7 +23,11 @@ impl FontToolState {
         // Auto-select first font if available
         let selected_font = {
             let lib = font_library.read();
-            if lib.has_fonts() { 0 } else { -1 }
+            if lib.has_fonts() {
+                0
+            } else {
+                -1
+            }
         };
 
         Self {

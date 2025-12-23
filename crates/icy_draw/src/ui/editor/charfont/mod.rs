@@ -18,31 +18,31 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Task, Theme,
     keyboard::Modifiers,
     widget::{button, canvas, column, container, row, scrollable, text},
+    Alignment, Element, Length, Task, Theme,
 };
-use icy_engine::Screen;
 use icy_engine::char_set::TdfBufferRenderer;
+use icy_engine::Screen;
 use icy_engine::{AttributedChar, BitFont, Layer, Size, TextAttribute, TextBuffer, TextPane};
+use icy_engine_edit::charset::{load_tdf_fonts, CharSetEditState, CharSetFocusedPanel, TdfFontType};
 use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
-use icy_engine_edit::charset::{CharSetEditState, CharSetFocusedPanel, TdfFontType, load_tdf_fonts};
-use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::ui::{DialogStack, add_icon, arrow_downward_icon, arrow_upward_icon, content_copy_icon, delete_icon, edit_icon};
+use icy_engine_gui::ui::{add_icon, arrow_downward_icon, arrow_upward_icon, content_copy_icon, delete_icon, edit_icon, DialogStack};
+use icy_engine_gui::TerminalMessage;
 use parking_lot::{Mutex, RwLock};
-use retrofont::{Glyph, GlyphPart, RenderOptions, transform_outline};
+use retrofont::{transform_outline, Glyph, GlyphPart, RenderOptions};
 
-use crate::Settings;
-use crate::SharedFontLibrary;
 use crate::ui::editor::ansi::constants;
 use crate::ui::editor::ansi::widget::canvas::CanvasView;
 use crate::ui::editor::ansi::{
-    AnsiEditorCore, AnsiEditorCoreMessage, ColorSwitcher, ColorSwitcherMessage, PaletteGrid, PaletteGridMessage, TdfFontSelectorDialog, ToolPanel,
-    ToolPanelMessage, tool_registry, tools,
+    tool_registry, tools, AnsiEditorCore, AnsiEditorCoreMessage, ColorSwitcher, ColorSwitcherMessage, PaletteGrid, PaletteGridMessage, TdfFontSelectorDialog,
+    ToolPanel, ToolPanelMessage,
 };
 use crate::ui::main_window::Message;
+use crate::Settings;
+use crate::SharedFontLibrary;
 
 /// Direction for arrow key navigation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

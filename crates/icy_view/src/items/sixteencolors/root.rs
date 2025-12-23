@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::{FileIcon, Item, ItemError};
-use crate::thumbnail::{RgbaData, scale_to_thumbnail_width};
+use crate::thumbnail::{scale_to_thumbnail_width, RgbaData};
 
-use super::{API_PATH, SixteenColorsYear, cache::fetch_json_async, get_cache};
+use super::{cache::fetch_json_async, get_cache, SixteenColorsYear, API_PATH};
 
 /// Root folder for 16colors.rs browsing
 pub struct SixteenColorsRoot {}

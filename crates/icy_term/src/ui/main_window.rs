@@ -10,27 +10,27 @@ use parking_lot::Mutex;
 
 use crate::{
     commands::{cmd, create_icy_term_commands},
-    mcp::{self, McpCommand, types::ScreenCaptureFormat},
+    mcp::{self, types::ScreenCaptureFormat, McpCommand},
     scripting::parse_key_string,
     ui::{
-        Message,
         dialogs::{find_dialog, select_bps_dialog},
         up_download_dialog::{self, FileTransferDialogState},
+        Message,
     },
 };
 
 use clipboard_rs::Clipboard;
-use iced::{Element, Event, Task, Theme, keyboard, window};
+use iced::{keyboard, window, Element, Event, Task, Theme};
 use icy_engine::Position;
-use icy_engine_gui::{MonitorSettings, command_handler, error_dialog, music::music::SoundThread, ui::DialogStack};
-use icy_net::{ConnectionType, telnet::TerminalEmulation};
+use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
+use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use tokio::sync::mpsc;
 
 use crate::{
-    Address, AddressBook, Options,
-    terminal::terminal_thread::{ConnectionConfig, TerminalCommand, TerminalEvent, create_terminal_thread},
+    terminal::terminal_thread::{create_terminal_thread, ConnectionConfig, TerminalCommand, TerminalEvent},
     ui::dialogs::{capture_dialog, terminal_info_dialog},
-    ui::{MainWindowState, dialing_directory_dialog, protocol_selector, settings_dialog, show_iemsi, terminal_window},
+    ui::{dialing_directory_dialog, protocol_selector, settings_dialog, show_iemsi, terminal_window, MainWindowState},
+    Address, AddressBook, Options,
 };
 
 // Command handler for MainWindow keyboard shortcuts
@@ -573,7 +573,11 @@ impl MainWindow {
                             .map(|f| f.path().to_path_buf())
                     },
                     |result| {
-                        if let Some(path) = result { Message::RunScript(path) } else { Message::None }
+                        if let Some(path) = result {
+                            Message::RunScript(path)
+                        } else {
+                            Message::None
+                        }
                     },
                 );
             }

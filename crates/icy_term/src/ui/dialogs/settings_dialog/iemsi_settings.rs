@@ -1,12 +1,13 @@
 use i18n_embed_fl::fl;
 use iced::{
-    Alignment, Element, Length,
     widget::{checkbox, column, row, text_input},
+    Alignment, Element, Length,
 };
 use icy_engine_gui::{
-    SECTION_PADDING, section_header,
+    section_header,
     settings::{effect_box_toggleable, left_label},
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL},
+    SECTION_PADDING,
 };
 
 use crate::ui::settings_dialog::{SettingsDialogMessage, SettingsDialogState};

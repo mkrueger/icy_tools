@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crc32fast::Hasher;
-use icy_engine::{SaveOptions, Screen, formats::FileFormat};
+use icy_engine::{formats::FileFormat, SaveOptions, Screen};
 use icy_engine_scripting::Animator;
 use std::{fs, path::PathBuf, thread, time::Duration};
 

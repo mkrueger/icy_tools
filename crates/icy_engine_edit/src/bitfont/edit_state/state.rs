@@ -78,8 +78,8 @@ use std::path::PathBuf;
 
 use icy_engine::{BitFont, Position, Selection};
 
-use crate::Result;
 use crate::bitfont::undo_stack::BitFontUndoStack;
+use crate::Result;
 
 use super::BitFontFocusedPanel;
 

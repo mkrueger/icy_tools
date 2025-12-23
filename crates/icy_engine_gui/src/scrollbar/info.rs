@@ -4,11 +4,11 @@
 //! and creating scrollbar overlay elements.
 
 use iced::{
-    Alignment, Element, Length,
     widget::{container, stack},
+    Alignment, Element, Length,
 };
 
-use super::{HorizontalScrollbarOverlay, ScrollbarOverlay, overlay::ViewportAccess};
+use super::{overlay::ViewportAccess, HorizontalScrollbarOverlay, ScrollbarOverlay};
 use crate::Terminal;
 
 /// Information needed to render scrollbars

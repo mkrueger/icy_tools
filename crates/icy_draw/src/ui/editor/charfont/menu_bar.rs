@@ -3,20 +3,20 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::{Border, Element, Theme, border::Radius};
+use iced::{border::Radius, Border, Element, Theme};
 use iced_aw::menu::{self, Menu};
-use iced_aw::style::{Status, menu_bar::primary};
+use iced_aw::style::{menu_bar::primary, Status};
 use iced_aw::{menu_bar, menu_items};
 
-use crate::MostRecentlyUsedFiles;
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
-use crate::ui::main_window::Message;
 use crate::ui::main_window::menu::{
-    MenuItem, UndoInfo, build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_simple_enabled, menu_item_submenu,
-    menu_item_undo, separator,
+    build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_simple_enabled, menu_item_submenu, menu_item_undo, separator,
+    MenuItem, UndoInfo,
 };
-use icy_engine_gui::commands::{Hotkey, cmd, hotkey_from_iced};
+use crate::ui::main_window::Message;
+use crate::MostRecentlyUsedFiles;
+use icy_engine_gui::commands::{cmd, hotkey_from_iced, Hotkey};
 
 // ============================================================================
 // CharFontMenu - Unified menu definition for CharFont editor

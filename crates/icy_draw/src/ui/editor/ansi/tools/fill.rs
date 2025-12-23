@@ -2,11 +2,11 @@
 //!
 //! Fills connected regions with color/character.
 
-use iced::widget::{Space, row, text, toggler};
+use iced::widget::{row, text, toggler, Space};
 use iced::{Element, Length};
 use icy_engine::{AttributedChar, MouseButton, Position, TextAttribute, TextPane};
-use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::terminal::crt_state::is_shift_pressed;
+use icy_engine_gui::TerminalMessage;
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};

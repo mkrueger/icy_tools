@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
 
-use crate::{MostRecentlyUsedFiles, ui::FKeySets};
+use crate::{ui::FKeySets, MostRecentlyUsedFiles};
 
 // =============================================================================
 // Project directory constants

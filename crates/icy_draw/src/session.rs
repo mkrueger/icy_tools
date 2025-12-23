@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use crate::ui::EditMode;
 
 // Re-export the editor-specific session states
-pub use icy_engine_edit::AnsiEditorSessionState;
 pub use icy_engine_edit::bitfont::BitFontSessionState;
+pub use icy_engine_edit::AnsiEditorSessionState;
 
 /// Session state for the CharFont (TDF) editor
 /// Uses the same undo system as AnsiEditor since it's based on AnsiEditorCore

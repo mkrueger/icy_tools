@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
-use icy_engine::{LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane, formats::FileFormat, limits};
+use icy_engine::{formats::FileFormat, limits, LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane};
 use icy_engine_gui::music::SoundThread;
 use icy_engine_gui::util::{BaudEmulator, QueuedCommand, QueueingSink};
 use icy_net::telnet::TerminalEmulation;

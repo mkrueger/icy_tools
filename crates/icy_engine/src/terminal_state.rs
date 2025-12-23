@@ -241,7 +241,11 @@ impl TerminalState {
         while i < self.tab_stops.len() && self.tab_stops[i] <= x {
             i += 1;
         }
-        if i < self.tab_stops.len() { self.tab_stops[i] } else { self.width() }
+        if i < self.tab_stops.len() {
+            self.tab_stops[i]
+        } else {
+            self.width()
+        }
     }
 
     pub fn prev_tab_stop(&self, x: i32) -> i32 {
@@ -249,7 +253,11 @@ impl TerminalState {
         while i >= 0 && self.tab_stops[i as usize] >= x {
             i -= 1;
         }
-        if i >= 0 { self.tab_stops[i as usize] } else { 0 }
+        if i >= 0 {
+            self.tab_stops[i as usize]
+        } else {
+            0
+        }
     }
 
     pub fn set_tab_at(&mut self, x: i32) {
