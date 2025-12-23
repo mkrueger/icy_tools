@@ -16,7 +16,7 @@
 [[commands]]
 id = "file.new"
 hotkey = ["Ctrl+N"]
-hotkey_mac = ["Cmd+N"]
+hotkey_mac = ["Cmd+Option+N"]
 category = "file"
 
 [[commands]]
@@ -213,7 +213,6 @@ category = "navigation"
 
 [[commands]]
 id = "settings.open"
-hotkey = [] 
-hotkey_mac = ["Cmd+,"] 
+hotkey = []
+hotkey_mac = []
 category = "settings"
-
