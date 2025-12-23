@@ -795,11 +795,7 @@ impl shader::Primitive for MinimapPrimitive {
                         iced::wgpu::TexelCopyTextureInfo {
                             texture: &resources.texture_array.texture,
                             mip_level: 0,
-                            origin: iced::wgpu::Origin3d {
-                                x: 0,
-                                y: 0,
-                                z: i as u32,
-                            },
+                            origin: iced::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                             aspect: iced::wgpu::TextureAspect::All,
                         },
                         &slice_data.rgba_data,

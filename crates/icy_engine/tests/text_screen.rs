@@ -739,7 +739,6 @@ fn test_editable_buffer_type_mut() {
     // Just ensure it doesn't panic
 }
 
-
 #[test]
 fn test_editable_update_hyperlinks() {
     let mut screen = TextScreen::new(Size::new(80, 25));

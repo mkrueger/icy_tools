@@ -1288,7 +1288,6 @@ impl TerminalThread {
                     // Update hyperlinks before releasing lock
                     editable.update_hyperlinks();
                     had_updates = true;
-                    
                 }
             }
 
@@ -1301,13 +1300,12 @@ impl TerminalThread {
             }
         }
 
-        if had_updates  {
+        if had_updates {
             if let Some(editable) = self.edit_screen.lock().as_editable() {
                 editable.mark_dirty();
             }
             self.send_event(TerminalEvent::RequestRedraw);
         }
-
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocol, files: Vec<PathBuf>) {
@@ -1986,7 +1984,7 @@ impl TerminalThread {
             *screen = new_screen;
         }
         self.parser = parser;
-        
+
         // Request UI redraw
         self.send_event(TerminalEvent::RequestRedraw);
 

@@ -116,6 +116,13 @@ impl<'a> CRTShaderProgram<'a> {
         // Track if any tiles were re-rendered this frame
         let mut tiles_rendered = false;
 
+        // Track the current sliding-window selection so we can invalidate GPU resources
+        // when the window moves, even if all tiles were served from cache.
+        #[allow(unused_assignments)]
+        let mut window_first_tile_idx: i32 = 0;
+        #[allow(unused_assignments)]
+        let mut window_slice_count: i32 = 0;
+
         // Caret rendering data (computed from screen, rendered in shader)
         let mut caret_pos: [f32; 2] = [0.0, 0.0];
         let mut caret_size: [f32; 2] = [0.0, 0.0];
@@ -503,6 +510,9 @@ impl<'a> CRTShaderProgram<'a> {
             let max_first_tile_idx = (max_tile_idx - (desired_count - 1)).max(0);
             let first_tile_idx = (current_tile_idx - 1).clamp(0, max_first_tile_idx);
 
+            window_first_tile_idx = first_tile_idx;
+            window_slice_count = desired_count;
+
             // Calculate tile indices to render
             let mut tile_indices: Vec<i32> = Vec::with_capacity(desired_count as usize);
             for i in 0..desired_count {
@@ -682,12 +692,19 @@ impl<'a> CRTShaderProgram<'a> {
         let tool_overlay_cell_height_scale = markers.map_or(1.0, |m| m.tool_overlay_cell_height_scale);
         let brush_preview_rect = markers.and_then(|m| m.brush_preview_rect).map(|(x, y, w, h)| [x, y, x + w, y + h]);
 
-        // Calculate render generation - increment if any tiles were re-rendered
-        let render_generation = if tiles_rendered {
+        // Calculate render generation.
+        // IMPORTANT: We must refresh GPU texture arrays not only when tiles were re-rendered,
+        // but also when the *window selection* changes (first tile index / slice count).
+        // Otherwise, scrolling across tile boundaries can reuse stale texture-array contents
+        // (all tiles served from cache => no generation bump), causing visible jumps and
+        // desync between minimap and terminal.
+        let base_generation = if tiles_rendered {
             RENDER_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
         } else {
             RENDER_GENERATION.load(Ordering::Relaxed)
         };
+        let window_key = ((window_first_tile_idx as u32 as u64) << 32) ^ (window_slice_count as u32 as u64);
+        let render_generation = base_generation ^ window_key;
 
         TerminalShader {
             slices_blink_off,

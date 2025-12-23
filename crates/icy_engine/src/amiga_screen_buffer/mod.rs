@@ -405,7 +405,7 @@ impl Screen for AmigaScreenBuffer {
     fn hyperlinks(&self) -> &Vec<HyperLink> {
         &self.hyperlinks
     }
-    
+
     fn default_foreground_color(&self) -> u32 {
         2
     }

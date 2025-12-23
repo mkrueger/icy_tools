@@ -388,7 +388,6 @@ impl Screen for PaletteScreenBuffer {
         &self.mouse_fields
     }
 
-
     fn default_foreground_color(&self) -> u32 {
         self.graphics_type.default_fg_color()
     }

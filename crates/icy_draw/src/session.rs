@@ -359,10 +359,7 @@ impl SessionManager {
 
     /// Check if autosave should be triggered for a window
     pub fn should_autosave(&mut self, window_id: window::Id, current_undo_len: usize) -> bool {
-        let status = self
-            .autosave_status
-            .entry(window_id)
-            .or_insert_with(|| AutosaveStatus::new(current_undo_len));
+        let status = self.autosave_status.entry(window_id).or_insert_with(|| AutosaveStatus::new(current_undo_len));
         status.should_autosave(current_undo_len, self.autosave_delay_secs)
     }
 

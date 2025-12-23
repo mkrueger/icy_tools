@@ -392,12 +392,7 @@ fn create_texture_with_data(
 
 /// Creates a GPU texture array from multiple texture slices.
 /// All slices are padded to have the same dimensions (max width x max height).
-fn create_texture_array(
-    device: &iced::wgpu::Device,
-    queue: &iced::wgpu::Queue,
-    label: &str,
-    slices: &[TextureSliceData],
-) -> TextureArray {
+fn create_texture_array(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, label: &str, slices: &[TextureSliceData]) -> TextureArray {
     if slices.is_empty() {
         // Create a minimal 1x1x1 array
         let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
@@ -451,17 +446,13 @@ fn create_texture_array(
     for (i, slice_data) in slices.iter().enumerate() {
         let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
         let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
-        
+
         if !slice_data.rgba_data.is_empty() {
             queue.write_texture(
                 iced::wgpu::TexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: 0,
-                    origin: iced::wgpu::Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: i as u32,
-                    },
+                    origin: iced::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                     aspect: iced::wgpu::TextureAspect::All,
                 },
                 &slice_data.rgba_data,
@@ -879,9 +870,7 @@ impl shader::Primitive for TerminalShader {
 
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
-            None => {
-                true
-            }
+            None => true,
             Some(resources) => {
                 // Recreate if render_generation changed (tiles were re-rendered) or structural parameters changed
                 let generation_changed = resources.render_generation != render_generation;
@@ -895,18 +884,8 @@ impl shader::Primitive for TerminalShader {
 
         if needs_recreate {
             // Create texture arrays for both blink states
-            let texture_array_blink_off = create_texture_array(
-                device,
-                queue,
-                &format!("Terminal BlinkOff Array Instance {}", id),
-                &self.slices_blink_off,
-            );
-            let texture_array_blink_on = create_texture_array(
-                device,
-                queue,
-                &format!("Terminal BlinkOn Array Instance {}", id),
-                &self.slices_blink_on,
-            );
+            let texture_array_blink_off = create_texture_array(device, queue, &format!("Terminal BlinkOff Array Instance {}", id), &self.slices_blink_off);
+            let texture_array_blink_on = create_texture_array(device, queue, &format!("Terminal BlinkOn Array Instance {}", id), &self.slices_blink_on);
 
             // Create shared uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
@@ -1094,8 +1073,20 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(
+                    &resources.texture_array_blink_off.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOff",
+                );
+                resources.bind_group_blink_on = create_bind_group(
+                    &resources.texture_array_blink_on.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOn",
+                );
                 resources.reference_image_hash = ref_image_hash;
             }
         }
@@ -1179,8 +1170,20 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(
+                    &resources.texture_array_blink_off.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOff",
+                );
+                resources.bind_group_blink_on = create_bind_group(
+                    &resources.texture_array_blink_on.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOn",
+                );
                 resources.selection_mask_hash = sel_mask_hash;
             }
         }
@@ -1293,8 +1296,20 @@ impl shader::Primitive for TerminalShader {
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
 
-                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(
+                    &resources.texture_array_blink_off.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOff",
+                );
+                resources.bind_group_blink_on = create_bind_group(
+                    &resources.texture_array_blink_on.texture_view,
+                    ref_view,
+                    sel_mask_view,
+                    tool_mask_view,
+                    "BlinkOn",
+                );
                 resources.tool_overlay_mask_hash = tool_mask_hash;
             }
         }

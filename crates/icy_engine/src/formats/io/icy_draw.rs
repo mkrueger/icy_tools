@@ -461,7 +461,7 @@ fn process_icy_draw_v1_decoded_chunk(
                 1 => crate::Mode::Chars,
                 2 => crate::Mode::Attributes,
                 _ => crate::Mode::Normal,
-                };
+            };
             o += 1;
 
             // Read color (RGBA, where A=0xFF means color is set)

@@ -44,6 +44,10 @@ struct MinimapCacheState {
     /// Content dimensions when cached
     content_width: u32,
     content_height: f32,
+
+    /// Whether this cached window contained placeholder slices for missing tiles.
+    /// If true, we should refresh until all tiles are available.
+    incomplete: bool,
 }
 
 /// A single texture slice for tall images
@@ -244,11 +248,7 @@ impl MinimapView {
             // Read metadata without holding the lock for long
             let (content_width_u32, content_height_f32, blink_state) = {
                 let shared_cache = cache_handle.read();
-                (
-                    shared_cache.content_width,
-                    shared_cache.content_height,
-                    shared_cache.last_blink_state,
-                )
+                (shared_cache.content_width, shared_cache.content_height, shared_cache.last_blink_state)
             };
 
             // Check if shared cache has usable dimensions
@@ -294,7 +294,7 @@ impl MinimapView {
 
                     cache_state.is_none()
                         || cache_state.as_ref().map_or(true, |cs| {
-                            cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
+                            cs.incomplete || cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
                         })
                         || last_first != first_tile_idx
                         || last_count != desired_count
@@ -305,7 +305,15 @@ impl MinimapView {
                     let mut slices = Vec::with_capacity(desired_count as usize);
                     let mut heights = Vec::with_capacity(desired_count as usize);
                     let mut total_height = 0u32;
+                    let mut incomplete = false;
                     let first_slice_start_y = first_tile_idx as f32 * tile_height;
+
+                    // Small placeholder (1x1) for missing tiles. Height is defined by `heights`.
+                    let placeholder_slice = TextureSliceData {
+                        rgba_data: Arc::new(vec![0, 0, 0, 0]),
+                        width: 1,
+                        height: 1,
+                    };
 
                     // Only read from cache - don't synchronously render missing tiles
                     let cache = cache_handle.read();
@@ -315,6 +323,11 @@ impl MinimapView {
                         if tile_idx > max_tile_idx {
                             break;
                         }
+
+                        // Expected height in document pixels for this tile.
+                        let tile_start_y = tile_idx as f32 * tile_height;
+                        let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(content_height);
+                        let expected_tile_height = (tile_end_y - tile_start_y).ceil().max(1.0) as u32;
 
                         let key = TileCacheKey::new(tile_idx, blink_state);
 
@@ -327,10 +340,19 @@ impl MinimapView {
                                 width: tile.texture.width,
                                 height: tile.texture.height,
                             });
-                            heights.push(tile.height);
-                            total_height += tile.height;
+                            // Preserve the expected document-space height for stable mapping,
+                            // even if the cached slice is slightly smaller due to clamping.
+                            heights.push(expected_tile_height);
+                            total_height += expected_tile_height;
+                        } else {
+                            // Preserve tile spacing by inserting a placeholder slice.
+                            // This prevents the minimap window from collapsing when tiles
+                            // are not yet rendered by the Terminal.
+                            incomplete = true;
+                            slices.push(placeholder_slice.clone());
+                            heights.push(expected_tile_height);
+                            total_height += expected_tile_height;
                         }
-                        // Missing tiles are skipped - Terminal will render them next frame
                     }
 
                     drop(cache);
@@ -344,6 +366,7 @@ impl MinimapView {
                             first_tile_idx,
                             content_width: content_width_u32,
                             content_height,
+                            incomplete,
                         });
                         *self.last_first_tile_idx.borrow_mut() = first_tile_idx;
                         *self.last_tile_count.borrow_mut() = desired_count;
@@ -366,28 +389,24 @@ impl MinimapView {
                     // Use dimensions from shared cache
                     let full_size = (content_width_u32, content_height as u32);
 
-                    // Calculate local scroll offset for shader
-                    // The shader needs to know where the viewport is within the loaded tile window.
-                    // scroll_pixel_y is the top of the viewport in document space.
-                    // first_slice_start_y is where our loaded tiles start in document space.
-                    // We calculate how far into the loaded tiles the viewport starts.
+                    // Calculate local scroll offset for the shader.
+                    // The WGSL computes:
+                    //   scroll_uv_y = local_scroll_offset * (1 - visible_uv_height)
+                    // We want `scroll_uv_y` to match the desired *window-UV* top position.
                     let window_h = total_height as f32;
                     let scaled_window_h = window_h * scale;
                     let window_visible_uv_h = (avail_height / scaled_window_h).min(1.0);
                     let window_max_scroll_uv = (1.0 - window_visible_uv_h).max(0.0);
-                    
-                    // Calculate the offset within the tile window
-                    let offset_in_window = scroll_pixel_y - first_slice_start_y;
-                    // Calculate the maximum scroll offset within the window
-                    // (how much of the window extends beyond the visible area)
-                    let scrollable_window_height = (window_h - (visible_uv_height * content_height)).max(0.0);
-                    
-                    let local_scroll_offset = if scrollable_window_height > 0.0 {
-                        (offset_in_window / scrollable_window_height).clamp(0.0, 1.0)
-                    } else if window_max_scroll_uv > 0.0 {
-                        // Fallback to old calculation
-                        let window_scroll_uv = (offset_in_window / window_h).clamp(0.0, window_max_scroll_uv);
-                        window_scroll_uv / window_max_scroll_uv
+
+                    // Desired top of the visible area within the window, in window UV.
+                    let offset_in_window = (scroll_pixel_y - first_slice_start_y).max(0.0);
+                    let desired_scroll_uv = if window_h > 0.0 {
+                        (offset_in_window / window_h).clamp(0.0, window_max_scroll_uv)
+                    } else {
+                        0.0
+                    };
+                    let local_scroll_offset = if window_max_scroll_uv > 0.0 {
+                        (desired_scroll_uv / window_max_scroll_uv).clamp(0.0, 1.0)
                     } else {
                         0.0
                     };

@@ -38,11 +38,11 @@ impl Caret {
     pub fn set_foreground_rgb(&mut self, r: u8, g: u8, b: u8) {
         self.attribute.set_foreground_rgb(r, g, b);
     }
-    
+
     pub fn set_background_rgb(&mut self, r: u8, g: u8, b: u8) {
         self.attribute.set_background_rgb(r, g, b);
     }
-    
+
     pub(crate) fn reset(&mut self) {
         self.x = 0;
         self.y = 0;
@@ -60,7 +60,6 @@ impl Caret {
     pub fn set_font_page(&mut self, page: u8) {
         self.attribute.set_font_page(page);
     }
-    
 }
 
 impl std::fmt::Debug for Caret {
