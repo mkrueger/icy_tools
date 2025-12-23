@@ -108,6 +108,7 @@ impl EditState {
         };
 
         self.selection_opt = Some(selection);
+        self.screen.buffer.mark_overlay_dirty();
         // Move caret to lead position
         self.set_caret_position(selection.lead);
     }

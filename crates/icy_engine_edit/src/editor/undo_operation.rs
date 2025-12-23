@@ -608,35 +608,35 @@ impl EditorUndoOp {
             }
             EditorUndoOp::Deselect { sel } => {
                 edit_state.selection_opt = Some(sel.clone());
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SelectNothing { sel, mask } => {
                 edit_state.selection_opt = sel.clone();
                 edit_state.set_selection_mask(mask.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::SetSelection { old, .. } => {
                 edit_state.selection_opt = old.clone();
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SetSelectionMask { old, .. } => {
                 edit_state.set_selection_mask(old.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::AddSelectionToMask { old, .. } => {
                 edit_state.set_selection_mask(old.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
                 edit_state.selection_opt = sel.clone();
                 std::mem::swap(old, new);
                 edit_state.set_selection_mask(new.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::SwitchPalettte { pal } => {
@@ -1062,7 +1062,7 @@ impl EditorUndoOp {
             EditorUndoOp::Deselect { sel } => {
                 *sel = edit_state.selection_opt.clone().unwrap_or_default();
                 edit_state.selection_opt = None;
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SelectNothing { .. } => {
@@ -1070,23 +1070,23 @@ impl EditorUndoOp {
                 // redo just needs to clear selection and mask
                 edit_state.selection_opt = None;
                 edit_state.selection_mask.clear();
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SetSelection { new, .. } => {
                 edit_state.selection_opt = new.clone();
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SetSelectionMask { new, .. } => {
                 edit_state.set_selection_mask(new.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::AddSelectionToMask { old, selection } => {
                 *old = edit_state.selection_mask.clone();
                 edit_state.selection_mask.add_selection(selection.clone());
-                edit_state.mark_dirty();
+                edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
@@ -1094,7 +1094,7 @@ impl EditorUndoOp {
                 std::mem::swap(old, new);
                 edit_state.selection_opt = None;
                 edit_state.set_selection_mask(new.clone());
-                edit_state.mark_dirty();
+                // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::SwitchPalettte { pal } => {

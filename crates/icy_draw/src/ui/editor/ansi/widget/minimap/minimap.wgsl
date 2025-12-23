@@ -14,28 +14,19 @@ struct Uniforms {
     // Checkerboard colors for transparency (from icy_engine_gui::CheckerboardColors)
     checker_color1: vec4<f32>,   // First checkerboard color (RGBA)
     checker_color2: vec4<f32>,   // Second checkerboard color (RGBA)
-    checker_params: vec4<f32>,   // x=cell_size, y=enabled (>0.5), z=unused, w=unused
+    checker_params: vec4<f32>,   // x=cell_size, y=enabled (>0.5), z=max_layer_height, w=unused
 
     canvas_bg: vec4<f32>,        // Solid minimap background (RGBA)
 }
 
-// 10 texture slots for sliding window
-@group(0) @binding(0) var t_slice0: texture_2d<f32>;
-@group(0) @binding(1) var t_slice1: texture_2d<f32>;
-@group(0) @binding(2) var t_slice2: texture_2d<f32>;
-@group(0) @binding(3) var t_slice3: texture_2d<f32>;
-@group(0) @binding(4) var t_slice4: texture_2d<f32>;
-@group(0) @binding(5) var t_slice5: texture_2d<f32>;
-@group(0) @binding(6) var t_slice6: texture_2d<f32>;
-@group(0) @binding(7) var t_slice7: texture_2d<f32>;
-@group(0) @binding(8) var t_slice8: texture_2d<f32>;
-@group(0) @binding(9) var t_slice9: texture_2d<f32>;
+// Texture array for sliced rendering (single binding instead of 10)
+@group(0) @binding(0) var t_slices: texture_2d_array<f32>;
 
-// Sampler at binding 10
-@group(0) @binding(10) var s_sampler: sampler;
+// Sampler at binding 1
+@group(0) @binding(1) var s_sampler: sampler;
 
-// Uniforms at binding 11
-@group(0) @binding(11) var<uniform> uniforms: Uniforms;
+// Uniforms at binding 2
+@group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -109,18 +100,20 @@ fn get_canvas_background() -> vec4<f32> {
     return uniforms.canvas_bg;
 }
 
-fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
-    if index == 0 { return textureSample(t_slice0, s_sampler, uv); }
-    if index == 1 { return textureSample(t_slice1, s_sampler, uv); }
-    if index == 2 { return textureSample(t_slice2, s_sampler, uv); }
-    if index == 3 { return textureSample(t_slice3, s_sampler, uv); }
-    if index == 4 { return textureSample(t_slice4, s_sampler, uv); }
-    if index == 5 { return textureSample(t_slice5, s_sampler, uv); }
-    if index == 6 { return textureSample(t_slice6, s_sampler, uv); }
-    if index == 7 { return textureSample(t_slice7, s_sampler, uv); }
-    if index == 8 { return textureSample(t_slice8, s_sampler, uv); }
-    if index == 9 { return textureSample(t_slice9, s_sampler, uv); }
-    return textureSample(t_slice0, s_sampler, uv);
+fn get_max_layer_height() -> f32 {
+    return uniforms.checker_params.z;
+}
+
+fn sample_slice(index: i32, uv: vec2<f32>, slice_height: f32) -> vec4<f32> {
+    // All texture array layers have uniform size (max_layer_height).
+    // Scale UV.y to sample only the portion that contains actual data.
+    let max_layer_h = get_max_layer_height();
+    if max_layer_h > 0.0 && slice_height < max_layer_h {
+        let uv_scale_y = slice_height / max_layer_h;
+        let adjusted_uv = vec2<f32>(uv.x, uv.y * uv_scale_y);
+        return textureSample(t_slices, s_sampler, adjusted_uv, index);
+    }
+    return textureSample(t_slices, s_sampler, uv, index);
 }
 
 // Sample from the appropriate texture slice based on pixel Y coordinate
@@ -156,12 +149,13 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
         let slice_height = get_slice_height(i);
         let next_cumulative = cumulative_height + slice_height;
         
-        if window_y < next_cumulative {
+        // Use the last slice for any remaining pixels (handles padding/rounding)
+        if window_y < next_cumulative || i == num_slices - 1 {
             // This is the slice we need
             let local_y = (window_y - cumulative_height) / slice_height;
             let slice_uv = vec2<f32>(uv.x, clamp(local_y, 0.0, 1.0));
             
-            return sample_slice(i, slice_uv);
+            return sample_slice(i, slice_uv, slice_height);
         }
         cumulative_height = next_cumulative;
     }

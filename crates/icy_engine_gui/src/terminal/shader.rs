@@ -56,6 +56,7 @@ struct CRTUniforms {
     visible_height: f32,
 
     // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
+    // aspect_params[1] = max_layer_height (for UV scaling in texture arrays)
     aspect_params: [f32; 4],
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
@@ -386,6 +387,108 @@ fn create_texture_with_data(
     }
 }
 
+/// Creates a GPU texture array from multiple texture slices.
+/// All slices are padded to have the same dimensions (max width x max height).
+fn create_texture_array(
+    device: &iced::wgpu::Device,
+    queue: &iced::wgpu::Queue,
+    label: &str,
+    slices: &[TextureSliceData],
+) -> TextureArray {
+    if slices.is_empty() {
+        // Create a minimal 1x1x1 array
+        let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some(label),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor {
+            dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        return TextureArray {
+            texture,
+            texture_view,
+            layer_count: 1,
+            layer_height: 1,
+        };
+    }
+
+    // Find the maximum dimensions across all slices
+    let max_width = slices.iter().map(|s| s.width).max().unwrap_or(1).min(MAX_TEXTURE_DIMENSION);
+    let max_height = slices.iter().map(|s| s.height).max().unwrap_or(1).min(MAX_TEXTURE_DIMENSION);
+    let layer_count = slices.len() as u32;
+
+    // Create the texture array
+    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        label: Some(label),
+        size: iced::wgpu::Extent3d {
+            width: max_width,
+            height: max_height,
+            depth_or_array_layers: layer_count,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: iced::wgpu::TextureDimension::D2,
+        format: iced::wgpu::TextureFormat::Rgba8Unorm,
+        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    // Upload each slice's data
+    for (i, slice_data) in slices.iter().enumerate() {
+        let w = slice_data.width.min(MAX_TEXTURE_DIMENSION);
+        let h = slice_data.height.min(MAX_TEXTURE_DIMENSION);
+        
+        if !slice_data.rgba_data.is_empty() {
+            queue.write_texture(
+                iced::wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: iced::wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: i as u32,
+                    },
+                    aspect: iced::wgpu::TextureAspect::All,
+                },
+                &slice_data.rgba_data,
+                iced::wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(h),
+                },
+                iced::wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+
+    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor {
+        dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+
+    TextureArray {
+        texture,
+        texture_view,
+        layer_count,
+        layer_height: max_height,
+    }
+}
+
 /// Texture slice for GPU
 #[allow(dead_code)]
 struct TextureSlice {
@@ -394,12 +497,21 @@ struct TextureSlice {
     height: u32,
 }
 
+/// Texture array for GPU (holds multiple layers in a single texture)
+struct TextureArray {
+    #[allow(dead_code)]
+    texture: iced::wgpu::Texture,
+    texture_view: iced::wgpu::TextureView,
+    layer_count: u32,
+    layer_height: u32,
+}
+
 /// Per-instance GPU resources with texture slicing
 struct InstanceResources {
-    /// Texture slices for blink_off state (slots 0-2)
-    _slices_blink_off: Vec<TextureSlice>,
-    /// Texture slices for blink_on state (slots 3-5)  
-    _slices_blink_on: Vec<TextureSlice>,
+    /// Texture array for blink_off state
+    texture_array_blink_off: TextureArray,
+    /// Texture array for blink_on state  
+    texture_array_blink_on: TextureArray,
     /// Bind group for blink_off state
     bind_group_blink_off: iced::wgpu::BindGroup,
     /// Bind group for blink_on state
@@ -439,13 +551,15 @@ struct InstanceResources {
     viewport_px: [f32; 4],
 }
 
-/// The terminal shader renderer (GPU pipeline) with multi-texture support
+/// The terminal shader renderer (GPU pipeline) with texture array support
 pub struct TerminalShaderRenderer {
     pipeline: iced::wgpu::RenderPipeline,
     bind_group_layout: iced::wgpu::BindGroupLayout,
     sampler: iced::wgpu::Sampler,
-    /// 1x1 transparent texture for unused texture slots
+    /// 1x1 transparent texture for unused 2D texture slots
     dummy_texture_view: iced::wgpu::TextureView,
+    /// 1x1x1 dummy texture array for unused array slots
+    dummy_texture_array_view: iced::wgpu::TextureView,
     instances: HashMap<u64, InstanceResources>,
 }
 
@@ -463,13 +577,51 @@ impl shader::Pipeline for TerminalShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("crt_shader.wgsl").into()),
         });
 
-        // Create bind group layout with slices + sampler + uniforms + monitor_color + reference_image + selection_mask + tool_overlay_mask
-        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 5);
-
-        // Add 3 texture bindings (0-2)
-        for i in 0..MAX_TEXTURE_SLICES {
-            entries.push(iced::wgpu::BindGroupLayoutEntry {
-                binding: i as u32,
+        // Create bind group layout with texture array + sampler + uniforms + monitor_color + reference_image + selection_mask + tool_overlay_mask
+        let entries = vec![
+            // Texture array at binding 0
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2Array,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // Sampler at binding 1
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            // Uniforms at binding 2
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: iced::wgpu::BindingType::Buffer {
+                    ty: iced::wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Monitor color at binding 3
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Buffer {
+                    ty: iced::wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Reference image texture at binding 4
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 4,
                 visibility: iced::wgpu::ShaderStages::FRAGMENT,
                 ty: iced::wgpu::BindingType::Texture {
                     multisampled: false,
@@ -477,76 +629,30 @@ impl shader::Pipeline for TerminalShaderRenderer {
                     sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
                 },
                 count: None,
-            });
-        }
-
-        // Sampler at binding 3
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: MAX_TEXTURE_SLICES as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
-            count: None,
-        });
-
-        // Uniforms at binding 4
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 1) as u32,
-            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: iced::wgpu::BindingType::Buffer {
-                ty: iced::wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
             },
-            count: None,
-        });
-
-        // Monitor color at binding 5
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 2) as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Buffer {
-                ty: iced::wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+            // Selection mask texture at binding 5
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
             },
-            count: None,
-        });
-
-        // Reference image texture at binding 6
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 3) as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Texture {
-                multisampled: false,
-                view_dimension: iced::wgpu::TextureViewDimension::D2,
-                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+            // Tool overlay mask texture at binding 6
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
             },
-            count: None,
-        });
-
-        // Selection mask texture at binding 7
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 4) as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Texture {
-                multisampled: false,
-                view_dimension: iced::wgpu::TextureViewDimension::D2,
-                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-            },
-            count: None,
-        });
-
-        // Tool overlay mask texture at binding 8
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 5) as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Texture {
-                multisampled: false,
-                view_dimension: iced::wgpu::TextureViewDimension::D2,
-                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-            },
-            count: None,
-        });
+        ];
 
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some(&format!("Terminal Shader Bind Group Layout {}", renderer_id)),
@@ -604,9 +710,9 @@ impl shader::Pipeline for TerminalShaderRenderer {
             ..Default::default()
         });
 
-        // Create 1x1 dummy texture for unused slots
+        // Create 1x1 dummy texture for unused 2D texture slots
         let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-            label: Some("Terminal Dummy Texture"),
+            label: Some("Terminal Dummy Texture 2D"),
             size: iced::wgpu::Extent3d {
                 width: 1,
                 height: 1,
@@ -621,11 +727,32 @@ impl shader::Pipeline for TerminalShaderRenderer {
         });
         let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
 
+        // Create 1x1x1 dummy texture array for the texture array slot
+        let dummy_texture_array = device.create_texture(&iced::wgpu::TextureDescriptor {
+            label: Some("Terminal Dummy Texture Array"),
+            size: iced::wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: iced::wgpu::TextureDimension::D2,
+            format: iced::wgpu::TextureFormat::Rgba8Unorm,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_texture_array_view = dummy_texture_array.create_view(&iced::wgpu::TextureViewDescriptor {
+            dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
         TerminalShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
             dummy_texture_view,
+            dummy_texture_array_view,
             instances: HashMap::new(),
         }
     }
@@ -778,28 +905,19 @@ impl shader::Primitive for TerminalShader {
         };
 
         if needs_recreate {
-            // Helper function to create GPU slices from texture data
-            let create_gpu_slices = |slices: &[TextureSliceData], label_prefix: &str| -> Vec<TextureSlice> {
-                let mut gpu_slices = Vec::with_capacity(slices.len());
-                for (i, slice_data) in slices.iter().enumerate() {
-                    let label = format!("Terminal {} Slice {} Instance {}", label_prefix, i, id);
-                    let slice = create_texture_with_data(
-                        device,
-                        queue,
-                        &label,
-                        slice_data.width,
-                        slice_data.height,
-                        Some(&slice_data.rgba_data),
-                        iced::wgpu::TextureFormat::Rgba8Unorm,
-                    );
-                    gpu_slices.push(slice);
-                }
-                gpu_slices
-            };
-
-            // Create GPU slices for both blink states
-            let gpu_slices_blink_off = create_gpu_slices(&self.slices_blink_off, "BlinkOff");
-            let gpu_slices_blink_on = create_gpu_slices(&self.slices_blink_on, "BlinkOn");
+            // Create texture arrays for both blink states
+            let texture_array_blink_off = create_texture_array(
+                device,
+                queue,
+                &format!("Terminal BlinkOff Array Instance {}", id),
+                &self.slices_blink_off,
+            );
+            let texture_array_blink_on = create_texture_array(
+                device,
+                queue,
+                &format!("Terminal BlinkOn Array Instance {}", id),
+                &self.slices_blink_on,
+            );
 
             // Create shared uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
@@ -816,63 +934,50 @@ impl shader::Primitive for TerminalShader {
                 mapped_at_creation: false,
             });
 
-            // Helper to create bind group for a set of GPU slices
-            let create_bind_group = |gpu_slices: &[TextureSlice],
+            // Helper to create bind group for a texture array
+            let create_bind_group = |texture_array_view: &iced::wgpu::TextureView,
                                      ref_image_view: &iced::wgpu::TextureView,
                                      sel_mask_view: &iced::wgpu::TextureView,
                                      tool_mask_view: &iced::wgpu::TextureView,
                                      label: &str|
              -> iced::wgpu::BindGroup {
-                let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
-
-                // Add texture bindings (0-2), using dummy for unused slots
-                for i in 0..MAX_TEXTURE_SLICES {
-                    let view = if i < gpu_slices.len() {
-                        &gpu_slices[i].texture_view
-                    } else {
-                        &pipeline.dummy_texture_view
-                    };
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: i as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(view),
-                    });
-                }
-
-                // Sampler at binding 3
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: MAX_TEXTURE_SLICES as u32,
-                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                });
-
-                // Uniforms at binding 4
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                    resource: uniform_buffer.as_entire_binding(),
-                });
-
-                // Monitor color at binding 5
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                    resource: monitor_color_buffer.as_entire_binding(),
-                });
-
-                // Reference image at binding 6
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 3) as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(ref_image_view),
-                });
-
-                // Selection mask at binding 7
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 4) as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
-                });
-
-                // Tool overlay mask at binding 8
-                bind_entries.push(iced::wgpu::BindGroupEntry {
-                    binding: (MAX_TEXTURE_SLICES + 5) as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
-                });
+                let bind_entries = vec![
+                    // Texture array at binding 0
+                    iced::wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: iced::wgpu::BindingResource::TextureView(texture_array_view),
+                    },
+                    // Sampler at binding 1
+                    iced::wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    },
+                    // Uniforms at binding 2
+                    iced::wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    // Monitor color at binding 3
+                    iced::wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: monitor_color_buffer.as_entire_binding(),
+                    },
+                    // Reference image at binding 4
+                    iced::wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: iced::wgpu::BindingResource::TextureView(ref_image_view),
+                    },
+                    // Selection mask at binding 5
+                    iced::wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                    },
+                    // Tool overlay mask at binding 6
+                    iced::wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                    },
+                ];
 
                 device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                     label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
@@ -883,14 +988,14 @@ impl shader::Primitive for TerminalShader {
 
             // Create bind groups for both blink states (using dummy for reference image and selection mask initially)
             let bind_group_blink_off = create_bind_group(
-                &gpu_slices_blink_off,
+                &texture_array_blink_off.texture_view,
                 &pipeline.dummy_texture_view,
                 &pipeline.dummy_texture_view,
                 &pipeline.dummy_texture_view,
                 "BlinkOff",
             );
             let bind_group_blink_on = create_bind_group(
-                &gpu_slices_blink_on,
+                &texture_array_blink_on.texture_view,
                 &pipeline.dummy_texture_view,
                 &pipeline.dummy_texture_view,
                 &pipeline.dummy_texture_view,
@@ -900,8 +1005,8 @@ impl shader::Primitive for TerminalShader {
             pipeline.instances.insert(
                 id,
                 InstanceResources {
-                    _slices_blink_off: gpu_slices_blink_off,
-                    _slices_blink_on: gpu_slices_blink_on,
+                    texture_array_blink_off,
+                    texture_array_blink_on,
                     bind_group_blink_off,
                     bind_group_blink_on,
                     uniform_buffer,
@@ -941,55 +1046,42 @@ impl shader::Primitive for TerminalShader {
                 }
 
                 // Helper to create bind group
-                let create_bind_group = |gpu_slices: &[TextureSlice],
+                let create_bind_group = |texture_array_view: &iced::wgpu::TextureView,
                                          ref_view: &iced::wgpu::TextureView,
                                          sel_mask_view: &iced::wgpu::TextureView,
                                          tool_mask_view: &iced::wgpu::TextureView,
                                          label: &str|
                  -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
-
-                    for i in 0..MAX_TEXTURE_SLICES {
-                        let view = if i < gpu_slices.len() {
-                            &gpu_slices[i].texture_view
-                        } else {
-                            &pipeline.dummy_texture_view
-                        };
-                        bind_entries.push(iced::wgpu::BindGroupEntry {
-                            binding: i as u32,
-                            resource: iced::wgpu::BindingResource::TextureView(view),
-                        });
-                    }
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: MAX_TEXTURE_SLICES as u32,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                        resource: resources.uniform_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                        resource: resources.monitor_color_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
-                    });
+                    let bind_entries = vec![
+                        iced::wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: iced::wgpu::BindingResource::TextureView(texture_array_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: resources.uniform_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: resources.monitor_color_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                        },
+                    ];
 
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
@@ -1014,8 +1106,8 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
                 resources.reference_image_hash = ref_image_hash;
             }
         }
@@ -1039,55 +1131,42 @@ impl shader::Primitive for TerminalShader {
                 }
 
                 // Helper to create bind group
-                let create_bind_group = |gpu_slices: &[TextureSlice],
+                let create_bind_group = |texture_array_view: &iced::wgpu::TextureView,
                                          ref_view: &iced::wgpu::TextureView,
                                          sel_mask_view: &iced::wgpu::TextureView,
                                          tool_mask_view: &iced::wgpu::TextureView,
                                          label: &str|
                  -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
-
-                    for i in 0..MAX_TEXTURE_SLICES {
-                        let view = if i < gpu_slices.len() {
-                            &gpu_slices[i].texture_view
-                        } else {
-                            &pipeline.dummy_texture_view
-                        };
-                        bind_entries.push(iced::wgpu::BindGroupEntry {
-                            binding: i as u32,
-                            resource: iced::wgpu::BindingResource::TextureView(view),
-                        });
-                    }
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: MAX_TEXTURE_SLICES as u32,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                        resource: resources.uniform_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                        resource: resources.monitor_color_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
-                    });
+                    let bind_entries = vec![
+                        iced::wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: iced::wgpu::BindingResource::TextureView(texture_array_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: resources.uniform_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: resources.monitor_color_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                        },
+                    ];
 
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
@@ -1112,8 +1191,8 @@ impl shader::Primitive for TerminalShader {
                     .as_ref()
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
                 resources.selection_mask_hash = sel_mask_hash;
             }
         }
@@ -1165,55 +1244,42 @@ impl shader::Primitive for TerminalShader {
                 }
 
                 // Helper to create bind group
-                let create_bind_group = |gpu_slices: &[TextureSlice],
+                let create_bind_group = |texture_array_view: &iced::wgpu::TextureView,
                                          ref_view: &iced::wgpu::TextureView,
                                          sel_mask_view: &iced::wgpu::TextureView,
                                          tool_mask_view: &iced::wgpu::TextureView,
                                          label: &str|
                  -> iced::wgpu::BindGroup {
-                    let mut bind_entries: Vec<iced::wgpu::BindGroupEntry> = Vec::with_capacity(MAX_TEXTURE_SLICES + 6);
-
-                    for i in 0..MAX_TEXTURE_SLICES {
-                        let view = if i < gpu_slices.len() {
-                            &gpu_slices[i].texture_view
-                        } else {
-                            &pipeline.dummy_texture_view
-                        };
-                        bind_entries.push(iced::wgpu::BindGroupEntry {
-                            binding: i as u32,
-                            resource: iced::wgpu::BindingResource::TextureView(view),
-                        });
-                    }
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: MAX_TEXTURE_SLICES as u32,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                        resource: resources.uniform_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                        resource: resources.monitor_color_buffer.as_entire_binding(),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 3) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(ref_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 4) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
-                    });
-
-                    bind_entries.push(iced::wgpu::BindGroupEntry {
-                        binding: (MAX_TEXTURE_SLICES + 5) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
-                    });
+                    let bind_entries = vec![
+                        iced::wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: iced::wgpu::BindingResource::TextureView(texture_array_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: resources.uniform_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: resources.monitor_color_buffer.as_entire_binding(),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: iced::wgpu::BindingResource::TextureView(ref_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: iced::wgpu::BindingResource::TextureView(sel_mask_view),
+                        },
+                        iced::wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: iced::wgpu::BindingResource::TextureView(tool_mask_view),
+                        },
+                    ];
 
                     device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
@@ -1239,8 +1305,8 @@ impl shader::Primitive for TerminalShader {
                     .map(|t| &t.texture_view)
                     .unwrap_or(&pipeline.dummy_texture_view);
 
-                resources.bind_group_blink_off = create_bind_group(&resources._slices_blink_off, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
-                resources.bind_group_blink_on = create_bind_group(&resources._slices_blink_on, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
+                resources.bind_group_blink_off = create_bind_group(&resources.texture_array_blink_off.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOff");
+                resources.bind_group_blink_on = create_bind_group(&resources.texture_array_blink_on.texture_view, ref_view, sel_mask_view, tool_mask_view, "BlinkOn");
                 resources.tool_overlay_mask_hash = tool_mask_hash;
             }
         }
@@ -1418,7 +1484,8 @@ impl shader::Primitive for TerminalShader {
             total_image_height: self.total_content_height,
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,
-            aspect_params: [self.aspect_ratio_y, 0.0, 0.0, 0.0],
+            // Calculate max layer height for UV scaling in texture arrays
+            aspect_params: [self.aspect_ratio_y, self.slice_heights.iter().copied().max().unwrap_or(1) as f32, 0.0, 0.0],
             slice_heights,
             // X-axis scrolling uniforms
             scroll_offset_x: self.scroll_offset_x,

@@ -656,6 +656,7 @@ impl AnsiEditorCore {
         match result {
             ToolResult::None => ToolResult::None,
             ToolResult::Redraw => ToolResult::Redraw,
+            ToolResult::RedrawSelectionRect => ToolResult::RedrawSelectionRect,
             ToolResult::Commit(msg) => {
                 self.is_modified = true;
                 // Char changes are now collected directly in EditState during push_undo_action
@@ -2375,6 +2376,47 @@ impl AnsiEditorCore {
         self.canvas.set_tool_overlay_mask(mask, rect);
     }
 
+    /// Lightweight update: only update the selection rectangle (no mask regeneration).
+    /// Use this during drag operations for better performance.
+    fn update_selection_rect_only(&mut self) {
+        use icy_engine::AddType;
+        use icy_engine_gui::selection_colors;
+
+        let (selection_rect, selection_color) = {
+            let mut screen = self.screen.lock();
+            let size = screen.font_dimensions();
+            let font_width = size.width as f32;
+            let font_height = size.height as f32;
+
+            if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
+                let selection = edit_state.selection();
+
+                let selection_color = match selection.map(|s| s.add_type) {
+                    Some(AddType::Add) => selection_colors::ADD,
+                    Some(AddType::Subtract) => selection_colors::SUBTRACT,
+                    _ => selection_colors::DEFAULT,
+                };
+
+                if let Some(sel) = selection {
+                    let rect = sel.as_rectangle();
+                    let x = rect.left() as f32 * font_width;
+                    let y = rect.top() as f32 * font_height;
+                    let w = rect.width() as f32 * font_width;
+                    let h = rect.height() as f32 * font_height;
+                    (Some((x, y, w, h)), selection_color)
+                } else {
+                    (None, selection_colors::DEFAULT)
+                }
+            } else {
+                (None, selection_colors::DEFAULT)
+            }
+        };
+
+        self.canvas.set_selection(selection_rect);
+        self.canvas.set_selection_color(selection_color);
+        // Note: We intentionally do NOT update the selection mask here for performance
+    }
+
     /// Update the selection display in the shader
     fn update_selection_mask_display(&mut self) {
         use icy_engine::AddType;
@@ -2665,7 +2707,12 @@ impl AnsiEditorCore {
                 if result.needs_redraw() {
                     match self.current_tool.id() {
                         tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
-                            self.update_selection_mask_display();
+                            // Use lightweight rect-only update during drag, full mask update otherwise
+                            if result.needs_selection_mask_update() {
+                                self.update_selection_mask_display();
+                            } else {
+                                self.update_selection_rect_only();
+                            }
                         }
                         tools::ToolId::Tool(Tool::Tag) => {
                             self.update_tag_overlays();
@@ -2876,14 +2923,24 @@ impl AnsiEditorCore {
     // view() moved to `AnsiEditorMainArea` (see `main_area.rs`).
 
     /// Sync UI components with the current edit state
-    /// Call this after operations that may change the palette or tags
+    /// Call this after operations that may change the palette, tags, or selection
     pub fn sync_ui(&mut self) {
-        let (palette, format_mode) = self.with_edit_state(|state| (state.get_buffer().palette.clone(), state.get_format_mode()));
+        let (palette, format_mode, overlay_dirty) = self.with_edit_state(|state| {
+            let overlay_dirty = state.is_overlay_dirty();
+            if overlay_dirty {
+                state.clear_overlay_dirty();
+            }
+            (state.get_buffer().palette.clone(), state.get_format_mode(), overlay_dirty)
+        });
         let _palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.color_switcher.sync_palette(&palette);
         // Tag selection pruning is handled by the wrapper (owns the tool registry).
         if self.current_tool.id() == tools::ToolId::Tool(Tool::Tag) {
             self.update_tag_overlays();
+        }
+        // If overlay was marked dirty (e.g., selection changed via undo/redo), update selection display
+        if overlay_dirty {
+            self.update_selection_mask_display();
         }
     }
 

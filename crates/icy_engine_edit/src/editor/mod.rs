@@ -764,11 +764,16 @@ impl EditState {
         #[cfg(debug_assertions)]
         eprintln!("[DEBUG] EditState::set_selection_mask - Setting selection mask");
         self.selection_mask = mask;
-        self.screen.mark_dirty();
+        // Selection changes only need overlay update (shader uniforms), not full buffer redraw
+        self.screen.buffer.mark_overlay_dirty();
     }
 
     pub fn mark_dirty(&mut self) {
         self.screen.mark_dirty();
+    }
+
+    pub fn mark_overlay_dirty_mut(&mut self) {
+        self.screen.buffer.mark_overlay_dirty();
     }
 }
 
@@ -952,6 +957,18 @@ impl Screen for EditState {
         self.screen.clear_dirty_lines()
     }
 
+    fn is_overlay_dirty(&self) -> bool {
+        self.screen.buffer.is_overlay_dirty()
+    }
+
+    fn clear_overlay_dirty(&self) {
+        self.screen.buffer.clear_overlay_dirty()
+    }
+
+    fn mark_overlay_dirty(&self) {
+        self.screen.buffer.mark_overlay_dirty()
+    }
+
     fn default_foreground_color(&self) -> u32 {
         self.screen.default_foreground_color()
     }
@@ -979,7 +996,7 @@ impl Screen for EditState {
     fn set_selection(&mut self, sel: Selection) -> Result<()> {
         if self.selection_opt.as_ref() != Some(&sel) {
             self.selection_opt = Some(sel);
-            self.mark_dirty();
+            self.screen.buffer.mark_overlay_dirty();
         }
         Ok(())
     }
@@ -987,7 +1004,7 @@ impl Screen for EditState {
     fn clear_selection(&mut self) -> Result<()> {
         if self.selection_opt.is_some() {
             self.selection_opt = None;
-            self.mark_dirty();
+            self.screen.buffer.mark_overlay_dirty();
         }
         Ok(())
     }

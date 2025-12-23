@@ -131,35 +131,26 @@ struct MonitorColor {
     color: vec4<f32>,
 }
 
-// Up to 10 texture slots for sliced rendering
-@group(0) @binding(0) var t_slice0: texture_2d<f32>;
-@group(0) @binding(1) var t_slice1: texture_2d<f32>;
-@group(0) @binding(2) var t_slice2: texture_2d<f32>;
-@group(0) @binding(3) var t_slice3: texture_2d<f32>;
-@group(0) @binding(4) var t_slice4: texture_2d<f32>;
-@group(0) @binding(5) var t_slice5: texture_2d<f32>;
-@group(0) @binding(6) var t_slice6: texture_2d<f32>;
-@group(0) @binding(7) var t_slice7: texture_2d<f32>;
-@group(0) @binding(8) var t_slice8: texture_2d<f32>;
-@group(0) @binding(9) var t_slice9: texture_2d<f32>;
+// Texture array for sliced rendering (single binding instead of 10)
+@group(0) @binding(0) var t_slices: texture_2d_array<f32>;
 
-// Sampler at binding 10
-@group(0) @binding(10) var terminal_sampler: sampler;
+// Sampler at binding 1
+@group(0) @binding(1) var terminal_sampler: sampler;
 
-// Uniforms at binding 11
-@group(0) @binding(11) var<uniform> uniforms: Uniforms;
+// Uniforms at binding 2
+@group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-// Monitor color at binding 12
-@group(0) @binding(12) var<uniform> monitor_color: MonitorColor;
+// Monitor color at binding 3
+@group(0) @binding(3) var<uniform> monitor_color: MonitorColor;
 
-// Reference image texture at binding 13
-@group(0) @binding(13) var t_reference_image: texture_2d<f32>;
+// Reference image texture at binding 4
+@group(0) @binding(4) var t_reference_image: texture_2d<f32>;
 
-// Selection mask texture at binding 14
-@group(0) @binding(14) var t_selection_mask: texture_2d<f32>;
+// Selection mask texture at binding 5
+@group(0) @binding(5) var t_selection_mask: texture_2d<f32>;
 
-// Tool overlay mask texture at binding 15
-@group(0) @binding(15) var t_tool_overlay_mask: texture_2d<f32>;
+// Tool overlay mask texture at binding 6
+@group(0) @binding(6) var t_tool_overlay_mask: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -215,17 +206,21 @@ fn get_canvas_background() -> vec4<f32> {
     return uniforms.background_color;
 }
 
-fn sample_slice(index: i32, uv: vec2<f32>) -> vec4<f32> {
-    if index == 0 { return textureSample(t_slice0, terminal_sampler, uv); }
-    else if index == 1 { return textureSample(t_slice1, terminal_sampler, uv); }
-    else if index == 2 { return textureSample(t_slice2, terminal_sampler, uv); }
-    else if index == 3 { return textureSample(t_slice3, terminal_sampler, uv); }
-    else if index == 4 { return textureSample(t_slice4, terminal_sampler, uv); }
-    else if index == 5 { return textureSample(t_slice5, terminal_sampler, uv); }
-    else if index == 6 { return textureSample(t_slice6, terminal_sampler, uv); }
-    else if index == 7 { return textureSample(t_slice7, terminal_sampler, uv); }
-    else if index == 8 { return textureSample(t_slice8, terminal_sampler, uv); }
-    else { return textureSample(t_slice9, terminal_sampler, uv); }
+fn get_max_layer_height() -> f32 {
+    // aspect_params[1] contains max_layer_height for UV scaling
+    return uniforms.aspect_params.y;
+}
+
+fn sample_slice(index: i32, uv: vec2<f32>, slice_height: f32) -> vec4<f32> {
+    // All texture array layers have uniform size (max_layer_height).
+    // Scale UV.y to sample only the portion that contains actual data.
+    let max_layer_h = get_max_layer_height();
+    if max_layer_h > 0.0 {
+        let uv_scale_y = slice_height / max_layer_h;
+        let adjusted_uv = vec2<f32>(uv.x, uv.y * uv_scale_y);
+        return textureSample(t_slices, terminal_sampler, adjusted_uv, index);
+    }
+    return textureSample(t_slices, terminal_sampler, uv, index);
 }
 
 // Sample from the appropriate texture slice based on pixel Y coordinate
@@ -310,7 +305,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
             let slice_uv = vec2<f32>(tex_uv_x, clamp(local_y, 0.0, 1.0));
             
             // Sample from the appropriate texture (up to 10 slices)
-            return sample_slice(i, slice_uv);
+            return sample_slice(i, slice_uv, slice_height);
         }
         cumulative_height = next_cumulative;
     }

@@ -230,6 +230,10 @@ pub struct TextBuffer {
     /// -1 means no dirty lines. These are updated atomically for thread-safety.
     dirty_line_start: AtomicI32,
     dirty_line_end: AtomicI32,
+
+    /// Overlay dirty flag: set when only shader overlays need updating (selection, markers).
+    /// This allows updating selection display without invalidating the tile cache.
+    overlay_dirty: AtomicBool,
 }
 
 impl std::fmt::Debug for TextBuffer {
@@ -282,6 +286,7 @@ impl Clone for TextBuffer {
             buffer_version: AtomicU64::new(self.buffer_version.load(Ordering::Relaxed)),
             dirty_line_start: AtomicI32::new(self.dirty_line_start.load(Ordering::Relaxed)),
             dirty_line_end: AtomicI32::new(self.dirty_line_end.load(Ordering::Relaxed)),
+            overlay_dirty: AtomicBool::new(self.overlay_dirty.load(Ordering::Relaxed)),
         }
     }
 }
@@ -585,6 +590,7 @@ impl TextBuffer {
             buffer_version: AtomicU64::new(0),
             dirty_line_start: AtomicI32::new(-1),
             dirty_line_end: AtomicI32::new(-1),
+            overlay_dirty: AtomicBool::new(false),
         }
     }
 
@@ -695,6 +701,22 @@ impl TextBuffer {
         let start = self.dirty_line_start.load(Ordering::Relaxed);
         let end = self.dirty_line_end.load(Ordering::Relaxed);
         if start < 0 || end < 0 { None } else { Some((start, end)) }
+    }
+
+    /// Mark the overlay as dirty (selection, markers changed).
+    /// This triggers a shader-only update without invalidating the tile cache.
+    pub fn mark_overlay_dirty(&self) {
+        self.overlay_dirty.store(true, Ordering::Release);
+    }
+
+    /// Check if the overlay is dirty (needs shader update)
+    pub fn is_overlay_dirty(&self) -> bool {
+        self.overlay_dirty.load(Ordering::Acquire)
+    }
+
+    /// Clear the overlay dirty flag
+    pub fn clear_overlay_dirty(&self) {
+        self.overlay_dirty.store(false, Ordering::Release);
     }
 
     pub fn clear_font_table(&mut self) {

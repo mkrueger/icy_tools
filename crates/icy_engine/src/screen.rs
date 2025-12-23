@@ -112,6 +112,22 @@ pub trait Screen: TextPane + Send + Sync {
         // Default: no-op
     }
 
+    /// Check if the overlay (selection, markers) needs updating.
+    /// This allows shader-only updates without tile cache invalidation.
+    fn is_overlay_dirty(&self) -> bool {
+        false
+    }
+
+    /// Clear the overlay dirty flag after processing.
+    fn clear_overlay_dirty(&self) {
+        // Default: no-op
+    }
+
+    /// Mark the overlay as dirty (selection changed, etc.)
+    fn mark_overlay_dirty(&self) {
+        // Default: no-op
+    }
+
     // Default foreground color
     fn default_foreground_color(&self) -> u32;
     fn max_base_colors(&self) -> u32;

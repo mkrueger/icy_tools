@@ -156,8 +156,6 @@ pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>, sauce_o
     }
     o += TUNDRA_HEADER.len();
 
-    screen.buffer.palette.clear();
-    screen.buffer.palette.insert_color_rgb(0, 0, 0);
     screen.buffer.buffer_type = BufferType::CP437;
     screen.buffer.ice_mode = IceMode::Ice;
 
@@ -219,7 +217,7 @@ pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>, sauce_o
                 o += 1;
                 let b = data[o];
                 o += 1;
-                attr.set_foreground(screen.buffer.palette.insert_color_rgb(r, g, b));
+                attr.set_foreground_rgb(r, g, b);
             }
             if cmd & TUNDRA_COLOR_BACKGROUND != 0 {
                 o += 1;
@@ -229,7 +227,7 @@ pub(crate) fn load_tundra(data: &[u8], load_data_opt: Option<&LoadData>, sauce_o
                 o += 1;
                 let b = data[o];
                 o += 1;
-                attr.set_background(screen.buffer.palette.insert_color_rgb(r, g, b));
+                attr.set_background_rgb(r, g, b);
             }
             cmd = ch;
         }

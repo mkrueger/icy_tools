@@ -238,9 +238,8 @@ impl UserData for LuaLayer {
         methods.add_method_mut("fg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                let color = editable.palette_mut().insert_color_rgb(r, g, b);
-                editable.caret_mut().set_foreground(color);
-                Ok(color)
+                editable.caret_mut().set_foreground_rgb(r, g, b);
+                Ok(0)
             } else {
                 Err(no_editable_error())
             }
@@ -249,9 +248,8 @@ impl UserData for LuaLayer {
         methods.add_method_mut("bg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             let mut screen = this.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                let color = editable.palette_mut().insert_color_rgb(r, g, b);
-                editable.caret_mut().set_background(color);
-                Ok(color)
+                editable.caret_mut().set_background_rgb(r, g, b);
+                Ok(0)
             } else {
                 Err(no_editable_error())
             }
@@ -790,9 +788,8 @@ impl UserData for LuaScreen {
         methods.add_method_mut("fg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                let color = editable.palette_mut().insert_color_rgb(r, g, b);
-                editable.caret_mut().set_foreground(color);
-                Ok(color)
+                editable.caret_mut().set_foreground_rgb(r, g, b);
+                Ok(0)
             } else {
                 Err(no_editable_error())
             }
@@ -801,9 +798,8 @@ impl UserData for LuaScreen {
         methods.add_method_mut("bg_rgb", |_, this, (r, g, b): (u8, u8, u8)| {
             let mut screen = this.layer.screen.lock();
             if let Some(editable) = screen.as_editable() {
-                let color = editable.palette_mut().insert_color_rgb(r, g, b);
-                editable.caret_mut().set_background(color);
-                Ok(color)
+                editable.caret_mut().set_background_rgb(r, g, b);
+                Ok(0)
             } else {
                 Err(no_editable_error())
             }

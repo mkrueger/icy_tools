@@ -232,7 +232,8 @@ impl ToolHandler for SelectTool {
                                 };
                                 let _ = ctx.state.set_selection(selection);
                             }
-                            return ToolResult::Redraw;
+                            // Use lightweight rect-only redraw during drag for performance
+                            return ToolResult::RedrawSelectionRect;
                         }
 
                         if let (Some(start_rect), Some(start_pos)) = (self.start_selection, self.start_pos) {
@@ -247,7 +248,8 @@ impl ToolHandler for SelectTool {
                                 let _ = ctx.state.set_selection(selection);
                             }
                         }
-                        return ToolResult::Redraw;
+                        // Use lightweight rect-only redraw during drag for performance
+                        return ToolResult::RedrawSelectionRect;
                     }
                 }
                 ToolResult::None

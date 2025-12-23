@@ -148,6 +148,9 @@ pub enum ToolResult {
     None,
     /// Request canvas redraw (e.g., overlay changed)
     Redraw,
+    /// Request lightweight selection rect update only (no mask regeneration)
+    /// Use this during drag operations for better performance
+    RedrawSelectionRect,
     /// Operation completed - commit to undo stack with description
     Commit(String),
     /// Update status bar text
@@ -198,8 +201,18 @@ impl ToolResult {
     /// that indicates the overlay should be updated.
     pub fn needs_redraw(&self) -> bool {
         match self {
-            ToolResult::Redraw | ToolResult::StartCapture | ToolResult::EndCapture | ToolResult::Commit(_) => true,
+            ToolResult::Redraw | ToolResult::RedrawSelectionRect | ToolResult::StartCapture | ToolResult::EndCapture | ToolResult::Commit(_) => true,
             ToolResult::Multi(results) => results.iter().any(|r| r.needs_redraw()),
+            _ => false,
+        }
+    }
+
+    /// Returns true if this result requires a full selection mask update.
+    /// RedrawSelectionRect only updates the rect, not the mask.
+    pub fn needs_selection_mask_update(&self) -> bool {
+        match self {
+            ToolResult::Redraw | ToolResult::Commit(_) => true,
+            ToolResult::Multi(results) => results.iter().any(|r| r.needs_selection_mask_update()),
             _ => false,
         }
     }

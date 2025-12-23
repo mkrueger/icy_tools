@@ -266,7 +266,8 @@ impl ToolHandler for ClickTool {
                 // Selection drag update
                 if let Some(pos) = evt.text_position {
                     if self.selection_mouse.handle_drag(ctx, pos) {
-                        return ToolResult::Redraw;
+                        // Use lightweight rect-only redraw during drag for performance
+                        return ToolResult::RedrawSelectionRect;
                     }
                 }
 

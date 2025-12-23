@@ -41,7 +41,7 @@ struct MinimapUniforms {
     checker_color1: [f32; 4],
     /// Second checkerboard color (RGBA)
     checker_color2: [f32; 4],
-    /// Checkerboard params: x=cell_size, y=enabled, z=unused, w=unused
+    /// Checkerboard params: x=cell_size, y=enabled, z=max_layer_height, w=unused
     checker_params: [f32; 4],
 
     /// Solid background color for the minimap canvas (RGBA)
@@ -509,17 +509,19 @@ impl MinimapPrimitive {
     }
 }
 
-/// Texture slice for GPU
-struct TextureSlice {
+/// Texture array for GPU
+struct TextureArray {
     texture: iced::wgpu::Texture,
     texture_view: iced::wgpu::TextureView,
+    layer_count: u32,
+    layer_height: u32,
 }
 
 /// Per-instance GPU resources with texture slicing
 struct InstanceResources {
-    /// Texture slices (1-10 slices depending on content height)
-    slices: Vec<TextureSlice>,
-    /// Bind group for rendering (includes all texture slots)
+    /// Texture array containing all slices
+    texture_array: TextureArray,
+    /// Bind group for rendering
     bind_group: iced::wgpu::BindGroup,
     /// Uniform buffer
     uniform_buffer: iced::wgpu::Buffer,
@@ -550,42 +552,38 @@ impl shader::Pipeline for MinimapShaderRenderer {
             source: iced::wgpu::ShaderSource::Wgsl(include_str!("minimap.wgsl").into()),
         });
 
-        // Create bind group layout with 10 texture slots + sampler + uniforms
-        let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
-
-        // Add 10 texture bindings (0-9)
-        for i in 0..MAX_TEXTURE_SLICES {
-            entries.push(iced::wgpu::BindGroupLayoutEntry {
-                binding: i as u32,
+        // Create bind group layout with texture array + sampler + uniforms (3 entries total)
+        let entries = vec![
+            // Binding 0: Texture array
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 0,
                 visibility: iced::wgpu::ShaderStages::FRAGMENT,
                 ty: iced::wgpu::BindingType::Texture {
                     multisampled: false,
-                    view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    view_dimension: iced::wgpu::TextureViewDimension::D2Array,
                     sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
                 },
                 count: None,
-            });
-        }
-
-        // Sampler at binding 10
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: MAX_TEXTURE_SLICES as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
-            count: None,
-        });
-
-        // Uniforms at binding 11
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
-            binding: (MAX_TEXTURE_SLICES + 1) as u32,
-            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: iced::wgpu::BindingType::Buffer {
-                ty: iced::wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
             },
-            count: None,
-        });
+            // Binding 1: Sampler
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: iced::wgpu::ShaderStages::FRAGMENT,
+                ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            // Binding 2: Uniforms
+            iced::wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: iced::wgpu::BindingType::Buffer {
+                    ty: iced::wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ];
 
         let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
             label: Some("Minimap Bind Group Layout"),
@@ -644,9 +642,9 @@ impl shader::Pipeline for MinimapShaderRenderer {
             ..Default::default()
         });
 
-        // Create 1x1 transparent dummy texture for unused slots
+        // Create 1x1 transparent dummy texture array for fallback
         let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-            label: Some("Minimap Dummy Texture"),
+            label: Some("Minimap Dummy Texture Array"),
             size: iced::wgpu::Extent3d {
                 width: 1,
                 height: 1,
@@ -659,7 +657,10 @@ impl shader::Pipeline for MinimapShaderRenderer {
             usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor {
+            dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
 
         MinimapShaderRenderer {
             pipeline,
@@ -696,32 +697,38 @@ impl shader::Primitive for MinimapPrimitive {
         };
 
         if needs_recreate {
-            // Create texture slices
-            let mut slices = Vec::with_capacity(num_slices);
+            // Find max dimensions across all slices for the array texture
+            let max_slice_w = self.slices.iter().take(num_slices).map(|s| s.width.max(1)).max().unwrap_or(1);
+            let max_slice_h = self.slices.iter().take(num_slices).map(|s| s.height.max(1)).max().unwrap_or(1);
+            let layer_count = (num_slices as u32).max(1);
 
-            for (i, slice_data) in self.slices.iter().enumerate().take(MAX_TEXTURE_SLICES) {
-                let slice_w = slice_data.width.max(1);
-                let slice_h = slice_data.height.max(1);
+            // Create texture array with uniform layer dimensions
+            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                label: Some(&format!("Minimap Texture Array {}", id)),
+                size: iced::wgpu::Extent3d {
+                    width: max_slice_w,
+                    height: max_slice_h,
+                    depth_or_array_layers: layer_count,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: iced::wgpu::TextureDimension::D2,
+                format: iced::wgpu::TextureFormat::Rgba8Unorm,
+                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
 
-                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
-                    label: Some(&format!("Minimap Texture {} Slice {}", id, i)),
-                    size: iced::wgpu::Extent3d {
-                        width: slice_w,
-                        height: slice_h,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: iced::wgpu::TextureDimension::D2,
-                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
+            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor {
+                dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            });
 
-                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-                slices.push(TextureSlice { texture, texture_view });
-            }
+            let texture_array = TextureArray {
+                texture,
+                texture_view,
+                layer_count,
+                layer_height: max_slice_h,
+            };
 
             // Create uniform buffer
             let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
@@ -731,32 +738,24 @@ impl shader::Primitive for MinimapPrimitive {
                 mapped_at_creation: false,
             });
 
-            // Create bind group entries for all 10 texture slots + sampler + uniforms
-            let mut entries = Vec::with_capacity(MAX_TEXTURE_SLICES + 2);
-
-            for i in 0..MAX_TEXTURE_SLICES {
-                let texture_view = if i < slices.len() {
-                    &slices[i].texture_view
-                } else {
-                    &pipeline.dummy_texture_view
-                };
-                entries.push(iced::wgpu::BindGroupEntry {
-                    binding: i as u32,
-                    resource: iced::wgpu::BindingResource::TextureView(texture_view),
-                });
-            }
-
-            // Sampler at binding 10
-            entries.push(iced::wgpu::BindGroupEntry {
-                binding: MAX_TEXTURE_SLICES as u32,
-                resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
-            });
-
-            // Uniforms at binding 11
-            entries.push(iced::wgpu::BindGroupEntry {
-                binding: (MAX_TEXTURE_SLICES + 1) as u32,
-                resource: uniform_buffer.as_entire_binding(),
-            });
+            // Create bind group with 3 entries: texture array, sampler, uniforms
+            let entries = vec![
+                // Binding 0: Texture array
+                iced::wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: iced::wgpu::BindingResource::TextureView(&texture_array.texture_view),
+                },
+                // Binding 1: Sampler
+                iced::wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                },
+                // Binding 2: Uniforms
+                iced::wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+            ];
 
             let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Minimap BindGroup {}", id)),
@@ -767,7 +766,7 @@ impl shader::Primitive for MinimapPrimitive {
             pipeline.instances.insert(
                 id,
                 InstanceResources {
-                    slices,
+                    texture_array,
                     bind_group,
                     uniform_buffer,
                     texture_size: (tex_w, tex_h),
@@ -788,16 +787,19 @@ impl shader::Primitive for MinimapPrimitive {
 
         // Upload texture data only if changed
         if needs_texture_upload {
-            for (i, slice_data) in self.slices.iter().enumerate().take(resources.slices.len()) {
-                if !slice_data.rgba_data.is_empty() && i < resources.slices.len() {
-                    let slice = &resources.slices[i];
+            for (i, slice_data) in self.slices.iter().enumerate().take(num_slices) {
+                if !slice_data.rgba_data.is_empty() {
                     let bytes_per_row = 4 * slice_data.width;
 
                     queue.write_texture(
                         iced::wgpu::TexelCopyTextureInfo {
-                            texture: &slice.texture,
+                            texture: &resources.texture_array.texture,
                             mip_level: 0,
-                            origin: iced::wgpu::Origin3d::ZERO,
+                            origin: iced::wgpu::Origin3d {
+                                x: 0,
+                                y: 0,
+                                z: i as u32,
+                            },
                             aspect: iced::wgpu::TextureAspect::All,
                         },
                         &slice_data.rgba_data,
@@ -870,6 +872,9 @@ impl shader::Primitive for MinimapPrimitive {
         }
         packed_heights[0][3] = self.first_slice_start_y;
 
+        // Calculate max layer height (all texture array layers have this size)
+        let max_layer_height = self.slices.iter().take(num_slices).map(|s| s.height).max().unwrap_or(1) as f32;
+
         let uniforms = MinimapUniforms {
             viewport_rect: [self.viewport_info.x, viewport_y_tex, self.viewport_info.width, viewport_h_tex],
             viewport_color: self.viewport_color,
@@ -883,7 +888,7 @@ impl shader::Primitive for MinimapPrimitive {
             slice_heights: packed_heights,
             checker_color1: self.checkerboard_colors.color1_rgba(),
             checker_color2: self.checkerboard_colors.color2_rgba(),
-            checker_params: [self.checkerboard_colors.cell_size, 1.0, 0.0, 0.0],
+            checker_params: [self.checkerboard_colors.cell_size, 1.0, max_layer_height, 0.0],
             canvas_bg: self.canvas_bg,
         };
 
