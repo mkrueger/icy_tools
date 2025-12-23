@@ -84,9 +84,9 @@ image = { version = "0.24", features = ["gif", "jpeg", "ico", "png", "pnm", "tga
 gif = "0.13"
 quantette = { version = "0.5.1", features = ["image"] }
 
-# MP4 video export (H.264)
-openh264 = "0.9"
-minimp4 = "0.1"
+# AV1 video export (pure Rust, outputs IVF container)
+rav1e = { version = "0.8", default-features = false, features = ["asm"] }
+num_cpus = "1.16"
 
 # TTF font rasterization
 fontdue = "0.9"

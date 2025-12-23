@@ -35,19 +35,19 @@ fn msg(m: AnimationExportMessage) -> Message {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
     Gif,
-    Mp4,
+    Av1,
     Asciicast,
 }
 
 impl ExportFormat {
     pub fn all() -> &'static [ExportFormat] {
-        &[ExportFormat::Gif, ExportFormat::Mp4, ExportFormat::Asciicast]
+        &[ExportFormat::Gif, ExportFormat::Av1, ExportFormat::Asciicast]
     }
 
     pub fn extension(&self) -> &'static str {
         match self {
             ExportFormat::Gif => "gif",
-            ExportFormat::Mp4 => "mp4",
+            ExportFormat::Av1 => "ivf",
             ExportFormat::Asciicast => "cast",
         }
     }
@@ -55,7 +55,7 @@ impl ExportFormat {
     pub fn name(&self) -> &'static str {
         match self {
             ExportFormat::Gif => "GIF Animation",
-            ExportFormat::Mp4 => "MP4 Video (H.264)",
+            ExportFormat::Av1 => "AV1 Video (IVF)",
             ExportFormat::Asciicast => "Asciicast v2",
         }
     }
@@ -177,7 +177,7 @@ impl AnimationExportDialog {
         thread::spawn(move || {
             let result = match format {
                 ExportFormat::Gif => export_to_gif_with_progress(&animator, &path, &progress),
-                ExportFormat::Mp4 => export_to_mp4_with_progress(&animator, &path, &progress),
+                ExportFormat::Av1 => export_to_av1_with_progress(&animator, &path, &progress),
                 ExportFormat::Asciicast => export_to_asciicast_with_progress(&animator, &path, &progress),
             };
 
@@ -319,7 +319,7 @@ impl Dialog<Message> for AnimationExportDialog {
                         async move {
                             let (filter_name, ext) = match format {
                                 ExportFormat::Gif => ("GIF Animation", "gif"),
-                                ExportFormat::Mp4 => ("MP4 Video", "mp4"),
+                                ExportFormat::Av1 => ("AV1 Video", "ivf"),
                                 ExportFormat::Asciicast => ("Asciicast", "cast"),
                             };
 
@@ -462,14 +462,10 @@ fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
         .map_err(|e| format!("GIF encoding failed: {}", e))
 }
 
-/// Export animation frames to MP4 (H.264) with progress tracking
-fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
-    use minimp4::Mp4Muxer;
-    use openh264::OpenH264API;
-    use openh264::encoder::{Encoder, EncoderConfig, FrameRate, UsageType};
-    use openh264::formats::YUVBuffer;
-    use std::fs::File;
-    use std::io::BufWriter;
+/// Export animation frames to AV1 (IVF container) with progress tracking
+fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, progress: &Arc<ExportProgress>) -> Result<(), String> {
+    use rav1e::prelude::*;
+    use std::io::Write;
 
     let animator_guard = animator.lock();
 
@@ -481,153 +477,208 @@ fn export_to_mp4_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     progress.total_frames.store(frame_count, Ordering::Relaxed);
     progress.current_frame.store(0, Ordering::Relaxed);
 
-    // Get dimensions from first frame
-    let first_frame = &animator_guard.frames[0].0;
-    let screen_width = first_frame.width();
-    let screen_height = first_frame.height();
-    let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
-    let options = RenderOptions {
-        rect: full_rect.into(),
-        blink_on: true,
+    // Pre-render all frames to RGBA
+    let mut rendered_frames: Vec<(Vec<u8>, u32, u32, u32)> = Vec::with_capacity(frame_count);
+
+    for (screen, _settings, delay_ms) in animator_guard.frames.iter() {
+        if progress.cancelled.load(Ordering::Relaxed) {
+            return Err("Export cancelled".to_string());
+        }
+
+        let screen_width = screen.width();
+        let screen_height = screen.height();
+        let full_rect = Rectangle::from_coords(0, 0, screen_width, screen_height);
+        let options = RenderOptions {
+            rect: full_rect.into(),
+            blink_on: true,
+            ..Default::default()
+        };
+
+        let (render_size, rgba_data) = screen.render_to_rgba(&options);
+        rendered_frames.push((rgba_data, render_size.width as u32, render_size.height as u32, *delay_ms));
+    }
+
+    // Release lock before encoding
+    drop(animator_guard);
+
+    if rendered_frames.is_empty() {
+        return Err("No frames rendered".to_string());
+    }
+
+    let (_, width, height, _) = &rendered_frames[0];
+    let width = *width as usize;
+    let height = *height as usize;
+
+    // Ensure dimensions are even (required by AV1)
+    let width = if width % 2 != 0 { width + 1 } else { width };
+    let height = if height % 2 != 0 { height + 1 } else { height };
+
+    // Calculate FPS from average delay
+    let total_delay_ms: u32 = rendered_frames.iter().map(|(_, _, _, d)| d).sum();
+    let avg_delay_ms = total_delay_ms as f64 / frame_count as f64;
+    let fps = (1000.0 / avg_delay_ms).round() as usize;
+    let fps = fps.max(1).min(60);
+
+    // Configure encoder
+    let enc_config = EncoderConfig {
+        width,
+        height,
+        speed_settings: SpeedSettings::from_preset(10), // Fastest preset
+        time_base: Rational::new(1, fps as u64),
+        bit_depth: 8,
+        chroma_sampling: ChromaSampling::Cs420,
+        chroma_sample_position: ChromaSamplePosition::Unknown,
+        pixel_range: PixelRange::Full,
+        color_description: None,
+        mastering_display: None,
+        content_light: None,
+        still_picture: false,
+        error_resilient: false,
+        switch_frame_interval: 0,
+        min_key_frame_interval: 0,
+        max_key_frame_interval: frame_count as u64,
+        reservoir_frame_delay: None,
+        low_latency: true,
+        quantizer: 100,
+        min_quantizer: 0,
+        bitrate: 0,
+        tune: Tune::Psychovisual,
+        tile_cols: 0,
+        tile_rows: 0,
+        tiles: 0,
+        film_grain_params: None,
         ..Default::default()
     };
 
-    let (render_size, _) = first_frame.render_to_rgba(&options);
-    // Ensure dimensions are even (required for H.264)
-    let width = (render_size.width as usize + 1) & !1;
-    let height = (render_size.height as usize + 1) & !1;
+    let config = Config::new().with_encoder_config(enc_config).with_threads(num_cpus::get());
 
-    // Calculate average FPS from frame delays
-    let total_delay_ms: u32 = animator_guard.frames.iter().map(|(_, _, delay)| *delay).sum();
-    let avg_delay_ms = if frame_count > 0 { total_delay_ms / frame_count as u32 } else { 100 };
-    let fps = (1000.0 / avg_delay_ms as f64).round() as u32;
-    let fps = fps.clamp(1, 60);
+    let mut ctx: Context<u8> = config.new_context().map_err(|e| format!("Failed to create encoder context: {:?}", e))?;
 
-    // Create H.264 encoder (openh264 0.9 API)
-    // Width/height are taken from the YUV source passed to `encode()`.
-    let api = OpenH264API::from_source();
-    let config = EncoderConfig::new()
-        .usage_type(UsageType::ScreenContentRealTime)
-        .max_frame_rate(FrameRate::from_hz(fps as f32));
-    let mut h264_encoder = Encoder::with_api_config(api, config).map_err(|e| format!("Failed to create H.264 encoder: {:?}", e))?;
+    // Open output file and write IVF header
+    let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create output file: {}", e))?;
 
-    // Create MP4 file
-    let file = File::create(path).map_err(|e| format!("Failed to create MP4 file: {}", e))?;
-    let writer = BufWriter::new(file);
-    let mut mp4_muxer = Mp4Muxer::new(writer);
-    mp4_muxer.init_video(width as i32, height as i32, false, "icy_draw animation");
+    // IVF header (32 bytes)
+    let mut header = [0u8; 32];
+    header[0..4].copy_from_slice(b"DKIF");
+    header[4..6].copy_from_slice(&0u16.to_le_bytes()); // version
+    header[6..8].copy_from_slice(&32u16.to_le_bytes()); // header length
+    header[8..12].copy_from_slice(b"AV01"); // codec FourCC
+    header[12..14].copy_from_slice(&(width as u16).to_le_bytes());
+    header[14..16].copy_from_slice(&(height as u16).to_le_bytes());
+    header[16..20].copy_from_slice(&(fps as u32).to_le_bytes()); // time base denominator
+    header[20..24].copy_from_slice(&1u32.to_le_bytes()); // time base numerator
+    header[24..28].copy_from_slice(&(frame_count as u32).to_le_bytes()); // frame count
+    header[28..32].copy_from_slice(&0u32.to_le_bytes()); // unused
 
-    // Encode each frame
-    for (i, (screen, _settings, _delay_ms)) in animator_guard.frames.iter().enumerate() {
-        // Check for cancellation
+    file.write_all(&header).map_err(|e| format!("Failed to write IVF header: {}", e))?;
+
+    // Send frames to encoder
+    for (i, (rgba_data, orig_w, orig_h, _delay_ms)) in rendered_frames.into_iter().enumerate() {
         if progress.cancelled.load(Ordering::Relaxed) {
             return Err("Export cancelled".to_string());
         }
 
         progress.current_frame.store(i + 1, Ordering::Relaxed);
 
-        // Render frame to RGBA
-        let full_rect = Rectangle::from_coords(0, 0, screen.width(), screen.height());
-        let options = RenderOptions {
-            rect: full_rect.into(),
-            blink_on: true,
-            ..Default::default()
-        };
-        let (_, rgba_data) = screen.render_to_rgba(&options);
+        // Create frame and convert RGBA to YUV420
+        let mut frame = ctx.new_frame();
 
-        // Convert RGBA to YUV (I420) and encode frame
-        let yuv_i420 = rgba_to_yuv420(&rgba_data, width, height);
-        let yuv = YUVBuffer::from_vec(yuv_i420, width, height);
+        // Get strides before borrowing mutably
+        let stride_y = frame.planes[0].cfg.stride;
+        let stride_u = frame.planes[1].cfg.stride;
+        let stride_v = frame.planes[2].cfg.stride;
 
-        let bitstream = h264_encoder.encode(&yuv).map_err(|e| format!("H.264 encoding failed: {:?}", e))?;
+        // Convert RGBA to YUV420
+        let orig_w = orig_w as usize;
+        let orig_h = orig_h as usize;
 
-        // Write NAL units to MP4
-        let nal_data = bitstream.to_vec();
-        if !nal_data.is_empty() {
-            mp4_muxer.write_video_with_fps(&nal_data, fps);
-        }
-    }
+        // Luma (Y)
+        let y_plane = frame.planes[0].data_origin_mut();
+        for y in 0..height {
+            for x in 0..width {
+                // Handle padding for odd dimensions
+                let src_x = x.min(orig_w.saturating_sub(1));
+                let src_y = y.min(orig_h.saturating_sub(1));
+                let idx = (src_y * orig_w + src_x) * 4;
 
-    // Drop the animator lock before finalizing
-    drop(animator_guard);
-
-    // Finalize MP4 file
-    mp4_muxer.close();
-
-    Ok(())
-}
-
-/// Convert RGBA image data to YUV420 (I420) format
-fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
-    let y_size = width * height;
-    let uv_size = (width / 2) * (height / 2);
-
-    let mut y_plane = vec![0u8; y_size];
-    let mut u_plane = vec![0u8; uv_size];
-    let mut v_plane = vec![0u8; uv_size];
-
-    // Convert each pixel to Y
-    for y in 0..height {
-        for x in 0..width {
-            let rgba_idx = (y * width + x) * 4;
-            if rgba_idx + 2 < rgba.len() {
-                let r = rgba[rgba_idx] as f32;
-                let g = rgba[rgba_idx + 1] as f32;
-                let b = rgba[rgba_idx + 2] as f32;
+                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
+                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
+                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
 
                 // BT.601 conversion
-                let y_val = (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
-                y_plane[y * width + x] = y_val;
+                let y_val = (0.299 * r + 0.587 * g + 0.114 * b).round() as u8;
+                y_plane[y * stride_y + x] = y_val;
             }
+        }
+
+        // Chroma (subsampled)
+        let u_plane = frame.planes[1].data_origin_mut();
+        for cy in 0..(height / 2) {
+            for cx in 0..(width / 2) {
+                let x = cx * 2;
+                let y = cy * 2;
+
+                let src_x = x.min(orig_w.saturating_sub(1));
+                let src_y = y.min(orig_h.saturating_sub(1));
+                let idx = (src_y * orig_w + src_x) * 4;
+
+                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
+                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
+                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+
+                let u = (128.0 - 0.169 * r - 0.331 * g + 0.500 * b).round().clamp(0.0, 255.0) as u8;
+                u_plane[cy * stride_u + cx] = u;
+            }
+        }
+
+        let v_plane = frame.planes[2].data_origin_mut();
+        for cy in 0..(height / 2) {
+            for cx in 0..(width / 2) {
+                let x = cx * 2;
+                let y = cy * 2;
+
+                let src_x = x.min(orig_w.saturating_sub(1));
+                let src_y = y.min(orig_h.saturating_sub(1));
+                let idx = (src_y * orig_w + src_x) * 4;
+
+                let r = rgba_data.get(idx).copied().unwrap_or(0) as f32;
+                let g = rgba_data.get(idx + 1).copied().unwrap_or(0) as f32;
+                let b = rgba_data.get(idx + 2).copied().unwrap_or(0) as f32;
+
+                let v = (128.0 + 0.500 * r - 0.419 * g - 0.081 * b).round().clamp(0.0, 255.0) as u8;
+                v_plane[cy * stride_v + cx] = v;
+            }
+        }
+
+        ctx.send_frame(frame).map_err(|e| format!("Failed to send frame {}: {:?}", i, e))?;
+    }
+
+    // Flush encoder
+    ctx.flush();
+
+    // Receive and write packets
+    let mut pts = 0u64;
+    loop {
+        if progress.cancelled.load(Ordering::Relaxed) {
+            return Err("Export cancelled".to_string());
+        }
+
+        match ctx.receive_packet() {
+            Ok(packet) => {
+                // Write IVF frame header (12 bytes)
+                let frame_size = packet.data.len() as u32;
+                file.write_all(&frame_size.to_le_bytes()).map_err(|e| format!("Failed to write frame size: {}", e))?;
+                file.write_all(&pts.to_le_bytes()).map_err(|e| format!("Failed to write PTS: {}", e))?;
+                file.write_all(&packet.data).map_err(|e| format!("Failed to write frame data: {}", e))?;
+                pts += 1;
+            }
+            Err(EncoderStatus::Encoded) => continue,
+            Err(EncoderStatus::LimitReached) | Err(EncoderStatus::EnoughData) => break,
+            Err(e) => return Err(format!("Encoding error: {:?}", e)),
         }
     }
 
-    // Convert 2x2 blocks to U and V (subsampled)
-    for y in (0..height).step_by(2) {
-        for x in (0..width).step_by(2) {
-            let mut r_sum = 0.0f32;
-            let mut g_sum = 0.0f32;
-            let mut b_sum = 0.0f32;
-            let mut count = 0.0f32;
-
-            // Average 2x2 block
-            for dy in 0..2 {
-                for dx in 0..2 {
-                    let px = x + dx;
-                    let py = y + dy;
-                    if px < width && py < height {
-                        let rgba_idx = (py * width + px) * 4;
-                        if rgba_idx + 2 < rgba.len() {
-                            r_sum += rgba[rgba_idx] as f32;
-                            g_sum += rgba[rgba_idx + 1] as f32;
-                            b_sum += rgba[rgba_idx + 2] as f32;
-                            count += 1.0;
-                        }
-                    }
-                }
-            }
-
-            if count > 0.0 {
-                let r = r_sum / count;
-                let g = g_sum / count;
-                let b = b_sum / count;
-
-                // BT.601 conversion for U and V
-                let u_val = (128.0 + (-0.169 * r - 0.331 * g + 0.500 * b)).clamp(0.0, 255.0) as u8;
-                let v_val = (128.0 + (0.500 * r - 0.419 * g - 0.081 * b)).clamp(0.0, 255.0) as u8;
-
-                let uv_idx = (y / 2) * (width / 2) + (x / 2);
-                u_plane[uv_idx] = u_val;
-                v_plane[uv_idx] = v_val;
-            }
-        }
-    }
-
-    let mut out = Vec::with_capacity(y_size + uv_size * 2);
-    out.extend_from_slice(&y_plane);
-    out.extend_from_slice(&u_plane);
-    out.extend_from_slice(&v_plane);
-    out
+    Ok(())
 }
 
 /// Export animation frames to Asciicast v2 format with progress tracking

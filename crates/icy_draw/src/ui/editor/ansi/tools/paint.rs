@@ -23,13 +23,11 @@ pub struct BrushSettings {
 impl Default for BrushSettings {
     fn default() -> Self {
         Self {
-            // Moebius default: Half Block mode
             primary: BrushPrimaryMode::HalfBlock,
             paint_char: '\u{00B0}', // Light shade block (░)
             brush_size: 1,
-            // Moebius default: FG on, BG off
             colorize_fg: true,
-            colorize_bg: false,
+            colorize_bg: true,
         }
     }
 }

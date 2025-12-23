@@ -154,7 +154,10 @@ impl Default for PlaybackState {
 
 #[derive(Debug, Clone, Copy)]
 struct PlaybackRedrawTicker {
+    /// True if animation is playing
     playing: bool,
+    /// True if we need ticks for initialization/compilation
+    needs_update: bool,
 }
 
 #[derive(Debug)]
@@ -183,7 +186,7 @@ impl iced::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTic
         _cursor: mouse::Cursor,
     ) -> Option<iced::widget::canvas::Action<AnimationEditorMessage>> {
         if let iced::Event::Window(iced::window::Event::RedrawRequested(now)) = event {
-            if self.playing {
+            if self.playing || self.needs_update {
                 state.last_redraw = Some(*now);
                 // Publishing `Tick` will schedule the next redraw as long as `Tick`
                 // actually updates state (like the ColorSwitcher pattern).
@@ -494,7 +497,14 @@ impl AnimationEditor {
                 self.first_frame = true;
                 // Force preview rebuild
                 self.last_preview_frame = usize::MAX;
+                // Immediately update preview after successful compile
+                self.update_preview_terminal();
             }
+        }
+
+        // Check if initial animator is ready but preview not yet created
+        if self.preview_terminal.is_none() && self.is_ready() && self.frame_count() > 0 {
+            self.update_preview_terminal();
         }
 
         // Check if we need to recompile
@@ -846,8 +856,11 @@ impl AnimationEditor {
         // Playback needs continuous redraws while playing.
         // We follow the same RedrawRequested-driven pattern as ColorSwitcher:
         // publish `Tick` on redraw; handling `Tick` updates state and triggers the next redraw.
+        // Also need ticks during initialization/compilation to update preview
+        let needs_update = self.preview_terminal.is_none() || self.next_animator.is_some() || self.needs_recompile;
         let redraw_ticker: Element<'_, AnimationEditorMessage> = Canvas::new(PlaybackRedrawTicker {
             playing: self.playback.is_playing && self.is_ready() && !self.has_error() && self.frame_count() > 0,
+            needs_update,
         })
         .width(Length::Fill)
         .height(Length::Fill)

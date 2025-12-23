@@ -25,12 +25,10 @@ pub struct FillSettings {
 impl Default for FillSettings {
     fn default() -> Self {
         Self {
-            // Moebius-style: Half Block for fill
             primary: BrushPrimaryMode::HalfBlock,
             paint_char: '\u{00B0}', // Light shade block (░)
-            // Moebius default: FG on, BG off
             colorize_fg: true,
-            colorize_bg: false,
+            colorize_bg: true,
             exact: false,
         }
     }

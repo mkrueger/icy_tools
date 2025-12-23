@@ -432,7 +432,6 @@ impl ToolHandler for ClickTool {
                                 _ => 0,
                             };
 
-                            // Moebius: Alt+F1..F10 selects set 0..9, Shift+Alt selects 10..19.
                             if modifiers.alt() && slot < 10 {
                                 let Some(options) = ctx.options else {
                                     return ToolResult::None;
