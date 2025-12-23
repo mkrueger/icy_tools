@@ -374,6 +374,13 @@ fn process_icy_draw_v0_decoded_chunk(
                 let (font_name, size) = read_utf8_encoded_string(&bytes[o..])?;
                 o += size;
                 let font = BitFont::from_bytes(font_name, &bytes[o..])?;
+
+                // Sync font_cell_size with the actual font dimensions for slot 0
+                // This ensures buffer.font_dimensions() matches the embedded font size
+                if font_slot == 0 {
+                    result.set_font_dimensions(font.size());
+                }
+
                 result.set_font(font_slot as u8, font);
                 return Ok(true);
             }

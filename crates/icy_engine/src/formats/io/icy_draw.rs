@@ -346,12 +346,10 @@ fn process_icy_draw_v1_decoded_chunk(
             let height: i32 = i32::try_from(height_u32).map_err(|_| IcedError::InvalidHeader(format!("height out of range: {height_u32}")))?;
             result.set_size((width, height));
 
-            if bytes.len() >= o + 2 {
-                let font_width = bytes[o] as i32;
-                o += 1;
-                let font_height = bytes[o] as i32;
-                result.set_font_dimensions((font_width, font_height).into());
-            }
+            let font_width = bytes[o] as i32;
+            o += 1;
+            let font_height = bytes[o] as i32;
+            result.set_font_dimensions((font_width, font_height).into());
         }
 
         "PALETTE" => {

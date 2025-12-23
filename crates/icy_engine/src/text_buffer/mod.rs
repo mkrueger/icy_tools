@@ -957,9 +957,7 @@ impl TextBuffer {
 
     /// Set the font cell size for this document
     pub fn set_font_dimensions(&mut self, size: Size) {
-        if self.font_cell_size != size {
-            self.font_cell_size = size;
-        }
+        self.font_cell_size = size;
     }
 
     pub fn to_screenx(&self, x: i32) -> f64 {
