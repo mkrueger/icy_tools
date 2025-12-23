@@ -34,7 +34,8 @@ jobs:
          cargo deb
        fi
 
-       DEB=$(ls -1 ../../target/debian/${{ matrix.app }}_*.deb | tail -n 1)
+       # cargo-deb may convert underscores to hyphens in package names
+       DEB=$(ls -1 ../../target/debian/*.deb | grep -E "$(echo ${{ matrix.app }} | tr '_' '-')" | tail -n 1)
        echo "Copy $DEB to ${{ matrix.app }}.deb"
        mv "$DEB" "../../${{ matrix.app }}.deb"
        cd ../..
