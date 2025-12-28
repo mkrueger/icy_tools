@@ -305,7 +305,7 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
                     return None;
                 };

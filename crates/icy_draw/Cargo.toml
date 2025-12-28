@@ -12,7 +12,6 @@ repository = "https://github.com/mkrueger/icy_tools"
 [dependencies]
 # UI Framework - iced based
 iced = { workspace = true, features = ["wgpu", "highlighter"] }
-iced_aw = { workspace = true, features = ["context_menu"] }
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }

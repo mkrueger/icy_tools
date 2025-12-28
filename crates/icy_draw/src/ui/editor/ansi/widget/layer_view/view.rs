@@ -24,11 +24,11 @@ use iced::{
         widget::{self, Widget},
     },
     mouse,
-    widget::{button, column, container, image, row, svg, text},
+    widget::{button, column, container, image, row, svg},
     Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
 };
 
-use iced_aw::ContextMenu;
+use iced::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
 use icy_engine::{BitFont, Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
 use icy_engine_gui::theme::main_area_background;
@@ -65,6 +65,32 @@ const PREVIEW_ATLAS_W: u32 = PREVIEW_TEX_W * PREVIEW_ATLAS_COLS;
 const PREVIEW_ATLAS_H: u32 = PREVIEW_TEX_H * PREVIEW_ATLAS_ROWS;
 
 const MAX_LABEL_CHARS: usize = 64;
+
+/// Context menu action for layers
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayerContextAction {
+    Properties(usize),
+    NewLayer,
+    Duplicate(usize),
+    MergeDown(usize),
+    Delete(usize),
+    Clear(usize),
+}
+
+impl iced::widget::menu::Action for LayerContextAction {
+    type Message = LayerMessage;
+
+    fn message(&self) -> Self::Message {
+        match *self {
+            LayerContextAction::Properties(i) => LayerMessage::EditLayer(i),
+            LayerContextAction::NewLayer => LayerMessage::Add,
+            LayerContextAction::Duplicate(i) => LayerMessage::Duplicate(i),
+            LayerContextAction::MergeDown(i) => LayerMessage::MergeDown(i),
+            LayerContextAction::Delete(i) => LayerMessage::Remove(i),
+            LayerContextAction::Clear(i) => LayerMessage::Clear(i),
+        }
+    }
+}
 
 /// Messages for the layer view
 #[derive(Clone, Debug)]
@@ -550,87 +576,35 @@ impl LayerView {
         Some(LabelTexture { handle, width: w, height: h })
     }
 
-    /// Build the context menu for a layer
-    fn build_context_menu(index: usize, layer_count: usize) -> Element<'static, LayerMessage> {
-        let props_btn = Self::menu_item(fl!("layer_tool_menu_layer_properties"), Some(LayerMessage::EditLayer(index)));
-        let new_btn = Self::menu_item(fl!("layer_tool_menu_new_layer"), Some(LayerMessage::Add));
-        let duplicate_btn = Self::menu_item(fl!("layer_tool_menu_duplicate_layer"), Some(LayerMessage::Duplicate(index)));
-        let merge_btn = Self::menu_item(
-            fl!("layer_tool_menu_merge_layer"),
-            if index > 0 { Some(LayerMessage::MergeDown(index)) } else { None },
-        );
-        let delete_btn = Self::menu_item(
-            fl!("layer_tool_menu_delete_layer"),
-            if layer_count > 1 { Some(LayerMessage::Remove(index)) } else { None },
-        );
-        let clear_btn = Self::menu_item(fl!("layer_tool_menu_clear_layer"), Some(LayerMessage::Clear(index)));
-
-        container(
-            column![props_btn, new_btn, duplicate_btn, merge_btn, delete_btn, clear_btn]
-                .spacing(2)
-                .width(Length::Fixed(200.0)),
-        )
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background.weak.color)),
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .padding(4)
-        .into()
+    /// Build the context menu items for a layer
+    fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuTree<'static, LayerMessage, Theme, iced::Renderer>> {
+        use std::collections::HashMap;
+        use iced::widget::menu::KeyBind;
+        
+        let key_binds: HashMap<KeyBind, LayerContextAction> = HashMap::new();
+        
+        let mut items = vec![
+            MenuItemDef::Button(fl!("layer_tool_menu_layer_properties"), LayerContextAction::Properties(index)),
+            MenuItemDef::Button(fl!("layer_tool_menu_new_layer"), LayerContextAction::NewLayer),
+            MenuItemDef::Button(fl!("layer_tool_menu_duplicate_layer"), LayerContextAction::Duplicate(index)),
+        ];
+        
+        // Merge is only available if not the bottom layer
+        if index > 0 {
+            items.push(MenuItemDef::Button(fl!("layer_tool_menu_merge_layer"), LayerContextAction::MergeDown(index)));
+        }
+        
+        // Delete is only available if there's more than one layer
+        if layer_count > 1 {
+            items.push(MenuItemDef::Button(fl!("layer_tool_menu_delete_layer"), LayerContextAction::Delete(index)));
+        }
+        
+        items.push(MenuItemDef::Button(fl!("layer_tool_menu_clear_layer"), LayerContextAction::Clear(index)));
+        
+        menu_items_fn(&key_binds, items)
     }
 
     /// Create a single menu item button
-    fn menu_item(label: String, message: Option<LayerMessage>) -> Element<'static, LayerMessage> {
-        let is_enabled = message.is_some();
-
-        button(text(label).size(13))
-            .on_press_maybe(message)
-            .width(Length::Fill)
-            .padding([6, 10])
-            .style(move |theme: &Theme, status: button::Status| {
-                let palette = theme.extended_palette();
-
-                match status {
-                    button::Status::Hovered if is_enabled => button::Style {
-                        background: Some(iced::Background::Color(palette.primary.base.color)),
-                        text_color: palette.primary.base.text,
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    button::Status::Pressed if is_enabled => button::Style {
-                        background: Some(iced::Background::Color(palette.primary.strong.color)),
-                        text_color: palette.primary.strong.text,
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    _ if !is_enabled => button::Style {
-                        background: None,
-                        text_color: palette.background.weak.text.scale_alpha(0.4),
-                        ..Default::default()
-                    },
-                    _ => button::Style {
-                        background: None,
-                        text_color: palette.background.weak.text,
-                        ..Default::default()
-                    },
-                }
-            })
-            .into()
-    }
-
     /// Render the layer view
     /// If `paste_mode` is true, the layer view shows paste-specific behavior:
     /// - Layer selection is disabled (paste layer is always selected)
@@ -795,7 +769,8 @@ impl LayerView {
 
         // Wrap with context menu (for current selection)
         if layer_count > 0 {
-            ContextMenu::new(content, move || Self::build_context_menu(current_layer, layer_count)).into()
+            let menu_items = Self::build_context_menu_items(current_layer, layer_count);
+            context_menu(content, Some(menu_items)).into()
         } else {
             content.into()
         }
@@ -1159,7 +1134,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                     shell.request_redraw();
                 }
             }
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 // In paste mode, layer selection is disabled
                 if self.paste_mode {
                     return;
@@ -1200,7 +1175,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                     }
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
                 state.left_button_down = false;
 
                 let Some(pressed_idx) = state.pressed_list_idx.take() else {
@@ -1260,7 +1235,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                     state.last_click = None;
                 }
             }
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let mut vp = self.viewport.borrow_mut();
                     match delta {

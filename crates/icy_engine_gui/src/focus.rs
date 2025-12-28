@@ -236,7 +236,7 @@ where
         let state = tree.state.downcast_mut::<State>();
         if matches!(
             event,
-            Event::Mouse(iced_mouse::Event::ButtonPressed(iced_mouse::Button::Left)) | Event::Touch(touch::Event::FingerPressed { .. })
+            Event::Mouse(iced_mouse::Event::ButtonPressed { button: iced_mouse::Button::Left, .. }) | Event::Touch(touch::Event::FingerPressed { .. })
         ) {
             if !state.is_focused && cursor.is_over(layout.bounds()) {
                 state.is_focused = true;

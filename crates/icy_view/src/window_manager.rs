@@ -236,21 +236,13 @@ impl WindowManager {
                     Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(iced::mouse::Event::CursorLeft) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip other mouse events
                     Event::Mouse(_) => None,
-                    // Keyboard events
-                    Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
-                        let ctrl = mods.control();
-                        let alt = mods.alt();
-                        let shift = mods.shift();
-                        let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
-                                                      // Also store globally for cross-widget access
-                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
-                        None
-                    }
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Track modifiers globally (replaces ModifiersChanged event)
+                        icy_engine_gui::set_global_modifiers(modifiers.control(), modifiers.alt(), modifiers.shift(), modifiers.command());
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                         if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
                             use icy_engine_gui::KeyboardAction;

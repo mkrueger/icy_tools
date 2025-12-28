@@ -282,7 +282,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button, .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let local_x = pos.x - self.x_offset;
                     if local_x < 0.0 || local_x >= used_width {

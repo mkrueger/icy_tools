@@ -154,7 +154,7 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 let Some(p) = cursor.position_in(bounds) else {
                     return None;
                 };
@@ -334,7 +334,7 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 let Some(p) = cursor.position_in(bounds) else {
                     return None;
                 };

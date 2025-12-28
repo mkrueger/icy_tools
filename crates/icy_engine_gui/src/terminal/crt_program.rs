@@ -885,7 +885,7 @@ impl<'a> CRTShaderProgram<'a> {
                 y: p.y - bounds.y,
             });
 
-            if let mouse::Event::ButtonReleased(button) = mouse_event {
+            if let mouse::Event::ButtonReleased { button, .. } = mouse_event {
                 if state.dragging && (matches!(button, mouse::Button::Left) || matches!(button, mouse::Button::Right)) {
                     state.dragging = false;
                     state.drag_anchor = None;
@@ -957,7 +957,7 @@ impl<'a> CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::ButtonPressed(button) => {
+                mouse::Event::ButtonPressed { button, .. } => {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
@@ -1025,7 +1025,7 @@ impl<'a> CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::ButtonReleased(button) => {
+                mouse::Event::ButtonReleased { button, .. } => {
                     // Middle button single-click (Middle doesn't support drag)
                     if matches!(button, mouse::Button::Middle) {
                         if let Some(position) = local_pos_in_bounds {
@@ -1062,10 +1062,8 @@ impl<'a> CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::WheelScrolled { delta } => {
-                    let modifiers = Self::get_modifiers();
-
-                    if modifiers.ctrl || crate::is_command_pressed() {
+                mouse::Event::WheelScrolled { delta, modifiers } => {
+                    if modifiers.control() || crate::is_command_pressed() {
                         return Some(iced::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 

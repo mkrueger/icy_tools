@@ -314,19 +314,19 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
         let cursor_pos = cursor_pos?;
 
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftPressed(cursor_pos))))
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Right, .. }) => {
                 Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightPressed(cursor_pos))))
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Middle, .. }) => {
                 Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::MiddlePressed)))
             }
-            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
                 Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftReleased)))
             }
-            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Right)) => {
+            iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Right, .. }) => {
                 Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightReleased)))
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {

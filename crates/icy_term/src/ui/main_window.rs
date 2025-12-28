@@ -1865,7 +1865,7 @@ impl MainWindow {
             Event::Mouse(iced::mouse::Event::CursorLeft) => {
                 return (Some(Message::CursorLeftWindow), Task::none());
             }
-            Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(iced::mouse::Event::WheelScrolled { delta, modifiers: _ }) => {
                 // Only handle mouse wheel in scrollback mode
                 if self.terminal_window.terminal.is_in_scrollback_mode() {
                     let line_height = self.terminal_window.terminal.char_height;

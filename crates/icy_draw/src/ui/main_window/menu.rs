@@ -1,16 +1,14 @@
 //! Menu system for icy_draw
 //!
-//! Uses iced_aw's menu widget for dropdown menus.
+//! Uses iced's built-in menu widget for dropdown menus.
 //! Ported from the egui version in src_egui/ui/top_bar.rs
 
 use iced::{
     alignment,
-    border::Radius,
-    widget::{button, row, text, Space},
+    widget::{button, container, row, rule, text, Space},
     Border, Color, Element, Length, Theme,
 };
-use iced_aw::menu::Menu;
-use iced_aw::{quad, widget::InnerBounds};
+use iced::widget::menu::Tree as MenuTree;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -372,21 +370,22 @@ fn render_menu_item_submenu_button(label: String) -> Element<'static, Message> {
     .into()
 }
 
-/// Convert a slice of MenuItems to iced_aw menu items (for rendering)
-pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> {
+/// Convert a slice of MenuItems to MenuTree items (for rendering)
+pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
     items
         .iter()
         .map(|item| match item {
             MenuItem::SubMenu { items: sub_items, .. } => {
-                let sub_menu = Menu::new(menu_items_to_iced(sub_items, state)).width(300.0).offset(5.0);
-                iced_aw::menu::Item::with_menu(render_menu_item(item), sub_menu)
+                MenuTree::with_children(render_menu_item(item), menu_items_to_iced(sub_items, state))
             }
             MenuItem::DynamicSubMenu { builder, .. } => {
                 let dynamic_items = builder(state);
-                let sub_menu = Menu::new(menu_items_to_iced(&dynamic_items, state)).width(300.0).offset(5.0);
-                iced_aw::menu::Item::with_menu(render_menu_item(item), sub_menu)
+                MenuTree::with_children(render_menu_item(item), menu_items_to_iced(&dynamic_items, state))
             }
-            _ => iced_aw::menu::Item::new(render_menu_item(item)),
+            MenuItem::Separator => {
+                MenuTree::separator(separator())
+            }
+            _ => MenuTree::new(render_menu_item(item)),
         })
         .collect()
 }
@@ -535,7 +534,7 @@ impl MenuBarState {
             match key.mode_tag {
                 0 => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
                 1 => bitfont::menu_bar::view_bitfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
-                2 => charfont::menu_bar::view_charfont(recent_files, &undo_info),
+                2 => charfont::menu_bar::view_charfont(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
                 3 => animation::menu_bar::view_animation_menu(recent_files, undo_info.undo_description.as_deref(), undo_info.redo_description.as_deref()),
                 _ => ansi::widget::toolbar::menu_bar::view_ansi(recent_files, &undo_info, &marker_state, plugins.as_ref(), key.mirror_mode, key.is_connected),
             }
@@ -564,7 +563,8 @@ impl MenuBarState {
 // Public helper functions for editor menu modules
 // ============================================================================
 
-/// Create a menu bar button
+/// Create a menu bar button (may be unused with new menu API)
+#[allow(dead_code)]
 pub fn menu_button(label: String) -> Element<'static, Message> {
     button(text(label).size(14))
         .padding([4, 8])
@@ -608,7 +608,7 @@ pub fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
     let is_enabled = description.is_some();
 
-    // Always set on_press to avoid iced_aw menu overlay issues
+    // Always set on_press to avoid menu overlay issues
     // The message handler will ignore the action if nothing to undo
     button(
         row![
@@ -639,7 +639,7 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
     let hotkey = cmd.primary_hotkey_display().unwrap_or_default();
     let is_enabled = description.is_some();
 
-    // Always set on_press to avoid iced_aw menu overlay issues
+    // Always set on_press to avoid menu overlay issues
     // The message handler will ignore the action if nothing to redo
     button(
         row![
@@ -779,17 +779,10 @@ pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Messa
 }
 
 /// Create a separator line
-pub fn separator() -> quad::Quad {
-    quad::Quad {
-        quad_color: Color::from([0.5; 3]).into(),
-        quad_border: Border {
-            radius: Radius::new(5.0),
-            ..Default::default()
-        },
-        inner_bounds: InnerBounds::Ratio(0.98, 0.2),
-        height: Length::Fixed(4.0),
-        ..Default::default()
-    }
+pub fn separator() -> Element<'static, Message> {
+    container(rule::horizontal(1))
+        .padding([4, 8])
+        .into()
 }
 
 /// Create a submenu item (with arrow indicator)
@@ -814,14 +807,14 @@ pub fn menu_item_submenu(label: String) -> Element<'static, Message> {
 }
 
 /// Build the recent files submenu
-pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Menu<'static, Message, Theme, iced::Renderer> {
+pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
     let files = recent_files.files();
 
-    let mut items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
 
     if files.is_empty() {
         // Show "No recent files" when empty
-        items.push(iced_aw::menu::Item::new(
+        items.push(MenuTree::new(
             button(text(fl!("menu-no_recent_files")).size(14))
                 .width(Length::Fill)
                 .padding([4, 8])
@@ -836,7 +829,7 @@ pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Menu<'st
                 .unwrap_or_else(|| file.display().to_string());
             let path = file.clone();
 
-            items.push(iced_aw::menu::Item::new(
+            items.push(MenuTree::new(
                 button(text(file_name).size(14))
                     .width(Length::Fill)
                     .padding([4, 8])
@@ -846,8 +839,8 @@ pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Menu<'st
         }
 
         // Add separator and clear option
-        items.push(iced_aw::menu::Item::new(separator()));
-        items.push(iced_aw::menu::Item::new(
+        items.push(MenuTree::separator(separator()));
+        items.push(MenuTree::new(
             button(text(fl!("menu-clear_recent_files")).size(14))
                 .width(Length::Fill)
                 .padding([4, 8])
@@ -856,13 +849,14 @@ pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Menu<'st
         ));
     }
 
-    Menu::new(items).width(350.0).offset(0.0)
+    items
 }
 
 // ============================================================================
 // Styles
 // ============================================================================
 
+#[allow(dead_code)]
 pub fn menu_button_style(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
 

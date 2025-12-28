@@ -283,11 +283,11 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch as u8);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                    iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                         state.is_dragging = true;
                         return Some(Action::publish(CharFontEditorMessage::SelectCharAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
                         state.is_dragging = false;
                     }
                     iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -303,7 +303,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+                if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
                     state.is_dragging = false;
                 }
                 if old_hovered.is_some() {
@@ -312,7 +312,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
             }
         } else {
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+            if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
                 state.is_dragging = false;
             }
             if old_hovered.is_some() {

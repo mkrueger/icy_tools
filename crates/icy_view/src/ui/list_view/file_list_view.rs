@@ -741,7 +741,7 @@ where
 
         match event {
             iced::Event::Mouse(mouse_event) => match mouse_event {
-                mouse::Event::WheelScrolled { delta } => {
+                mouse::Event::WheelScrolled { delta, .. } => {
                     if is_over {
                         let (_dx, dy) = match delta {
                             mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
@@ -751,7 +751,7 @@ where
                         return Some(iced::widget::Action::publish(msg));
                     }
                 }
-                mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                mouse::Event::ButtonPressed { button: mouse::Button::Left, .. } => {
                     if is_over {
                         if let Some(pos) = cursor.position_in(bounds) {
                             let msg = (self.on_message)(FileListViewMessage::Click(pos.y));

@@ -136,10 +136,8 @@ impl IntoHotkey for iced::Event {
     }
 
     fn into_mouse_binding(&self) -> Option<MouseBinding> {
-        if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed(button)) = self {
-            // Note: For mouse events, we can't easily get keyboard modifiers from the event itself
-            // In practice, the application should track modifier state separately if needed
-            Some(MouseBinding::new(from_iced_mouse_button(*button), Modifiers::NONE))
+        if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button, modifiers }) = self {
+            Some(MouseBinding::new(from_iced_mouse_button(*button), from_iced_modifiers(*modifiers)))
         } else {
             None
         }

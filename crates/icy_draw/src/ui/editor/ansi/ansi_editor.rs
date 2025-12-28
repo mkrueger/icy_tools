@@ -2550,7 +2550,7 @@ impl AnsiEditorCore {
                 true
             }
             // Reset mouse capture state - the release may have happened outside the terminal widget
-            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased { button: iced::mouse::Button::Left, .. }) => {
                 if self.mouse_capture_tool.is_some() {
                     self.current_tool.cancel_capture();
                     self.paste_handler.cancel_capture();

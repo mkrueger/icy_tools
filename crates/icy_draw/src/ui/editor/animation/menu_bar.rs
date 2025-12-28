@@ -3,13 +3,11 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::{border::Radius, Border, Element, Theme};
-use iced_aw::menu::{self, Menu};
-use iced_aw::style::{menu_bar::primary, Status};
-use iced_aw::{menu_bar, menu_items};
+use iced::Element;
+use iced::widget::menu::{bar as menu_bar, root as menu_root, Tree as MenuTree};
 
 use crate::fl;
-use crate::ui::main_window::menu::{menu_button, menu_items_to_iced, MenuItem, MenuState};
+use crate::ui::main_window::menu::{menu_items_to_iced, MenuItem, MenuState};
 use crate::ui::main_window::Message;
 use crate::MostRecentlyUsedFiles;
 use icy_engine_gui::commands::{cmd, hotkey_from_iced, Hotkey};
@@ -140,33 +138,18 @@ pub fn view_animation_menu(recent_files: &MostRecentlyUsedFiles, undo_desc: Opti
         redo_description: redo_desc,
     };
 
-    let menu_template = |items: Vec<iced_aw::menu::Item<'static, Message, Theme, iced::Renderer>>| Menu::new(items).width(300.0).offset(5.0);
-
     let file_items = menu_items_to_iced(&menu.file, &state);
     let edit_items = menu_items_to_iced(&menu.edit, &state);
     let help_items = menu_items_to_iced(&menu.help, &state);
 
-    let mb = menu_bar!(
-        (menu_button(fl!("menu-file")), menu_template(file_items)),
-        (menu_button(fl!("menu-edit")), menu_template(edit_items)),
-        (menu_button(fl!("menu-help")), menu_template(help_items))
-    )
-    .spacing(4.0)
-    .padding([4, 8])
-    .draw_path(menu::DrawPath::Backdrop)
-    .close_on_item_click_global(true)
-    .close_on_background_click_global(true)
-    .style(|theme: &Theme, status: Status| {
-        let palette = theme.extended_palette();
-        menu::Style {
-            path_border: Border {
-                radius: Radius::new(6.0),
-                ..Default::default()
-            },
-            path: palette.primary.weak.color.into(),
-            ..primary(theme, status)
-        }
-    });
+    let menu_roots = vec![
+        MenuTree::with_children(menu_root(fl!("menu-file"), Message::Noop), file_items),
+        MenuTree::with_children(menu_root(fl!("menu-edit"), Message::Noop), edit_items),
+        MenuTree::with_children(menu_root(fl!("menu-help"), Message::Noop), help_items),
+    ];
 
-    mb.into()
+    menu_bar(menu_roots)
+        .spacing(4.0)
+        .padding([4, 8])
+        .into()
 }

@@ -1722,7 +1722,7 @@ impl BitFontEditor {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
                     return Some(BitFontEditorMessage::HidePreview);
                 }
-                iced::Event::Mouse(mouse::Event::ButtonPressed(_)) => {
+                iced::Event::Mouse(mouse::Event::ButtonPressed { .. }) => {
                     return Some(BitFontEditorMessage::HidePreview);
                 }
                 _ => {}

@@ -587,24 +587,24 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         let can_scroll = zoomed.0 > bounds.width || zoomed.1 > bounds.height;
 
         match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 if can_scroll {
                     if let Some(pos) = cursor.position_in(bounds) {
                         shell.publish((self.on_message)(ImageViewerMessage::Press((pos.x, pos.y))));
                     }
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
                 // Always send release to handle drags that end outside bounds
                 shell.publish((self.on_message)(ImageViewerMessage::Release));
             }
-            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+            Event::Mouse(mouse::Event::CursorMoved { position, .. }) => {
                 // Always send Move with global position for drag tracking
                 // preview_view decides if it's a drag based on is_dragging state
                 let global_pos = (position.x - bounds.x, position.y - bounds.y);
                 shell.publish((self.on_message)(ImageViewerMessage::Move(Some(global_pos))));
             }
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     // Check if Cmd/Ctrl is held for zooming (Cmd on macOS, Ctrl on Windows/Linux)
                     let command_pressed = icy_engine_gui::is_command_pressed();

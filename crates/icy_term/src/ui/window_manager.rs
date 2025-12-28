@@ -311,17 +311,10 @@ impl WindowManager {
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
                     Event::Mouse(_) => None,
 
-                    Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
-                        let ctrl = mods.control();
-                        let alt = mods.alt();
-                        let shift = mods.shift();
-                        let command = mods.command(); // Cmd on macOS, Ctrl on Windows/Linux
-                                                      // Also store globally for cross-widget access
-                        icy_engine_gui::set_global_modifiers(ctrl, alt, shift, command);
-                        None
-                    }
                     // Keyboard events need special handling
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Track modifiers globally (replaces ModifiersChanged event)
+                        icy_engine_gui::set_global_modifiers(modifiers.control(), modifiers.alt(), modifiers.shift(), modifiers.command());
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                         if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
                             use icy_engine_gui::KeyboardAction;
@@ -335,7 +328,7 @@ impl WindowManager {
                         // Forward all key events - command matching happens in update()
                         Some(WindowManagerMessage::Event(window_id, event))
                     }
-                    // Forward other keyboard events (KeyReleased, ModifiersChanged)
+                    // Forward other keyboard events (KeyReleased)
                     Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip touch events
                     Event::Touch(_) => None,

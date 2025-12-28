@@ -755,7 +755,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
 
     fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     // Find which item was clicked
                     let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
@@ -807,7 +807,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                     }
                 }
             }
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            iced::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let scroll_amount = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => -y * 30.0,

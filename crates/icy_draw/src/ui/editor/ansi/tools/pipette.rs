@@ -11,7 +11,6 @@ use i18n_embed_fl::fl;
 use iced::widget::canvas::{self, Frame, Geometry};
 use iced::widget::{column, container, row, text, Canvas, Space};
 use iced::{Alignment, Color, Element, Font, Length, Point, Rectangle, Size, Theme};
-use iced_aw::direction::Vertical;
 use icy_engine::{AttributedChar, BitFont, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};

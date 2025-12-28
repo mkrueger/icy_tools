@@ -2393,7 +2393,7 @@ impl MainWindow {
         // Try the command handler first for both keyboard and mouse events
         if let Some(msg) = self.commands.handle(event) {
             if self.collaboration_state.chat_input_focused {
-                if let Event::Mouse(iced::mouse::Event::ButtonPressed(_)) = event {
+                if let Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) = event {
                     self.collaboration_state.chat_input_focused = false;
                 }
             }
@@ -2456,7 +2456,7 @@ impl MainWindow {
             ModeState::Ansi(editor) => {
                 if editor.handle_event(event) {
                     if self.collaboration_state.chat_input_focused {
-                        if let Event::Mouse(iced::mouse::Event::ButtonPressed(_)) = event {
+                        if let Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) = event {
                             self.collaboration_state.chat_input_focused = false;
                         }
                     }

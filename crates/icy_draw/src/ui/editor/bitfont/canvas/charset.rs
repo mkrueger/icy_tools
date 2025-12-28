@@ -283,13 +283,13 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch_code);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                    iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                         state.is_dragging = true;
                         let ch = char::from_u32(ch_code as u32).unwrap_or(' ');
                         // SelectGlyph sets anchor position and focus to CharSet
                         return Some(Action::publish(BitFontEditorMessage::SelectGlyphAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
                         state.is_dragging = false;
                     }
                     iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -309,7 +309,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+                if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
                     state.is_dragging = false;
                 }
                 // Request redraw if hover changed (mouse outside grid cells)
@@ -320,7 +320,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
         } else {
             // Cursor left the canvas entirely
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+            if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
                 state.is_dragging = false;
             }
             // Request redraw if hover changed (mouse left canvas)

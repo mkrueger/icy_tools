@@ -212,7 +212,7 @@ impl shader::Program<ColorSwitcherMessage> for ColorSwitcherProgram {
             }
         }
 
-        if let iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
+        if let iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) = event {
             if let Some(pos) = cursor.position_in(bounds) {
                 // Check if clicked on swap area (top-right)
                 if pos.x > rect_size && pos.y < rect_size {

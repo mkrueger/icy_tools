@@ -865,13 +865,9 @@ impl WindowManager {
                     // Mouse events
                     Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(_) => None,
-                    // Keyboard events
-                    Event::Keyboard(iced::keyboard::Event::ModifiersChanged(mods)) => {
-                        icy_engine_gui::set_global_modifiers(mods.control(), mods.alt(), mods.shift(), mods.command());
-                        None
-                    }
+                    // Keyboard events are handled below
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                         if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {

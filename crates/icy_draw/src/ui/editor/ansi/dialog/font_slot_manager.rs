@@ -478,7 +478,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
 
     fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let scroll_y = self.dialog.viewport.borrow().scroll_y;
                     let click_y = pos.y + scroll_y;
@@ -490,7 +490,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                     }
                 }
             }
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            iced::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let scroll_amount = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => -y * 26.0,

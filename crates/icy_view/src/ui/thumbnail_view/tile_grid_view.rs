@@ -1528,8 +1528,8 @@ impl TileGridView {
 
         // Get cursor position from event if available
         let cursor_position = match event {
-            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(*position),
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => self.last_cursor_position,
+            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position, .. }) => Some(*position),
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => self.last_cursor_position,
             _ => None,
         };
 
@@ -1540,7 +1540,7 @@ impl TileGridView {
                 return Some(TileGridMessage::OpenSelected);
             }
             // Check if a click happened (selection changed)
-            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) = event {
+            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. }) = event {
                 if let Some(index) = self.selected_index {
                     return Some(TileGridMessage::TileClicked(index));
                 }
@@ -1570,7 +1570,7 @@ impl TileGridView {
         }
 
         match event {
-            iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+            iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta, .. }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
                 if let Some(pos) = pos {
                     if bounds.contains(pos) {
@@ -1639,7 +1639,7 @@ impl TileGridView {
                     return true;
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
                 if let Some(pos) = pos {
                     if bounds.contains(pos) {

@@ -628,7 +628,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
         let bounds = layout.bounds();
 
         match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let scroll_offset = self.viewport.borrow().scroll_y;
                     let clicked_y = pos.y + scroll_offset;
@@ -644,7 +644,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
                     }
                 }
             }
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let mut vp = self.viewport.borrow_mut();
                     match delta {

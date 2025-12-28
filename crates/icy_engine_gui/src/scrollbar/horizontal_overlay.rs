@@ -112,7 +112,7 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for HorizontalScrollbarOverlay<'
                 }
             }
             iced::Event::Mouse(mouse_event) => match mouse_event {
-                iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left) => {
+                iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. } => {
                     if is_hovered {
                         if let Some(pos) = cursor.position_in(bounds) {
                             self.viewport.with_viewport_mut(|vp| {
@@ -122,7 +122,7 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for HorizontalScrollbarOverlay<'
                         }
                     }
                 }
-                iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left) => {
+                iced::mouse::Event::ButtonReleased { button: iced::mouse::Button::Left, .. } => {
                     let released = self.viewport.with_viewport_mut(|vp| {
                         if vp.handle_hscrollbar_release() {
                             vp.handle_hscrollbar_hover(is_hovered);
@@ -253,7 +253,7 @@ where
 
         match event {
             iced::Event::Mouse(mouse_event) => match mouse_event {
-                iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left) => {
+                iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. } => {
                     if is_hovered {
                         state.is_dragging = true;
                         if let Some(pos) = cursor.position_in(bounds) {
@@ -264,7 +264,7 @@ where
                         }
                     }
                 }
-                iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left) => {
+                iced::mouse::Event::ButtonReleased { button: iced::mouse::Button::Left, .. } => {
                     if state.is_dragging {
                         state.is_dragging = false;
                         let msg = (self.on_hover)(is_hovered);

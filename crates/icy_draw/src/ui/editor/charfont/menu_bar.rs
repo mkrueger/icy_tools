@@ -3,17 +3,12 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::{border::Radius, Border, Element, Theme};
-use iced_aw::menu::{self, Menu};
-use iced_aw::style::{menu_bar::primary, Status};
-use iced_aw::{menu_bar, menu_items};
+use iced::Element;
+use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
 
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
-use crate::ui::main_window::menu::{
-    build_recent_files_menu, menu_button, menu_item, menu_item_redo, menu_item_simple, menu_item_simple_enabled, menu_item_submenu, menu_item_undo, separator,
-    MenuItem, UndoInfo,
-};
+use crate::ui::main_window::menu::{menu_items_to_iced, MenuItem, MenuState};
 use crate::ui::main_window::Message;
 use crate::MostRecentlyUsedFiles;
 use icy_engine_gui::commands::{cmd, hotkey_from_iced, Hotkey};
@@ -168,147 +163,35 @@ pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_d
 }
 
 // ============================================================================
-// Legacy view function (still used for rendering)
+// Menu View
 // ============================================================================
 
 /// Build the CharFont (TDF) editor menu bar
-pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_info: &UndoInfo) -> Element<'static, Message> {
-    let menu_template = |items| Menu::new(items).width(300.0).offset(5.0);
+pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_desc: Option<&str>, redo_desc: Option<&str>) -> Element<'static, Message> {
+    let menu = CharFontMenu::new(undo_desc, redo_desc);
 
-    let close_editor_hotkey = cmd::WINDOW_CLOSE.primary_hotkey_display().unwrap_or_default();
+    let state = MenuState {
+        recent_files,
+        undo_description: undo_desc,
+        redo_description: redo_desc,
+    };
 
-    let mb = menu_bar!(
-        // File menu
-        (
-            menu_button(fl!("menu-file")),
-            menu_template(menu_items!(
-                (menu_item(&cmd::FILE_NEW, Message::NewFile)),
-                (menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
-                (menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
-                (separator()),
-                (menu_item(&cmd::FILE_SAVE, Message::SaveFile)),
-                (menu_item(&cmd::FILE_SAVE_AS, Message::SaveFileAs)),
-                (separator()),
-                (
-                    menu_item_submenu(fl!("menu-import")),
-                    menu_template(menu_items!(
-                        (menu_item_simple(fl!("menu-import-font"), Message::ShowImportFontDialog)),
-                        (menu_item_simple(fl!("menu-import-fonts"), Message::CharFontEditor(super::CharFontEditorMessage::ImportFonts)))
-                    ))
-                ),
-                (
-                    menu_item_submenu(fl!("menu-export")),
-                    menu_template(menu_items!(
-                        (menu_item_simple(fl!("menu-export-font"), Message::CharFontEditor(super::CharFontEditorMessage::ExportFont)))
-                    ))
-                ),
-                (separator()),
-                (menu_item_simple(fl!("menu-connect-to-server"), Message::ShowConnectDialog)),
-                (separator()),
-                (menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
-                (separator()),
-                (menu_item_simple_enabled(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor, true)),
-                (menu_item(&cmd::APP_QUIT, Message::QuitApp))
-            ))
-        ),
-        // Edit menu (simplified - no SAUCE, no canvas size)
-        (
-            menu_button(fl!("menu-edit")),
-            menu_template(menu_items!(
-                (menu_item_undo(&cmd::EDIT_UNDO, Message::Undo, undo_info.undo_description.as_deref())),
-                (menu_item_redo(&cmd::EDIT_REDO, Message::Redo, undo_info.redo_description.as_deref())),
-                (separator()),
-                (menu_item(&cmd::EDIT_CUT, Message::Cut)),
-                (menu_item(&cmd::EDIT_COPY, Message::Copy)),
-                (menu_item(&cmd::EDIT_PASTE, Message::Paste))
-            ))
-        ),
-        // Colors menu (simplified - no palette selection)
-        (
-            menu_button(fl!("menu-colors")),
-            menu_template(menu_items!(
-                (menu_item_simple_enabled(
-                    fl!("menu-next_fg_color"),
-                    "Ctrl+Down",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)),
-                    true
-                )),
-                (menu_item_simple_enabled(
-                    fl!("menu-prev_fg_color"),
-                    "Ctrl+Up",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)),
-                    true
-                )),
-                (separator()),
-                (menu_item_simple_enabled(
-                    fl!("menu-next_bg_color"),
-                    "Ctrl+Right",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)),
-                    true
-                )),
-                (menu_item_simple_enabled(
-                    fl!("menu-prev_bg_color"),
-                    "Ctrl+Left",
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
-                    true
-                )),
-                (separator()),
-                (menu_item_simple_enabled(
-                    fl!("menu-toggle_color"),
-                    "Alt+X",
-                    Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
-                    true
-                )),
-                (menu_item_simple(
-                    fl!("menu-default_color"),
-                    Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor))
-                ))
-            ))
-        ),
-        // View menu (simplified - zoom and panels only)
-        (
-            menu_button(fl!("menu-view")),
-            menu_template(menu_items!(
-                (menu_item(&cmd::VIEW_ZOOM_RESET, Message::ZoomReset)),
-                (menu_item(&cmd::VIEW_ZOOM_IN, Message::ZoomIn)),
-                (menu_item(&cmd::VIEW_ZOOM_OUT, Message::ZoomOut)),
-                (separator()),
-                (menu_item_simple("4:1 400%".to_string(), Message::SetZoom(4.0))),
-                (menu_item_simple("2:1 200%".to_string(), Message::SetZoom(2.0))),
-                (menu_item_simple("1:1 100%".to_string(), Message::SetZoom(1.0))),
-                (menu_item_simple("1:2 50%".to_string(), Message::SetZoom(0.5))),
-                (menu_item_simple("1:4 25%".to_string(), Message::SetZoom(0.25))),
-                (separator()),
-                (menu_item(&cmd::VIEW_FULLSCREEN, Message::ToggleFullscreen))
-            ))
-        ),
-        // Help menu
-        (
-            menu_button(fl!("menu-help")),
-            menu_template(menu_items!(
-                (menu_item_simple(fl!("menu-discuss"), Message::OpenDiscussions)),
-                (menu_item_simple(fl!("menu-report-bug"), Message::ReportBug)),
-                (separator()),
-                (menu_item(&cmd::HELP_ABOUT, Message::ShowAbout))
-            ))
-        )
-    )
-    .spacing(4.0)
-    .padding([4, 8])
-    .draw_path(menu::DrawPath::Backdrop)
-    .close_on_item_click_global(true)
-    .close_on_background_click_global(true)
-    .style(|theme: &Theme, status: Status| {
-        let palette = theme.extended_palette();
-        menu::Style {
-            path_border: Border {
-                radius: Radius::new(6.0),
-                ..Default::default()
-            },
-            path: palette.primary.weak.color.into(),
-            ..primary(theme, status)
-        }
-    });
+    let file_items = menu_items_to_iced(&menu.file, &state);
+    let edit_items = menu_items_to_iced(&menu.edit, &state);
+    let colors_items = menu_items_to_iced(&menu.colors, &state);
+    let view_items = menu_items_to_iced(&menu.view, &state);
+    let help_items = menu_items_to_iced(&menu.help, &state);
 
-    mb.into()
+    let menu_roots = vec![
+        MenuTree::with_children(menu_root(fl!("menu-file"), Message::Noop), file_items),
+        MenuTree::with_children(menu_root(fl!("menu-edit"), Message::Noop), edit_items),
+        MenuTree::with_children(menu_root(fl!("menu-colors"), Message::Noop), colors_items),
+        MenuTree::with_children(menu_root(fl!("menu-view"), Message::Noop), view_items),
+        MenuTree::with_children(menu_root(fl!("menu-help"), Message::Noop), help_items),
+    ];
+
+    menu_bar_fn(menu_roots)
+        .spacing(4.0)
+        .padding([4, 8])
+        .into()
 }

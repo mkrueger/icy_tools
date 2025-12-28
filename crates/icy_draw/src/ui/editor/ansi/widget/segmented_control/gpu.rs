@@ -277,7 +277,7 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
                 let Some(pos) = cursor.position_in(bounds) else {
                     return None;
                 };
