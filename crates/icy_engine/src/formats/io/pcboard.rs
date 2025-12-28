@@ -30,7 +30,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
         while pos.x < line_length {
             let mut found_tag = false;
             for tag in &buf.tags {
-                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y && tag.position.x == pos.x {
                     if first_char || tag.attribute != last_attr {
                         result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
                         last_attr = tag.attribute;
@@ -55,7 +55,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
 
             if char_opts.unicode {
                 if ch.ch == '\0' {
-                    result.push(b' ')
+                    result.push(b' ');
                 } else {
                     let uni_ch = buf.buffer_type.convert_to_unicode(ch.ch);
                     result.extend(uni_ch.to_string().as_bytes().to_vec());
@@ -107,7 +107,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
 }
 
 pub(crate) fn load_pcboard(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
-    let width = load_data_opt.and_then(|ld| ld.default_terminal_width()).unwrap_or(80);
+    let width = load_data_opt.and_then(super::super::LoadData::default_terminal_width).unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;

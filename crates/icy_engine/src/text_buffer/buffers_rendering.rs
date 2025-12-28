@@ -185,7 +185,7 @@ impl TextBuffer {
         // Check for potential overflow before allocation
         let total_bytes = (crop_width as u64).saturating_mul(crop_height as u64).saturating_mul(4);
         if total_bytes > 100_000_000 || total_bytes == 0 {
-            log::error!("render_region_to_rgba_raw: crop dimensions too large or zero {}x{}", crop_width, crop_height);
+            log::error!("render_region_to_rgba_raw: crop dimensions too large or zero {crop_width}x{crop_height}");
             return (Size::new(0, 0), Vec::new());
         }
 
@@ -307,7 +307,7 @@ impl TextBuffer {
                     fg_is_rgb = bg_is_rgb;
                 }
 
-                let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
+                let is_selected = selection_active && selection_ref.is_some_and(|sel| sel.is_inside(pos));
 
                 // Get colors directly as u32
                 let (fg_u32, bg_u32) = if is_selected {
@@ -511,7 +511,7 @@ impl TextBuffer {
                     fg_is_rgb = bg_is_rgb;
                 }
 
-                let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
+                let is_selected = selection_active && selection_ref.is_some_and(|sel| sel.is_inside(pos));
 
                 let (fg_u32, bg_u32) = if is_selected {
                     if let Some((sel_fg, sel_bg)) = explicit_sel_colors {
@@ -801,7 +801,7 @@ impl TextBuffer {
                 fg_is_rgb = bg_is_rgb;
             }
 
-            let is_selected = selection_active && selection_ref.map(|sel| sel.is_inside(pos)).unwrap_or(false);
+            let is_selected = selection_active && selection_ref.is_some_and(|sel| sel.is_inside(pos));
 
             let (fg_u32, bg_u32) = if is_selected {
                 if let Some((sel_fg_u32, sel_bg_u32)) = explicit_sel_colors {
@@ -1095,9 +1095,9 @@ impl TextBuffer {
                                     let src_g = ((src_pixel >> 8) & 0xFF) as u32;
                                     let src_b = ((src_pixel >> 16) & 0xFF) as u32;
 
-                                    let dst_r = (dest_pixel & 0xFF) as u32;
-                                    let dst_g = ((dest_pixel >> 8) & 0xFF) as u32;
-                                    let dst_b = ((dest_pixel >> 16) & 0xFF) as u32;
+                                    let dst_r = dest_pixel & 0xFF;
+                                    let dst_g = (dest_pixel >> 8) & 0xFF;
+                                    let dst_b = (dest_pixel >> 16) & 0xFF;
 
                                     // Blend
                                     let r = (src_r * alpha + dst_r * inv_alpha) / 255;

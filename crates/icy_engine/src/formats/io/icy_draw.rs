@@ -372,7 +372,7 @@ fn process_icy_draw_v1_decoded_chunk(
             if bytes.len() < 2 {
                 return Err(IcedError::DataTruncated(2));
             }
-            let mut cur = &bytes[..];
+            let mut cur = bytes;
             let tag_len = u16::from_le_bytes(cur[..2].try_into().unwrap());
             cur = &cur[2..];
             for _ in 0..tag_len {
@@ -500,8 +500,7 @@ fn process_icy_draw_v1_decoded_chunk(
 
             if (char_data_size as i64) < min_expected || (char_data_size as i64) > max_expected {
                 return Err(IcedError::InvalidRecord(format!(
-                    "layer '{}' char data size {} doesn't match dimensions {}x{} (expected {}..{} bytes)",
-                    title, char_data_size, width, height, min_expected, max_expected
+                    "layer '{title}' char data size {char_data_size} doesn't match dimensions {width}x{height} (expected {min_expected}..{max_expected} bytes)"
                 )));
             }
             let mut layer = Layer::new(title.clone(), (width, height));
@@ -696,8 +695,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
     for (slot, v) in buf.font_iter() {
         let mut font_data: Vec<u8> = Vec::new();
-        font_data.push(*slot as u8);
-        write_utf8_encoded_string(&mut font_data, &v.name());
+        font_data.push(*slot);
+        write_utf8_encoded_string(&mut font_data, v.name());
         font_data.extend(v.to_psf2_bytes().unwrap());
 
         write_compressed_chunk(&mut writer, "FONT", file_compression, &font_data)?;
@@ -778,8 +777,8 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         for tag in &buf.tags {
             write_utf8_encoded_string(&mut data, &tag.preview);
             write_utf8_encoded_string(&mut data, &tag.replacement_value);
-            data.extend(i32::to_le_bytes(tag.position.x as i32));
-            data.extend(i32::to_le_bytes(tag.position.y as i32));
+            data.extend(i32::to_le_bytes(tag.position.x));
+            data.extend(i32::to_le_bytes(tag.position.y));
             data.extend(u16::to_le_bytes(tag.length as u16));
             if tag.is_enabled {
                 data.push(1);

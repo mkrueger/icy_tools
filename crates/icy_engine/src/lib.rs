@@ -345,7 +345,7 @@ impl Rectangle {
 
     /// Check if position is inside the rectangle (inclusive of the last row/column).
     /// This is for backward compatibility with code that expects inclusive bounds.
-    /// For new code, prefer using is_inside() which uses exclusive bounds.
+    /// For new code, prefer using `is_inside()` which uses exclusive bounds.
     pub fn is_inside_inclusive(&self, pos: impl Into<Position>) -> bool {
         let pos = pos.into();
         self.start.x <= pos.x && self.start.y <= pos.y && pos.x < self.start.x + self.size.width && pos.y < self.start.y + self.size.height
@@ -419,7 +419,6 @@ pub trait TextPane {
 
     /// Gets a string of specified size starting from the given position
     fn string_at(&self, pos: Position, size: usize) -> String {
-        let pos = pos.into();
         let mut result = String::new();
         let mut pos = pos;
         for _ in 0..size {

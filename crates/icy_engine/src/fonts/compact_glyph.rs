@@ -164,7 +164,7 @@ impl CompactGlyph {
     /// Extend the glyph width from 8 to 9 pixels for VGA letter spacing mode.
     /// For box-drawing characters, the 8th pixel is extended to the 9th.
     ///
-    /// Note: This returns a new representation since CompactGlyph only supports up to 8px width.
+    /// Note: This returns a new representation since `CompactGlyph` only supports up to 8px width.
     /// The caller should handle 9px fonts separately.
     pub fn extend_to_9px(&self, extend_8th_pixel: bool) -> [u16; MAX_GLYPH_HEIGHT] {
         let mut result = [0u16; MAX_GLYPH_HEIGHT];

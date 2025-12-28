@@ -84,7 +84,7 @@ pub struct Tag {
     pub attribute: TextAttribute,
 }
 
-/// Custom serde implementation for std::fmt::Alignment
+/// Custom serde implementation for `std::fmt::Alignment`
 mod alignment_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt::Alignment;
@@ -129,13 +129,13 @@ impl Tag {
     fn get_char_at(&self, x: i32) -> AttributedChar {
         let ch = match self.alignment {
             Alignment::Left => self.preview.chars().nth(x as usize).unwrap_or(' '),
-            Alignment::Right => self.preview.chars().nth(self.len() as usize - x as usize - 1).unwrap_or(' '),
+            Alignment::Right => self.preview.chars().nth(self.len() - x as usize - 1).unwrap_or(' '),
             Alignment::Center => {
-                let half = self.len() as usize / 2;
+                let half = self.len() / 2;
                 if (x as usize) < half {
                     self.preview.chars().nth(x as usize).unwrap_or(' ')
                 } else {
-                    self.preview.chars().nth(self.len() as usize - x as usize - 1).unwrap_or(' ')
+                    self.preview.chars().nth(self.len() - x as usize - 1).unwrap_or(' ')
                 }
             }
         };
@@ -489,7 +489,7 @@ pub fn analyze_font_usage(buf: &TextBuffer) -> Vec<u8> {
                 continue;
             }
 
-            if small.iter().any(|&p| p == page) {
+            if small.contains(&page) {
                 continue;
             }
 
@@ -541,7 +541,7 @@ pub struct RenderOptions {
     /// If None and selection is Some, colors will be inverted
     pub selection_fg: Option<Color>,
 
-    /// Custom background color for selected text (requires selection to be Some)  
+    /// Custom background color for selected text (requires selection to be Some)\
     /// If None and selection is Some, colors will be inverted
     pub selection_bg: Option<Color>,
 
@@ -684,8 +684,8 @@ impl TextBuffer {
     }
 
     /// Get the dirty line range and clear it atomically.
-    /// Returns (start_line, end_line) or None if no lines are dirty.
-    /// end_line is exclusive.
+    /// Returns (`start_line`, `end_line`) or None if no lines are dirty.
+    /// `end_line` is exclusive.
     pub fn get_and_clear_dirty_lines(&self) -> Option<(i32, i32)> {
         let start = self.dirty_line_start.swap(-1, Ordering::Relaxed);
         let end = self.dirty_line_end.swap(-1, Ordering::Relaxed);
@@ -698,8 +698,8 @@ impl TextBuffer {
     }
 
     /// Get the dirty line range without clearing it.
-    /// Returns (start_line, end_line) or None if no lines are dirty.
-    /// end_line is exclusive.
+    /// Returns (`start_line`, `end_line`) or None if no lines are dirty.
+    /// `end_line` is exclusive.
     pub fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         let start = self.dirty_line_start.load(Ordering::Relaxed);
         let end = self.dirty_line_end.load(Ordering::Relaxed);
@@ -789,7 +789,7 @@ impl TextBuffer {
     }
 
     pub fn set_font(&mut self, font_number: u8, font: BitFont) {
-        self.font_table.insert(font_number as u8, font);
+        self.font_table.insert(font_number, font);
         self.is_font_table_dirty = true;
     }
 
@@ -1068,16 +1068,14 @@ impl TextPane for TextBuffer {
     }
 
     fn line_count(&self) -> i32 {
-        if let Some(len) = self.layers.iter().map(|l| l.line_count()).max() {
-            len as i32
+        if let Some(len) = self.layers.iter().map(super::TextPane::line_count).max() {
+            len
         } else {
             self.size.height
         }
     }
 
     fn char_at(&self, pos: Position) -> AttributedChar {
-        let pos = pos.into();
-
         if self.show_tags {
             for tag in &self.tags {
                 if tag.is_enabled && tag.contains(pos) {

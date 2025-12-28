@@ -30,18 +30,14 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
             for x in start.x..=end.x {
                 let ch = buffer.char_at((x, y).into());
                 let mut fg = ch.attribute.foreground();
-                if buffer.buffer_type == BufferType::CP437 {
-                    if ch.attribute.is_bold() && fg < 8 {
-                        fg += 8; // bright variant
-                    }
+                if buffer.buffer_type == BufferType::CP437 && ch.attribute.is_bold() && fg < 8 {
+                    fg += 8; // bright variant
                 }
                 add_color(palette.rgb(fg));
 
                 let mut bg = ch.attribute.background();
-                if buffer.ice_mode == IceMode::Ice {
-                    if ch.attribute.is_blinking() && bg < 8 {
-                        bg += 8; // bright variant
-                    }
+                if buffer.ice_mode == IceMode::Ice && ch.attribute.is_blinking() && bg < 8 {
+                    bg += 8; // bright variant
                 }
                 if bg & (1 << 31) == 0 {
                     // skip transparent sentinel
@@ -104,9 +100,9 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
     rtf.push_str("{\\colortbl;"); // First entry is always empty
     for (r, g, b) in &colors {
         use std::fmt::Write;
-        let _ = write!(rtf, "\\red{}\\green{}\\blue{};", r, g, b);
+        let _ = write!(rtf, "\\red{r}\\green{g}\\blue{b};");
     }
-    rtf.push_str("}");
+    rtf.push('}');
 
     // Set default font
     rtf.push_str("\\f0 ");
@@ -222,7 +218,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                     color_map.get(&bg_rgb).copied()
                 };
 
-                if last_attr.map(|la| la != ch.attribute).unwrap_or(true) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
+                if (last_attr != Some(ch.attribute)) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
                     emit_attr(&mut rtf, last_attr, ch.attribute, fg_idx, bg_idx, &mut last_fg_idx, &mut last_bg_idx);
                     last_attr = Some(ch.attribute);
                 }
@@ -254,7 +250,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                     color_map.get(&bg_rgb).copied()
                 };
 
-                if last_attr.map(|la| la != ch.attribute).unwrap_or(true) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
+                if (last_attr != Some(ch.attribute)) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
                     emit_attr(&mut rtf, last_attr, ch.attribute, fg_idx, bg_idx, &mut last_fg_idx, &mut last_bg_idx);
                     last_attr = Some(ch.attribute);
                 }
@@ -279,7 +275,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                     color_map.get(&bg_rgb).copied()
                 };
 
-                if last_attr.map(|la| la != ch.attribute).unwrap_or(true) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
+                if (last_attr != Some(ch.attribute)) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
                     emit_attr(&mut rtf, last_attr, ch.attribute, fg_idx, bg_idx, &mut last_fg_idx, &mut last_bg_idx);
                     last_attr = Some(ch.attribute);
                 }
@@ -303,7 +299,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                         color_map.get(&bg_rgb).copied()
                     };
 
-                    if last_attr.map(|la| la != ch.attribute).unwrap_or(true) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
+                    if (last_attr != Some(ch.attribute)) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
                         emit_attr(&mut rtf, last_attr, ch.attribute, fg_idx, bg_idx, &mut last_fg_idx, &mut last_bg_idx);
                         last_attr = Some(ch.attribute);
                     }
@@ -327,7 +323,7 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
                     color_map.get(&bg_rgb).copied()
                 };
 
-                if last_attr.map(|la| la != ch.attribute).unwrap_or(true) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
+                if (last_attr != Some(ch.attribute)) || last_fg_idx != Some(fg_idx) || last_bg_idx != bg_idx {
                     emit_attr(&mut rtf, last_attr, ch.attribute, fg_idx, bg_idx, &mut last_fg_idx, &mut last_bg_idx);
                     last_attr = Some(ch.attribute);
                 }

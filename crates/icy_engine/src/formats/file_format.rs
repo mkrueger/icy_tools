@@ -16,7 +16,7 @@ use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextPane};
 
 use super::{io, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions};
 
-/// Map file extension to archive format (replacement for private ArchiveFormat::from_extension)
+/// Map file extension to archive format (replacement for private `ArchiveFormat::from_extension`)
 fn archive_format_from_extension(ext: &str) -> Option<ArchiveFormat> {
     match ext {
         "ace" => Some(ArchiveFormat::Ace),
@@ -59,9 +59,9 @@ pub enum FileFormat {
     Ascii,
     /// Avatar terminal format (.avt)
     Avatar,
-    /// PCBoard BBS format (.pcb)
+    /// `PCBoard` BBS format (.pcb)
     PCBoard,
-    /// Synchronet/Wildcat CtrlA format (.msg)
+    /// Synchronet/Wildcat `CtrlA` format (.msg)
     CtrlA,
     /// Renegade BBS format (.an1-.an9)
     Renegade,
@@ -73,9 +73,9 @@ pub enum FileFormat {
     ViewData,
     /// BBC Micro Mode 7 teletext (.m7)
     Mode7,
-    /// RIPscrip graphics format (.rip)
+    /// `RIPscrip` graphics format (.rip)
     Rip,
-    /// SkyPix graphics format (.spx)
+    /// `SkyPix` graphics format (.spx)
     SkyPix,
     /// VT52 terminal format (.vt52, .v52, .vt5)
     Vt52,
@@ -83,21 +83,21 @@ pub enum FileFormat {
     Igs,
 
     // Binary/direct load formats
-    /// IcyDraw native format (.icy)
+    /// `IcyDraw` native format (.icy)
     IcyDraw,
     /// iCE Draw format (.idf)
     IceDraw,
     /// Raw binary format (.bin)
     Bin,
-    /// XBin format with embedded font/palette (.xb)
+    /// `XBin` format with embedded font/palette (.xb)
     XBin,
-    /// TundraDraw 24-bit color format (.tnd)
+    /// `TundraDraw` 24-bit color format (.tnd)
     TundraDraw,
     /// Artworx format (.adf)
     Artworx,
 
     // Animation format
-    /// IcyDraw animation format (.icyanim)
+    /// `IcyDraw` animation format (.icyanim)
     IcyAnim,
 
     // Palette formats
@@ -185,7 +185,7 @@ impl FileFormat {
         FileFormat::Archive(ArchiveFormat::Uc2),
     ];
 
-    /// Formats that support saving (text-based formats only, see SAVEABLE_WITH_IMAGES for full list)
+    /// Formats that support saving (text-based formats only, see `SAVEABLE_WITH_IMAGES` for full list)
     pub const SAVEABLE: &'static [FileFormat] = &[
         FileFormat::Ansi,
         FileFormat::Ascii,
@@ -398,12 +398,12 @@ impl FileFormat {
                 BitFontFormat::Raw(10) => "f10",
                 BitFontFormat::Raw(12) => "f12",
                 BitFontFormat::Raw(14) => "f14",
-                BitFontFormat::Raw(16) => "f16",
                 BitFontFormat::Raw(19) => "f19",
                 BitFontFormat::Raw(20) => "f20",
                 BitFontFormat::Raw(24) => "f24",
                 BitFontFormat::Raw(32) => "f32",
-                BitFontFormat::Raw(_) => "f16", // fallback to most common
+                // fallback to most common (16)
+                BitFontFormat::Raw(16 | _) => "f16",
             },
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.extension(),
             FileFormat::Image(img) => img.extension(),
@@ -417,7 +417,7 @@ impl FileFormat {
                 ArchiveFormat::Z => "z",
                 ArchiveFormat::Gz => "gz",
                 ArchiveFormat::Bz2 => "bz2",
-                ArchiveFormat::Ice => "ice",
+                ArchiveFormat::Ice | ArchiveFormat::PackIce => "ice",
                 ArchiveFormat::Hyp => "hyp",
                 ArchiveFormat::Ha => "ha",
                 ArchiveFormat::Lha => "lha",
@@ -473,9 +473,8 @@ impl FileFormat {
             FileFormat::Image(ImageFormat::Bmp) => &["bmp"],
             FileFormat::Image(ImageFormat::Sixel) => &["six", "sixel"],
             FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
-            FileFormat::Archive(ArchiveFormat::Arc) => &["arc"],
+            FileFormat::Archive(ArchiveFormat::Arc) => &["arc", "pak"],
             FileFormat::Archive(ArchiveFormat::Ace) => &["ace"],
-            FileFormat::Archive(ArchiveFormat::Arc) => &["arc"],
             FileFormat::Archive(ArchiveFormat::Arj) => &["arj"],
             FileFormat::Archive(ArchiveFormat::Zoo) => &["zoo"],
             FileFormat::Archive(ArchiveFormat::Sq) => &["sq", "sq2", "qqq"],
@@ -483,11 +482,10 @@ impl FileFormat {
             FileFormat::Archive(ArchiveFormat::Z) => &["z"],
             FileFormat::Archive(ArchiveFormat::Gz) => &["gz"],
             FileFormat::Archive(ArchiveFormat::Bz2) => &["bz2"],
-            FileFormat::Archive(ArchiveFormat::Ice) => &["ice"],
+            FileFormat::Archive(ArchiveFormat::Ice | ArchiveFormat::PackIce) => &["ice"],
             FileFormat::Archive(ArchiveFormat::Hyp) => &["hyp"],
             FileFormat::Archive(ArchiveFormat::Ha) => &["ha"],
             FileFormat::Archive(ArchiveFormat::Lha) => &["lha", "lzh"],
-            FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
             FileFormat::Archive(ArchiveFormat::Rar) => &["rar"],
             FileFormat::Archive(ArchiveFormat::SevenZ) => &["7z"],
             FileFormat::Archive(ArchiveFormat::Tar) => &["tar"],
@@ -549,6 +547,7 @@ impl FileFormat {
                 ArchiveFormat::Tbz => "TBZ Archive",
                 ArchiveFormat::TarZ => "TAR.Z Archive",
                 ArchiveFormat::Uc2 => "UC2 Archive",
+                ArchiveFormat::PackIce => "Pack-Ice Archive",
             },
         }
     }
@@ -566,20 +565,11 @@ impl FileFormat {
             // Avatar - basic ANSI-like
             FileFormat::Avatar => C::ICE_COLORS | C::CONTROL_CHARS,
 
-            // PCBoard - no custom palette, no ice colors
-            FileFormat::PCBoard => C::CONTROL_CHARS,
+            // PCBoard, CtrlA, Renegade - basic colors only
+            FileFormat::PCBoard | FileFormat::CtrlA | FileFormat::Renegade => C::CONTROL_CHARS,
 
-            // CtrlA - basic colors only
-            FileFormat::CtrlA => C::CONTROL_CHARS,
-
-            // Renegade - similar to PCBoard
-            FileFormat::Renegade => C::CONTROL_CHARS,
-
-            // PETSCII - native charset only
-            FileFormat::Petscii => C::empty(),
-
-            // ATASCII - native charset only
-            FileFormat::Atascii => C::empty(),
+            // PETSCII, ATASCII - native charset only
+            FileFormat::Petscii | FileFormat::Atascii => C::empty(),
 
             // Viewdata/Mode7
             FileFormat::ViewData | FileFormat::Mode7 => C::empty(),
@@ -624,8 +614,7 @@ impl FileFormat {
     /// Maximum height this format supports (None = unlimited).
     pub fn max_height(&self) -> Option<i32> {
         match self {
-            FileFormat::Bin => Some(65535),
-            FileFormat::XBin => Some(65535),
+            FileFormat::Bin | FileFormat::XBin => Some(65535),
             _ => None,
         }
     }
@@ -763,7 +752,7 @@ impl FileFormat {
         matches!(self, FileFormat::Archive(_))
     }
 
-    /// Get the ArchiveFormat if this is an archive, None otherwise.
+    /// Get the `ArchiveFormat` if this is an archive, None otherwise.
     pub fn as_archive(&self) -> Option<ArchiveFormat> {
         match self {
             FileFormat::Archive(arc) => Some(*arc),
@@ -771,7 +760,7 @@ impl FileFormat {
         }
     }
 
-    /// Get the ImageFormat if this is an image, None otherwise.
+    /// Get the `ImageFormat` if this is an image, None otherwise.
     pub fn as_image(&self) -> Option<ImageFormat> {
         match self {
             FileFormat::Image(img) => Some(*img),
@@ -779,7 +768,7 @@ impl FileFormat {
         }
     }
 
-    /// Get the BitFontFormat if this is a bitmap font, None otherwise.
+    /// Get the `BitFontFormat` if this is a bitmap font, None otherwise.
     pub fn as_bitfont(&self) -> Option<BitFontFormat> {
         match self {
             FileFormat::BitFont(font) => Some(*font),
@@ -792,7 +781,7 @@ impl FileFormat {
         matches!(self, FileFormat::CharacterFont(_))
     }
 
-    /// Get the CharacterFontFormat if this is a character font, None otherwise.
+    /// Get the `CharacterFontFormat` if this is a character font, None otherwise.
     pub fn as_character_font(&self) -> Option<CharacterFontFormat> {
         match self {
             FileFormat::CharacterFont(font) => Some(*font),
@@ -1109,7 +1098,7 @@ impl FileFormat {
         }
     }
 
-    /// Load content from bytes into a LoadedDocument.
+    /// Load content from bytes into a `LoadedDocument`.
     ///
     /// # Arguments
     /// * `data` - The raw file data
@@ -1141,7 +1130,7 @@ impl FileFormat {
             let (mut screen, sauce_opt) = io::load_icy_draw(data, load_data.as_ref())?;
 
             // Apply max height limit if specified
-            if let Some(max_height) = load_data.as_ref().and_then(|ld| ld.max_height()) {
+            if let Some(max_height) = load_data.as_ref().and_then(super::LoadData::max_height) {
                 if screen.height() > max_height {
                     screen.buffer.set_height(max_height);
                 }
@@ -1178,7 +1167,7 @@ impl FileFormat {
         }?;
 
         // Apply max height limit if specified
-        if let Some(max_height) = load_data.as_ref().and_then(|ld| ld.max_height()) {
+        if let Some(max_height) = load_data.as_ref().and_then(super::LoadData::max_height) {
             if screen.height() > max_height {
                 screen.buffer.set_height(max_height);
             }

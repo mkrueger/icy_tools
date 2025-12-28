@@ -1,9 +1,9 @@
-//! Unified error types for icy_engine
+//! Unified error types for `icy_engine`
 
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// Main error type for icy_engine operations
+/// Main error type for `icy_engine` operations
 #[derive(Debug, Error)]
 pub enum EngineError {
     // === I/O Errors ===
@@ -174,7 +174,7 @@ pub enum EngineError {
     Archive(#[from] unarc_rs::error::ArchiveError),
 }
 
-/// Result type alias for icy_engine operations
+/// Result type alias for `icy_engine` operations
 pub type Result<T> = std::result::Result<T, EngineError>;
 
 // === Convenience constructors ===
@@ -208,7 +208,7 @@ impl EngineError {
 
 // === Backward compatibility: From impls for legacy error types ===
 
-/// Legacy LoadingError variants - will be removed in future
+/// Legacy `LoadingError` variants - will be removed in future
 #[derive(Debug, Clone)]
 pub enum LoadingError {
     OpenFileError(String),
@@ -240,7 +240,7 @@ impl From<LoadingError> for EngineError {
     }
 }
 
-/// Legacy SavingError variants - will be removed in future
+/// Legacy `SavingError` variants - will be removed in future
 #[derive(Debug, Clone)]
 pub enum SavingError {
     NoFontFound,
@@ -260,7 +260,7 @@ impl From<SavingError> for EngineError {
     }
 }
 
-/// Legacy FontError variants - will be removed in future
+/// Legacy `FontError` variants - will be removed in future
 #[derive(Debug, Clone)]
 pub enum FontError {
     FontNotFound,
@@ -282,7 +282,7 @@ impl From<FontError> for EngineError {
     }
 }
 
-/// Legacy ParserError variants - will be removed in future
+/// Legacy `ParserError` variants - will be removed in future
 #[derive(Debug, Clone)]
 pub enum ParserError {
     UnsupportedFont(usize),

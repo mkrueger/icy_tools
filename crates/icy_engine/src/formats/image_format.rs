@@ -190,7 +190,7 @@ impl ImageFormat {
         encoder.encode_blink_animation(path, frame1_data, frame2_data, blink_rate_ms as u32)
     }
 
-    /// Save a TextBuffer to an image file.
+    /// Save a `TextBuffer` to an image file.
     ///
     /// For PNG: Renders a single static frame.
     /// For GIF: Renders an animated GIF with blink effect (2 frames at ~560ms interval).

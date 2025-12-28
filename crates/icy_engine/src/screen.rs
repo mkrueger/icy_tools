@@ -21,23 +21,18 @@ pub enum GraphicsType {
 impl GraphicsType {
     pub fn scan_lines(&self) -> bool {
         match self {
-            GraphicsType::Text => false,
-            GraphicsType::Rip => false,
             GraphicsType::IGS(res) => match res {
-                TerminalResolution::Low => false,
                 TerminalResolution::Medium => true,
-                TerminalResolution::High => false,
+                TerminalResolution::Low | TerminalResolution::High => false,
             },
-            GraphicsType::Skypix => false,
+            GraphicsType::Text | GraphicsType::Rip | GraphicsType::Skypix => false,
         }
     }
 
     pub fn default_fg_color(&self) -> u32 {
         match self {
-            GraphicsType::Text => 7,
-            GraphicsType::Rip => 7,
             GraphicsType::IGS(res) => res.default_fg_color() as u32,
-            GraphicsType::Skypix => 7,
+            GraphicsType::Text | GraphicsType::Rip | GraphicsType::Skypix => 7,
         }
     }
 }
@@ -97,7 +92,7 @@ pub trait Screen: TextPane + Send + Sync {
     fn font_count(&self) -> usize;
 
     /// Get dirty line range that needs to be re-rendered.
-    /// Returns (first_dirty_line, last_dirty_line) or None if no lines are dirty.
+    /// Returns (`first_dirty_line`, `last_dirty_line`) or None if no lines are dirty.
     /// The caller should clear the dirty range after processing.
     fn get_dirty_lines(&self) -> Option<(i32, i32)> {
         // Default: no dirty line tracking, returns None meaning full invalidation is needed
@@ -296,33 +291,35 @@ pub trait EditableScreen: Screen {
     /// This extracts and applies character capabilities from the SAUCE record,
     /// including buffer size, font, and ice colors.
     ///
-    /// This is a default implementation that works for TextScreen.
+    /// This is a default implementation that works for `TextScreen`.
     /// Graphics screens can override this to ignore SAUCE data.
     ///
     /// Returns the (columns, lines) applied from the SAUCE, or (0, 0) if none were applied.
     ///
-    /// Note: aspect_ratio and letter_spacing are buffer-specific settings
-    /// and are handled by TextBuffer in its own load_sauce method.
+    /// Note: `aspect_ratio` and `letter_spacing` are buffer-specific settings
+    /// and are handled by `TextBuffer` in its own `load_sauce` method.
     fn apply_sauce(&mut self, sauce: &SauceRecord) -> (u16, u16) {
         match sauce.capabilities() {
-            Some(Capabilities::Character(CharacterCapabilities {
-                columns,
-                lines,
-                font_opt,
-                ice_colors,
-                letter_spacing,
-                aspect_ratio,
-                ..
-            }))
-            | Some(Capabilities::Binary(BinaryCapabilities {
-                columns,
-                lines,
-                font_opt,
-                ice_colors,
-                letter_spacing,
-                aspect_ratio,
-                ..
-            })) => {
+            Some(
+                Capabilities::Character(CharacterCapabilities {
+                    columns,
+                    lines,
+                    font_opt,
+                    ice_colors,
+                    letter_spacing,
+                    aspect_ratio,
+                    ..
+                })
+                | Capabilities::Binary(BinaryCapabilities {
+                    columns,
+                    lines,
+                    font_opt,
+                    ice_colors,
+                    letter_spacing,
+                    aspect_ratio,
+                    ..
+                }),
+            ) => {
                 // Apply buffer size (clamped to reasonable limits)
                 // Some files have wrong sauce data, even if 0 is specified
                 if columns > 0 {
@@ -351,7 +348,7 @@ pub trait EditableScreen: Screen {
                 self.terminal_state_mut().ice_colors = ice_colors;
                 self.set_aspect_ratio(aspect_ratio == AspectRatio::LegacyDevice);
                 self.set_letter_spacing(letter_spacing == LetterSpacing::NinePixel);
-                return (columns, lines);
+                (columns, lines)
             }
             _ => {
                 // No character/binary capabilities - nothing to apply
@@ -387,13 +384,13 @@ pub trait EditableScreen: Screen {
     }
 
     /// Returns layer bounds (offset and size) for the given layer index.
-    /// This is an object-safe alternative to get_layer() for use with dyn Screen.
+    /// This is an object-safe alternative to `get_layer()` for use with dyn Screen.
     fn get_layer_bounds(&self, _layer: usize) -> Option<(Position, Size)> {
         None // Default: no layers - override in implementations
     }
 
     /// Returns true if the layer at the given index is a paste layer.
-    /// This is an object-safe alternative to get_layer() for use with dyn Screen.
+    /// This is an object-safe alternative to `get_layer()` for use with dyn Screen.
     fn is_layer_paste(&self, _layer: usize) -> bool {
         false // Default: no paste layers - override in implementations
     }
@@ -668,10 +665,9 @@ pub trait EditableScreen: Screen {
             self.caret_mut().x = last_col;
             self.lf();
             return;
-        } else {
-            let x = self.caret_mut().x.saturating_add(num);
-            self.caret_mut().x = x;
         }
+        let x = self.caret_mut().x.saturating_add(num);
+        self.caret_mut().x = x;
         if scroll {
             self.check_scrolling_on_caret_down(false, in_scroll_region);
         }

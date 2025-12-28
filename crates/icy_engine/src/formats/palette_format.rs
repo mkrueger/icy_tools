@@ -30,7 +30,7 @@ lazy_static::lazy_static! {
 /// Prefer detecting via `FileFormat::load_palette()` when loading palettes from disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PaletteFormat {
-    /// IcyDraw "ICE Palette" text format.
+    /// `IcyDraw` "ICE Palette" text format.
     Ice,
     /// Simple hex list, one `RRGGBB` per line.
     Hex,

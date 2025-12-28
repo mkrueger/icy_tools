@@ -984,7 +984,7 @@ impl Bgi {
                 }
 
                 // Stop if already filled
-                let already = idx(cur_x, y).map(|i| visited[i]).unwrap_or(true);
+                let already = idx(cur_x, y).is_none_or(|i| visited[i]);
                 if already {
                     break;
                 }
@@ -1007,32 +1007,28 @@ impl Bgi {
                     // Previous line logic
                     if prev_y >= vp_top && !iszero && !(iszero && oy == prev_y) {
                         let prev_pixel = self.pixel(buf, cur_x, prev_y);
-                        let prev_visited = idx(cur_x, prev_y).map(|i| visited[i]).unwrap_or(true);
+                        let prev_visited = idx(cur_x, prev_y).is_none_or(|i| visited[i]);
                         if prevline_active {
                             if prev_pixel == edge {
                                 prevline_active = false;
                             }
-                        } else {
-                            if cur_x > vp_left && cur_x < vp_right - 1 && prev_pixel != edge && !prev_visited {
-                                prevline_active = true;
-                                stack.push(SavedPoint { x: cur_x, y: prev_y, oy: y });
-                            }
+                        } else if cur_x > vp_left && cur_x < vp_right - 1 && prev_pixel != edge && !prev_visited {
+                            prevline_active = true;
+                            stack.push(SavedPoint { x: cur_x, y: prev_y, oy: y });
                         }
                     }
 
                     // Next line logic
                     if next_y < vp_bottom && !iszero && !(iszero && oy == next_y) {
                         let next_pixel = self.pixel(buf, cur_x, next_y);
-                        let next_visited = idx(cur_x, next_y).map(|i| visited[i]).unwrap_or(true);
+                        let next_visited = idx(cur_x, next_y).is_none_or(|i| visited[i]);
                         if nextline_active {
                             if next_pixel == edge {
                                 nextline_active = false;
                             }
-                        } else {
-                            if cur_x > vp_left && cur_x < vp_right - 1 && next_pixel != edge && !next_visited {
-                                nextline_active = true;
-                                stack.push(SavedPoint { x: cur_x, y: next_y, oy: y });
-                            }
+                        } else if cur_x > vp_left && cur_x < vp_right - 1 && next_pixel != edge && !next_visited {
+                            nextline_active = true;
+                            stack.push(SavedPoint { x: cur_x, y: next_y, oy: y });
                         }
                     }
                 }
@@ -1121,7 +1117,7 @@ impl Bgi {
             let screen = buf.screen_mut();
             let color = self.fill_color;
             for y in rect.top()..rect.bottom() {
-                let start = (y * width as i32 + rect.left()) as usize;
+                let start = (y * width + rect.left()) as usize;
                 let end = start + rect.width() as usize;
                 screen[start..end].fill(color);
             }
@@ -1828,9 +1824,8 @@ impl Bgi {
             let mag = self.char_size;
             if matches!(self.direction, Direction::Horizontal) {
                 return Size::new(str.len() as i32 * 8 * mag, 8 * mag);
-            } else {
-                return Size::new(8 * mag, str.len() as i32 * 8 * mag);
             }
+            return Size::new(8 * mag, str.len() as i32 * 8 * mag);
         }
 
         let loaded_font = font.font();

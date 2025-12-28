@@ -4,7 +4,7 @@ use crate::{AttributedChar, Position, Result, TextAttribute, TextBuffer, TextPan
 
 use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 
-/// Load a binary file into a TextScreen.
+/// Load a binary file into a `TextScreen`.
 pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((160, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
@@ -14,7 +14,7 @@ pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt:
         apply_sauce_to_buffer(&mut screen.buffer, sauce);
     }
 
-    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+    let max_height = load_data_opt.and_then(super::super::LoadData::max_height);
 
     let mut o = 0;
     let mut pos = Position::default();
@@ -57,7 +57,7 @@ pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt:
     }
 }
 
-/// Save a TextBuffer to binary format.
+/// Save a `TextBuffer` to binary format.
 pub(crate) fn save_bin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 

@@ -104,10 +104,10 @@ impl HalfBlock {
     }
 
     pub fn is_blocky(&self) -> bool {
-        match self.block_type {
-            HalfBlockType::Upper | HalfBlockType::Lower | HalfBlockType::Full | HalfBlockType::Empty => true,
-            _ => false,
-        }
+        matches!(
+            self.block_type,
+            HalfBlockType::Upper | HalfBlockType::Lower | HalfBlockType::Full | HalfBlockType::Empty
+        )
     }
 
     pub fn is_vertically_blocky(&self) -> bool {
@@ -145,32 +145,30 @@ impl HalfBlock {
                     ),
                 )
             }
+        } else if self.is_top {
+            AttributedChar::new(
+                HALF_BLOCK_TOP,
+                TextAttribute::from_colors(
+                    col,
+                    if transparent_color {
+                        AttributeColor::Transparent
+                    } else {
+                        self.ch.attribute.background_color()
+                    },
+                ),
+            )
         } else {
-            if self.is_top {
-                AttributedChar::new(
-                    HALF_BLOCK_TOP,
-                    TextAttribute::from_colors(
-                        col,
-                        if transparent_color {
-                            AttributeColor::Transparent
-                        } else {
-                            self.ch.attribute.background_color()
-                        },
-                    ),
-                )
-            } else {
-                AttributedChar::new(
-                    HALF_BLOCK_BOTTOM,
-                    TextAttribute::from_colors(
-                        col,
-                        if transparent_color {
-                            AttributeColor::Transparent
-                        } else {
-                            self.ch.attribute.background_color()
-                        },
-                    ),
-                )
-            }
+            AttributedChar::new(
+                HALF_BLOCK_BOTTOM,
+                TextAttribute::from_colors(
+                    col,
+                    if transparent_color {
+                        AttributeColor::Transparent
+                    } else {
+                        self.ch.attribute.background_color()
+                    },
+                ),
+            )
         };
         self.optimize_block(block)
     }

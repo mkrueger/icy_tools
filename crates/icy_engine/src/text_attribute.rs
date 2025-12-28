@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::IceMode;
 
 /// Attribute flags for text styling (bold, italic, blink, etc.)
-/// Note: Transparency is now part of AttributeColor, not these flags.
+/// Note: Transparency is now part of `AttributeColor`, not these flags.
 pub mod attribute {
     pub const NONE: u16 = 0;
     pub const BOLD: u16 = 0b0000_0000_0000_0001;
@@ -48,10 +48,10 @@ impl Default for AttributeColor {
 impl AttributeColor {
     /// Pack this color into a u32 for wire/storage format.
     /// Layout:
-    /// - Transparent: 0xFF_00_00_00
-    /// - Palette(n):  0x00_00_00_nn
-    /// - ExtendedPalette(n): 0x01_00_00_nn
-    /// - Rgb(r,g,b): 0x02_rr_gg_bb
+    /// - Transparent: `0xFF_00_00_00`
+    /// - Palette(n):  `0x00_00_00_nn`
+    /// - ExtendedPalette(n): `0x01_00_00_nn`
+    /// - Rgb(r,g,b): `0x02_rr_gg_bb`
     pub fn to_u32(self) -> u32 {
         match self {
             AttributeColor::Transparent => 0xFF_00_00_00,
@@ -61,7 +61,7 @@ impl AttributeColor {
         }
     }
 
-    /// Unpack a u32 from wire/storage format into AttributeColor.
+    /// Unpack a u32 from wire/storage format into `AttributeColor`.
     pub fn from_u32(val: u32) -> Self {
         let tag = (val >> 24) as u8;
         match tag {
@@ -90,7 +90,7 @@ impl AttributeColor {
         }
     }
 
-    /// Get extended palette index if this is ExtendedPalette, None otherwise
+    /// Get extended palette index if this is `ExtendedPalette`, None otherwise
     pub fn as_extended_index(self) -> Option<u8> {
         match self {
             AttributeColor::ExtendedPalette(n) => Some(n),
@@ -116,7 +116,7 @@ pub struct TextAttribute {
 }
 
 impl TextAttribute {
-    /// Decode AttributeColor from legacy wire format (ext_attr + u32 raw_color).
+    /// Decode `AttributeColor` from legacy wire format (`ext_attr` + u32 `raw_color`).
     #[inline(always)]
     fn decode_color(data: &[u8]) -> (&[u8], AttributeColor) {
         match data[0] {
@@ -136,12 +136,12 @@ impl TextAttribute {
         }
     }
 
-    /// Encode AttributeColor to legacy wire format, returns (raw_u32, ext_attr_bits).
+    /// Encode `AttributeColor` to legacy wire format, returns (`raw_u32`, `ext_attr_bits`).
     #[inline(always)]
     fn encode_color(color: AttributeColor, data: &mut Vec<u8>) {
         match color {
             AttributeColor::Transparent => data.push(0),
-            AttributeColor::Palette(p) => data.push(1 + p as u8), // Palette colors 1-16
+            AttributeColor::Palette(p) => data.push(1 + p), // Palette colors 1-16
             AttributeColor::ExtendedPalette(p) => {
                 data.push(17);
                 data.push(p);
@@ -155,8 +155,8 @@ impl TextAttribute {
         }
     }
 
-    /// Decode a TextAttribute from bytes (10 bytes: fg:u32, bg:u32, font_page:u8, ext_attr:u8).
-    /// The attr:u16 field must be set separately on the returned TextAttribute.
+    /// Decode a `TextAttribute` from bytes (10 bytes: fg:u32, bg:u32, `font_page:u8`, `ext_attr:u8`).
+    /// The attr:u16 field must be set separately on the returned `TextAttribute`.
     #[inline(always)]
     pub fn decode_attribute(bytes: &[u8]) -> (&[u8], Self) {
         let (rest, foreground_color) = Self::decode_color(&bytes[0..]);
@@ -168,15 +168,15 @@ impl TextAttribute {
         (
             rest,
             Self {
+                font_page,
                 foreground_color,
                 background_color,
-                font_page,
                 attr,
             },
         )
     }
 
-    /// Encode a TextAttribute to bytes (10 bytes: fg:u32, bg:u32, font_page:u8, ext_attr:u8).
+    /// Encode a `TextAttribute` to bytes (10 bytes: fg:u32, bg:u32, `font_page:u8`, `ext_attr:u8`).
     /// The attr:u16 field must be written separately.
     #[inline(always)]
     pub fn encode_attribute(attr: &TextAttribute, data: &mut Vec<u8>) {
@@ -223,7 +223,7 @@ impl std::fmt::Display for TextAttribute {
 }
 
 impl TextAttribute {
-    /// Create a new TextAttribute with palette colors
+    /// Create a new `TextAttribute` with palette colors
     pub fn new(foreground: u32, background: u32) -> Self {
         TextAttribute {
             foreground_color: AttributeColor::Palette(foreground as u8),
@@ -232,7 +232,7 @@ impl TextAttribute {
         }
     }
 
-    /// Create from AttributeColor values
+    /// Create from `AttributeColor` values
     pub fn from_colors(foreground: AttributeColor, background: AttributeColor) -> Self {
         TextAttribute {
             foreground_color: foreground,
@@ -577,14 +577,11 @@ impl TextAttribute {
     }
 
     pub fn set_font_page(&mut self, page: u8) {
-        self.font_page = page as u8;
+        self.font_page = page;
     }
 
     pub fn with_font_page(&self, font_page: u8) -> TextAttribute {
-        TextAttribute {
-            font_page: font_page as u8,
-            ..*self
-        }
+        TextAttribute { font_page, ..*self }
     }
 
     // === Legacy compatibility for palette-based operations ===

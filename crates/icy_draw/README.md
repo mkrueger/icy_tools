@@ -14,10 +14,6 @@
   <a href="https://github.com/mkrueger/icy_tools/actions"><img src="https://img.shields.io/github/actions/workflow/status/mkrueger/icy_tools/build.yml?branch=master" alt="Build Status"></a>
 </p>
 
-<p align="center">
-  <img src="assets/main_window.jpg" alt="IcyDraw Main Window" width="800">
-</p>
-
 ---
 
 ## ✨ Overview
@@ -110,31 +106,83 @@ sudo apt-get install build-essential libasound2-dev libxcb-shape0-dev libxcb-xfi
 sudo dnf install alsa-lib-devel libxcb-devel
 ```
 
+## 🤝 Collaboration (Moebius-compatible)
+
+IcyDraw supports **real-time collaboration** via a Moebius-compatible WebSocket protocol.
+
+### Join a session
+
+1. Start IcyDraw
+2. Open **File → Connect to server…**
+3. Enter the server address
+
+Accepted formats (port defaults to **8000** if omitted):
+
+- `localhost`
+- `example.com:9000`
+- `example.com:8000/some/path`
+- `ws://example.com:8000`
+
+Then choose a nickname (and optionally a group) and provide a password if the server requires one.
+
+### Host a session (headless server)
+
+IcyDraw can host a collaboration session as a headless server:
+
+```bash
+# Host an existing file (format is detected from the extension)
+icy_draw host my_art.ans
+
+# Host with password, custom bind/port, and autosave configuration
+icy_draw host --bind 0.0.0.0 --port 8000 --password secret --backup-folder ./backups --interval 10 my_art.ans
+```
+
+Notes:
+
+- In collaboration mode, **Save / Save As** are disabled (the server handles persistence). Use **File → Export** to write an export on the client.
+- `--interval` is in minutes; use `0` for shutdown-only saves.
+
+### Debugging collaboration traffic
+
+Set `ICY_COLLAB_DEBUG=1` to print raw collaboration JSON messages (TX/RX) to the log/stdout.
+
+```bash
+ICY_COLLAB_DEBUG=1 cargo run -p icy_draw
+```
+
 ## 📁 Data Directory
 
-IcyDraw stores all data in a single location:
+IcyDraw uses OS-specific directories (via `directories::ProjectDirs`) for configuration and local state.
 
-| Platform | Path |
-|----------|------|
-| Linux | `~/.config/icy_draw/` |
-| macOS | `~/Library/Application Support/icy_draw/` |
-| Windows | `%APPDATA%\icy_draw\` |
+Typical locations:
+
+| Type | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Config | `~/.config/icy_draw/` | `~/Library/Application Support/icy_draw/`* | `%APPDATA%\icy_draw\`* |
+| Local data (session/autosave) | `~/.local/share/icy_draw/` | `~/Library/Application Support/icy_draw/`* | `%LOCALAPPDATA%\icy_draw\`* |
+
+\*Depending on platform conventions, an additional vendor folder (e.g. `GitHub`) may be used.
 
 ### Directory Structure
-
-```
+```text
 icy_draw/
-├── data/
-│   ├── fonts/       # Bit fonts (.psf, .f16, etc.)
-│   ├── tdf/         # TheDraw fonts
-│   ├── palettes/    # Color palettes
-│   └── plugins/     # Lua plugins
-├── autosave/        # Autosave backups
-├── settings.json    # Application settings
-├── key_bindings.json
-├── character_sets.json
-├── recent_files.json
-└── icy_draw.log
+├── settings.toml        # Application settings
+├── recent_files.json    # Most recently used files
+├── fkeys.json           # F-key character sets
+├── icy_draw.log         # Log file
+└── data/
+    ├── plugins/         # Lua plugins
+    │   └── taglists/    # BBS tag replacement lists
+    └── text_art_fonts/  # Text-art fonts (TDF/FIGlet); legacy fallback: data/fonts/
+```
+
+Local data (session restore + crash-recovery autosaves):
+
+```text
+session/
+├── session.json          # Last window/session state
+├── untitled_*.autosave   # Autosaves for new/unsaved documents
+└── *.autosave            # Autosaves for existing files (hashed by path)
 ```
 
 > **Tip**: Fonts and palettes can be loaded directly from `.zip` files — no need to extract!
@@ -144,9 +192,6 @@ icy_draw/
 Planned features for future releases:
 
 - [ ] Full Unicode support
-- [ ] Per-layer transparency and filters
-- [ ] PETSCII, ATASCII, and Viewdata modes
-- [ ] Collaboration server
 
 ## 🌍 Translations
 
@@ -182,9 +227,9 @@ Contributions are welcome in many forms:
 
 If you enjoy IcyDraw and want to support its development:
 
-[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/mkrueger)
+Give Feedback/report bugs.
 
-Donations can be sent via PayPal to: **mkrueger@posteo.de**
+I'm sure there are tons of small "niggles". I don't draw many ansis… never did.
 
 ## 📜 License
 

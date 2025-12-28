@@ -68,7 +68,7 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
 pub(crate) fn load_artworx(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
-    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+    let max_height = load_data_opt.and_then(super::super::LoadData::max_height);
 
     // Apply SAUCE settings early
     if let Some(sauce) = sauce_opt {

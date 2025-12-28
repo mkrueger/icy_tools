@@ -50,7 +50,7 @@ pub struct BitFont {
     pub font_type: BitFontType,
 }
 
-/// Serializable representation of BitFont for serde
+/// Serializable representation of `BitFont` for serde
 #[derive(Serialize, Deserialize)]
 struct BitFontSerde {
     name: String,
@@ -173,7 +173,7 @@ impl BitFont {
         format!("\x1BPCTerm:Font:{font_slot}:{data}\x1B\\")
     }
 
-    /// Convert BitFont to YaffFont for export
+    /// Convert `BitFont` to `YaffFont` for export
     pub fn to_yaff_font(&self) -> YaffFont {
         use libyaff::{Bitmap, GlyphDefinition, Label};
 
@@ -235,7 +235,7 @@ impl BitFont {
         }
     }
 
-    /// Alias for create_8 for compatibility
+    /// Alias for `create_8` for compatibility
     pub fn from_basic(width: u8, height: u8, data: &[u8]) -> Self {
         Self::create_8("Custom", width, height, data)
     }
@@ -309,7 +309,7 @@ impl BitFont {
             // Convert Vec<CompactGlyph> to [CompactGlyph; 256], taking first 256 glyphs
             let mut glyphs: [CompactGlyph; 256] = std::array::from_fn(|_| CompactGlyph::new(psf.width, psf.height));
             for (i, glyph) in psf.glyphs.iter().take(256).enumerate() {
-                glyphs[i] = glyph.clone();
+                glyphs[i] = *glyph;
             }
             return Ok(Self {
                 name,
@@ -327,7 +327,7 @@ impl BitFont {
         }
 
         // Try as raw font data (must be multiple of 256)
-        if data.len() % 256 == 0 && !data.is_empty() {
+        if data.len().is_multiple_of(256) && !data.is_empty() {
             let char_height = data.len() / 256;
             return Ok(Self::create_8(name, 8, char_height as u8, data));
         }
@@ -360,7 +360,7 @@ impl BitFont {
         sauce::load_sauce_font(sauce_name)
     }
 
-    /// Convert a YaffFont to BitFont (for loading YAFF format files)
+    /// Convert a `YaffFont` to `BitFont` (for loading YAFF format files)
     pub fn from_yaff_font(yaff_font: &YaffFont, name: impl Into<String>) -> Self {
         use libyaff::Label;
 

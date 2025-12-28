@@ -65,8 +65,8 @@ pub enum TextMode {
 }
 
 impl AmigaScreenBuffer {
-    /// Creates a new PaletteScreenBuffer with pixel dimensions
-    /// px_width, px_height: pixel dimensions (e.g., 640x350 for RIP graphics)
+    /// Creates a new `PaletteScreenBuffer` with pixel dimensions
+    /// `px_width`, `px_height`: pixel dimensions (e.g., 640x350 for RIP graphics)
     pub fn new(graphics_type: GraphicsType) -> Self {
         let (px_width, px_height) = match graphics_type {
             GraphicsType::Text => {
@@ -96,7 +96,7 @@ impl AmigaScreenBuffer {
                 font_table.insert(0, SKYPIX_DEFAULT_FONT.clone());
             }
             GraphicsType::Text => unreachable!(),
-        };
+        }
 
         let font = font_table.get(&0).unwrap();
         // Calculate character grid dimensions from pixel size
@@ -117,16 +117,13 @@ impl AmigaScreenBuffer {
         // Set appropriate default caret colors based on graphics type
         let mut caret = Caret::default();
         caret.use_pixel_positioning = true;
-        match graphics_type {
-            GraphicsType::IGS(_) => {
-                caret.attribute.set_foreground(1);
-                caret.attribute.set_background(0);
-                terminal_state.cr_is_if = true;
-            }
-            _ => {
-                // Standard VGA: 0=Black, 7=White
-                // Keep default (foreground=7, background=0)
-            }
+        if let GraphicsType::IGS(_) = graphics_type {
+            caret.attribute.set_foreground(1);
+            caret.attribute.set_background(0);
+            terminal_state.cr_is_if = true;
+        } else {
+            // Standard VGA: 0=Black, 7=White
+            // Keep default (foreground=7, background=0)
         }
 
         let scan_lines = match graphics_type {
@@ -173,7 +170,7 @@ impl AmigaScreenBuffer {
         let pixel_y = pos.y;
 
         // Get colors from palette, swap if inverse video mode is
-        let (fg_color, bg_color) = (ch.attribute.foreground() as u32, ch.attribute.background() as u32);
+        let (fg_color, bg_color) = (ch.attribute.foreground(), ch.attribute.background());
 
         let font_size = self.font_dimensions();
         let transparent_bg = self.text_mode == TextMode::Jam1;
@@ -193,7 +190,7 @@ impl AmigaScreenBuffer {
             (glyph.data, glyph.width as i32, glyph.height as usize)
         };
 
-        let render_width = if transparent_bg { glyph_width } else { font_size.width as i32 };
+        let render_width = if transparent_bg { glyph_width } else { font_size.width };
 
         for row in 0..font_size.height {
             for col in 0..render_width {
@@ -346,7 +343,7 @@ impl Screen for AmigaScreenBuffer {
 
         // SAFETY: Reinterpret Vec<u32> as Vec<u8> - u32 is 4 bytes, same memory layout
         let pixels = unsafe {
-            let ptr = pixels_u32.as_mut_ptr() as *mut u8;
+            let ptr = pixels_u32.as_mut_ptr().cast::<u8>();
             let len = pixels_u32.len() * 4;
             let cap = pixels_u32.capacity() * 4;
             std::mem::forget(pixels_u32);
@@ -460,7 +457,7 @@ impl EditableScreen for AmigaScreenBuffer {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
         let mut scrollback = self.scrollback_buffer.clone();
         scrollback.snapshot_current_screen(self);
-        return Some(Arc::new(Mutex::new(Box::new(scrollback))));
+        Some(Arc::new(Mutex::new(Box::new(scrollback))))
     }
 
     fn first_visible_line(&self) -> i32 {
@@ -540,16 +537,13 @@ impl EditableScreen for AmigaScreenBuffer {
             _ => false,
         };
 
-        match graphics_type {
-            GraphicsType::IGS(res) => {
-                self.caret.attribute.set_foreground(1);
-                self.caret.attribute.set_background(0);
-                self.terminal_state.cr_is_if = true;
-                self.set_resolution(res.resolution());
-            }
-            _ => {
-                // Keep current caret settings
-            }
+        if let GraphicsType::IGS(res) = graphics_type {
+            self.caret.attribute.set_foreground(1);
+            self.caret.attribute.set_background(0);
+            self.terminal_state.cr_is_if = true;
+            self.set_resolution(res.resolution());
+        } else {
+            // Keep current caret settings
         }
 
         self.buffer_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -567,7 +561,7 @@ impl EditableScreen for AmigaScreenBuffer {
         self.caret.set_position(pixel_pos);
     }
 
-    /// Override: print_char that works with pixel coordinates
+    /// Override: `print_char` that works with pixel coordinates
     fn print_char(&mut self, ch: AttributedChar) {
         let font_size = self.font_dimensions();
 
@@ -596,7 +590,6 @@ impl EditableScreen for AmigaScreenBuffer {
                 self.caret.y += font_size.height;
             } else {
                 self.lf();
-                return;
             }
         }
     }
@@ -769,7 +762,7 @@ impl EditableScreen for AmigaScreenBuffer {
             return;
         }
 
-        for y in 0..screen_height as usize {
+        for y in 0..screen_height {
             let row_start = y * screen_width;
             // Shift row content left
             self.screen.copy_within(row_start + char_width..row_start + screen_width, row_start);
@@ -789,7 +782,7 @@ impl EditableScreen for AmigaScreenBuffer {
             return;
         }
 
-        for y in 0..screen_height as usize {
+        for y in 0..screen_height {
             let row_start = y * screen_width;
             // Shift content right
             self.screen

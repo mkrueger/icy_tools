@@ -37,7 +37,7 @@ pub struct MouseState {
     pub mouse_mode: MouseMode,
     pub focus_out_event_enabled: bool,
 
-    /// Is set by icy_term based on connection settings
+    /// Is set by `icy_term` based on connection settings
     /// Not part of the ANSI standard - let users enable/disable mouse tracking
     pub mouse_tracking_enabled: bool,
     pub alternate_scroll_enabled: bool,
@@ -343,7 +343,7 @@ impl TerminalState {
     }
 
     /// Returns true if the given position is within the current text margins.
-    /// Retruns false if origin mode is UpperLeftCorner or position is outside margins.
+    /// Retruns false if origin mode is `UpperLeftCorner` or position is outside margins.
     pub fn in_margin(&self, pos: Position) -> bool {
         if self.origin_mode == OriginMode::UpperLeftCorner || self.margins_top_bottom.is_none() && self.margins_left_right.is_none() {
             return false;
@@ -379,8 +379,6 @@ impl TerminalState {
     }
 
     pub fn reset_terminal(&mut self, size: Size) {
-        let size = size.into();
-
         // Update size first (tab stops depend on width)
         self.size = size;
 

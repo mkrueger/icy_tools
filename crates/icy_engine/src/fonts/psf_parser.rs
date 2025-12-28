@@ -124,7 +124,7 @@ impl PsfFont {
 
     /// Get Unicode mappings for a glyph index
     pub fn get_unicode_mappings(&self, glyph_idx: usize) -> Option<&[UnicodeMapping]> {
-        self.unicode_table.get(glyph_idx).map(|v| v.as_slice())
+        self.unicode_table.get(glyph_idx).map(std::vec::Vec::as_slice)
     }
 
     /// Add a Unicode mapping for a glyph
@@ -257,7 +257,7 @@ impl PsfFont {
             return Err(EngineError::Generic("PSF2: invalid dimensions".into()));
         }
 
-        let bytes_per_row = (width + 7) / 8;
+        let bytes_per_row = width.div_ceil(8);
         let expected_char_size = height * bytes_per_row;
         if expected_char_size != char_size {
             return Err(EngineError::Generic(format!(
@@ -368,7 +368,7 @@ impl PsfFont {
     }
 
     /// Parse a UTF-8 encoded character from bytes.
-    /// Returns (codepoint, bytes_consumed) or None if invalid.
+    /// Returns (codepoint, `bytes_consumed`) or None if invalid.
     fn parse_utf8_char(bytes: &[u8]) -> Option<(u32, usize)> {
         if bytes.is_empty() {
             return None;
@@ -441,7 +441,7 @@ impl PsfFont {
     pub fn to_psf2_bytes(&self) -> Vec<u8> {
         let width = self.width as usize;
         let height = self.height as usize;
-        let bytes_per_row = (width + 7) / 8;
+        let bytes_per_row = width.div_ceil(8);
         let char_size = height * bytes_per_row;
         let glyph_count = self.glyphs.len();
 

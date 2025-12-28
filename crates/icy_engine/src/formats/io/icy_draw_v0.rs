@@ -7,7 +7,7 @@ use regex::Regex;
 
 use crate::{AttributeColor, BitFont, Color, Layer, LoadingError, Position, Result, Sixel, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-/// Decode legacy wire format (ext_attr + u32 fg/bg) into AttributeColor.
+/// Decode legacy wire format (`ext_attr` + u32 fg/bg) into `AttributeColor`.
 fn decode_legacy_color(raw_color: u32, ext_attr: u8, is_foreground: bool) -> AttributeColor {
     if raw_color == 0x8000_0000 {
         return AttributeColor::Transparent;
@@ -40,7 +40,7 @@ const V0_SHORT_DATA_MASK: u16 = 0x0800 | 0x4000;
 // V0 stored "invisible cell" as a special attr-only marker.
 const V0_INVISIBLE_CELL: u16 = 0x8000;
 
-/// Load an IcyDraw v0 file (Base64 encoded tEXt/zTXt PNG chunks).
+/// Load an `IcyDraw` v0 file (Base64 encoded tEXt/zTXt PNG chunks).
 /// Returns an error if the file is not a valid v0 file.
 pub(crate) fn load_icy_draw_v0(data: &[u8]) -> Result<(TextScreen, Option<SauceRecord>)> {
     match load_icy_draw_v0_base64_text_chunks(data)? {
@@ -255,7 +255,7 @@ fn process_icy_draw_v0_decoded_chunk(
             if bytes.len() < 2 {
                 return Err(crate::EngineError::OutOfBounds { offset: 2 });
             }
-            let mut cur = &bytes[..];
+            let mut cur = bytes;
             let tag_len = u16::from_le_bytes(cur[..2].try_into().unwrap());
             cur = &cur[2..];
             for _ in 0..tag_len {

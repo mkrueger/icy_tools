@@ -21,6 +21,8 @@ github_release_check = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
 icy_engine_gui = { workspace = true }
+icy_parser_core = { workspace = true }
+parking_lot = { workspace = true }
 bstr = { workspace = true }
 clap = { workspace = true }
 #sound

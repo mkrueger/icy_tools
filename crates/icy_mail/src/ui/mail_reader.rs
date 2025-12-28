@@ -3,8 +3,9 @@ use crate::{
     qwk::{MessageDescriptor, QwkPackage},
     ui::Message,
 };
-use iced::widget::{button, column, container, row, scrollable, text, text_editor, Space};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
+use icy_engine_gui::TerminalView;
 
 impl MainWindow {
     pub fn mail_reader_view(&self) -> Element<'_, Message> {
@@ -306,6 +307,9 @@ impl MainWindow {
                     .spacing(2)
                     .padding(8);
 
+                    // Use TerminalView to display the message content with ANSI rendering
+                    let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone(), None).map(Message::TerminalMessage);
+
                     return column![
                         container(header_info).width(Length::Fill).style(|theme: &iced::Theme| {
                             container::Style {
@@ -313,8 +317,7 @@ impl MainWindow {
                                 ..Default::default()
                             }
                         }),
-                        scrollable(text_editor(&self.message_content).on_action(|_| Message::Noop))
-                            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())),
+                        container(terminal_view).width(Length::Fill).height(Length::Fill),
                     ]
                     .into();
                 }

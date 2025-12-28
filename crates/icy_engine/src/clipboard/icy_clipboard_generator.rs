@@ -72,7 +72,7 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
     );
 
     if width == 0 || height == 0 {
-        log::warn!("from_clipboard_data: empty dimensions {}x{}", width, height);
+        log::warn!("from_clipboard_data: empty dimensions {width}x{height}");
         return None;
     }
 
@@ -89,7 +89,7 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
 
     let mut data = &data[17..];
 
-    let mut layer = Layer::new(format!("New Layer"), (width, height));
+    let mut layer = Layer::new("New Layer".to_string(), (width, height));
     layer.properties.has_alpha_channel = true;
     layer.set_offset((x, y));
     for y in 0..height {

@@ -113,7 +113,7 @@ pub(crate) fn load_ice_draw(data: &[u8], load_data_opt: Option<&LoadData>, sauce
     let mut result = TextBuffer::new((80, 25));
     result.ice_mode = IceMode::Ice;
     result.terminal_state.is_terminal_buffer = false;
-    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+    let max_height = load_data_opt.and_then(super::super::LoadData::max_height);
 
     // Apply SAUCE settings early
     if let Some(sauce) = sauce_opt {

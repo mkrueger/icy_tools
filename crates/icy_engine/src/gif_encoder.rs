@@ -30,20 +30,15 @@ use std::path::Path;
 use crate::EngineError;
 
 /// How many times the GIF animation should repeat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RepeatCount {
     /// Loop forever
+    #[default]
     Infinite,
     /// Play once, no repeat
     Once,
     /// Repeat N times (0 = infinite in GIF spec, but we handle that with Infinite)
     Times(u16),
-}
-
-impl Default for RepeatCount {
-    fn default() -> Self {
-        Self::Infinite
-    }
 }
 
 /// A single frame in a GIF animation.
@@ -117,7 +112,7 @@ impl GifEncoder {
     /// # Arguments
     /// * `path` - Output file path
     /// * `frames` - Vector of frames to encode
-    /// * `progress_callback` - Called after each frame with (current_frame, total_frames)
+    /// * `progress_callback` - Called after each frame with (`current_frame`, `total_frames`)
     /// * `is_cancelled` - Called to check if encoding should be cancelled
     ///
     /// # Returns

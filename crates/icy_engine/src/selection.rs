@@ -77,7 +77,7 @@ impl Selection {
                         return pos.x <= self.lead.x;
                     }
                     // Intermediate line: whole line selected
-                    return true;
+                    true
                 } else {
                     // Upward drag (anchor.y > lead.y)
                     if pos.y < self.lead.y || pos.y > self.anchor.y {
@@ -92,7 +92,7 @@ impl Selection {
                         return pos.x <= self.anchor.x;
                     }
                     // Intermediate line: whole line selected
-                    return true;
+                    true
                 }
             }
         }

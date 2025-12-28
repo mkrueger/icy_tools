@@ -17,8 +17,8 @@ const SINUS_TABLE: [u16; 113] = [
 
 pub fn isin(angle: u16) -> u16 {
     let angle = angle % MAX_TABLE_ANGLE;
-    let index = (angle >> 3) as u16;
-    let remainder = (angle & 7) as u16;
+    let index = angle >> 3;
+    let remainder = angle & 7;
     let tmpsin = SINUS_TABLE[index as usize];
     if remainder != 0 && index < SINUS_TABLE.len() as u16 - 1 {
         let next_sin = SINUS_TABLE[index as usize + 1] as i32;

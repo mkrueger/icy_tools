@@ -28,7 +28,7 @@ impl VdiPaint {
     pub fn write_text(&mut self, screen: &mut dyn EditableScreen, pos: Position, text: &[u8]) {
         let (metrics, font) = load_atari_font(self.text_size);
         let is_outlined = self.text_effects.contains(TextEffects::OUTLINED);
-        let outline_thickness = if is_outlined { 1 } else { 0 };
+        let outline_thickness = i32::from(is_outlined);
         let scale = metrics.scale;
 
         let mut pos = pos;
@@ -103,44 +103,42 @@ impl VdiPaint {
 
                     for x in 0..font_size.width {
                         let pixel_set = glyph.get_pixel(x as usize, y as usize);
-                        if pixel_set {
-                            if 1 & draw_mask != 0 {
-                                // Draw scaled pixel
-                                for sy in 0..scale {
-                                    for sx in 0..scale {
-                                        let scaled_x = x * scale + sx;
-                                        let scaled_y = y * scale + sy;
-                                        let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
-                                            (scaled_size.height - 1 - scaled_y) / 2 - (scaled_y % 2)
-                                        } else {
-                                            0
-                                        };
+                        if pixel_set && 1 & draw_mask != 0 {
+                            // Draw scaled pixel
+                            for sy in 0..scale {
+                                for sx in 0..scale {
+                                    let scaled_x = x * scale + sx;
+                                    let scaled_y = y * scale + sy;
+                                    let skew_offset = if self.text_effects.contains(TextEffects::SKEWED) {
+                                        (scaled_size.height - 1 - scaled_y) / 2 - (scaled_y % 2)
+                                    } else {
+                                        0
+                                    };
 
-                                        let (rx, ry) = self.apply_rotation(scaled_x, scaled_y, scaled_size, skew_offset, metrics.y_off);
-                                        let p = pos + Position::new(rx, ry);
-                                        self.set_pixel(screen, p.x, p.y, color);
+                                    let (rx, ry) = self.apply_rotation(scaled_x, scaled_y, scaled_size, skew_offset, metrics.y_off);
+                                    let p = pos + Position::new(rx, ry);
+                                    self.set_pixel(screen, p.x, p.y, color);
 
-                                        if self.text_effects.contains(TextEffects::THICKENED) {
-                                            match self.text_rotation {
-                                                TextRotation::Degrees0 => {
-                                                    for t in 1..=metrics.thicken {
-                                                        self.set_pixel(screen, p.x + t, p.y, color);
-                                                    }
+                                    if self.text_effects.contains(TextEffects::THICKENED) {
+                                        match self.text_rotation {
+                                            TextRotation::Degrees0 => {
+                                                for t in 1..=metrics.thicken {
+                                                    self.set_pixel(screen, p.x + t, p.y, color);
                                                 }
-                                                TextRotation::Degrees90 => {
-                                                    for t in 1..=metrics.thicken {
-                                                        self.set_pixel(screen, p.x, p.y - t, color);
-                                                    }
+                                            }
+                                            TextRotation::Degrees90 => {
+                                                for t in 1..=metrics.thicken {
+                                                    self.set_pixel(screen, p.x, p.y - t, color);
                                                 }
-                                                TextRotation::Degrees180 => {
-                                                    for t in 1..=metrics.thicken {
-                                                        self.set_pixel(screen, p.x - t, p.y, color);
-                                                    }
+                                            }
+                                            TextRotation::Degrees180 => {
+                                                for t in 1..=metrics.thicken {
+                                                    self.set_pixel(screen, p.x - t, p.y, color);
                                                 }
-                                                TextRotation::Degrees270 => {
-                                                    for t in 1..=metrics.thicken {
-                                                        self.set_pixel(screen, p.x, p.y + t, color);
-                                                    }
+                                            }
+                                            TextRotation::Degrees270 => {
+                                                for t in 1..=metrics.thicken {
+                                                    self.set_pixel(screen, p.x, p.y + t, color);
                                                 }
                                             }
                                         }

@@ -183,7 +183,7 @@ impl Screen for TextScreen {
             format.to_bytes(&self.buffer, options)
         } else {
             Err(crate::EngineError::UnsupportedFormat {
-                description: format!("Unknown format: {}", extension),
+                description: format!("Unknown format: {extension}"),
             })
         }
     }
@@ -284,7 +284,7 @@ impl EditableScreen for TextScreen {
     fn snapshot_scrollback(&mut self) -> Option<Arc<Mutex<Box<dyn Screen>>>> {
         let mut scrollback = self.scrollback_buffer.clone();
         scrollback.snapshot_current_screen(self);
-        return Some(Arc::new(Mutex::new(Box::new(scrollback))));
+        Some(Arc::new(Mutex::new(Box::new(scrollback))))
     }
 
     fn first_visible_line(&self) -> i32 {
@@ -521,7 +521,7 @@ impl EditableScreen for TextScreen {
             if left == start_column as i32 {
                 // Its leftmost column is lost
                 remove_indices.push(i);
-            } else if left > start_column as i32 && right <= end_column as i32 {
+            } else if left > start_column as i32 && right <= end_column {
                 sixel.position.x -= 1;
             }
         }
@@ -592,7 +592,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn insert_line(&mut self, line: usize, new_line: crate::Line) {
-        self.buffer.layers[self.current_layer].lines.insert(line as usize, new_line);
+        self.buffer.layers[self.current_layer].lines.insert(line, new_line);
     }
 
     fn set_width(&mut self, width: i32) {
@@ -720,7 +720,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn mark_dirty(&self) {
-        self.buffer.mark_dirty()
+        self.buffer.mark_dirty();
     }
 
     fn mark_line_dirty(&self, line: i32) {

@@ -12,7 +12,7 @@ pub use icy_sauce::MetaData as SauceMetaData;
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct SaveOptions {
     /// Optional SAUCE metadata to append.
-    /// The actual SauceRecord will be created by the backend with appropriate capabilities.
+    /// The actual `SauceRecord` will be created by the backend with appropriate capabilities.
     #[serde(skip)]
     pub sauce: Option<SauceMetaData>,
 
@@ -48,7 +48,7 @@ impl SaveOptions {
         }
     }
 
-    /// Create save options for IcyDraw native format.
+    /// Create save options for `IcyDraw` native format.
     pub fn icy_draw() -> Self {
         Self {
             format: FormatOptions::IcyDraw(IcyDrawFormatOptions::default()),
@@ -64,7 +64,7 @@ impl SaveOptions {
         }
     }
 
-    /// Get the IcyDraw format options, or default if not set.
+    /// Get the `IcyDraw` format options, or default if not set.
     pub fn icy_draw_options(&self) -> IcyDrawFormatOptions {
         match &self.format {
             FormatOptions::IcyDraw(opts) => opts.clone(),
@@ -97,7 +97,7 @@ impl SaveOptions {
 /// Preprocessing options applied to buffer before format-specific saving.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreprocessOptions {
-    /// When true, optimize colors (opposite of old lossless_output).
+    /// When true, optimize colors (opposite of old `lossless_output`).
     /// Ignores fg color changes in whitespaces and bg color changes in blocks.
     pub optimize_colors: bool,
 
@@ -124,17 +124,17 @@ pub enum FormatOptions {
     /// ANSI terminal format options.
     Ansi(AnsiFormatOptions),
 
-    /// Character-based formats (ASCII, PCBoard, Avatar, CtrlA, Renegade).
+    /// Character-based formats (ASCII, `PCBoard`, Avatar, `CtrlA`, Renegade).
     Character(CharacterFormatOptions),
 
-    /// Formats that support compression (XBin).
+    /// Formats that support compression (`XBin`).
     Compressed(CompressedFormatOptions),
 
-    /// IcyDraw native format options.
+    /// `IcyDraw` native format options.
     IcyDraw(IcyDrawFormatOptions),
 }
 
-/// Options for character-based formats (ASCII, PCBoard, Avatar, CtrlA, Renegade).
+/// Options for character-based formats (ASCII, `PCBoard`, Avatar, `CtrlA`, Renegade).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CharacterFormatOptions {
     /// Screen preparation sequence.
@@ -144,14 +144,14 @@ pub struct CharacterFormatOptions {
     pub unicode: bool,
 }
 
-/// Options for formats supporting compression (XBin).
+/// Options for formats supporting compression (`XBin`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CompressedFormatOptions {
     /// Enable RLE compression.
     pub compress: bool,
 }
 
-/// Options for IcyDraw native format.
+/// Options for `IcyDraw` native format.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IcyDrawFormatOptions {
     /// Skip generating the thumbnail image (faster for autosave).
@@ -274,7 +274,7 @@ pub enum LineBreakBehavior {
     /// Force line breaks at line end.
     Force,
 
-    /// Use GotoXY sequences at line start (for longer terminals).
+    /// Use `GotoXY` sequences at line start (for longer terminals).
     GotoXY,
 }
 
@@ -296,7 +296,7 @@ pub enum ControlCharHandling {
     #[default]
     Ignore,
 
-    /// Escape control characters using IcyTerm convention (ESC + char).
+    /// Escape control characters using `IcyTerm` convention (ESC + char).
     IcyTerm,
 
     /// Replace control characters with a placeholder (e.g., '.').
@@ -327,7 +327,7 @@ impl Default for SixelSettings {
 }
 
 impl SixelSettings {
-    /// Convert to icy_sixel::EncodeOptions.
+    /// Convert to `icy_sixel::EncodeOptions`.
     pub fn to_encode_options(&self) -> icy_sixel::EncodeOptions {
         icy_sixel::EncodeOptions {
             max_colors: self.max_colors,
@@ -366,7 +366,7 @@ pub struct AnsiFormatOptions {
     pub sixel: SixelSettings,
 
     /// Lines to skip during output (runtime parameter for animation playback).
-    /// This is not serialized - it's set programmatically by icy_play.
+    /// This is not serialized - it's set programmatically by `icy_play`.
     #[serde(skip)]
     pub skip_lines: Vec<usize>,
 }
@@ -414,10 +414,10 @@ use crate::{IceMode, TextBuffer, TextPane};
 
 /// Trait to create SAUCE records with appropriate capabilities for different formats.
 pub trait SauceBuilder {
-    /// Create a SauceRecord with CharacterCapabilities (for ANSI, ASCII, Avatar, etc.)
+    /// Create a `SauceRecord` with `CharacterCapabilities` (for ANSI, ASCII, Avatar, etc.)
     fn build_character_sauce(&self, meta: &SauceMetaData, format: CharacterFormat) -> icy_sauce::SauceRecord;
 
-    /// Create a SauceRecord with BinaryCapabilities (for BIN, XBin)
+    /// Create a `SauceRecord` with `BinaryCapabilities` (for BIN, `XBin`)
     fn build_binary_sauce(&self, meta: &SauceMetaData) -> icy_sauce::SauceRecord;
 }
 

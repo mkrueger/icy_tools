@@ -115,7 +115,7 @@ impl fmt::Display for BlitSurface {
                 } else {
                     '?' // For values > 15 (shouldn't happen with & 0xF)
                 };
-                write!(f, "{}", ch)?;
+                write!(f, "{ch}")?;
             }
             writeln!(f, "│")?;
         }

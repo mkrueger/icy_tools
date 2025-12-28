@@ -89,11 +89,11 @@ impl VdiPaint {
         }
         let res = buf.resolution();
         if amount < 0 {
-            buf.screen_mut().splice(0..0, vec![1; res.width as usize * amount.abs() as usize]);
+            buf.screen_mut().splice(0..0, vec![1; res.width as usize * amount.unsigned_abs() as usize]);
             buf.screen_mut().truncate(res.width as usize * res.height as usize);
         } else {
-            buf.screen_mut().splice(0..res.width as usize * amount.abs() as usize, vec![]);
-            buf.screen_mut().extend(vec![1; res.width as usize * amount.abs() as usize]);
+            buf.screen_mut().splice(0..res.width as usize * amount.unsigned_abs() as usize, vec![]);
+            buf.screen_mut().extend(vec![1; res.width as usize * amount.unsigned_abs() as usize]);
         }
     }
 

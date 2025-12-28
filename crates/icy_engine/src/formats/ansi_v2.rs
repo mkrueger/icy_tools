@@ -43,7 +43,7 @@ impl Default for SixelSettings {
 }
 
 impl SixelSettings {
-    /// Convert to icy_sixel::EncodeOptions
+    /// Convert to `icy_sixel::EncodeOptions`
     pub fn to_encode_options(&self) -> icy_sixel::EncodeOptions {
         icy_sixel::EncodeOptions {
             max_colors: self.max_colors,
@@ -232,7 +232,7 @@ impl AnsiSaveOptions {
         AnsiCompatibilityLevel::Vt100
     }
 
-    /// Create from the new SaveOptions structure.
+    /// Create from the new `SaveOptions` structure.
     pub fn from_save_options(options: &super::SaveOptions) -> Self {
         let ansi_opts = options.ansi_options();
 
@@ -299,7 +299,7 @@ fn uses_ice_colors(buf: &TextBuffer) -> bool {
             for x in 0..layer.width() {
                 let ch = layer.char_at((x, y).into());
                 let bg = ch.attribute.background();
-                if bg >= 8 && bg < 16 {
+                if (8..16).contains(&bg) {
                     return true;
                 }
             }
@@ -314,7 +314,7 @@ pub fn save_ansi_v2(buf: &TextBuffer, options: &super::SaveOptions) -> Result<Ve
     save_ansi_v2_internal(buf, &ansi_options)
 }
 
-/// Internal save function using legacy AnsiSaveOptions.
+/// Internal save function using legacy `AnsiSaveOptions`.
 fn save_ansi_v2_internal(buf: &TextBuffer, options: &AnsiSaveOptions) -> Result<Vec<u8>> {
     let mut result: Vec<u8> = Vec::new();
 
@@ -535,7 +535,7 @@ impl StringGeneratorV2 {
             crate::IceMode::Ice => {
                 if let Some(idx) = back_idx {
                     if idx < 8 {
-                        is_blink = is_blink | attr.is_blinking();
+                        is_blink |= attr.is_blinking();
                     } else if (8..16).contains(&idx) {
                         is_blink = true;
                         back_idx = Some(idx - 8);
@@ -779,8 +779,8 @@ impl StringGeneratorV2 {
                 area.width()
             };
 
-            for t in self.tags.iter() {
-                if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y as i32 {
+            for t in &self.tags {
+                if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y {
                     len = len.max(t.position.x + t.len() as i32);
                 }
             }
@@ -788,8 +788,8 @@ impl StringGeneratorV2 {
             let mut x = 0;
             while x < len {
                 let mut found_tag = false;
-                for t in self.tags.iter() {
-                    if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y as i32 && t.position.x == x as i32 {
+                for t in &self.tags {
+                    if t.is_enabled && t.tag_placement == TagPlacement::InText && t.position.y == y && t.position.x == x {
                         for ch in t.replacement_value.chars() {
                             line.push(CharCell {
                                 ch,
@@ -1073,7 +1073,7 @@ impl StringGeneratorV2 {
 
     fn screen_end(&mut self, buf: &TextBuffer, mut state: AnsiState) {
         let mut end_tags = 0;
-        for tag in buf.tags.iter() {
+        for tag in &buf.tags {
             if tag.is_enabled && tag.tag_placement == crate::TagPlacement::WithGotoXY {
                 let (new_state, sgr, extra_esc) = self.color(buf, AttributedChar::new('#', tag.attribute), state);
                 state = new_state;

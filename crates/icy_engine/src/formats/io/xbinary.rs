@@ -123,7 +123,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
         // Fast path: if only 1 font slot, skip expensive analyze_font_usage (~21% hash overhead)
         let font_count = buf.font_count();
         fonts = if font_count <= 1 { vec![0u8] } else { analyze_font_usage(buf) };
-        let primary_slot = *fonts.first().unwrap_or(&0) as u8;
+        let primary_slot = *fonts.first().unwrap_or(&0);
         let Some(font) = buf.font(primary_slot) else {
             return Err(SavingError::NoFontFound.into());
         };
@@ -188,7 +188,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
     }
 
     if write_font_data {
-        let primary_slot = *fonts.first().unwrap_or(&0) as u8;
+        let primary_slot = *fonts.first().unwrap_or(&0);
         let Some(font) = buf.font(primary_slot) else {
             return Err(SavingError::NoFontFound.into());
         };
@@ -201,7 +201,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
         }
         result.extend(font_data);
         if (flags & FLAG_512CHAR_MODE) == FLAG_512CHAR_MODE {
-            let secondary_slot = *fonts.get(1).unwrap_or(&1) as u8;
+            let secondary_slot = *fonts.get(1).unwrap_or(&1);
             if let Some(ext_font) = buf.font(secondary_slot) {
                 if ext_font.length() != 256 {
                     return Err(crate::EngineError::InvalidXBin {
@@ -251,7 +251,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
 pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
     let mut screen = TextScreen::new((80, 25));
     screen.buffer.terminal_state.is_terminal_buffer = false;
-    let max_height = load_data_opt.and_then(|ld| ld.max_height());
+    let max_height = load_data_opt.and_then(super::super::LoadData::max_height);
 
     // Apply SAUCE settings early
     if let Some(sauce) = sauce_opt {
@@ -272,7 +272,7 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     let width = data[o] as i32 + ((data[o + 1] as i32) << 8);
     if !(0..=4096).contains(&width) {
         return Err(crate::EngineError::InvalidXBin {
-            message: format!("Width out of range: {} (0-4096)", width),
+            message: format!("Width out of range: {width} (0-4096)"),
         });
     }
     screen.buffer.set_width(width);
@@ -292,7 +292,7 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     }
     if font_size > 32 {
         return Err(crate::EngineError::InvalidXBin {
-            message: format!("Font height too large: {} (32 max)", font_size),
+            message: format!("Font height too large: {font_size} (32 max)"),
         });
     }
     o += 1;
@@ -315,7 +315,7 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     // Spec: If Font bit is not set, default font size should be VGA 16.
     if !has_custom_font && font_size != 16 {
         return Err(crate::EngineError::InvalidXBin {
-            message: format!("FontSize {} requires Font flag to be set", font_size),
+            message: format!("FontSize {font_size} requires Font flag to be set"),
         });
     }
 
@@ -363,10 +363,10 @@ pub(crate) fn load_xbin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
 
 fn select_attr_table(result: &TextBuffer) -> &'static [TextAttribute; 256] {
     match (result.ice_mode, matches!(result.font_mode, FontMode::FixedSize)) {
-        (IceMode::Ice | IceMode::Unlimited, false) => &*ATTR_TABLE_ICE,
-        (IceMode::Ice | IceMode::Unlimited, true) => &*ATTR_TABLE_ICE_EXT,
-        (IceMode::Blink, false) => &*ATTR_TABLE_BLINK,
-        (IceMode::Blink, true) => &*ATTR_TABLE_BLINK_EXT,
+        (IceMode::Ice | IceMode::Unlimited, false) => &ATTR_TABLE_ICE,
+        (IceMode::Ice | IceMode::Unlimited, true) => &ATTR_TABLE_ICE_EXT,
+        (IceMode::Blink, false) => &ATTR_TABLE_BLINK,
+        (IceMode::Blink, true) => &ATTR_TABLE_BLINK_EXT,
     }
 }
 
@@ -393,7 +393,7 @@ fn read_data_compressed(result: &mut TextBuffer, bytes: &[u8]) -> Result<bool> {
         let xbin_compression = unsafe { *bytes.get_unchecked(o) };
 
         o += 1;
-        let compression = unsafe { std::mem::transmute(xbin_compression & 0b_1100_0000) };
+        let compression = unsafe { std::mem::transmute::<u8, Compression>(xbin_compression & 0b_1100_0000) };
         let repeat_counter = (xbin_compression & 0b_0011_1111) + 1;
 
         match compression {

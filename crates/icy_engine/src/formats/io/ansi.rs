@@ -6,9 +6,9 @@ use super::super::ansi_v2::save_ansi_v2;
 use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
 
 use crate::screen::EditableScreen;
-/// Load an ANSI file into a TextScreen.
+/// Load an ANSI file into a `TextScreen`.
 pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
-    let width = load_data_opt.and_then(|ld| ld.default_terminal_width()).unwrap_or(80);
+    let width = load_data_opt.and_then(super::super::LoadData::default_terminal_width).unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
     result.terminal_state_mut().is_terminal_buffer = false;
 
@@ -18,7 +18,7 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     }
 
     let mut parser = icy_parser_core::AnsiParser::new();
-    if let Some(music) = load_data_opt.and_then(|ld| ld.ansi_music()) {
+    if let Some(music) = load_data_opt.and_then(super::super::LoadData::ansi_music) {
         parser.set_music_option(music);
     }
 
@@ -30,7 +30,7 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     Ok(result)
 }
 
-/// Save a TextBuffer to ANSI format using ANSI exporter v2.
+/// Save a `TextBuffer` to ANSI format using ANSI exporter v2.
 pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
     save_ansi_v2(buf, options)
 }

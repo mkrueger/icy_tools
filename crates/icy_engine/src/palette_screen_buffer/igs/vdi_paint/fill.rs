@@ -40,8 +40,8 @@ impl VdiPaint {
                 let dy = y2 - y1;
 
                 // Calculate deltas of each endpoint with current scan line.
-                let dy1 = (y - y1) as i32;
-                let dy2 = (y - y2) as i32;
+                let dy1 = y - y1;
+                let dy2 = y - y2;
 
                 // Determine whether the current vector intersects with the scan line.
                 if (dy1 ^ dy2) < 0 {
@@ -76,9 +76,9 @@ impl VdiPaint {
             // Loop through all edges in pairs, filling the pixels in between.
             let mut j = 0;
             while j < edge_buffer.len() {
-                let x1 = edge_buffer[j] as i32;
+                let x1 = edge_buffer[j];
                 j += 1;
-                let x2 = edge_buffer[j] as i32;
+                let x2 = edge_buffer[j];
                 j += 1;
 
                 for k in x1..=x2 {

@@ -128,62 +128,62 @@ pub struct LoadedDocument {
 use crate::{limits, IceMode, TextBuffer};
 use icy_sauce::prelude::*;
 
-/// Apply SAUCE record settings directly to a TextBuffer.
-/// This is used by formats that don't use TextScreen (like bin, xbinary, etc.)
+/// Apply SAUCE record settings directly to a `TextBuffer`.
+/// This is used by formats that don't use `TextScreen` (like bin, xbinary, etc.)
 pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
-    match sauce.capabilities() {
-        Some(Capabilities::Character(CharacterCapabilities {
+    if let Some(
+        Capabilities::Character(CharacterCapabilities {
             columns,
             lines,
             font_opt,
             ice_colors,
             ..
-        }))
-        | Some(Capabilities::Binary(BinaryCapabilities {
+        })
+        | Capabilities::Binary(BinaryCapabilities {
             columns,
             lines,
             font_opt,
             ice_colors,
             ..
-        })) => {
-            // Apply buffer size (clamped to reasonable limits)
-            if columns > 0 {
-                let width = (columns as i32).min(limits::MAX_BUFFER_WIDTH);
-                buf.set_width(width);
-                buf.terminal_state.set_width(width);
-            }
-
-            if lines > 0 {
-                let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
-                buf.set_height(height);
-            }
-
-            // Resize first layer if needed
-            if !buf.layers.is_empty() {
-                let size = buf.size();
-                buf.layers[0].set_size(size);
-            }
-
-            // Apply font if specified
-            if let Some(font_name) = &font_opt {
-                if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
-                    buf.set_font(0, font);
-                }
-            }
-
-            // Apply ice colors
-            if ice_colors {
-                buf.ice_mode = IceMode::Ice;
-            }
-            buf.terminal_state.ice_colors = ice_colors;
+        }),
+    ) = sauce.capabilities()
+    {
+        // Apply buffer size (clamped to reasonable limits)
+        if columns > 0 {
+            let width = (columns as i32).min(limits::MAX_BUFFER_WIDTH);
+            buf.set_width(width);
+            buf.terminal_state.set_width(width);
         }
-        _ => {
-            // No character/binary capabilities - nothing to apply
+
+        if lines > 0 {
+            let height = (lines as i32).min(limits::MAX_BUFFER_HEIGHT);
+            buf.set_height(height);
         }
+
+        // Resize first layer if needed
+        if !buf.layers.is_empty() {
+            let size = buf.size();
+            buf.layers[0].set_size(size);
+        }
+
+        // Apply font if specified
+        if let Some(font_name) = &font_opt {
+            if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
+                buf.set_font(0, font);
+            }
+        }
+
+        // Apply ice colors
+        if ice_colors {
+            buf.ice_mode = IceMode::Ice;
+        }
+        buf.terminal_state.ice_colors = ice_colors;
+    } else {
+        // No character/binary capabilities - nothing to apply
     }
 }
 
-/// Parse data using a CommandParser from icy_parser_core
+/// Parse data using a `CommandParser` from `icy_parser_core`
 ///
 /// # Errors
 ///
@@ -213,7 +213,7 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
                     (size.height + font_size.height - 1) / font_size.height,
                 );
                 num += 1;
-                let mut layer = Layer::new(format!("Sixel {}", num), size);
+                let mut layer = Layer::new(format!("Sixel {num}"), size);
                 layer.role = Role::Image;
                 layer.set_offset(sixel.position);
                 sixel.position = Position::default();
@@ -251,7 +251,7 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
 }
 
 /// Prepare data for parsing.
-/// Returns (data, is_unicode)
+/// Returns (data, `is_unicode`)
 /// - If data has UTF-8 BOM: strip BOM and return (data, true)
 /// - Otherwise: return data as-is with (data, false)
 pub fn prepare_data_for_parsing(data: &[u8]) -> (&[u8], bool) {

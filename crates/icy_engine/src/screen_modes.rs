@@ -54,8 +54,8 @@ impl Serialize for ScreenMode {
     {
         let s = match self {
             ScreenMode::Default => "Default".to_string(),
-            ScreenMode::Vga(w, h) => format!("Vga({}, {})", w, h),
-            ScreenMode::Unicode(w, h) => format!("Unicode({}, {})", w, h),
+            ScreenMode::Vga(w, h) => format!("Vga({w}, {h})"),
+            ScreenMode::Unicode(w, h) => format!("Unicode({w}, {h})"),
             ScreenMode::Vic => "Vic".to_string(),
             ScreenMode::Atascii(i) => {
                 if *i == 80 {
@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for ScreenMode {
     {
         struct ScreenModeVisitor;
 
-        impl<'de> Visitor<'de> for ScreenModeVisitor {
+        impl Visitor<'_> for ScreenModeVisitor {
             type Value = ScreenMode;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -105,7 +105,7 @@ impl<'de> Deserialize<'de> for ScreenMode {
                     }
                     let name = &value[..open_paren];
                     let params_str = &value[open_paren + 1..value.len() - 1];
-                    let params: Vec<&str> = params_str.split(',').map(|p| p.trim()).collect();
+                    let params: Vec<&str> = params_str.split(',').map(str::trim).collect();
                     match name {
                         "Vga" => {
                             if params.len() != 2 {
@@ -129,9 +129,9 @@ impl<'de> Deserialize<'de> for ScreenMode {
                             }
                             let term_res = match params[0] {
                                 "High" => TerminalResolution::High,
-                                "Medium" => TerminalResolution::Medium,
                                 "Low" => TerminalResolution::Low,
-                                _ => TerminalResolution::Medium, // Default to Medium if unrecognized
+                                // Default to Medium if unrecognized
+                                _ => TerminalResolution::Medium,
                             };
                             let has_igs = params[1] == "true";
                             Ok(ScreenMode::AtariST(term_res, has_igs))
@@ -200,9 +200,9 @@ impl Display for ScreenMode {
             ScreenMode::AtariST(resolution, igs) => {
                 let igs = if *igs { "enabled " } else { "disabled" };
                 match resolution {
-                    TerminalResolution::Low => write!(f, "Atari ST low, igs {}", igs),
-                    TerminalResolution::Medium => write!(f, "Atari ST medium, igs {}", igs),
-                    TerminalResolution::High => write!(f, "Atari ST high, igs {}", igs),
+                    TerminalResolution::Low => write!(f, "Atari ST low, igs {igs}"),
+                    TerminalResolution::Medium => write!(f, "Atari ST medium, igs {igs}"),
+                    TerminalResolution::High => write!(f, "Atari ST high, igs {igs}"),
                 }
             }
             ScreenMode::Mode7 => write!(f, "Mode7"),
@@ -238,9 +238,8 @@ impl ScreenMode {
                 }
             }
             ScreenMode::Videotex => Size::new(40, 24),
-            ScreenMode::Default => Size::new(80, 25),
+            ScreenMode::Default | ScreenMode::SkyPix => Size::new(80, 25),
             ScreenMode::Rip => Size::new(80, 44),
-            ScreenMode::SkyPix => Size::new(80, 25),
         }
     }
 
@@ -309,7 +308,7 @@ impl ScreenMode {
     /// * `option` - Optional creation options (e.g., ANSI music settings)
     ///
     /// # Returns
-    /// A tuple of (EditableScreen, CommandParser) properly configured for the emulation
+    /// A tuple of (`EditableScreen`, `CommandParser`) properly configured for the emulation
     ///
     /// # Example
     /// ```no_run
@@ -360,7 +359,7 @@ impl ScreenMode {
 /// # Arguments
 /// * `emulator` - The terminal emulation type
 /// * `use_ansi_music` - Optional music option for ANSI parsers
-/// * `screen_mode` - The screen mode (used for AtariST IGS detection)
+/// * `screen_mode` - The screen mode (used for `AtariST` IGS detection)
 ///
 /// # Returns
 /// A boxed command parser configured for the emulation type
@@ -392,7 +391,7 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: Option<MusicOpti
                     Box::new(icy_parser_core::Vt52Parser::new(icy_parser_core::VT52Mode::Mixed))
                 };
             }
-            log::warn!("ScreenMode is wrong for AtariST {:?}, fall back to IGS.", screen_mode);
+            log::warn!("ScreenMode is wrong for AtariST {screen_mode:?}, fall back to IGS.");
             Box::new(icy_parser_core::IgsParser::new())
         }
     }

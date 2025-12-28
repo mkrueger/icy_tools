@@ -1,4 +1,5 @@
 use crate::qwk::QwkPackage;
+use icy_engine_gui::TerminalMessage;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -34,6 +35,7 @@ pub enum Message {
     NavigateMessage(NavigateDirection),
     FocusMessageContent,
 
+    TerminalMessage(TerminalMessage),
     Noop,
 }
 
@@ -58,6 +60,7 @@ impl std::fmt::Debug for Message {
             Message::FocusMessageList => write!(f, "FocusMessageList"),
             Message::NavigateMessage(dir) => write!(f, "NavigateMessage({:?})", dir),
             Message::FocusMessageContent => write!(f, "FocusMessageContent"),
+            Message::TerminalMessage(msg) => write!(f, "TerminalMessage({:?})", msg),
         }
     }
 }

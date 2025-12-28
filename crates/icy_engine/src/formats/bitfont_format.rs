@@ -1,4 +1,4 @@
-//! BitFont file format definitions.
+//! `BitFont` file format definitions.
 //!
 //! This module defines the supported bitmap font formats for loading and saving.
 
@@ -28,7 +28,7 @@ impl BitFontFormat {
         match self {
             Self::Yaff => "yaff".to_string(),
             Self::Psf => "psf".to_string(),
-            Self::Raw(height) => format!("f{:02}", height),
+            Self::Raw(height) => format!("f{height:02}"),
         }
     }
 
@@ -77,12 +77,12 @@ impl BitFontFormat {
         path.extension().and_then(|ext| ext.to_str()).and_then(Self::from_extension)
     }
 
-    /// Check if a file extension matches a BitFont format.
+    /// Check if a file extension matches a `BitFont` format.
     pub fn is_bitfont_extension(ext: &str) -> bool {
         Self::from_extension(ext).is_some()
     }
 
-    /// Get all common BitFont extensions for file dialogs.
+    /// Get all common `BitFont` extensions for file dialogs.
     pub fn all_extensions() -> &'static [&'static str] {
         &[
             "yaff", "psf", "f04", "f05", "f06", "f07", "f08", "f09", "f10", "f12", "f14", "f16", "f19", "f20", "f24", "f32",
@@ -103,7 +103,7 @@ impl BitFontFormat {
         match self {
             Self::Yaff => "Yet Another Font Format (text-based)".to_string(),
             Self::Psf => "PC Screen Font (Linux console)".to_string(),
-            Self::Raw(height) => format!("Raw bitmap font ({}px height)", height),
+            Self::Raw(height) => format!("Raw bitmap font ({height}px height)"),
         }
     }
 }
@@ -113,7 +113,7 @@ impl std::fmt::Display for BitFontFormat {
         match self {
             Self::Yaff => write!(f, "YAFF"),
             Self::Psf => write!(f, "PSF"),
-            Self::Raw(height) => write!(f, "Raw ({}px)", height),
+            Self::Raw(height) => write!(f, "Raw ({height}px)"),
         }
     }
 }

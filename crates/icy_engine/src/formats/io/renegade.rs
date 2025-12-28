@@ -44,7 +44,7 @@ pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 }
 
 pub(crate) fn load_renegade(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
-    let width = load_data_opt.and_then(|ld| ld.default_terminal_width()).unwrap_or(80);
+    let width = load_data_opt.and_then(super::super::LoadData::default_terminal_width).unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
 
     result.terminal_state_mut().is_terminal_buffer = false;

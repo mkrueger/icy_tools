@@ -1,5 +1,5 @@
-use codepages::tables::*;
-use icy_parser_core::*;
+use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
+use icy_parser_core::{ATARI_TO_UNICODE, PETSCII_TO_UNICODE, UNICODE_TO_ATARI, UNICODE_TO_PETSCII, UNICODE_TO_VIEWDATA, VIEWDATA_TO_UNICODE};
 
 use crate::Color;
 
@@ -156,41 +156,20 @@ impl BufferType {
         match self {
             BufferType::Unicode => Some(ch), // Already Unicode, no conversion needed
 
-            BufferType::CP437 => {
-                if let Some(tch) = UNICODE_TO_CP437.get(&ch) {
-                    Some(*tch as char)
-                } else {
-                    None
-                }
-            }
+            BufferType::CP437 => UNICODE_TO_CP437.get(&ch).map(|tch| *tch as char),
 
-            BufferType::Petscii => {
-                if let Some(tch) = UNICODE_TO_PETSCII.get(&(ch as u8)) {
-                    Some(*tch as char)
-                } else {
-                    None
-                }
-            }
+            BufferType::Petscii => UNICODE_TO_PETSCII.get(&(ch as u8)).map(|tch| *tch as char),
 
             BufferType::Atascii => {
                 // Use the ATASCII converter for Atari characters
-                match UNICODE_TO_ATARI.get(&ch) {
-                    Some(out_ch) => Some(*out_ch),
-                    _ => None,
-                }
+                UNICODE_TO_ATARI.get(&ch).copied()
             }
 
             BufferType::Viewdata => {
                 if ch == ' ' {
                     return Some(' ');
                 }
-                match UNICODE_TO_VIEWDATA.get(&ch) {
-                    Some(out_ch) => Some(*out_ch),
-                    // For Viewdata/Mode7, unknown characters should be filtered
-                    // to prevent sending invalid bytes to the BBS.
-                    // Return NUL character to indicate the character should be skipped.
-                    _ => None,
-                }
+                UNICODE_TO_VIEWDATA.get(&ch).copied()
             }
         }
     }

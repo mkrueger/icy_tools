@@ -1,7 +1,7 @@
 use crate::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane};
 use retrofont::{Cell, FontTarget};
 
-/// A renderer that writes to a TextBuffer
+/// A renderer that writes to a `TextBuffer`
 pub struct TdfBufferRenderer<'a> {
     buffer: &'a mut TextBuffer,
     cur_x: i32,

@@ -100,7 +100,7 @@ impl MouseEvent {
                     let cb = encode_x10_button(self.button, &self.modifiers);
                     Some(format!(
                         "\x1B[M{}{}{}",
-                        char::from((cb + 32) as u8),
+                        char::from(cb + 32),
                         char::from((x.min(223) + 32) as u8),
                         char::from((y.min(223) + 32) as u8)
                     ))
@@ -113,7 +113,7 @@ impl MouseEvent {
                 let cb = encode_vt200_button(self.button, self.event_type, &self.modifiers);
                 Some(format!(
                     "\x1B[M{}{}{}",
-                    char::from((cb + 32) as u8),
+                    char::from(cb + 32),
                     char::from((x.min(223) + 32) as u8),
                     char::from((y.min(223) + 32) as u8)
                 ))
@@ -126,7 +126,7 @@ impl MouseEvent {
                 }
                 Some(format!(
                     "\x1B[M{}{}{}",
-                    char::from((cb + 32) as u8),
+                    char::from(cb + 32),
                     char::from((x.min(223) + 32) as u8),
                     char::from((y.min(223) + 32) as u8)
                 ))
@@ -140,7 +140,7 @@ impl MouseEvent {
                 }
                 Some(format!(
                     "\x1B[M{}{}{}",
-                    char::from((cb + 32) as u8),
+                    char::from(cb + 32),
                     char::from((x.min(223) + 32) as u8),
                     char::from((y.min(223) + 32) as u8)
                 ))

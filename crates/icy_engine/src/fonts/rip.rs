@@ -32,7 +32,7 @@ lazy_static::lazy_static! {
             name: "VGA 16x14".to_string(),
             width: 8,
             height: 14,
-            glyphs: base.glyphs().clone(),
+            glyphs: *base.glyphs(),
             path_opt: None,
             font_type: BitFontType::BuiltIn,
         }

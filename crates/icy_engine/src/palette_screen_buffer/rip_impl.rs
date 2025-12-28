@@ -539,7 +539,7 @@ impl crate::PaletteScreenBuffer {
     pub(crate) fn handle_rip_command_impl(&mut self, cmd: RipCommand) {
         // Temporarily extract bgi to avoid borrow checker issues
         // SAFETY: We ensure that bgi and self don't overlap in memory access during the call
-        let bgi_ptr = &mut self.bgi as *mut Bgi;
+        let bgi_ptr = &raw mut self.bgi;
         unsafe {
             execute_rip_command(self, &mut *bgi_ptr, cmd);
         }
@@ -574,7 +574,7 @@ fn parse_host_command(split: &str) -> Option<String> {
                 // Resume data transmission
                 'Q' => res.push('\x11'), // XON
                 _ => {
-                    log::error!("Invalid character after ^ in button command: {}", c);
+                    log::error!("Invalid character after ^ in button command: {c}");
                 }
             }
             got_caret = false;

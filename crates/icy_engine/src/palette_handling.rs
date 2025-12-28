@@ -238,7 +238,7 @@ impl Palette {
                 for c in &self.colors {
                     res.push_str(format!("{:02x}{:02x}{:02x}\n", c.r, c.g, c.b).as_str());
                 }
-                return Ok(res.as_bytes().to_vec());
+                Ok(res.as_bytes().to_vec())
             }
             FileFormat::Palette(PaletteFormat::Pal) => {
                 let mut res = String::new();
@@ -250,7 +250,7 @@ impl Palette {
                     res.push_str(format!("{} {} {}\n", c.r, c.g, c.b).as_str());
                 }
 
-                return Ok(res.as_bytes().to_vec());
+                Ok(res.as_bytes().to_vec())
             }
             FileFormat::Palette(PaletteFormat::Gpl) => {
                 let mut res = String::new();
@@ -265,7 +265,7 @@ impl Palette {
                     res.push_str(format!("{:3} {:3} {:3} {}\n", c.r, c.g, c.b, self.description).as_str());
                 }
 
-                return Ok(res.as_bytes().to_vec());
+                Ok(res.as_bytes().to_vec())
             }
 
             FileFormat::Palette(PaletteFormat::Ice) => {
@@ -283,7 +283,7 @@ impl Palette {
                     }
                     res.push_str(format!("{:02x}{:02x}{:02x}\n", c.r, c.g, c.b).as_str());
                 }
-                return Ok(res.as_bytes().to_vec());
+                Ok(res.as_bytes().to_vec())
             }
             FileFormat::Palette(PaletteFormat::Txt) => {
                 let mut res = String::new();
@@ -298,7 +298,7 @@ impl Palette {
                     res.push_str(format!("FF{:02x}{:02x}{:02x}\n", c.r, c.g, c.b,).as_str());
                 }
 
-                return Ok(res.as_bytes().to_vec());
+                Ok(res.as_bytes().to_vec())
             }
             FileFormat::Palette(PaletteFormat::Ase) => {
                 // Adobe Swatch Exchange format (binary, big-endian)
@@ -348,7 +348,7 @@ impl Palette {
                     result.extend_from_slice(&block_data);
                 }
 
-                return Ok(result);
+                Ok(result)
             }
             FileFormat::XBin => {
                 // Create a minimal TextBuffer with just the palette
@@ -356,10 +356,10 @@ impl Palette {
                 buf.palette = self.clone();
                 buf.clear_font_table();
                 let options = crate::SaveOptions::default();
-                return FileFormat::XBin.to_bytes(&buf, &options);
+                FileFormat::XBin.to_bytes(&buf, &options)
             }
             _ => Err(crate::EngineError::InvalidPaletteFormat {
-                message: format!("Invalid palette format"),
+                message: "Invalid palette format".to_string(),
             }),
         }
     }
@@ -3335,7 +3335,7 @@ impl Default for Palette {
     fn default() -> Self {
         let mut palette_cache_rgba = Vec::new();
 
-        for c in DOS_DEFAULT_PALETTE.iter() {
+        for c in &DOS_DEFAULT_PALETTE {
             palette_cache_rgba.push(Palette::rgb_to_rgba_u32(c.r, c.g, c.b));
         }
 

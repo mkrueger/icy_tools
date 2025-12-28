@@ -37,7 +37,7 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
         while pos.x < line_length {
             let mut found_tag = false;
             for tag in &buf.tags {
-                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y && tag.position.x == pos.x {
                     result.extend(tag.replacement_value.as_bytes());
                     pos.x += (tag.len() as i32).max(1);
                     found_tag = true;
@@ -126,7 +126,7 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
 }
 
 pub(crate) fn load_avatar(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
-    let width = load_data_opt.and_then(|ld| ld.default_terminal_width()).unwrap_or(80);
+    let width = load_data_opt.and_then(super::super::LoadData::default_terminal_width).unwrap_or(80);
     let mut result = TextScreen::new((width, 25));
     result.terminal_state_mut().is_terminal_buffer = false;
 

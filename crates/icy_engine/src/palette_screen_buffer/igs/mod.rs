@@ -14,7 +14,7 @@ pub use icy_parser_core::TerminalResolution;
 
 pub const IGS_VERSION: &str = "2.19";
 
-/// Extension trait for TerminalResolution with icy_engine-specific functionality
+/// Extension trait for `TerminalResolution` with icy_engine-specific functionality
 pub trait TerminalResolutionExt {
     fn resolution(&self) -> Size;
     fn text_resolution(&self) -> Size;

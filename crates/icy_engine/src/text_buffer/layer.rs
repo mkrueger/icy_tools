@@ -289,7 +289,7 @@ impl Layer {
     }
 
     /// Pre-allocate lines for the given size with invisible chars
-    /// This is an optimization for formats like XBin where size is known upfront
+    /// This is an optimization for formats like `XBin` where size is known upfront
     /// Allows direct access to chars without bounds checks
     pub fn preallocate_lines(&mut self, width: i32, height: i32) {
         self.size = Size::new(width, height);
@@ -305,8 +305,8 @@ impl Layer {
     ///
     /// # Safety
     /// Caller must ensure:
-    /// - pos.y < self.lines.len()
-    /// - pos.x < self.lines[pos.y].chars.len()
+    /// - pos.y < `self.lines.len()`
+    /// - pos.x < self.lines[pos.y].`chars.len()`
     #[inline(always)]
     pub fn set_char_unchecked(&mut self, pos: Position, attributed_char: AttributedChar) {
         // SAFETY: Caller guarantees bounds are valid

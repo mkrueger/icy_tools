@@ -11,11 +11,11 @@ use std::path::Path;
 /// decorative characters made up of multiple smaller characters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CharacterFontFormat {
-    /// FIGlet font format
+    /// `FIGlet` font format
     /// Extension: .flf
     Figlet,
 
-    /// TheDraw font format
+    /// `TheDraw` font format
     /// Extension: .tdf
     Tdf,
 }

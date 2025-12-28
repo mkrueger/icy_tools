@@ -3,7 +3,7 @@
 //! Maps SAUCE font names to dedicated font files.
 //! Implements fallback chain according to SAUCE specification.
 //!
-//! Font data converted from Moebius (blocktronics/moebius) using convert_moebius_fonts tool.
+//! Font data converted from Moebius (blocktronics/moebius) using `convert_moebius_fonts` tool.
 //!
 //! ## Missing Codepages (referenced in Moebius but no files available)
 //! - CP720 (Arabic)
@@ -21,7 +21,7 @@ use super::BitFont;
 
 /// Dedicated font data embedded in binary
 pub struct SauceFontMapping {
-    /// SAUCE font name (as specified in SAUCE TInfoS field)
+    /// SAUCE font name (as specified in SAUCE `TInfoS` field)
     pub sauce_name: &'static str,
     /// Font data (PSF2 format)
     pub data: &'static [u8],
@@ -213,7 +213,7 @@ const ATARI_ATASCII: &[u8] = include_bytes!("../../data/fonts/Sauce/atari/Atari_
 /// Complete SAUCE font mapping table
 ///
 /// According to SAUCE spec, these are the standard font names.
-/// See: https://www.acid.org/info/sauce/sauce.htm
+/// See: <https://www.acid.org/info/sauce/sauce.htm>
 ///
 /// Font data sourced from Moebius (blocktronics/moebius).
 pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
@@ -649,7 +649,7 @@ pub static SAUCE_FONT_MAP: &[SauceFontMapping] = &[
 /// 7. Default to "IBM VGA"
 ///
 /// # Arguments
-/// * `sauce_name` - The font name from SAUCE TInfoS field
+/// * `sauce_name` - The font name from SAUCE `TInfoS` field
 ///
 /// # Returns
 /// * `Ok(BitFont)` - The loaded font
@@ -703,8 +703,7 @@ pub fn load_sauce_font(sauce_name: &str) -> crate::Result<BitFont> {
     }
 
     // Fallback 3: For "Amiga Font+" → try "Amiga Font"
-    if sauce_name.ends_with('+') {
-        let base_name = &sauce_name[..sauce_name.len() - 1];
+    if let Some(base_name) = sauce_name.strip_suffix('+') {
         if let Some(font) = try_load_sauce_font(base_name) {
             return Ok(font);
         }

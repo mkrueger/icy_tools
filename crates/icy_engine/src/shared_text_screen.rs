@@ -1,8 +1,8 @@
-//! SharedTextScreen - A wrapper that allows sharing a TextScreen between components
+//! `SharedTextScreen` - A wrapper that allows sharing a `TextScreen` between components
 //!
 //! This wrapper holds an `Arc<Mutex<TextScreen>>` and implements `Screen` by delegating
-//! all calls to the inner TextScreen. This allows the same TextScreen to be shared
-//! between EditState (for editing) and Terminal (for display).
+//! all calls to the inner `TextScreen`. This allows the same `TextScreen` to be shared
+//! between `EditState` (for editing) and Terminal (for display).
 
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -14,14 +14,14 @@ use crate::{
 
 /// A wrapper around `Arc<Mutex<TextScreen>>` that implements `Screen`.
 ///
-/// This allows sharing a single TextScreen between multiple components
-/// (e.g., EditState and Terminal) while still satisfying the `Screen` trait.
+/// This allows sharing a single `TextScreen` between multiple components
+/// (e.g., `EditState` and Terminal) while still satisfying the `Screen` trait.
 pub struct SharedTextScreen {
     inner: Arc<Mutex<TextScreen>>,
 }
 
 impl SharedTextScreen {
-    /// Create a new SharedTextScreen wrapping the given Arc
+    /// Create a new `SharedTextScreen` wrapping the given Arc
     pub fn new(inner: Arc<Mutex<TextScreen>>) -> Self {
         Self { inner }
     }
@@ -31,7 +31,7 @@ impl SharedTextScreen {
         self.inner.clone()
     }
 
-    /// Create a new SharedTextScreen with a fresh TextScreen
+    /// Create a new `SharedTextScreen` with a fresh `TextScreen`
     pub fn with_size(size: impl Into<Size>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(TextScreen::new(size))),
@@ -149,7 +149,7 @@ impl Screen for SharedTextScreen {
     }
 
     fn clear_dirty_lines(&self) {
-        self.inner.lock().clear_dirty_lines()
+        self.inner.lock().clear_dirty_lines();
     }
 
     fn default_foreground_color(&self) -> u32 {
@@ -220,7 +220,7 @@ impl Screen for SharedTextScreen {
             format.to_bytes(&self.inner.lock().buffer, options)
         } else {
             Err(crate::EngineError::UnsupportedFormat {
-                description: format!("Unknown format: {}", extension),
+                description: format!("Unknown format: {extension}"),
             })
         }
     }

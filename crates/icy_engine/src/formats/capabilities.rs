@@ -1,6 +1,6 @@
 //! Format capability system for compatibility checking.
 //!
-//! This module provides a system to check if a TextBuffer can be saved
+//! This module provides a system to check if a `TextBuffer` can be saved
 //! in a specific file format without data loss.
 
 use bitflags::bitflags;

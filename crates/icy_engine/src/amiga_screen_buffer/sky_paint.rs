@@ -1,4 +1,4 @@
-//! SkyPaint - Minimal graphics engine for Skypix protocol
+//! `SkyPaint` - Minimal graphics engine for Skypix protocol
 
 use std::collections::HashSet;
 
@@ -12,7 +12,7 @@ pub struct Image {
     pub data: Vec<u8>,
 }
 
-/// SkyPaint graphics state - minimal for Skypix protocol
+/// `SkyPaint` graphics state - minimal for Skypix protocol
 pub struct SkyPaint {
     pen_pos: Position,
     viewport: Rectangle,
@@ -105,7 +105,7 @@ impl SkyPaint {
     ///
     /// # Fill Modes (from Amiga graphics.library)
     ///
-    /// - `FillMode::Outline`: Fill stops at pixels matching the outline color (pen_a).
+    /// - `FillMode::Outline`: Fill stops at pixels matching the outline color (`pen_a`).
     ///   All pixels NOT of the outline color are filled.
     /// - `FillMode::Color`: Fill replaces all connected pixels that are the
     ///   SAME color as the starting pixel (x, y).

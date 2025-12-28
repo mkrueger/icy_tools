@@ -8,7 +8,7 @@ use crate::{get_amiga_font_by_name, BitFont, EditableScreen, Palette, Screen, Si
 /// of the previous larger character cell.
 ///
 /// When switching from a larger font to the default 8x8 font, the Y position needs
-/// adjustment: y += old_font_height - base_font_height
+/// adjustment: y += `old_font_height` - `base_font_height`
 fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
     let current_page = buf.caret().font_page();
 
@@ -109,7 +109,7 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
                 switch_to_custom_font(buf, font);
             // JAM1 mode: CR moves to beginning of next line, LF is ignored
             } else {
-                log::warn!("SKYPIX_SET_FONT: Font '{}' size {} not found", name, size);
+                log::warn!("SKYPIX_SET_FONT: Font '{name}' size {size} not found");
                 buf.caret_mut().set_font_page(0);
             }
         }
@@ -199,7 +199,7 @@ impl super::AmigaScreenBuffer {
     pub(crate) fn handle_skypix_command_impl(&mut self, cmd: SkypixCommand) {
         // Use a raw pointer to avoid borrowing issues
         // Safety: We're splitting the borrow - sky_paint doesn't alias with the rest of self
-        let paint_ptr = &mut self.sky_paint as *mut SkyPaint;
+        let paint_ptr = &raw mut self.sky_paint;
         let paint = unsafe { &mut *paint_ptr };
 
         execute_skypix_command(self, paint, cmd);

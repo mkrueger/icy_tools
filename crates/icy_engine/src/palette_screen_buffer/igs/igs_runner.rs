@@ -275,9 +275,9 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         // Style and appearance commands
         IgsCommand::SetPenColor { pen, red, green, blue } => {
-            let r = (red * 34) as u8;
-            let g = (green * 34) as u8;
-            let b = (blue * 34) as u8;
+            let r = red * 34;
+            let g = green * 34;
+            let b = blue * 34;
             let (palette_size, color_map) = get_color_map(buf);
 
             // For Medium (4 colors) and High (2 colors) resolution, only accept pens 0-3 or 0-1
@@ -410,7 +410,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                 CursorMode::Off => buf.caret_mut().visible = false,
                 CursorMode::On => buf.caret_mut().visible = true,
                 CursorMode::DestructiveBackspace | CursorMode::NonDestructiveBackspace => {
-                    log::info!("IGS Cursor backspace mode {:?} not implemented", mode);
+                    log::info!("IGS Cursor backspace mode {mode:?} not implemented");
                 }
             }
         }
@@ -511,7 +511,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         }
 
         IgsCommand::SetColorRegister { register, value } => {
-            log::info!("IGS SetColorRegister {} = {} not implemented", register, value);
+            log::info!("IGS SetColorRegister {register} = {value} not implemented");
         }
 
         IgsCommand::SetRandomRange { range_type } => {
@@ -547,7 +547,7 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                 }
                 _ => {
                     // Define a new mouse zone with clickable region
-                    let host_command = if !string.is_empty() { Some(string.clone()) } else { None };
+                    let host_command = if string.is_empty() { None } else { Some(string.clone()) };
                     let (x1, y1, x2, y2) = (
                         x1.evaluate(&paint.random_bounds, 0, 0),
                         y1.evaluate(&paint.random_bounds, 0, 0),

@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use super::BitFont;
 
-/// Macro to create array of OnceLock
+/// Macro to create array of `OnceLock`
 macro_rules! once_lock_array {
     ($n:expr) => {{
         const INIT: [OnceLock<BitFont>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
@@ -16,7 +16,7 @@ macro_rules! once_lock_array {
 }
 
 /// Static cache for each slot/height combination: [slot][height_index]
-/// height_index: 0=8px, 1=14px, 2=16px
+/// `height_index`: 0=8px, 1=14px, 2=16px
 static FONT_CACHE: [[OnceLock<BitFont>; 3]; ANSI_SLOT_COUNT] = once_lock_array!(ANSI_SLOT_COUNT);
 
 /// ANSI Font Slot mit optionalen Größenvarianten (PSF2-Format)
@@ -578,7 +578,7 @@ pub static ANSI_SLOT_FONTS: [AnsiSlotFont; ANSI_SLOT_COUNT] = [
 pub fn get_ansi_font(slot: u8, font_height: u8) -> Option<&'static BitFont> {
     let slot = slot as usize;
     if slot >= ANSI_SLOT_COUNT {
-        log::warn!("Requested ANSI font slot {} is out of range", slot);
+        log::warn!("Requested ANSI font slot {slot} is out of range");
         return None;
     }
 
@@ -604,20 +604,17 @@ pub fn get_ansi_font(slot: u8, font_height: u8) -> Option<&'static BitFont> {
         _ => slot_font.f16.or(slot_font.f14).or(slot_font.f08),
     };
 
-    match font_data {
-        Some(data) => {
-            let Ok(font) = BitFont::from_bytes(slot_font.name, data) else {
-                log::error!("Failed to parse font data for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
-                return None;
-            };
-            // Store in cache and return reference
-            let _ = FONT_CACHE[slot][height_index].set(font);
-            Some(FONT_CACHE[slot][height_index].get().unwrap())
-        }
-        None => {
-            log::warn!("No font data available for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
-            None
-        }
+    if let Some(data) = font_data {
+        let Ok(font) = BitFont::from_bytes(slot_font.name, data) else {
+            log::error!("Failed to parse font data for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
+            return None;
+        };
+        // Store in cache and return reference
+        let _ = FONT_CACHE[slot][height_index].set(font);
+        Some(FONT_CACHE[slot][height_index].get().unwrap())
+    } else {
+        log::warn!("No font data available for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
+        None
     }
 }
 

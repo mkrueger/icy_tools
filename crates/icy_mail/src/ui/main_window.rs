@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use crate::ui::NavigateDirection;
 use crate::{qwk::QwkPackage, ui::Message};
-use iced::widget::{button, column, container, pane_grid, progress_bar, text, text_editor, Space};
+use iced::widget::{button, column, container, pane_grid, progress_bar, text, Space};
 use iced::{window, Alignment, Element, Length, Task, Theme};
+use icy_engine::{EditableScreen, Screen, Size, TextScreen};
+use icy_engine_gui::{MonitorSettings, Terminal};
+use parking_lot::Mutex;
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub enum MainWindowMode {
@@ -24,7 +27,8 @@ pub struct MainWindow {
     pub selected_conference: u16,
     pub selected_message: Option<usize>,
     pub message_list_scroll: iced::widget::Id,
-    pub message_content: text_editor::Content,
+    pub terminal: Terminal,
+    pub monitor_settings: Arc<MonitorSettings>,
     pub _panes: pane_grid::State<PaneContent>,
     pub show_threads: bool,
     pub conference_list_focused: bool,
@@ -54,6 +58,12 @@ impl MainWindow {
             .split(pane_grid::Axis::Horizontal, message_list_pane, PaneContent::MessageContent)
             .unwrap();
 
+        // Create a default screen for the terminal (80x25)
+        let screen: Box<dyn Screen> = Box::new(TextScreen::new(Size::new(80, 25)));
+        let screen = Arc::new(Mutex::new(screen));
+        let mut terminal = Terminal::new(screen);
+        terminal.set_fit_terminal_height_to_bounds(true);
+
         Self {
             _id: id,
             mode,
@@ -63,7 +73,8 @@ impl MainWindow {
             selected_conference: 0,
             selected_message: None,
             message_list_scroll: iced::widget::Id::unique(),
-            message_content: text_editor::Content::new(),
+            terminal,
+            monitor_settings: Arc::new(MonitorSettings::default()),
             _panes: panes,
             show_threads: false,
             conference_list_focused: false,
@@ -118,7 +129,7 @@ impl MainWindow {
             Message::SelectConference(conf_idx) => {
                 self.selected_conference = conf_idx;
                 self.selected_message = None;
-                self.message_content = text_editor::Content::new();
+                self.clear_message_screen();
                 self.conference_list_focused = true;
                 self.message_list_focused = false;
                 Task::none()
@@ -129,12 +140,10 @@ impl MainWindow {
                 self.conference_list_focused = false;
                 self.message_list_focused = true;
 
-                // Load message content
+                // Load message content into terminal screen
                 if let Some(package) = &self.package {
                     if let Ok(message) = package.get_message(msg_idx) {
-                        // Convert message content to string for display
-                        let content = String::from_utf8_lossy(&message.text).to_string();
-                        self.message_content = text_editor::Content::with_text(&content);
+                        self.load_message_to_screen(&message.text);
                     }
                 }
                 Task::none()
@@ -272,10 +281,9 @@ impl MainWindow {
 
                     self.selected_message = Some(messages[new_position]);
 
-                    // Load the message content
+                    // Load the message content into terminal screen
                     if let Ok(msg) = package.get_message(messages[new_position]) {
-                        let content = String::from_utf8_lossy(&msg.text).to_string();
-                        self.message_content = text_editor::Content::with_text(&content);
+                        self.load_message_to_screen(&msg.text);
                     }
                 }
                 Task::none()
@@ -313,7 +321,68 @@ impl MainWindow {
                 Task::none()
             }
 
+            Message::TerminalMessage(msg) => {
+                self.handle_terminal_message(msg);
+                Task::none()
+            }
+
             _ => Task::none(),
+        }
+    }
+
+    /// Load message text into the terminal screen
+    fn load_message_to_screen(&mut self, data: &[u8]) {
+        use icy_engine::load_with_parser;
+        use icy_parser_core::AnsiParser;
+
+        // Create a new text screen for the message
+        let mut text_screen = TextScreen::new(Size::new(80, 25));
+        text_screen.terminal_state_mut().is_terminal_buffer = false;
+
+        // Parse the message content (could be ANSI, ASCII, or plain text)
+        let mut parser = AnsiParser::new();
+        let _ = load_with_parser(&mut text_screen, &mut parser, data, true, -1);
+
+        // Wrap in Arc<Mutex> for the Terminal
+        let screen: Box<dyn Screen> = Box::new(text_screen);
+        let screen = Arc::new(Mutex::new(screen));
+        self.terminal = Terminal::new(screen);
+        self.terminal.set_fit_terminal_height_to_bounds(true);
+
+        // Reset scroll position
+        self.terminal.scroll_x_to(0.0);
+        self.terminal.scroll_y_to(0.0);
+        self.terminal.sync_scrollbar_with_viewport();
+    }
+
+    /// Clear the message screen
+    fn clear_message_screen(&mut self) {
+        let screen: Box<dyn Screen> = Box::new(TextScreen::new(Size::new(80, 25)));
+        let screen = Arc::new(Mutex::new(screen));
+        self.terminal = Terminal::new(screen);
+        self.terminal.set_fit_terminal_height_to_bounds(true);
+    }
+
+    /// Handle terminal messages (scrolling, etc.)
+    fn handle_terminal_message(&mut self, msg: icy_engine_gui::TerminalMessage) {
+        use icy_engine_gui::TerminalMessage;
+        match msg {
+            TerminalMessage::Scroll(delta) => {
+                // Handle scroll events
+                match delta {
+                    icy_engine_gui::WheelDelta::Lines { x: _, y } => {
+                        let scroll_amount = y * 20.0; // Adjust scroll speed
+                        let mut vp = self.terminal.viewport.write();
+                        vp.scroll_y = (vp.scroll_y - scroll_amount).max(0.0);
+                    }
+                    icy_engine_gui::WheelDelta::Pixels { x: _, y } => {
+                        let mut vp = self.terminal.viewport.write();
+                        vp.scroll_y = (vp.scroll_y - y).max(0.0);
+                    }
+                }
+                self.terminal.sync_scrollbar_with_viewport();
+            }
+            _ => {}
         }
     }
 

@@ -1,8 +1,8 @@
-//! CommandSink implementation for EditableScreen
+//! `CommandSink` implementation for `EditableScreen`
 //!
 //! This module provides `ScreenSink`, an adapter that implements the `CommandSink` trait
 //! from `icy_parser_core` for any type implementing `EditableScreen`. This allows the new
-//! parser infrastructure to drive icy_engine's terminal emulation.
+//! parser infrastructure to drive `icy_engine`'s terminal emulation.
 //!
 //! # Example
 //!
@@ -23,8 +23,8 @@ use icy_parser_core::{
 };
 
 use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel};
-/// Adapter that implements CommandSink for any type implementing EditableScreen.
-/// This allows icy_parser_core parsers to drive icy_engine's terminal emulation.
+/// Adapter that implements `CommandSink` for any type implementing `EditableScreen`.
+/// This allows `icy_parser_core` parsers to drive `icy_engine`'s terminal emulation.
 pub struct ScreenSink<'a> {
     screen: &'a mut dyn EditableScreen,
 }
@@ -44,7 +44,7 @@ impl<'a> ScreenSink<'a> {
         self.screen
     }
 
-    /// Get the current caret attribute with inverse_video applied if active
+    /// Get the current caret attribute with `inverse_video` applied if active
     fn display_attribute(&self) -> crate::TextAttribute {
         let mut attr = if self.screen.terminal_state().inverse_video {
             let mut attr = self.screen.caret().attribute;
@@ -140,21 +140,18 @@ impl<'a> ScreenSink<'a> {
                             (c as u32) % self.screen.max_base_colors()
                         };
                         self.screen.caret_mut().attribute.set_foreground(col);
-                        return;
                     }
                     Color::Extended(c) => {
                         // Extended colors (256-color palette) - store as extended palette index
                         self.screen.caret_mut().attribute.set_foreground_ext(c);
-                        return;
                     }
                     Color::Rgb(r, g, b) => {
                         self.screen.caret_mut().attribute.set_foreground_rgb(r, g, b);
-                        return;
                     }
                     Color::Default => {
                         attr.set_foreground(7);
                     }
-                };
+                }
             }
             SgrAttribute::Background(color) => {
                 match color {
@@ -168,16 +165,14 @@ impl<'a> ScreenSink<'a> {
                     Color::Extended(c) => {
                         // Extended colors (256-color palette) - store as extended palette index
                         self.screen.caret_mut().attribute.set_background_ext(c);
-                        return;
                     }
                     Color::Rgb(r, g, b) => {
                         self.screen.caret_mut().attribute.set_background_rgb(r, g, b);
-                        return;
                     }
                     Color::Default => {
                         attr.set_background(0);
                     }
-                };
+                }
             }
             SgrAttribute::IdeogramUnderline
             | SgrAttribute::IdeogramDoubleUnderline
@@ -309,7 +304,7 @@ impl<'a> ScreenSink<'a> {
     }
 }
 
-impl<'a> CommandSink for ScreenSink<'a> {
+impl CommandSink for ScreenSink<'_> {
     fn print(&mut self, text: &[u8]) {
         match self.screen.buffer_type() {
             BufferType::Unicode => {
@@ -336,7 +331,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
 
                 // Now output the collected characters
                 for ch in chars {
-                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH as i32 {
+                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH {
                         // Prevent excessive buffer growth
                         break;
                     }
@@ -347,7 +342,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
             _ => {
                 // Legacy mode: treat each byte as a character (CP437, Petscii, Atascii, Viewdata)
                 for &byte in text {
-                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT as i32 || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH as i32 {
+                    if self.screen.height() >= crate::limits::MAX_BUFFER_HEIGHT || self.screen.width() >= crate::limits::MAX_BUFFER_WIDTH {
                         // Prevent excessive buffer growth
                         break;
                     }
@@ -394,8 +389,8 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 let n = n as i32;
                 let auto_wrap = match wrapping {
                     Wrapping::Never => false,
-                    Wrapping::Always => true,
-                    Wrapping::Setting => true, // Use terminal's auto_wrap_mode setting
+                    // Use terminal's auto_wrap_mode setting
+                    Wrapping::Always | Wrapping::Setting => true,
                 };
                 match direction {
                     Direction::Up => self.screen.up(n, false, auto_wrap),
@@ -821,7 +816,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                 }
                 Direction::Down => {
                     let mut pos = self.screen.caret_position();
-                    pos.y = pos.y + 1;
+                    pos.y += 1;
                     if pos.y >= self.screen.terminal_state().height() {
                         pos.y = 0;
                     }
@@ -866,13 +861,13 @@ impl<'a> CommandSink for ScreenSink<'a> {
         match dcs {
             DeviceControlString::LoadFont(slot, data) => {
                 // Load custom font from decoded base64 data
-                match crate::BitFont::from_bytes(format!("custom font {}", slot), &data) {
+                match crate::BitFont::from_bytes(format!("custom font {slot}"), &data) {
                     Ok(font) => {
-                        log::info!("Loaded custom font into slot {}", slot);
+                        log::info!("Loaded custom font into slot {slot}");
                         self.screen.set_font(slot, font);
                     }
                     Err(err) => {
-                        log::error!("Failed to load custom font: {}", err);
+                        log::error!("Failed to load custom font: {err}");
                     }
                 }
             }
@@ -887,7 +882,7 @@ impl<'a> CommandSink for ScreenSink<'a> {
                     self.screen.add_sixel(pos, sixel);
                 }
                 Err(err) => {
-                    log::error!("Error loading sixel: {}", err);
+                    log::error!("Error loading sixel: {err}");
                 }
             },
         }
@@ -898,24 +893,24 @@ impl<'a> CommandSink for ScreenSink<'a> {
         match osc {
             OperatingSystemCommand::SetTitle(title) => {
                 if let Ok(title_str) = std::str::from_utf8(&title) {
-                    log::debug!("OSC: Set title to '{}'", title_str);
+                    log::debug!("OSC: Set title to '{title_str}'");
                     // TODO: Add SetTitle callback variant
                 }
             }
             OperatingSystemCommand::SetIconName(name) => {
                 if let Ok(name_str) = std::str::from_utf8(&name) {
-                    log::debug!("OSC: Set icon name to '{}'", name_str);
+                    log::debug!("OSC: Set icon name to '{name_str}'");
                 }
             }
             OperatingSystemCommand::SetWindowTitle(title) => {
                 if let Ok(title_str) = std::str::from_utf8(&title) {
-                    log::debug!("OSC: Set window title to '{}'", title_str);
+                    log::debug!("OSC: Set window title to '{title_str}'");
                 }
             }
             OperatingSystemCommand::SetPaletteColor(index, r, g, b) => {
                 // Set palette color
                 self.screen.palette_mut().set_color_rgb(index as u32, r, g, b);
-                log::debug!("OSC: Set palette color {} to RGB({}, {}, {})", index, r, g, b);
+                log::debug!("OSC: Set palette color {index} to RGB({r}, {g}, {b})");
             }
             OperatingSystemCommand::Hyperlink { params, uri } => {
                 if let (Ok(_params_str), Ok(uri_str)) = (std::str::from_utf8(&params), std::str::from_utf8(&uri)) {
@@ -950,6 +945,6 @@ impl<'a> CommandSink for ScreenSink<'a> {
     }
 
     fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
-        log::error!("Parser error: {:?}", error);
+        log::error!("Parser error: {error:?}");
     }
 }

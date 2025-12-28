@@ -36,7 +36,7 @@ pub(crate) fn save_ctrla(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
 
             let mut found_tag = None;
             for tag in &buf.tags {
-                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y as i32 && tag.position.x == pos.x as i32 {
+                if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y && tag.position.x == pos.x {
                     found_tag = Some(tag);
                     cur_attribute = tag.attribute;
                     break;
