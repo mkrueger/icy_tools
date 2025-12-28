@@ -1,5 +1,5 @@
 use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
-use crate::{Palette, Position, Result, TextBuffer, TextPane, TextScreen, ATARI, ATARI_DEFAULT_PALETTE};
+use crate::{Palette, Position, Result, Size, TextBuffer, TextPane, TextScreen, ATARI, ATARI_DEFAULT_PALETTE};
 
 #[allow(unused)]
 pub(crate) fn save_atascii(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
@@ -49,6 +49,7 @@ pub(crate) fn load_atascii(data: &[u8], _load_data_opt: Option<&LoadData>, sauce
     result.buffer.clear_font_table();
     let font = ATARI.clone();
     result.buffer.set_font(0, font);
+    result.buffer.set_font_dimensions(Size::new(8, 8)); // Atari uses 8x8 fonts
     result.buffer.palette = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
 
     result.buffer.buffer_type = crate::BufferType::Atascii;

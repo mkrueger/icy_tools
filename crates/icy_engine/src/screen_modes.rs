@@ -264,6 +264,7 @@ impl ScreenMode {
                 screen.clear_font_table();
                 screen.set_font(0, C64_UNSHIFTED.clone());
                 screen.set_font(1, C64_SHIFTED.clone());
+                screen.set_font_dimensions(Size::new(8, 8)); // C64 uses 8x8 fonts
                 *screen.palette_mut() = Palette::from_slice(&C64_DEFAULT_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Petscii;
 
@@ -273,10 +274,12 @@ impl ScreenMode {
                 screen.clear_font_table();
                 if *i == 40 {
                     screen.set_font(0, ATARI.clone());
+                    screen.set_font_dimensions(Size::new(8, 8)); // Atari uses 8x8 fonts
                     *screen.palette_mut() = Palette::from_slice(&ATARI_DEFAULT_PALETTE);
                 } else {
                     screen.set_font(0, ATARI_XEP80.clone());
                     screen.set_font(1, ATARI_XEP80_INT.clone());
+                    screen.set_font_dimensions(Size::new(8, 8)); // XEP80 also uses 8x8 fonts
                     *screen.palette_mut() = Palette::from_slice(&ATARI_XEP80_PALETTE);
                 }
                 *screen.buffer_type_mut() = BufferType::Atascii;
@@ -284,6 +287,7 @@ impl ScreenMode {
             ScreenMode::Videotex | ScreenMode::Mode7 => {
                 screen.clear_font_table();
                 screen.set_font(0, VIEWDATA.clone());
+                screen.set_font_dimensions(Size::new(6, 10)); // Viewdata SAA5050 uses 6x10 fonts
                 *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Viewdata;
             }
@@ -296,6 +300,7 @@ impl ScreenMode {
             }
             ScreenMode::AtariST(_x, _igs) => {
                 *screen.buffer_type_mut() = BufferType::Atascii;
+                screen.set_font_dimensions(Size::new(8, 8));
             }
         }
         screen.caret_default_colors();

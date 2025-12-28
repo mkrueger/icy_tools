@@ -1,5 +1,5 @@
 use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
-use crate::{AttributedChar, EditableScreen, Palette, Result, TextBuffer, TextScreen, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED};
+use crate::{AttributedChar, EditableScreen, Palette, Result, Size, TextBuffer, TextScreen, C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED};
 
 #[allow(unused)]
 pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u8>> {
@@ -18,6 +18,7 @@ pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>, sauce_opt
     result.buffer.clear_font_table();
     result.buffer.set_font(0, C64_UNSHIFTED.clone());
     result.buffer.set_font(1, C64_SHIFTED.clone());
+    result.buffer.set_font_dimensions(Size::new(8, 8)); // C64 uses 8x8 fonts
 
     result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
     result.buffer.buffer_type = crate::BufferType::Petscii;

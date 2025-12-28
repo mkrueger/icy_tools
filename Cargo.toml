@@ -28,9 +28,9 @@ icy_engine_scripting = { path = "crates/icy_engine_scripting"}
 icy_sauce =  { git ="https://github.com/mkrueger/icy_sauce" }
 
 #icy_sauce = { path = "../icy_sauce" }
-icy_sixel = "0.4.3"
-icy_net = { git ="https://github.com/mkrueger/icy_board" }
-#icy_net = { path ="../icy_board/crates/icy_net" }
+icy_sixel = "0.5.0"
+#icy_net = { git ="https://github.com/mkrueger/icy_board" }
+icy_net = { path ="../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
 unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
 retrofont = { git = "https://github.com/mkrueger/retrofont" }
