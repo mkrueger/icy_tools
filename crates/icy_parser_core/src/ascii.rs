@@ -30,6 +30,14 @@ impl CommandParser for AsciiParser {
         let mut start = i;
         while i < len {
             let nb = unsafe { *input.get_unchecked(i) };
+
+            if nb == 0 {
+                flush_input(input, sink, i, start);
+                i += 1;
+                start = i;
+                continue;
+            }
+
             if let Some(ctrl) = unsafe { CONTROL_COMMAND.get_unchecked(nb as usize) } {
                 flush_input(input, sink, i, start);
                 sink.emit(*ctrl);

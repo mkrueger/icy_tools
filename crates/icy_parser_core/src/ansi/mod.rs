@@ -308,6 +308,11 @@ impl CommandParser for AnsiParser {
             match self.state {
                 ParserState::Default => {
                     match byte {
+                        0 => {
+                            self.flush_printable(sink, input, printable_start, i);
+                            i += 1;
+                            printable_start = i;
+                        }
                         ESC => {
                             self.flush_printable(sink, input, printable_start, i);
                             self.state = ParserState::Escape;
