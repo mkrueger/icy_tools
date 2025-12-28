@@ -311,7 +311,7 @@ fn render_sixel_thumbnail(path: &String, data: &[u8], label: &str, cancel_token:
         return None;
     }
 
-    match icy_sixel::sixel_decode(data) {
+    match icy_sixel::SixelImage::decode(data) {
         Ok(image) => {
             if cancel_token.is_cancelled() {
                 return None;

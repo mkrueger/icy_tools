@@ -1,5 +1,5 @@
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
-use crate::features::{AutoTransferScanner, IEmsiAutoLogin};
+use crate::features::AutoTransferScanner;
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
 use crate::ConnectionInformation;
@@ -10,7 +10,7 @@ use icy_engine_gui::music::sound_effects::sound_data;
 use icy_engine_gui::util::BaudEmulator;
 use icy_engine_gui::util::QueuedCommand;
 use icy_engine_gui::util::QueueingSink;
-use icy_net::iemsi::EmsiISI;
+use icy_net::iemsi::{complete_iemsi_handshake, EmsiISI, ICITerminalSettings, ICIUserSettings, IEmsi};
 use icy_net::rlogin::RloginConfig;
 use icy_net::{
     modem::{ModemConfiguration, ModemConnection, ModemResponseType},
@@ -193,7 +193,8 @@ pub struct TerminalThread {
 
     // Auto-features
     auto_transfer_scanner: AutoTransferScanner,
-    iemsi_auto_login: Option<IEmsiAutoLogin>,
+    iemsi_scanner: Option<IEmsi>,
+    iemsi_user_settings: Option<ICIUserSettings>,
     auto_transfer: Option<(String, bool, Option<String>)>, // For pending auto-transfers (protocol_id, is_download, filename)
     transfer_protocols: Vec<TransferProtocol>,             // Stored protocol list for auto-transfer lookup
 
@@ -251,7 +252,8 @@ impl TerminalThread {
             auto_transfer_scanner: AutoTransferScanner::default(),
             transfer_protocols: Vec::new(),
             baud_emulator: BaudEmulator::new(),
-            iemsi_auto_login: None,
+            iemsi_scanner: None,
+            iemsi_user_settings: None,
             auto_transfer: None,
             emulated_modem: EmulatedModem::default(),
             capture_writer: None,
@@ -777,7 +779,8 @@ impl TerminalThread {
 
     fn setup_auto_login(&mut self, config: &ConnectionConfig) {
         if !config.iemsi_auto_login {
-            self.iemsi_auto_login = None;
+            self.iemsi_scanner = None;
+            self.iemsi_user_settings = None;
             return;
         }
 
@@ -815,7 +818,12 @@ impl TerminalThread {
             let user = effective_user.clone().unwrap();
             let pass = effective_pass.clone().unwrap();
             if !user.is_empty() && !pass.is_empty() {
-                self.iemsi_auto_login = Some(IEmsiAutoLogin::new(user, pass));
+                self.iemsi_scanner = Some(IEmsi::default());
+                self.iemsi_user_settings = Some(ICIUserSettings {
+                    name: user,
+                    password: pass,
+                    ..Default::default()
+                });
             }
         }
     }
@@ -842,7 +850,8 @@ impl TerminalThread {
         self.baud_emulator = BaudEmulator::new();
         self.connection_time = None;
         self.utf8_buffer.clear();
-        self.iemsi_auto_login = None;
+        self.iemsi_scanner = None;
+        self.iemsi_user_settings = None;
         self.auto_transfer_scanner = AutoTransferScanner::default();
         self.transfer_protocols.clear();
         self.send_event(TerminalEvent::Disconnected(None));
@@ -935,29 +944,6 @@ impl TerminalThread {
 
     #[async_recursion::async_recursion(?Send)]
     async fn process_data(&mut self, data: &[u8]) {
-        // Check for auto-features before parsing
-        for &byte in data {
-            if let Some((protocol_id, is_download)) = self.auto_transfer_scanner.try_transfer(byte) {
-                self.auto_transfer = Some((protocol_id, is_download, None));
-            }
-
-            let mut logged_in = false;
-            if let Some(autologin) = &mut self.iemsi_auto_login {
-                if let Ok(Some(login_data)) = autologin.try_login(byte) {
-                    if let Some(conn) = &mut self.connection {
-                        let _ = conn.send(&login_data).await;
-                    }
-                    if let Some(isi) = &autologin.iemsi.isi {
-                        let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi.clone())));
-                    }
-                }
-                logged_in = autologin.is_logged_in();
-            }
-            if logged_in {
-                self.iemsi_auto_login = None;
-            }
-        }
-
         // Parse data into command queue (reuse existing sink to preserve queue)
         if self.use_utf8 {
             // UTF-8 mode: decode multi-byte sequences
@@ -1021,6 +1007,40 @@ impl TerminalThread {
 
         // Process the command queue with granular locking
         self.process_command_queue().await;
+
+        // Check for auto-features after display
+        for &byte in data {
+            if let Some((protocol_id, is_download)) = self.auto_transfer_scanner.try_transfer(byte) {
+                self.auto_transfer = Some((protocol_id, is_download, None));
+            }
+
+            // IEMSI auto-login: scan for EMSI_IRQ
+            if let Some(scanner) = &mut self.iemsi_scanner {
+                if scanner.scan_byte(byte) {
+                    // EMSI_IRQ detected - perform handshake
+                    if let (Some(conn), Some(user_settings)) = (&mut self.connection, &self.iemsi_user_settings) {
+                        let terminal_settings = ICITerminalSettings::default();
+                        match complete_iemsi_handshake(conn, user_settings, &terminal_settings, 5000).await {
+                            Ok(Some(isi)) => {
+                                log::info!("[IEMSI] Login successful: {}", isi.name);
+                                let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi)));
+                                // Clear scanner after login
+                                self.iemsi_scanner = None;
+                                self.iemsi_user_settings = None;
+                            }
+                            Ok(None) => {
+                                log::warn!("[IEMSI] Handshake failed or timed out");
+                                scanner.reset();
+                            }
+                            Err(e) => {
+                                log::error!("[IEMSI] Handshake error: {}", e);
+                                scanner.reset();
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Check if command needs async processing (delays, sound, etc.)

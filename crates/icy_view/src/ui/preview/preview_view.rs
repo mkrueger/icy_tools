@@ -218,7 +218,7 @@ impl PreviewView {
 
                         if is_sixel {
                             // Use icy_sixel for Sixel files
-                            match icy_sixel::sixel_decode(&data) {
+                            match icy_sixel::SixelImage::decode(&data) {
                                 Ok(image) => {
                                     let w = image.width as u32;
                                     let h = image.height as u32;

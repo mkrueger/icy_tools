@@ -72,7 +72,7 @@ impl Sixel {
     pub fn parse_from(aspect_ratio: Option<u16>, zero_color: Option<u16>, grid_size: Option<u16>, sixel_data: &[u8]) -> Result<Self> {
         let settings = icy_sixel::decoder::DcsSettings::new(aspect_ratio, zero_color, grid_size);
         let image =
-            icy_sixel::decoder::sixel_decode_from_dcs(sixel_data, settings).map_err(|e| crate::EngineError::SixelDecodeError { message: e.to_string() })?;
+            icy_sixel::SixelImage::decode_from_dcs(sixel_data, settings).map_err(|e| crate::EngineError::SixelDecodeError { message: e.to_string() })?;
 
         Ok(Sixel {
             position: Position::default(),

@@ -281,7 +281,9 @@ impl MainWindow {
             }
             Message::Hangup => {
                 let _ = self.terminal_tx.send(TerminalCommand::Disconnect);
+                self.is_connected = false;
                 self.terminal_window.disconnect();
+                self.connection_time = None;
                 Task::none()
             }
             Message::SendData(data) => {
@@ -1275,14 +1277,14 @@ impl MainWindow {
             TerminalEvent::Connected => {
                 self.is_connected = true;
                 self.last_address = self.current_address.clone();
-                self.terminal_window.is_connected = true;
+                self.terminal_window.set_connected();
                 self.connection_time = Some(Instant::now());
                 self.show_disconnect = false;
                 Task::none()
             }
             TerminalEvent::Disconnected(_error) => {
                 self.is_connected = false;
-                self.terminal_window.disconnect();
+                self.terminal_window.connection_lost();
                 self.connection_time = None;
                 Task::none()
             }

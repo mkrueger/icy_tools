@@ -29,6 +29,7 @@ const DOWNLOAD_SVG: &[u8] = include_bytes!("../../data/icons/download.svg");
 pub struct TerminalWindow {
     pub terminal: Terminal,
     pub is_connected: bool,
+    pub is_dialing: bool, // Track if we're currently trying to connect
     pub is_capturing: bool,
     pub current_address: Option<Address>,
     pub serial_connected: Option<Serial>,
@@ -47,6 +48,7 @@ impl TerminalWindow {
         Self {
             terminal: Terminal::new(edit_screen),
             is_connected: false,
+            is_dialing: false,
             is_capturing: false,
             current_address: None,
             serial_connected: None,
@@ -405,12 +407,8 @@ impl TerminalWindow {
                     ..iced::Font::default()
                 })
         } else if let Some(addr) = &self.current_address {
-            if !self.is_connected {
-                text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().background.base.text),
-                    ..Default::default()
-                })
-            } else {
+            if self.is_connected {
+                // Connected - show system name in green
                 let system = if addr.system_name.is_empty() {
                     addr.address.clone()
                 } else {
@@ -427,8 +425,21 @@ impl TerminalWindow {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::default()
                     })
+            } else if self.is_dialing {
+                // Dialing - show "DIALING..." in normal color
+                text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().background.base.text),
+                    ..Default::default()
+                })
+            } else {
+                // Connection lost but address still set - show "NO CARRIER" in red
+                text("NO CARRIER").style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                    ..Default::default()
+                })
             }
         } else {
+            // No address - show "NO CARRIER" in red
             text("NO CARRIER").style(|theme: &iced::Theme| iced::widget::text::Style {
                 color: Some(theme.extended_palette().danger.base.color),
                 ..Default::default()
@@ -715,6 +726,8 @@ impl TerminalWindow {
     // Helper methods for terminal operations
     pub fn connect(&mut self, address: Option<Address>) {
         self.current_address = address;
+        self.is_dialing = true; // Mark that we're trying to connect
+        self.is_connected = false;
         match &self.current_address {
             Some(addr) => {
                 self.baud_emulation = addr.baud_emulation;
@@ -730,8 +743,25 @@ impl TerminalWindow {
         };
     }
 
+    /// Called when connection is established
+    pub fn set_connected(&mut self) {
+        self.is_connected = true;
+        self.is_dialing = false;
+    }
+
+    /// Called when connection fails or is lost
+    /// Does NOT clear current_address - that's only cleared on explicit hangup
+    pub fn connection_lost(&mut self) {
+        self.is_connected = false;
+        self.is_dialing = false;
+        self.serial_connected = None;
+        self.iemsi_info = None;
+    }
+
+    /// Called on explicit hangup - clears everything
     pub fn disconnect(&mut self) {
         self.is_connected = false;
+        self.is_dialing = false;
         self.current_address = None;
         self.serial_connected = None;
         self.iemsi_info = None;
