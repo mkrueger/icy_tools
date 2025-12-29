@@ -228,7 +228,7 @@ impl CaptureDialogState {
                 error_tooltip(error),
                 Space::new().width(4.0),
                 text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
+                    color: Some(theme.destructive.base),
                 })
             ]
             .align_y(Alignment::Center)
@@ -240,7 +240,7 @@ impl CaptureDialogState {
                 text(file_warning_msg)
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().warning.base.color),
+                        color: Some(theme.warning.base),
                     })
             ]
         } else {

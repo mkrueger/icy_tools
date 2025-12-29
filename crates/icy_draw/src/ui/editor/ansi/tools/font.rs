@@ -421,11 +421,8 @@ impl ToolHandler for FontTool {
         let row1: Element<'_, ToolMessage> = ('!'..='O')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
-                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    iced::widget::text::Style {
-                        color: Some(if ok { p.background.base.text } else { p.secondary.base.color }),
-                    }
+                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| iced::widget::text::Style {
+                    color: Some(if ok { theme.background.on } else { theme.button.on }),
                 }))
             })
             .into();
@@ -433,24 +430,18 @@ impl ToolHandler for FontTool {
         let row2: Element<'_, ToolMessage> = ('P'..='~')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
-                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    iced::widget::text::Style {
-                        color: Some(if ok { p.background.base.text } else { p.secondary.base.color }),
-                    }
+                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| iced::widget::text::Style {
+                    color: Some(if ok { theme.background.on } else { theme.button.on }),
                 }))
             })
             .into();
 
         let char_preview: Element<'_, ToolMessage> = container(column![row1, row2].spacing(2))
             .padding([2, 6])
-            .style(|theme: &Theme| {
-                let p = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(p.background.weak.color)),
-                    border: iced::Border::default().rounded(4).width(1).color(p.background.strong.color),
-                    ..Default::default()
-                }
+            .style(|theme: &Theme| container::Style {
+                background: Some(iced::Background::Color(theme.secondary.base)),
+                border: iced::Border::default().rounded(4).width(1).color(theme.primary.divider),
+                ..Default::default()
             })
             .into();
 

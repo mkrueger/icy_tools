@@ -151,11 +151,13 @@ where
 }
 
 fn toast_container_style(theme: &Theme) -> container::Style {
-    let palette = theme.palette();
     container::Style {
-        background: Some(iced::Background::Color(iced::Color { a: 0.95, ..palette.background })),
+        background: Some(iced::Background::Color(iced::Color {
+            a: 0.95,
+            ..theme.background.base
+        })),
         border: iced::Border {
-            color: palette.text.scale_alpha(0.2),
+            color: theme.background.on.scale_alpha(0.2),
             width: 1.0,
             radius: 6.0.into(),
         },
@@ -169,7 +171,6 @@ fn toast_container_style(theme: &Theme) -> container::Style {
 }
 
 fn close_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.palette();
     let base_alpha = match status {
         button::Status::Hovered => 0.8,
         button::Status::Pressed => 1.0,
@@ -177,7 +178,7 @@ fn close_button_style(theme: &Theme, status: button::Status) -> button::Style {
     };
     button::Style {
         background: None,
-        text_color: palette.text.scale_alpha(base_alpha),
+        text_color: theme.background.on.scale_alpha(base_alpha),
         border: iced::Border::default(),
         shadow: iced::Shadow::default(),
         snap: false,

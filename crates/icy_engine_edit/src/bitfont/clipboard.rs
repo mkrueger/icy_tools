@@ -150,31 +150,25 @@ pub fn copy_to_clipboard<Message: Send + 'static>(
     on_complete: impl Fn(Result<(), BitFontClipboardError>) -> Message + Send + 'static,
 ) -> Task<Message> {
     let bytes = data.to_bytes();
-    STANDARD
-        .write_format(bytes, &[BITFONT_CLIPBOARD_TYPE])
-        .map(move |()| on_complete(Ok(())))
+    STANDARD.write_format(bytes, &[BITFONT_CLIPBOARD_TYPE]).map(move |()| on_complete(Ok(())))
 }
 
 /// Get pixel data from clipboard (returns a Task to be executed by iced runtime)
 pub fn get_from_clipboard<Message: Send + 'static>(
     on_complete: impl Fn(Result<BitFontClipboardData, BitFontClipboardError>) -> Message + Send + 'static,
 ) -> Task<Message> {
-    STANDARD
-        .read_format(&[BITFONT_CLIPBOARD_TYPE])
-        .map(move |result| {
-            let parsed = match result {
-                Some(data) => BitFontClipboardData::from_bytes(&data.data),
-                None => Err(BitFontClipboardError::NoBitFontData),
-            };
-            on_complete(parsed)
-        })
+    STANDARD.read_format(&[BITFONT_CLIPBOARD_TYPE]).map(move |result| {
+        let parsed = match result {
+            Some(data) => BitFontClipboardData::from_bytes(&data.data),
+            None => Err(BitFontClipboardError::NoBitFontData),
+        };
+        on_complete(parsed)
+    })
 }
 
 /// Check if clipboard has BitFont data (returns a Task to be executed by iced runtime)
 pub fn has_bitfont_data<Message: Send + 'static>(on_result: impl Fn(bool) -> Message + Send + 'static) -> Task<Message> {
-    STANDARD
-        .has_format(vec![BITFONT_CLIPBOARD_TYPE.to_string()])
-        .map(on_result)
+    STANDARD.has_format(vec![BITFONT_CLIPBOARD_TYPE.to_string()]).map(on_result)
 }
 
 #[cfg(test)]

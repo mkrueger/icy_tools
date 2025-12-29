@@ -103,13 +103,13 @@ fn pill<Message: 'static>(content: &str) -> Element<'static, Message> {
                 ..iced::Font::default()
             })
             .style(|theme: &Theme| text::Style {
-                color: Some(theme.palette().text),
+                color: Some(theme.background.on),
                 ..Default::default()
             }),
     )
     .padding(Padding::from([5, 12]))
     .style(|theme: &Theme| container::Style {
-        background: Some(theme.palette().primary.into()),
+        background: Some(theme.accent.base.into()),
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
@@ -145,7 +145,7 @@ fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> 
         r = r.push(pill::<Message>(p));
         if i + 1 < parts.len() {
             r = r.push(text("+").size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().background.base.text),
+                color: Some(theme.background.on),
                 ..Default::default()
             }));
         }
@@ -157,22 +157,14 @@ fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> 
 fn category_header<Message: 'static>(name: &str) -> container::Container<'static, Message> {
     container(
         row![text(name.to_owned()).size(16).style(|theme: &Theme| text::Style {
-            color: Some(theme.palette().text),
+            color: Some(theme.background.on),
             ..Default::default()
         }),]
         .align_y(Alignment::Center),
     )
     .padding(Padding::from([10, 24]))
     .style(|t: &Theme| container::Style {
-        background: Some(
-            Color::from_rgba(
-                t.extended_palette().background.weak.color.r,
-                t.extended_palette().background.weak.color.g,
-                t.extended_palette().background.weak.color.b,
-                0.3,
-            )
-            .into(),
-        ),
+        background: Some(Color::from_rgba(t.secondary.base.r, t.secondary.base.g, t.secondary.base.b, 0.3).into()),
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
@@ -195,11 +187,11 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
             Space::new().width(10),
             column![
                 text(config.title.clone()).size(22).style(|theme: &Theme| text::Style {
-                    color: Some(theme.palette().text),
+                    color: Some(theme.background.on),
                     ..Default::default()
                 }),
                 text(config.subtitle.clone()).size(TEXT_SIZE_SMALL).style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
+                    color: Some(theme.button.on),
                     ..Default::default()
                 }),
             ]
@@ -240,7 +232,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
                     container(key_group::<Message>(&keys)).width(Length::Fixed(200.0)),
                     Space::new().width(16),
                     container(text(action).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
-                        color: Some(theme.palette().text),
+                        color: Some(theme.background.on),
                         ..Default::default()
                     }))
                     .width(Length::Fixed(140.0)),
@@ -248,7 +240,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
                     text(desc)
                         .size(TEXT_SIZE_NORMAL)
                         .style(|theme: &Theme| text::Style {
-                            color: Some(theme.palette().text),
+                            color: Some(theme.background.on),
                             ..Default::default()
                         })
                         .width(Length::Fill),
@@ -290,7 +282,7 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
                 .height(Length::FillPortion(1))
                 .padding(Padding::from([0, 0])),
             container(Space::new().height(1)).width(Length::Fill).style(|theme: &Theme| container::Style {
-                background: Some(theme.extended_palette().background.weak.color.into()),
+                background: Some(theme.secondary.base.into()),
                 ..Default::default()
             }),
             footer,
@@ -300,9 +292,9 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
     .width(Length::Fixed(700.0))
     .height(Length::Fixed(500.0))
     .style(|theme: &Theme| container::Style {
-        background: Some(iced::Background::Color(theme.extended_palette().background.base.color)),
+        background: Some(iced::Background::Color(theme.background.base)),
         border: Border {
-            color: theme.extended_palette().background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 12.0.into(),
         },

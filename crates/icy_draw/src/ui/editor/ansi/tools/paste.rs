@@ -388,8 +388,8 @@ impl ToolHandler for PasteTool {
             button::Style {
                 background: None,
                 text_color: match status {
-                    button::Status::Hovered | button::Status::Pressed => theme.extended_palette().background.base.text,
-                    _ => theme.extended_palette().secondary.base.color,
+                    button::Status::Hovered | button::Status::Pressed => theme.background.on,
+                    _ => theme.button.on,
                 },
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
@@ -414,9 +414,7 @@ impl ToolHandler for PasteTool {
             paste_icon_btn("⇅", fl!("paste-tool-flip-y"), ToolMessage::PasteFlipY),
             paste_icon_btn("◐", fl!("paste-tool-transparent"), ToolMessage::PasteToggleTransparent),
             Space::new().width(Length::Fill),
-            text(hint_text).size(12).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }),
+            text(hint_text).size(12).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
         ]
         .spacing(2)
         .height(Length::Fill)

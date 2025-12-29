@@ -166,31 +166,17 @@ impl RulerState {
 /// This provides a consistent look across both the edit grid and charset grid.
 /// Uses theme colors for better integration with the UI.
 pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
-    let palette = theme.extended_palette();
-
     // Ruler background color depends on focus
     // Focused: use primary color, Unfocused: use secondary/background
-    let ruler_bg = if state.is_focused {
-        palette.primary.weak.color
-    } else {
-        palette.background.strong.color
-    };
+    let ruler_bg = if state.is_focused { theme.accent.selected } else { theme.primary.divider };
 
     // Draw ruler backgrounds
     frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(state.ruler_size, state.bounds_size.height), ruler_bg);
     frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(state.bounds_size.width, state.ruler_size), ruler_bg);
 
-    // Text colors from palette
-    let text_normal = if state.is_focused {
-        palette.secondary.base.color
-    } else {
-        palette.background.base.color
-    };
-    let text_highlight = if state.is_focused {
-        palette.background.base.text
-    } else {
-        palette.secondary.strong.color
-    };
+    // Text colors from theme
+    let text_normal = if state.is_focused { theme.button.on } else { theme.background.base };
+    let text_highlight = if state.is_focused { theme.background.on } else { theme.secondary.on };
     // for the 9px column
     let text_special = text_normal;
 

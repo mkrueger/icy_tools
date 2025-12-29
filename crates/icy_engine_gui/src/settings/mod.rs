@@ -58,31 +58,7 @@ impl From<ThemeOption> for Theme {
 
 impl fmt::Display for ThemeOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Theme::Light => write!(f, "Light"),
-            Theme::Dark => write!(f, "Dark"),
-            Theme::Dracula => write!(f, "Dracula"),
-            Theme::Nord => write!(f, "Nord"),
-            Theme::SolarizedLight => write!(f, "Solarized Light"),
-            Theme::SolarizedDark => write!(f, "Solarized Dark"),
-            Theme::GruvboxLight => write!(f, "Gruvbox Light"),
-            Theme::GruvboxDark => write!(f, "Gruvbox Dark"),
-            Theme::CatppuccinLatte => write!(f, "Catppuccin Latte"),
-            Theme::CatppuccinFrappe => write!(f, "Catppuccin Frappe"),
-            Theme::CatppuccinMacchiato => write!(f, "Catppuccin Macchiato"),
-            Theme::CatppuccinMocha => write!(f, "Catppuccin Mocha"),
-            Theme::TokyoNight => write!(f, "Tokyo Night"),
-            Theme::TokyoNightStorm => write!(f, "Tokyo Night Storm"),
-            Theme::TokyoNightLight => write!(f, "Tokyo Night Light"),
-            Theme::KanagawaWave => write!(f, "Kanagawa Wave"),
-            Theme::KanagawaDragon => write!(f, "Kanagawa Dragon"),
-            Theme::KanagawaLotus => write!(f, "Kanagawa Lotus"),
-            Theme::Moonfly => write!(f, "Moonfly"),
-            Theme::Nightfly => write!(f, "Nightfly"),
-            Theme::Oxocarbon => write!(f, "Oxocarbon"),
-            Theme::Ferra => write!(f, "Ferra"),
-            Theme::Custom(_) => write!(f, "Custom"),
-        }
+        write!(f, "{}", self.0.name)
     }
 }
 
@@ -142,7 +118,7 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
             text_color: Color::WHITE,
             border: Border {
                 color: if matches!(status, iced::widget::button::Status::Hovered) {
-                    theme.extended_palette().primary.strong.color
+                    theme.accent.hover
                 } else {
                     Color::from_rgb(0.5, 0.5, 0.5)
                 },
@@ -169,9 +145,9 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
 pub fn themed_container<'a, Message: 'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a, Message> {
     container(content)
         .style(|theme: &Theme| container::Style {
-            background: Some(Background::Color(theme.extended_palette().background.weak.color)),
+            background: Some(Background::Color(theme.primary.base)),
             border: Border {
-                color: theme.extended_palette().background.strong.color,
+                color: theme.secondary.base,
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -191,19 +167,18 @@ pub fn slider_row_owned<'a>(
     row![
         text(label).size(14).width(Length::Fixed(LABEL_WIDTH)),
         slider(range, value, on_change).width(Length::Fill).style(|theme: &Theme, status| {
-            let palette = theme.extended_palette();
             iced::widget::slider::Style {
                 rail: iced::widget::slider::Rail {
-                    backgrounds: (Background::Color(palette.primary.base.color), Background::Color(palette.background.weak.color)),
+                    backgrounds: (Background::Color(theme.accent.base), Background::Color(theme.primary.base)),
                     width: 4.0,
                     border: Border::default(),
                 },
                 handle: iced::widget::slider::Handle {
                     shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
                     background: Background::Color(if status == iced::widget::slider::Status::Dragged {
-                        palette.primary.strong.color
+                        theme.accent.pressed
                     } else {
-                        palette.primary.base.color
+                        theme.accent.base
                     }),
                     border_color: Color::WHITE,
                     border_width: 2.0,
@@ -212,15 +187,15 @@ pub fn slider_row_owned<'a>(
         }),
         container(text(format!("{:.0}", value)).size(13).style(|theme: &Theme| {
             text::Style {
-                color: Some(theme.extended_palette().background.strong.text),
+                color: Some(theme.secondary.on),
             }
         }))
         .width(Length::Fixed(SLIDER_VALUE_WIDTH))
         .style(|theme: &Theme| {
             container::Style {
-                background: Some(Background::Color(theme.extended_palette().background.weak.color)),
+                background: Some(Background::Color(theme.primary.base)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.secondary.base,
                     width: 1.0,
                     radius: 4.0.into(),
                 },
@@ -264,9 +239,9 @@ pub fn left_label<T: 'static>(txt: String) -> Element<'static, T> {
 pub fn effect_box<'a, T: 'a>(inner: Element<'a, T>) -> Element<'a, T> {
     container(inner)
         .style(|theme: &Theme| container::Style {
-            background: Some(Background::Color(theme.extended_palette().background.weakest.color)),
+            background: Some(Background::Color(theme.background.base)),
             border: Border {
-                color: theme.extended_palette().background.strong.color,
+                color: theme.secondary.base,
                 width: 1.0,
                 radius: EFFECT_BOX_RADIUS.into(),
             },
@@ -280,8 +255,8 @@ pub fn effect_box<'a, T: 'a>(inner: Element<'a, T>) -> Element<'a, T> {
 pub fn effect_box_toggleable<'a, T: 'a>(inner: Element<'a, T>, disabled: bool) -> Element<'a, T> {
     container(inner)
         .style(move |theme: &Theme| {
-            let base_bg = theme.extended_palette().background.weakest.color;
-            let border_color = theme.extended_palette().background.strong.color;
+            let base_bg = theme.background.base;
+            let border_color = theme.secondary.base;
 
             container::Style {
                 background: Some(Background::Color(if disabled {

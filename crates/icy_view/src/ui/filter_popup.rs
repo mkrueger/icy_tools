@@ -102,9 +102,9 @@ impl FilterPopup {
 
         container(content)
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.palette().background)),
+                background: Some(iced::Background::Color(theme.background.base)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.primary.divider,
                     width: 1.0,
                     radius: 6.0.into(),
                 },
@@ -152,18 +152,17 @@ where
 }
 
 fn popup_button_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (palette.background.strong.color, palette.background.strong.text),
-        iced::widget::button::Status::Hovered => (palette.primary.weak.color, palette.primary.weak.text),
-        iced::widget::button::Status::Pressed => (palette.primary.base.color, palette.primary.base.text),
-        iced::widget::button::Status::Disabled => (palette.background.weak.color, palette.background.weak.text.scale_alpha(0.5)),
+        iced::widget::button::Status::Active => (theme.primary.divider, theme.primary.on),
+        iced::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
+        iced::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
+        iced::widget::button::Status::Disabled => (theme.secondary.base, theme.secondary.on.scale_alpha(0.5)),
     };
     iced::widget::button::Style {
         background: Some(iced::Background::Color(bg)),
         text_color,
         border: Border {
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 4.0.into(),
         },
@@ -172,12 +171,11 @@ fn popup_button_style(theme: &iced::Theme, status: iced::widget::button::Status)
 }
 
 fn popup_button_disabled_style(theme: &iced::Theme, _status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
     iced::widget::button::Style {
-        background: Some(iced::Background::Color(palette.background.weak.color)),
-        text_color: palette.background.weak.text.scale_alpha(0.3),
+        background: Some(iced::Background::Color(theme.secondary.base)),
+        text_color: theme.secondary.on.scale_alpha(0.3),
         border: Border {
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 4.0.into(),
         },

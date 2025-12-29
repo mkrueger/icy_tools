@@ -149,12 +149,12 @@ impl super::DialingDirectoryState {
                 row![name_input, star_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
                 row![
                     container(text(format!("✆ {calls}")).style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
+                        color: Some(theme.button.on),
                         ..Default::default()
                     })),
                     Space::new().width(Length::Fill),
                     container(text(last_call_text).style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
+                        color: Some(theme.button.on),
                         ..Default::default()
                     })),
                     Space::new().width(8.0),
@@ -277,7 +277,7 @@ impl super::DialingDirectoryState {
                         text(format!("⚠ {}", err_msg))
                             .size(TEXT_SIZE_SMALL)
                             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                                color: Some(theme.extended_palette().danger.base.color),
+                                color: Some(theme.destructive.base),
                                 ..Default::default()
                             })
                     ]
@@ -487,17 +487,16 @@ impl super::DialingDirectoryState {
                         "https://breakintochat.com/blog/category/instant-graphics-and-sound".to_string(),
                     ))
                     .style(|theme: &iced::Theme, status| {
-                        let palette = theme.extended_palette();
                         let base = button::Style {
                             background: None,
-                            text_color: palette.primary.strong.color,
+                            text_color: theme.accent.hover,
                             border: iced::Border::default(),
                             shadow: iced::Shadow::default(),
                             snap: false,
                         };
                         match status {
                             button::Status::Hovered => button::Style {
-                                text_color: palette.primary.base.color,
+                                text_color: theme.accent.base,
                                 ..base
                             },
                             _ => base,

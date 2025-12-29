@@ -89,9 +89,8 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
         let offset_y = ((bounds.height - content_height) / 2.0).max(0.0);
 
         // Text colors - derived from theme
-        let palette = theme.extended_palette();
-        let text_color = palette.background.weak.text.scale_alpha(0.8);
-        let highlight_color = palette.background.base.text;
+        let text_color = theme.secondary.on.scale_alpha(0.8);
+        let highlight_color = theme.background.on;
 
         // Font size for line numbers (scales with zoom)
         let line_number_font_size = (12.0 * scaled_font_height / 16.0).max(8.0).min(16.0);

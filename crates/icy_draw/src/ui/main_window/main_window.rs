@@ -20,6 +20,7 @@ use iced::{
     Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
 };
 use icy_engine::formats::FileFormat;
+use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage};
@@ -1295,15 +1296,13 @@ impl MainWindow {
                     ModeState::BitFont(_) => {
                         // BitFont paste is handled separately via its own clipboard format
                         // Read BitFont format first
-                        return icy_engine_edit::bitfont::get_from_clipboard(|result| {
-                            match result {
-                                Ok(data) => Message::ClipboardDataForPaste(Some(ClipboardReadResult {
-                                    icy_data: Some(data.to_bytes()),
-                                    image: None,
-                                    text: None,
-                                })),
-                                Err(_) => Message::ClipboardDataForPaste(None),
-                            }
+                        return icy_engine_edit::bitfont::get_from_clipboard(|result| match result {
+                            Ok(data) => Message::ClipboardDataForPaste(Some(ClipboardReadResult {
+                                icy_data: Some(data.to_bytes()),
+                                image: None,
+                                text: None,
+                            })),
+                            Err(_) => Message::ClipboardDataForPaste(None),
                         });
                     }
                     _ => {
@@ -1351,9 +1350,7 @@ impl MainWindow {
                             } else {
                                 // No ICY data, try reading image next
                                 return STANDARD.read_image().map(|clipboard_data| {
-                                    let img = clipboard_data.and_then(|cd| {
-                                        image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8())
-                                    });
+                                    let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
                                     Message::ClipboardDataForPaste(Some(ClipboardReadResult {
                                         icy_data: None,
                                         image: img,
@@ -1377,9 +1374,7 @@ impl MainWindow {
 
                 // Read image format for paste as new image
                 STANDARD.read_image().map(|clipboard_data| {
-                    let img = clipboard_data.and_then(|cd| {
-                        image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8())
-                    });
+                    let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
                     Message::ClipboardDataForNewImage(Some(ClipboardReadResult {
                         icy_data: None,
                         image: img,
@@ -3284,24 +3279,22 @@ impl icy_engine_gui::Window for MainWindow {
 // ============================================================================
 
 fn active_slot_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
-        background: Some(iced::Background::Color(palette.primary.base.color)),
-        text_color: Some(palette.primary.base.text),
+        background: Some(iced::Background::Color(theme.accent.base)),
+        text_color: Some(theme.background.on),
         border: iced::Border {
             radius: 3.0.into(),
             width: 1.0,
-            color: palette.primary.strong.color,
+            color: theme.accent.hover,
         },
         ..Default::default()
     }
 }
 
 fn inactive_slot_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
-        background: Some(iced::Background::Color(palette.background.weak.color)),
-        text_color: Some(palette.background.base.text),
+        background: Some(iced::Background::Color(theme.secondary.base)),
+        text_color: Some(theme.background.on),
         border: iced::Border {
             radius: 3.0.into(),
             ..Default::default()
@@ -3317,17 +3310,16 @@ fn inactive_slot_style(theme: &Theme) -> container::Style {
 /// Style for status bar toggle buttons (left section)
 /// Default: secondary color, Hover: base.text color
 fn statusbar_toggle_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     let base = button::Style {
         background: Some(iced::Background::Color(Color::TRANSPARENT)),
-        text_color: palette.secondary.base.color,
+        text_color: theme.button.on,
         border: Border::default(),
         ..Default::default()
     };
 
     match status {
         button::Status::Hovered | button::Status::Pressed => button::Style {
-            text_color: palette.background.base.text,
+            text_color: theme.background.on,
             ..base
         },
         _ => base,
@@ -3337,17 +3329,16 @@ fn statusbar_toggle_style(theme: &Theme, status: button::Status) -> button::Styl
 /// Style for the font button in status bar (right section)
 /// Default: secondary color, Hover: base.text color
 fn statusbar_font_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     let base = button::Style {
         background: Some(iced::Background::Color(Color::TRANSPARENT)),
-        text_color: palette.secondary.base.color,
+        text_color: theme.button.on,
         border: Border::default(),
         ..Default::default()
     };
 
     match status {
         button::Status::Hovered | button::Status::Pressed => button::Style {
-            text_color: palette.background.base.text,
+            text_color: theme.background.on,
             ..base
         },
         _ => base,
@@ -3356,17 +3347,13 @@ fn statusbar_font_button_style(theme: &Theme, status: button::Status) -> button:
 
 /// Style for secondary text in status bar (position, dimensions)
 fn statusbar_secondary_text_style(theme: &Theme) -> text::Style {
-    let palette = theme.extended_palette();
-    text::Style {
-        color: Some(palette.secondary.base.color),
-    }
+    text::Style { color: Some(theme.button.on) }
 }
 
 /// Style for vertical separator in status bar
 fn statusbar_separator_style(theme: &Theme) -> rule::Style {
-    let palette = theme.extended_palette();
     rule::Style {
-        color: palette.secondary.weak.color,
+        color: theme.button.base,
         radius: 0.0.into(),
         fill_mode: rule::FillMode::Full,
         snap: false,

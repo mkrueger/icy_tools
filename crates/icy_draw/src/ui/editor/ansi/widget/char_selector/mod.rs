@@ -153,9 +153,8 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Background with dotted pattern
-        let palette = theme.extended_palette();
-        let bg_panel = palette.background.base.color;
-        let dot_color = palette.background.strong.color.scale_alpha(0.12);
+        let bg_panel = theme.background.base;
+        let dot_color = theme.primary.divider.scale_alpha(0.12);
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_panel);
 
         // Draw subtle dot pattern in padding area
@@ -181,8 +180,8 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
         let (bg_r, bg_g, bg_b) = self.palette.rgb(self.bg_color);
         let fg = Color::from_rgb8(fg_r, fg_g, fg_b);
         let bg = Color::from_rgb8(bg_r, bg_g, bg_b);
-        let hover_tint = palette.primary.weak.color;
-        let selected_border = palette.background.base.text;
+        let hover_tint = theme.accent.selected;
+        let selected_border = theme.background.on;
 
         // Calculate scale to fit cells
         let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
@@ -228,7 +227,9 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
                     return None;
                 };

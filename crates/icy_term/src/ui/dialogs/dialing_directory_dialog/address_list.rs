@@ -146,7 +146,7 @@ fn address_row_entry<'a>(
 
     let star = if favored {
         text("★").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
-            color: Some(theme.extended_palette().warning.base.color),
+            color: Some(theme.warning.base),
             ..Default::default()
         })
     } else {
@@ -169,7 +169,7 @@ fn address_row_entry<'a>(
         text(truncated_addr)
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.weak.color),
+                color: Some(theme.button.base),
                 ..Default::default()
             })
             .font(iced::Font::MONOSPACE)
@@ -209,15 +209,13 @@ fn address_row_entry<'a>(
         container(stacked)
             .width(Length::Fill)
             .style(|theme: &iced::Theme| {
-                let extended = theme.extended_palette();
-
-                let mut border_color = extended.primary.strong.color;
+                let mut border_color = theme.accent.hover;
                 border_color.a = 0.6;
                 swap(&mut border_color.r, &mut border_color.g);
 
                 container::Style {
                     background: Some(iced::Background::Color({
-                        let mut c = extended.primary.weak.color;
+                        let mut c = theme.accent.selected;
                         swap(&mut c.r, &mut c.g);
                         c.a = 0.10;
                         c
@@ -261,7 +259,7 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 .size(TEXT_SIZE_NORMAL)
                 .font(iced::Font::MONOSPACE)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().primary.strong.color),
+                    color: Some(theme.accent.hover),
                     ..Default::default()
                 })
                 .into(),
@@ -281,7 +279,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         return text(text_str)
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
+                color: Some(theme.button.on),
                 ..Default::default()
             })
             .font(iced::Font::MONOSPACE)
@@ -301,7 +299,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 text(text_str[last..idx].to_string())
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
+                        color: Some(theme.button.on),
                         ..Default::default()
                     })
                     .font(iced::Font::MONOSPACE)
@@ -314,7 +312,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 .size(TEXT_SIZE_SMALL)
                 .font(iced::Font::MONOSPACE)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().primary.strong.color),
+                    color: Some(theme.accent.hover),
                     ..Default::default()
                 })
                 .into(),
@@ -326,7 +324,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             text(text_str[last..].to_string())
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
+                    color: Some(theme.button.on),
                     ..Default::default()
                 })
                 .font(iced::Font::MONOSPACE)

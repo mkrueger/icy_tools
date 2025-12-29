@@ -71,7 +71,7 @@ impl ProtocolSelectorState {
                             text(protocol.get_name())
                                 .size(PROTOCOL_NAME_SIZE)
                                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                                    color: Some(theme.extended_palette().primary.strong.color),
+                                    color: Some(theme.accent.hover),
                                     ..Default::default()
                                 })
                         )
@@ -79,7 +79,7 @@ impl ProtocolSelectorState {
                         text(description)
                             .size(PROTOCOL_DESCRIPTION_SIZE)
                             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                                color: Some(theme.extended_palette().secondary.base.color),
+                                color: Some(theme.button.on),
                                 ..Default::default()
                             })
                     ]
@@ -148,10 +148,9 @@ fn get_protocol_description(protocol: &TransferProtocol) -> String {
 }
 
 fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     let base = button::Style {
         background: Some(iced::Background::Color(Color::TRANSPARENT)),
-        text_color: palette.background.base.text,
+        text_color: theme.background.on,
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
@@ -165,24 +164,19 @@ fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button:
         button::Status::Active => base,
         button::Status::Hovered => button::Style {
             background: Some(iced::Background::Color(Color::from_rgba(
-                palette.primary.weak.color.r,
-                palette.primary.weak.color.g,
-                palette.primary.weak.color.b,
+                theme.accent.selected.r,
+                theme.accent.selected.g,
+                theme.accent.selected.b,
                 0.2,
             ))),
             ..base
         },
         button::Status::Pressed => button::Style {
-            background: Some(iced::Background::Color(palette.primary.weak.color)),
+            background: Some(iced::Background::Color(theme.accent.selected)),
             ..base
         },
         button::Status::Disabled => button::Style {
-            text_color: Color::from_rgba(
-                palette.background.base.text.r,
-                palette.background.base.text.g,
-                palette.background.base.text.b,
-                0.5,
-            ),
+            text_color: Color::from_rgba(theme.background.on.r, theme.background.on.g, theme.background.on.b, 0.5),
             ..base
         },
     }

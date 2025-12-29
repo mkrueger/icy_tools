@@ -152,8 +152,8 @@ impl FileTransferDialogState {
             .style(|theme: &iced::Theme| container::Style {
                 background: Some(iced::Background::Gradient(iced::Gradient::Linear(
                     gradient::Linear::new(0.0)
-                        .add_stop(0.0, theme.extended_palette().background.weak.color)
-                        .add_stop(1.0, theme.palette().background),
+                        .add_stop(0.0, theme.secondary.base)
+                        .add_stop(1.0, theme.background.base),
                 ))),
                 ..Default::default()
             });
@@ -181,14 +181,14 @@ impl FileTransferDialogState {
                 .align_y(Alignment::Center),
                 Space::new().height(8.0),
                 container(progress_bar(0.0..=1.0, progress).style(|theme: &iced::Theme| progress_bar::Style {
-                    background: iced::Background::Color(theme.extended_palette().background.strong.color),
-                    bar: iced::Background::Color(theme.palette().primary),
+                    background: iced::Background::Color(theme.primary.divider),
+                    bar: iced::Background::Color(theme.accent.base),
 
                     /*
                     bar: iced::Background::Gradient(iced::Gradient::Linear(
                         gradient::Linear::new(0.0)
-                            .add_stop(0.0, theme.palette().primary)
-                            .add_stop(1.0, theme.palette().)
+                            .add_stop(0.0, theme.accent.base)
+                            .add_stop(1.0, theme.accent.hover)
                     )),*/
                     border: Border {
                         color: Color::TRANSPARENT,
@@ -266,23 +266,20 @@ impl FileTransferDialogState {
             let modal_content = container(main_column)
                 .width(Length::Fixed(MODAL_WIDTH))
                 .height(Length::Fixed(MODAL_HEIGHT))
-                .style(|theme: &iced::Theme| {
-                    let palette = theme.palette();
-                    container::Style {
-                        background: Some(iced::Background::Color(palette.background)),
-                        border: Border {
-                            color: theme.extended_palette().background.strong.color,
-                            width: 1.0,
-                            radius: 12.0.into(),
-                        },
-                        text_color: Some(palette.text),
-                        shadow: iced::Shadow {
-                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                            offset: iced::Vector::new(0.0, 8.0),
-                            blur_radius: 20.0,
-                        },
-                        snap: false,
-                    }
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(theme.background.base)),
+                    border: Border {
+                        color: theme.primary.divider,
+                        width: 1.0,
+                        radius: 12.0.into(),
+                    },
+                    text_color: Some(theme.background.on),
+                    shadow: iced::Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                        offset: iced::Vector::new(0.0, 8.0),
+                        blur_radius: 20.0,
+                    },
+                    snap: false,
                 });
 
             container(modal_content)
@@ -321,7 +318,7 @@ impl FileTransferDialogState {
         )
         .padding(Padding::from([4.0, 8.0]))
         .style(move |theme: &iced::Theme| {
-            let color = if is_finished { theme.palette().success } else { theme.palette().primary };
+            let color = if is_finished { theme.success.base } else { theme.accent.base };
             container::Style {
                 background: Some(iced::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.15))),
                 border: Border {
@@ -348,9 +345,9 @@ impl FileTransferDialogState {
         .padding(10)
         .width(Length::Fill)
         .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+            background: Some(iced::Background::Color(theme.secondary.base)),
             border: Border {
-                color: theme.extended_palette().background.strong.color,
+                color: theme.primary.divider,
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -409,9 +406,9 @@ impl FileTransferDialogState {
         let log_scroll =
             container(scrollable(container(log_column).width(Length::Fill).padding(12)).height(Length::Fixed(120.0))).style(|theme: &iced::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                    background: Some(iced::Background::Color(theme.secondary.base)),
                     border: Border {
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         width: 1.0,
                         radius: 6.0.into(),
                     },
@@ -473,9 +470,9 @@ impl FileTransferDialogState {
         .padding(Padding::from([4.0, 8.0]))
         .style(move |theme: &iced::Theme| {
             let color = match &msg {
-                OutputLogMessage::Error(_) => theme.palette().danger,
-                OutputLogMessage::Warning(_) => theme.extended_palette().danger.weak.color,
-                OutputLogMessage::Info(_) => theme.extended_palette().secondary.weak.color,
+                OutputLogMessage::Error(_) => theme.destructive.base,
+                OutputLogMessage::Warning(_) => theme.warning.base,
+                OutputLogMessage::Info(_) => theme.button.base,
             };
             container::Style {
                 background: Some(iced::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.08))),
@@ -518,9 +515,9 @@ impl FileTransferDialogState {
                 )
                 .padding(16)
                 .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                    background: Some(iced::Background::Color(theme.secondary.base)),
                     border: Border {
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         width: 1.0,
                         radius: 8.0.into(),
                     },
@@ -544,23 +541,20 @@ impl FileTransferDialogState {
         )
         .width(Length::Fixed(420.0))
         .height(Length::Shrink)
-        .style(|theme: &iced::Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background)),
-                border: Border {
-                    color: theme.extended_palette().background.strong.color,
-                    width: 1.0,
-                    radius: 12.0.into(),
-                },
-                text_color: Some(palette.text),
-                shadow: iced::Shadow {
-                    color: Color::from_rgba8(0, 0, 0, 1.0),
-                    offset: iced::Vector::new(0.0, 8.0),
-                    blur_radius: 20.0,
-                },
-                snap: false,
-            }
+        .style(|theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(theme.background.base)),
+            border: Border {
+                color: theme.primary.divider,
+                width: 1.0,
+                radius: 12.0.into(),
+            },
+            text_color: Some(theme.background.on),
+            shadow: iced::Shadow {
+                color: Color::from_rgba8(0, 0, 0, 1.0),
+                offset: iced::Vector::new(0.0, 8.0),
+                blur_radius: 20.0,
+            },
+            snap: false,
         });
 
         container(loading_content)
@@ -597,9 +591,9 @@ impl FileTransferDialogState {
         .padding([12, 16])
         .width(Length::Fill)
         .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+            background: Some(iced::Background::Color(theme.secondary.base)),
             border: Border {
-                color: theme.extended_palette().background.strong.color,
+                color: theme.primary.divider,
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -633,7 +627,7 @@ impl FileTransferDialogState {
                 .padding(16)
                 .width(Length::Fill)
                 .style(|theme: &iced::Theme| {
-                    let success_color = theme.palette().success;
+                    let success_color = theme.success.base;
                     container::Style {
                         background: Some(iced::Background::Color(Color::from_rgba(
                             success_color.r,
@@ -677,7 +671,7 @@ impl FileTransferDialogState {
                 .padding(16)
                 .width(Length::Fill)
                 .style(|theme: &iced::Theme| {
-                    let danger_color = theme.palette().danger;
+                    let danger_color = theme.destructive.base;
                     container::Style {
                         background: Some(iced::Background::Color(Color::from_rgba(danger_color.r, danger_color.g, danger_color.b, 0.1))),
                         border: Border {
@@ -714,9 +708,9 @@ impl FileTransferDialogState {
             .padding(16)
             .width(Length::Fill)
             .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                background: Some(iced::Background::Color(theme.secondary.base)),
                 border: Border {
-                    color: theme.extended_palette().primary.weak.color,
+                    color: theme.accent.selected,
                     width: 1.0,
                     radius: 6.0.into(),
                 },

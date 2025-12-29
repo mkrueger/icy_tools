@@ -39,7 +39,7 @@ impl MainWindow {
                 .style(|theme: &iced::Theme| container::Style {
                     border: iced::Border {
                         width: 1.0,
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -54,7 +54,7 @@ impl MainWindow {
                 .style(|theme: &iced::Theme| container::Style {
                     border: iced::Border {
                         width: 1.0,
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -65,7 +65,7 @@ impl MainWindow {
                 .style(|theme: &iced::Theme| container::Style {
                     border: iced::Border {
                         width: 1.0,
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -78,7 +78,7 @@ impl MainWindow {
                 .style(|theme: &iced::Theme| container::Style {
                     border: iced::Border {
                         width: 1.0,
-                        color: theme.extended_palette().background.strong.color,
+                        color: theme.primary.divider,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -125,7 +125,7 @@ impl MainWindow {
             .width(Length::Fixed(335.0)) // Fixed width for the header
             .style(|theme: &iced::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.extended_palette().background.strong.color)),
+                    background: Some(iced::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -201,7 +201,7 @@ impl MainWindow {
                 border: if self.conference_list_focused {
                     iced::Border {
                         width: 2.0,
-                        color: theme.extended_palette().primary.base.color,
+                        color: theme.accent.base,
                         radius: 0.0.into(),
                     }
                 } else {
@@ -229,7 +229,7 @@ impl MainWindow {
             .width(Length::Fill)
             .style(|theme: &iced::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.extended_palette().background.strong.color)),
+                    background: Some(iced::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -313,7 +313,7 @@ impl MainWindow {
                     return column![
                         container(header_info).width(Length::Fill).style(|theme: &iced::Theme| {
                             container::Style {
-                                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                                background: Some(iced::Background::Color(theme.secondary.base)),
                                 ..Default::default()
                             }
                         }),
@@ -334,7 +334,7 @@ impl MainWindow {
         let thread_content = column![
             container(text("Thread").size(14)).padding(8).width(Length::Fill).style(|theme: &iced::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.extended_palette().background.strong.color)),
+                    background: Some(iced::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -349,11 +349,10 @@ impl MainWindow {
 fn button_style(theme: &iced::Theme, status: iced::widget::button::Status, is_selected: bool) -> iced::widget::button::Style {
     use iced::widget::button::{Status, Style};
 
-    let palette = theme.extended_palette();
     let base = if is_selected {
         Style {
-            background: Some(iced::Background::Color(palette.primary.weak.color)),
-            text_color: palette.primary.weak.text,
+            background: Some(iced::Background::Color(theme.accent.base)),
+            text_color: theme.accent.on,
             border: Default::default(),
             shadow: Default::default(),
             snap: false, // Add the missing field
@@ -361,7 +360,7 @@ fn button_style(theme: &iced::Theme, status: iced::widget::button::Status, is_se
     } else {
         Style {
             background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-            text_color: palette.background.base.text,
+            text_color: theme.background.on,
             border: Default::default(),
             shadow: Default::default(),
             snap: false, // Add the missing field
@@ -371,12 +370,12 @@ fn button_style(theme: &iced::Theme, status: iced::widget::button::Status, is_se
     match status {
         Status::Active => base,
         Status::Hovered if !is_selected => Style {
-            background: Some(iced::Background::Color(palette.background.weak.color)),
+            background: Some(iced::Background::Color(theme.secondary.base)),
             ..base
         },
         Status::Pressed => Style {
-            background: Some(iced::Background::Color(palette.primary.strong.color)),
-            text_color: palette.primary.strong.text,
+            background: Some(iced::Background::Color(theme.accent.hover)),
+            text_color: theme.accent.on,
             ..base
         },
         _ => base,

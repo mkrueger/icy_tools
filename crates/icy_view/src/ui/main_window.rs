@@ -1938,10 +1938,10 @@ impl MainWindow {
                     let welcome_title = text(fl!(crate::LANGUAGE_LOADER, "welcome-select-file"))
                         .size(18)
                         .style(|theme: &Theme| text::Style {
-                            color: Some(theme.palette().text.scale_alpha(0.7)),
+                            color: Some(theme.background.on.scale_alpha(0.7)),
                         });
                     let welcome_tip = text(fl!(crate::LANGUAGE_LOADER, "welcome-tip")).size(13).style(|theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(0.5)),
+                        color: Some(theme.background.on.scale_alpha(0.5)),
                     });
                     let preview_content = column![welcome_logo, welcome_title, welcome_tip].spacing(12).align_x(iced::Alignment::Center);
 

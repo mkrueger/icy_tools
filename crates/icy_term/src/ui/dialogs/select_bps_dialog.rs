@@ -127,23 +127,20 @@ impl SelectBpsDialogState {
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
             .text_size(TEXT_SIZE_NORMAL)
-            .style(move |theme: &iced::Theme, _status| {
-                let palette = theme.extended_palette();
-                iced::widget::radio::Style {
-                    background: iced::Background::Color(if is_selected {
-                        palette.primary.base.color
-                    } else {
-                        Color::from_rgba(0.18, 0.18, 0.18, 0.85)
-                    }),
-                    dot_color: Color::WHITE,
-                    border_color: if is_selected {
-                        palette.primary.strong.color
-                    } else {
-                        Color::from_rgba(0.5, 0.5, 0.5, 0.4)
-                    },
-                    border_width: 1.0,
-                    text_color: Some(theme.palette().text),
-                }
+            .style(move |theme: &iced::Theme, _status| iced::widget::radio::Style {
+                background: iced::Background::Color(if is_selected {
+                    theme.accent.base
+                } else {
+                    Color::from_rgba(0.18, 0.18, 0.18, 0.85)
+                }),
+                dot_color: Color::WHITE,
+                border_color: if is_selected {
+                    theme.accent.hover
+                } else {
+                    Color::from_rgba(0.5, 0.5, 0.5, 0.4)
+                },
+                border_width: 1.0,
+                text_color: Some(theme.background.on),
             });
 
             list = list.push(item);
@@ -163,23 +160,20 @@ impl SelectBpsDialogState {
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
             .text_size(TEXT_SIZE_NORMAL)
-            .style(move |theme: &iced::Theme, _| {
-                let palette = theme.extended_palette();
-                iced::widget::radio::Style {
-                    background: iced::Background::Color(if is_custom_selected {
-                        palette.primary.base.color
-                    } else {
-                        Color::from_rgba(0.18, 0.18, 0.18, 0.85)
-                    }),
-                    dot_color: Color::WHITE,
-                    border_color: if is_custom_selected {
-                        palette.primary.strong.color
-                    } else {
-                        Color::from_rgba(0.5, 0.5, 0.5, 0.4)
-                    },
-                    border_width: 1.0,
-                    text_color: Some(theme.palette().text),
-                }
+            .style(move |theme: &iced::Theme, _| iced::widget::radio::Style {
+                background: iced::Background::Color(if is_custom_selected {
+                    theme.accent.base
+                } else {
+                    Color::from_rgba(0.18, 0.18, 0.18, 0.85)
+                }),
+                dot_color: Color::WHITE,
+                border_color: if is_custom_selected {
+                    theme.accent.hover
+                } else {
+                    Color::from_rgba(0.5, 0.5, 0.5, 0.4)
+                },
+                border_width: 1.0,
+                text_color: Some(theme.background.on),
             });
 
             let input = text_input("", &self.custom_rate)
@@ -188,7 +182,6 @@ impl SelectBpsDialogState {
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fixed(110.0))
                 .style(move |theme: &iced::Theme, status| {
-                    let palette = theme.extended_palette();
                     let focused = matches!(status, text_input::Status::Focused { .. });
                     text_input::Style {
                         background: iced::Background::Color(if is_custom_selected {
@@ -202,19 +195,19 @@ impl SelectBpsDialogState {
                         }),
                         border: Border {
                             color: if is_custom_selected && focused {
-                                palette.primary.base.color
+                                theme.accent.base
                             } else if is_custom_selected {
-                                palette.primary.weak.color
+                                theme.accent.selected
                             } else {
                                 Color::from_rgba(0.3, 0.3, 0.3, 0.2)
                             },
                             width: 1.0,
                             radius: 4.0.into(),
                         },
-                        icon: theme.palette().text,
+                        icon: theme.background.on,
                         placeholder: Color::from_rgba(0.6, 0.6, 0.6, if is_custom_selected { 0.7 } else { 0.4 }),
-                        value: theme.palette().text.scale_alpha(if is_custom_selected { 1.0 } else { 0.5 }),
-                        selection: palette.primary.strong.color,
+                        value: theme.background.on.scale_alpha(if is_custom_selected { 1.0 } else { 0.5 }),
+                        selection: theme.accent.hover,
                     }
                 });
 

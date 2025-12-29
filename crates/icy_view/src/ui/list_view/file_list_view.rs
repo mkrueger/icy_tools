@@ -565,17 +565,14 @@ impl FileListView {
             ])
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.base.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 0.0.into(),
-                    },
-                    ..Default::default()
-                }
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.background.base)),
+                border: iced::Border {
+                    color: theme.primary.divider,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
             });
 
             // Add header row if in SAUCE mode
@@ -585,18 +582,18 @@ impl FileListView {
                 list_content.into()
             }
         } else {
-            let list_content = container(shader_widget).width(Length::Fill).height(Length::Fill).style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.base.color)),
+            let list_content = container(shader_widget)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(theme.background.base)),
                     border: iced::Border {
-                        color: palette.background.strong.color,
+                        color: theme.primary.divider,
                         width: 1.0,
                         radius: 0.0.into(),
                     },
                     ..Default::default()
-                }
-            });
+                });
 
             // Add header row if in SAUCE mode
             if self.sauce_mode {
@@ -611,21 +608,18 @@ impl FileListView {
     fn render_header_row<Message: 'static>(&self) -> Element<'_, Message> {
         use i18n_embed_fl::fl;
 
-        let header_style = |theme: &iced::Theme| {
-            let palette = theme.extended_palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background.weak.color)),
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 0.0,
-                    radius: 0.0.into(),
-                },
-                ..Default::default()
-            }
+        let header_style = |theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(theme.secondary.base)),
+            border: iced::Border {
+                color: theme.primary.divider,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
         };
 
         let header_text_style = |theme: &iced::Theme| text::Style {
-            color: Some(theme.extended_palette().background.base.text.scale_alpha(0.7)),
+            color: Some(theme.background.on.scale_alpha(0.7)),
         };
 
         // Column widths for SAUCE mode - matching constants in file_list_shader.rs
@@ -751,7 +745,9 @@ where
                         return Some(iced::widget::Action::publish(msg));
                     }
                 }
-                mouse::Event::ButtonPressed { button: mouse::Button::Left, .. } => {
+                mouse::Event::ButtonPressed {
+                    button: mouse::Button::Left, ..
+                } => {
                     if is_over {
                         if let Some(pos) = cursor.position_in(bounds) {
                             let msg = (self.on_message)(FileListViewMessage::Click(pos.y));

@@ -297,7 +297,9 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(slot) = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds)) {
                     return Some(iced::widget::Action::publish(ToolPanelMessage::ClickSlot(slot)));
                 }

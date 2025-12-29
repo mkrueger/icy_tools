@@ -411,9 +411,7 @@ impl TopToolbar {
         fn paste_btn<'a>(label: &'a str, shortcut: &'a str, msg: TopToolbarMessage) -> Element<'a, TopToolbarMessage> {
             button(
                 row![
-                    text(shortcut).size(12).style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                    }),
+                    text(shortcut).size(12).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
                     text(label).size(14),
                 ]
                 .spacing(4)
@@ -431,9 +429,9 @@ impl TopToolbar {
             paste_btn("Flip Y", "Y", TopToolbarMessage::PasteFlipY),
             paste_btn("Transparent", "T", TopToolbarMessage::PasteToggleTransparent),
             Space::new().width(Length::Fill),
-            text("Enter: Anchor | Esc: Cancel | Arrows: Move").size(12).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }),
+            text("Enter: Anchor | Esc: Cancel | Arrows: Move")
+                .size(12)
+                .style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
         ]
         .spacing(8)
         .height(Length::Fill)
@@ -472,9 +470,9 @@ impl TopToolbar {
             Space::new().width(Length::Fill),
             segmented_control,
             Space::new().width(Length::Fixed(16.0)),
-            text("⇧: add   ⌃/Ctrl: remove").size(14).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }),
+            text("⇧: add   ⌃/Ctrl: remove")
+                .size(14)
+                .style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
             Space::new().width(Length::Fill),
         ]
         .spacing(8)
@@ -594,8 +592,8 @@ impl TopToolbar {
             });
 
         // Brush size selector with SVG arrow icons
-        let secondary_color = theme.extended_palette().secondary.base.color;
-        let base_color = theme.extended_palette().primary.base.color;
+        let secondary_color = theme.button.on;
+        let base_color = theme.accent.base;
         let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
             .width(Length::Fixed(32.0))
             .height(Length::Fixed(32.0))
@@ -621,9 +619,7 @@ impl TopToolbar {
         let size_text = text(format!("{}", self.brush_options.brush_size))
             .size(14)
             .font(iced::Font::MONOSPACE)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            });
+            .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
 
         // Center the control with flexible space on both sides
         row![
@@ -636,8 +632,8 @@ impl TopToolbar {
                 .on_press(TopToolbarMessage::DecrementBrushSize)
                 .padding(2)
                 .style(|theme: &Theme, status| {
-                    let secondary = theme.extended_palette().secondary.base.color;
-                    let base = theme.extended_palette().primary.base.color;
+                    let secondary = theme.button.on;
+                    let base = theme.accent.base;
                     let text_color = match status {
                         button::Status::Hovered | button::Status::Pressed => base,
                         _ => secondary,
@@ -658,8 +654,8 @@ impl TopToolbar {
                 .on_press(TopToolbarMessage::IncrementBrushSize)
                 .padding(2)
                 .style(|theme: &Theme, status| {
-                    let secondary = theme.extended_palette().secondary.base.color;
-                    let base = theme.extended_palette().primary.base.color;
+                    let secondary = theme.button.on;
+                    let base = theme.accent.base;
                     let text_color = match status {
                         button::Status::Hovered | button::Status::Pressed => base,
                         _ => secondary,
@@ -919,9 +915,7 @@ impl TopToolbar {
             if *available {
                 r1 = r1.push(t);
             } else {
-                r1 = r1.push(t.style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
-                }));
+                r1 = r1.push(t.style(|theme: &Theme| text::Style { color: Some(theme.button.on) }));
             };
         }
 
@@ -932,9 +926,7 @@ impl TopToolbar {
             if *available {
                 r2 = r2.push(t);
             } else {
-                r2 = r2.push(t.style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
-                }));
+                r2 = r2.push(t.style(|theme: &Theme| text::Style { color: Some(theme.button.on) }));
             };
         }
 

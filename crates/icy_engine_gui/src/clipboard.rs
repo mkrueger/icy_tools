@@ -159,9 +159,7 @@ pub fn copy_to_clipboard<Message: Clone + Send + 'static>(
         if let Some(img) = image::RgbaImage::from_raw(width, height, rgba_data) {
             let mut png_bytes = Vec::new();
             if img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_ok() {
-                write_task
-                    .chain(STANDARD.write_image(png_bytes))
-                    .map(move |()| on_complete_clone(Ok(())))
+                write_task.chain(STANDARD.write_image(png_bytes)).map(move |()| on_complete_clone(Ok(())))
             } else {
                 write_task.map(move |()| on_complete(Ok(())))
             }

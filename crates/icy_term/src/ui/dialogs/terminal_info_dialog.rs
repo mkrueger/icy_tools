@@ -215,7 +215,7 @@ impl TerminalInfoDialog {
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fixed(VALUE_WIDTH))
                 .style(|theme: &Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.7)),
+                    color: Some(theme.background.on.scale_alpha(0.7)),
                 }),
         ]
         .spacing(DIALOG_SPACING)
@@ -240,10 +240,10 @@ impl TerminalInfoDialog {
                         .size(TEXT_SIZE_SMALL)
                         .font(iced::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
-                            color: Some(theme.palette().text.scale_alpha(alpha)),
+                            color: Some(theme.background.on.scale_alpha(alpha)),
                         }),
                     text(desc).size(TEXT_SIZE_SMALL).style(move |theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(alpha)),
+                        color: Some(theme.background.on.scale_alpha(alpha)),
                     }),
                 ]
                 .spacing(8)
@@ -261,7 +261,7 @@ impl TerminalInfoDialog {
                     .font(iced::Font::MONOSPACE)
                     .width(Length::Fixed(VALUE_WIDTH))
                     .style(|theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(0.7)),
+                        color: Some(theme.background.on.scale_alpha(0.7)),
                     }),
                 container(tooltip_content).padding(8).style(container::rounded_box),
                 tooltip::Position::Top,
@@ -278,12 +278,12 @@ impl TerminalInfoDialog {
             text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
             row![
                 text(format!("{}x{}", cols, rows)).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.7)),
+                    color: Some(theme.background.on.scale_alpha(0.7)),
                 }),
                 text(format!("({}x{} px)", px_width, px_height))
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(0.4)),
+                        color: Some(theme.background.on.scale_alpha(0.4)),
                     }),
             ]
             .width(Length::Fixed(VALUE_WIDTH))
@@ -316,16 +316,16 @@ impl TerminalInfoDialog {
                 let alpha = if is_current { 1.0 } else { 0.5 };
                 row![
                     text(*sym).size(TEXT_SIZE_SMALL).style(move |theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(alpha)),
+                        color: Some(theme.background.on.scale_alpha(alpha)),
                     }),
                     text(format!("{:<12}", shape_name))
                         .size(TEXT_SIZE_SMALL)
                         .font(iced::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
-                            color: Some(theme.palette().text.scale_alpha(alpha)),
+                            color: Some(theme.background.on.scale_alpha(alpha)),
                         }),
                     text(desc).size(TEXT_SIZE_SMALL).style(move |theme: &Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(alpha)),
+                        color: Some(theme.background.on.scale_alpha(alpha)),
                     }),
                 ]
                 .spacing(8)
@@ -345,7 +345,7 @@ impl TerminalInfoDialog {
                         .size(TEXT_SIZE_NORMAL)
                         .font(iced::Font::MONOSPACE)
                         .style(|theme: &Theme| text::Style {
-                            color: Some(theme.palette().text.scale_alpha(0.7)),
+                            color: Some(theme.background.on.scale_alpha(0.7)),
                         }),
                 ]
                 .align_y(Alignment::Center),
@@ -364,7 +364,7 @@ impl TerminalInfoDialog {
             .width(1.0)
             .height(Length::Fill)
             .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(theme.palette().text.scale_alpha(0.15))),
+                background: Some(Background::Color(theme.background.on.scale_alpha(0.15))),
                 ..Default::default()
             })
             .into()

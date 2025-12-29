@@ -230,9 +230,8 @@ impl MinimapView {
         viewport_info: &ViewportInfo,
         render_cache: Option<&SharedRenderCacheHandle>,
     ) -> Element<'_, MinimapMessage> {
-        let palette = theme.extended_palette();
         let viewport_color = {
-            let c = palette.primary.base.color;
+            let c = theme.accent.base;
             [c.r, c.g, c.b, 0.9]
         };
         let canvas_bg = {

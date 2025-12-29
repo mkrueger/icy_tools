@@ -23,30 +23,8 @@ pub fn show_monitor_settings_with_options(s: MonitorSettings, show_scaling_optio
         MonitorType::CustomMonochrome,
     ];
 
-    let theme_options: Vec<ThemeOption> = vec![
-        ThemeOption(Theme::Light),
-        ThemeOption(Theme::Dark),
-        ThemeOption(Theme::Dracula),
-        ThemeOption(Theme::Nord),
-        ThemeOption(Theme::SolarizedLight),
-        ThemeOption(Theme::SolarizedDark),
-        ThemeOption(Theme::GruvboxLight),
-        ThemeOption(Theme::GruvboxDark),
-        ThemeOption(Theme::CatppuccinLatte),
-        ThemeOption(Theme::CatppuccinFrappe),
-        ThemeOption(Theme::CatppuccinMacchiato),
-        ThemeOption(Theme::CatppuccinMocha),
-        ThemeOption(Theme::TokyoNight),
-        ThemeOption(Theme::TokyoNightStorm),
-        ThemeOption(Theme::TokyoNightLight),
-        ThemeOption(Theme::KanagawaWave),
-        ThemeOption(Theme::KanagawaDragon),
-        ThemeOption(Theme::KanagawaLotus),
-        ThemeOption(Theme::Moonfly),
-        ThemeOption(Theme::Nightfly),
-        ThemeOption(Theme::Oxocarbon),
-        ThemeOption(Theme::Ferra),
-    ];
+    // New Theme API: Theme::all() returns Vec<Theme> with light/dark and custom themes
+    let theme_options: Vec<ThemeOption> = Theme::all().into_iter().map(ThemeOption).collect();
 
     let mut content: iced::widget::Column<'_, MonitorSettingsMessage> = column![section_header(fl!(LANGUAGE_LOADER, "settings-appearance-section")),];
 
@@ -127,7 +105,7 @@ pub fn show_monitor_settings_with_options(s: MonitorSettings, show_scaling_optio
                 text(format!("RGB({}, {}, {})", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8))
                     .size(TEXT_SIZE_NORMAL)
                     .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().background.strong.text)
+                        color: Some(theme.secondary.on)
                     })
             ]
             .spacing(ROW_SPACING)
@@ -351,67 +329,36 @@ fn disabled_slider<'a>(
         // Disabled appearance
         row![
             text(label).size(14).width(Length::Fixed(LABEL_WIDTH)).style(|theme: &Theme| text::Style {
-                color: Some(Color::from_rgba(theme.palette().text.r, theme.palette().text.g, theme.palette().text.b, 0.5))
+                color: Some(theme.background.on.scale_alpha(0.5))
             }),
             slider(range, value, |_| MonitorSettingsMessage::Noop)
                 .width(Length::Fill)
                 .style(|theme: &Theme, _status| {
-                    let palette = theme.extended_palette();
                     iced::widget::slider::Style {
                         rail: iced::widget::slider::Rail {
                             backgrounds: (
-                                Background::Color(Color::from_rgba(
-                                    palette.primary.base.color.r,
-                                    palette.primary.base.color.g,
-                                    palette.primary.base.color.b,
-                                    0.3,
-                                )),
-                                Background::Color(Color::from_rgba(
-                                    palette.background.weak.color.r,
-                                    palette.background.weak.color.g,
-                                    palette.background.weak.color.b,
-                                    0.3,
-                                )),
+                                Background::Color(theme.accent.base.scale_alpha(0.3)),
+                                Background::Color(theme.primary.base.scale_alpha(0.3)),
                             ),
                             width: 4.0,
                             border: Border::default(),
                         },
                         handle: iced::widget::slider::Handle {
                             shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
-                            background: Background::Color(Color::from_rgba(
-                                palette.primary.base.color.r,
-                                palette.primary.base.color.g,
-                                palette.primary.base.color.b,
-                                0.3,
-                            )),
+                            background: Background::Color(theme.accent.base.scale_alpha(0.3)),
                             border_color: Color::from_rgba(1.0, 1.0, 1.0, 0.3),
                             border_width: 2.0,
                         },
                     }
                 }),
             container(text(format!("{:.0}", value)).size(13).style(|theme: &Theme| text::Style {
-                color: Some(Color::from_rgba(
-                    theme.extended_palette().background.strong.text.r,
-                    theme.extended_palette().background.strong.text.g,
-                    theme.extended_palette().background.strong.text.b,
-                    0.5
-                ))
+                color: Some(theme.secondary.on.scale_alpha(0.5))
             }))
             .width(Length::Fixed(SLIDER_VALUE_WIDTH))
             .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgba(
-                    theme.extended_palette().background.weak.color.r,
-                    theme.extended_palette().background.weak.color.g,
-                    theme.extended_palette().background.weak.color.b,
-                    0.3
-                ))),
+                background: Some(Background::Color(theme.primary.base.scale_alpha(0.3))),
                 border: Border {
-                    color: Color::from_rgba(
-                        theme.extended_palette().background.strong.color.r,
-                        theme.extended_palette().background.strong.color.g,
-                        theme.extended_palette().background.strong.color.b,
-                        0.3
-                    ),
+                    color: theme.secondary.base.scale_alpha(0.3),
                     width: 1.0,
                     radius: 4.0.into(),
                 },

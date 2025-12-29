@@ -154,7 +154,9 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(p) = cursor.position_in(bounds) else {
                     return None;
                 };
@@ -166,7 +168,6 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
     }
 
     fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -178,15 +179,15 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
 
                 let (bg, fg) = if !self.is_active {
                     // Inactive state: dim colors
-                    (palette.background.weak.color, palette.secondary.weak.color)
+                    (theme.secondary.base, theme.secondary.base)
                 } else if is_selected {
-                    (palette.primary.strong.color, palette.primary.strong.text)
+                    (theme.accent.hover, theme.background.on)
                 } else if is_cursor {
-                    (palette.primary.base.color, palette.primary.base.text)
+                    (theme.accent.base, theme.background.on)
                 } else if is_hovered {
-                    (palette.primary.weak.color, palette.primary.weak.text)
+                    (theme.accent.base, theme.background.on)
                 } else {
-                    (palette.background.weak.color, palette.background.base.text)
+                    (theme.secondary.base, theme.background.on)
                 };
 
                 self.draw_char_cell(frame, char_code, rect, fg, bg);
@@ -194,7 +195,7 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
                 // Draw border for cursor (dashed style effect via thicker border)
                 if is_cursor && self.is_active {
                     let border = canvas::Path::rectangle(Point::new(rect.x, rect.y), rect.size());
-                    frame.stroke(&border, canvas::Stroke::default().with_width(2.0).with_color(palette.primary.strong.color));
+                    frame.stroke(&border, canvas::Stroke::default().with_width(2.0).with_color(theme.accent.hover));
                 }
             }
         });
@@ -334,7 +335,9 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(p) = cursor.position_in(bounds) else {
                     return None;
                 };
@@ -346,7 +349,6 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
     }
 
     fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -356,21 +358,17 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
                 let is_hovered = hovered == Some(slot);
 
                 let (bg, fg, label_color) = if is_selected {
-                    (palette.primary.strong.color, palette.primary.strong.text, palette.primary.strong.text)
+                    (theme.accent.hover, theme.background.on, theme.background.on)
                 } else if is_hovered {
-                    (palette.primary.weak.color, palette.primary.weak.text, palette.primary.weak.text)
+                    (theme.accent.base, theme.background.on, theme.background.on)
                 } else {
-                    (palette.background.weak.color, palette.background.base.text, palette.background.strong.color)
+                    (theme.secondary.base, theme.background.on, theme.primary.divider)
                 };
 
                 self.draw_slot(frame, slot, rect, fg, bg, label_color);
 
                 // Draw border
-                let border_color = if is_selected {
-                    palette.primary.base.color
-                } else {
-                    palette.background.strong.color
-                };
+                let border_color = if is_selected { theme.accent.base } else { theme.primary.divider };
                 let border = canvas::Path::rectangle(Point::new(rect.x, rect.y), rect.size());
                 frame.stroke(
                     &border,

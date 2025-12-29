@@ -236,7 +236,10 @@ where
         let state = tree.state.downcast_mut::<State>();
         if matches!(
             event,
-            Event::Mouse(iced_mouse::Event::ButtonPressed { button: iced_mouse::Button::Left, .. }) | Event::Touch(touch::Event::FingerPressed { .. })
+            Event::Mouse(iced_mouse::Event::ButtonPressed {
+                button: iced_mouse::Button::Left,
+                ..
+            }) | Event::Touch(touch::Event::FingerPressed { .. })
         ) {
             if !state.is_focused && cursor.is_over(layout.bounds()) {
                 state.is_focused = true;
@@ -465,12 +468,11 @@ impl<Theme> From<Style> for StyleFn<'_, Theme> {
 
 /// The default style for a focused widget.
 pub fn default_style(theme: &iced::Theme) -> Style {
-    let palette = theme.extended_palette();
     Style {
         border: Border {
             radius: 2.0.into(),
             width: 1.0,
-            color: palette.primary.strong.color,
+            color: theme.accent.hover,
         },
         offset: 0.0,
         snap: true,
@@ -488,12 +490,11 @@ pub fn no_border_style(_theme: &iced::Theme) -> Style {
 
 /// A focus style matching iced's text_input widget - integrates visually.
 pub fn list_focus_style(theme: &iced::Theme) -> Style {
-    let palette = theme.extended_palette();
     Style {
         border: Border {
             radius: 2.0.into(),
             width: 1.0,
-            color: palette.primary.strong.color,
+            color: theme.accent.hover,
         },
         offset: 0.0,
         snap: true,

@@ -221,7 +221,7 @@ impl<'a> FontListWidget<'a> {
                 shadow: iced::Shadow::default(),
                 snap: true,
             },
-            theme.extended_palette().background.weak.color,
+            theme.secondary.base,
         );
     }
 
@@ -253,12 +253,7 @@ impl<'a> FontListWidget<'a> {
             wrapping: iced::advanced::text::Wrapping::None,
             hint_factor: Some(0.0),
         };
-        r.fill_text(
-            count_text,
-            Point::new(count_rect.x, count_rect.y),
-            theme.extended_palette().background.strong.text,
-            count_rect,
-        );
+        r.fill_text(count_text, Point::new(count_rect.x, count_rect.y), theme.primary.on, count_rect);
 
         if show_filter_hint {
             let hint_rect = line_bounds(start_y + line_h + gap);
@@ -274,12 +269,7 @@ impl<'a> FontListWidget<'a> {
                 wrapping: iced::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
-            r.fill_text(
-                empty_text,
-                Point::new(hint_rect.x, hint_rect.y),
-                theme.extended_palette().background.weak.text,
-                hint_rect,
-            );
+            r.fill_text(empty_text, Point::new(hint_rect.x, hint_rect.y), theme.secondary.on, hint_rect);
         }
     }
 
@@ -288,11 +278,7 @@ impl<'a> FontListWidget<'a> {
             return;
         }
 
-        let bg = if is_selected {
-            theme.extended_palette().primary.weak.color
-        } else {
-            theme.extended_palette().secondary.weak.color
-        };
+        let bg = if is_selected { theme.accent.selected } else { theme.button.base };
 
         r.fill_quad(
             renderer::Quad {
@@ -356,12 +342,12 @@ impl<'a> FontListWidget<'a> {
             hint_factor: Some(0.0),
         };
 
-        r.fill_text(name_text, Point::new(left_x, top_y), theme.extended_palette().background.strong.text, name_clip);
+        r.fill_text(name_text, Point::new(left_x, top_y), theme.primary.on, name_clip);
     }
 
     fn draw_charset_preview(&self, r: &mut iced::Renderer, theme: &Theme, bounds: Rectangle, charset_bounds: Rectangle, font: &retrofont::Font) {
-        let supported_color = theme.extended_palette().background.base.text;
-        let unsupported_color = theme.extended_palette().background.weak.text;
+        let supported_color = theme.background.on;
+        let unsupported_color = theme.secondary.on;
 
         let char_w = (TEXT_SIZE_SMALL * 0.62).max(1.0);
         let line_h = (TEXT_SIZE_SMALL * 1.15).max(1.0);
@@ -455,12 +441,7 @@ impl<'a> FontListWidget<'a> {
                     hint_factor: Some(0.0),
                 };
 
-                r2.fill_text(
-                    ph,
-                    Point::new(preview_area.x, preview_area.y),
-                    theme.extended_palette().background.weak.text,
-                    preview_clip,
-                );
+                r2.fill_text(ph, Point::new(preview_area.x, preview_area.y), theme.secondary.on, preview_clip);
             }
         });
     }
@@ -628,7 +609,9 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
         let bounds = layout.bounds();
 
         match event {
-            Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let scroll_offset = self.viewport.borrow().scroll_y;
                     let clicked_y = pos.y + scroll_offset;
@@ -1071,8 +1054,8 @@ impl Dialog<Message> for TdfFontSelectorDialog {
             .width(Length::Fill)
             .height(Length::Fixed(LIST_HEIGHT))
             .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(theme.extended_palette().background.weak.color)),
-                border: Border::default().rounded(4).width(1).color(theme.extended_palette().background.strong.color),
+                background: Some(Background::Color(theme.secondary.base)),
+                border: Border::default().rounded(4).width(1).color(theme.primary.divider),
                 ..Default::default()
             });
 

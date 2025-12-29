@@ -377,11 +377,10 @@ impl SettingsDialogState {
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
-                    let palette = theme.extended_palette();
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
-                            text_color: palette.primary.weak.text,
+                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            text_color: theme.accent.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
@@ -389,7 +388,7 @@ impl SettingsDialogState {
                     } else {
                         Style {
                             background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                            text_color: palette.background.base.text,
+                            text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
@@ -400,15 +399,15 @@ impl SettingsDialogState {
                         Status::Active => base,
                         Status::Hovered if !is_selected => Style {
                             background: Some(iced::Background::Color(Color::from_rgba(
-                                palette.primary.weak.color.r,
-                                palette.primary.weak.color.g,
-                                palette.primary.weak.color.b,
+                                theme.accent.selected.r,
+                                theme.accent.selected.g,
+                                theme.accent.selected.b,
                                 0.2,
                             ))),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
+                            background: Some(iced::Background::Color(theme.accent.hover)),
                             ..base
                         },
                         _ => base,
@@ -657,30 +656,9 @@ impl std::fmt::Display for FlowControlOption {
 struct ThemeOption(iced::Theme);
 
 impl ThemeOption {
-    const _ALL: [ThemeOption; 22] = [
-        ThemeOption(iced::Theme::Light),
-        ThemeOption(iced::Theme::Dark),
-        ThemeOption(iced::Theme::Dracula),
-        ThemeOption(iced::Theme::Nord),
-        ThemeOption(iced::Theme::SolarizedLight),
-        ThemeOption(iced::Theme::SolarizedDark),
-        ThemeOption(iced::Theme::GruvboxLight),
-        ThemeOption(iced::Theme::GruvboxDark),
-        ThemeOption(iced::Theme::CatppuccinLatte),
-        ThemeOption(iced::Theme::CatppuccinFrappe),
-        ThemeOption(iced::Theme::CatppuccinMacchiato),
-        ThemeOption(iced::Theme::CatppuccinMocha),
-        ThemeOption(iced::Theme::TokyoNight),
-        ThemeOption(iced::Theme::TokyoNightStorm),
-        ThemeOption(iced::Theme::TokyoNightLight),
-        ThemeOption(iced::Theme::KanagawaWave),
-        ThemeOption(iced::Theme::KanagawaDragon),
-        ThemeOption(iced::Theme::KanagawaLotus),
-        ThemeOption(iced::Theme::Moonfly),
-        ThemeOption(iced::Theme::Nightfly),
-        ThemeOption(iced::Theme::Oxocarbon),
-        ThemeOption(iced::Theme::Ferra),
-    ];
+    fn all() -> Vec<ThemeOption> {
+        iced::Theme::all().into_iter().map(ThemeOption).collect()
+    }
 }
 
 impl From<iced::Theme> for ThemeOption {
@@ -697,31 +675,7 @@ impl From<ThemeOption> for iced::Theme {
 
 impl std::fmt::Display for ThemeOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            iced::Theme::Light => write!(f, "Light"),
-            iced::Theme::Dark => write!(f, "Dark"),
-            iced::Theme::Dracula => write!(f, "Dracula"),
-            iced::Theme::Nord => write!(f, "Nord"),
-            iced::Theme::SolarizedLight => write!(f, "Solarized Light"),
-            iced::Theme::SolarizedDark => write!(f, "Solarized Dark"),
-            iced::Theme::GruvboxLight => write!(f, "Gruvbox Light"),
-            iced::Theme::GruvboxDark => write!(f, "Gruvbox Dark"),
-            iced::Theme::CatppuccinLatte => write!(f, "Catppuccin Latte"),
-            iced::Theme::CatppuccinFrappe => write!(f, "Catppuccin Frappe"),
-            iced::Theme::CatppuccinMacchiato => write!(f, "Catppuccin Macchiato"),
-            iced::Theme::CatppuccinMocha => write!(f, "Catppuccin Mocha"),
-            iced::Theme::TokyoNight => write!(f, "Tokyo Night"),
-            iced::Theme::TokyoNightStorm => write!(f, "Tokyo Night Storm"),
-            iced::Theme::TokyoNightLight => write!(f, "Tokyo Night Light"),
-            iced::Theme::KanagawaWave => write!(f, "Kanagawa Wave"),
-            iced::Theme::KanagawaDragon => write!(f, "Kanagawa Dragon"),
-            iced::Theme::KanagawaLotus => write!(f, "Kanagawa Lotus"),
-            iced::Theme::Moonfly => write!(f, "Moonfly"),
-            iced::Theme::Nightfly => write!(f, "Nightfly"),
-            iced::Theme::Oxocarbon => write!(f, "Oxocarbon"),
-            iced::Theme::Ferra => write!(f, "Ferra"),
-            iced::Theme::Custom(_) => write!(f, "Custom"),
-        }
+        write!(f, "{}", self.0.name)
     }
 }
 

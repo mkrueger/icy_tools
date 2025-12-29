@@ -302,17 +302,14 @@ impl NavigationBar {
 
         container(content)
             .width(Length::Fill)
-            .style(|theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 0.0,
-                        radius: 0.0.into(),
-                    },
-                    ..Default::default()
-                }
+            .style(|theme| container::Style {
+                background: Some(iced::Background::Color(theme.secondary.base)),
+                border: iced::Border {
+                    color: theme.primary.divider,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
             })
             .into()
     }
@@ -325,12 +322,11 @@ impl Default for NavigationBar {
 }
 
 fn nav_button_style(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        button::Status::Active => (iced::Color::TRANSPARENT, palette.background.strong.text),
-        button::Status::Hovered => (palette.primary.weak.color, palette.primary.weak.text),
-        button::Status::Pressed => (palette.primary.base.color, palette.primary.base.text),
-        button::Status::Disabled => (iced::Color::TRANSPARENT, palette.background.weak.text.scale_alpha(0.3)),
+        button::Status::Active => (iced::Color::TRANSPARENT, theme.primary.on),
+        button::Status::Hovered => (theme.accent.selected, theme.accent.on),
+        button::Status::Pressed => (theme.accent.base, theme.accent.on),
+        button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
     button::Style {
         background: Some(iced::Background::Color(bg)),
@@ -346,18 +342,17 @@ fn nav_button_style(theme: &iced::Theme, status: button::Status) -> button::Styl
 
 /// Style for active toggle buttons (like 16colors when enabled)
 fn nav_button_active_style(theme: &iced::Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        button::Status::Active => (palette.primary.base.color, palette.primary.base.text),
-        button::Status::Hovered => (palette.primary.strong.color, palette.primary.strong.text),
-        button::Status::Pressed => (palette.primary.weak.color, palette.primary.weak.text),
-        button::Status::Disabled => (palette.background.weak.color, palette.background.weak.text.scale_alpha(0.5)),
+        button::Status::Active => (theme.accent.base, theme.accent.on),
+        button::Status::Hovered => (theme.accent.hover, theme.primary.on),
+        button::Status::Pressed => (theme.accent.selected, theme.accent.on),
+        button::Status::Disabled => (theme.secondary.base, theme.secondary.on.scale_alpha(0.5)),
     };
     button::Style {
         background: Some(iced::Background::Color(bg)),
         text_color,
         border: iced::Border {
-            color: palette.primary.strong.color,
+            color: theme.accent.hover,
             width: 1.0,
             radius: 4.0.into(),
         },
@@ -367,23 +362,22 @@ fn nav_button_active_style(theme: &iced::Theme, status: button::Status) -> butto
 
 /// Style for the path input field
 fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: bool) -> text_input::Style {
-    let palette = theme.extended_palette();
-    let danger_color = palette.danger.base.color;
+    let danger_color = theme.destructive.base;
 
     let (bg, border_color) = match status {
         text_input::Status::Active => {
-            let border = if is_valid { palette.background.strong.color } else { danger_color };
-            (palette.background.base.color, border)
+            let border = if is_valid { theme.primary.divider } else { danger_color };
+            (theme.background.base, border)
         }
         text_input::Status::Hovered => {
-            let border = if is_valid { palette.background.strong.color } else { danger_color };
-            (palette.background.weak.color, border)
+            let border = if is_valid { theme.primary.divider } else { danger_color };
+            (theme.secondary.base, border)
         }
         text_input::Status::Focused { .. } => {
-            let border = if is_valid { palette.primary.base.color } else { danger_color };
-            (palette.background.base.color, border)
+            let border = if is_valid { theme.accent.base } else { danger_color };
+            (theme.background.base, border)
         }
-        text_input::Status::Disabled => (palette.background.weak.color, palette.background.strong.color),
+        text_input::Status::Disabled => (theme.secondary.base, theme.primary.divider),
     };
     text_input::Style {
         background: iced::Background::Color(bg),
@@ -392,10 +386,10 @@ fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: b
             width: if is_valid { 1.0 } else { 2.0 },
             radius: 4.0.into(),
         },
-        icon: palette.background.strong.text.scale_alpha(0.6),
-        placeholder: palette.background.base.text.scale_alpha(0.5),
-        value: palette.background.base.text,
-        selection: palette.primary.weak.color.scale_alpha(0.5),
+        icon: theme.primary.on.scale_alpha(0.6),
+        placeholder: theme.background.on.scale_alpha(0.5),
+        value: theme.background.on,
+        selection: theme.accent.selected.scale_alpha(0.5),
     }
 }
 

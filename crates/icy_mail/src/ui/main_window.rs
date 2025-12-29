@@ -507,7 +507,10 @@ impl MainWindow {
                     }
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
+                button: iced::mouse::Button::Left,
+                ..
+            }) => {
                 // We'll need to check if the click was in the conference area
                 // This is handled by the button presses, but we need to track focus
                 // You might want to return a FocusConferenceList message here based on position
@@ -518,6 +521,6 @@ impl MainWindow {
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dark
+        Theme::dark()
     }
 }

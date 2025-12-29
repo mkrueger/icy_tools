@@ -147,7 +147,7 @@ impl Dialog<Message> for AddFontDialog {
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
             text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             })
         } else {
             text("").size(TEXT_SIZE_SMALL)
@@ -315,7 +315,7 @@ impl Dialog<Message> for EditFontSettingsDialog {
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
             text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             })
         } else {
             text("").size(TEXT_SIZE_SMALL)

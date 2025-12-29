@@ -83,7 +83,7 @@ impl Dialog<Message> for FontSizeDialog {
 
         let width_error = if !width_valid && !self.width.is_empty() {
             text("1-8").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             })
         } else {
             text("").size(TEXT_SIZE_SMALL)
@@ -102,7 +102,7 @@ impl Dialog<Message> for FontSizeDialog {
 
         let height_error = if !height_valid && !self.height.is_empty() {
             text("1-32").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             })
         } else {
             text("").size(TEXT_SIZE_SMALL)

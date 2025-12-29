@@ -18,14 +18,12 @@ const SPEED_PICKER_WIDTH: f32 = 65.0;
 
 /// Custom button style for transport controls
 fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
-    let palette = theme.extended_palette();
-
     if is_active {
         button::Style {
-            background: Some(Background::Color(palette.primary.base.color)),
-            text_color: palette.primary.base.text,
+            background: Some(Background::Color(theme.accent.base)),
+            text_color: theme.background.on,
             border: Border {
-                color: palette.primary.strong.color,
+                color: theme.accent.hover,
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -38,10 +36,10 @@ fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
         }
     } else {
         button::Style {
-            background: Some(Background::Color(palette.background.weak.color)),
-            text_color: palette.background.base.text,
+            background: Some(Background::Color(theme.secondary.base)),
+            text_color: theme.background.on,
             border: Border {
-                color: palette.background.strong.color,
+                color: theme.primary.divider,
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -53,12 +51,10 @@ fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
 
 /// Main play button style (larger, more prominent)
 fn play_button_style(theme: &Theme, is_playing: bool) -> button::Style {
-    let palette = theme.extended_palette();
-
     let bg_color = if is_playing {
-        palette.danger.base.color // Red when playing (pause)
+        theme.destructive.base // Red when playing (pause)
     } else {
-        palette.success.base.color // Green when paused (play)
+        theme.success.base // Green when paused (play)
     };
 
     button::Style {
@@ -80,12 +76,10 @@ fn play_button_style(theme: &Theme, is_playing: bool) -> button::Style {
 
 /// Control bar background style
 fn control_bar_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
-
     container::Style {
         background: Some(Background::Color(main_area_background(theme))),
         border: Border {
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 8.0.into(),
         },

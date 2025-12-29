@@ -545,17 +545,14 @@ impl NewFileDialog {
         container(focusable_list)
             .width(Length::Fixed(LEFT_PANEL_WIDTH))
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(theme.secondary.base)),
+                border: iced::Border {
+                    color: theme.primary.divider,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
             })
             .into()
     }
@@ -582,16 +579,13 @@ impl NewFileDialog {
             ]
             .align_y(Alignment::Center),
         )
-        .style(|theme: &iced::Theme| {
-            let palette = theme.extended_palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background.strong.color)),
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
+        .style(|theme: &iced::Theme| container::Style {
+            background: Some(iced::Background::Color(theme.primary.divider)),
+            border: iced::Border {
+                radius: 4.0.into(),
                 ..Default::default()
-            }
+            },
+            ..Default::default()
         })
         .padding([3, 8]);
 
@@ -599,7 +593,7 @@ impl NewFileDialog {
         let description = text(template.description())
             .size(TEXT_SIZE_NORMAL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().background.base.text.scale_alpha(0.8)),
+                color: Some(theme.background.on.scale_alpha(0.8)),
             });
 
         // Size inputs (only for templates that need it)
@@ -659,8 +653,6 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
-
         // Update viewport dimensions
         {
             let mut vp = self.dialog.list_viewport.borrow_mut();
@@ -695,7 +687,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                     ListItem::CategoryHeader { editor, count } => {
                         // Draw category header background
                         let bg_rect = Path::rectangle(Point::new(0.0, y), Size::new(bounds.width, height));
-                        frame.fill(&bg_rect, palette.background.strong.color);
+                        frame.fill(&bg_rect, theme.primary.divider);
 
                         // Draw arrow and text
                         let expanded = self.dialog.categories.get(editor).map(|s| s.expanded).unwrap_or(true);
@@ -705,7 +697,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                         frame.fill_text(Text {
                             content: label,
                             position: Point::new(12.0, y + (height - 14.0) / 2.0),
-                            color: palette.background.base.text,
+                            color: theme.background.on,
                             size: iced::Pixels(14.0),
                             ..Default::default()
                         });
@@ -716,15 +708,11 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                         // Draw selection background
                         if is_selected {
                             let bg_rect = Path::rectangle(Point::new(0.0, y), Size::new(bounds.width, height));
-                            frame.fill(&bg_rect, palette.primary.weak.color);
+                            frame.fill(&bg_rect, theme.accent.base);
                         }
 
                         // Draw icon and template name
-                        let text_color = if is_selected {
-                            palette.primary.weak.text
-                        } else {
-                            palette.background.base.text
-                        };
+                        let text_color = if is_selected { theme.background.on } else { theme.background.on };
 
                         // Icon
                         frame.fill_text(Text {
@@ -755,7 +743,9 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
 
     fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     // Find which item was clicked
                     let scroll_y = self.dialog.list_viewport.borrow().scroll_y;

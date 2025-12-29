@@ -299,17 +299,14 @@ impl FontExportDialog {
         .height(Length::Fixed(label_size + 16.0 * cell_size));
 
         container(canvas)
-            .style(|theme: &iced::Theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(palette.background.weak.color.into()),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                }
+            .style(|theme: &iced::Theme| container::Style {
+                background: Some(theme.secondary.base.into()),
+                border: iced::Border {
+                    color: theme.primary.divider,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
             })
             .padding(8)
             .into()
@@ -374,14 +371,14 @@ impl Dialog<Message> for FontExportDialog {
             text(err)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
+                    color: Some(theme.destructive.base),
                 })
                 .into()
         } else if let Some(success) = &self.success {
             text(success)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().success.base.color),
+                    color: Some(theme.success.base),
                 })
                 .into()
         } else {

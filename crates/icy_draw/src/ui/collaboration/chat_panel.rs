@@ -425,11 +425,10 @@ fn view_input_area(input_text: &str) -> Element<'_, Message> {
 
 #[allow(dead_code)]
 fn chat_panel_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
-        background: Some(iced::Background::Color(palette.background.weak.color)),
+        background: Some(iced::Background::Color(theme.secondary.base)),
         border: Border {
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 4.0.into(),
         },
@@ -438,29 +437,27 @@ fn chat_panel_style(theme: &Theme) -> container::Style {
 }
 
 fn separator_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
-        background: Some(iced::Background::Color(palette.background.strong.color)),
+        background: Some(iced::Background::Color(theme.primary.divider)),
         ..Default::default()
     }
 }
 
 fn user_entry_style(theme: &Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
     let base = iced::widget::button::Style {
         background: Some(iced::Background::Color(Color::TRANSPARENT)),
-        text_color: palette.background.base.text,
+        text_color: theme.background.on,
         border: Border::default().rounded(4.0),
         ..Default::default()
     };
 
     match status {
         iced::widget::button::Status::Hovered => iced::widget::button::Style {
-            background: Some(iced::Background::Color(palette.primary.weak.color.scale_alpha(0.2))),
+            background: Some(iced::Background::Color(theme.accent.base.scale_alpha(0.2))),
             ..base
         },
         iced::widget::button::Status::Pressed => iced::widget::button::Style {
-            background: Some(iced::Background::Color(palette.primary.weak.color.scale_alpha(0.4))),
+            background: Some(iced::Background::Color(theme.accent.base.scale_alpha(0.4))),
             ..base
         },
         _ => base,
@@ -468,11 +465,10 @@ fn user_entry_style(theme: &Theme, status: iced::widget::button::Status) -> iced
 }
 
 fn chat_area_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
-        background: Some(iced::Background::Color(palette.background.base.color)),
+        background: Some(iced::Background::Color(theme.background.base)),
         border: Border {
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
             width: 1.0,
             radius: 4.0.into(),
         },

@@ -36,9 +36,7 @@ pub fn commands_settings_content_generic<M: Clone + 'static>(
     }
 
     let description = text(fl!(crate::LANGUAGE_LOADER, "settings-commands-description"))
-        .style(|theme: &Theme| text::Style {
-            color: Some(theme.extended_palette().secondary.base.color),
-        })
+        .style(|theme: &Theme| text::Style { color: Some(theme.button.on) })
         .size(TEXT_SIZE_SMALL);
 
     column![

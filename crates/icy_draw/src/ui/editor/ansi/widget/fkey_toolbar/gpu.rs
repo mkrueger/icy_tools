@@ -223,7 +223,10 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
         }
 
         // Handle mouse clicks
-        if let iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) = event {
+        if let iced::Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
             if let Some(pos) = cursor.position_in(bounds) {
                 let (slot, hover_type) = compute_hover_state(pos, bounds, nav_label_space);
 

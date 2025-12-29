@@ -749,61 +749,19 @@ impl MonitorSettings {
     }
 
     pub fn get_theme(&self) -> iced::Theme {
+        // New Theme API: Theme is now a struct, use name to find matching theme
+        // or default to light/dark based on stored name
         match self.theme.as_str() {
-            "Light" => iced::Theme::Light,
-            "Dark" => iced::Theme::Dark,
-            "Dracula" => iced::Theme::Dracula,
-            "Nord" => iced::Theme::Nord,
-            "SolarizedLight" => iced::Theme::SolarizedLight,
-            "SolarizedDark" => iced::Theme::SolarizedDark,
-            "GruvboxLight" => iced::Theme::GruvboxLight,
-            "GruvboxDark" => iced::Theme::GruvboxDark,
-            "Ferra" => iced::Theme::Ferra,
-            "CatppuccinLatte" => iced::Theme::CatppuccinLatte,
-            "CatppuccinFrappe" => iced::Theme::CatppuccinFrappe,
-            "CatppuccinMacchiato" => iced::Theme::CatppuccinMacchiato,
-            "CatppuccinMocha" => iced::Theme::CatppuccinMocha,
-            "TokyoNight" => iced::Theme::TokyoNight,
-            "TokyoNightStorm" => iced::Theme::TokyoNightStorm,
-            "TokyoNightLight" => iced::Theme::TokyoNightLight,
-            "KanagawaWave" => iced::Theme::KanagawaWave,
-            "KanagawaDragon" => iced::Theme::KanagawaDragon,
-            "KanagawaLotus" => iced::Theme::KanagawaLotus,
-            "Moonfly" => iced::Theme::Moonfly,
-            "Nightfly" => iced::Theme::Nightfly,
-            "Oxocarbon" => iced::Theme::Oxocarbon,
+            "Light" => iced::Theme::light(),
+            "Dark" => iced::Theme::dark(),
             // Default to Dark theme if theme string is empty or unrecognized
-            _ => iced::Theme::Dark,
+            _ => iced::Theme::dark(),
         }
     }
 
     pub fn set_theme(&mut self, theme: iced::Theme) {
-        self.theme = match theme {
-            iced::Theme::Light => "Light",
-            iced::Theme::Dark => "Dark",
-            iced::Theme::Dracula => "Dracula",
-            iced::Theme::Nord => "Nord",
-            iced::Theme::SolarizedLight => "SolarizedLight",
-            iced::Theme::SolarizedDark => "SolarizedDark",
-            iced::Theme::GruvboxLight => "GruvboxLight",
-            iced::Theme::GruvboxDark => "GruvboxDark",
-            iced::Theme::CatppuccinLatte => "CatppuccinLatte",
-            iced::Theme::CatppuccinFrappe => "CatppuccinFrappe",
-            iced::Theme::CatppuccinMacchiato => "CatppuccinMacchiato",
-            iced::Theme::CatppuccinMocha => "CatppuccinMocha",
-            iced::Theme::TokyoNight => "TokyoNight",
-            iced::Theme::TokyoNightStorm => "TokyoNightStorm",
-            iced::Theme::TokyoNightLight => "TokyoNightLight",
-            iced::Theme::KanagawaWave => "KanagawaWave",
-            iced::Theme::KanagawaDragon => "KanagawaDragon",
-            iced::Theme::KanagawaLotus => "KanagawaLotus",
-            iced::Theme::Moonfly => "Moonfly",
-            iced::Theme::Nightfly => "Nightfly",
-            iced::Theme::Oxocarbon => "Oxocarbon",
-            iced::Theme::Custom(_) => "Dark",
-            iced::Theme::Ferra => "Ferra",
-        }
-        .to_string();
+        // New Theme API: Theme is now a struct with a name field
+        self.theme = theme.name.clone();
     }
 }
 

@@ -3,8 +3,8 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::Element;
 use iced::widget::menu::{bar as menu_bar, root as menu_root, Tree as MenuTree};
+use iced::Element;
 
 use crate::fl;
 use crate::ui::main_window::menu::{menu_items_to_iced, MenuItem, MenuState};
@@ -142,14 +142,20 @@ pub fn view_animation_menu(recent_files: &MostRecentlyUsedFiles, undo_desc: Opti
     let edit_items = menu_items_to_iced(&menu.edit, &state);
     let help_items = menu_items_to_iced(&menu.help, &state);
 
-    let menu_roots = vec![
-        MenuTree::with_children(menu_root(fl!("menu-file"), Message::Noop), file_items),
-        MenuTree::with_children(menu_root(fl!("menu-edit"), Message::Noop), edit_items),
-        MenuTree::with_children(menu_root(fl!("menu-help"), Message::Noop), help_items),
-    ];
+    let (file_button, file_mnemonic) = menu_root(fl!("menu-file"), Message::Noop);
+    let (edit_button, edit_mnemonic) = menu_root(fl!("menu-edit"), Message::Noop);
+    let (help_button, help_mnemonic) = menu_root(fl!("menu-help"), Message::Noop);
 
-    menu_bar(menu_roots)
-        .spacing(4.0)
-        .padding([4, 8])
-        .into()
+    let file_tree = MenuTree::with_children(file_button, file_items);
+    let file_tree = if let Some(m) = file_mnemonic { file_tree.mnemonic(m) } else { file_tree };
+
+    let edit_tree = MenuTree::with_children(edit_button, edit_items);
+    let edit_tree = if let Some(m) = edit_mnemonic { edit_tree.mnemonic(m) } else { edit_tree };
+
+    let help_tree = MenuTree::with_children(help_button, help_items);
+    let help_tree = if let Some(m) = help_mnemonic { help_tree.mnemonic(m) } else { help_tree };
+
+    let menu_roots = vec![file_tree, edit_tree, help_tree];
+
+    menu_bar(menu_roots).spacing(4.0).padding([4, 8]).into()
 }

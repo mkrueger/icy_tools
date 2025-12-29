@@ -22,7 +22,7 @@ struct SauceColors {
 
 impl SauceColors {
     fn for_theme(theme: &Theme) -> Self {
-        let is_dark = theme.extended_palette().is_dark;
+        let is_dark = theme.is_dark;
         if is_dark {
             // Dark theme - bright colors
             Self {
@@ -305,7 +305,7 @@ impl StatusBar {
                 }
             } else {
                 // Wrap SAUCE info in a clickable button
-                let is_dark = theme.extended_palette().is_dark;
+                let is_dark = theme.is_dark;
                 button(row(parts).spacing(0))
                     .on_press(StatusBarMessage::ShowSauceInfo)
                     .padding([0, 0])
@@ -373,12 +373,11 @@ impl StatusBar {
                 .style(|theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
-                    let palette = theme.extended_palette();
                     let base = Style {
                         background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                        text_color: palette.primary.strong.color,
+                        text_color: theme.accent.hover,
                         border: Border {
-                            color: palette.primary.weak.color,
+                            color: theme.accent.selected,
                             width: 1.0,
                             radius: 4.0.into(),
                         },
@@ -389,13 +388,13 @@ impl StatusBar {
                     match status {
                         Status::Active | Status::Disabled => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
-                            text_color: palette.primary.weak.text,
+                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            text_color: theme.accent.on,
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
-                            text_color: palette.primary.strong.text,
+                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            text_color: theme.primary.on,
                             ..base
                         },
                     }
@@ -405,19 +404,16 @@ impl StatusBar {
             // Disabled state when not viewing a file
             button(text(baud_text).size(12))
                 .padding([2, 8])
-                .style(|theme: &iced::Theme, _status| {
-                    let palette = theme.extended_palette();
-                    iced::widget::button::Style {
-                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                        text_color: palette.secondary.base.color.scale_alpha(0.5),
-                        border: Border {
-                            color: palette.secondary.base.color.scale_alpha(0.3),
-                            width: 1.0,
-                            radius: 4.0.into(),
-                        },
-                        shadow: Default::default(),
-                        snap: false,
-                    }
+                .style(|theme: &iced::Theme, _status| iced::widget::button::Style {
+                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    text_color: theme.button.on.scale_alpha(0.5),
+                    border: Border {
+                        color: theme.button.on.scale_alpha(0.3),
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    shadow: Default::default(),
+                    snap: false,
                 })
                 .into()
         };
@@ -432,20 +428,15 @@ impl StatusBar {
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
-                    let palette = theme.extended_palette();
                     let base = Style {
                         background: if is_auto_scroll_enabled {
-                            Some(iced::Background::Color(palette.primary.weak.color))
+                            Some(iced::Background::Color(theme.accent.selected))
                         } else {
                             Some(iced::Background::Color(Color::TRANSPARENT))
                         },
-                        text_color: if is_auto_scroll_enabled {
-                            palette.primary.weak.text
-                        } else {
-                            palette.primary.strong.color
-                        },
+                        text_color: if is_auto_scroll_enabled { theme.accent.on } else { theme.accent.hover },
                         border: Border {
-                            color: palette.primary.weak.color,
+                            color: theme.accent.selected,
                             width: 1.0,
                             radius: 4.0.into(),
                         },
@@ -456,13 +447,13 @@ impl StatusBar {
                     match status {
                         Status::Active | Status::Disabled => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
-                            text_color: palette.primary.weak.text,
+                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            text_color: theme.accent.on,
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
-                            text_color: palette.primary.strong.text,
+                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            text_color: theme.primary.on,
                             ..base
                         },
                     }
@@ -476,7 +467,7 @@ impl StatusBar {
             text(count_text)
                 .size(12)
                 .style(|theme: &iced::Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 })
                 .into()
         } else {
@@ -496,17 +487,14 @@ impl StatusBar {
         container(content)
             .width(Length::Fill)
             .padding([4, 0])
-            .style(|theme| {
-                let palette = theme.extended_palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background.weak.color)),
-                    border: iced::Border {
-                        color: palette.background.strong.color,
-                        width: 1.0,
-                        radius: 0.0.into(),
-                    },
-                    ..Default::default()
-                }
+            .style(|theme| container::Style {
+                background: Some(iced::Background::Color(theme.secondary.base)),
+                border: iced::Border {
+                    color: theme.primary.divider,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
             })
             .into()
     }

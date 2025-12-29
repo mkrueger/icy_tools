@@ -317,7 +317,7 @@ impl FileSettingsDialog {
         };
 
         let format_description = text(format_desc).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-            color: Some(theme.extended_palette().secondary.strong.color),
+            color: Some(theme.secondary.on),
         });
 
         let format_row = row![
@@ -467,7 +467,7 @@ impl FileSettingsDialog {
         let info_text = text(fl!("file-settings-comments-info"))
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.strong.color),
+                color: Some(theme.secondary.on),
             });
 
         // Text editor for comments

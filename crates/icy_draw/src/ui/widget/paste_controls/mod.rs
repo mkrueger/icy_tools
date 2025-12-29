@@ -170,7 +170,9 @@ impl shader::Program<PasteControlsMessage> for PasteControlsProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(slot) = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds)) {
                     let msg = match slot {
                         0 => PasteControlsMessage::Anchor,

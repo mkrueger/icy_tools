@@ -217,34 +217,28 @@ impl FileListToolbar {
             // Tiles mode: same background as list mode, no border, square corners
             container(content)
                 .width(Length::Shrink)
-                .style(|theme| {
-                    let palette = theme.extended_palette();
-                    container::Style {
-                        background: Some(iced::Background::Color(palette.background.weak.color).scale_alpha(0.9)),
-                        border: iced::Border {
-                            color: iced::Color::TRANSPARENT,
-                            width: 0.0,
-                            radius: 0.0.into(),
-                        },
-                        ..Default::default()
-                    }
+                .style(|theme| container::Style {
+                    background: Some(iced::Background::Color(theme.secondary.base).scale_alpha(0.9)),
+                    border: iced::Border {
+                        color: iced::Color::TRANSPARENT,
+                        width: 0.0,
+                        radius: 0.0.into(),
+                    },
+                    ..Default::default()
                 })
                 .into()
         } else {
             // List mode: solid background, full width
             container(content)
                 .width(Length::Fill)
-                .style(|theme| {
-                    let palette = theme.extended_palette();
-                    container::Style {
-                        background: Some(iced::Background::Color(palette.background.weak.color)),
-                        border: iced::Border {
-                            color: palette.background.strong.color,
-                            width: 0.0,
-                            radius: 0.0.into(),
-                        },
-                        ..Default::default()
-                    }
+                .style(|theme| container::Style {
+                    background: Some(iced::Background::Color(theme.secondary.base)),
+                    border: iced::Border {
+                        color: theme.primary.divider,
+                        width: 0.0,
+                        radius: 0.0.into(),
+                    },
+                    ..Default::default()
                 })
                 .into()
         }
@@ -258,12 +252,11 @@ impl Default for FileListToolbar {
 }
 
 fn toolbar_button_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (iced::Color::TRANSPARENT, palette.background.strong.text),
-        iced::widget::button::Status::Hovered => (palette.primary.weak.color, palette.primary.weak.text),
-        iced::widget::button::Status::Pressed => (palette.primary.base.color, palette.primary.base.text),
-        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, palette.background.weak.text.scale_alpha(0.3)),
+        iced::widget::button::Status::Active => (iced::Color::TRANSPARENT, theme.primary.on),
+        iced::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
+        iced::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
+        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
     iced::widget::button::Style {
         background: Some(iced::Background::Color(bg)),
@@ -278,12 +271,11 @@ fn toolbar_button_style(theme: &iced::Theme, status: iced::widget::button::Statu
 }
 
 fn sauce_button_active_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let palette = theme.extended_palette();
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (palette.primary.base.color, palette.primary.base.text),
-        iced::widget::button::Status::Hovered => (palette.primary.strong.color, palette.primary.strong.text),
-        iced::widget::button::Status::Pressed => (palette.primary.weak.color, palette.primary.weak.text),
-        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, palette.background.weak.text.scale_alpha(0.3)),
+        iced::widget::button::Status::Active => (theme.accent.base, theme.accent.on),
+        iced::widget::button::Status::Hovered => (theme.accent.hover, theme.primary.on),
+        iced::widget::button::Status::Pressed => (theme.accent.selected, theme.accent.on),
+        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
     iced::widget::button::Style {
         background: Some(iced::Background::Color(bg)),

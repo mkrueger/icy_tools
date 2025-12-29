@@ -427,7 +427,7 @@ impl Dialog<Message> for FontImportDialog {
             text(err)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
+                    color: Some(theme.destructive.base),
                 })
                 .into()
         } else {
@@ -572,7 +572,7 @@ impl FontImportDialog {
 
                 let width_error = if !width_valid && !self.image_width.is_empty() {
                     text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
+                        color: Some(theme.destructive.base),
                     })
                 } else {
                     text("").size(TEXT_SIZE_SMALL)
@@ -580,7 +580,7 @@ impl FontImportDialog {
 
                 let height_error = if !height_valid && !self.image_height.is_empty() {
                     text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                        color: Some(theme.extended_palette().danger.base.color),
+                        color: Some(theme.destructive.base),
                     })
                 } else {
                     text("").size(TEXT_SIZE_SMALL)

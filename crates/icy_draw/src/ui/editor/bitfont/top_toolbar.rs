@@ -116,20 +116,20 @@ impl BitFontTopToolbar {
         row![
             text(key).size(14).style(|theme: &iced::Theme| {
                 text::Style {
-                    color: Some(theme.extended_palette().background.base.text),
+                    color: Some(theme.background.on),
                 }
             }),
             text(":")
                 .style(|theme: &iced::Theme| {
                     text::Style {
-                        color: Some(theme.extended_palette().secondary.strong.color),
+                        color: Some(theme.secondary.on),
                     }
                 })
                 .size(14),
             text(action)
                 .style(|theme: &iced::Theme| {
                     text::Style {
-                        color: Some(theme.extended_palette().secondary.strong.color),
+                        color: Some(theme.secondary.on),
                     }
                 })
                 .size(14),
@@ -143,7 +143,7 @@ impl BitFontTopToolbar {
         text("|")
             .size(14)
             .style(|theme: &iced::Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.weak.color),
+                color: Some(theme.button.base),
             })
             .into()
     }

@@ -204,8 +204,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                     let cell_y = RULER_SIZE + hover_y as f32 * (cell_size + cell_gap);
 
                     // Use theme color for hover
-                    let iced_palette = theme.extended_palette();
-                    let hover_color = iced_palette.primary.base.color;
+                    let hover_color = theme.accent.base;
 
                     draw_corner_brackets(frame, cell_x, cell_y, cell_size, cell_size, hover_color, 2.0);
                 });
@@ -314,21 +313,21 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
         let cursor_pos = cursor_pos?;
 
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
-                Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftPressed(cursor_pos))))
-            }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Right, .. }) => {
-                Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightPressed(cursor_pos))))
-            }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Middle, .. }) => {
-                Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::MiddlePressed)))
-            }
-            iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
-                Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftReleased)))
-            }
-            iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Right, .. }) => {
-                Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightReleased)))
-            }
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftPressed(cursor_pos)))),
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Right, ..
+            }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightPressed(cursor_pos)))),
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Middle, ..
+            }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::MiddlePressed))),
+            iced::Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Left, ..
+            }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftReleased))),
+            iced::Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Right, ..
+            }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightReleased))),
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 // Request redraw if hover changed
                 if old_hovered != state.hovered {

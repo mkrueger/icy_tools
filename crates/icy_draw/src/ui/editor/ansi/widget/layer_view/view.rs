@@ -578,29 +578,29 @@ impl LayerView {
 
     /// Build the context menu items for a layer
     fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuTree<'static, LayerMessage, Theme, iced::Renderer>> {
-        use std::collections::HashMap;
         use iced::widget::menu::KeyBind;
-        
+        use std::collections::HashMap;
+
         let key_binds: HashMap<KeyBind, LayerContextAction> = HashMap::new();
-        
+
         let mut items = vec![
             MenuItemDef::Button(fl!("layer_tool_menu_layer_properties"), LayerContextAction::Properties(index)),
             MenuItemDef::Button(fl!("layer_tool_menu_new_layer"), LayerContextAction::NewLayer),
             MenuItemDef::Button(fl!("layer_tool_menu_duplicate_layer"), LayerContextAction::Duplicate(index)),
         ];
-        
+
         // Merge is only available if not the bottom layer
         if index > 0 {
             items.push(MenuItemDef::Button(fl!("layer_tool_menu_merge_layer"), LayerContextAction::MergeDown(index)));
         }
-        
+
         // Delete is only available if there's more than one layer
         if layer_count > 1 {
             items.push(MenuItemDef::Button(fl!("layer_tool_menu_delete_layer"), LayerContextAction::Delete(index)));
         }
-        
+
         items.push(MenuItemDef::Button(fl!("layer_tool_menu_clear_layer"), LayerContextAction::Clear(index)));
-        
+
         menu_items_fn(&key_binds, items)
     }
 
@@ -692,8 +692,7 @@ impl LayerView {
         let list_with_scrollbar = wrap_with_scrollbars(list_widget, &self.viewport, needs_scrollbar, false);
 
         let scroll_y = self.viewport.borrow().scroll_y;
-        let palette = theme.extended_palette();
-        let icon_color = palette.background.base.text;
+        let icon_color = theme.background.on;
         let shader_bg: Element<'a, LayerMessage> = iced::widget::shader(LayerListBackgroundProgram {
             row_count: layer_count as u32,
             row_height: LAYER_ROW_HEIGHT,
@@ -701,8 +700,8 @@ impl LayerView {
             selected_row: selected_list_idx,
             hovered_row: self.hovered_list_idx.clone(),
             bg_color: main_area_background(theme),
-            preview_bg_color: palette.background.weak.color,
-            preview_border_color: palette.background.strong.color.scale_alpha(0.7),
+            preview_bg_color: theme.secondary.base,
+            preview_border_color: theme.primary.divider.scale_alpha(0.7),
             preview_border_width: 1.0,
             preview_radius: 2.0,
             preview_atlas: self.preview_atlas.clone(),
@@ -717,14 +716,14 @@ impl LayerView {
             .height(Length::Fill)
             .into();
 
-        let list_container = container(list_stack).width(Length::Fill).height(Length::Fill).style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style {
+        let list_container = container(list_stack)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|theme: &Theme| container::Style {
                 background: None,
-                border: Border::default().width(1).color(palette.background.strong.color),
+                border: Border::default().width(1).color(theme.primary.divider),
                 ..Default::default()
-            }
-        });
+            });
 
         // Button bar - changes behavior in paste mode
         let button_bar = if paste_mode {
@@ -737,13 +736,10 @@ impl LayerView {
             container(row![keep_layer_btn, move_up_btn, move_down_btn, cancel_btn].spacing(0))
                 .padding([2, 0])
                 .width(Length::Fill)
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    container::Style {
-                        // Slightly different background to indicate paste mode
-                        background: Some(iced::Background::Color(palette.primary.weak.color.scale_alpha(0.3))),
-                        ..Default::default()
-                    }
+                .style(|theme: &Theme| container::Style {
+                    // Slightly different background to indicate paste mode
+                    background: Some(iced::Background::Color(theme.accent.selected.scale_alpha(0.3))),
+                    ..Default::default()
                 })
         } else {
             // Normal mode
@@ -756,12 +752,9 @@ impl LayerView {
             container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
                 .padding([2, 0])
                 .width(Length::Fill)
-                .style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    container::Style {
-                        background: Some(iced::Background::Color(palette.background.weak.color)),
-                        ..Default::default()
-                    }
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced::Background::Color(theme.secondary.base)),
+                    ..Default::default()
                 })
         };
 
@@ -883,15 +876,13 @@ impl<'a> LayerListWidget<'a> {
         is_hovered: bool,
         is_selected: bool,
     ) {
-        let palette = theme.extended_palette();
-
         let title_fg = if is_selected {
             // Selected row background comes from primary; use its text color.
-            palette.primary.base.text
+            theme.accent.on
         } else if is_hovered {
-            palette.background.base.text
+            theme.background.on
         } else {
-            palette.background.base.text
+            theme.background.on
         };
 
         let _preview_bounds = self.preview_bounds(row_bounds);
@@ -903,11 +894,11 @@ impl<'a> LayerListWidget<'a> {
         renderer.fill_quad(
             renderer::Quad {
                 bounds: toggle_bounds,
-                border: Border::default().width(1.0).color(palette.background.strong.color).rounded(2.0),
+                border: Border::default().width(1.0).color(theme.primary.divider).rounded(2.0),
                 shadow: iced::Shadow::default(),
                 snap: true,
             },
-            palette.background.weak.color,
+            theme.secondary.base,
         );
 
         // Draw cached icon (white SVG) centered.
@@ -1134,7 +1125,9 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                     shell.request_redraw();
                 }
             }
-            Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 // In paste mode, layer selection is disabled
                 if self.paste_mode {
                     return;
@@ -1175,7 +1168,9 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
                     }
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
+            Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Left, ..
+            }) => {
                 state.left_button_down = false;
 
                 let Some(pressed_idx) = state.pressed_list_idx.take() else {

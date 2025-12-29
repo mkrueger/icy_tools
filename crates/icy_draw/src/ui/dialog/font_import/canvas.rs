@@ -25,9 +25,8 @@ impl<'a, Message> canvas::Program<Message> for FontPreviewCanvas<'a> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Colors
-        let palette = theme.extended_palette();
-        let fg_color = palette.background.base.text;
-        let bg_color = palette.background.weak.color;
+        let fg_color = theme.background.on;
+        let bg_color = theme.secondary.base;
 
         let (font_width, font_height) = (self.font.size().width, self.font.size().height);
 

@@ -54,12 +54,9 @@ impl TagListDialog {
                 container(text(fl!("tag-list-no-tags")).size(TEXT_SIZE_NORMAL))
                     .width(Length::Fill)
                     .padding(8)
-                    .style(|theme: &Theme| {
-                        let p = theme.extended_palette();
-                        container::Style {
-                            background: Some(iced::Background::Color(p.background.base.color)),
-                            ..Default::default()
-                        }
+                    .style(|theme: &Theme| container::Style {
+                        background: Some(iced::Background::Color(theme.background.base)),
+                        ..Default::default()
                     }),
             );
         } else {
@@ -72,9 +69,7 @@ impl TagListDialog {
                 let preview = if item.is_enabled {
                     preview_base
                 } else {
-                    preview_base.style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().secondary.base.color),
-                    })
+                    preview_base.style(|theme: &Theme| text::Style { color: Some(theme.button.on) })
                 };
 
                 let pos = text(format!("{},{}", item.position.x, item.position.y))

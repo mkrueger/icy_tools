@@ -506,7 +506,9 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
                     return None;
                 };

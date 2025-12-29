@@ -123,13 +123,12 @@ impl DialogType {
     }
 
     pub fn icon_color(&self, theme: &Theme) -> Color {
-        let palette = theme.extended_palette();
         match self {
             DialogType::Plain => Color::TRANSPARENT,
-            DialogType::Error => palette.danger.base.color,
-            DialogType::Warning => palette.warning.base.color,
-            DialogType::Info => palette.primary.base.color,
-            DialogType::Question => palette.primary.base.color,
+            DialogType::Error => theme.destructive.base,
+            DialogType::Warning => theme.warning.base,
+            DialogType::Info => theme.accent.base,
+            DialogType::Question => theme.accent.base,
         }
     }
 }
@@ -205,9 +204,11 @@ impl ConfirmationDialog {
         })];
 
         if let Some(secondary) = self.secondary_message.clone() {
-            text_column = text_column.push(text(secondary).size(TEXT_SIZE_SMALL).style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }));
+            text_column = text_column.push(
+                text(secondary)
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &Theme| iced::widget::text::Style { color: Some(theme.button.on) }),
+            );
         }
 
         // Build header with icon and title/secondary message side by side
@@ -267,9 +268,11 @@ impl ConfirmationDialog {
         })];
 
         if let Some(secondary) = self.secondary_message.clone() {
-            text_column = text_column.push(text(secondary).size(TEXT_SIZE_SMALL).style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }));
+            text_column = text_column.push(
+                text(secondary)
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &Theme| iced::widget::text::Style { color: Some(theme.button.on) }),
+            );
         }
 
         // Build header with icon and title/secondary message side by side

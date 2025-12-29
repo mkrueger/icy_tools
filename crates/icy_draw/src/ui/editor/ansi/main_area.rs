@@ -1636,7 +1636,7 @@ impl AnsiEditorMainArea {
         // Tool panel - calculate columns based on sidebar width
         // Use the active theme's main area background color
         let bg_weakest = main_area_background(theme);
-        let icon_color = theme.extended_palette().background.base.text;
+        let icon_color = theme.background.on;
 
         // In paste mode, show paste controls instead of tool panel
         let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {

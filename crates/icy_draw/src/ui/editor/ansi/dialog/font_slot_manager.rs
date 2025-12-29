@@ -384,8 +384,6 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
-
         // Update viewport dimensions
         {
             let mut vp = self.dialog.viewport.borrow_mut();
@@ -427,7 +425,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
 
                 // Background
                 let bg_color = if is_active {
-                    palette.primary.base.color
+                    theme.accent.base
                 } else if is_empty {
                     Color::from_rgb(0.08, 0.08, 0.08)
                 } else if is_custom {
@@ -478,7 +476,9 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
 
     fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let scroll_y = self.dialog.viewport.borrow().scroll_y;
                     let click_y = pos.y + scroll_y;

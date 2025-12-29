@@ -90,17 +90,14 @@ impl SauceDialogState {
                 .height(Length::Fixed(80.0))
                 .width(Length::Fill),
         )
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style {
-                background: Some(iced::Background::Color(palette.background.weak.color)),
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                ..Default::default()
-            }
+        .style(|theme: &Theme| container::Style {
+            background: Some(iced::Background::Color(theme.secondary.base)),
+            border: iced::Border {
+                color: theme.primary.divider,
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
         })
         .into()
     }

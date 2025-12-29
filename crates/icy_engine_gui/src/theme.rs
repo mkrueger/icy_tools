@@ -28,5 +28,5 @@ impl IcyTheme {
 /// Get the main area background color for content areas (preview, editor canvas, etc.)
 /// This provides visual separation from sidebars and toolbars
 pub fn main_area_background(theme: &Theme) -> Color {
-    theme.extended_palette().background.weaker.color
+    theme.primary.base
 }

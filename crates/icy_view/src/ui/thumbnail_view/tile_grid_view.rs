@@ -1257,7 +1257,7 @@ impl TileGridView {
                 text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
                     .size(14)
                     .style(|theme: &iced::Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(0.5)),
+                        color: Some(theme.background.on.scale_alpha(0.5)),
                     }),
             )
             .width(Length::Fill)
@@ -1274,7 +1274,7 @@ impl TileGridView {
                 text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
                     .size(14)
                     .style(|theme: &iced::Theme| text::Style {
-                        color: Some(theme.palette().text.scale_alpha(0.5)),
+                        color: Some(theme.background.on.scale_alpha(0.5)),
                     }),
             )
             .width(Length::Fill)
@@ -1540,7 +1540,11 @@ impl TileGridView {
                 return Some(TileGridMessage::OpenSelected);
             }
             // Check if a click happened (selection changed)
-            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. }) = event {
+            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
+                button: iced::mouse::Button::Left,
+                ..
+            }) = event
+            {
                 if let Some(index) = self.selected_index {
                     return Some(TileGridMessage::TileClicked(index));
                 }
@@ -1639,7 +1643,10 @@ impl TileGridView {
                     return true;
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button: iced::mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
+                button: iced::mouse::Button::Left,
+                ..
+            }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
                 if let Some(pos) = pos {
                     if bounds.contains(pos) {

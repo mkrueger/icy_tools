@@ -813,7 +813,7 @@ impl AnimationEditor {
         let preview_element: Element<'_, AnimationEditorMessage> = if self.has_error() {
             // Show error
             container(text(error_msg).size(14).style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             }))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -883,7 +883,7 @@ impl AnimationEditor {
             .style(|theme: &Theme| container::Style {
                 background: Some(Background::Color(main_area_background(theme))),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.primary.divider,
                     width: 1.0,
                     radius: 4.0.into(),
                 },
@@ -977,7 +977,7 @@ impl AnimationEditor {
         if !error_text.is_empty() {
             // Show error
             container(text(error_text).size(12).style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
+                color: Some(theme.destructive.base),
             }))
             .width(Length::Fill)
             .height(Length::Fixed(120.0))
@@ -986,7 +986,7 @@ impl AnimationEditor {
         } else if log_entries.is_empty() {
             // No log entries
             container(text(fl!("animation-no-log")).size(12).style(|theme: &Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().background.strong.color),
+                color: Some(theme.primary.divider),
             }))
             .width(Length::Fill)
             .height(Length::Fixed(120.0))
@@ -999,7 +999,7 @@ impl AnimationEditor {
                 .map(|(frame, entry_text)| {
                     row![
                         text(format!("[{}]", frame)).size(11).style(|theme: &Theme| iced::widget::text::Style {
-                            color: Some(theme.extended_palette().primary.weak.color),
+                            color: Some(theme.accent.selected),
                         }),
                         Space::new().width(6),
                         text(entry_text).size(11),

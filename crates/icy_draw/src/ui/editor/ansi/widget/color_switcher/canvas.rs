@@ -178,7 +178,7 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
             builder.line_to(Point::new(cx - r + 3.0, cy + r * 0.5 + 3.0));
         });
 
-        let arrow_color = theme.extended_palette().background.base.text;
+        let arrow_color = theme.background.on;
         frame.stroke(&arrow_path, Stroke::default().with_color(arrow_color).with_width(1.5));
 
         vec![frame.into_geometry()]
@@ -188,7 +188,10 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         let height = SWITCHER_SIZE;
         let rect_height = height * 0.618;
 
-        if let iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) = event {
+        if let iced::Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
             if let Some(pos) = cursor.position_in(bounds) {
                 // Check if clicked on swap area (top-right)
                 if pos.x > rect_height && pos.y < rect_height {

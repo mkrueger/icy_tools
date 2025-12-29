@@ -257,8 +257,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 let hover_y = self.label_size + hover_row as f32 * self.cell_height;
 
                 // Use theme color for hover
-                let iced_palette = theme.extended_palette();
-                let hover_color = iced_palette.primary.base.color;
+                let hover_color = theme.accent.base;
 
                 draw_corner_brackets(&mut frame, hover_x, hover_y, self.cell_width, self.cell_height, hover_color, 1.5);
             }
@@ -283,13 +282,17 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch_code);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+                    iced::Event::Mouse(mouse::Event::ButtonPressed {
+                        button: mouse::Button::Left, ..
+                    }) => {
                         state.is_dragging = true;
                         let ch = char::from_u32(ch_code as u32).unwrap_or(' ');
                         // SelectGlyph sets anchor position and focus to CharSet
                         return Some(Action::publish(BitFontEditorMessage::SelectGlyphAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
+                    iced::Event::Mouse(mouse::Event::ButtonReleased {
+                        button: mouse::Button::Left, ..
+                    }) => {
                         state.is_dragging = false;
                     }
                     iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -309,7 +312,10 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
+                if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                    button: mouse::Button::Left, ..
+                }) = event
+                {
                     state.is_dragging = false;
                 }
                 // Request redraw if hover changed (mouse outside grid cells)
@@ -320,7 +326,10 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
         } else {
             // Cursor left the canvas entirely
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
+            if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Left, ..
+            }) = event
+            {
                 state.is_dragging = false;
             }
             // Request redraw if hover changed (mouse left canvas)

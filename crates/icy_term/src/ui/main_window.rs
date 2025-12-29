@@ -713,7 +713,7 @@ impl MainWindow {
                     let screen = self.terminal_window.terminal.screen.lock();
                     let caret = screen.caret();
                     let terminal_state = screen.terminal_state();
-                    
+
                     let info = terminal_info_dialog::TerminalInfo {
                         buffer_size: terminal_state.size(),
                         screen_resolution: screen.resolution(),
@@ -736,17 +736,15 @@ impl MainWindow {
                         ansi_music: self.terminal_window.ansi_music,
                     };
                     drop(screen);
-                    
+
                     // Create a temporary dialog state just to format the text
                     let dialog = terminal_info_dialog::TerminalInfoDialog::new(info);
                     let text = dialog.format_info_text();
-                    
+
                     // Copy text to clipboard using async API
-                    return iced::clipboard::STANDARD.write_text(text).map(|()| {
-                        Message::ClipboardTextCopied(Ok(()))
-                    });
+                    return iced::clipboard::STANDARD.write_text(text).map(|()| Message::ClipboardTextCopied(Ok(())));
                 }
-                
+
                 // Route other messages to dialog stack
                 if let Some(task) = self.dialogs.update(&message) {
                     return task;

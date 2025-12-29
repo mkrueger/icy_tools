@@ -348,9 +348,9 @@ impl ToolHandler for SelectTool {
             Space::new().width(iced::Length::Fill),
             segmented_control,
             Space::new().width(iced::Length::Fixed(16.0)),
-            text("⇧: add   ⌃/Ctrl: remove").size(14).style(|theme: &iced::Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            }),
+            text("⇧: add   ⌃/Ctrl: remove")
+                .size(14)
+                .style(|theme: &iced::Theme| text::Style { color: Some(theme.button.on) }),
             Space::new().width(iced::Length::Fill),
         ]
         .spacing(8)

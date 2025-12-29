@@ -93,7 +93,7 @@ pub fn separator<'a, T: 'a>() -> Element<'a, T> {
         .width(Length::Fill)
         .height(1.0)
         .style(|theme: &Theme| container::Style {
-            background: Some(Background::Color(theme.palette().text.scale_alpha(SEPARATOR_ALPHA))),
+            background: Some(Background::Color(theme.background.on.scale_alpha(SEPARATOR_ALPHA))),
             ..Default::default()
         })
         .into()
@@ -114,24 +114,24 @@ pub fn dialog_area<'a, T: 'a>(content: Element<'a, T>) -> Element<'a, T> {
 }
 
 pub fn modal_container<'a, T: 'a>(content: Element<'a, T>, width: f32) -> container::Container<'a, T> {
-    container(content).width(Length::Fixed(width)).height(Length::Shrink).style(|theme: &Theme| {
-        let palette = theme.palette();
-        container::Style {
-            background: Some(Background::Color(palette.background)),
+    container(content)
+        .width(Length::Fixed(width))
+        .height(Length::Shrink)
+        .style(|theme: &Theme| container::Style {
+            background: Some(Background::Color(theme.background.base)),
             border: Border {
-                color: palette.text,
+                color: theme.background.on,
                 width: DIALOG_BORDER_WIDTH,
                 radius: DIALOG_BORDER_RADIUS.into(),
             },
-            text_color: Some(palette.text),
+            text_color: Some(theme.background.on),
             shadow: Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
                 offset: iced::Vector::new(0.0, 4.0),
                 blur_radius: 8.0,
             },
             snap: false,
-        }
-    })
+        })
 }
 
 pub fn modal_overlay<'a, Message: 'a + Clone>(background: Element<'a, Message>, modal: Element<'a, Message>) -> Element<'a, Message> {
@@ -182,7 +182,7 @@ pub fn warning_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Messa
 
     tooltip(
         warning_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
-            color: Some(theme.extended_palette().warning.base.color),
+            color: Some(theme.warning.base),
         }),
         container(text(error_text)).style(container::rounded_box),
         tooltip::Position::Top,
@@ -195,7 +195,7 @@ pub fn error_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message
 
     tooltip(
         error_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
-            color: Some(theme.extended_palette().danger.base.color),
+            color: Some(theme.destructive.base),
         }),
         container(text(error_text)).style(container::rounded_box),
         tooltip::Position::Top,
@@ -205,46 +205,42 @@ pub fn error_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message
 
 // Button style functions
 pub fn primary_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     match status {
         button::Status::Active => button::Style {
-            background: Some(palette.primary.base.color.into()),
-            text_color: palette.primary.base.text,
+            background: Some(theme.accent.base.into()),
+            text_color: theme.accent.on,
             border: Border {
-                color: palette.primary.strong.color,
+                color: theme.accent.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Hovered => button::Style {
-            background: Some(palette.primary.strong.color.into()),
-            text_color: palette.primary.strong.text,
+            background: Some(theme.accent.hover.into()),
+            text_color: theme.accent.on,
             border: Border {
-                color: palette.primary.strong.color,
+                color: theme.accent.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Pressed => button::Style {
-            background: Some(palette.primary.weak.color.into()),
-            text_color: palette.primary.weak.text,
+            background: Some(theme.accent.pressed.into()),
+            text_color: theme.accent.on,
             border: Border {
-                color: palette.primary.strong.color,
+                color: theme.accent.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Disabled => button::Style {
-            background: Some(palette.background.weak.color.into()),
-            text_color: Color {
-                a: palette.background.weak.text.a * 0.5,
-                ..palette.background.weak.text
-            },
+            background: Some(theme.accent.disabled.into()),
+            text_color: theme.accent.on_disabled,
             border: Border {
-                color: palette.background.strong.color,
+                color: theme.secondary.base,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
@@ -254,46 +250,42 @@ pub fn primary_button_style(theme: &Theme, status: button::Status) -> button::St
 }
 
 pub fn secondary_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     match status {
         button::Status::Active => button::Style {
-            background: Some(palette.secondary.base.color.into()),
-            text_color: palette.secondary.base.text,
+            background: Some(theme.button.base.into()),
+            text_color: theme.button.on,
             border: Border {
-                color: palette.secondary.strong.color,
+                color: theme.button.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Hovered => button::Style {
-            background: Some(palette.secondary.strong.color.into()),
-            text_color: palette.secondary.strong.text,
+            background: Some(theme.button.hover.into()),
+            text_color: theme.button.on,
             border: Border {
-                color: palette.secondary.strong.color,
+                color: theme.button.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Pressed => button::Style {
-            background: Some(palette.secondary.weak.color.into()),
-            text_color: palette.secondary.weak.text,
+            background: Some(theme.button.pressed.into()),
+            text_color: theme.button.on,
             border: Border {
-                color: palette.secondary.strong.color,
+                color: theme.button.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Disabled => button::Style {
-            background: Some(palette.background.weak.color.into()),
-            text_color: Color {
-                a: palette.background.weak.text.a * 0.5,
-                ..palette.background.weak.text
-            },
+            background: Some(theme.button.disabled.into()),
+            text_color: theme.button.on_disabled,
             border: Border {
-                color: palette.background.strong.color,
+                color: theme.secondary.base,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
@@ -303,46 +295,42 @@ pub fn secondary_button_style(theme: &Theme, status: button::Status) -> button::
 }
 
 pub fn danger_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     match status {
         button::Status::Active => button::Style {
-            background: Some(palette.danger.base.color.into()),
-            text_color: palette.danger.base.text,
+            background: Some(theme.destructive.base.into()),
+            text_color: theme.destructive.on,
             border: Border {
-                color: palette.danger.strong.color,
+                color: theme.destructive.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Hovered => button::Style {
-            background: Some(palette.danger.strong.color.into()),
-            text_color: palette.danger.strong.text,
+            background: Some(theme.destructive.hover.into()),
+            text_color: theme.destructive.on,
             border: Border {
-                color: palette.danger.strong.color,
+                color: theme.destructive.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Pressed => button::Style {
-            background: Some(palette.danger.weak.color.into()),
-            text_color: palette.danger.weak.text,
+            background: Some(theme.destructive.pressed.into()),
+            text_color: theme.destructive.on,
             border: Border {
-                color: palette.danger.strong.color,
+                color: theme.destructive.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Disabled => button::Style {
-            background: Some(palette.background.weak.color.into()),
-            text_color: Color {
-                a: palette.background.weak.text.a * 0.5,
-                ..palette.background.weak.text
-            },
+            background: Some(theme.destructive.disabled.into()),
+            text_color: theme.destructive.on_disabled,
             border: Border {
-                color: palette.background.strong.color,
+                color: theme.secondary.base,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
@@ -352,46 +340,42 @@ pub fn danger_button_style(theme: &Theme, status: button::Status) -> button::Sty
 }
 
 pub fn success_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     match status {
         button::Status::Active => button::Style {
-            background: Some(palette.success.base.color.into()),
-            text_color: palette.success.base.text,
+            background: Some(theme.success.base.into()),
+            text_color: theme.success.on,
             border: Border {
-                color: palette.success.strong.color,
+                color: theme.success.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Hovered => button::Style {
-            background: Some(palette.success.strong.color.into()),
-            text_color: palette.success.strong.text,
+            background: Some(theme.success.hover.into()),
+            text_color: theme.success.on,
             border: Border {
-                color: palette.success.strong.color,
+                color: theme.success.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Pressed => button::Style {
-            background: Some(palette.success.weak.color.into()),
-            text_color: palette.success.weak.text,
+            background: Some(theme.success.pressed.into()),
+            text_color: theme.success.on,
             border: Border {
-                color: palette.success.strong.color,
+                color: theme.success.hover,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
             ..Default::default()
         },
         button::Status::Disabled => button::Style {
-            background: Some(palette.background.weak.color.into()),
-            text_color: Color {
-                a: palette.background.weak.text.a * 0.5,
-                ..palette.background.weak.text
-            },
+            background: Some(theme.success.disabled.into()),
+            text_color: theme.success.on_disabled,
             border: Border {
-                color: palette.background.strong.color,
+                color: theme.secondary.base,
                 width: BUTTON_BORDER_WIDTH,
                 radius: BUTTON_BORDER_RADIUS.into(),
             },
@@ -401,11 +385,10 @@ pub fn success_button_style(theme: &Theme, status: button::Status) -> button::St
 }
 
 pub fn text_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
     match status {
         button::Status::Active => button::Style {
             background: None,
-            text_color: palette.primary.strong.color,
+            text_color: theme.accent.hover,
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -414,8 +397,8 @@ pub fn text_button_style(theme: &Theme, status: button::Status) -> button::Style
             ..Default::default()
         },
         button::Status::Hovered => button::Style {
-            background: Some(palette.primary.weak.color.scale_alpha(0.1).into()),
-            text_color: palette.primary.strong.color,
+            background: Some(theme.accent.base.scale_alpha(0.1).into()),
+            text_color: theme.accent.hover,
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -424,8 +407,8 @@ pub fn text_button_style(theme: &Theme, status: button::Status) -> button::Style
             ..Default::default()
         },
         button::Status::Pressed => button::Style {
-            background: Some(palette.primary.weak.color.scale_alpha(0.2).into()),
-            text_color: palette.primary.base.color,
+            background: Some(theme.accent.base.scale_alpha(0.2).into()),
+            text_color: theme.accent.base,
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -435,10 +418,7 @@ pub fn text_button_style(theme: &Theme, status: button::Status) -> button::Style
         },
         button::Status::Disabled => button::Style {
             background: None,
-            text_color: Color {
-                a: palette.background.weak.text.a * 0.5,
-                ..palette.background.weak.text
-            },
+            text_color: theme.primary.on.scale_alpha(0.5),
             border: Border {
                 color: Color::TRANSPARENT,
                 width: 0.0,
@@ -588,7 +568,7 @@ pub fn section_header<T: 'static>(title: String) -> Element<'static, T> {
                 })
                 .style(|theme: &Theme| {
                     text::Style {
-                        color: Some(theme.palette().text),
+                        color: Some(theme.background.on),
                     }
                 }),
         ],

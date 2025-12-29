@@ -1427,8 +1427,8 @@ impl BitFontEditor {
 
         // === LEFT SIDEBAR (like ANSI editor) ===
         // Use theme's main area background color
-        let bg_weakest = main_area_background(&Theme::Dark);
-        let icon_color = Theme::Dark.extended_palette().background.base.text;
+        let bg_weakest = main_area_background(&Theme::dark());
+        let icon_color = Theme::dark().background.on;
 
         // Palette grid + Tool panel
         let palette_view = self.palette_grid.view_with_width(SIDEBAR_WIDTH, None).map(BitFontEditorMessage::PaletteGrid);

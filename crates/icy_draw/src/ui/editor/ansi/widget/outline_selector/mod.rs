@@ -213,9 +213,8 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
         let keyboard_cursor = state.cursor;
 
         // Background with dotted pattern (like CharSelector)
-        let palette = theme.extended_palette();
-        let bg_panel = palette.background.base.color;
-        let dot_color = palette.background.strong.color.scale_alpha(0.12);
+        let bg_panel = theme.background.base;
+        let dot_color = theme.primary.divider.scale_alpha(0.12);
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_panel);
 
         // Draw subtle dot pattern in padding area
@@ -236,16 +235,16 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
         }
 
         // Colors derived from theme
-        let fg_normal = palette.background.base.text;
-        let bg_normal = palette.background.weak.color;
-        let bg_hovered = palette.primary.weak.color.scale_alpha(0.35);
-        let bg_selected = palette.primary.base.color.scale_alpha(0.45);
-        let bg_cursor = palette.primary.strong.color.scale_alpha(0.30);
-        let fg_selected = palette.background.base.text;
-        let border_selected = palette.background.base.text;
-        let border_cursor = palette.primary.strong.color;
-        let label_color = palette.background.weak.text.scale_alpha(0.75);
-        let label_selected = palette.background.base.text;
+        let fg_normal = theme.background.on;
+        let bg_normal = theme.secondary.base;
+        let bg_hovered = theme.accent.selected.scale_alpha(0.35);
+        let bg_selected = theme.accent.base.scale_alpha(0.45);
+        let bg_cursor = theme.accent.hover.scale_alpha(0.30);
+        let fg_selected = theme.background.on;
+        let border_selected = theme.background.on;
+        let border_cursor = theme.accent.hover;
+        let label_color = theme.secondary.on.scale_alpha(0.75);
+        let label_selected = theme.background.on;
 
         for style in 0..OUTLINE_STYLES {
             let rect = self.cell_rect(style);
@@ -305,7 +304,9 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
                     return None;
                 };

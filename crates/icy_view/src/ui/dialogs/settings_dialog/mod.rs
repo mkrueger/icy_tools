@@ -158,11 +158,10 @@ impl SettingsDialogState {
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
 
-                    let palette = theme.extended_palette();
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
-                            text_color: palette.primary.weak.text,
+                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            text_color: theme.accent.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
@@ -170,7 +169,7 @@ impl SettingsDialogState {
                     } else {
                         Style {
                             background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                            text_color: palette.background.base.text,
+                            text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
@@ -181,15 +180,15 @@ impl SettingsDialogState {
                         Status::Active => base,
                         Status::Hovered if !is_selected => Style {
                             background: Some(iced::Background::Color(Color::from_rgba(
-                                palette.primary.weak.color.r,
-                                palette.primary.weak.color.g,
-                                palette.primary.weak.color.b,
+                                theme.accent.selected.r,
+                                theme.accent.selected.g,
+                                theme.accent.selected.b,
                                 0.2,
                             ))),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
+                            background: Some(iced::Background::Color(theme.accent.hover)),
                             ..base
                         },
                         _ => base,

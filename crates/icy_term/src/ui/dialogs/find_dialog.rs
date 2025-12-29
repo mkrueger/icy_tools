@@ -366,9 +366,9 @@ impl DialogState {
 
         container(content)
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.palette().background)),
+                background: Some(iced::Background::Color(theme.background.base)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.primary.divider,
                     width: 1.0,
                     radius: 4.0.into(),
                 },

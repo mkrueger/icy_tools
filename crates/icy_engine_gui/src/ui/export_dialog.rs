@@ -601,16 +601,14 @@ impl ExportDialogState {
                 error_tooltip(error.clone()),
                 Space::new().width(4.0),
                 text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
+                    color: Some(theme.destructive.base),
                 })
             ]
             .into()
         } else {
             row![text(format!("→ {}", self.get_temp_full_path().display()))
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().secondary.base.color),
-                })]
+                .style(|theme: &iced::Theme| iced::widget::text::Style { color: Some(theme.button.on) })]
             .into()
         };
 

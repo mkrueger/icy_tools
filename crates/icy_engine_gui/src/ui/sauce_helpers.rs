@@ -26,7 +26,7 @@ pub enum SauceFieldColor {
 /// - Group: Blue tones
 /// - Normal: Theme's default text color
 pub fn get_sauce_color(field: SauceFieldColor, theme: &Theme) -> Color {
-    let is_dark = theme.extended_palette().is_dark;
+    let is_dark = theme.is_dark;
     match field {
         SauceFieldColor::Title => {
             if is_dark {
@@ -49,7 +49,7 @@ pub fn get_sauce_color(field: SauceFieldColor, theme: &Theme) -> Color {
                 Color::from_rgb(0.0, 0.4, 0.6)
             }
         }
-        SauceFieldColor::Normal => theme.palette().text,
+        SauceFieldColor::Normal => theme.background.on,
     }
 }
 
@@ -64,19 +64,18 @@ pub fn get_sauce_color(field: SauceFieldColor, theme: &Theme) -> Color {
 /// ```
 pub fn sauce_input_style(field: SauceFieldColor) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
     move |theme: &Theme, _status: text_input::Status| {
-        let palette = theme.extended_palette();
         let value_color = get_sauce_color(field, theme);
         text_input::Style {
-            background: iced::Background::Color(palette.background.weak.color),
+            background: iced::Background::Color(theme.primary.base),
             border: iced::Border {
-                color: palette.background.strong.color,
+                color: theme.secondary.base,
                 width: 1.0,
                 radius: 4.0.into(),
             },
-            icon: palette.background.strong.text.scale_alpha(0.6),
-            placeholder: palette.background.base.text.scale_alpha(0.5),
+            icon: theme.secondary.on.scale_alpha(0.6),
+            placeholder: theme.background.on.scale_alpha(0.5),
             value: value_color,
-            selection: palette.primary.weak.color.scale_alpha(0.5),
+            selection: theme.accent.base.scale_alpha(0.5),
         }
     }
 }
@@ -92,20 +91,17 @@ pub fn sauce_input_style(field: SauceFieldColor) -> impl Fn(&Theme, text_input::
 ///     .style(danger_input_style())
 /// ```
 pub fn danger_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style + Copy {
-    |theme: &Theme, _status: text_input::Status| {
-        let palette = theme.extended_palette();
-        text_input::Style {
-            background: iced::Background::Color(palette.background.weak.color),
-            border: iced::Border {
-                color: palette.danger.base.color,
-                width: 1.5,
-                radius: 4.0.into(),
-            },
-            icon: palette.background.strong.text.scale_alpha(0.6),
-            placeholder: palette.background.base.text.scale_alpha(0.5),
-            value: palette.danger.base.color,
-            selection: palette.primary.weak.color.scale_alpha(0.5),
-        }
+    |theme: &Theme, _status: text_input::Status| text_input::Style {
+        background: iced::Background::Color(theme.primary.base),
+        border: iced::Border {
+            color: theme.destructive.base,
+            width: 1.5,
+            radius: 4.0.into(),
+        },
+        icon: theme.secondary.on.scale_alpha(0.6),
+        placeholder: theme.background.on.scale_alpha(0.5),
+        value: theme.destructive.base,
+        selection: theme.accent.base.scale_alpha(0.5),
     }
 }
 
@@ -113,20 +109,17 @@ pub fn danger_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input
 ///
 /// This returns a closure that can be used with `.style()` on text_input widgets.
 pub fn default_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style + Copy {
-    |theme: &Theme, _status: text_input::Status| {
-        let palette = theme.extended_palette();
-        text_input::Style {
-            background: iced::Background::Color(palette.background.weak.color),
-            border: iced::Border {
-                color: palette.background.strong.color,
-                width: 1.0,
-                radius: 4.0.into(),
-            },
-            icon: palette.background.strong.text.scale_alpha(0.6),
-            placeholder: palette.background.base.text.scale_alpha(0.5),
-            value: palette.background.base.text,
-            selection: palette.primary.weak.color.scale_alpha(0.5),
-        }
+    |theme: &Theme, _status: text_input::Status| text_input::Style {
+        background: iced::Background::Color(theme.primary.base),
+        border: iced::Border {
+            color: theme.secondary.base,
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        icon: theme.secondary.on.scale_alpha(0.6),
+        placeholder: theme.background.on.scale_alpha(0.5),
+        value: theme.background.on,
+        selection: theme.accent.base.scale_alpha(0.5),
     }
 }
 

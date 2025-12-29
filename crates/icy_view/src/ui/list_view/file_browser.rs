@@ -264,7 +264,7 @@ impl FileBrowser {
             let empty_text = text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
                 .size(14)
                 .style(|theme: &iced::Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.5)),
+                    color: Some(theme.background.on.scale_alpha(0.5)),
                 });
             return container(empty_text)
                 .width(Length::Fill)
@@ -279,7 +279,7 @@ impl FileBrowser {
             let no_items_text = text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
                 .size(14)
                 .style(|theme: &iced::Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.5)),
+                    color: Some(theme.background.on.scale_alpha(0.5)),
                 });
             return container(no_items_text)
                 .width(Length::Fill)

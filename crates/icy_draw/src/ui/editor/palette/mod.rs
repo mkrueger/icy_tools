@@ -511,7 +511,7 @@ impl Dialog<Message> for PaletteEditorDialog {
             text(err)
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &iced::Theme| iced::widget::text::Style {
-                    color: Some(theme.extended_palette().danger.base.color),
+                    color: Some(theme.destructive.base),
                 })
                 .into()
         } else {

@@ -766,21 +766,20 @@ impl Default for FileListThemeColors {
 impl FileListThemeColors {
     /// Create colors from an iced Theme
     pub fn from_theme(theme: &iced::Theme) -> Self {
-        let palette = theme.extended_palette();
-        let is_dark = palette.is_dark;
+        let is_dark = theme.is_dark;
 
         // Get base text color from theme
-        let base_color = palette.background.base.text;
+        let base_color = theme.background.on;
         let icon_color = [(base_color.r * 255.0) as u8, (base_color.g * 255.0) as u8, (base_color.b * 255.0) as u8, 255];
 
         // Get selection foreground color (text color on primary/selection background)
-        let fg_selected = color_to_array(palette.primary.base.text);
+        let fg_selected = color_to_array(theme.accent.on);
 
         if is_dark {
             Self {
-                bg_color: color_to_array(palette.background.base.color),
-                bg_selected: color_to_array(palette.primary.base.color),
-                bg_hovered: color_to_array(palette.background.strong.color),
+                bg_color: color_to_array(theme.background.base),
+                bg_selected: color_to_array(theme.accent.base),
+                bg_hovered: color_to_array(theme.primary.divider),
                 fg_selected,
                 text_color: [230, 230, 230, 255],
                 image_color: [0xFF, 0x55, 0xFF, 255],     // Light Magenta
@@ -796,9 +795,9 @@ impl FileListThemeColors {
             }
         } else {
             Self {
-                bg_color: color_to_array(palette.background.base.color),
-                bg_selected: color_to_array(palette.primary.base.color),
-                bg_hovered: color_to_array(palette.background.strong.color),
+                bg_color: color_to_array(theme.background.base),
+                bg_selected: color_to_array(theme.accent.base),
+                bg_hovered: color_to_array(theme.primary.divider),
                 fg_selected,
                 text_color: [40, 40, 40, 255],
                 image_color: [0xAA, 0x00, 0xAA, 255],     // Magenta

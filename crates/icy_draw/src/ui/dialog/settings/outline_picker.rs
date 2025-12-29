@@ -187,7 +187,9 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(p) = cursor.position_in(bounds) else {
                     return None;
                 };
@@ -199,7 +201,6 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
     }
 
     fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -211,13 +212,13 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
 
                 // Determine colors based on state
                 let (bg, fg) = if is_selected {
-                    (palette.primary.strong.color, palette.primary.strong.text)
+                    (theme.accent.hover, theme.background.on)
                 } else if is_cursor {
-                    (palette.secondary.base.color, palette.secondary.base.text)
+                    (theme.button.on, theme.background.on)
                 } else if is_hovered {
-                    (palette.primary.weak.color, palette.primary.weak.text)
+                    (theme.accent.base, theme.background.on)
                 } else {
-                    (palette.background.weak.color, palette.background.base.text)
+                    (theme.secondary.base, theme.background.on)
                 };
 
                 // Draw the cell
@@ -229,11 +230,11 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
                     content: shortcut.to_string(),
                     position: Point::new(rect.x + 3.0, rect.y + 2.0),
                     color: if is_selected {
-                        palette.primary.strong.text
+                        theme.background.on
                     } else if is_cursor {
-                        palette.secondary.base.text
+                        theme.background.on
                     } else {
-                        palette.secondary.weak.color
+                        theme.secondary.base
                     },
                     size: iced::Pixels(13.0),
                     ..Default::default()
@@ -242,11 +243,11 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
 
                 // Draw border
                 let border_color = if is_selected {
-                    palette.primary.base.color
+                    theme.accent.base
                 } else if is_cursor {
-                    palette.secondary.strong.color
+                    theme.button.on
                 } else {
-                    palette.background.strong.color
+                    theme.primary.divider
                 };
                 let border = canvas::Path::rectangle(Point::new(rect.x, rect.y), rect.size());
                 frame.stroke(

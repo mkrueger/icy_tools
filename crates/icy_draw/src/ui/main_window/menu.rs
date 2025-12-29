@@ -3,12 +3,12 @@
 //! Uses iced's built-in menu widget for dropdown menus.
 //! Ported from the egui version in src_egui/ui/top_bar.rs
 
+use iced::widget::menu::Tree as MenuTree;
 use iced::{
     alignment,
     widget::{button, container, row, rule, text, Space},
     Border, Color, Element, Length, Theme,
 };
-use iced::widget::menu::Tree as MenuTree;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -305,7 +305,7 @@ fn render_menu_item_button(label: String, hotkey: String, message: Message, enab
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -332,7 +332,7 @@ fn render_menu_item_toggle(label: String, hotkey: String, message: Message, chec
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -356,7 +356,7 @@ fn render_menu_item_submenu_button(label: String) -> Element<'static, Message> {
             text(label).size(14).width(Length::Fill),
             text("▶").size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -375,16 +375,12 @@ pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<Menu
     items
         .iter()
         .map(|item| match item {
-            MenuItem::SubMenu { items: sub_items, .. } => {
-                MenuTree::with_children(render_menu_item(item), menu_items_to_iced(sub_items, state))
-            }
+            MenuItem::SubMenu { items: sub_items, .. } => MenuTree::with_children(render_menu_item(item), menu_items_to_iced(sub_items, state)),
             MenuItem::DynamicSubMenu { builder, .. } => {
                 let dynamic_items = builder(state);
                 MenuTree::with_children(render_menu_item(item), menu_items_to_iced(&dynamic_items, state))
             }
-            MenuItem::Separator => {
-                MenuTree::separator(separator())
-            }
+            MenuItem::Separator => MenuTree::separator(separator()),
             _ => MenuTree::new(render_menu_item(item)),
         })
         .collect()
@@ -584,7 +580,7 @@ pub fn menu_item(cmd: &icy_engine_gui::commands::CommandDef, msg: Message) -> El
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -615,7 +611,7 @@ pub fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -646,7 +642,7 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -680,7 +676,7 @@ pub fn menu_item_enabled(cmd: &icy_engine_gui::commands::CommandDef, msg: Messag
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -707,7 +703,7 @@ pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabl
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -735,7 +731,7 @@ pub fn menu_item_cmd_label_enabled(label: String, cmd: &icy_engine_gui::commands
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -764,7 +760,7 @@ pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Messa
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -780,9 +776,7 @@ pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Messa
 
 /// Create a separator line
 pub fn separator() -> Element<'static, Message> {
-    container(rule::horizontal(1))
-        .padding([4, 8])
-        .into()
+    container(rule::horizontal(1)).padding([4, 8]).into()
 }
 
 /// Create a submenu item (with arrow indicator)
@@ -792,7 +786,7 @@ pub fn menu_item_submenu(label: String) -> Element<'static, Message> {
             text(label).size(14).width(Length::Fill),
             text("▶").size(12).style(|theme: &Theme| {
                 iced::widget::text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.6)),
+                    color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
         ]
@@ -858,43 +852,37 @@ pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Vec<Menu
 
 #[allow(dead_code)]
 pub fn menu_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
-
     let base = button::Style {
-        text_color: palette.background.base.text,
+        text_color: theme.background.on,
         border: Border::default().rounded(6.0),
         ..Default::default()
     };
     match status {
         button::Status::Active => base.with_background(Color::TRANSPARENT),
-        button::Status::Hovered => base.with_background(palette.primary.weak.color),
-        button::Status::Pressed => base.with_background(palette.primary.strong.color),
+        button::Status::Hovered => base.with_background(theme.accent.base),
+        button::Status::Pressed => base.with_background(theme.accent.hover),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
     }
 }
 
 pub fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
-
     let base = button::Style {
-        text_color: palette.background.base.text,
+        text_color: theme.background.on,
         border: Border::default().rounded(6.0),
         ..Default::default()
     };
 
     match status {
         button::Status::Active => base.with_background(Color::TRANSPARENT),
-        button::Status::Hovered => base.with_background(palette.primary.weak.color),
-        button::Status::Pressed => base.with_background(palette.primary.weak.color),
+        button::Status::Hovered => base.with_background(theme.accent.base),
+        button::Status::Pressed => base.with_background(theme.accent.base),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
     }
 }
 
 pub fn menu_item_disabled_style(theme: &Theme, _status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
-
     button::Style {
-        text_color: palette.background.base.text.scale_alpha(0.5),
+        text_color: theme.background.on.scale_alpha(0.5),
         border: Border::default().rounded(6.0),
         background: Some(Color::TRANSPARENT.into()),
         ..Default::default()

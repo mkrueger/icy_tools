@@ -277,7 +277,9 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 let Some(pos) = cursor.position_in(bounds) else {
                     return None;
                 };
@@ -1001,8 +1003,8 @@ impl ShaderSegmentedControl {
         let bg_color = main_area_background(theme);
 
         // Text colors: match selected segment background (primary) vs. unselected.
-        let text_color_selected = theme.extended_palette().primary.base.text;
-        let text_color_unselected = theme.extended_palette().secondary.base.color;
+        let text_color_selected = theme.accent.on;
+        let text_color_unselected = theme.button.on;
 
         // Clone segment values for message mapping
         let segment_values: Vec<T> = segments.iter().map(|s| s.value.clone()).collect();
@@ -1088,8 +1090,8 @@ impl ShaderSegmentedControl {
         let bg_color = main_area_background(theme);
 
         // Text colors: match selected segment background (primary) vs. unselected.
-        let text_color_selected = theme.extended_palette().primary.base.text;
-        let text_color_unselected = theme.extended_palette().secondary.base.color;
+        let text_color_selected = theme.accent.on;
+        let text_color_unselected = theme.button.on;
 
         // Clone segment values for message mapping
         let segment_values: Vec<T> = segments.iter().map(|s| s.value.clone()).collect();

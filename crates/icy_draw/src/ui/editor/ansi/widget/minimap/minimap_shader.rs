@@ -419,7 +419,9 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             }
 
             // Handle mouse button press - start dragging
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 // Use position_in for initial click - must be inside bounds
                 if let Some(pos) = cursor.position_in(bounds) {
                     state.is_dragging = true;
@@ -433,7 +435,9 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             }
 
             // Handle mouse button release - stop dragging
-            iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Left, ..
+            }) => {
                 if state.is_dragging {
                     state.is_dragging = false;
                     state.last_redraw = None;

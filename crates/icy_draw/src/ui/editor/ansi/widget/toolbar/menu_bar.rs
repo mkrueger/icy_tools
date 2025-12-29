@@ -3,11 +3,11 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
+use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
 use iced::{
     widget::{button, text},
     Element, Length, Theme,
 };
-use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
 
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
@@ -686,7 +686,12 @@ pub fn view_ansi(
         MenuTree::separator(separator()),
         MenuTree::new(menu_item(&cmd::SETTINGS_OPEN, Message::ShowSettings)),
         MenuTree::separator(separator()),
-        MenuTree::new(menu_item_simple_enabled(fl!("menu-close-editor"), close_editor_hotkey.as_str(), Message::CloseEditor, true)),
+        MenuTree::new(menu_item_simple_enabled(
+            fl!("menu-close-editor"),
+            close_editor_hotkey.as_str(),
+            Message::CloseEditor,
+            true,
+        )),
         MenuTree::new(menu_item(&cmd::APP_QUIT, Message::QuitApp)),
     ];
 
@@ -706,7 +711,10 @@ pub fn view_ansi(
         MenuTree::separator(separator()),
         MenuTree::with_children(menu_item_submenu(fl!("menu-area_operations")), build_area_submenu()),
         MenuTree::separator(separator()),
-        MenuTree::new(menu_item_simple(fl!("menu-open_font_selector"), Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))),
+        MenuTree::new(menu_item_simple(
+            fl!("menu-open_font_selector"),
+            Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector),
+        )),
         MenuTree::separator(separator()),
         MenuTree::new(menu_item_checkbox(
             fl!("menu-mirror_mode"),
@@ -722,10 +730,19 @@ pub fn view_ansi(
     let selection_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
         MenuTree::new(menu_item(&cmd::EDIT_SELECT_ALL, Message::SelectAll)),
         MenuTree::new(menu_item(&selection_cmd::SELECT_NONE, Message::Deselect)),
-        MenuTree::new(menu_item(&selection_cmd::SELECT_INVERSE, Message::AnsiEditor(AnsiEditorMessage::InverseSelection))),
+        MenuTree::new(menu_item(
+            &selection_cmd::SELECT_INVERSE,
+            Message::AnsiEditor(AnsiEditorMessage::InverseSelection),
+        )),
         MenuTree::separator(separator()),
-        MenuTree::new(menu_item(&selection_cmd::SELECT_FLIP_X, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)))),
-        MenuTree::new(menu_item(&selection_cmd::SELECT_FLIP_Y, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)))),
+        MenuTree::new(menu_item(
+            &selection_cmd::SELECT_FLIP_X,
+            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)),
+        )),
+        MenuTree::new(menu_item(
+            &selection_cmd::SELECT_FLIP_Y,
+            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)),
+        )),
         MenuTree::new(menu_item(
             &selection_cmd::SELECT_JUSTIFY_CENTER,
             Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter)),
@@ -738,7 +755,10 @@ pub fn view_ansi(
             &selection_cmd::SELECT_JUSTIFY_RIGHT,
             Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight)),
         )),
-        MenuTree::new(menu_item(&selection_cmd::SELECT_CROP, Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)))),
+        MenuTree::new(menu_item(
+            &selection_cmd::SELECT_CROP,
+            Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)),
+        )),
     ];
 
     // Build colors menu items
@@ -790,7 +810,12 @@ pub fn view_ansi(
     ];
 
     // Build view menu items
-    let view_items = build_view_menu(marker_state, build_guides_submenu(marker_state), build_raster_submenu(marker_state), is_connected);
+    let view_items = build_view_menu(
+        marker_state,
+        build_guides_submenu(marker_state),
+        build_raster_submenu(marker_state),
+        is_connected,
+    );
 
     // Build help menu items
     let help_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
@@ -801,25 +826,56 @@ pub fn view_ansi(
     ];
 
     // Build menu roots
-    let mut menu_roots = vec![
-        MenuTree::with_children(menu_root(fl!("menu-file"), Message::Noop), file_items),
-        MenuTree::with_children(menu_root(fl!("menu-edit"), Message::Noop), edit_items),
-        MenuTree::with_children(menu_root(fl!("menu-selection"), Message::Noop), selection_items),
-        MenuTree::with_children(menu_root(fl!("menu-colors"), Message::Noop), colors_items),
-        MenuTree::with_children(menu_root(fl!("menu-view"), Message::Noop), view_items),
-    ];
+    let (file_button, file_mnemonic) = menu_root(fl!("menu-file"), Message::Noop);
+    let (edit_button, edit_mnemonic) = menu_root(fl!("menu-edit"), Message::Noop);
+    let (selection_button, selection_mnemonic) = menu_root(fl!("menu-selection"), Message::Noop);
+    let (colors_button, colors_mnemonic) = menu_root(fl!("menu-colors"), Message::Noop);
+    let (view_button, view_mnemonic) = menu_root(fl!("menu-view"), Message::Noop);
+    let (help_button, help_mnemonic) = menu_root(fl!("menu-help"), Message::Noop);
+
+    let file_tree = MenuTree::with_children(file_button, file_items);
+    let file_tree = if let Some(m) = file_mnemonic { file_tree.mnemonic(m) } else { file_tree };
+
+    let edit_tree = MenuTree::with_children(edit_button, edit_items);
+    let edit_tree = if let Some(m) = edit_mnemonic { edit_tree.mnemonic(m) } else { edit_tree };
+
+    let selection_tree = MenuTree::with_children(selection_button, selection_items);
+    let selection_tree = if let Some(m) = selection_mnemonic {
+        selection_tree.mnemonic(m)
+    } else {
+        selection_tree
+    };
+
+    let colors_tree = MenuTree::with_children(colors_button, colors_items);
+    let colors_tree = if let Some(m) = colors_mnemonic {
+        colors_tree.mnemonic(m)
+    } else {
+        colors_tree
+    };
+
+    let view_tree = MenuTree::with_children(view_button, view_items);
+    let view_tree = if let Some(m) = view_mnemonic { view_tree.mnemonic(m) } else { view_tree };
+
+    let help_tree = MenuTree::with_children(help_button, help_items);
+    let help_tree = if let Some(m) = help_mnemonic { help_tree.mnemonic(m) } else { help_tree };
+
+    let mut menu_roots = vec![file_tree, edit_tree, selection_tree, colors_tree, view_tree];
 
     // Add plugins menu if there are plugins
     if !plugins.is_empty() {
         let plugins_items = build_plugins_menu(plugins);
-        menu_roots.push(MenuTree::with_children(menu_root(fl!("menu-plugins"), Message::Noop), plugins_items));
+        let (plugins_button, plugins_mnemonic) = menu_root(fl!("menu-plugins"), Message::Noop);
+        let plugins_tree = MenuTree::with_children(plugins_button, plugins_items);
+        let plugins_tree = if let Some(m) = plugins_mnemonic {
+            plugins_tree.mnemonic(m)
+        } else {
+            plugins_tree
+        };
+        menu_roots.push(plugins_tree);
     }
 
     // Add help menu
-    menu_roots.push(MenuTree::with_children(menu_root(fl!("menu-help"), Message::Noop), help_items));
+    menu_roots.push(help_tree);
 
-    menu_bar_fn(menu_roots)
-        .spacing(4.0)
-        .padding([4, 8])
-        .into()
+    menu_bar_fn(menu_roots).spacing(4.0).padding([4, 8]).into()
 }

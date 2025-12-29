@@ -3,8 +3,8 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::Element;
 use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
+use iced::Element;
 
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
@@ -182,16 +182,32 @@ pub fn view_charfont(recent_files: &MostRecentlyUsedFiles, undo_desc: Option<&st
     let view_items = menu_items_to_iced(&menu.view, &state);
     let help_items = menu_items_to_iced(&menu.help, &state);
 
-    let menu_roots = vec![
-        MenuTree::with_children(menu_root(fl!("menu-file"), Message::Noop), file_items),
-        MenuTree::with_children(menu_root(fl!("menu-edit"), Message::Noop), edit_items),
-        MenuTree::with_children(menu_root(fl!("menu-colors"), Message::Noop), colors_items),
-        MenuTree::with_children(menu_root(fl!("menu-view"), Message::Noop), view_items),
-        MenuTree::with_children(menu_root(fl!("menu-help"), Message::Noop), help_items),
-    ];
+    let (file_button, file_mnemonic) = menu_root(fl!("menu-file"), Message::Noop);
+    let (edit_button, edit_mnemonic) = menu_root(fl!("menu-edit"), Message::Noop);
+    let (colors_button, colors_mnemonic) = menu_root(fl!("menu-colors"), Message::Noop);
+    let (view_button, view_mnemonic) = menu_root(fl!("menu-view"), Message::Noop);
+    let (help_button, help_mnemonic) = menu_root(fl!("menu-help"), Message::Noop);
 
-    menu_bar_fn(menu_roots)
-        .spacing(4.0)
-        .padding([4, 8])
-        .into()
+    let file_tree = MenuTree::with_children(file_button, file_items);
+    let file_tree = if let Some(m) = file_mnemonic { file_tree.mnemonic(m) } else { file_tree };
+
+    let edit_tree = MenuTree::with_children(edit_button, edit_items);
+    let edit_tree = if let Some(m) = edit_mnemonic { edit_tree.mnemonic(m) } else { edit_tree };
+
+    let colors_tree = MenuTree::with_children(colors_button, colors_items);
+    let colors_tree = if let Some(m) = colors_mnemonic {
+        colors_tree.mnemonic(m)
+    } else {
+        colors_tree
+    };
+
+    let view_tree = MenuTree::with_children(view_button, view_items);
+    let view_tree = if let Some(m) = view_mnemonic { view_tree.mnemonic(m) } else { view_tree };
+
+    let help_tree = MenuTree::with_children(help_button, help_items);
+    let help_tree = if let Some(m) = help_mnemonic { help_tree.mnemonic(m) } else { help_tree };
+
+    let menu_roots = vec![file_tree, edit_tree, colors_tree, view_tree, help_tree];
+
+    menu_bar_fn(menu_roots).spacing(4.0).padding([4, 8]).into()
 }

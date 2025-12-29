@@ -1163,8 +1163,8 @@ impl CharFontEditor {
         });
 
         let palette_view = self.palette_grid.view_with_width(sidebar_width, None).map(CharFontEditorMessage::PaletteGrid);
-        let bg_weakest = main_area_background(&Theme::Dark);
-        let icon_color = Theme::Dark.extended_palette().background.base.text;
+        let bg_weakest = main_area_background(&Theme::dark());
+        let icon_color = Theme::dark().background.on;
         let tool_panel = self
             .tool_panel
             .view_with_config(sidebar_width, bg_weakest, icon_color)
@@ -1186,7 +1186,7 @@ impl CharFontEditor {
         });
 
         let view_ctx = tools::ToolViewContext {
-            theme: Theme::Dark,
+            theme: Theme::dark(),
             fkeys,
             font: current_font,
             palette: palette.clone(),
@@ -1275,12 +1275,7 @@ impl CharFontEditor {
 
         // Focused container style with highlight border
         let charset_container_style = move |theme: &iced::Theme| {
-            let palette = theme.extended_palette();
-            let border_color = if charset_is_focused {
-                palette.primary.base.color
-            } else {
-                palette.background.strong.color
-            };
+            let border_color = if charset_is_focused { theme.accent.base } else { theme.primary.divider };
             container::Style {
                 border: iced::Border {
                     color: border_color,
@@ -1296,12 +1291,7 @@ impl CharFontEditor {
         // === CENTER AREA: Editor canvas + optional style preview on right ===
         // Focused container style for ANSI editor
         let ansi_container_style = move |theme: &iced::Theme| {
-            let palette = theme.extended_palette();
-            let border_color = if edit_is_focused {
-                palette.primary.base.color
-            } else {
-                palette.background.strong.color
-            };
+            let border_color = if edit_is_focused { theme.accent.base } else { theme.primary.divider };
             container::Style {
                 border: iced::Border {
                     color: border_color,

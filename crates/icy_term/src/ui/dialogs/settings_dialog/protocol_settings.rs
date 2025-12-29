@@ -37,20 +37,19 @@ impl SettingsDialogState {
                 .width(Length::Fill)
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
-                    let palette = theme.extended_palette();
                     let text_color = if is_enabled {
                         if is_selected {
-                            palette.primary.weak.text
+                            theme.accent.on
                         } else {
-                            palette.background.base.text
+                            theme.background.on
                         }
                     } else {
-                        palette.background.strong.text.scale_alpha(0.5)
+                        theme.primary.on.scale_alpha(0.5)
                     };
 
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
+                            background: Some(iced::Background::Color(theme.accent.selected)),
                             text_color,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
@@ -69,12 +68,12 @@ impl SettingsDialogState {
                     match status {
                         Status::Active => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(palette.background.weak.color)),
+                            background: Some(iced::Background::Color(theme.secondary.base)),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
-                            text_color: palette.primary.strong.text,
+                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            text_color: theme.accent.on,
                             ..base
                         },
                         _ => base,
@@ -182,9 +181,9 @@ impl SettingsDialogState {
             .height(Length::Fill)
             .width(Length::Fill)
             .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                background: Some(iced::Background::Color(theme.secondary.base)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.primary.divider,
                     width: 1.0,
                     radius: 6.0.into(),
                 },
@@ -328,7 +327,7 @@ impl SettingsDialogState {
                 text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-internal-hint"))
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &iced::Theme| text::Style {
-                        color: Some(theme.extended_palette().background.strong.text.scale_alpha(0.7)),
+                        color: Some(theme.primary.on.scale_alpha(0.7)),
                     })
                     .into()
             } else {
@@ -503,14 +502,12 @@ impl SettingsDialogState {
                     Space::new().height(DIALOG_SPACING),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-nothing-selected"))
                         .size(TEXT_SIZE_NORMAL)
-                        .style(|theme: &iced::Theme| text::Style {
-                            color: Some(theme.extended_palette().background.strong.text),
-                        }),
+                        .style(|theme: &iced::Theme| text::Style { color: Some(theme.primary.on) }),
                     Space::new().height(4),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-no-selection-hint"))
                         .size(TEXT_SIZE_SMALL)
                         .style(|theme: &iced::Theme| text::Style {
-                            color: Some(theme.extended_palette().background.strong.text.scale_alpha(0.7)),
+                            color: Some(theme.primary.on.scale_alpha(0.7)),
                         }),
                 ]
                 .align_x(Alignment::Center),

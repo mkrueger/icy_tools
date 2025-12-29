@@ -344,8 +344,8 @@ impl ToolHandler for PencilTool {
             });
 
         // Brush size arrows
-        let secondary_color = _ctx.theme.extended_palette().secondary.base.color;
-        let base_color = _ctx.theme.extended_palette().primary.base.text;
+        let secondary_color = _ctx.theme.button.on;
+        let base_color = _ctx.theme.accent.on;
         let left_arrow = svg(svg::Handle::from_memory(ARROW_LEFT_SVG))
             .width(Length::Fixed(32.0))
             .height(Length::Fixed(32.0))
@@ -370,9 +370,7 @@ impl ToolHandler for PencilTool {
         let size_text = text(format!("{}", self.brush.brush_size))
             .size(14)
             .font(iced::Font::MONOSPACE)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().secondary.base.color),
-            });
+            .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
 
         let dec_size = self.brush.brush_size.saturating_sub(1).max(1);
         let inc_size = (self.brush.brush_size + 1).min(9);
@@ -387,8 +385,8 @@ impl ToolHandler for PencilTool {
                 .on_press(ToolMessage::SetBrushSize(dec_size as u8))
                 .padding(2)
                 .style(|theme: &Theme, status| {
-                    let secondary = theme.extended_palette().secondary.base.color;
-                    let base = theme.extended_palette().primary.base.color;
+                    let secondary = theme.button.on;
+                    let base = theme.accent.base;
                     let text_color = match status {
                         button::Status::Hovered | button::Status::Pressed => base,
                         _ => secondary,
@@ -409,8 +407,8 @@ impl ToolHandler for PencilTool {
                 .on_press(ToolMessage::SetBrushSize(inc_size as u8))
                 .padding(2)
                 .style(|theme: &Theme, status| {
-                    let secondary = theme.extended_palette().secondary.base.color;
-                    let base = theme.extended_palette().primary.base.color;
+                    let secondary = theme.button.on;
+                    let base = theme.accent.base;
                     let text_color = match status {
                         button::Status::Hovered | button::Status::Pressed => base,
                         _ => secondary,

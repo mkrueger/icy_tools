@@ -37,11 +37,10 @@ impl SettingsDialogState {
                 .width(Length::Fill)
                 .style(move |theme: &iced::Theme, status| {
                     use iced::widget::button::{Status, Style};
-                    let palette = theme.extended_palette();
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(palette.primary.weak.color)),
-                            text_color: palette.primary.weak.text,
+                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            text_color: theme.accent.on,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
@@ -49,7 +48,7 @@ impl SettingsDialogState {
                     } else {
                         Style {
                             background: Some(iced::Background::Color(Color::TRANSPARENT)),
-                            text_color: palette.background.base.text,
+                            text_color: theme.background.on,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
@@ -59,12 +58,12 @@ impl SettingsDialogState {
                     match status {
                         Status::Active => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(palette.background.weak.color)),
+                            background: Some(iced::Background::Color(theme.secondary.base)),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(palette.primary.strong.color)),
-                            text_color: palette.primary.strong.text,
+                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            text_color: theme.accent.on,
                             ..base
                         },
                         _ => base,
@@ -120,9 +119,9 @@ impl SettingsDialogState {
             .height(Length::Fill)
             .width(Length::Fill)
             .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.extended_palette().background.weak.color)),
+                background: Some(iced::Background::Color(theme.secondary.base)),
                 border: Border {
-                    color: theme.extended_palette().background.strong.color,
+                    color: theme.primary.divider,
                     width: 1.0,
                     radius: 6.0.into(),
                 },
@@ -401,14 +400,12 @@ impl SettingsDialogState {
                     Space::new().height(DIALOG_SPACING),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-modem-nothing_selected"))
                         .size(TEXT_SIZE_NORMAL)
-                        .style(|theme: &iced::Theme| text::Style {
-                            color: Some(theme.extended_palette().background.strong.text),
-                        }),
+                        .style(|theme: &iced::Theme| text::Style { color: Some(theme.primary.on) }),
                     Space::new().height(4),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-modem-no-selection-hint"))
                         .size(TEXT_SIZE_SMALL)
                         .style(|theme: &iced::Theme| text::Style {
-                            color: Some(theme.extended_palette().background.strong.text.scale_alpha(0.7)),
+                            color: Some(theme.primary.on.scale_alpha(0.7)),
                         }),
                 ]
                 .align_x(Alignment::Center),

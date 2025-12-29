@@ -68,9 +68,8 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
     fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        let palette = theme.extended_palette();
-        let bg_color = palette.background.base.color;
-        let fg_color = palette.background.base.text;
+        let bg_color = theme.background.base;
+        let fg_color = theme.background.on;
 
         // Fill background
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_color);
@@ -109,7 +108,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                     // Determine cell colors
                     let (cell_fg, cell_bg) = if is_cursor_cell {
                         // Cursor cell - use highlight colors
-                        (palette.primary.base.text, palette.primary.base.color)
+                        (theme.accent.on, theme.accent.base)
                     } else if is_selected {
                         // Selected cell
                         (fg_color, CHAR_HIGHLIGHT_BG)
@@ -142,7 +141,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                         frame.fill_rectangle(
                             Point::new(x + self.cell_width - indicator_size - 2.0, y + 2.0),
                             Size::new(indicator_size, indicator_size),
-                            palette.success.base.color,
+                            theme.success.base,
                         );
                     }
                 }
@@ -260,7 +259,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                     let hover_x = self.label_size + hover_col as f32 * self.cell_width;
                     let hover_y = self.label_size + hover_row as f32 * self.cell_height;
 
-                    let hover_color = palette.primary.base.color;
+                    let hover_color = theme.accent.base;
                     draw_corner_brackets(&mut frame, hover_x, hover_y, self.cell_width, self.cell_height, hover_color, 1.5);
                 }
             }
@@ -283,11 +282,15 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch as u8);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+                    iced::Event::Mouse(mouse::Event::ButtonPressed {
+                        button: mouse::Button::Left, ..
+                    }) => {
                         state.is_dragging = true;
                         return Some(Action::publish(CharFontEditorMessage::SelectCharAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) => {
+                    iced::Event::Mouse(mouse::Event::ButtonReleased {
+                        button: mouse::Button::Left, ..
+                    }) => {
                         state.is_dragging = false;
                     }
                     iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -303,7 +306,10 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
+                if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                    button: mouse::Button::Left, ..
+                }) = event
+                {
                     state.is_dragging = false;
                 }
                 if old_hovered.is_some() {
@@ -312,7 +318,10 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
             }
         } else {
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased { button: mouse::Button::Left, .. }) = event {
+            if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                button: mouse::Button::Left, ..
+            }) = event
+            {
                 state.is_dragging = false;
             }
             if old_hovered.is_some() {

@@ -115,7 +115,7 @@ impl Dialog<Message> for ReferenceImageDialog {
             .style(move |theme: &iced::Theme, status| {
                 let mut style = iced::widget::text_input::default(theme, status);
                 if !path_valid {
-                    style.border.color = theme.extended_palette().danger.base.color;
+                    style.border.color = theme.destructive.base;
                 }
                 style
             });
@@ -158,7 +158,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         let info_text = text(fl!("reference-image-info"))
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(theme.extended_palette().secondary.strong.color),
+                color: Some(theme.secondary.on),
             });
 
         // ═══════════════════════════════════════════════════════════════════════

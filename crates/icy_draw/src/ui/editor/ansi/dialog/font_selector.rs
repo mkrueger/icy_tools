@@ -896,8 +896,6 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        let palette = theme.extended_palette();
-
         // Update viewport dimensions
         {
             let mut vp = self.dialog.list_viewport.borrow_mut();
@@ -932,7 +930,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                     ListItem::CategoryHeader { category, count } => {
                         // Draw category header background
                         let bg_rect = Path::rectangle(Point::new(0.0, y), Size::new(bounds.width, height));
-                        frame.fill(&bg_rect, palette.background.weak.color);
+                        frame.fill(&bg_rect, theme.secondary.base);
 
                         // Draw arrow and text
                         let expanded = self.dialog.categories.get(category).map(|s| s.expanded).unwrap_or(true);
@@ -942,7 +940,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         frame.fill_text(Text {
                             content: label,
                             position: Point::new(12.0, y + (height - 13.0) / 2.0),
-                            color: palette.background.base.text,
+                            color: theme.background.on,
                             size: iced::Pixels(13.0),
                             ..Default::default()
                         });
@@ -953,16 +951,12 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         // Draw selection background
                         if is_selected {
                             let bg_rect = Path::rectangle(Point::new(0.0, y), Size::new(bounds.width, height));
-                            frame.fill(&bg_rect, palette.primary.weak.color);
+                            frame.fill(&bg_rect, theme.accent.selected);
                         }
 
                         // Draw font name
                         let font_name = &self.dialog.fonts[*font_idx].font.name();
-                        let text_color = if is_selected {
-                            palette.primary.weak.text
-                        } else {
-                            palette.background.base.text
-                        };
+                        let text_color = if is_selected { theme.accent.on } else { theme.background.on };
 
                         frame.fill_text(Text {
                             content: font_name.to_string(),
@@ -983,7 +977,9 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
 
     fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button: mouse::Button::Left, .. }) => {
+            iced::Event::Mouse(mouse::Event::ButtonPressed {
+                button: mouse::Button::Left, ..
+            }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     // Find which item was clicked
                     let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
@@ -1039,13 +1035,12 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
 // ============================================================================
 
 fn preview_container_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
     container::Style {
         background: Some(iced::Background::Color(Color::from_rgb(0.05, 0.05, 0.08))),
         border: iced::Border {
             radius: 8.0.into(),
             width: 1.0,
-            color: palette.background.strong.color,
+            color: theme.primary.divider,
         },
         ..Default::default()
     }

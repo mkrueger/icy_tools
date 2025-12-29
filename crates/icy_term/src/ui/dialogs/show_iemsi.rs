@@ -55,7 +55,7 @@ impl ShowIemsiState {
             text(fl!(crate::LANGUAGE_LOADER, "show-iemsi-dialog-notice"))
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &Theme| text::Style {
-                    color: Some(theme.palette().text.scale_alpha(0.7)),
+                    color: Some(theme.background.on.scale_alpha(0.7)),
                 }),
             Space::new().height(4.0),
             container(
