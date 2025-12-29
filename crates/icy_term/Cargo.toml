@@ -40,7 +40,6 @@ toml = { workspace = true }
 lazy_static = { workspace = true }
 notify = { workspace = true }
 human_bytes = { version = "0.4", default-features = false }
-clipboard-rs = { workspace = true }
 
 chrono = { workspace = true }  # Utc hanldung
 thiserror = { workspace = true }

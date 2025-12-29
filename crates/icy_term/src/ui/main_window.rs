@@ -19,7 +19,6 @@ use crate::{
     },
 };
 
-use clipboard_rs::Clipboard;
 use iced::{keyboard, window, Element, Event, Task, Theme};
 use icy_engine::Position;
 use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
@@ -707,8 +706,48 @@ impl MainWindow {
                 Task::none()
             }
 
-            Message::TerminalInfo(ref _msg) => {
-                // Route to dialog stack
+            Message::TerminalInfo(ref msg) => {
+                // Handle CopyToClipboard specially - needs async clipboard API
+                if matches!(msg, terminal_info_dialog::TerminalInfoDialogMessage::CopyToClipboard) {
+                    // Gather current terminal info for the text
+                    let screen = self.terminal_window.terminal.screen.lock();
+                    let caret = screen.caret();
+                    let terminal_state = screen.terminal_state();
+                    
+                    let info = terminal_info_dialog::TerminalInfo {
+                        buffer_size: terminal_state.size(),
+                        screen_resolution: screen.resolution(),
+                        font_size: screen.font(caret.font_page() as usize).map(|f| f.size()).unwrap_or_default(),
+                        caret_position: caret.position(),
+                        caret_visible: caret.visible,
+                        caret_blinking: caret.blinking,
+                        caret_shape: caret.shape,
+                        insert_mode: caret.insert_mode,
+                        auto_wrap: terminal_state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
+                        scroll_mode: terminal_state.scroll_state,
+                        margins_top_bottom: terminal_state.margins_top_bottom(),
+                        margins_left_right: terminal_state.margins_left_right(),
+                        mouse_mode: format!("{:?}", terminal_state.mouse_state.mouse_mode),
+                        inverse_mode: terminal_state.inverse_video,
+                        ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
+                        baud_emulation: self.terminal_window.baud_emulation,
+                        terminal_type: self.terminal_window.terminal_emulation,
+                        screen_mode: self.terminal_window.screen_mode,
+                        ansi_music: self.terminal_window.ansi_music,
+                    };
+                    drop(screen);
+                    
+                    // Create a temporary dialog state just to format the text
+                    let dialog = terminal_info_dialog::TerminalInfoDialog::new(info);
+                    let text = dialog.format_info_text();
+                    
+                    // Copy text to clipboard using async API
+                    return iced::clipboard::STANDARD.write_text(text).map(|()| {
+                        Message::ClipboardTextCopied(Ok(()))
+                    });
+                }
+                
+                // Route other messages to dialog stack
                 if let Some(task) = self.dialogs.update(&message) {
                     return task;
                 }
@@ -782,30 +821,55 @@ impl MainWindow {
             }
 
             Message::Copy => {
+                // Check if in scrollback mode - text copy isn't available there
+                // because scrollback only stores rendered pixels, not character data
+                if self.terminal_window.terminal.is_in_scrollback_mode() {
+                    log::warn!("Text copy is not available in scrollback view (pixel data only)");
+                    self.shift_pressed_during_selection = false;
+                    return Task::none();
+                }
+
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Err(err) = icy_engine_gui::copy_selection_to_clipboard(&mut **screen, &*crate::CLIPBOARD_CONTEXT) {
-                        log::error!("Failed to copy: {err}");
+                    match icy_engine_gui::copy_selection(&mut **screen, Message::CopyCompleted) {
+                        Ok(task) => {
+                            self.shift_pressed_during_selection = false;
+                            return task;
+                        }
+                        Err(err) => log::error!("Failed to copy: {err}"),
                     }
                     self.shift_pressed_during_selection = false;
                 }
                 Task::none()
             }
 
+            Message::CopyCompleted(result) => {
+                if let Err(err) = result {
+                    log::error!("Failed to copy to clipboard: {err}");
+                }
+                Task::none()
+            }
+
             Message::Paste => {
                 self.clear_selection();
-                match crate::CLIPBOARD_CONTEXT.get_text() {
-                    Ok(text) => {
-                        let data = self.convert_clipboard_text(text);
+                // Read text from clipboard asynchronously
+                iced::clipboard::STANDARD.read_text().map(Message::ClipboardText)
+            }
 
-                        // Send the data to the terminal
-                        if !data.is_empty() {
-                            let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
-                        }
+            Message::ClipboardText(text_opt) => {
+                if let Some(text) = text_opt {
+                    let data = self.convert_clipboard_text(text);
+                    // Send the data to the terminal
+                    if !data.is_empty() {
+                        let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                     }
-                    Err(err) => {
-                        log::error!("Failed to get clipboard text: {}", err);
-                    }
+                }
+                Task::none()
+            }
+
+            Message::ClipboardTextCopied(result) => {
+                if let Err(err) = result {
+                    log::error!("Failed to copy text to clipboard: {err}");
                 }
                 Task::none()
             }

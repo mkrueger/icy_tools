@@ -3,19 +3,21 @@
 //! This module provides clipboard operations for copying and pasting
 //! pixel selections from bitmap font glyphs. Uses a custom clipboard
 //! format that stores width, height, and pixel data.
+//!
+//! The clipboard operations return Tasks that need to be executed
+//! by the iced runtime.
 
-use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
+use iced::clipboard::STANDARD;
+use iced::Task;
 
 /// Custom clipboard type identifier for BitFont pixel data
 pub const BITFONT_CLIPBOARD_TYPE: &str = "application/x-icy-bitfont";
 
 /// Error type for clipboard operations
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BitFontClipboardError {
     /// No selection available to copy
     NoSelection,
-    /// Failed to create clipboard context
-    ClipboardContextFailed(String),
     /// Failed to set clipboard contents
     ClipboardSetFailed(String),
     /// Failed to get clipboard contents
@@ -30,7 +32,6 @@ impl std::fmt::Display for BitFontClipboardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BitFontClipboardError::NoSelection => write!(f, "No selection available to copy"),
-            BitFontClipboardError::ClipboardContextFailed(msg) => write!(f, "Failed to create clipboard context: {}", msg),
             BitFontClipboardError::ClipboardSetFailed(msg) => write!(f, "Failed to set clipboard: {}", msg),
             BitFontClipboardError::ClipboardGetFailed(msg) => write!(f, "Failed to get clipboard: {}", msg),
             BitFontClipboardError::InvalidFormat => write!(f, "Invalid clipboard data format"),
@@ -143,37 +144,37 @@ impl BitFontClipboardData {
     }
 }
 
-/// Copy pixel data to clipboard
-pub fn copy_to_clipboard(data: &BitFontClipboardData) -> Result<(), BitFontClipboardError> {
-    let ctx = ClipboardContext::new().map_err(|e| BitFontClipboardError::ClipboardContextFailed(e.to_string()))?;
-
+/// Copy pixel data to clipboard (returns a Task to be executed by iced runtime)
+pub fn copy_to_clipboard<Message: Send + 'static>(
+    data: &BitFontClipboardData,
+    on_complete: impl Fn(Result<(), BitFontClipboardError>) -> Message + Send + 'static,
+) -> Task<Message> {
     let bytes = data.to_bytes();
-    let contents = vec![ClipboardContent::Other(BITFONT_CLIPBOARD_TYPE.into(), bytes)];
-
-    ctx.set(contents).map_err(|e| BitFontClipboardError::ClipboardSetFailed(e.to_string()))?;
-
-    Ok(())
+    STANDARD
+        .write_format(bytes, &[BITFONT_CLIPBOARD_TYPE])
+        .map(move |()| on_complete(Ok(())))
 }
 
-/// Get pixel data from clipboard
-pub fn get_from_clipboard() -> Result<BitFontClipboardData, BitFontClipboardError> {
-    let ctx = ClipboardContext::new().map_err(|e| BitFontClipboardError::ClipboardContextFailed(e.to_string()))?;
-
-    // Try to get custom format data
-    let data = ctx
-        .get_buffer(BITFONT_CLIPBOARD_TYPE)
-        .map_err(|e| BitFontClipboardError::ClipboardGetFailed(e.to_string()))?;
-
-    BitFontClipboardData::from_bytes(&data)
+/// Get pixel data from clipboard (returns a Task to be executed by iced runtime)
+pub fn get_from_clipboard<Message: Send + 'static>(
+    on_complete: impl Fn(Result<BitFontClipboardData, BitFontClipboardError>) -> Message + Send + 'static,
+) -> Task<Message> {
+    STANDARD
+        .read_format(&[BITFONT_CLIPBOARD_TYPE])
+        .map(move |result| {
+            let parsed = match result {
+                Some(data) => BitFontClipboardData::from_bytes(&data.data),
+                None => Err(BitFontClipboardError::NoBitFontData),
+            };
+            on_complete(parsed)
+        })
 }
 
-/// Check if clipboard has BitFont data
-pub fn has_bitfont_data() -> bool {
-    if let Ok(ctx) = ClipboardContext::new() {
-        ctx.get_buffer(BITFONT_CLIPBOARD_TYPE).is_ok()
-    } else {
-        false
-    }
+/// Check if clipboard has BitFont data (returns a Task to be executed by iced runtime)
+pub fn has_bitfont_data<Message: Send + 'static>(on_result: impl Fn(bool) -> Message + Send + 'static) -> Task<Message> {
+    STANDARD
+        .has_format(vec![BITFONT_CLIPBOARD_TYPE.to_string()])
+        .map(on_result)
 }
 
 #[cfg(test)]

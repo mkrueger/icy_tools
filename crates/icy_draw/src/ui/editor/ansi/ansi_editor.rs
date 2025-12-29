@@ -8,11 +8,10 @@ use icy_engine_edit::EditState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clipboard_rs::{Clipboard, ClipboardContent};
 use iced::{Element, Length, Task};
 use icy_engine::formats::FileFormat;
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
-use icy_engine_gui::{TerminalMessage, ICY_CLIPBOARD_TYPE};
+use icy_engine_gui::TerminalMessage;
 use parking_lot::{Mutex, RwLock};
 
 use super::widget::outline_selector::{outline_selector_width, OutlineSelector};
@@ -1073,27 +1072,31 @@ impl AnsiEditorCore {
     }
 
     /// Cut selection to clipboard (for Image layers: cut the entire layer)
-    pub fn cut(&mut self) -> Result<(), String> {
+    /// Returns a Task that performs the clipboard write
+    pub fn cut<Message: Clone + Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> Task<Message> {
         // Image layer: copy layer to clipboard and delete it
         if self.is_on_image_layer() {
-            self.copy_layer_to_clipboard()?;
+            let task = self.copy_layer_to_clipboard(on_complete);
             let layer_idx = self.with_edit_state_readonly(|state| state.get_current_layer().ok());
             if let Some(idx) = layer_idx {
                 let mut screen = self.screen.lock();
                 if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                    edit_state.remove_layer(idx).map_err(|e| e.to_string())?;
+                    let _ = edit_state.remove_layer(idx);
                 }
             }
-            return Ok(());
+            return task;
         }
 
         // Normal layer: standard cut behavior
-        self.copy_without_deselect()?;
+        let task = self.copy_without_deselect(on_complete);
         {
             let mut screen = self.screen.lock();
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                edit_state.erase_selection().map_err(|e| e.to_string())?;
-                edit_state.clear_selection().map_err(|e| e.to_string())?;
+                let _ = edit_state.erase_selection();
+                let _ = edit_state.clear_selection();
             }
         }
 
@@ -1103,14 +1106,15 @@ impl AnsiEditorCore {
         self.selection_drag = SelectionDrag::None;
         self.start_selection = None;
         self.refresh_selection_display();
-        Ok(())
+        task
     }
 
     /// Copy the current layer to clipboard as an image
-    fn copy_layer_to_clipboard(&self) -> Result<(), String> {
-        use clipboard_rs::common::RustImage;
-        use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
-        use std::io::Cursor;
+    fn copy_layer_to_clipboard<Message: Clone + Send + 'static>(
+        &self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> Task<Message> {
+        use iced::clipboard::STANDARD;
 
         let image_data = self.with_edit_state_readonly(|state| {
             let layer = state.get_cur_layer()?;
@@ -1126,27 +1130,20 @@ impl AnsiEditorCore {
         });
 
         let Some((width, height, rgba)) = image_data else {
-            return Err("No image data in layer".to_string());
+            return Task::done(on_complete(Err(icy_engine_gui::ClipboardError::NoSelection)));
         };
 
-        let clipboard = ClipboardContext::new().map_err(|e| e.to_string())?;
-
-        // Encode RGBA data to PNG bytes, then use from_bytes which works across versions
-        let img_buf: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-            image::ImageBuffer::from_raw(width, height, rgba).ok_or_else(|| "Failed to create image buffer".to_string())?;
+        // Create an RgbaImage from the raw data and encode as PNG
+        let Some(img) = image::RgbaImage::from_raw(width, height, rgba) else {
+            return Task::done(on_complete(Err(icy_engine_gui::ClipboardError::ImageCreationFailed)));
+        };
 
         let mut png_bytes = Vec::new();
-        {
-            let mut cursor = Cursor::new(&mut png_bytes);
-            img_buf
-                .write_to(&mut cursor, image::ImageFormat::Png)
-                .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+        if img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_err() {
+            return Task::done(on_complete(Err(icy_engine_gui::ClipboardError::ImageCreationFailed)));
         }
 
-        let img = RustImageData::from_bytes(&png_bytes).map_err(|e| format!("Failed to create image from PNG: {}", e))?;
-
-        clipboard.set(vec![ClipboardContent::Image(img)]).map_err(|e| e.to_string())?;
-        Ok(())
+        STANDARD.write_image(png_bytes).map(move |()| on_complete(Ok(())))
     }
 
     /// Check if copy operation is available (selection exists)
@@ -1155,19 +1152,24 @@ impl AnsiEditorCore {
         self.with_edit_state_readonly(|state| state.selection().is_some())
     }
 
-    /// Copy selection to clipboard in multiple formats (ICY, RTF, Text)
-    pub fn copy(&mut self) -> Result<(), String> {
+    /// Copy selection to clipboard in multiple formats (ICY, RTF, Text, Image)
+    /// Returns a Task that performs the clipboard write
+    pub fn copy<Message: Clone + Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> Task<Message> {
         // Image layer: copy layer as image
         if self.is_on_image_layer() {
-            return self.copy_layer_to_clipboard();
+            return self.copy_layer_to_clipboard(on_complete);
         }
 
-        self.copy_without_deselect()?;
+        let task = self.copy_without_deselect(on_complete.clone());
+
         // Clear selection after copy
         {
             let mut screen = self.screen.lock();
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
-                edit_state.clear_selection().map_err(|e| e.to_string())?;
+                let _ = edit_state.clear_selection();
             }
         }
 
@@ -1177,49 +1179,24 @@ impl AnsiEditorCore {
         self.selection_drag = SelectionDrag::None;
         self.start_selection = None;
         self.refresh_selection_display();
-        Ok(())
+        task
     }
 
     /// Copy selection to clipboard without clearing the selection
     /// Used internally by cut() which handles its own selection clearing
-    fn copy_without_deselect(&mut self) -> Result<(), String> {
+    fn copy_without_deselect<Message: Clone + Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> Task<Message> {
         let mut screen = self.screen.lock();
-        let edit_state = screen
-            .as_any_mut()
-            .downcast_mut::<EditState>()
-            .ok_or_else(|| "Could not access edit state".to_string())?;
 
-        let mut contents = Vec::new();
-
-        // Debug: log selection state
-        log::debug!("copy_without_deselect: selection={:?}", edit_state.selection());
-
-        // Plain text (required - if no text, nothing to copy)
-        let text = match edit_state.copy_text() {
-            Some(t) => t,
-            None => return Err("No selection to copy".to_string()),
-        };
-
-        // ICY binary format (for paste between ICY applications)
-        if let Some(data) = edit_state.clipboard_data() {
-            log::debug!("copy_without_deselect: ICY data size={}", data.len());
-            contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
-        } else {
-            log::warn!("copy_without_deselect: No ICY clipboard data generated");
+        match icy_engine_gui::copy_selection(&mut **screen, on_complete) {
+            Ok(task) => task,
+            Err(e) => {
+                log::error!("Copy failed: {}", e);
+                Task::none()
+            }
         }
-
-        // RTF (rich text with colors)
-        if let Some(rich_text) = edit_state.copy_rich_text() {
-            contents.push(ClipboardContent::Rtf(rich_text));
-        }
-
-        // Plain text - MUST be last on Windows
-        contents.push(ClipboardContent::Text(text));
-
-        // Set clipboard contents
-        crate::CLIPBOARD_CONTEXT.set(contents).map_err(|e| format!("Failed to set clipboard: {e}"))?;
-
-        Ok(())
     }
 
     /// Check if paste operation is available (clipboard has compatible content)
@@ -1230,8 +1207,19 @@ impl AnsiEditorCore {
 
     /// Paste from clipboard (ICY format, image, or text)
     /// Creates a floating layer that can be positioned before anchoring
+    /// Note: This is the old sync version - prefer paste_icy_data/paste_image/paste_text
     pub fn paste(&mut self) -> Result<(), String> {
         // Don't paste if already in paste mode
+        if self.is_paste_mode() {
+            return Ok(());
+        }
+
+        // This method is deprecated - paste_icy_data/paste_image/paste_text should be used instead
+        Err("Use paste_icy_data, paste_image, or paste_text instead".to_string())
+    }
+
+    /// Paste ICY binary format data
+    pub fn paste_icy_data(&mut self, data: &[u8]) -> Result<(), String> {
         if self.is_paste_mode() {
             return Ok(());
         }
@@ -1244,19 +1232,76 @@ impl AnsiEditorCore {
             .downcast_mut::<EditState>()
             .ok_or_else(|| "Could not access edit state".to_string())?;
 
-        let mut undo_guard = None;
-        let half_block_mapper = Some(self.build_half_block_mapper(state));
-        let mut ctx = tools::ToolContext {
-            state,
-            options: Some(&self.options),
-            undo_guard: &mut undo_guard,
-            half_block_mapper,
-        };
+        // Begin atomic undo
+        let undo_guard = state.begin_atomic_undo("Paste".to_string());
 
-        let result = self.paste_handler.paste_from_clipboard(&mut ctx, previous_tool)?;
+        state.paste_clipboard_data(data).map_err(|e| e.to_string())?;
+
+        drop(undo_guard);
         drop(screen_guard);
-        let _ = self.process_tool_result(result);
 
+        self.paste_handler.set_active(previous_tool);
+        Ok(())
+    }
+
+    /// Paste image data as a Sixel
+    pub fn paste_image(&mut self, img: image::RgbaImage) -> Result<(), String> {
+        use icy_engine::{Position, Sixel};
+
+        if self.is_paste_mode() {
+            return Ok(());
+        }
+
+        let previous_tool = self.current_tool.id();
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .ok_or_else(|| "Could not access edit state".to_string())?;
+
+        // Begin atomic undo
+        let undo_guard = state.begin_atomic_undo("Paste".to_string());
+
+        let w = img.width();
+        let h = img.height();
+        let mut sixel = Sixel::new(Position::default());
+        sixel.picture_data = img.into_raw();
+        sixel.set_width(w as i32);
+        sixel.set_height(h as i32);
+
+        state.paste_sixel(sixel).map_err(|e| e.to_string())?;
+
+        drop(undo_guard);
+        drop(screen_guard);
+
+        self.paste_handler.set_active(previous_tool);
+        Ok(())
+    }
+
+    /// Paste plain text
+    pub fn paste_text(&mut self, text: &str) -> Result<(), String> {
+        if self.is_paste_mode() {
+            return Ok(());
+        }
+
+        let previous_tool = self.current_tool.id();
+
+        let mut screen_guard = self.screen.lock();
+        let state = screen_guard
+            .as_any_mut()
+            .downcast_mut::<EditState>()
+            .ok_or_else(|| "Could not access edit state".to_string())?;
+
+        // Begin atomic undo
+        let undo_guard = state.begin_atomic_undo("Paste".to_string());
+
+        state.paste_text(text).map_err(|e| e.to_string())?;
+
+        drop(undo_guard);
+        drop(screen_guard);
+
+        self.paste_handler.set_active(previous_tool);
         Ok(())
     }
 

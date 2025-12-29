@@ -1,4 +1,3 @@
-use clipboard_rs::{Clipboard, ClipboardContent};
 use i18n_embed_fl::fl;
 use iced::{
     widget::{column, container, row, text, tooltip, Space},
@@ -110,10 +109,7 @@ impl TerminalInfoDialog {
         match message {
             TerminalInfoDialogMessage::Close => StateResult::Close,
             TerminalInfoDialogMessage::CopyToClipboard => {
-                let text = self.format_info_text();
-                if let Err(err) = crate::CLIPBOARD_CONTEXT.set(vec![ClipboardContent::Text(text)]) {
-                    log::error!("Failed to copy to clipboard: {err}");
-                }
+                // Clipboard copy is handled in main_window since it's now async
                 StateResult::None
             }
             TerminalInfoDialogMessage::SettingsChanged(change) => {
@@ -146,7 +142,8 @@ impl TerminalInfoDialog {
             || self.selected_ansi_music != self.info.ansi_music
     }
 
-    fn format_info_text(&self) -> String {
+    /// Format terminal info as text for clipboard
+    pub fn format_info_text(&self) -> String {
         let margins_str = match (self.info.margins_top_bottom, self.info.margins_left_right) {
             (Some((t, b)), Some((l, r))) => format!("Lines {}→{} • Cols {}→{}", t, b, l, r),
             (Some((t, b)), None) => format!("Lines {}→{}", t, b),

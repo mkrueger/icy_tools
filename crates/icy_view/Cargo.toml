@@ -39,7 +39,6 @@ async-trait = "0.1"
 bytemuck = { workspace = true, features = ["derive"] }
 retrofont = { workspace = true }
 rfd = { workspace = true }
-clipboard-rs = { workspace = true }
 string-interner = { workspace = true }
 
 # SVG and font rendering for shader-based list

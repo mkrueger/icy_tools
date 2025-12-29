@@ -35,11 +35,6 @@ lazy_static! {
 }
 
 lazy_static! {
-    /// Global clipboard context for copy/paste operations
-    pub static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
-}
-
-lazy_static! {
     /// Pending buffers to be opened in new windows (used by PasteAsNewImage)
     pub static ref PENDING_NEW_WINDOW_BUFFERS: std::sync::Mutex<Vec<icy_engine::TextBuffer>> = std::sync::Mutex::new(Vec::new());
 }

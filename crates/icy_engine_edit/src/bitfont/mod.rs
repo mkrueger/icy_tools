@@ -10,11 +10,16 @@
 //! separating model logic from UI concerns.
 
 pub mod brushes;
-mod clipboard;
+pub mod clipboard;
 mod edit_state;
 pub mod session_state;
 mod undo_operation;
 mod undo_stack;
+
+// Re-export clipboard types for convenience
+pub use clipboard::{
+    copy_to_clipboard, get_from_clipboard, has_bitfont_data, BitFontClipboardData, BitFontClipboardError, BITFONT_CLIPBOARD_TYPE,
+};
 
 /// Maximum allowed font height (rows per glyph)
 pub const MAX_FONT_HEIGHT: i32 = 32;
@@ -28,7 +33,6 @@ pub const MAX_FONT_WIDTH: i32 = 8;
 /// Minimum allowed font width (columns per glyph)
 pub const MIN_FONT_WIDTH: i32 = 1;
 
-pub use clipboard::*;
 pub use edit_state::*;
 pub use session_state::{BitFontFocusedPanelState, BitFontSessionState};
 pub use undo_operation::{BitFontOperationType, BitFontUndoOp};

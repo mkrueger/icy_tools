@@ -45,7 +45,6 @@ struct Localizations;
 lazy_static::lazy_static! {
     pub static ref VERSION: Version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     pub static ref DEFAULT_TITLE: String = format!("iCY VIEW {}", *VERSION);
-    pub static ref CLIPBOARD_CONTEXT: clipboard_rs::ClipboardContext = clipboard_rs::ClipboardContext::new().unwrap();
 
     /// Latest version available on GitHub (checked at startup)
     pub static ref LATEST_VERSION: Version = {

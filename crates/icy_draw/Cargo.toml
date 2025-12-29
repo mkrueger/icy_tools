@@ -100,9 +100,6 @@ notify = { workspace = true }
 rfd = { workspace = true }
 open = { workspace = true }
 
-# Clipboard
-clipboard-rs = { workspace = true }
-
 # MCP (rmcp + HTTP server)
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 axum = "0.8"

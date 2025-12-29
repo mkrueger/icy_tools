@@ -137,6 +137,8 @@ pub enum Message {
     ExportDialog(ExportDialogMessage),
     /// Copy selection to clipboard
     Copy,
+    /// Copy operation completed
+    CopyCompleted(Result<(), icy_engine_gui::ClipboardError>),
     /// Skip to next file in shuffle mode
     ShuffleNext,
     /// Show help dialog
@@ -1589,9 +1591,16 @@ impl MainWindow {
                 // Get screen for copy operation
                 if let Some(screen_arc) = self.preview.get_screen() {
                     let mut screen = screen_arc.lock();
-                    if let Err(err) = icy_engine_gui::copy_selection_to_clipboard(&mut **screen, &*crate::CLIPBOARD_CONTEXT) {
-                        log::error!("Failed to copy: {err}");
+                    match icy_engine_gui::copy_selection(&mut **screen, Message::CopyCompleted) {
+                        Ok(task) => return task,
+                        Err(err) => log::error!("Failed to copy: {err}"),
                     }
+                }
+                Task::none()
+            }
+            Message::CopyCompleted(result) => {
+                if let Err(err) = result {
+                    log::error!("Failed to copy to clipboard: {err}");
                 }
                 Task::none()
             }

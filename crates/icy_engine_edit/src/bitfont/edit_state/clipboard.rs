@@ -3,9 +3,12 @@
 //! Copy, cut, and paste operations for pixel data.
 //!
 //! Clipboard format is custom BitFont data that preserves pixel data dimensions.
+//!
+//! All clipboard operations return Tasks that must be executed by the iced runtime.
 
 use crate::bitfont::BitFontUndoOp;
 use crate::Result;
+use iced::Task;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
@@ -38,74 +41,63 @@ impl BitFontEditState {
 
     /// Copy selection (or entire glyph if no selection) to clipboard
     ///
+    /// Returns a Task that performs the clipboard write.
     /// Clears edit and charset selections after copying.
-    pub fn copy(&mut self) -> Result<()> {
-        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData, BitFontClipboardError};
+    pub fn copy<Message: Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(std::result::Result<(), crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
+    ) -> Task<Message> {
+        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData};
 
         let pixels = self.get_copy_data();
         let data = BitFontClipboardData::new(pixels);
 
-        copy_to_clipboard(&data).map_err(|e| {
-            crate::EngineError::Generic(match e {
-                BitFontClipboardError::ClipboardContextFailed(msg) => format!("Clipboard error: {}", msg),
-                BitFontClipboardError::ClipboardSetFailed(msg) => format!("Failed to copy: {}", msg),
-                _ => "Copy failed".to_string(),
-            })
-        })?;
-
-        // Clear selections after successful copy
+        // Clear selections after initiating copy
         self.clear_edit_selection();
         self.clear_charset_selection();
 
-        Ok(())
+        copy_to_clipboard(&data, on_complete)
     }
 
     /// Cut selection (or entire glyph if no selection) to clipboard
     ///
+    /// Returns a Task that performs the clipboard write.
     /// Copies to clipboard then erases the selection.
     /// Clears edit and charset selections after cutting.
-    pub fn cut(&mut self) -> Result<()> {
-        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData, BitFontClipboardError};
+    pub fn cut<Message: Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(std::result::Result<(), crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
+    ) -> Task<Message> {
+        use crate::bitfont::{copy_to_clipboard, BitFontClipboardData};
 
         // Copy data to clipboard first (before erasing)
         let pixels = self.get_copy_data();
         let data = BitFontClipboardData::new(pixels);
 
-        copy_to_clipboard(&data).map_err(|e| {
-            crate::EngineError::Generic(match e {
-                BitFontClipboardError::ClipboardContextFailed(msg) => format!("Clipboard error: {}", msg),
-                BitFontClipboardError::ClipboardSetFailed(msg) => format!("Failed to cut: {}", msg),
-                _ => "Cut failed".to_string(),
-            })
-        })?;
-
         // Then erase the selection (or entire glyph)
-        self.erase_selection()?;
+        let _ = self.erase_selection();
 
         // Clear selections after successful cut
         self.clear_edit_selection();
         self.clear_charset_selection();
 
-        Ok(())
+        copy_to_clipboard(&data, on_complete)
     }
 
-    /// Paste from clipboard at cursor position
+    /// Initiate paste from clipboard
     ///
-    /// **EditGrid focus**: Pastes at cursor position, clipping if necessary.
-    /// **CharSet focus**: Pastes to all selected characters at top-left (0, 0).
-    pub fn paste(&mut self) -> Result<()> {
-        use crate::bitfont::{get_from_clipboard, BitFontClipboardError};
+    /// Returns a Task that reads the clipboard and calls the callback with the result.
+    /// The callback receives the parsed BitFontClipboardData or an error.
+    pub fn paste<Message: Send + 'static>(
+        on_result: impl Fn(std::result::Result<crate::bitfont::BitFontClipboardData, crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
+    ) -> Task<Message> {
+        crate::bitfont::get_from_clipboard(on_result)
+    }
 
-        let clipboard_data = get_from_clipboard().map_err(|e| {
-            crate::EngineError::Generic(match e {
-                BitFontClipboardError::ClipboardContextFailed(msg) => format!("Clipboard error: {}", msg),
-                BitFontClipboardError::ClipboardGetFailed(msg) => format!("Failed to paste: {}", msg),
-                BitFontClipboardError::InvalidFormat => "Invalid clipboard format".to_string(),
-                BitFontClipboardError::NoBitFontData => "No BitFont data in clipboard".to_string(),
-                _ => "Paste failed".to_string(),
-            })
-        })?;
-
+    /// Apply pasted data to the editor
+    ///
+    /// This should be called with the result from the paste Task callback.
+    pub fn paste_data(&mut self, clipboard_data: crate::bitfont::BitFontClipboardData) -> Result<()> {
         let target_chars = self.get_target_chars();
 
         if self.focused_panel == BitFontFocusedPanel::CharSet {
@@ -170,7 +162,9 @@ impl BitFontEditState {
     }
 
     /// Check if clipboard contains BitFont data
-    pub fn can_paste(&self) -> bool {
-        crate::bitfont::has_bitfont_data()
+    ///
+    /// Returns a Task that checks clipboard availability.
+    pub fn can_paste<Message: Send + 'static>(on_result: impl Fn(bool) -> Message + Send + 'static) -> Task<Message> {
+        crate::bitfont::has_bitfont_data(on_result)
     }
 }

@@ -20,7 +20,6 @@ use iced::{
     Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
 };
 use icy_engine::formats::FileFormat;
-use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage};
@@ -250,6 +249,18 @@ pub(super) fn enforce_extension(mut path: PathBuf, required_ext: &str) -> PathBu
     path
 }
 
+/// Result from reading clipboard data
+/// Holds all available clipboard formats read in one operation
+#[derive(Clone, Debug)]
+pub struct ClipboardReadResult {
+    /// ICY binary format data (if available)
+    pub icy_data: Option<Vec<u8>>,
+    /// Image data as RGBA with dimensions (if available)
+    pub image: Option<image::RgbaImage>,
+    /// Plain text content (if available)
+    pub text: Option<String>,
+}
+
 /// Message type for MainWindow
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -310,9 +321,15 @@ pub enum Message {
     Redo,
     Cut,
     Copy,
+    /// Copy completed (clipboard write finished)
+    CopyCompleted(Result<(), String>),
     Paste,
+    /// Clipboard data received for paste operation
+    ClipboardDataForPaste(Option<ClipboardReadResult>),
     /// Paste clipboard image (or ICY buffer) as a new ANSI document with a Sixel layer
     PasteAsNewImage,
+    /// Clipboard data received for PasteAsNewImage operation
+    ClipboardDataForNewImage(Option<ClipboardReadResult>),
     /// Open file dialog to insert a Sixel from an image file
     InsertSixelFromFile,
     /// Insert a Sixel from the selected image file path
@@ -1227,15 +1244,13 @@ impl MainWindow {
             Message::Cut => {
                 match &mut self.mode_state {
                     ModeState::BitFont(editor) => {
-                        if let Err(e) = editor.state.cut() {
-                            log::error!("Cut failed: {}", e);
-                        }
+                        // BitFont cut uses its own clipboard format
+                        let task = editor.state.cut(|res| Message::CopyCompleted(res.map_err(|e| e.to_string())));
                         editor.invalidate_caches();
+                        return task;
                     }
                     ModeState::Ansi(editor) => {
-                        if let Err(e) = editor.cut() {
-                            log::error!("Cut failed: {}", e);
-                        }
+                        return editor.cut(|res| Message::CopyCompleted(res.map_err(|e| e.to_string())));
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement cut for CharFont
@@ -1249,15 +1264,13 @@ impl MainWindow {
             Message::Copy => {
                 match &mut self.mode_state {
                     ModeState::BitFont(editor) => {
-                        if let Err(e) = editor.state.copy() {
-                            log::error!("Copy failed: {}", e);
-                        }
+                        // BitFont uses its own clipboard format
+                        let task = editor.state.copy(|res| Message::CopyCompleted(res.map_err(|e| e.to_string())));
                         editor.invalidate_caches();
+                        return task;
                     }
                     ModeState::Ansi(editor) => {
-                        if let Err(e) = editor.copy() {
-                            log::error!("Copy failed: {}", e);
-                        }
+                        return editor.copy(|res| Message::CopyCompleted(res.map_err(|e| e.to_string())));
                     }
                     ModeState::CharFont(_) => {
                         // TODO: Implement copy for CharFont
@@ -1268,65 +1281,123 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::CopyCompleted(result) => {
+                if let Err(e) = result {
+                    log::error!("Copy failed: {}", e);
+                }
+                Task::none()
+            }
             Message::Paste => {
-                match &mut self.mode_state {
-                    ModeState::BitFont(editor) => {
-                        if let Err(e) = editor.state.paste() {
-                            log::error!("Paste failed: {}", e);
+                use iced::clipboard::STANDARD;
+                use icy_engine_gui::ICY_CLIPBOARD_TYPE;
+
+                match &self.mode_state {
+                    ModeState::BitFont(_) => {
+                        // BitFont paste is handled separately via its own clipboard format
+                        // Read BitFont format first
+                        return icy_engine_edit::bitfont::get_from_clipboard(|result| {
+                            match result {
+                                Ok(data) => Message::ClipboardDataForPaste(Some(ClipboardReadResult {
+                                    icy_data: Some(data.to_bytes()),
+                                    image: None,
+                                    text: None,
+                                })),
+                                Err(_) => Message::ClipboardDataForPaste(None),
+                            }
+                        });
+                    }
+                    _ => {
+                        // For ANSI and other editors, read ICY format first
+                        return STANDARD.read_format(&[ICY_CLIPBOARD_TYPE]).map(|icy_result| {
+                            Message::ClipboardDataForPaste(Some(ClipboardReadResult {
+                                icy_data: icy_result.map(|d| d.data),
+                                image: None,
+                                text: None,
+                            }))
+                        });
+                    }
+                }
+            }
+            Message::ClipboardDataForPaste(data) => {
+                use iced::clipboard::STANDARD;
+
+                if let Some(clipboard_data) = data {
+                    match &mut self.mode_state {
+                        ModeState::BitFont(editor) => {
+                            // BitFont paste from our custom format
+                            if let Some(data) = clipboard_data.icy_data {
+                                if let Ok(parsed) = icy_engine_edit::bitfont::BitFontClipboardData::from_bytes(&data) {
+                                    if let Err(e) = editor.state.paste_data(parsed) {
+                                        log::error!("BitFont paste failed: {}", e);
+                                    }
+                                }
+                            }
+                            editor.invalidate_caches();
                         }
-                        editor.invalidate_caches();
-                    }
-                    ModeState::Ansi(editor) => {
-                        if let Err(e) = editor.paste() {
-                            log::error!("Paste failed: {}", e);
+                        ModeState::Ansi(editor) => {
+                            // Try ICY format first
+                            if let Some(icy_data) = clipboard_data.icy_data {
+                                if let Err(e) = editor.paste_icy_data(&icy_data) {
+                                    log::error!("Paste ICY data failed: {}", e);
+                                }
+                            } else if let Some(img) = clipboard_data.image {
+                                if let Err(e) = editor.paste_image(img) {
+                                    log::error!("Paste image failed: {}", e);
+                                }
+                            } else if let Some(text) = clipboard_data.text {
+                                if let Err(e) = editor.paste_text(&text) {
+                                    log::error!("Paste text failed: {}", e);
+                                }
+                            } else {
+                                // No ICY data, try reading image next
+                                return STANDARD.read_image().map(|clipboard_data| {
+                                    let img = clipboard_data.and_then(|cd| {
+                                        image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8())
+                                    });
+                                    Message::ClipboardDataForPaste(Some(ClipboardReadResult {
+                                        icy_data: None,
+                                        image: img,
+                                        text: None,
+                                    }))
+                                });
+                            }
                         }
-                    }
-                    ModeState::CharFont(_) => {
-                        // TODO: Implement paste for CharFont
-                    }
-                    ModeState::Animation(_) => {
-                        // TODO: Implement paste for Animation
+                        ModeState::CharFont(_) => {
+                            // TODO: Implement paste for CharFont
+                        }
+                        ModeState::Animation(_) => {
+                            // TODO: Implement paste for Animation
+                        }
                     }
                 }
                 Task::none()
             }
             Message::PasteAsNewImage => {
-                use clipboard_rs::common::RustImage;
-                use clipboard_rs::Clipboard;
-                use icy_engine::{clipboard, Layer, Position, Role, Sixel, Size, TextBuffer, TextPane};
-                use icy_engine_gui::ICY_CLIPBOARD_TYPE;
+                use iced::clipboard::STANDARD;
 
-                // Try ICY binary format first (copied selection from icy_draw)
-                if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
-                    // Get buffer_type from current editor if available, otherwise use default
-                    let buffer_type = if let ModeState::Ansi(editor) = &mut self.mode_state {
-                        editor.with_edit_state(|state| state.get_buffer().buffer_type)
-                    } else {
-                        icy_engine::BufferType::CP437
-                    };
+                // Read image format for paste as new image
+                STANDARD.read_image().map(|clipboard_data| {
+                    let img = clipboard_data.and_then(|cd| {
+                        image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8())
+                    });
+                    Message::ClipboardDataForNewImage(Some(ClipboardReadResult {
+                        icy_data: None,
+                        image: img,
+                        text: None,
+                    }))
+                })
+            }
+            Message::ClipboardDataForNewImage(data) => {
+                use icy_engine::{Layer, Position, Role, Sixel, Size, TextBuffer, TextPane};
 
-                    if let Some(mut layer) = clipboard::from_clipboard_data(buffer_type, &data) {
-                        layer.set_offset((0, 0));
-                        layer.role = Role::Normal;
-                        let size = layer.size();
-                        let mut buf = TextBuffer::new(size);
-                        layer.set_title(buf.layers[0].title());
-                        buf.layers.clear();
-                        buf.layers.push(layer);
-                        buf.set_height(buf.line_count());
+                if let Some(clipboard_data) = data {
+                    // Try image first since that's what PasteAsNewImage is mainly for
+                    if let Some(img) = clipboard_data.image {
+                        let w = img.width();
+                        let h = img.height();
 
-                        // Store buffer in global static for WindowManager to pick up
-                        if let Ok(mut pending) = crate::PENDING_NEW_WINDOW_BUFFERS.lock() {
-                            pending.push(buf);
-                        }
-                        return Task::done(Message::OpenNewWindowWithBuffer);
-                    }
-                } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
-                    // Image from clipboard - create a new buffer with a Sixel layer
-                    let (w, h) = img.get_size();
-                    if let Ok(rgba_data) = img.to_rgba8() {
                         let mut sixel = Sixel::new(Position::default());
-                        sixel.picture_data = rgba_data.as_raw().clone();
+                        sixel.picture_data = img.into_raw();
                         sixel.set_width(w as i32);
                         sixel.set_height(h as i32);
 

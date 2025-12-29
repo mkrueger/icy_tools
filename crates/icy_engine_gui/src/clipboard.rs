@@ -7,19 +7,21 @@
 //! - Image (rendered selection)
 //! - ICY binary format (for paste between ICY applications)
 //!
-//! The implementation handles OS-specific quirks (e.g., Windows requires
-//! text to be last in the clipboard contents).
+//! The clipboard operations return Tasks that need to be executed
+//! by the iced runtime.
 
-use clipboard_rs::common::RustImage;
-use clipboard_rs::{Clipboard, ClipboardContent, RustImageData};
+use iced::clipboard::STANDARD;
+use iced::Task;
 use icy_engine::{RenderOptions, Screen};
-use image::DynamicImage;
 
 /// Clipboard type identifier for ICY binary format
 pub const ICY_CLIPBOARD_TYPE: &str = "application/x-icy-buffer";
 
+/// RTF MIME type
+pub const RTF_MIME_TYPE: &str = "text/rtf";
+
 /// Error type for clipboard operations
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClipboardError {
     /// No selection available to copy
     NoSelection,
@@ -41,9 +43,23 @@ impl std::fmt::Display for ClipboardError {
 
 impl std::error::Error for ClipboardError {}
 
-/// Copy the current selection to clipboard with all formats (text, RTF, image, ICY)
+/// Prepared clipboard data ready to be written
+/// This struct holds all the data that will be written to the clipboard
+#[derive(Debug, Clone)]
+pub struct ClipboardData {
+    /// Plain text content
+    pub text: String,
+    /// RTF content (optional)
+    pub rtf: Option<String>,
+    /// Image data as RGBA bytes with dimensions (optional)
+    pub image: Option<(Vec<u8>, u32, u32)>,
+    /// ICY binary format data (optional)
+    pub icy_data: Option<Vec<u8>>,
+}
+
+/// Prepare clipboard data from a screen selection
 ///
-/// This function copies the selection in multiple formats to maximize compatibility:
+/// This function extracts all clipboard formats from the selection:
 /// - ICY binary format: For paste between ICY applications (preserves all attributes)
 /// - Image: Rendered selection as RGBA image
 /// - RTF: Rich text with colors and formatting
@@ -51,34 +67,22 @@ impl std::error::Error for ClipboardError {}
 ///
 /// # Arguments
 /// * `screen` - The screen/buffer containing the selection
-/// * `clipboard` - The clipboard context to write to
-/// * `options` - Rendering options for the image copy (9px font, aspect ratio)
 ///
 /// # Returns
-/// * `Ok(())` - Selection was copied successfully
+/// * `Ok(ClipboardData)` - Data ready to be written to clipboard
 /// * `Err(ClipboardError::NoSelection)` - No text available to copy
-/// * `Err(ClipboardError::ClipboardSetFailed)` - Failed to write to clipboard
-///
-/// # Platform Notes
-/// On Windows, the order of clipboard contents matters - text must be last
-/// to be properly recognized by other applications.
-pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipboard: &C) -> Result<(), ClipboardError> {
+pub fn prepare_clipboard_data(screen: &mut dyn Screen) -> Result<ClipboardData, ClipboardError> {
     // Get plain text first - if no text, nothing to copy
     let text = match screen.copy_text() {
         Some(t) => t,
         None => return Err(ClipboardError::NoSelection),
     };
 
-    let mut contents = Vec::with_capacity(4);
-
     // ICY binary format (for paste between ICY applications)
-    // This preserves all attributes, fonts, colors, etc.
-    if let Some(data) = screen.clipboard_data() {
-        contents.push(ClipboardContent::Other(ICY_CLIPBOARD_TYPE.into(), data));
-    }
+    let icy_data = screen.clipboard_data();
 
     // Image (rendered selection as RGBA)
-    if let Some(selection) = screen.selection() {
+    let image = if let Some(selection) = screen.selection() {
         let (mut size, mut data) = screen.render_to_rgba_raw(&RenderOptions {
             rect: selection,
             blink_on: true,
@@ -98,29 +102,86 @@ pub fn copy_selection_to_clipboard<C: Clipboard>(screen: &mut dyn Screen, clipbo
         }
 
         if size.width > 0 && size.height > 0 {
-            if let Some(img_buf) = image::ImageBuffer::from_raw(size.width as u32, size.height as u32, data) {
-                let dynamic_image = DynamicImage::ImageRgba8(img_buf);
-                let img = RustImageData::from_dynamic_image(dynamic_image);
-                contents.push(ClipboardContent::Image(img));
-            }
+            Some((data, size.width as u32, size.height as u32))
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
     // RTF (rich text with colors and formatting)
-    if let Some(rich_text) = screen.copy_rich_text() {
-        contents.push(ClipboardContent::Rtf(rich_text));
-    }
+    let rtf = screen.copy_rich_text();
 
-    // Plain text - MUST be last on Windows to be recognized properly
-    contents.push(ClipboardContent::Text(text));
-
-    // Set all contents to clipboard
-    clipboard.set(contents).map_err(|e| ClipboardError::ClipboardSetFailed(e.to_string()))?;
-
-    // Clear selection after successful copy
+    // Clear selection after preparing data
     let _ = screen.clear_selection();
 
-    Ok(())
+    Ok(ClipboardData { text, rtf, image, icy_data })
+}
+
+/// Copy prepared clipboard data to the system clipboard
+///
+/// This returns a Task that writes all formats to the clipboard.
+/// The task should be executed by the iced runtime.
+///
+/// # Arguments
+/// * `data` - The prepared clipboard data
+///
+/// # Returns
+/// A Task that performs the clipboard write operation
+pub fn copy_to_clipboard<Message: Clone + Send + 'static>(
+    data: ClipboardData,
+    on_complete: impl Fn(Result<(), ClipboardError>) -> Message + Clone + Send + 'static,
+) -> Task<Message> {
+    // Build list of entries to write: Vec<(data, formats)>
+    let mut entries: Vec<(Vec<u8>, Vec<String>)> = Vec::with_capacity(4);
+
+    // ICY binary format first (for paste between ICY applications)
+    if let Some(icy_data) = data.icy_data {
+        entries.push((icy_data, vec![ICY_CLIPBOARD_TYPE.to_string()]));
+    }
+
+    // RTF format
+    if let Some(rtf) = data.rtf {
+        entries.push((rtf.into_bytes(), vec![RTF_MIME_TYPE.to_string()]));
+    }
+
+    // Plain text (using text/plain MIME type)
+    entries.push((data.text.into_bytes(), vec!["text/plain".to_string()]));
+
+    // Write all MIME contents
+    let write_task = STANDARD.write_multi(entries);
+
+    // If we have an image, chain the image write
+    if let Some((rgba_data, width, height)) = data.image {
+        let on_complete_clone = on_complete.clone();
+        // Create an image::RgbaImage from the raw data and encode as PNG
+        if let Some(img) = image::RgbaImage::from_raw(width, height, rgba_data) {
+            let mut png_bytes = Vec::new();
+            if img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_ok() {
+                write_task
+                    .chain(STANDARD.write_image(png_bytes))
+                    .map(move |()| on_complete_clone(Ok(())))
+            } else {
+                write_task.map(move |()| on_complete(Ok(())))
+            }
+        } else {
+            write_task.map(move |()| on_complete(Ok(())))
+        }
+    } else {
+        write_task.map(move |()| on_complete(Ok(())))
+    }
+}
+
+/// Convenience function to prepare and copy in one step
+///
+/// This combines `prepare_clipboard_data` and `copy_to_clipboard`.
+pub fn copy_selection<Message: Clone + Send + 'static>(
+    screen: &mut dyn Screen,
+    on_complete: impl Fn(Result<(), ClipboardError>) -> Message + Clone + Send + 'static,
+) -> Result<Task<Message>, ClipboardError> {
+    let data = prepare_clipboard_data(screen)?;
+    Ok(copy_to_clipboard(data, on_complete))
 }
 
 fn scale_image_vertical(pixels: Vec<u8>, width: i32, height: i32, scale: f32) -> (i32, Vec<u8>) {

@@ -7,16 +7,13 @@
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 use crate::fl;
-use clipboard_rs::common::RustImage;
-use clipboard_rs::Clipboard;
-use clipboard_rs::ContentFormat;
 use iced::widget::{button, row, text, tooltip, Space};
 use iced::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
-use icy_engine_gui::{TerminalMessage, ICY_CLIPBOARD_TYPE};
+use icy_engine_gui::TerminalMessage;
 
 /// State for the paste/floating layer tool
 #[derive(Default)]
@@ -48,50 +45,21 @@ impl PasteTool {
         Self::default()
     }
 
+    /// Check if paste is potentially available
+    /// Note: With async clipboard API, this is always true since we can't
+    /// synchronously check clipboard contents. The actual availability
+    /// is determined when the clipboard is read.
     pub fn can_paste(&self) -> bool {
-        crate::CLIPBOARD_CONTEXT.has(ContentFormat::Other(ICY_CLIPBOARD_TYPE.into()))
-            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Image)
-            || crate::CLIPBOARD_CONTEXT.has(ContentFormat::Text)
+        // Always return true - the async paste operation will handle
+        // cases where no compatible content is available
+        true
     }
 
-    pub fn paste_from_clipboard(&mut self, ctx: &mut ToolContext<'_>, previous_tool: super::ToolId) -> Result<ToolResult, String> {
-        if self.active {
-            return Ok(ToolResult::None);
-        }
-
-        // Start atomic undo guard BEFORE the paste operation so it's included in the group
-        self.paste_undo = Some(ctx.state.begin_atomic_undo("Paste".to_string()));
-
-        // Priority: ICY binary > Image > Text
-        if let Ok(data) = crate::CLIPBOARD_CONTEXT.get_buffer(ICY_CLIPBOARD_TYPE) {
-            log::debug!("paste: Using ICY binary data, size={}", data.len());
-            ctx.state.paste_clipboard_data(&data).map_err(|e| e.to_string())?;
-        } else if let Ok(img) = crate::CLIPBOARD_CONTEXT.get_image() {
-            log::debug!("paste: Using image data");
-
-            let mut sixel: Sixel = Sixel::new(Position::default());
-            sixel.picture_data = img.to_rgba8().map_err(|e| e.to_string())?.as_raw().clone();
-            let (w, h) = img.get_size();
-            sixel.set_width(w as i32);
-            sixel.set_height(h as i32);
-
-            ctx.state.paste_sixel(sixel).map_err(|e| e.to_string())?;
-        } else if let Ok(text) = crate::CLIPBOARD_CONTEXT.get_text() {
-            log::debug!("paste: Using text data: {:?}", text);
-            ctx.state.paste_text(&text).map_err(|e| e.to_string())?;
-        } else {
-            // No compatible content - drop the undo guard without committing
-            self.paste_undo = None;
-            return Err("No compatible clipboard content".to_string());
-        }
-
+    /// Set paste mode active (used when paste data is received asynchronously)
+    pub fn set_active(&mut self, previous_tool: super::ToolId) {
         self.active = true;
         self.previous_tool = Some(previous_tool);
         self.abort();
-        Ok(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
-            .and(ToolResult::UpdateLayerBounds)
-            .and(ToolResult::CollabPasteAsSelection)
-            .and(ToolResult::Redraw))
     }
 
     pub fn is_active(&self) -> bool {

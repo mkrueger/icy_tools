@@ -611,20 +611,38 @@ impl AnsiEditorMainArea {
         &self.core.screen
     }
 
-    pub fn cut(&mut self) -> Result<(), String> {
-        let result = self.core.cut();
+    pub fn cut<Message: Clone + Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> iced::Task<Message> {
+        let task = self.core.cut(on_complete);
         self.refresh_selection_display();
-        result
+        task
     }
 
-    pub fn copy(&mut self) -> Result<(), String> {
-        let result = self.core.copy();
+    pub fn copy<Message: Clone + Send + 'static>(
+        &mut self,
+        on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
+    ) -> iced::Task<Message> {
+        let task = self.core.copy(on_complete);
         self.refresh_selection_display();
-        result
+        task
     }
 
     pub fn paste(&mut self) -> Result<(), String> {
         self.core.paste()
+    }
+
+    pub fn paste_icy_data(&mut self, data: &[u8]) -> Result<(), String> {
+        self.core.paste_icy_data(data)
+    }
+
+    pub fn paste_image(&mut self, img: image::RgbaImage) -> Result<(), String> {
+        self.core.paste_image(img)
+    }
+
+    pub fn paste_text(&mut self, text: &str) -> Result<(), String> {
+        self.core.paste_text(text)
     }
 
     pub fn mark_modified(&mut self) {
