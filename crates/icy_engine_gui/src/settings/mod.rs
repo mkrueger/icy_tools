@@ -1,6 +1,6 @@
 use i18n_embed_fl::fl;
-use iced::widget::{button, container, row, slider, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme};
+use icy_ui::widget::{button, container, row, slider, text};
+use icy_ui::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme};
 use icy_engine::Color as IcyColor;
 use lazy_static::lazy_static;
 use std::fmt;
@@ -93,22 +93,22 @@ impl MonitorType {
 fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Element<'a, Message> {
     button("")
         .on_press(on_press)
-        .style(move |theme: &Theme, status| iced::widget::button::Style {
+        .style(move |theme: &Theme, status| icy_ui::widget::button::Style {
             background: Some(Background::Color(match status {
-                iced::widget::button::Status::Active => color,
-                iced::widget::button::Status::Hovered => Color {
+                icy_ui::widget::button::Status::Active | icy_ui::widget::button::Status::Selected => color,
+                icy_ui::widget::button::Status::Hovered => Color {
                     r: (color.r * 1.1).min(1.0),
                     g: (color.g * 1.1).min(1.0),
                     b: (color.b * 1.1).min(1.0),
                     a: color.a,
                 },
-                iced::widget::button::Status::Pressed => Color {
+                icy_ui::widget::button::Status::Pressed => Color {
                     r: (color.r * 0.9).max(0.0),
                     g: (color.g * 0.9).max(0.0),
                     b: (color.b * 0.9).max(0.0),
                     a: color.a,
                 },
-                iced::widget::button::Status::Disabled => Color {
+                icy_ui::widget::button::Status::Disabled => Color {
                     r: color.r * 0.5,
                     g: color.g * 0.5,
                     b: color.b * 0.5,
@@ -116,21 +116,24 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
                 },
             })),
             text_color: Color::WHITE,
+            icon_color: None,
+            outline_color: Color::TRANSPARENT,
+            outline_width: 0.0,
             border: Border {
-                color: if matches!(status, iced::widget::button::Status::Hovered) {
+                color: if matches!(status, icy_ui::widget::button::Status::Hovered) {
                     theme.accent.hover
                 } else {
                     Color::from_rgb(0.5, 0.5, 0.5)
                 },
-                width: if matches!(status, iced::widget::button::Status::Hovered) { 2.0 } else { 1.0 },
+                width: if matches!(status, icy_ui::widget::button::Status::Hovered) { 2.0 } else { 1.0 },
                 radius: 4.0.into(),
             },
-            shadow: if matches!(status, iced::widget::button::Status::Pressed) {
+            shadow: if matches!(status, icy_ui::widget::button::Status::Pressed) {
                 Shadow::default()
             } else {
                 Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.2),
-                    offset: iced::Vector::new(0.0, 1.0),
+                    offset: icy_ui::Vector::new(0.0, 1.0),
                     blur_radius: 2.0,
                 }
             },
@@ -167,15 +170,15 @@ pub fn slider_row_owned<'a>(
     row![
         text(label).size(14).width(Length::Fixed(LABEL_WIDTH)),
         slider(range, value, on_change).width(Length::Fill).style(|theme: &Theme, status| {
-            iced::widget::slider::Style {
-                rail: iced::widget::slider::Rail {
+            icy_ui::widget::slider::Style {
+                rail: icy_ui::widget::slider::Rail {
                     backgrounds: (Background::Color(theme.accent.base), Background::Color(theme.primary.base)),
                     width: 4.0,
                     border: Border::default(),
                 },
-                handle: iced::widget::slider::Handle {
-                    shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
-                    background: Background::Color(if status == iced::widget::slider::Status::Dragged {
+                handle: icy_ui::widget::slider::Handle {
+                    shape: icy_ui::widget::slider::HandleShape::Circle { radius: 8.0 },
+                    background: Background::Color(if status == icy_ui::widget::slider::Status::Dragged {
                         theme.accent.pressed
                     } else {
                         theme.accent.base
@@ -232,7 +235,7 @@ pub fn icy_to_iced_color(color: IcyColor) -> Color {
 pub fn left_label<T: 'static>(txt: String) -> Element<'static, T> {
     container(text(txt).size(TEXT_SIZE_NORMAL))
         .width(Length::Fixed(LABEL_WIDTH))
-        .align_x(iced::alignment::Horizontal::Left)
+        .align_x(icy_ui::alignment::Horizontal::Left)
         .into()
 }
 

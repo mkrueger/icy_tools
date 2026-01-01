@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use iced::mouse;
-use iced::widget::shader;
-use iced::Rectangle;
+use icy_ui::mouse;
+use icy_ui::widget::shader;
+use icy_ui::Rectangle;
 use parking_lot::Mutex;
 
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;
@@ -223,13 +223,13 @@ pub struct MinimapState {
     /// Last redraw timestamp for tracking animation frames
     last_redraw: Option<std::time::Instant>,
     /// Last pointer position (absolute) for continuous scroll during drag
-    last_pointer_position: Option<iced::Point>,
+    last_pointer_position: Option<icy_ui::Point>,
 }
 
 impl MinimapProgram {
     /// Helper to calculate normalized position from cursor position
     /// Takes absolute position and bounds, calculates relative position internally
-    fn calculate_normalized_position(&self, absolute_pos: iced::Point, bounds: Rectangle) -> Option<(f32, f32)> {
+    fn calculate_normalized_position(&self, absolute_pos: icy_ui::Point, bounds: Rectangle) -> Option<(f32, f32)> {
         let tex_w = self.texture_width;
         let tex_h = self.total_rendered_height;
         if tex_w == 0 || tex_h == 0 {
@@ -401,16 +401,16 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<MinimapMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<MinimapMessage>> {
         match event {
             // Handle redraw requests for continuous drag scrolling
-            iced::Event::Window(iced::window::Event::RedrawRequested(now)) => {
+            icy_ui::Event::Window(icy_ui::window::Event::RedrawRequested(now)) => {
                 if state.is_dragging {
                     state.last_redraw = Some(*now);
                     // Re-send scroll position based on last known pointer position
                     if let Some(last_pos) = state.last_pointer_position {
                         if let Some((norm_x, norm_y)) = self.calculate_normalized_position(last_pos, bounds) {
-                            return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
+                            return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                         }
                     }
                 } else {
@@ -419,23 +419,23 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             }
 
             // Handle mouse button press - start dragging
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 // Use position_in for initial click - must be inside bounds
                 if let Some(pos) = cursor.position_in(bounds) {
                     state.is_dragging = true;
                     state.last_redraw = None;
-                    let absolute_pos = iced::Point::new(pos.x + bounds.x, pos.y + bounds.y);
+                    let absolute_pos = icy_ui::Point::new(pos.x + bounds.x, pos.y + bounds.y);
                     state.last_pointer_position = Some(absolute_pos);
                     if let Some((norm_x, norm_y)) = self.calculate_normalized_position(absolute_pos, bounds) {
-                        return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
+                        return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                     }
                 }
             }
 
             // Handle mouse button release - stop dragging
-            iced::Event::Mouse(mouse::Event::ButtonReleased {
+            icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                 button: mouse::Button::Left, ..
             }) => {
                 if state.is_dragging {
@@ -446,13 +446,13 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             }
 
             // Handle cursor movement while dragging
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if state.is_dragging {
                     // Use cursor.position() for mouse capture effect - works even outside bounds
                     if let Some(pos) = cursor.position() {
                         state.last_pointer_position = Some(pos);
                         if let Some((norm_x, norm_y)) = self.calculate_normalized_position(pos, bounds) {
-                            return Some(iced::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
+                            return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                         }
                     }
                 }
@@ -516,8 +516,8 @@ impl MinimapPrimitive {
 /// Texture array for GPU
 #[allow(dead_code)]
 struct TextureArray {
-    texture: iced::wgpu::Texture,
-    texture_view: iced::wgpu::TextureView,
+    texture: icy_ui::wgpu::Texture,
+    texture_view: icy_ui::wgpu::TextureView,
 }
 
 /// Per-instance GPU resources with texture slicing
@@ -525,9 +525,9 @@ struct InstanceResources {
     /// Texture array containing all slices
     texture_array: TextureArray,
     /// Bind group for rendering
-    bind_group: iced::wgpu::BindGroup,
+    bind_group: icy_ui::wgpu::BindGroup,
     /// Uniform buffer
-    uniform_buffer: iced::wgpu::Buffer,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     /// Total texture dimensions for cache validation
     texture_size: (u32, u32),
     /// Number of slices for cache validation
@@ -540,45 +540,45 @@ struct InstanceResources {
 
 /// The minimap shader renderer (GPU pipeline) with multi-texture support
 pub struct MinimapShaderRenderer {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group_layout: iced::wgpu::BindGroupLayout,
-    sampler: iced::wgpu::Sampler,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group_layout: icy_ui::wgpu::BindGroupLayout,
+    sampler: icy_ui::wgpu::Sampler,
     instances: HashMap<usize, InstanceResources>,
 }
 
 impl shader::Pipeline for MinimapShaderRenderer {
-    fn new(device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+    fn new(device: &icy_ui::wgpu::Device, _queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Minimap Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("minimap.wgsl").into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(include_str!("minimap.wgsl").into()),
         });
 
         // Create bind group layout with texture array + sampler + uniforms (3 entries total)
         let entries = vec![
             // Binding 0: Texture array
-            iced::wgpu::BindGroupLayoutEntry {
+            icy_ui::wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                ty: iced::wgpu::BindingType::Texture {
+                visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                ty: icy_ui::wgpu::BindingType::Texture {
                     multisampled: false,
-                    view_dimension: iced::wgpu::TextureViewDimension::D2Array,
-                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: icy_ui::wgpu::TextureViewDimension::D2Array,
+                    sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                 },
                 count: None,
             },
             // Binding 1: Sampler
-            iced::wgpu::BindGroupLayoutEntry {
+            icy_ui::wgpu::BindGroupLayoutEntry {
                 binding: 1,
-                visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
             // Binding 2: Uniforms
-            iced::wgpu::BindGroupLayoutEntry {
+            icy_ui::wgpu::BindGroupLayoutEntry {
                 binding: 2,
-                visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: iced::wgpu::BindingType::Buffer {
-                    ty: iced::wgpu::BufferBindingType::Uniform,
+                visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: icy_ui::wgpu::BindingType::Buffer {
+                    ty: icy_ui::wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -586,60 +586,60 @@ impl shader::Pipeline for MinimapShaderRenderer {
             },
         ];
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Minimap Bind Group Layout"),
             entries: &entries,
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Minimap Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Minimap Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: iced::wgpu::FrontFace::Ccw,
+                front_face: icy_ui::wgpu::FrontFace::Ccw,
                 cull_mode: None,
                 unclipped_depth: false,
-                polygon_mode: iced::wgpu::PolygonMode::Fill,
+                polygon_mode: icy_ui::wgpu::PolygonMode::Fill,
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
         // Use linear filtering for smooth minimap scaling
-        let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Minimap Sampler"),
-            address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
-            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            address_mode_u: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_v: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_w: icy_ui::wgpu::AddressMode::ClampToEdge,
+            mag_filter: icy_ui::wgpu::FilterMode::Linear,
+            min_filter: icy_ui::wgpu::FilterMode::Linear,
+            mipmap_filter: icy_ui::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -658,10 +658,10 @@ impl shader::Primitive for MinimapPrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
-        bounds: &iced::Rectangle,
-        _viewport: &iced::advanced::graphics::Viewport,
+        device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
+        bounds: &icy_ui::Rectangle,
+        _viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let id = self.instance_id;
         let num_slices = self.slices.len().min(MAX_TEXTURE_SLICES);
@@ -683,56 +683,56 @@ impl shader::Primitive for MinimapPrimitive {
             let layer_count = (num_slices as u32).max(1);
 
             // Create texture array with uniform layer dimensions
-            let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                 label: Some(&format!("Minimap Texture Array {}", id)),
-                size: iced::wgpu::Extent3d {
+                size: icy_ui::wgpu::Extent3d {
                     width: max_slice_w,
                     height: max_slice_h,
                     depth_or_array_layers: layer_count,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                dimension: icy_ui::wgpu::TextureDimension::D2,
+                format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
 
-            let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor {
-                dimension: Some(iced::wgpu::TextureViewDimension::D2Array),
+            let texture_view = texture.create_view(&icy_ui::wgpu::TextureViewDescriptor {
+                dimension: Some(icy_ui::wgpu::TextureViewDimension::D2Array),
                 ..Default::default()
             });
 
             let texture_array = TextureArray { texture, texture_view };
 
             // Create uniform buffer
-            let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+            let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
                 label: Some(&format!("Minimap Uniforms {}", id)),
                 size: std::mem::size_of::<MinimapUniforms>() as u64,
-                usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
 
             // Create bind group with 3 entries: texture array, sampler, uniforms
             let entries = vec![
                 // Binding 0: Texture array
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: iced::wgpu::BindingResource::TextureView(&texture_array.texture_view),
+                    resource: icy_ui::wgpu::BindingResource::TextureView(&texture_array.texture_view),
                 },
                 // Binding 1: Sampler
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                    resource: icy_ui::wgpu::BindingResource::Sampler(&pipeline.sampler),
                 },
                 // Binding 2: Uniforms
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 2,
                     resource: uniform_buffer.as_entire_binding(),
                 },
             ];
 
-            let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+            let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                 label: Some(&format!("Minimap BindGroup {}", id)),
                 layout: &pipeline.bind_group_layout,
                 entries: &entries,
@@ -767,19 +767,19 @@ impl shader::Primitive for MinimapPrimitive {
                     let bytes_per_row = 4 * slice_data.width;
 
                     queue.write_texture(
-                        iced::wgpu::TexelCopyTextureInfo {
+                        icy_ui::wgpu::TexelCopyTextureInfo {
                             texture: &resources.texture_array.texture,
                             mip_level: 0,
-                            origin: iced::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                            aspect: iced::wgpu::TextureAspect::All,
+                            origin: icy_ui::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                            aspect: icy_ui::wgpu::TextureAspect::All,
                         },
                         &slice_data.rgba_data,
-                        iced::wgpu::TexelCopyBufferLayout {
+                        icy_ui::wgpu::TexelCopyBufferLayout {
                             offset: 0,
                             bytes_per_row: Some(bytes_per_row),
                             rows_per_image: Some(slice_data.height),
                         },
-                        iced::wgpu::Extent3d {
+                        icy_ui::wgpu::Extent3d {
                             width: slice_data.width,
                             height: slice_data.height,
                             depth_or_array_layers: 1,
@@ -867,7 +867,7 @@ impl shader::Primitive for MinimapPrimitive {
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let Some(resources) = pipeline.instances.get(&self.instance_id) else {
             return;
         };
@@ -879,14 +879,14 @@ impl shader::Primitive for MinimapPrimitive {
         let vp_w = clip_bounds.width as f32;
         let vp_h = clip_bounds.height as f32;
 
-        let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("Minimap Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],

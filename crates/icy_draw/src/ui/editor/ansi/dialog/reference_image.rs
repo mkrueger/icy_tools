@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, slider, text, text_input, Space},
     Alignment, Element, Length, Task,
 };
@@ -112,8 +112,8 @@ impl Dialog<Message> for ReferenceImageDialog {
             .on_input(|s| msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::SetPath(s))))
             .size(TEXT_SIZE_NORMAL)
             .width(Length::Fill)
-            .style(move |theme: &iced::Theme, status| {
-                let mut style = iced::widget::text_input::default(theme, status);
+            .style(move |theme: &icy_ui::Theme, status| {
+                let mut style = icy_ui::widget::text_input::default(theme, status);
                 if !path_valid {
                     style.border.color = theme.destructive.base;
                 }
@@ -157,7 +157,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         // ═══════════════════════════════════════════════════════════════════════
         let info_text = text(fl!("reference-image-info"))
             .size(TEXT_SIZE_SMALL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.secondary.on),
             });
 

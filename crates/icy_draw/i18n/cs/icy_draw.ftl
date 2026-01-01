@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=Soubor
+menu-file=&Soubor
 menu-new=Nový…
 menu-open=Otevřít…
 menu-open_recent=Otevřít nedávné
@@ -60,7 +60,7 @@ menu-export=Exportovat…
 menu-edit-font-outline=Obrys písma…
 menu-show_settings=Nastavení…
 
-menu-edit=Upravit
+menu-edit=&Upravit
 menu-undo=Zpět
 menu-redo=Znovu
 menu-undo-op=Zpět: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Posunout oblast vpravo
 menu-mirror_mode=Režim zrcadlení
 menu-area_operations=Oblast
 
-menu-selection=Výběr
+menu-selection=Vý&běr
 menu-select-all=Vybrat vše
 menu-select_nothing=Zrušit výběr
 menu-inverse_selection=Invertovat výběr
 
-menu-colors=Barvy
+menu-colors=&Barvy
 menu-ice-mode=Režim Ice
 menu-ice-mode-unrestricted=Neomezený
 menu-ice-mode-blink=Blikání
@@ -123,7 +123,7 @@ menu-next_bg_color=Další barva pozadí
 menu-prev_fg_color=Předchozí barva popředí
 menu-prev_bg_color=Předchozí barva pozadí
 
-menu-view=Zobrazení
+menu-view=&Zobrazení
 menu-reference-image=Otevřít referenční obrázek…
 menu-toggle-reference-image=Přepnout referenční obrázek
 menu-clear-reference-image=Vymazat
@@ -158,12 +158,12 @@ menu-open_font_manager=Upravit písma v bufferu…
 menu-open_font_directoy=Otevřít adresář písem…
 menu-open_palettes_directoy=Otevřít adresář palet…
 
-menu-help=Nápověda
+menu-help=&Nápověda
 menu-discuss=Diskutovat
 menu-open_log_file=Otevřít soubor protokolu
 menu-report-bug=Nahlásit chybu
 menu-about=O aplikaci…
-menu-plugins=Pluginy
+menu-plugins=&Pluginy
 menu-open_plugin_directory=Otevřít adresář pluginů…
 
 menu-upgrade_version=Aktualizovat na { $version }

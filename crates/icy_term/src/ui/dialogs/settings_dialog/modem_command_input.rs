@@ -1,4 +1,4 @@
-use iced::{
+use icy_ui::{
     widget::{row, text_input, Space},
     Alignment, Element, Length,
 };

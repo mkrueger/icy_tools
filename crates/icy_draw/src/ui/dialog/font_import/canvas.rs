@@ -2,7 +2,7 @@
 //!
 //! Similar to the CharSetCanvas in the bitfont editor
 
-use iced::{
+use icy_ui::{
     mouse::Cursor,
     widget::canvas::{self, Frame},
     Point, Rectangle, Size,
@@ -21,7 +21,7 @@ pub struct FontPreviewCanvas<'a> {
 impl<'a, Message> canvas::Program<Message> for FontPreviewCanvas<'a> {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Colors

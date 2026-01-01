@@ -3,8 +3,8 @@
 //! Uses iced's built-in menu widget for dropdown menus.
 //! Ported from the egui version in src_egui/ui/top_bar.rs
 
-use iced::widget::menu::Tree as MenuTree;
-use iced::{
+use icy_ui::widget::menu::Tree as MenuTree;
+use icy_ui::{
     alignment,
     widget::{button, container, row, rule, text, Space},
     Border, Color, Element, Length, Theme,
@@ -304,7 +304,7 @@ fn render_menu_item_button(label: String, hotkey: String, message: Message, enab
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -331,7 +331,7 @@ fn render_menu_item_toggle(label: String, hotkey: String, message: Message, chec
             text(indicator).size(14).width(Length::Fixed(20.0)),
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -355,7 +355,7 @@ fn render_menu_item_submenu_button(label: String) -> Element<'static, Message> {
         row![
             text(label).size(14).width(Length::Fill),
             text("▶").size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -371,7 +371,7 @@ fn render_menu_item_submenu_button(label: String) -> Element<'static, Message> {
 }
 
 /// Convert a slice of MenuItems to MenuTree items (for rendering)
-pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
+pub fn menu_items_to_iced(items: &[MenuItem], state: &MenuState<'_>) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
     items
         .iter()
         .map(|item| match item {
@@ -509,7 +509,7 @@ impl MenuBarState {
 
         // Cache the whole menu subtree. During resize, this avoids rebuilding all menu widgets and
         // regenerating strings/translations.
-        let menu = iced::widget::lazy(key, move |key: &MenuBarCacheKey| {
+        let menu = icy_ui::widget::lazy(key, move |key: &MenuBarCacheKey| {
             let undo_info = UndoInfo {
                 undo_description: key.undo_description.clone(),
                 redo_description: key.redo_description.clone(),
@@ -547,7 +547,7 @@ impl MenuBarState {
                 .on_press(Message::OpenReleasesPage);
 
             row![menu, Space::new().width(Length::Fill), update_btn, Space::new().width(8),]
-                .align_y(iced::Alignment::Center)
+                .align_y(icy_ui::Alignment::Center)
                 .into()
         } else {
             menu.into()
@@ -579,7 +579,7 @@ pub fn menu_item(cmd: &icy_engine_gui::commands::CommandDef, msg: Message) -> El
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -610,7 +610,7 @@ pub fn menu_item_undo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -641,7 +641,7 @@ pub fn menu_item_redo(cmd: &icy_engine_gui::commands::CommandDef, msg: Message, 
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -675,7 +675,7 @@ pub fn menu_item_enabled(cmd: &icy_engine_gui::commands::CommandDef, msg: Messag
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -702,7 +702,7 @@ pub fn menu_item_simple_enabled(label: String, hotkey: &str, msg: Message, enabl
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -730,7 +730,7 @@ pub fn menu_item_cmd_label_enabled(label: String, cmd: &icy_engine_gui::commands
         row![
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -759,7 +759,7 @@ pub fn menu_item_checkbox(label: String, hotkey: &str, checked: bool, msg: Messa
             text(checkbox_indicator).size(14).width(Length::Fixed(16.0)),
             text(label).size(14).width(Length::Fill),
             text(hotkey_text).size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -785,7 +785,7 @@ pub fn menu_item_submenu(label: String) -> Element<'static, Message> {
         row![
             text(label).size(14).width(Length::Fill),
             text("▶").size(12).style(|theme: &Theme| {
-                iced::widget::text::Style {
+                icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 }
             }),
@@ -801,10 +801,10 @@ pub fn menu_item_submenu(label: String) -> Element<'static, Message> {
 }
 
 /// Build the recent files submenu
-pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
+pub fn build_recent_files_menu(recent_files: &MostRecentlyUsedFiles) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
     let files = recent_files.files();
 
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     if files.is_empty() {
         // Show "No recent files" when empty
@@ -858,7 +858,7 @@ pub fn menu_button_style(theme: &Theme, status: button::Status) -> button::Style
         ..Default::default()
     };
     match status {
-        button::Status::Active => base.with_background(Color::TRANSPARENT),
+        button::Status::Active | button::Status::Selected => base.with_background(Color::TRANSPARENT),
         button::Status::Hovered => base.with_background(theme.accent.base),
         button::Status::Pressed => base.with_background(theme.accent.hover),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
@@ -873,7 +873,7 @@ pub fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
     };
 
     match status {
-        button::Status::Active => base.with_background(Color::TRANSPARENT),
+        button::Status::Active | button::Status::Selected => base.with_background(Color::TRANSPARENT),
         button::Status::Hovered => base.with_background(theme.accent.base),
         button::Status::Pressed => base.with_background(theme.accent.base),
         button::Status::Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
@@ -895,13 +895,13 @@ fn update_link_style(_theme: &Theme, status: button::Status) -> button::Style {
     let info_color = Color::from_rgb(0.2, 0.6, 1.0);
 
     let (bg, text_color) = match status {
-        button::Status::Active => (Color::TRANSPARENT, info_color),
+        button::Status::Active | button::Status::Selected => (Color::TRANSPARENT, info_color),
         button::Status::Hovered => (Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1), info_color),
         button::Status::Pressed => (Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15), info_color),
         button::Status::Disabled => (Color::TRANSPARENT, info_color.scale_alpha(0.3)),
     };
     button::Style {
-        background: Some(iced::Background::Color(bg)),
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
         border: Border {
             color: Color::TRANSPARENT,

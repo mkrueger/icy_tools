@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     widget::{column, container, image as iced_image, mouse_area, row, text, Space},
     Element, Event, Length, Task, Theme,
@@ -770,11 +770,11 @@ impl MainWindow {
             Message::ToggleFullscreen => {
                 self.fullscreen = !self.fullscreen;
                 let mode = if self.fullscreen {
-                    iced::window::Mode::Fullscreen
+                    icy_ui::window::Mode::Fullscreen
                 } else {
-                    iced::window::Mode::Windowed
+                    icy_ui::window::Mode::Windowed
                 };
-                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
+                icy_ui::window::latest().and_then(move |window| icy_ui::window::set_mode(window, mode))
             }
             Message::Escape => {
                 // First check if shuffle mode is active - exit it
@@ -1891,7 +1891,7 @@ impl MainWindow {
                     let folder_preview = self.folder_preview.view().map(Message::FolderPreview);
                     focus(folder_preview)
                         .on_event(|event, _id| {
-                            if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                            if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                                 match key {
                                     Key::Named(Named::ArrowUp) => Some(Message::FolderPreview(TileGridMessage::SelectPrevious)),
                                     Key::Named(Named::ArrowDown) => Some(Message::FolderPreview(TileGridMessage::SelectNext)),
@@ -1916,7 +1916,7 @@ impl MainWindow {
                     let preview = self.preview.view_with_settings(Some(monitor_settings)).map(Message::Preview);
                     focus(preview)
                         .on_event(|event, _id| {
-                            if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                            if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                                 match key {
                                     Key::Named(Named::ArrowUp) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, -50.0))),
                                     Key::Named(Named::ArrowDown) => Some(Message::Preview(PreviewMessage::ScrollViewport(0.0, 50.0))),
@@ -1934,7 +1934,7 @@ impl MainWindow {
                         .into()
                 } else {
                     // Show welcome logo with message
-                    let welcome_logo = iced_image::Image::new(WELCOME_IMAGE.clone()).content_fit(iced::ContentFit::None);
+                    let welcome_logo = iced_image::Image::new(WELCOME_IMAGE.clone()).content_fit(icy_ui::ContentFit::None);
                     let welcome_title = text(fl!(crate::LANGUAGE_LOADER, "welcome-select-file"))
                         .size(18)
                         .style(|theme: &Theme| text::Style {
@@ -1943,7 +1943,7 @@ impl MainWindow {
                     let welcome_tip = text(fl!(crate::LANGUAGE_LOADER, "welcome-tip")).size(13).style(|theme: &Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(0.5)),
                     });
-                    let preview_content = column![welcome_logo, welcome_title, welcome_tip].spacing(12).align_x(iced::Alignment::Center);
+                    let preview_content = column![welcome_logo, welcome_title, welcome_tip].spacing(12).align_x(icy_ui::Alignment::Center);
 
                     container(preview_content)
                         .width(Length::Fill)
@@ -1951,7 +1951,7 @@ impl MainWindow {
                         .center_x(Length::Fill)
                         .center_y(Length::Fill)
                         .style(move |_theme: &Theme| container::Style {
-                            background: Some(iced::Background::Color(bg_color)),
+                            background: Some(icy_ui::Background::Color(bg_color)),
                             ..Default::default()
                         })
                         .into()
@@ -1963,7 +1963,7 @@ impl MainWindow {
                     .width(4.0)
                     .height(Length::Fill)
                     .style(move |_theme: &Theme| container::Style {
-                        background: Some(iced::Background::Color(bg_color)),
+                        background: Some(icy_ui::Background::Color(bg_color)),
                         ..Default::default()
                     })
                     .into();
@@ -1976,7 +1976,7 @@ impl MainWindow {
                 let tile_content: Element<'_, Message> = focus(tile_grid)
                     .on_event(|event, _id| {
                         // Handle keyboard events when focused
-                        if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                        if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                             match key {
                                 Key::Named(Named::ArrowUp) => Some(Message::TileGrid(TileGridMessage::SelectPrevious)),
                                 Key::Named(Named::ArrowDown) => Some(Message::TileGrid(TileGridMessage::SelectNext)),
@@ -2013,8 +2013,8 @@ impl MainWindow {
                         .on_exit(Message::FileListToolbar(FileListToolbarMessage::MouseLeft));
 
                     container(toolbar_with_hover)
-                        .align_x(iced::alignment::Horizontal::Left)
-                        .align_y(iced::alignment::Vertical::Top)
+                        .align_x(icy_ui::alignment::Horizontal::Left)
+                        .align_y(icy_ui::alignment::Vertical::Top)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()
@@ -2024,14 +2024,14 @@ impl MainWindow {
                         .on_enter(Message::FileListToolbar(FileListToolbarMessage::MouseEntered));
 
                     container(hover_zone)
-                        .align_x(iced::alignment::Horizontal::Left)
-                        .align_y(iced::alignment::Vertical::Top)
+                        .align_x(icy_ui::alignment::Horizontal::Left)
+                        .align_y(icy_ui::alignment::Vertical::Top)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()
                 };
 
-                iced::widget::stack![tile_content, toolbar_overlay].into()
+                icy_ui::widget::stack![tile_content, toolbar_overlay].into()
             }
         };
 
@@ -2231,7 +2231,7 @@ impl MainWindow {
         }
 
         match event {
-            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+            Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
                 // Context-dependent keys that can't be in command handler
                 // Space: shuffle mode or auto-scroll toggle
                 if let Key::Named(Named::Space) = key {
@@ -2344,9 +2344,9 @@ impl MainWindow {
 
     /// View for shuffle mode - fullscreen preview with SAUCE info overlay
     fn view_shuffle_mode(&self) -> Element<'_, Message> {
-        use iced::keyboard::{key::Named, Key};
-        use iced::widget::stack;
-        use iced::Event;
+        use icy_ui::keyboard::{key::Named, Key};
+        use icy_ui::widget::stack;
+        use icy_ui::Event;
 
         // Preview takes full screen - use monitor settings for proper display
         let monitor_settings = self.get_current_monitor_settings();
@@ -2366,7 +2366,7 @@ impl MainWindow {
 
         // Wrap in focus to handle keyboard events (Space/Enter for next, Escape to exit)
         let focusable_content = focus(content).on_event(|event, _id| {
-            if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+            if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                 match key {
                     Key::Named(Named::Space) | Key::Named(Named::Enter) => Some(Message::ShuffleNext),
                     Key::Named(Named::Escape) => Some(Message::Escape),
@@ -2381,7 +2381,7 @@ impl MainWindow {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_theme| container::Style {
-                background: Some(iced::Background::Color(iced::Color::BLACK)),
+                background: Some(icy_ui::Background::Color(icy_ui::Color::BLACK)),
                 ..Default::default()
             })
             .into()
@@ -2416,7 +2416,7 @@ impl icy_engine_gui::Window for MainWindow {
         MainWindow::theme(self)
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         MainWindow::handle_event(self, event)
     }
 }

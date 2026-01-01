@@ -3,7 +3,7 @@
 //! Contains the tool panel (grid for BitFont tools)
 //! Uses the shared GPU-accelerated tool panel component
 
-use iced::{Color, Element};
+use icy_ui::{Color, Element};
 
 use super::{BitFontTool, BITFONT_TOOL_SLOTS};
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage};

@@ -35,7 +35,7 @@ server-error-invalid-bind-address = Error: Invalid bind address '{ $addr }': { $
 server-error-runtime = Failed to create Tokio runtime
 server-error = Server error: { $error }
 
-menu-file=File
+menu-file=&File
 menu-new=New…
 menu-open=Open…
 menu-open_recent=Open Recent
@@ -133,7 +133,7 @@ menu-set-font-size=Set Font Size…
 font-size-width=Width
 font-size-height=Height
 
-menu-edit=Edit
+menu-edit=&Edit
 menu-undo=Undo
 menu-redo=Redo
 menu-undo-op=Undo: { $op }
@@ -176,12 +176,12 @@ menu-scroll_area_right=Scroll Area Right
 menu-mirror_mode=Mirror Mode
 menu-area_operations=Area
 
-menu-selection=Selection
+menu-selection=&Selection
 menu-select-all=Select All
 menu-select_nothing=Deselect
 menu-inverse_selection=Inverse
 
-menu-colors=Colors
+menu-colors=&Colors
 menu-ice-mode=Ice Mode
 menu-ice-mode-unrestricted=Unrestricted
 menu-ice-mode-blink=Blink
@@ -198,7 +198,7 @@ menu-next_bg_color=Next Background Color
 menu-prev_fg_color=Previous Foreground Color
 menu-prev_bg_color=Previous Background Color
 
-menu-view=View
+menu-view=&View
 menu-reference-image=Open Reference Image…
 menu-toggle-reference-image=Toggle Reference Image
 menu-clear-reference-image=Clear
@@ -257,12 +257,12 @@ set-font-xbin-select-title=Select font from XBin file
 set-font-xbin-font=Font { $slot }
 set-font-xbin-no-fonts=No fonts found in XBin file
 
-menu-help=Help
+menu-help=&Help
 menu-discuss=Discuss
 menu-open_log_file=Open log file
 menu-report-bug=Report Bug
 menu-about=About…
-menu-plugins=Plugins
+menu-plugins=&Plugins
 menu-no_plugins=No plugins found
 
 menu-upgrade_version=Upgrade to { $version }

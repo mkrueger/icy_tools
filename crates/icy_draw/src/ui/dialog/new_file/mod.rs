@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     mouse,
     widget::{
@@ -520,7 +520,7 @@ impl NewFileDialog {
         // Wrap in Focus widget for keyboard navigation
         let focusable_list: Element<'_, Message> = focus(list_with_scrollbar)
             .on_event(|event, _id| {
-                if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
                         Key::Named(Named::ArrowUp) => Some(Message::NewFileDialog(NewFileMessage::NavigateUp)),
                         Key::Named(Named::ArrowDown) => Some(Message::NewFileDialog(NewFileMessage::NavigateDown)),
@@ -545,9 +545,9 @@ impl NewFileDialog {
         container(focusable_list)
             .width(Length::Fixed(LEFT_PANEL_WIDTH))
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 4.0.into(),
@@ -564,9 +564,9 @@ impl NewFileDialog {
         let icon = text(template.icon()).size(32);
 
         // Title with standard header size
-        let title = text(template.title()).size(HEADER_TEXT_SIZE).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..iced::Font::default()
+        let title = text(template.title()).size(HEADER_TEXT_SIZE).font(icy_ui::Font {
+            weight: icy_ui::font::Weight::Bold,
+            ..icy_ui::Font::default()
         });
 
         // Editor type badge with consistent styling
@@ -579,9 +579,9 @@ impl NewFileDialog {
             ]
             .align_y(Alignment::Center),
         )
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.primary.divider)),
-            border: iced::Border {
+        .style(|theme: &icy_ui::Theme| container::Style {
+            background: Some(icy_ui::Background::Color(theme.primary.divider)),
+            border: icy_ui::Border {
                 radius: 4.0.into(),
                 ..Default::default()
             },
@@ -592,7 +592,7 @@ impl NewFileDialog {
         // Description
         let description = text(template.description())
             .size(TEXT_SIZE_NORMAL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.background.on.scale_alpha(0.8)),
             });
 
@@ -663,7 +663,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
         let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
         let items = self.dialog.visible_items.borrow();
 
-        let geometry = iced::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
+        let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
             for item in items.iter() {
@@ -698,7 +698,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                             content: label,
                             position: Point::new(12.0, y + (height - 14.0) / 2.0),
                             color: theme.background.on,
-                            size: iced::Pixels(14.0),
+                            size: icy_ui::Pixels(14.0),
                             ..Default::default()
                         });
                     }
@@ -719,7 +719,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                             content: template.icon().to_string(),
                             position: Point::new(TEMPLATE_INDENT, y + (height - 14.0) / 2.0),
                             color: text_color,
-                            size: iced::Pixels(14.0),
+                            size: icy_ui::Pixels(14.0),
                             ..Default::default()
                         });
 
@@ -728,7 +728,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                             content: template.title(),
                             position: Point::new(TEMPLATE_INDENT + 24.0, y + (height - 13.0) / 2.0),
                             color: text_color,
-                            size: iced::Pixels(13.0),
+                            size: icy_ui::Pixels(13.0),
                             ..Default::default()
                         });
                     }
@@ -741,9 +741,9 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
         vec![geometry]
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
@@ -797,7 +797,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                     }
                 }
             }
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let scroll_amount = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => -y * 30.0,
@@ -943,8 +943,8 @@ impl Dialog<Message> for NewFileDialog {
         None
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
             if let Key::Named(Named::Enter) = key {
                 return Some(DialogAction::CloseWith(Message::NewFileCreated(
                     self.selected_template,

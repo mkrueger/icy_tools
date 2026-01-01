@@ -4,13 +4,13 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use iced::advanced::image::Renderer as ImageRenderer;
-use iced::advanced::layout::{self, Layout};
-use iced::advanced::renderer::{self, Renderer as _};
-use iced::advanced::widget::{self, Widget};
-use iced::mouse::ScrollDelta;
-use iced::widget::{container, image as iced_image, stack};
-use iced::{mouse, Element, Event, Length, Rectangle, Size, Theme};
+use icy_ui::advanced::image::Renderer as ImageRenderer;
+use icy_ui::advanced::layout::{self, Layout};
+use icy_ui::advanced::renderer::{self, Renderer as _};
+use icy_ui::advanced::widget::{self, Widget};
+use icy_ui::mouse::ScrollDelta;
+use icy_ui::widget::{container, image as iced_image, stack};
+use icy_ui::{mouse, Element, Event, Length, Rectangle, Size, Theme};
 use icy_engine_gui::{HorizontalScrollbarOverlayCallback, ScalingMode, ScrollbarOverlayCallback, ScrollbarState, Viewport, ZoomMessage};
 use parking_lot::RwLock;
 
@@ -435,7 +435,7 @@ impl ImageViewer {
                 )
                 .view();
 
-                let vscrollbar_container = container(vscrollbar).width(Length::Fill).height(Length::Fill).align_x(iced::Alignment::End);
+                let vscrollbar_container = container(vscrollbar).width(Length::Fill).height(Length::Fill).align_x(icy_ui::Alignment::End);
                 layers.push(vscrollbar_container.into());
             }
 
@@ -454,7 +454,7 @@ impl ImageViewer {
                 )
                 .view();
 
-                let hscrollbar_container = container(hscrollbar).width(Length::Fill).height(Length::Fill).align_y(iced::Alignment::End);
+                let hscrollbar_container = container(hscrollbar).width(Length::Fill).height(Length::Fill).align_y(icy_ui::Alignment::End);
                 layers.push(hscrollbar_container.into());
             }
 
@@ -499,12 +499,12 @@ impl<Message> ImageViewWidget<Message> {
     }
 }
 
-impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<Message> {
+impl<Message: Clone> Widget<Message, Theme, icy_ui::Renderer> for ImageViewWidget<Message> {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fill)
     }
 
-    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &iced::Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &icy_ui::Renderer, limits: &layout::Limits) -> layout::Node {
         let size = limits.max();
         layout::Node::new(size)
     }
@@ -512,7 +512,7 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
     fn draw(
         &self,
         _tree: &widget::Tree,
-        renderer: &mut iced::Renderer,
+        renderer: &mut icy_ui::Renderer,
         _theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
@@ -525,11 +525,11 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         renderer.fill_quad(
             renderer::Quad {
                 bounds,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
-            iced::Color::from_rgb(0.08, 0.08, 0.08),
+            icy_ui::Color::from_rgb(0.08, 0.08, 0.08),
         );
 
         let zoomed = self.zoomed_size();
@@ -558,13 +558,13 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         // Use renderer's with_layer for clipping
         renderer.with_layer(bounds, |renderer| {
             // Draw the image using iced's image rendering
-            let image = iced::advanced::image::Image::<iced_image::Handle> {
+            let image = icy_ui::advanced::image::Image::<iced_image::Handle> {
                 handle: self.handle.clone(),
-                filter_method: iced::advanced::image::FilterMethod::Linear,
-                rotation: iced::Radians(0.0),
+                filter_method: icy_ui::advanced::image::FilterMethod::Linear,
+                rotation: icy_ui::Radians(0.0),
                 opacity: 1.0,
                 snap: true,
-                border_radius: iced::border::Radius::default(),
+                border_radius: icy_ui::border::Radius::default(),
             };
 
             renderer.draw_image(image, image_bounds, bounds);
@@ -574,12 +574,12 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
     fn update(
         &mut self,
         _tree: &mut widget::Tree,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
-        _renderer: &iced::Renderer,
-        _clipboard: &mut dyn iced::advanced::Clipboard,
-        shell: &mut iced::advanced::Shell<'_, Message>,
+        _renderer: &icy_ui::Renderer,
+        _clipboard: &mut dyn icy_ui::advanced::Clipboard,
+        shell: &mut icy_ui::advanced::Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -627,8 +627,8 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
                     return;
                 }
             }
-            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::{key::Named, Key};
+            Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
+                use icy_ui::keyboard::{key::Named, Key};
                 match key {
                     Key::Named(Named::Home) => {
                         shell.publish((self.on_message)(ImageViewerMessage::Home));
@@ -667,7 +667,7 @@ impl<Message: Clone> Widget<Message, Theme, iced::Renderer> for ImageViewWidget<
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
-        _renderer: &iced::Renderer,
+        _renderer: &icy_ui::Renderer,
     ) -> mouse::Interaction {
         // Check for cursor override (e.g., during drag)
         if let Some(cursor_override) = *self.cursor_icon.read() {

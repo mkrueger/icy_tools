@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, container, row, text, text_input, tooltip, Space},
     Element, Event, Length,
 };
@@ -284,7 +284,7 @@ impl NavigationBar {
         ]
         .spacing(2)
         .padding(6)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         // Add update link if available
         if update_available {
@@ -303,8 +303,8 @@ impl NavigationBar {
         container(content)
             .width(Length::Fill)
             .style(|theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 0.0,
                     radius: 0.0.into(),
@@ -321,18 +321,18 @@ impl Default for NavigationBar {
     }
 }
 
-fn nav_button_style(theme: &iced::Theme, status: button::Status) -> button::Style {
+fn nav_button_style(theme: &icy_ui::Theme, status: button::Status) -> button::Style {
     let (bg, text_color) = match status {
-        button::Status::Active => (iced::Color::TRANSPARENT, theme.primary.on),
+        button::Status::Active | button::Status::Selected => (icy_ui::Color::TRANSPARENT, theme.primary.on),
         button::Status::Hovered => (theme.accent.selected, theme.accent.on),
         button::Status::Pressed => (theme.accent.base, theme.accent.on),
-        button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
+        button::Status::Disabled => (icy_ui::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
     button::Style {
-        background: Some(iced::Background::Color(bg)),
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
-        border: iced::Border {
-            color: iced::Color::TRANSPARENT,
+        border: icy_ui::Border {
+            color: icy_ui::Color::TRANSPARENT,
             width: 0.0,
             radius: 4.0.into(),
         },
@@ -341,17 +341,17 @@ fn nav_button_style(theme: &iced::Theme, status: button::Status) -> button::Styl
 }
 
 /// Style for active toggle buttons (like 16colors when enabled)
-fn nav_button_active_style(theme: &iced::Theme, status: button::Status) -> button::Style {
+fn nav_button_active_style(theme: &icy_ui::Theme, status: button::Status) -> button::Style {
     let (bg, text_color) = match status {
-        button::Status::Active => (theme.accent.base, theme.accent.on),
+        button::Status::Active | button::Status::Selected => (theme.accent.base, theme.accent.on),
         button::Status::Hovered => (theme.accent.hover, theme.primary.on),
         button::Status::Pressed => (theme.accent.selected, theme.accent.on),
         button::Status::Disabled => (theme.secondary.base, theme.secondary.on.scale_alpha(0.5)),
     };
     button::Style {
-        background: Some(iced::Background::Color(bg)),
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
-        border: iced::Border {
+        border: icy_ui::Border {
             color: theme.accent.hover,
             width: 1.0,
             radius: 4.0.into(),
@@ -361,7 +361,7 @@ fn nav_button_active_style(theme: &iced::Theme, status: button::Status) -> butto
 }
 
 /// Style for the path input field
-fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: bool) -> text_input::Style {
+fn path_input_style(theme: &icy_ui::Theme, status: text_input::Status, is_valid: bool) -> text_input::Style {
     let danger_color = theme.destructive.base;
 
     let (bg, border_color) = match status {
@@ -380,8 +380,8 @@ fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: b
         text_input::Status::Disabled => (theme.secondary.base, theme.primary.divider),
     };
     text_input::Style {
-        background: iced::Background::Color(bg),
-        border: iced::Border {
+        background: icy_ui::Background::Color(bg),
+        border: icy_ui::Border {
             color: border_color,
             width: if is_valid { 1.0 } else { 2.0 },
             radius: 4.0.into(),
@@ -394,21 +394,21 @@ fn path_input_style(theme: &iced::Theme, status: text_input::Status, is_valid: b
 }
 
 /// Style for the update available link button
-fn update_link_style(_theme: &iced::Theme, status: button::Status) -> button::Style {
+fn update_link_style(_theme: &icy_ui::Theme, status: button::Status) -> button::Style {
     // Use the same info blue color as icy_term: Color::from_rgb(0.2, 0.6, 1.0)
-    let info_color = iced::Color::from_rgb(0.2, 0.6, 1.0);
+    let info_color = icy_ui::Color::from_rgb(0.2, 0.6, 1.0);
 
     let (bg, text_color) = match status {
-        button::Status::Active => (iced::Color::TRANSPARENT, info_color),
-        button::Status::Hovered => (iced::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1), info_color),
-        button::Status::Pressed => (iced::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15), info_color),
-        button::Status::Disabled => (iced::Color::TRANSPARENT, info_color.scale_alpha(0.3)),
+        button::Status::Active | button::Status::Selected => (icy_ui::Color::TRANSPARENT, info_color),
+        button::Status::Hovered => (icy_ui::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1), info_color),
+        button::Status::Pressed => (icy_ui::Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15), info_color),
+        button::Status::Disabled => (icy_ui::Color::TRANSPARENT, info_color.scale_alpha(0.3)),
     };
     button::Style {
-        background: Some(iced::Background::Color(bg)),
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
-        border: iced::Border {
-            color: iced::Color::TRANSPARENT,
+        border: icy_ui::Border {
+            color: icy_ui::Color::TRANSPARENT,
             width: 0.0,
             radius: 4.0.into(),
         },

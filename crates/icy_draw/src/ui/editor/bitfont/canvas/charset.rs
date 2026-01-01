@@ -1,6 +1,6 @@
 //! Character set canvas for BitFont editor
 
-use iced::{
+use icy_ui::{
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Frame, Path, Stroke},
     Color, Point, Rectangle, Size,
@@ -32,7 +32,7 @@ pub struct CharSetCanvas<'a> {
 impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
     type State = CharSetCanvasState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Get colors from palette
@@ -266,7 +266,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<BitFontEditorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<BitFontEditorMessage>> {
         let cursor_pos = cursor.position_in(bounds);
 
         // Update hover state first
@@ -282,7 +282,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch_code);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed {
+                    icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                         button: mouse::Button::Left, ..
                     }) => {
                         state.is_dragging = true;
@@ -290,12 +290,12 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                         // SelectGlyph sets anchor position and focus to CharSet
                         return Some(Action::publish(BitFontEditorMessage::SelectGlyphAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased {
+                    icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                         button: mouse::Button::Left, ..
                     }) => {
                         state.is_dragging = false;
                     }
-                    iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                         if state.is_dragging {
                             // Extend charset selection while dragging
                             // Uses anchor/lead: anchor stays fixed, lead follows cursor
@@ -312,7 +312,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                if let icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                     button: mouse::Button::Left, ..
                 }) = event
                 {
@@ -326,7 +326,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
         } else {
             // Cursor left the canvas entirely
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+            if let icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                 button: mouse::Button::Left, ..
             }) = event
             {

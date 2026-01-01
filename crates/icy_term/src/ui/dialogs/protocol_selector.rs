@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Alignment, Border, Color, Element, Length,
 };
@@ -70,7 +70,7 @@ impl ProtocolSelectorState {
                         container(
                             text(protocol.get_name())
                                 .size(PROTOCOL_NAME_SIZE)
-                                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                                     color: Some(theme.accent.hover),
                                     ..Default::default()
                                 })
@@ -78,7 +78,7 @@ impl ProtocolSelectorState {
                         .width(Length::Fixed(120.0)),
                         text(description)
                             .size(PROTOCOL_DESCRIPTION_SIZE)
-                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                                 color: Some(theme.button.on),
                                 ..Default::default()
                             })
@@ -147,9 +147,9 @@ fn get_protocol_description(protocol: &TransferProtocol) -> String {
     }
 }
 
-fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button::Style {
+fn protocol_button_style(theme: &icy_ui::Theme, status: button::Status) -> button::Style {
     let base = button::Style {
-        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
         text_color: theme.background.on,
         border: Border {
             color: Color::TRANSPARENT,
@@ -158,12 +158,13 @@ fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button:
         },
         shadow: Default::default(),
         snap: false,
+        ..Default::default()
     };
 
     match status {
-        button::Status::Active => base,
+        button::Status::Active | button::Status::Selected => base,
         button::Status::Hovered => button::Style {
-            background: Some(iced::Background::Color(Color::from_rgba(
+            background: Some(icy_ui::Background::Color(Color::from_rgba(
                 theme.accent.selected.r,
                 theme.accent.selected.g,
                 theme.accent.selected.b,
@@ -172,7 +173,7 @@ fn protocol_button_style(theme: &iced::Theme, status: button::Status) -> button:
             ..base
         },
         button::Status::Pressed => button::Style {
-            background: Some(iced::Background::Color(theme.accent.selected)),
+            background: Some(icy_ui::Background::Color(theme.accent.selected)),
             ..base
         },
         button::Status::Disabled => button::Style {

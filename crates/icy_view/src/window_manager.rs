@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use parking_lot::Mutex;
 
-use iced::{keyboard, widget::space, window, Element, Event, Size, Subscription, Task, Theme, Vector};
+use icy_ui::{keyboard, widget::space, window, Element, Event, Size, Subscription, Task, Theme, Vector};
 
 use crate::ui::{MainWindow, Message};
 use crate::Options;
@@ -10,12 +10,12 @@ use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
 use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 
-fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+fn load_window_icon(png_bytes: &[u8]) -> Result<icy_ui::window::Icon, Box<dyn std::error::Error>> {
     let img = image::load_from_memory(png_bytes)?;
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
-    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+    Ok(icy_ui::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }
 
 // Generate the WindowCommands struct with handle() method
@@ -48,7 +48,7 @@ pub enum WindowManagerMessage {
     WindowClosed(window::Id),
     WindowMessage(window::Id, Message),
     _TitleChanged(window::Id, String),
-    Event(window::Id, iced::Event),
+    Event(window::Id, icy_ui::Event),
     AnimationTick,
 }
 
@@ -138,8 +138,8 @@ impl WindowManager {
 
             WindowManagerMessage::CloseWindow(id) => window::close(id),
 
-            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
-            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+            WindowManagerMessage::FocusNext => icy_ui::widget::operation::focus_next(),
+            WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
 
             WindowManagerMessage::WindowOpened(id) => {
                 let (window, initial_message) = MainWindow::new(
@@ -228,15 +228,15 @@ impl WindowManager {
 
         let subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
-            iced::event::listen_with(|event, _status, window_id| {
+            icy_ui::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events - pass through for tile grid hover/click handling
-                    Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::CursorLeft) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::CursorLeft) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip other mouse events
                     Event::Mouse(_) => None,
 
@@ -263,7 +263,7 @@ impl WindowManager {
                 }
             }),
             // important for updating slow blinking and smooth scroll animations
-            iced::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick),
+            icy_ui::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick),
         ];
 
         Subscription::batch(subs)

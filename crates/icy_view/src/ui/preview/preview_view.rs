@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
-use iced::Event;
-use iced::{
+use icy_ui::Event;
+use icy_ui::{
     widget::{column, container, image as iced_image, stack, text, Space},
     Alignment, Element, Length, Task,
 };
@@ -526,7 +526,7 @@ impl PreviewView {
             }
             PreviewMessage::ImageViewerMessage(msg) => {
                 use super::image_viewer::ImageViewerMessage;
-                use iced::mouse;
+                use icy_ui::mouse;
 
                 // Handle drag messages with shared drag_scroll state
                 match &msg {
@@ -689,7 +689,7 @@ impl PreviewView {
                 Task::none()
             }
             PreviewMessage::TerminalMessage(msg) => {
-                use iced::mouse;
+                use icy_ui::mouse;
 
                 match msg {
                     icy_engine_gui::TerminalMessage::Press(evt) => {
@@ -806,39 +806,39 @@ impl PreviewView {
         let monitor_settings = settings.unwrap_or_else(|| self.monitor_settings.clone());
 
         match &self.preview_mode {
-            PreviewMode::None => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-no-file-selected")))
+            PreviewMode::None => container(icy_ui::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-no-file-selected")))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                     ..Default::default()
                 })
                 .into(),
-            PreviewMode::Loading => container(iced::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-loading")))
+            PreviewMode::Loading => container(icy_ui::widget::text(fl!(crate::LANGUAGE_LOADER, "preview-loading")))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                     ..Default::default()
                 })
                 .into(),
             PreviewMode::Error(msg) => {
                 // Create a nice error display with icon and styled text
-                let error_icon = text("⚠").size(48).color(iced::Color::from_rgb(0.9, 0.3, 0.3));
+                let error_icon = text("⚠").size(48).color(icy_ui::Color::from_rgb(0.9, 0.3, 0.3));
 
                 let error_title = text(fl!(crate::LANGUAGE_LOADER, "preview-error-title"))
                     .size(20)
-                    .color(iced::Color::from_rgb(0.9, 0.3, 0.3));
+                    .color(icy_ui::Color::from_rgb(0.9, 0.3, 0.3));
 
-                let error_message = text(msg.clone()).size(14).color(iced::Color::from_rgb(0.7, 0.7, 0.7));
+                let error_message = text(msg.clone()).size(14).color(icy_ui::Color::from_rgb(0.7, 0.7, 0.7));
 
                 let file_hint = if let Some(ref path) = self.current_file {
                     let filename = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                    text(filename).size(12).color(iced::Color::from_rgb(0.5, 0.5, 0.5))
+                    text(filename).size(12).color(icy_ui::Color::from_rgb(0.5, 0.5, 0.5))
                 } else {
                     text("").size(12)
                 };
@@ -860,8 +860,8 @@ impl PreviewView {
                     .height(Length::Fill)
                     .center_x(Length::Fill)
                     .center_y(Length::Fill)
-                    .style(|theme: &iced::Theme| container::Style {
-                        background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                    .style(|theme: &icy_ui::Theme| container::Style {
+                        background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                         ..Default::default()
                     })
                     .into()
@@ -872,21 +872,21 @@ impl PreviewView {
                     container(viewer.view(PreviewMessage::ImageViewerMessage))
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .style(|theme: &iced::Theme| container::Style {
-                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                             ..Default::default()
                         })
                         .into()
                 } else {
                     // Fallback: simple centered image (shouldn't happen normally)
-                    let img = iced_image::Image::new(_handle.clone()).content_fit(iced::ContentFit::Contain);
+                    let img = iced_image::Image::new(_handle.clone()).content_fit(icy_ui::ContentFit::Contain);
                     container(img)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .center_x(Length::Fill)
                         .center_y(Length::Fill)
-                        .style(|theme: &iced::Theme| container::Style {
-                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                             ..Default::default()
                         })
                         .into()
@@ -922,8 +922,8 @@ impl PreviewView {
                     container(stack(layers))
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .style(|theme: &iced::Theme| container::Style {
-                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                             ..Default::default()
                         })
                         .into()
@@ -931,8 +931,8 @@ impl PreviewView {
                     container(terminal_view)
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .style(|theme: &iced::Theme| container::Style {
-                            background: Some(iced::Background::Color(theme::main_area_background(theme))),
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                             ..Default::default()
                         })
                         .into()

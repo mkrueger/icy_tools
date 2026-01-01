@@ -3,7 +3,7 @@
 //! Combined dialog for editing layer properties and size.
 //! Replaces the separate EditLayerDialog and ResizeLayerDialog from the egui version.
 
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -185,7 +185,7 @@ impl Dialog<Message> for EditLayerDialog {
             .width(Length::Fixed(80.0));
 
         let width_error = if !width_valid && !self.width.is_empty() {
-            text("≥1").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("≥1").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {
@@ -203,7 +203,7 @@ impl Dialog<Message> for EditLayerDialog {
             .width(Length::Fixed(80.0));
 
         let height_error = if !height_valid && !self.height.is_empty() {
-            text("≥1").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("≥1").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {

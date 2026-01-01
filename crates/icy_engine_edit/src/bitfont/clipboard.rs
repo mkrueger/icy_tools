@@ -7,8 +7,8 @@
 //! The clipboard operations return Tasks that need to be executed
 //! by the iced runtime.
 
-use iced::clipboard::STANDARD;
-use iced::Task;
+use icy_ui::clipboard::STANDARD;
+use icy_ui::Task;
 
 /// Custom clipboard type identifier for BitFont pixel data
 pub const BITFONT_CLIPBOARD_TYPE: &str = "application/x-icy-bitfont";

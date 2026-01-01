@@ -27,8 +27,8 @@ pub enum SelectionDrag {
 
 impl SelectionDrag {
     /// Convert to mouse cursor interaction for resize handles
-    pub fn to_cursor_interaction(self) -> Option<iced::mouse::Interaction> {
-        use iced::mouse::Interaction;
+    pub fn to_cursor_interaction(self) -> Option<icy_ui::mouse::Interaction> {
+        use icy_ui::mouse::Interaction;
         match self {
             SelectionDrag::None | SelectionDrag::Create => None,
             SelectionDrag::Move => Some(Interaction::Grab),

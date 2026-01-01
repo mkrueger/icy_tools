@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use super::{CRTShaderProgram, TextureSliceData};
 use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
-use iced::widget::shader;
-use iced::Element;
+use icy_ui::widget::shader;
+use icy_ui::Element;
 use icy_engine::GraphicsType;
 use icy_engine::MouseState;
 use icy_engine::Position;
@@ -324,8 +324,8 @@ pub fn create_crt_shader<'a>(
 ) -> Element<'a, TerminalMessage> {
     // Let the parent wrapper decide sizing; shader can just be Fill.
     shader(CRTShaderProgram::new(term, monitor_settings, editor_markers))
-        .width(iced::Length::Fill)
-        .height(iced::Length::Fill)
+        .width(icy_ui::Length::Fill)
+        .height(icy_ui::Length::Fill)
         .into()
 }
 

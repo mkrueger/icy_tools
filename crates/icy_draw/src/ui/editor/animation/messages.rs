@@ -1,13 +1,13 @@
 //! Animation editor messages
 
-use iced::widget::pane_grid;
+use icy_ui::widget::pane_grid;
 
 /// Messages for the animation editor
 #[derive(Debug, Clone)]
 pub enum AnimationEditorMessage {
     // === Script editing ===
     /// Script content changed
-    ScriptAction(iced::widget::text_editor::Action),
+    ScriptAction(icy_ui::widget::text_editor::Action),
 
     // === Playback controls ===
     /// Play/pause toggle

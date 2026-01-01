@@ -10,7 +10,7 @@
 // Allow unused items - this module provides a complete API for future use.
 #![allow(dead_code)]
 
-use iced::{Point, Rectangle};
+use icy_ui::{Point, Rectangle};
 use icy_engine::BitFont;
 
 use crate::ui::editor::ansi::constants::{TOP_CONTROL_HEIGHT, TOP_CONTROL_SHADOW_PADDING};

@@ -4,7 +4,7 @@
 //! including ANSI, ASCII, XBin, and image formats (PNG, GIF, etc.).
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, container, pick_list, row, scrollable, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -600,7 +600,7 @@ impl ExportDialogState {
             row![
                 error_tooltip(error.clone()),
                 Space::new().width(4.0),
-                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
             ]
@@ -608,7 +608,7 @@ impl ExportDialogState {
         } else {
             row![text(format!("→ {}", self.get_temp_full_path().display()))
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style { color: Some(theme.button.on) })]
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) })]
             .into()
         };
 

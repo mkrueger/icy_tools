@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-use iced::{
+use icy_ui::{
     advanced::{
         image::{self as adv_image, Renderer as _},
         layout::{self, Layout},
@@ -213,19 +213,19 @@ impl<'a> FontListWidget<'a> {
         }
     }
 
-    fn draw_background(&self, r: &mut iced::Renderer, theme: &Theme, bounds: Rectangle) {
+    fn draw_background(&self, r: &mut icy_ui::Renderer, theme: &Theme, bounds: Rectangle) {
         r.fill_quad(
             renderer::Quad {
                 bounds,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
             theme.secondary.base,
         );
     }
 
-    fn draw_empty_state(&self, r: &mut iced::Renderer, theme: &Theme, bounds: Rectangle) {
+    fn draw_empty_state(&self, r: &mut icy_ui::Renderer, theme: &Theme, bounds: Rectangle) {
         // Center horizontally + vertically (as a group) within the list area.
         let show_filter_hint = self.has_filter;
         let line_h = 28.0;
@@ -241,39 +241,39 @@ impl<'a> FontListWidget<'a> {
         };
 
         let count_rect = line_bounds(start_y);
-        let count_text = iced::advanced::text::Text {
+        let count_text = icy_ui::advanced::text::Text {
             content: "0 fonts".to_string(),
             bounds: count_rect.size(),
-            size: iced::Pixels(TEXT_SIZE_NORMAL + 4.0),
-            line_height: iced::advanced::text::LineHeight::Relative(1.0),
-            font: iced::Font::default(),
-            align_x: iced::advanced::text::Alignment::Center,
-            align_y: iced::alignment::Vertical::Center,
-            shaping: iced::advanced::text::Shaping::Advanced,
-            wrapping: iced::advanced::text::Wrapping::None,
+            size: icy_ui::Pixels(TEXT_SIZE_NORMAL + 4.0),
+            line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+            font: icy_ui::Font::default(),
+            align_x: icy_ui::advanced::text::Alignment::Center,
+            align_y: icy_ui::alignment::Vertical::Center,
+            shaping: icy_ui::advanced::text::Shaping::Advanced,
+            wrapping: icy_ui::advanced::text::Wrapping::None,
             hint_factor: Some(0.0),
         };
         r.fill_text(count_text, Point::new(count_rect.x, count_rect.y), theme.primary.on, count_rect);
 
         if show_filter_hint {
             let hint_rect = line_bounds(start_y + line_h + gap);
-            let empty_text = iced::advanced::text::Text {
+            let empty_text = icy_ui::advanced::text::Text {
                 content: "No fonts match filter".to_string(),
                 bounds: hint_rect.size(),
-                size: iced::Pixels(TEXT_SIZE_SMALL),
-                line_height: iced::advanced::text::LineHeight::Relative(1.0),
-                font: iced::Font::default(),
-                align_x: iced::advanced::text::Alignment::Center,
-                align_y: iced::alignment::Vertical::Center,
-                shaping: iced::advanced::text::Shaping::Advanced,
-                wrapping: iced::advanced::text::Wrapping::None,
+                size: icy_ui::Pixels(TEXT_SIZE_SMALL),
+                line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+                font: icy_ui::Font::default(),
+                align_x: icy_ui::advanced::text::Alignment::Center,
+                align_y: icy_ui::alignment::Vertical::Center,
+                shaping: icy_ui::advanced::text::Shaping::Advanced,
+                wrapping: icy_ui::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
             r.fill_text(empty_text, Point::new(hint_rect.x, hint_rect.y), theme.secondary.on, hint_rect);
         }
     }
 
-    fn draw_selection_background(&self, r: &mut iced::Renderer, theme: &Theme, row_bounds: Rectangle, is_selected: bool, is_cursor: bool) {
+    fn draw_selection_background(&self, r: &mut icy_ui::Renderer, theme: &Theme, row_bounds: Rectangle, is_selected: bool, is_cursor: bool) {
         if !(is_selected || is_cursor) {
             return;
         }
@@ -283,15 +283,15 @@ impl<'a> FontListWidget<'a> {
         r.fill_quad(
             renderer::Quad {
                 bounds: row_bounds,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
             bg,
         );
     }
 
-    fn draw_separator(&self, r: &mut iced::Renderer, row_bounds: Rectangle) {
+    fn draw_separator(&self, r: &mut icy_ui::Renderer, row_bounds: Rectangle) {
         r.fill_quad(
             renderer::Quad {
                 bounds: Rectangle {
@@ -300,8 +300,8 @@ impl<'a> FontListWidget<'a> {
                     width: row_bounds.width,
                     height: 1.0,
                 },
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
             Color::from_rgba8(100, 100, 100, 0.25),
@@ -321,7 +321,7 @@ impl<'a> FontListWidget<'a> {
         (preview_area.x - left_x - PREVIEW_GAP).max(0.0)
     }
 
-    fn draw_name(&self, r: &mut iced::Renderer, theme: &Theme, left_x: f32, top_y: f32, left_area_w: f32, font_name: &str) {
+    fn draw_name(&self, r: &mut icy_ui::Renderer, theme: &Theme, left_x: f32, top_y: f32, left_area_w: f32, font_name: &str) {
         let name_clip = Rectangle {
             x: left_x,
             y: top_y,
@@ -329,23 +329,23 @@ impl<'a> FontListWidget<'a> {
             height: 24.0,
         };
 
-        let name_text = iced::advanced::text::Text {
+        let name_text = icy_ui::advanced::text::Text {
             content: font_name.to_string(),
             bounds: Size::new(left_area_w, 24.0),
-            size: iced::Pixels(TEXT_SIZE_NORMAL),
-            line_height: iced::advanced::text::LineHeight::Relative(1.0),
-            font: iced::Font::default(),
-            align_x: iced::advanced::text::Alignment::Left,
-            align_y: iced::alignment::Vertical::Top,
-            shaping: iced::advanced::text::Shaping::Advanced,
-            wrapping: iced::advanced::text::Wrapping::None,
+            size: icy_ui::Pixels(TEXT_SIZE_NORMAL),
+            line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+            font: icy_ui::Font::default(),
+            align_x: icy_ui::advanced::text::Alignment::Left,
+            align_y: icy_ui::alignment::Vertical::Top,
+            shaping: icy_ui::advanced::text::Shaping::Advanced,
+            wrapping: icy_ui::advanced::text::Wrapping::None,
             hint_factor: Some(0.0),
         };
 
         r.fill_text(name_text, Point::new(left_x, top_y), theme.primary.on, name_clip);
     }
 
-    fn draw_charset_preview(&self, r: &mut iced::Renderer, theme: &Theme, bounds: Rectangle, charset_bounds: Rectangle, font: &retrofont::Font) {
+    fn draw_charset_preview(&self, r: &mut icy_ui::Renderer, theme: &Theme, bounds: Rectangle, charset_bounds: Rectangle, font: &retrofont::Font) {
         let supported_color = theme.background.on;
         let unsupported_color = theme.secondary.on;
 
@@ -362,16 +362,16 @@ impl<'a> FontListWidget<'a> {
                 let x = charset_bounds.x + col as f32 * char_w;
                 let y = charset_bounds.y + row as f32 * line_h;
 
-                let t = iced::advanced::text::Text {
+                let t = icy_ui::advanced::text::Text {
                     content: ch.to_string(),
                     bounds: Size::new(char_w, line_h),
-                    size: iced::Pixels(TEXT_SIZE_SMALL),
-                    line_height: iced::advanced::text::LineHeight::Relative(1.15),
-                    font: iced::Font::MONOSPACE,
-                    align_x: iced::advanced::text::Alignment::Left,
-                    align_y: iced::alignment::Vertical::Top,
-                    shaping: iced::advanced::text::Shaping::Advanced,
-                    wrapping: iced::advanced::text::Wrapping::None,
+                    size: icy_ui::Pixels(TEXT_SIZE_SMALL),
+                    line_height: icy_ui::advanced::text::LineHeight::Relative(1.15),
+                    font: icy_ui::Font::MONOSPACE,
+                    align_x: icy_ui::advanced::text::Alignment::Left,
+                    align_y: icy_ui::alignment::Vertical::Top,
+                    shaping: icy_ui::advanced::text::Shaping::Advanced,
+                    wrapping: icy_ui::advanced::text::Wrapping::None,
                     hint_factor: Some(0.0),
                 };
                 rr.fill_text(t, Point::new(x, y), color, bounds);
@@ -388,7 +388,7 @@ impl<'a> FontListWidget<'a> {
         });
     }
 
-    fn draw_preview(&self, r: &mut iced::Renderer, theme: &Theme, list_bounds: Rectangle, preview_area: Rectangle, preview: Option<&crate::FontPreview>) {
+    fn draw_preview(&self, r: &mut icy_ui::Renderer, theme: &Theme, list_bounds: Rectangle, preview_area: Rectangle, preview: Option<&crate::FontPreview>) {
         let Some(preview_clip) = Self::intersect(preview_area, list_bounds) else {
             return;
         };
@@ -397,8 +397,8 @@ impl<'a> FontListWidget<'a> {
             r2.fill_quad(
                 renderer::Quad {
                     bounds: preview_area,
-                    border: iced::Border::default().rounded(2.0).width(1.0).color(Color::from_rgba8(50, 50, 50, 0.6)),
-                    shadow: iced::Shadow::default(),
+                    border: icy_ui::Border::default().rounded(2.0).width(1.0).color(Color::from_rgba8(50, 50, 50, 0.6)),
+                    shadow: icy_ui::Shadow::default(),
                     snap: true,
                 },
                 Color::from_rgb(0.05, 0.05, 0.05),
@@ -417,27 +417,27 @@ impl<'a> FontListWidget<'a> {
                     height: h,
                 };
 
-                let image = adv_image::Image::<iced::widget::image::Handle> {
+                let image = adv_image::Image::<icy_ui::widget::image::Handle> {
                     handle: preview.handle.clone(),
                     filter_method: adv_image::FilterMethod::Linear,
-                    rotation: iced::Radians(0.0),
+                    rotation: icy_ui::Radians(0.0),
                     opacity: 1.0,
                     snap: true,
-                    border_radius: iced::border::Radius::default(),
+                    border_radius: icy_ui::border::Radius::default(),
                 };
 
                 r2.draw_image(image, img_bounds, preview_clip);
             } else {
-                let ph = iced::advanced::text::Text {
+                let ph = icy_ui::advanced::text::Text {
                     content: "Loading…".to_string(),
                     bounds: preview_area.size(),
-                    size: iced::Pixels(TEXT_SIZE_SMALL),
-                    line_height: iced::advanced::text::LineHeight::Relative(1.0),
-                    font: iced::Font::default(),
-                    align_x: iced::advanced::text::Alignment::Center,
-                    align_y: iced::alignment::Vertical::Center,
-                    shaping: iced::advanced::text::Shaping::Advanced,
-                    wrapping: iced::advanced::text::Wrapping::None,
+                    size: icy_ui::Pixels(TEXT_SIZE_SMALL),
+                    line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+                    font: icy_ui::Font::default(),
+                    align_x: icy_ui::advanced::text::Alignment::Center,
+                    align_y: icy_ui::alignment::Vertical::Center,
+                    shaping: icy_ui::advanced::text::Shaping::Advanced,
+                    wrapping: icy_ui::advanced::text::Wrapping::None,
                     hint_factor: Some(0.0),
                 };
 
@@ -448,7 +448,7 @@ impl<'a> FontListWidget<'a> {
 
     fn draw_row(
         &self,
-        r: &mut iced::Renderer,
+        r: &mut icy_ui::Renderer,
         theme: &Theme,
         list_bounds: Rectangle,
         row_bounds: Rectangle,
@@ -485,7 +485,7 @@ impl<'a> FontListWidget<'a> {
         self.draw_preview(r, theme, list_bounds, preview_area, lib.get_preview(font_idx));
     }
 
-    fn draw_badge(&self, renderer: &mut iced::Renderer, _theme: &Theme, bounds: Rectangle, label: &str, color: Color) {
+    fn draw_badge(&self, renderer: &mut icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, label: &str, color: Color) {
         let badge_w = 58.0;
         let badge_h = 18.0;
         let x = bounds.x + bounds.width - badge_w - ROW_PADDING_X;
@@ -499,23 +499,23 @@ impl<'a> FontListWidget<'a> {
                     width: badge_w,
                     height: badge_h,
                 },
-                border: iced::Border::default().rounded(4.0).width(1.0).color(color),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default().rounded(4.0).width(1.0).color(color),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
             Color::from_rgba(color.r, color.g, color.b, 0.18),
         );
 
-        let text = iced::advanced::text::Text {
+        let text = icy_ui::advanced::text::Text {
             content: label.to_string(),
             bounds: Size::new(badge_w, badge_h),
-            size: iced::Pixels(TEXT_SIZE_SMALL),
-            line_height: iced::advanced::text::LineHeight::Relative(1.0),
-            font: iced::Font::default(),
-            align_x: iced::advanced::text::Alignment::Center,
-            align_y: iced::alignment::Vertical::Center,
-            shaping: iced::advanced::text::Shaping::Advanced,
-            wrapping: iced::advanced::text::Wrapping::None,
+            size: icy_ui::Pixels(TEXT_SIZE_SMALL),
+            line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+            font: icy_ui::Font::default(),
+            align_x: icy_ui::advanced::text::Alignment::Center,
+            align_y: icy_ui::alignment::Vertical::Center,
+            shaping: icy_ui::advanced::text::Shaping::Advanced,
+            wrapping: icy_ui::advanced::text::Wrapping::None,
             hint_factor: Some(0.0),
         };
 
@@ -529,12 +529,12 @@ impl<'a> FontListWidget<'a> {
     }
 }
 
-impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
+impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fixed(LIST_HEIGHT))
     }
 
-    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &iced::Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &icy_ui::Renderer, limits: &layout::Limits) -> layout::Node {
         let size = limits.max();
         layout::Node::new(size)
     }
@@ -542,7 +542,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
     fn draw(
         &self,
         _tree: &widget::Tree,
-        renderer: &mut iced::Renderer,
+        renderer: &mut icy_ui::Renderer,
         theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
@@ -598,12 +598,12 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
     fn update(
         &mut self,
         _tree: &mut widget::Tree,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
-        _renderer: &iced::Renderer,
-        _clipboard: &mut dyn iced::advanced::Clipboard,
-        shell: &mut iced::advanced::Shell<'_, Message>,
+        _renderer: &icy_ui::Renderer,
+        _clipboard: &mut dyn icy_ui::advanced::Clipboard,
+        shell: &mut icy_ui::advanced::Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -644,7 +644,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
                 }
             }
             // Prefetch previews when anything causes redraws (scrollbar drag/animation)
-            Event::Window(iced::window::Event::RedrawRequested(_)) => {
+            Event::Window(icy_ui::window::Event::RedrawRequested(_)) => {
                 let _changed = self.viewport.borrow().changed.swap(false, Ordering::Relaxed);
 
                 // Sync preview generation (fast) for visible items.
@@ -680,7 +680,7 @@ impl Widget<Message, Theme, iced::Renderer> for FontListWidget<'_> {
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
-        _renderer: &iced::Renderer,
+        _renderer: &icy_ui::Renderer,
     ) -> mouse::Interaction {
         let bounds = layout.bounds();
         if cursor.is_over(bounds) {
@@ -945,9 +945,9 @@ impl TdfFontSelectorDialog {
     }
 
     /// Handle keyboard navigation
-    fn handle_key(&mut self, key: &iced::keyboard::Key, _modifiers: &iced::keyboard::Modifiers) -> bool {
-        use iced::keyboard::key::Named;
-        use iced::keyboard::Key;
+    fn handle_key(&mut self, key: &icy_ui::keyboard::Key, _modifiers: &icy_ui::keyboard::Modifiers) -> bool {
+        use icy_ui::keyboard::key::Named;
+        use icy_ui::keyboard::Key;
 
         if self.filtered_fonts.is_empty() {
             return false;
@@ -1186,11 +1186,11 @@ impl Dialog<Message> for TdfFontSelectorDialog {
         DialogAction::CloseWith(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)))
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
-        use iced::keyboard::key::Named;
-        use iced::keyboard::Key;
+    fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
+        use icy_ui::keyboard::key::Named;
+        use icy_ui::keyboard::Key;
 
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
             let msg = match key {
                 Key::Named(Named::ArrowUp) => Some(TdfFontSelectorMessage::KeyUp),
                 Key::Named(Named::ArrowDown) => Some(TdfFontSelectorMessage::KeyDown),

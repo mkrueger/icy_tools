@@ -3,7 +3,7 @@
 //! Provides consistent styling for SAUCE metadata fields (title, author, group)
 //! across all icy_tools applications.
 
-use iced::{widget::text_input, Color, Theme};
+use icy_ui::{widget::text_input, Color, Theme};
 
 /// SAUCE field color category for dialog styling
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,8 +66,8 @@ pub fn sauce_input_style(field: SauceFieldColor) -> impl Fn(&Theme, text_input::
     move |theme: &Theme, _status: text_input::Status| {
         let value_color = get_sauce_color(field, theme);
         text_input::Style {
-            background: iced::Background::Color(theme.primary.base),
-            border: iced::Border {
+            background: icy_ui::Background::Color(theme.primary.base),
+            border: icy_ui::Border {
                 color: theme.secondary.base,
                 width: 1.0,
                 radius: 4.0.into(),
@@ -92,8 +92,8 @@ pub fn sauce_input_style(field: SauceFieldColor) -> impl Fn(&Theme, text_input::
 /// ```
 pub fn danger_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style + Copy {
     |theme: &Theme, _status: text_input::Status| text_input::Style {
-        background: iced::Background::Color(theme.primary.base),
-        border: iced::Border {
+        background: icy_ui::Background::Color(theme.primary.base),
+        border: icy_ui::Border {
             color: theme.destructive.base,
             width: 1.5,
             radius: 4.0.into(),
@@ -110,8 +110,8 @@ pub fn danger_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input
 /// This returns a closure that can be used with `.style()` on text_input widgets.
 pub fn default_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style + Copy {
     |theme: &Theme, _status: text_input::Status| text_input::Style {
-        background: iced::Background::Color(theme.primary.base),
-        border: iced::Border {
+        background: icy_ui::Background::Color(theme.primary.base),
+        border: icy_ui::Border {
             color: theme.secondary.base,
             width: 1.0,
             radius: 4.0.into(),

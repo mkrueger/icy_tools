@@ -1,6 +1,6 @@
 use crate::EXTERNAL_COMMAND_COUNT;
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, row, text, text_input},
     Alignment, Element, Length, Theme,
 };

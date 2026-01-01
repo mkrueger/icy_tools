@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, pick_list, row},
     Alignment, Length,
 };
@@ -87,7 +87,7 @@ pub fn get_default_screen_mode(terminal_type: TerminalEmulation) -> ScreenMode {
 pub fn build_terminal_settings_ui<'a, M: Clone + 'static>(
     settings: &TerminalSettings,
     on_change: impl Fn(TerminalSettingsChange) -> M + 'a + Clone,
-) -> iced::widget::Column<'a, M> {
+) -> icy_ui::widget::Column<'a, M> {
     let terminal_type_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-terminal_type");
     let screen_mode_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-screen_mode");
     let ansi_music_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-music-option");

@@ -2,8 +2,8 @@ use super::*;
 use crate::{section_header, LANGUAGE_LOADER, SECTION_PADDING, SECTION_SPACING, SLIDER_SPACING};
 use crate::{MonitorSettings, MonitorType};
 use i18n_embed_fl::fl;
-use iced::widget::{checkbox, column, container, pick_list, row, text, Space};
-use iced::{Alignment, Background, Border, Element, Length, Theme};
+use icy_ui::widget::{checkbox, column, container, pick_list, row, text, Space};
+use icy_ui::{Alignment, Background, Border, Element, Length, Theme};
 
 pub const CHECKBOX_SIZE: f32 = 18.0;
 pub fn show_monitor_settings(s: MonitorSettings) -> Element<'static, MonitorSettingsMessage> {
@@ -26,7 +26,7 @@ pub fn show_monitor_settings_with_options(s: MonitorSettings, show_scaling_optio
     // New Theme API: Theme::all() returns Vec<Theme> with light/dark and custom themes
     let theme_options: Vec<ThemeOption> = Theme::all().into_iter().map(ThemeOption).collect();
 
-    let mut content: iced::widget::Column<'_, MonitorSettingsMessage> = column![section_header(fl!(LANGUAGE_LOADER, "settings-appearance-section")),];
+    let mut content: icy_ui::widget::Column<'_, MonitorSettingsMessage> = column![section_header(fl!(LANGUAGE_LOADER, "settings-appearance-section")),];
 
     // Appearance section with rounded border
     let mut appearance_content = column![
@@ -334,8 +334,8 @@ fn disabled_slider<'a>(
             slider(range, value, |_| MonitorSettingsMessage::Noop)
                 .width(Length::Fill)
                 .style(|theme: &Theme, _status| {
-                    iced::widget::slider::Style {
-                        rail: iced::widget::slider::Rail {
+                    icy_ui::widget::slider::Style {
+                        rail: icy_ui::widget::slider::Rail {
                             backgrounds: (
                                 Background::Color(theme.accent.base.scale_alpha(0.3)),
                                 Background::Color(theme.primary.base.scale_alpha(0.3)),
@@ -343,8 +343,8 @@ fn disabled_slider<'a>(
                             width: 4.0,
                             border: Border::default(),
                         },
-                        handle: iced::widget::slider::Handle {
-                            shape: iced::widget::slider::HandleShape::Circle { radius: 8.0 },
+                        handle: icy_ui::widget::slider::Handle {
+                            shape: icy_ui::widget::slider::HandleShape::Circle { radius: 8.0 },
                             background: Background::Color(theme.accent.base.scale_alpha(0.3)),
                             border_color: Color::from_rgba(1.0, 1.0, 1.0, 0.3),
                             border_width: 2.0,

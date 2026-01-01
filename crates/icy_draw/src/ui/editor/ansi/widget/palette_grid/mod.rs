@@ -4,7 +4,7 @@
 //! Supports 16, 64, and 256 color palettes.
 //! Ported from egui palette_editor_16.
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke},
     Color, Element, Length, Point, Rectangle, Size, Theme,
@@ -204,7 +204,7 @@ impl PaletteGridProgram {
 impl Program<PaletteGridMessage> for PaletteGridProgram {
     type State = Option<u32>; // Hovered color index
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         let cell_width = self.cell_width;
@@ -257,13 +257,13 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<PaletteGridMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<PaletteGridMessage>> {
         let cell_width = self.cell_width;
         let cell_height = self.cell_height;
         let used_width = cell_width * self.items_per_row as f32;
 
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let local_x = pos.x - self.x_offset;
                     if local_x < 0.0 || local_x >= used_width {
@@ -282,7 +282,7 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed { button, .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed { button, .. }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     let local_x = pos.x - self.x_offset;
                     if local_x < 0.0 || local_x >= used_width {

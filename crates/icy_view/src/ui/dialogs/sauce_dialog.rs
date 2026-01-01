@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, container, row, scrollable, text, text_input, Space},
     Alignment, Element, Length, Theme,
 };
@@ -91,8 +91,8 @@ impl SauceDialogState {
                 .width(Length::Fill),
         )
         .style(|theme: &Theme| container::Style {
-            background: Some(iced::Background::Color(theme.secondary.base)),
-            border: iced::Border {
+            background: Some(icy_ui::Background::Color(theme.secondary.base)),
+            border: icy_ui::Border {
                 color: theme.primary.divider,
                 width: 1.0,
                 radius: 4.0.into(),

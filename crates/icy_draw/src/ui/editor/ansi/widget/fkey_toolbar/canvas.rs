@@ -8,7 +8,7 @@
 
 #![allow(dead_code)]
 
-use iced::{
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{
         canvas::{self, Cache, Canvas, Frame, Geometry, Path},
@@ -306,7 +306,7 @@ impl<'a> FKeyToolbarProgram<'a> {
         let center_y = y + size / 2.0;
         let arrow_size = size * 0.4;
 
-        use iced::widget::canvas::{Path, Stroke};
+        use icy_ui::widget::canvas::{Path, Stroke};
 
         let path = if pointing_left {
             Path::new(|builder| {
@@ -358,7 +358,7 @@ enum HoverState {
 impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
     type State = HoverState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         // Professional dark theme colors (consistent with SegmentedControl)
         let border_color = Color::from_rgba(0.35, 0.35, 0.40, 0.8);
         let bg_color = Color::from_rgba(0.12, 0.13, 0.15, 0.95);
@@ -472,9 +472,9 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
         vec![geometry]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<FKeyToolbarMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<FKeyToolbarMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = if let Some(pos) = cursor.position_in(bounds) {
                     // Check slots first
                     if let Some((slot, is_on_char)) = self.slot_at(pos, bounds) {
@@ -506,7 +506,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
@@ -547,7 +547,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
 
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if *state != HoverState::None {
                     *state = HoverState::None;
                     self.cache.clear(); // Clear cache when hover changes

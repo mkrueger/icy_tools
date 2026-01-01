@@ -10,8 +10,8 @@ use std::sync::{
     Arc,
 };
 
-use iced::wgpu::util::DeviceExt;
-use iced::{
+use icy_ui::wgpu::util::DeviceExt;
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{self, canvas, container, shader},
     Color, Element, Length, Point, Rectangle, Theme,
@@ -210,7 +210,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
         }
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<iced::widget::Action<FKeyToolbarMessage>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<icy_ui::widget::Action<FKeyToolbarMessage>> {
         let nav_label_space = f32::from_bits(self.nav_label_space_bits.load(Ordering::Relaxed)).max(0.0);
         // Handle mouse movement for hover state
         if let Some(pos) = cursor.position_in(bounds) {
@@ -223,7 +223,7 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
         }
 
         // Handle mouse clicks
-        if let iced::Event::Mouse(mouse::Event::ButtonPressed {
+        if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
             button: mouse::Button::Left, ..
         }) = event
         {
@@ -233,17 +233,17 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
                 if slot != NO_HOVER {
                     let is_on_char = hover_type == 1;
                     if is_on_char {
-                        return Some(iced::widget::Action::publish(FKeyToolbarMessage::TypeFKey(slot as usize)));
+                        return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::TypeFKey(slot as usize)));
                     } else {
-                        return Some(iced::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
+                        return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
                     }
                 }
 
                 if hover_type == 2 {
-                    return Some(iced::widget::Action::publish(FKeyToolbarMessage::PrevSet));
+                    return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::PrevSet));
                 }
                 if hover_type == 3 {
-                    return Some(iced::widget::Action::publish(FKeyToolbarMessage::NextSet));
+                    return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::NextSet));
                 }
             }
         }
@@ -289,10 +289,10 @@ impl shader::Primitive for FKeyOnePassPrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let scale = viewport.scale_factor();
         let origin_x = (bounds.x * scale).round().max(0.0);
@@ -655,20 +655,20 @@ impl shader::Primitive for FKeyOnePassPrimitive {
         }
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let instance_count = self.instance_count.load(Ordering::Relaxed);
         if instance_count == 0 {
             return;
         }
 
-        let mut pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+        let mut pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("FKey OnePass Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
@@ -699,88 +699,88 @@ impl shader::Primitive for FKeyOnePassPrimitive {
 }
 
 pub struct FKeyOnePassRenderer {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     uniform_stride: u64,
     uniform_capacity: u32,
     next_uniform: AtomicU32,
-    quad_vertex_buffer: iced::wgpu::Buffer,
-    instance_buffer: iced::wgpu::Buffer,
+    quad_vertex_buffer: icy_ui::wgpu::Buffer,
+    instance_buffer: icy_ui::wgpu::Buffer,
     instance_stride: u64,
     instance_capacity_per_primitive: u32,
     instance_slots: u32,
     instance_slot_stride: u64,
     next_instance_slot: AtomicU32,
 
-    atlas_texture: iced::wgpu::Texture,
-    atlas_view: iced::wgpu::TextureView,
-    atlas_sampler: iced::wgpu::Sampler,
+    atlas_texture: icy_ui::wgpu::Texture,
+    atlas_view: icy_ui::wgpu::TextureView,
+    atlas_sampler: icy_ui::wgpu::Sampler,
     atlas_key: Option<u64>,
     atlas_w: u32,
     atlas_h: u32,
 }
 
 impl FKeyOnePassRenderer {
-    fn update_atlas(&mut self, device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
+    fn update_atlas(&mut self, device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
         if self.atlas_w != w || self.atlas_h != h {
-            self.atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            self.atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                 label: Some("FKey OnePass Glyph Atlas"),
-                size: iced::wgpu::Extent3d {
+                size: icy_ui::wgpu::Extent3d {
                     width: w,
                     height: h,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                dimension: icy_ui::wgpu::TextureDimension::D2,
+                format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            self.atlas_view = self.atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+            self.atlas_view = self.atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
             self.atlas_w = w;
             self.atlas_h = h;
 
             let bind_group_layout = self.pipeline.get_bind_group_layout(0);
-            self.bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+            self.bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                 label: Some("FKey OnePass Bind Group"),
                 layout: &bind_group_layout,
                 entries: &[
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                        resource: icy_ui::wgpu::BindingResource::Buffer(icy_ui::wgpu::BufferBinding {
                             buffer: &self.uniform_buffer,
                             offset: 0,
                             size: NonZeroU64::new(std::mem::size_of::<FKeyOnePassUniforms>() as u64),
                         }),
                     },
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: iced::wgpu::BindingResource::TextureView(&self.atlas_view),
+                        resource: icy_ui::wgpu::BindingResource::TextureView(&self.atlas_view),
                     },
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: iced::wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                        resource: icy_ui::wgpu::BindingResource::Sampler(&self.atlas_sampler),
                     },
                 ],
             });
         }
 
         queue.write_texture(
-            iced::wgpu::TexelCopyTextureInfo {
+            icy_ui::wgpu::TexelCopyTextureInfo {
                 texture: &self.atlas_texture,
                 mip_level: 0,
-                origin: iced::wgpu::Origin3d::ZERO,
-                aspect: iced::wgpu::TextureAspect::All,
+                origin: icy_ui::wgpu::Origin3d::ZERO,
+                aspect: icy_ui::wgpu::TextureAspect::All,
             },
             rgba,
-            iced::wgpu::TexelCopyBufferLayout {
+            icy_ui::wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(w * 4),
                 rows_per_image: Some(h),
             },
-            iced::wgpu::Extent3d {
+            icy_ui::wgpu::Extent3d {
                 width: w,
                 height: h,
                 depth_or_array_layers: 1,
@@ -792,10 +792,10 @@ impl FKeyOnePassRenderer {
 }
 
 impl shader::Pipeline for FKeyOnePassRenderer {
-    fn new(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+    fn new(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("FKey OnePass Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let uniform_size = std::mem::size_of::<FKeyOnePassUniforms>() as u64;
@@ -805,53 +805,53 @@ impl shader::Pipeline for FKeyOnePassRenderer {
         let uniform_capacity: u32 = 1024;
         let uniform_buffer_size = uniform_stride * (uniform_capacity as u64);
 
-        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("FKey OnePass Uniforms (Dynamic)"),
             size: uniform_buffer_size,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        let atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
             label: Some("FKey OnePass Glyph Atlas (init)"),
-            size: iced::wgpu::Extent3d {
+            size: icy_ui::wgpu::Extent3d {
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            dimension: icy_ui::wgpu::TextureDimension::D2,
+            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         queue.write_texture(
-            iced::wgpu::TexelCopyTextureInfo {
+            icy_ui::wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,
                 mip_level: 0,
-                origin: iced::wgpu::Origin3d::ZERO,
-                aspect: iced::wgpu::TextureAspect::All,
+                origin: icy_ui::wgpu::Origin3d::ZERO,
+                aspect: icy_ui::wgpu::TextureAspect::All,
             },
             &[255, 255, 255, 0],
-            iced::wgpu::TexelCopyBufferLayout {
+            icy_ui::wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4),
                 rows_per_image: Some(1),
             },
-            iced::wgpu::Extent3d {
+            icy_ui::wgpu::Extent3d {
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
             },
         );
-        let atlas_view = atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+        let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
 
-        let atlas_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let atlas_sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("FKey OnePass Atlas Sampler"),
-            mag_filter: iced::wgpu::FilterMode::Nearest,
-            min_filter: iced::wgpu::FilterMode::Nearest,
-            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            mag_filter: icy_ui::wgpu::FilterMode::Nearest,
+            min_filter: icy_ui::wgpu::FilterMode::Nearest,
+            mipmap_filter: icy_ui::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -881,10 +881,10 @@ impl shader::Pipeline for FKeyOnePassRenderer {
                 unit_uv: [1.0, 1.0],
             },
         ];
-        let quad_vertex_buffer = device.create_buffer_init(&iced::wgpu::util::BufferInitDescriptor {
+        let quad_vertex_buffer = device.create_buffer_init(&icy_ui::wgpu::util::BufferInitDescriptor {
             label: Some("FKey OnePass Quad"),
             contents: bytemuck::cast_slice(&quad),
-            usage: iced::wgpu::BufferUsages::VERTEX,
+            usage: icy_ui::wgpu::BufferUsages::VERTEX,
         });
 
         let instance_stride = std::mem::size_of::<GlyphInstance>() as u64;
@@ -893,122 +893,122 @@ impl shader::Pipeline for FKeyOnePassRenderer {
         let instance_slot_stride = instance_stride * (instance_capacity_per_primitive as u64);
         let instance_buffer_size = instance_slot_stride * (instance_slots as u64);
 
-        let instance_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let instance_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("FKey OnePass Instances (Ring)"),
             size: instance_buffer_size,
-            usage: iced::wgpu::BufferUsages::VERTEX | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::VERTEX | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("FKey OnePass Bind Group Layout"),
             entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
                         min_binding_size: NonZeroU64::new(uniform_size),
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
-        let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
             label: Some("FKey OnePass Bind Group"),
             layout: &bind_group_layout,
             entries: &[
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                    resource: icy_ui::wgpu::BindingResource::Buffer(icy_ui::wgpu::BufferBinding {
                         buffer: &uniform_buffer,
                         offset: 0,
                         size: NonZeroU64::new(uniform_size),
                     }),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: iced::wgpu::BindingResource::TextureView(&atlas_view),
+                    resource: icy_ui::wgpu::BindingResource::TextureView(&atlas_view),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: iced::wgpu::BindingResource::Sampler(&atlas_sampler),
+                    resource: icy_ui::wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("FKey OnePass Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let vertex_buffers = [
-            iced::wgpu::VertexBufferLayout {
+            icy_ui::wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<QuadVertex>() as u64,
-                step_mode: iced::wgpu::VertexStepMode::Vertex,
+                step_mode: icy_ui::wgpu::VertexStepMode::Vertex,
                 attributes: &[
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x2,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x2,
                         offset: 0,
                         shader_location: 0,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x2,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x2,
                         offset: 8,
                         shader_location: 1,
                     },
                 ],
             },
-            iced::wgpu::VertexBufferLayout {
+            icy_ui::wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<GlyphInstance>() as u64,
-                step_mode: iced::wgpu::VertexStepMode::Instance,
+                step_mode: icy_ui::wgpu::VertexStepMode::Instance,
                 attributes: &[
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x2,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x2,
                         offset: 0,
                         shader_location: 2,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x2,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x2,
                         offset: 8,
                         shader_location: 3,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x4,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x4,
                         offset: 16,
                         shader_location: 4,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Float32x4,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Float32x4,
                         offset: 32,
                         shader_location: 5,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Uint32,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Uint32,
                         offset: 48,
                         shader_location: 6,
                     },
-                    iced::wgpu::VertexAttribute {
-                        format: iced::wgpu::VertexFormat::Uint32,
+                    icy_ui::wgpu::VertexAttribute {
+                        format: icy_ui::wgpu::VertexFormat::Uint32,
                         offset: 52,
                         shader_location: 7,
                     },
@@ -1016,31 +1016,31 @@ impl shader::Pipeline for FKeyOnePassRenderer {
             },
         ];
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("FKey OnePass Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
@@ -1174,7 +1174,7 @@ impl ShaderFKeyToolbar {
         .height(Length::Fixed(layout.total_height))
         .into();
 
-        let stacked: Element<'_, FKeyToolbarMessage> = iced::widget::stack![shader_onepass, overlay]
+        let stacked: Element<'_, FKeyToolbarMessage> = icy_ui::widget::stack![shader_onepass, overlay]
             .width(Length::Fixed(layout.total_width))
             .height(Length::Fixed(layout.total_height))
             .into();
@@ -1199,7 +1199,7 @@ struct FKeyTtfLabelOverlay {
 impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         // Keep font sizes in one place so it is easy to tune.
@@ -1230,17 +1230,17 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
             let w = (LABEL_WIDTH * 2.0).min(SLOT_WIDTH);
             let h = self.layout.control_height;
 
-            let center = iced::Point::new(x + w / 2.0, y + h / 2.0);
+            let center = icy_ui::Point::new(x + w / 2.0, y + h / 2.0);
 
             // Shadow
             frame.fill_text(canvas::Text {
                 content: text.clone(),
-                position: iced::Point::new(center.x + 1.0, center.y + 1.0),
+                position: icy_ui::Point::new(center.x + 1.0, center.y + 1.0),
                 color: shadow_color,
                 size: slot_label_font_size.into(),
-                font: iced::Font::default(),
-                align_x: iced::alignment::Horizontal::Center.into(),
-                align_y: iced::alignment::Vertical::Center.into(),
+                font: icy_ui::Font::default(),
+                align_x: icy_ui::alignment::Horizontal::Center.into(),
+                align_y: icy_ui::alignment::Vertical::Center.into(),
                 ..Default::default()
             });
 
@@ -1250,9 +1250,9 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
                 position: center,
                 color: c,
                 size: slot_label_font_size.into(),
-                font: iced::Font::default(),
-                align_x: iced::alignment::Horizontal::Center.into(),
-                align_y: iced::alignment::Vertical::Center.into(),
+                font: icy_ui::Font::default(),
+                align_x: icy_ui::alignment::Horizontal::Center.into(),
+                align_y: icy_ui::alignment::Vertical::Center.into(),
                 ..Default::default()
             });
         }
@@ -1270,16 +1270,16 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
         };
 
         let set_text = (self.current_set + 1).to_string();
-        let center = iced::Point::new(label_rect.x + label_rect.width / 2.0, label_rect.y + label_rect.height / 2.0);
+        let center = icy_ui::Point::new(label_rect.x + label_rect.width / 2.0, label_rect.y + label_rect.height / 2.0);
 
         frame.fill_text(canvas::Text {
             content: set_text.clone(),
-            position: iced::Point::new(center.x + 1.0, center.y + 1.0),
+            position: icy_ui::Point::new(center.x + 1.0, center.y + 1.0),
             color: shadow_color,
             size: set_label_font_size.into(),
-            font: iced::Font::default(),
-            align_x: iced::alignment::Horizontal::Center.into(),
-            align_y: iced::alignment::Vertical::Center.into(),
+            font: icy_ui::Font::default(),
+            align_x: icy_ui::alignment::Horizontal::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center.into(),
             ..Default::default()
         });
 
@@ -1288,9 +1288,9 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
             position: center,
             color: label_color,
             size: set_label_font_size.into(),
-            font: iced::Font::default(),
-            align_x: iced::alignment::Horizontal::Center.into(),
-            align_y: iced::alignment::Vertical::Center.into(),
+            font: icy_ui::Font::default(),
+            align_x: icy_ui::alignment::Horizontal::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center.into(),
             ..Default::default()
         });
 

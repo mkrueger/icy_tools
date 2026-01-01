@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced::widget::shader;
-use iced::Rectangle;
+use icy_ui::widget::shader;
+use icy_ui::Rectangle;
 
 // ============================================================================
 // Texture Slicing Constants
@@ -229,8 +229,8 @@ impl TileUniforms {
 /// Texture slice for a single portion of a tall image
 struct TextureSlice {
     #[allow(dead_code)]
-    texture: iced::wgpu::Texture,
-    texture_view: iced::wgpu::TextureView,
+    texture: icy_ui::wgpu::Texture,
+    texture_view: icy_ui::wgpu::TextureView,
     height: u32,
 }
 
@@ -247,8 +247,8 @@ struct SharedTextureResources {
 
 /// A single viewport stripe for multi-pass rendering of tall tiles
 struct StripeResources {
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     /// Y offset in display pixels for this stripe
     y_offset: f32,
     /// Height of this stripe in display pixels
@@ -295,13 +295,13 @@ struct LabelUniforms {
 #[allow(dead_code)]
 struct LabelResources {
     /// Label texture (owned by this tile)
-    texture: iced::wgpu::Texture,
+    texture: icy_ui::wgpu::Texture,
     /// Label texture view
-    texture_view: iced::wgpu::TextureView,
+    texture_view: icy_ui::wgpu::TextureView,
     /// Bind group for rendering
-    bind_group: iced::wgpu::BindGroup,
+    bind_group: icy_ui::wgpu::BindGroup,
     /// Uniform buffer
-    uniform_buffer: iced::wgpu::Buffer,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     /// Display Y position (below image)
     display_y: f32,
     /// Display width
@@ -313,19 +313,19 @@ struct LabelResources {
 /// Renderer for the tile grid shader
 pub struct TileGridShaderRenderer {
     // Main tile pipeline
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group_layout: iced::wgpu::BindGroupLayout,
-    sampler: iced::wgpu::Sampler,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group_layout: icy_ui::wgpu::BindGroupLayout,
+    sampler: icy_ui::wgpu::Sampler,
     /// 1x1 transparent texture for unused texture slots
-    dummy_texture_view: iced::wgpu::TextureView,
+    dummy_texture_view: icy_ui::wgpu::TextureView,
     /// Per-tile resources (unique to each tile)
     tiles: HashMap<u64, TileResources>,
     /// Shared texture resources keyed by Arc pointer address
     shared_textures: HashMap<usize, SharedTextureResources>,
 
     // Label rendering pipeline
-    label_pipeline: iced::wgpu::RenderPipeline,
-    label_bind_group_layout: iced::wgpu::BindGroupLayout,
+    label_pipeline: icy_ui::wgpu::RenderPipeline,
+    label_bind_group_layout: icy_ui::wgpu::BindGroupLayout,
     /// Per-tile label resources
     label_resources: HashMap<u64, LabelResources>,
 }
@@ -338,13 +338,13 @@ pub fn new_tile_id() -> u64 {
 }
 
 impl shader::Pipeline for TileGridShaderRenderer {
-    fn new(device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
+    fn new(device: &icy_ui::wgpu::Device, _queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
         // Load shader from external WGSL file for better syntax highlighting and maintainability
         let shader_source = include_str!("tile_grid.wgsl");
 
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Tile Grid Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(shader_source.into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
         // Create bind group layout with 10 texture slots + sampler + uniforms + label texture
@@ -352,32 +352,32 @@ impl shader::Pipeline for TileGridShaderRenderer {
 
         // Add 10 texture bindings (0-9)
         for i in 0..MAX_TEXTURE_SLICES {
-            entries.push(iced::wgpu::BindGroupLayoutEntry {
+            entries.push(icy_ui::wgpu::BindGroupLayoutEntry {
                 binding: i as u32,
-                visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                ty: iced::wgpu::BindingType::Texture {
+                visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                ty: icy_ui::wgpu::BindingType::Texture {
                     multisampled: false,
-                    view_dimension: iced::wgpu::TextureViewDimension::D2,
-                    sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                    sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                 },
                 count: None,
             });
         }
 
         // Sampler at binding 10
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
+        entries.push(icy_ui::wgpu::BindGroupLayoutEntry {
             binding: MAX_TEXTURE_SLICES as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+            visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+            ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
             count: None,
         });
 
         // Uniforms at binding 11
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
+        entries.push(icy_ui::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 1) as u32,
-            visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: iced::wgpu::BindingType::Buffer {
-                ty: iced::wgpu::BufferBindingType::Uniform,
+            visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: icy_ui::wgpu::BindingType::Buffer {
+                ty: icy_ui::wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
                 min_binding_size: None,
             },
@@ -385,126 +385,126 @@ impl shader::Pipeline for TileGridShaderRenderer {
         });
 
         // Label texture at binding 12
-        entries.push(iced::wgpu::BindGroupLayoutEntry {
+        entries.push(icy_ui::wgpu::BindGroupLayoutEntry {
             binding: (MAX_TEXTURE_SLICES + 2) as u32,
-            visibility: iced::wgpu::ShaderStages::FRAGMENT,
-            ty: iced::wgpu::BindingType::Texture {
+            visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+            ty: icy_ui::wgpu::BindingType::Texture {
                 multisampled: false,
-                view_dimension: iced::wgpu::TextureViewDimension::D2,
-                sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
             },
             count: None,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Tile Grid Bind Group Layout"),
             entries: &entries,
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Tile Grid Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Tile Grid Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: iced::wgpu::FrontFace::Ccw,
+                front_face: icy_ui::wgpu::FrontFace::Ccw,
                 cull_mode: None,
                 unclipped_depth: false,
-                polygon_mode: iced::wgpu::PolygonMode::Fill,
+                polygon_mode: icy_ui::wgpu::PolygonMode::Fill,
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
-        let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Tile Grid Sampler"),
-            address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
-            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            address_mode_u: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_v: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_w: icy_ui::wgpu::AddressMode::ClampToEdge,
+            mag_filter: icy_ui::wgpu::FilterMode::Linear,
+            min_filter: icy_ui::wgpu::FilterMode::Linear,
+            mipmap_filter: icy_ui::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
         // Create 1x1 transparent dummy texture for unused slots
-        let dummy_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        let dummy_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
             label: Some("Dummy Texture"),
-            size: iced::wgpu::Extent3d {
+            size: icy_ui::wgpu::Extent3d {
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8Unorm,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            dimension: icy_ui::wgpu::TextureDimension::D2,
+            format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let dummy_texture_view = dummy_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+        let dummy_texture_view = dummy_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
 
         // ====================================================================
         // Label Pipeline Setup
         // ====================================================================
         let label_shader_source = include_str!("tile_label.wgsl");
-        let label_shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+        let label_shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Label Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(label_shader_source.into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(label_shader_source.into()),
         });
 
-        let label_bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let label_bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Label Bind Group Layout"),
             entries: &[
                 // Label texture at binding 0
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
                 // Sampler at binding 1
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 // Uniforms at binding 2
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -513,42 +513,42 @@ impl shader::Pipeline for TileGridShaderRenderer {
             ],
         });
 
-        let label_pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let label_pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Label Pipeline Layout"),
             bind_group_layouts: &[&label_bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let label_pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let label_pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Label Pipeline"),
             layout: Some(&label_pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &label_shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &label_shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: iced::wgpu::FrontFace::Ccw,
+                front_face: icy_ui::wgpu::FrontFace::Ccw,
                 cull_mode: None,
                 unclipped_depth: false,
-                polygon_mode: iced::wgpu::PolygonMode::Fill,
+                polygon_mode: icy_ui::wgpu::PolygonMode::Fill,
                 conservative: false,
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
@@ -573,10 +573,10 @@ impl shader::Primitive for TileGridShader {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         _bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         // Set scale factor for HiDPI/Retina displays on first prepare
         icy_engine_gui::set_scale_factor(viewport.scale_factor() as f32);
@@ -639,18 +639,18 @@ impl shader::Primitive for TileGridShader {
                         break;
                     }
 
-                    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                    let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                         label: Some(&format!("Texture Slice {:x}_{}", texture_key, slice_idx)),
-                        size: iced::wgpu::Extent3d {
+                        size: icy_ui::wgpu::Extent3d {
                             width: tile.width,
                             height: slice_height,
                             depth_or_array_layers: 1,
                         },
                         mip_level_count: 1,
                         sample_count: 1,
-                        dimension: iced::wgpu::TextureDimension::D2,
-                        format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                        dimension: icy_ui::wgpu::TextureDimension::D2,
+                        format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+                        usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                         view_formats: &[],
                     });
 
@@ -661,26 +661,26 @@ impl shader::Primitive for TileGridShader {
                     let slice_data = &tile.rgba_data[slice_start..slice_end];
 
                     queue.write_texture(
-                        iced::wgpu::TexelCopyTextureInfo {
+                        icy_ui::wgpu::TexelCopyTextureInfo {
                             texture: &texture,
                             mip_level: 0,
-                            origin: iced::wgpu::Origin3d::ZERO,
-                            aspect: iced::wgpu::TextureAspect::All,
+                            origin: icy_ui::wgpu::Origin3d::ZERO,
+                            aspect: icy_ui::wgpu::TextureAspect::All,
                         },
                         slice_data,
-                        iced::wgpu::TexelCopyBufferLayout {
+                        icy_ui::wgpu::TexelCopyBufferLayout {
                             offset: 0,
                             bytes_per_row: Some(bytes_per_row),
                             rows_per_image: Some(slice_height),
                         },
-                        iced::wgpu::Extent3d {
+                        icy_ui::wgpu::Extent3d {
                             width: tile.width,
                             height: slice_height,
                             depth_or_array_layers: 1,
                         },
                     );
 
-                    let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+                    let texture_view = texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
 
                     slices.push(TextureSlice {
                         texture,
@@ -746,10 +746,10 @@ impl shader::Primitive for TileGridShader {
                     };
 
                     // Create uniform buffer for this stripe
-                    let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                    let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
                         label: Some(&format!("Tile {} Stripe {} Uniforms", tile.id, stripe_idx)),
                         size: std::mem::size_of::<TileUniforms>() as u64,
-                        usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                        usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
                     });
 
@@ -762,31 +762,31 @@ impl shader::Primitive for TileGridShader {
                         } else {
                             &pipeline.dummy_texture_view
                         };
-                        entries.push(iced::wgpu::BindGroupEntry {
+                        entries.push(icy_ui::wgpu::BindGroupEntry {
                             binding: i as u32,
-                            resource: iced::wgpu::BindingResource::TextureView(texture_view),
+                            resource: icy_ui::wgpu::BindingResource::TextureView(texture_view),
                         });
                     }
 
                     // Sampler at binding 10
-                    entries.push(iced::wgpu::BindGroupEntry {
+                    entries.push(icy_ui::wgpu::BindGroupEntry {
                         binding: MAX_TEXTURE_SLICES as u32,
-                        resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                        resource: icy_ui::wgpu::BindingResource::Sampler(&pipeline.sampler),
                     });
 
                     // Uniforms at binding 11
-                    entries.push(iced::wgpu::BindGroupEntry {
+                    entries.push(icy_ui::wgpu::BindGroupEntry {
                         binding: (MAX_TEXTURE_SLICES + 1) as u32,
                         resource: uniform_buffer.as_entire_binding(),
                     });
 
                     // Label texture at binding 12 - use dummy texture since labels are rendered separately
-                    entries.push(iced::wgpu::BindGroupEntry {
+                    entries.push(icy_ui::wgpu::BindGroupEntry {
                         binding: (MAX_TEXTURE_SLICES + 2) as u32,
-                        resource: iced::wgpu::BindingResource::TextureView(&pipeline.dummy_texture_view),
+                        resource: icy_ui::wgpu::BindingResource::TextureView(&pipeline.dummy_texture_view),
                     });
 
-                    let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                    let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                         label: Some(&format!("Tile {} Stripe {} BindGroup", tile.id, stripe_idx)),
                         layout: &pipeline.bind_group_layout,
                         entries: &entries,
@@ -829,64 +829,64 @@ impl shader::Primitive for TileGridShader {
 
                     if needs_label_recreate {
                         // Create label texture for THIS tile
-                        let label_tex = device.create_texture(&iced::wgpu::TextureDescriptor {
+                        let label_tex = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                             label: Some(&format!("Tile {} Label Texture", tile.id)),
-                            size: iced::wgpu::Extent3d {
+                            size: icy_ui::wgpu::Extent3d {
                                 width: lw,
                                 height: lh,
                                 depth_or_array_layers: 1,
                             },
                             mip_level_count: 1,
                             sample_count: 1,
-                            dimension: iced::wgpu::TextureDimension::D2,
-                            format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                            dimension: icy_ui::wgpu::TextureDimension::D2,
+                            format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+                            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                             view_formats: &[],
                         });
 
                         queue.write_texture(
-                            iced::wgpu::TexelCopyTextureInfo {
+                            icy_ui::wgpu::TexelCopyTextureInfo {
                                 texture: &label_tex,
                                 mip_level: 0,
-                                origin: iced::wgpu::Origin3d::ZERO,
-                                aspect: iced::wgpu::TextureAspect::All,
+                                origin: icy_ui::wgpu::Origin3d::ZERO,
+                                aspect: icy_ui::wgpu::TextureAspect::All,
                             },
                             label_data,
-                            iced::wgpu::TexelCopyBufferLayout {
+                            icy_ui::wgpu::TexelCopyBufferLayout {
                                 offset: 0,
                                 bytes_per_row: Some(4 * lw),
                                 rows_per_image: Some(lh),
                             },
-                            iced::wgpu::Extent3d {
+                            icy_ui::wgpu::Extent3d {
                                 width: lw,
                                 height: lh,
                                 depth_or_array_layers: 1,
                             },
                         );
 
-                        let label_view = label_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
+                        let label_view = label_tex.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
 
                         // Create uniform buffer for label
-                        let label_uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                        let label_uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
                             label: Some(&format!("Tile {} Label Uniforms", tile.id)),
                             size: std::mem::size_of::<LabelUniforms>() as u64,
-                            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                            usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
                             mapped_at_creation: false,
                         });
 
-                        let label_bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                        let label_bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                             label: Some(&format!("Tile {} Label BindGroup", tile.id)),
                             layout: &pipeline.label_bind_group_layout,
                             entries: &[
-                                iced::wgpu::BindGroupEntry {
+                                icy_ui::wgpu::BindGroupEntry {
                                     binding: 0,
-                                    resource: iced::wgpu::BindingResource::TextureView(&label_view),
+                                    resource: icy_ui::wgpu::BindingResource::TextureView(&label_view),
                                 },
-                                iced::wgpu::BindGroupEntry {
+                                icy_ui::wgpu::BindGroupEntry {
                                     binding: 1,
-                                    resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                                    resource: icy_ui::wgpu::BindingResource::Sampler(&pipeline.sampler),
                                 },
-                                iced::wgpu::BindGroupEntry {
+                                icy_ui::wgpu::BindGroupEntry {
                                     binding: 2,
                                     resource: label_uniform_buffer.as_entire_binding(),
                                 },
@@ -953,7 +953,7 @@ impl shader::Primitive for TileGridShader {
         pipeline.shared_textures.retain(|key, _| used_texture_keys.contains(key));
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         // Get scale factor for HiDPI/Retina displays
         let scale_factor = icy_engine_gui::get_scale_factor();
 
@@ -1009,14 +1009,14 @@ impl shader::Primitive for TileGridShader {
                     let clipped_w = clipped_right - clipped_left;
                     let clipped_h = clipped_bottom - clipped_top;
 
-                    let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+                    let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
                         label: Some(&format!("Tile {} Stripe Render Pass", tile.id)),
-                        color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+                        color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                             view: target,
                             resolve_target: None,
-                            ops: iced::wgpu::Operations {
-                                load: iced::wgpu::LoadOp::Load,
-                                store: iced::wgpu::StoreOp::Store,
+                            ops: icy_ui::wgpu::Operations {
+                                load: icy_ui::wgpu::LoadOp::Load,
+                                store: icy_ui::wgpu::StoreOp::Store,
                             },
                             depth_slice: None,
                         })],
@@ -1080,14 +1080,14 @@ impl shader::Primitive for TileGridShader {
                 let clipped_w = clipped_right - clipped_left;
                 let clipped_h = clipped_bottom - clipped_top;
 
-                let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+                let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
                     label: Some(&format!("Tile {} Label Render Pass", tile.id)),
-                    color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                         view: target,
                         resolve_target: None,
-                        ops: iced::wgpu::Operations {
-                            load: iced::wgpu::LoadOp::Load,
-                            store: iced::wgpu::StoreOp::Store,
+                        ops: icy_ui::wgpu::Operations {
+                            load: icy_ui::wgpu::LoadOp::Load,
+                            store: icy_ui::wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
                     })],

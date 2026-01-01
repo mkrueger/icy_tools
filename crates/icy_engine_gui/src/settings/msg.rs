@@ -1,5 +1,5 @@
 use crate::{settings::iced_to_icy_color, MonitorSettings, MonitorType, ScalingMode};
-use iced::{Color, Theme};
+use icy_ui::{Color, Theme};
 
 #[derive(Debug, Clone)]
 pub enum MonitorSettingsMessage {

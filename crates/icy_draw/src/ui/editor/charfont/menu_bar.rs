@@ -3,8 +3,8 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
-use iced::Element;
+use icy_ui::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
+use icy_ui::Element;
 
 use crate::fl;
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage};
@@ -151,9 +151,9 @@ impl CharFontMenu {
 }
 
 /// Handle keyboard event by checking all CharFont menu commands
-pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_desc: Option<&str>) -> Option<Message> {
+pub fn handle_command_event(event: &icy_ui::Event, undo_desc: Option<&str>, redo_desc: Option<&str>) -> Option<Message> {
     let (key, modifiers) = match event {
-        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
+        icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
         _ => return None,
     };
 

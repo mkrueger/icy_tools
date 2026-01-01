@@ -10,13 +10,13 @@
 //! Copyright (c) 2024 Brady Simon
 //! https://github.com/bradysimon/iced_focus
 
-use iced::advanced::renderer::Quad;
-use iced::advanced::widget::{operation, tree, Tree};
-use iced::advanced::{self, layout, overlay, renderer, widget, Clipboard, Layout, Shell, Widget};
-use iced::border::Radius;
-use iced::keyboard::key;
-use iced::widget::Id;
-use iced::{keyboard, mouse as iced_mouse, touch, Border, Color, Element, Event, Font, Length, Padding, Rectangle, Shadow, Size, Vector};
+use icy_ui::advanced::renderer::Quad;
+use icy_ui::advanced::widget::{operation, tree, Tree};
+use icy_ui::advanced::{self, layout, overlay, renderer, widget, Clipboard, Layout, Shell, Widget};
+use icy_ui::border::Radius;
+use icy_ui::keyboard::key;
+use icy_ui::widget::Id;
+use icy_ui::{keyboard, mouse as iced_mouse, touch, Border, Color, Element, Event, Font, Length, Padding, Rectangle, Shadow, Size, Vector};
 
 /// A boxed closure that takes an [`Event`] and an [`Id`], and produces an optional message.
 /// The event is only sent if the widget is focused, and returning `None` ignores the event.
@@ -24,7 +24,7 @@ pub type OnEvent<'a, Message> = Box<dyn Fn(Event, Id) -> Option<Message> + 'a>;
 
 /// Allows a child element to be focusable. This can help you arbitrarily focus
 /// elements in your application, and handle events only when focused.
-pub struct Focus<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
+pub struct Focus<'a, Message, Theme = icy_ui::Theme, Renderer = icy_ui::Renderer>
 where
     Renderer: advanced::Renderer,
     Theme: Catalog,
@@ -41,10 +41,10 @@ where
     /// The message to emit when this widget loses focus.
     on_blur: Option<Message>,
     /// The message to emit when the next widget in the app should be focused.
-    /// You typically want to call [`iced::widget::operation::focus_next()`] when this happens.
+    /// You typically want to call [`icy_ui::widget::operation::focus_next()`] when this happens.
     focus_next: Option<Message>,
     /// The message to emit when the previous widget in the app should be focused.
-    /// You typically want to call [`iced::widget::operation::focus_previous()`] when this happens.
+    /// You typically want to call [`icy_ui::widget::operation::focus_previous()`] when this happens.
     focus_previous: Option<Message>,
     /// The style of the [`Focus`].
     class: Theme::Class<'a>,
@@ -106,7 +106,7 @@ where
     }
 
     /// Emits the `message` when the next widget in the app should be focused,
-    /// typically calling `iced::widget::operation::focus_next()`.
+    /// typically calling `icy_ui::widget::operation::focus_next()`.
     ///
     /// This is necesssary until Iced supports focus navigation natively.
     #[must_use]
@@ -116,7 +116,7 @@ where
     }
 
     /// Emits the `message` when the previous widget in the app should be focused,
-    /// typically calling `iced::widget::operation::focus_previous()`.
+    /// typically calling `icy_ui::widget::operation::focus_previous()`.
     ///
     /// This is necesssary until Iced supports focus navigation natively.
     #[must_use]
@@ -372,13 +372,13 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Focus<'a, Message, Theme, Renderer>> for iced::Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<Focus<'a, Message, Theme, Renderer>> for icy_ui::Element<'a, Message, Theme, Renderer>
 where
     Message: Clone + 'a,
     Renderer: advanced::text::Renderer<Font = Font> + 'a,
     Theme: Catalog + 'a,
 {
-    fn from(focus: Focus<'a, Message, Theme, Renderer>) -> iced::Element<'a, Message, Theme, Renderer> {
+    fn from(focus: Focus<'a, Message, Theme, Renderer>) -> icy_ui::Element<'a, Message, Theme, Renderer> {
         Self::new(focus)
     }
 }
@@ -443,7 +443,7 @@ pub trait Catalog {
     fn style(&self, class: &Self::Class<'_>) -> Style;
 }
 
-impl Catalog for iced::Theme {
+impl Catalog for icy_ui::Theme {
     type Class<'a> = StyleFn<'a, Self>;
 
     fn default<'a>() -> Self::Class<'a> {
@@ -467,7 +467,7 @@ impl<Theme> From<Style> for StyleFn<'_, Theme> {
 }
 
 /// The default style for a focused widget.
-pub fn default_style(theme: &iced::Theme) -> Style {
+pub fn default_style(theme: &icy_ui::Theme) -> Style {
     Style {
         border: Border {
             radius: 2.0.into(),
@@ -480,7 +480,7 @@ pub fn default_style(theme: &iced::Theme) -> Style {
 }
 
 /// A style that shows no border (invisible focus indicator).
-pub fn no_border_style(_theme: &iced::Theme) -> Style {
+pub fn no_border_style(_theme: &icy_ui::Theme) -> Style {
     Style {
         border: Border::default().width(0.0),
         offset: 0.0,
@@ -489,7 +489,7 @@ pub fn no_border_style(_theme: &iced::Theme) -> Style {
 }
 
 /// A focus style matching iced's text_input widget - integrates visually.
-pub fn list_focus_style(theme: &iced::Theme) -> Style {
+pub fn list_focus_style(theme: &icy_ui::Theme) -> Style {
     Style {
         border: Border {
             radius: 2.0.into(),

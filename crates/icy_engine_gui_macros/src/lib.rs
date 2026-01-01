@@ -303,7 +303,7 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
             F: Fn(#internal_message) -> M + Clone + Send + 'static,
             E: Fn(&M) -> Option<&#internal_message> + Clone + Send + 'static,
         {
-            fn view(&self) -> iced::Element<'_, M> {
+            fn view(&self) -> icy_ui::Element<'_, M> {
                 self.state.view(self.on_message.clone())
             }
 
@@ -316,7 +316,7 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
 
             #request_confirm_impl
 
-            fn handle_event(&mut self, _event: &iced::Event) -> Option<icy_engine_gui::ui::DialogAction<M>> {
+            fn handle_event(&mut self, _event: &icy_ui::Event) -> Option<icy_engine_gui::ui::DialogAction<M>> {
                 None
             }
 

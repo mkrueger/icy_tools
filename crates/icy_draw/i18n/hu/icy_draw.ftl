@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=Fájl
+menu-file=&Fájl
 menu-new=Új…
 menu-open=Megnyitás…
 menu-open_recent=Legutóbbi megnyitása
@@ -60,7 +60,7 @@ menu-export=Exportálás…
 menu-edit-font-outline=Betűtípus körvonalának szerkesztése…
 menu-show_settings=Beállítások…
 
-menu-edit=Szerkesztés
+menu-edit=&Szerkesztés
 menu-undo=Visszavonás
 menu-redo=Újra
 menu-undo-op=Visszavonás: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Terület jobbra görgetése
 menu-mirror_mode=Tükrözés mód
 menu-area_operations=Terület
 
-menu-selection=Kijelölés
+menu-selection=&Kijelölés
 menu-select-all=Összes kijelölése
 menu-select_nothing=Kijelölés megszüntetése
 menu-inverse_selection=Fordított kijelölés
 
-menu-colors=Színek
+menu-colors=&Színek
 menu-ice-mode=Ice mód
 menu-ice-mode-unrestricted=Korlátlan
 menu-ice-mode-blink=Villogás
@@ -123,7 +123,7 @@ menu-next_bg_color=Következő háttér szín
 menu-prev_fg_color=Előző előtér szín
 menu-prev_bg_color=Előző háttér szín
 
-menu-view=Nézet
+menu-view=&Nézet
 menu-reference-image=Referencia kép megnyitása…
 menu-toggle-reference-image=Referencia kép váltása
 menu-clear-reference-image=Törlés
@@ -158,12 +158,12 @@ menu-open_font_manager=Betűtípusok kezelése…
 menu-open_font_directoy=Betűtípus könyvtár megnyitása…
 menu-open_palettes_directoy=Paletta könyvtár megnyitása…
 
-menu-help=Súgó
+menu-help=&Súgó
 menu-discuss=Beszélgetés
 menu-open_log_file=Naplófájl megnyitása
 menu-report-bug=Hiba jelentése
 menu-about=Névjegy…
-menu-plugins=Pluginok
+menu-plugins=&Pluginok
 menu-open_plugin_directory=Plugin könyvtár megnyitása…
 
 menu-upgrade_version=Frissítés { $version } verzióramenu-update-available=⬆ Elérhető frissítés: { $version }

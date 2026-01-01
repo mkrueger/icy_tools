@@ -8,9 +8,9 @@
 //! - Ctrl+click: Take background only
 
 use i18n_embed_fl::fl;
-use iced::widget::canvas::{self, Frame, Geometry};
-use iced::widget::{column, container, row, text, Canvas, Space};
-use iced::{Alignment, Color, Element, Font, Length, Point, Rectangle, Size, Theme};
+use icy_ui::widget::canvas::{self, Frame, Geometry};
+use icy_ui::widget::{column, container, row, text, Canvas, Space};
+use icy_ui::{Alignment, Color, Element, Font, Length, Point, Rectangle, Size, Theme};
 use icy_engine::{AttributedChar, BitFont, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
@@ -48,7 +48,7 @@ struct GlyphPreview {
 impl canvas::Program<ToolMessage> for GlyphPreview {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: iced::mouse::Cursor) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: icy_ui::mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         let font_width = self.font.size().width as f32;
@@ -154,7 +154,7 @@ impl ToolHandler for PipetteTool {
     }
 
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let mut content = row![].spacing(16).align_y(iced::Alignment::Center);
+        let mut content = row![].spacing(16).align_y(icy_ui::Alignment::Center);
 
         // Center content
         content = content.push(Space::new().width(Length::Fill));
@@ -192,7 +192,7 @@ impl ToolHandler for PipetteTool {
                 let glyph_canvas = Canvas::new(preview).width(Length::Fixed(32.0)).height(Length::Fixed(32.0));
 
                 let glyph_container = container(glyph_canvas).style(|_theme: &Theme| container::Style {
-                    border: iced::Border {
+                    border: icy_ui::Border {
                         color: Color::from_rgb8(80, 80, 80),
                         width: 1.0,
                         radius: 2.0.into(),
@@ -207,9 +207,9 @@ impl ToolHandler for PipetteTool {
             let fg_idx = ch.attribute.foreground();
             let (r, g, b) = ctx.palette.color(fg_idx).rgb();
             let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
-                iced::Color::BLACK
+                icy_ui::Color::BLACK
             } else {
-                iced::Color::WHITE
+                icy_ui::Color::WHITE
             };
             let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
 
@@ -232,13 +232,13 @@ impl ToolHandler for PipetteTool {
                 text(hex_text)
                     .size(12)
                     .font(Font::MONOSPACE)
-                    .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                    .style(move |_| icy_ui::widget::text::Style { color: Some(text_color) }),
             )
             .padding([4, 8])
             .style(move |_theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                border: iced::Border {
-                    color: iced::Color::WHITE,
+                background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                border: icy_ui::Border {
+                    color: icy_ui::Color::WHITE,
                     width: 1.0,
                     radius: 4.0.into(),
                 },
@@ -250,9 +250,9 @@ impl ToolHandler for PipetteTool {
             let bg_idx = ch.attribute.background();
             let (r, g, b) = ctx.palette.color(bg_idx).rgb();
             let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
-                iced::Color::BLACK
+                icy_ui::Color::BLACK
             } else {
-                iced::Color::WHITE
+                icy_ui::Color::WHITE
             };
             let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
             let bg_label_text = format!(
@@ -265,13 +265,13 @@ impl ToolHandler for PipetteTool {
                 text(hex_text)
                     .size(12)
                     .font(Font::MONOSPACE)
-                    .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                    .style(move |_| icy_ui::widget::text::Style { color: Some(text_color) }),
             )
             .padding([4, 8])
             .style(move |_theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                border: iced::Border {
-                    color: iced::Color::WHITE,
+                background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                border: icy_ui::Border {
+                    color: icy_ui::Color::WHITE,
                     width: 1.0,
                     radius: 4.0.into(),
                 },
@@ -291,8 +291,8 @@ impl ToolHandler for PipetteTool {
         content.into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Crosshair
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::Crosshair
     }
 
     fn show_caret(&self) -> bool {

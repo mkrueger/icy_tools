@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, container, row, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -227,7 +227,7 @@ impl CaptureDialogState {
             row![
                 error_tooltip(error),
                 Space::new().width(4.0),
-                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
             ]
@@ -239,7 +239,7 @@ impl CaptureDialogState {
                 Space::new().width(4.0),
                 text(file_warning_msg)
                     .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.warning.base),
                     })
             ]
@@ -302,7 +302,7 @@ impl CaptureDialogState {
             DIALOG_WIDTH_LARGE,
         );
 
-        iced::widget::container(modal)
+        icy_ui::widget::container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, container, row, text, tooltip, Space},
     Alignment, Background, Element, Length, Theme,
 };
@@ -238,7 +238,7 @@ impl TerminalInfoDialog {
                 row![
                     text(format!("{:<16}", mode))
                         .size(TEXT_SIZE_SMALL)
-                        .font(iced::Font::MONOSPACE)
+                        .font(icy_ui::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
                             color: Some(theme.background.on.scale_alpha(alpha)),
                         }),
@@ -251,14 +251,14 @@ impl TerminalInfoDialog {
             })
             .collect();
 
-        let tooltip_content = iced::widget::Column::with_children(tooltip_rows).spacing(2);
+        let tooltip_content = icy_ui::widget::Column::with_children(tooltip_rows).spacing(2);
 
         row![
             text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
             tooltip(
                 text(value)
                     .size(TEXT_SIZE_NORMAL)
-                    .font(iced::Font::MONOSPACE)
+                    .font(icy_ui::Font::MONOSPACE)
                     .width(Length::Fixed(VALUE_WIDTH))
                     .style(|theme: &Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(0.7)),
@@ -320,7 +320,7 @@ impl TerminalInfoDialog {
                     }),
                     text(format!("{:<12}", shape_name))
                         .size(TEXT_SIZE_SMALL)
-                        .font(iced::Font::MONOSPACE)
+                        .font(icy_ui::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
                             color: Some(theme.background.on.scale_alpha(alpha)),
                         }),
@@ -333,17 +333,17 @@ impl TerminalInfoDialog {
             })
             .collect();
 
-        let tooltip_content = iced::widget::Column::with_children(tooltip_rows).spacing(2);
+        let tooltip_content = icy_ui::widget::Column::with_children(tooltip_rows).spacing(2);
 
         row![
             text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
             tooltip(
                 row![
-                    text(symbol).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE),
+                    text(symbol).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE),
                     Space::new().width(6.0),
                     text(name)
                         .size(TEXT_SIZE_NORMAL)
-                        .font(iced::Font::MONOSPACE)
+                        .font(icy_ui::Font::MONOSPACE)
                         .style(|theme: &Theme| text::Style {
                             color: Some(theme.background.on.scale_alpha(0.7)),
                         }),

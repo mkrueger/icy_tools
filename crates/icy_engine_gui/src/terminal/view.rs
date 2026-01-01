@@ -1,11 +1,11 @@
 #![allow(static_mut_refs)]
 use crate::{create_crt_shader, MonitorSettings, Terminal, ZoomMessage};
-use iced::Element;
+use icy_ui::Element;
 use icy_engine::{KeyModifiers, MouseButton, Position};
 use std::sync::Arc;
 
-/// Re-export iced's scroll delta for convenience
-pub use iced::mouse::ScrollDelta as WheelDelta;
+/// Re-export icy_ui's scroll delta for convenience
+pub use icy_ui::mouse::ScrollDelta as WheelDelta;
 
 /// Mouse event data with both pixel and text coordinates.
 /// Used by all mouse event variants in Message.
@@ -96,7 +96,7 @@ impl<'a> TerminalView<'a> {
     /// * `editor_markers` - Optional editor markers (layer bounds, selection, etc.)
     ///   Pass `Some(markers)` for editor views, `None` for simple terminal/viewer.
     pub fn show_with_effects(term: &'a Terminal, settings: Arc<MonitorSettings>, editor_markers: Option<crate::EditorMarkers>) -> Element<'a, TerminalMessage> {
-        iced::widget::container(create_crt_shader(term, settings, editor_markers))
+        icy_ui::widget::container(create_crt_shader(term, settings, editor_markers))
             .id(term.id.clone())
             .into()
     }

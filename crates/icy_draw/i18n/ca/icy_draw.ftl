@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=Fitxer
+menu-file=&Fitxer
 menu-new=Nou…
 menu-open=Obrir…
 menu-open_recent=Obrir recent
@@ -60,7 +60,7 @@ menu-export=Exportar…
 menu-edit-font-outline=Contorn de la font…
 menu-show_settings=Configuració…
 
-menu-edit=Editar
+menu-edit=&Editar
 menu-undo=Desfer
 menu-redo=Refer
 menu-undo-op=Desfer: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Desplaçar àrea cap a la dreta
 menu-mirror_mode=Mode mirall
 menu-area_operations=Àrea
 
-menu-selection=Selecció
+menu-selection=&Selecció
 menu-select-all=Seleccionar tot
 menu-select_nothing=Desseleccionar
 menu-inverse_selection=Invertir selecció
 
-menu-colors=Colors
+menu-colors=&Colors
 menu-ice-mode=Mode Ice
 menu-ice-mode-unrestricted=Sense restriccions
 menu-ice-mode-blink=Parpelleig
@@ -123,7 +123,7 @@ menu-next_bg_color=Següent color de fons
 menu-prev_fg_color=Color de primer pla anterior
 menu-prev_bg_color=Color de fons anterior
 
-menu-view=Vista
+menu-view=&Vista
 menu-reference-image=Obrir imatge de referència…
 menu-toggle-reference-image=Alternar imatge de referència
 menu-clear-reference-image=Netejar
@@ -158,12 +158,12 @@ menu-open_font_manager=Editar fonts del buffer…
 menu-open_font_directoy=Obrir directori de fonts…
 menu-open_palettes_directoy=Obrir directori de paletes…
 
-menu-help=Ajuda
+menu-help=&Ajuda
 menu-discuss=Discutir
 menu-open_log_file=Obrir fitxer de registre
 menu-report-bug=Informar d'un error
 menu-about=Quant a…
-menu-plugins=Plugins
+menu-plugins=&Plugins
 menu-open_plugin_directory=Obrir directori de plugins…
 
 menu-upgrade_version=Actualitzar a { $version }

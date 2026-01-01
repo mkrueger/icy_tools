@@ -7,8 +7,8 @@
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 use crate::fl;
-use iced::widget::{button, row, text, tooltip, Space};
-use iced::{Element, Length, Theme};
+use icy_ui::widget::{button, row, text, tooltip, Space};
+use icy_ui::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
@@ -309,9 +309,9 @@ pub enum PasteAction {
 impl PasteTool {
     /// Handle a keyboard event in paste mode
     /// Returns the action to perform
-    pub fn handle_key(&self, key: &iced::keyboard::Key) -> PasteAction {
-        use iced::keyboard::key::Named;
-        use iced::keyboard::Key;
+    pub fn handle_key(&self, key: &icy_ui::keyboard::Key) -> PasteAction {
+        use icy_ui::keyboard::key::Named;
+        use icy_ui::keyboard::Key;
 
         match key {
             // Escape - cancel paste
@@ -391,9 +391,10 @@ impl ToolHandler for PasteTool {
                     button::Status::Hovered | button::Status::Pressed => theme.background.on,
                     _ => theme.button.on,
                 },
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
+                border: icy_ui::Border::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
+                ..Default::default()
             }
         }
 
@@ -418,11 +419,11 @@ impl ToolHandler for PasteTool {
         ]
         .spacing(2)
         .height(Length::Fill)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         // Center vertically; AnsiEditor wraps this into the rounded container.
         row![Space::new().width(Length::Fill), content, Space::new().width(Length::Fill)]
-            .align_y(iced::Alignment::Center)
+            .align_y(icy_ui::Alignment::Center)
             .into()
     }
 
@@ -444,7 +445,7 @@ impl ToolHandler for PasteTool {
                     if self.move_undo.is_none() {
                         self.move_undo = Some(ctx.state.begin_atomic_undo("Move pasted layer".to_string()));
                     }
-                    ToolResult::StartCapture.and(ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing)))
+                    ToolResult::StartCapture.and(ToolResult::SetCursorIcon(Some(icy_ui::mouse::Interaction::Grabbing)))
                 } else {
                     ToolResult::None
                 }
@@ -456,7 +457,7 @@ impl ToolHandler for PasteTool {
                         // Set preview offset for visual feedback
                         let new_offset = self.target_layer_offset();
                         ctx.state.set_layer_preview_offset(Some(new_offset));
-                        return ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing))
+                        return ToolResult::SetCursorIcon(Some(icy_ui::mouse::Interaction::Grabbing))
                             .and(ToolResult::UpdateLayerBounds)
                             .and(ToolResult::CollabOperation(new_offset.x, new_offset.y))
                             .and(ToolResult::Redraw);
@@ -466,9 +467,9 @@ impl ToolHandler for PasteTool {
             }
             TerminalMessage::Move(_evt) => {
                 if self.drag_active {
-                    ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grabbing))
+                    ToolResult::SetCursorIcon(Some(icy_ui::mouse::Interaction::Grabbing))
                 } else {
-                    ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab))
+                    ToolResult::SetCursorIcon(Some(icy_ui::mouse::Interaction::Grab))
                 }
             }
             TerminalMessage::Release(_evt) => {
@@ -482,7 +483,7 @@ impl ToolHandler for PasteTool {
                     self.move_undo = None;
                     ToolResult::Multi(vec![
                         ToolResult::EndCapture,
-                        ToolResult::SetCursorIcon(Some(iced::mouse::Interaction::Grab)),
+                        ToolResult::SetCursorIcon(Some(icy_ui::mouse::Interaction::Grab)),
                         ToolResult::UpdateLayerBounds,
                         ToolResult::CollabOperation(final_offset.x, final_offset.y),
                         ToolResult::Commit("Move pasted layer".to_string()),
@@ -495,13 +496,13 @@ impl ToolHandler for PasteTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         if !self.active {
             return ToolResult::None;
         }
 
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
                 let action: PasteAction = self.handle_key(key);
                 self.perform_action(ctx.state, action)
             }

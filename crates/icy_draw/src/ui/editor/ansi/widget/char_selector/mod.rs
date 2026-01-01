@@ -3,7 +3,7 @@
 //! A 16x16 grid of characters that can be selected with the mouse.
 //! Used for customizing F-key character assignments.
 
-use iced::{
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{
         canvas::{self, Canvas, Frame, Geometry},
@@ -149,7 +149,7 @@ type HoverState = Option<u16>;
 impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
     type State = HoverState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Background with dotted pattern
@@ -207,7 +207,7 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
 
                 // Draw selection border for current character
                 if is_current {
-                    use iced::widget::canvas::{Path, Stroke};
+                    use icy_ui::widget::canvas::{Path, Stroke};
                     let rect_path = Path::rectangle(Point::new(x, y), Size::new(CELL_SIZE, CELL_SIZE));
                     frame.stroke(&rect_path, Stroke::default().with_color(selected_border).with_width(2.0));
                 }
@@ -217,9 +217,9 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<CharSelectorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<CharSelectorMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.code_at_pos(p));
                 if *state != new_hover {
                     *state = new_hover;
@@ -227,7 +227,7 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
@@ -240,14 +240,14 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
 
                 None
             }
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::Key;
-                if matches!(key, Key::Named(iced::keyboard::key::Named::Escape)) {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
+                use icy_ui::keyboard::Key;
+                if matches!(key, Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                     return Some(Action::publish(CharSelectorMessage::Cancel));
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if state.is_some() {
                     *state = None;
                     return Some(Action::request_redraw());

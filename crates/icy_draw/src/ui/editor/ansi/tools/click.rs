@@ -7,8 +7,8 @@
 //! - Cursor navigation (arrows, home, end, etc.)
 //! - Layer dragging (Ctrl+Click+Drag, or always for Image layers)
 
-use iced::keyboard::key::Physical;
-use iced::Element;
+use icy_ui::keyboard::key::Physical;
+use icy_ui::Element;
 use icy_engine::{BufferType, Role};
 use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
@@ -309,17 +309,17 @@ impl ToolHandler for ClickTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed {
                 key,
                 modifiers,
                 text,
                 physical_key,
                 ..
             }) => {
-                use iced::keyboard::key::Named;
-                use iced::keyboard::Key;
+                use icy_ui::keyboard::key::Named;
+                use icy_ui::keyboard::Key;
 
                 // - Ctrl+,  => previous set
                 // - Ctrl+.  => next set
@@ -329,7 +329,7 @@ impl ToolHandler for ClickTool {
                         return ToolResult::None;
                     };
                     match physical_key {
-                        Physical::Code(iced::keyboard::key::Code::Comma) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::Comma) => {
                             let cur = self.current_fkey_set;
                             let prev = {
                                 let opts = options.read();
@@ -343,12 +343,12 @@ impl ToolHandler for ClickTool {
                             self.set_current_fkey_set(options, prev);
                             return ToolResult::Redraw;
                         }
-                        Physical::Code(iced::keyboard::key::Code::Period) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::Period) => {
                             let next = self.current_fkey_set.saturating_add(1);
                             self.set_current_fkey_set(options, next);
                             return ToolResult::Redraw;
                         }
-                        Physical::Code(iced::keyboard::key::Code::Slash) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::Slash) => {
                             let default_set = FKeySets::default().current_set;
                             self.set_current_fkey_set(options, default_set);
                             return ToolResult::Redraw;
@@ -364,7 +364,7 @@ impl ToolHandler for ClickTool {
 
                 // Shift+Space inserts 0xFF (hard blank) - works for all font types (not for Image layers)
                 if !self.is_on_image_layer && modifiers.shift() {
-                    if let iced::keyboard::Key::Named(Named::Space) = key {
+                    if let icy_ui::keyboard::Key::Named(Named::Space) = key {
                         if let Err(e) = ctx.state.type_key('\u{00FF}') {
                             log::warn!("Failed to type hard blank: {}", e);
                             return ToolResult::None;
@@ -397,7 +397,7 @@ impl ToolHandler for ClickTool {
 
                 // Handle Space key (text field may not contain it) - not for Image layers
                 if !self.is_on_image_layer {
-                    if let iced::keyboard::Key::Named(Named::Space) = key {
+                    if let icy_ui::keyboard::Key::Named(Named::Space) = key {
                         if !modifiers.shift() && !modifiers.control() {
                             let buffer_type = ctx.state.get_buffer().buffer_type;
                             let encoded = buffer_type.convert_from_unicode(' ');
@@ -410,7 +410,7 @@ impl ToolHandler for ClickTool {
                     }
                 }
 
-                if let iced::keyboard::Key::Named(named) = key {
+                if let icy_ui::keyboard::Key::Named(named) = key {
                     match named {
                         // F-keys - not for Image layers (except Alt+F for set switching)
                         Named::F1
@@ -487,7 +487,7 @@ impl ToolHandler for ClickTool {
 
                 // Image layers: handle Delete specially (delete the layer)
                 if self.is_on_image_layer {
-                    if let iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) = key {
+                    if let icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Delete) = key {
                         let _ = ctx.state.remove_layer(ctx.state.get_current_layer().unwrap_or(0));
                         return ToolResult::Commit("Delete layer".to_string());
                     }
@@ -507,16 +507,16 @@ impl ToolHandler for ClickTool {
         }
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
         if self.layer_drag_active {
-            iced::mouse::Interaction::Grabbing
+            icy_ui::mouse::Interaction::Grabbing
         } else if self.is_on_image_layer {
             // Image layers always show grab cursor
-            iced::mouse::Interaction::Grab
+            icy_ui::mouse::Interaction::Grab
         } else if let Some(cursor) = self.selection_mouse.cursor() {
             cursor
         } else {
-            iced::mouse::Interaction::Text
+            icy_ui::mouse::Interaction::Text
         }
     }
 

@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, container, row, text, Space},
     Alignment, Border, Color, Element, Event, Length, Theme,
 };
@@ -309,21 +309,22 @@ impl StatusBar {
                 button(row(parts).spacing(0))
                     .on_press(StatusBarMessage::ShowSauceInfo)
                     .padding([0, 0])
-                    .style(move |_theme: &iced::Theme, status| {
-                        use iced::widget::button::{Status, Style};
+                    .style(move |_theme: &icy_ui::Theme, status| {
+                        use icy_ui::widget::button::{Status, Style};
                         let hover_alpha = if is_dark { 0.1 } else { 0.15 };
                         let pressed_alpha = if is_dark { 0.15 } else { 0.2 };
                         let base = Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: Color::WHITE,
                             border: Border::default(),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         };
                         match status {
-                            Status::Active | Status::Disabled => base,
+                            Status::Active | Status::Disabled | Status::Selected => base,
                             Status::Hovered => Style {
-                                background: Some(iced::Background::Color(if is_dark {
+                                background: Some(icy_ui::Background::Color(if is_dark {
                                     Color::from_rgba(1.0, 1.0, 1.0, hover_alpha)
                                 } else {
                                     Color::from_rgba(0.0, 0.0, 0.0, hover_alpha)
@@ -331,7 +332,7 @@ impl StatusBar {
                                 ..base
                             },
                             Status::Pressed => Style {
-                                background: Some(iced::Background::Color(if is_dark {
+                                background: Some(icy_ui::Background::Color(if is_dark {
                                     Color::from_rgba(1.0, 1.0, 1.0, pressed_alpha)
                                 } else {
                                     Color::from_rgba(0.0, 0.0, 0.0, pressed_alpha)
@@ -370,11 +371,11 @@ impl StatusBar {
             button(text(baud_text).size(12))
                 .on_press(StatusBarMessage::CycleBaudEmulation)
                 .padding([2, 8])
-                .style(|theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(|theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = Style {
-                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                         text_color: theme.accent.hover,
                         border: Border {
                             color: theme.accent.selected,
@@ -383,17 +384,18 @@ impl StatusBar {
                         },
                         shadow: Default::default(),
                         snap: false,
+                        ..Default::default()
                     };
 
                     match status {
-                        Status::Active | Status::Disabled => base,
+                        Status::Active | Status::Disabled | Status::Selected => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             text_color: theme.primary.on,
                             ..base
                         },
@@ -404,8 +406,8 @@ impl StatusBar {
             // Disabled state when not viewing a file
             button(text(baud_text).size(12))
                 .padding([2, 8])
-                .style(|theme: &iced::Theme, _status| iced::widget::button::Style {
-                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                .style(|theme: &icy_ui::Theme, _status| icy_ui::widget::button::Style {
+                    background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                     text_color: theme.button.on.scale_alpha(0.5),
                     border: Border {
                         color: theme.button.on.scale_alpha(0.3),
@@ -414,6 +416,7 @@ impl StatusBar {
                     },
                     shadow: Default::default(),
                     snap: false,
+                    ..Default::default()
                 })
                 .into()
         };
@@ -425,14 +428,14 @@ impl StatusBar {
             button(text(scroll_text).size(12))
                 .on_press(StatusBarMessage::ToggleAutoScroll)
                 .padding([2, 8])
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = Style {
                         background: if is_auto_scroll_enabled {
-                            Some(iced::Background::Color(theme.accent.selected))
+                            Some(icy_ui::Background::Color(theme.accent.selected))
                         } else {
-                            Some(iced::Background::Color(Color::TRANSPARENT))
+                            Some(icy_ui::Background::Color(Color::TRANSPARENT))
                         },
                         text_color: if is_auto_scroll_enabled { theme.accent.on } else { theme.accent.hover },
                         border: Border {
@@ -442,17 +445,18 @@ impl StatusBar {
                         },
                         shadow: Default::default(),
                         snap: false,
+                        ..Default::default()
                     };
 
                     match status {
-                        Status::Active | Status::Disabled => base,
+                        Status::Active | Status::Disabled | Status::Selected => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             text_color: theme.primary.on,
                             ..base
                         },
@@ -466,7 +470,7 @@ impl StatusBar {
             let count_text = fl!(LANGUAGE_LOADER, "statusbar-items", count = info.item_count);
             text(count_text)
                 .size(12)
-                .style(|theme: &iced::Theme| text::Style {
+                .style(|theme: &icy_ui::Theme| text::Style {
                     color: Some(theme.background.on.scale_alpha(0.6)),
                 })
                 .into()
@@ -488,8 +492,8 @@ impl StatusBar {
             .width(Length::Fill)
             .padding([4, 0])
             .style(|theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 0.0.into(),

@@ -10,8 +10,8 @@ use super::layout::{
     BORDER_WIDTH, CORNER_RADIUS, MAX_SEGMENTS, NO_HOVER, PREVIEW_GLYPH_HEIGHT, SEGMENT_FONT_SCALE, SEGMENT_HEIGHT, SEGMENT_PADDING_H, SHADOW_PADDING,
 };
 use crate::ui::editor::ansi::widget::layer_view::glyph_renderer::{build_glyph_atlas_rgba, cp437_index, font_key, GlyphInstance, QuadVertex, FLAG_DRAW_BG};
-use iced::wgpu::util::DeviceExt;
-use iced::{
+use icy_ui::wgpu::util::DeviceExt;
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{self, canvas, shader},
     Color, Element, Length, Rectangle, Theme,
@@ -256,28 +256,28 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
     fn update(
         &self,
         _state: &mut Self::State,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         bounds: Rectangle,
         cursor: Cursor,
-    ) -> Option<iced::widget::Action<SegmentedControlMessage<T>>> {
+    ) -> Option<icy_ui::widget::Action<SegmentedControlMessage<T>>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|pos| segment_at_x(pos.x, &self.segment_widths));
                 let new_raw = new_hover.map(|i| i as u32).unwrap_or(NO_HOVER);
                 let old_raw = self.hovered_index.swap(new_raw, Ordering::Relaxed);
                 if old_raw != new_raw {
-                    return Some(iced::widget::Action::request_redraw());
+                    return Some(icy_ui::widget::Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 let old_raw = self.hovered_index.swap(NO_HOVER, Ordering::Relaxed);
                 if old_raw != NO_HOVER {
-                    return Some(iced::widget::Action::request_redraw());
+                    return Some(icy_ui::widget::Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(pos) = cursor.position_in(bounds) else {
@@ -292,14 +292,14 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
                 };
                 let value = seg.value.clone();
                 if self.multi_select {
-                    Some(iced::widget::Action::publish(SegmentedControlMessage::Toggled(value)))
+                    Some(icy_ui::widget::Action::publish(SegmentedControlMessage::Toggled(value)))
                 } else {
                     let is_char = matches!(seg.content, SegmentContent::Char(_));
                     let is_already_selected = idx == self.selected_index;
                     if is_char && is_already_selected {
-                        Some(iced::widget::Action::publish(SegmentedControlMessage::CharClicked(value)))
+                        Some(icy_ui::widget::Action::publish(SegmentedControlMessage::CharClicked(value)))
                     } else {
-                        Some(iced::widget::Action::publish(SegmentedControlMessage::Selected(value)))
+                        Some(icy_ui::widget::Action::publish(SegmentedControlMessage::Selected(value)))
                     }
                 }
             }
@@ -345,10 +345,10 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Primitive for S
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let scale = viewport.scale_factor();
         // Convert logical widget bounds to physical pixels.
@@ -435,20 +435,20 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Primitive for S
         queue.write_buffer(&pipeline.instance_buffer, instance_offset, bytes);
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let instance_count = self.instance_count.load(Ordering::Relaxed);
         if instance_count == 0 {
             return;
         }
 
-        let mut pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+        let mut pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("Segmented OnePass Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
@@ -479,88 +479,88 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Primitive for S
 }
 
 pub struct SegmentedOnePassRenderer {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     uniform_stride: u64,
     uniform_capacity: u32,
     next_uniform: AtomicU32,
-    quad_vertex_buffer: iced::wgpu::Buffer,
-    instance_buffer: iced::wgpu::Buffer,
+    quad_vertex_buffer: icy_ui::wgpu::Buffer,
+    instance_buffer: icy_ui::wgpu::Buffer,
     instance_stride: u64,
     instance_capacity_per_primitive: u32,
     instance_slots: u32,
     instance_slot_stride: u64,
     next_instance_slot: AtomicU32,
 
-    atlas_texture: iced::wgpu::Texture,
-    atlas_view: iced::wgpu::TextureView,
-    atlas_sampler: iced::wgpu::Sampler,
+    atlas_texture: icy_ui::wgpu::Texture,
+    atlas_view: icy_ui::wgpu::TextureView,
+    atlas_sampler: icy_ui::wgpu::Sampler,
     atlas_key: Option<u64>,
     atlas_w: u32,
     atlas_h: u32,
 }
 
 impl SegmentedOnePassRenderer {
-    fn update_atlas(&mut self, device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
+    fn update_atlas(&mut self, device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
         if self.atlas_w != w || self.atlas_h != h {
-            self.atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+            self.atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                 label: Some("Segmented OnePass Glyph Atlas"),
-                size: iced::wgpu::Extent3d {
+                size: icy_ui::wgpu::Extent3d {
                     width: w,
                     height: h,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
-                dimension: iced::wgpu::TextureDimension::D2,
-                format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                dimension: icy_ui::wgpu::TextureDimension::D2,
+                format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            self.atlas_view = self.atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+            self.atlas_view = self.atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
             self.atlas_w = w;
             self.atlas_h = h;
 
             let bind_group_layout = self.pipeline.get_bind_group_layout(0);
-            self.bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+            self.bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                 label: Some("Segmented OnePass Bind Group"),
                 layout: &bind_group_layout,
                 entries: &[
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                        resource: icy_ui::wgpu::BindingResource::Buffer(icy_ui::wgpu::BufferBinding {
                             buffer: &self.uniform_buffer,
                             offset: 0,
                             size: NonZeroU64::new(std::mem::size_of::<SegmentedOnePassUniforms>() as u64),
                         }),
                     },
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: iced::wgpu::BindingResource::TextureView(&self.atlas_view),
+                        resource: icy_ui::wgpu::BindingResource::TextureView(&self.atlas_view),
                     },
-                    iced::wgpu::BindGroupEntry {
+                    icy_ui::wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: iced::wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                        resource: icy_ui::wgpu::BindingResource::Sampler(&self.atlas_sampler),
                     },
                 ],
             });
         }
 
         queue.write_texture(
-            iced::wgpu::TexelCopyTextureInfo {
+            icy_ui::wgpu::TexelCopyTextureInfo {
                 texture: &self.atlas_texture,
                 mip_level: 0,
-                origin: iced::wgpu::Origin3d::ZERO,
-                aspect: iced::wgpu::TextureAspect::All,
+                origin: icy_ui::wgpu::Origin3d::ZERO,
+                aspect: icy_ui::wgpu::TextureAspect::All,
             },
             rgba,
-            iced::wgpu::TexelCopyBufferLayout {
+            icy_ui::wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(w * 4),
                 rows_per_image: Some(h),
             },
-            iced::wgpu::Extent3d {
+            icy_ui::wgpu::Extent3d {
                 width: w,
                 height: h,
                 depth_or_array_layers: 1,
@@ -572,10 +572,10 @@ impl SegmentedOnePassRenderer {
 }
 
 impl shader::Pipeline for SegmentedOnePassRenderer {
-    fn new(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+    fn new(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Segmented OnePass Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let uniform_size = std::mem::size_of::<SegmentedOnePassUniforms>() as u64;
@@ -584,52 +584,52 @@ impl shader::Pipeline for SegmentedOnePassRenderer {
         let uniform_capacity: u32 = 1024;
         let uniform_buffer_size = uniform_stride * (uniform_capacity as u64);
 
-        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("Segmented OnePass Uniforms (Dynamic)"),
             size: uniform_buffer_size,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        let atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
             label: Some("Segmented OnePass Atlas (init)"),
-            size: iced::wgpu::Extent3d {
+            size: icy_ui::wgpu::Extent3d {
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            dimension: icy_ui::wgpu::TextureDimension::D2,
+            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         queue.write_texture(
-            iced::wgpu::TexelCopyTextureInfo {
+            icy_ui::wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,
                 mip_level: 0,
-                origin: iced::wgpu::Origin3d::ZERO,
-                aspect: iced::wgpu::TextureAspect::All,
+                origin: icy_ui::wgpu::Origin3d::ZERO,
+                aspect: icy_ui::wgpu::TextureAspect::All,
             },
             &[255, 255, 255, 0],
-            iced::wgpu::TexelCopyBufferLayout {
+            icy_ui::wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4),
                 rows_per_image: Some(1),
             },
-            iced::wgpu::Extent3d {
+            icy_ui::wgpu::Extent3d {
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
             },
         );
-        let atlas_view = atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-        let atlas_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
+        let atlas_sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Segmented OnePass Atlas Sampler"),
-            mag_filter: iced::wgpu::FilterMode::Nearest,
-            min_filter: iced::wgpu::FilterMode::Nearest,
-            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            mag_filter: icy_ui::wgpu::FilterMode::Nearest,
+            min_filter: icy_ui::wgpu::FilterMode::Nearest,
+            mipmap_filter: icy_ui::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -659,10 +659,10 @@ impl shader::Pipeline for SegmentedOnePassRenderer {
                 unit_uv: [1.0, 1.0],
             },
         ];
-        let quad_vertex_buffer = device.create_buffer_init(&iced::wgpu::util::BufferInitDescriptor {
+        let quad_vertex_buffer = device.create_buffer_init(&icy_ui::wgpu::util::BufferInitDescriptor {
             label: Some("Segmented OnePass Quad"),
             contents: bytemuck::cast_slice(&quad),
-            usage: iced::wgpu::BufferUsages::VERTEX,
+            usage: icy_ui::wgpu::BufferUsages::VERTEX,
         });
 
         let instance_stride = std::mem::size_of::<GlyphInstance>() as u64;
@@ -670,87 +670,87 @@ impl shader::Pipeline for SegmentedOnePassRenderer {
         let instance_slots: u32 = 1024;
         let instance_slot_stride = instance_stride * (instance_capacity_per_primitive as u64);
         let instance_buffer_size = instance_slot_stride * (instance_slots as u64);
-        let instance_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let instance_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("Segmented OnePass Instances (Ring)"),
             size: instance_buffer_size,
-            usage: iced::wgpu::BufferUsages::VERTEX | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::VERTEX | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Segmented OnePass Bind Group Layout"),
             entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
                         min_binding_size: NonZeroU64::new(uniform_size),
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
-        let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
             label: Some("Segmented OnePass Bind Group"),
             layout: &bind_group_layout,
             entries: &[
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                    resource: icy_ui::wgpu::BindingResource::Buffer(icy_ui::wgpu::BufferBinding {
                         buffer: &uniform_buffer,
                         offset: 0,
                         size: NonZeroU64::new(uniform_size),
                     }),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: iced::wgpu::BindingResource::TextureView(&atlas_view),
+                    resource: icy_ui::wgpu::BindingResource::TextureView(&atlas_view),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: iced::wgpu::BindingResource::Sampler(&atlas_sampler),
+                    resource: icy_ui::wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Segmented OnePass Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
         let vertex_buffers = [
-            iced::wgpu::VertexBufferLayout {
+            icy_ui::wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<QuadVertex>() as u64,
-                step_mode: iced::wgpu::VertexStepMode::Vertex,
-                attributes: &iced::wgpu::vertex_attr_array![
+                step_mode: icy_ui::wgpu::VertexStepMode::Vertex,
+                attributes: &icy_ui::wgpu::vertex_attr_array![
                     0 => Float32x2,
                     1 => Float32x2
                 ],
             },
-            iced::wgpu::VertexBufferLayout {
+            icy_ui::wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<GlyphInstance>() as u64,
-                step_mode: iced::wgpu::VertexStepMode::Instance,
-                attributes: &iced::wgpu::vertex_attr_array![
+                step_mode: icy_ui::wgpu::VertexStepMode::Instance,
+                attributes: &icy_ui::wgpu::vertex_attr_array![
                     2 => Float32x2,
                     3 => Float32x2,
                     4 => Float32x4,
@@ -761,31 +761,31 @@ impl shader::Pipeline for SegmentedOnePassRenderer {
             },
         ];
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Segmented OnePass Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
@@ -948,7 +948,7 @@ impl ShaderSegmentedControl {
         bg_color: u32,
         palette: &Palette,
     ) -> Element<'_, SegmentedControlMessage<T>> {
-        // Convert palette indices to iced::Color
+        // Convert palette indices to icy_ui::Color
         let (r, g, b) = palette.rgb(fg_color);
         let fg = Color::from_rgb8(r, g, b);
         let (r, g, b) = palette.rgb(bg_color);
@@ -1050,7 +1050,7 @@ impl ShaderSegmentedControl {
         .height(Length::Fixed(total_height))
         .into();
 
-        let stacked: Element<'_, SegmentedControlMessage<usize>> = iced::widget::stack![shader_onepass, overlay]
+        let stacked: Element<'_, SegmentedControlMessage<usize>> = icy_ui::widget::stack![shader_onepass, overlay]
             .width(Length::Fixed(total_width))
             .height(Length::Fixed(total_height))
             .into();
@@ -1137,7 +1137,7 @@ impl ShaderSegmentedControl {
         .height(Length::Fixed(total_height))
         .into();
 
-        let stacked: Element<'_, SegmentedControlMessage<usize>> = iced::widget::stack![shader_onepass, overlay]
+        let stacked: Element<'_, SegmentedControlMessage<usize>> = icy_ui::widget::stack![shader_onepass, overlay]
             .width(Length::Fixed(total_width))
             .height(Length::Fixed(total_height))
             .into();
@@ -1163,7 +1163,7 @@ struct SegmentedTtfOverlay {
 impl canvas::Program<SegmentedControlMessage<usize>> for SegmentedTtfOverlay {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         let hovered_raw = self.hovered_index.load(Ordering::Relaxed);
@@ -1191,12 +1191,12 @@ impl canvas::Program<SegmentedControlMessage<usize>> for SegmentedTtfOverlay {
 
                 frame.fill_text(canvas::Text {
                     content: text.clone(),
-                    position: iced::Point::new(seg_x + seg_w / 2.0, content_y + content_h / 2.0),
+                    position: icy_ui::Point::new(seg_x + seg_w / 2.0, content_y + content_h / 2.0),
                     color,
                     size: 14.0.into(),
-                    font: iced::Font::default(),
-                    align_x: iced::alignment::Horizontal::Center.into(),
-                    align_y: iced::alignment::Vertical::Center.into(),
+                    font: icy_ui::Font::default(),
+                    align_x: icy_ui::alignment::Horizontal::Center.into(),
+                    align_y: icy_ui::alignment::Vertical::Center.into(),
                     ..Default::default()
                 });
             }

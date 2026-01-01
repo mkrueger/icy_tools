@@ -162,11 +162,11 @@ impl CollaborationState {
     }
 
     /// Send our status to the server
-    pub fn send_status(&mut self, status: u8) -> Option<iced::Task<()>> {
+    pub fn send_status(&mut self, status: u8) -> Option<icy_ui::Task<()>> {
         let client = self.client.as_ref()?;
         let handle = client.handle().clone();
 
-        Some(iced::Task::future(async move {
+        Some(icy_ui::Task::future(async move {
             let _ = handle.send_status(status).await;
         }))
     }
@@ -197,7 +197,7 @@ impl CollaborationState {
     }
 
     /// Send a chat message (returns a Task that should be spawned)
-    pub fn send_chat(&mut self, text: String) -> Option<iced::Task<()>> {
+    pub fn send_chat(&mut self, text: String) -> Option<icy_ui::Task<()>> {
         let client = self.client.as_ref()?;
         let handle = client.handle().clone();
 
@@ -215,16 +215,16 @@ impl CollaborationState {
             });
         }
 
-        Some(iced::Task::future(async move {
+        Some(icy_ui::Task::future(async move {
             let _ = handle.send_chat(text).await;
         }))
     }
 
     /// Send cursor position (returns a Task that should be spawned)
-    pub fn send_cursor(&self, col: i32, row: i32) -> Option<iced::Task<()>> {
+    pub fn send_cursor(&self, col: i32, row: i32) -> Option<icy_ui::Task<()>> {
         if let Some(client) = &self.client {
             let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
+            Some(icy_ui::Task::future(async move {
                 let _ = handle.send_cursor(col, row).await;
             }))
         } else {
@@ -233,10 +233,10 @@ impl CollaborationState {
     }
 
     /// Send operation mode position (floating selection) (returns a Task that should be spawned)
-    pub fn send_operation(&self, col: i32, row: i32) -> Option<iced::Task<()>> {
+    pub fn send_operation(&self, col: i32, row: i32) -> Option<icy_ui::Task<()>> {
         if let Some(client) = &self.client {
             let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
+            Some(icy_ui::Task::future(async move {
                 let _ = handle.send_operation(col, row).await;
             }))
         } else {
@@ -245,10 +245,10 @@ impl CollaborationState {
     }
 
     /// Send paste-as-selection (floating layer blocks) for collaboration
-    pub fn send_paste_as_selection(&self, blocks: icy_engine_edit::collaboration::Blocks) -> Option<iced::Task<()>> {
+    pub fn send_paste_as_selection(&self, blocks: icy_engine_edit::collaboration::Blocks) -> Option<icy_ui::Task<()>> {
         if let Some(client) = &self.client {
             let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
+            Some(icy_ui::Task::future(async move {
                 let _ = handle.paste_as_selection(blocks).await;
             }))
         } else {
@@ -257,10 +257,10 @@ impl CollaborationState {
     }
 
     /// Send hide cursor command (returns a Task that should be spawned)
-    pub fn send_hide_cursor(&self) -> Option<iced::Task<()>> {
+    pub fn send_hide_cursor(&self) -> Option<icy_ui::Task<()>> {
         if let Some(client) = &self.client {
             let handle = client.handle().clone();
-            Some(iced::Task::future(async move {
+            Some(icy_ui::Task::future(async move {
                 let _ = handle.send_hide_cursor().await;
             }))
         } else {
@@ -314,7 +314,7 @@ impl CollaborationState {
     /// Also syncs cursor position and selection state.
     ///
     /// Returns a Task that sends all collected commands to the server.
-    pub fn sync_from_undo_stack(&mut self, undo_stack: &EditorUndoStack, caret_pos: (i32, i32), selecting: bool) -> Option<iced::Task<()>> {
+    pub fn sync_from_undo_stack(&mut self, undo_stack: &EditorUndoStack, caret_pos: (i32, i32), selecting: bool) -> Option<icy_ui::Task<()>> {
         // Skip if not connected
         let client = self.client.as_ref()?;
         let handle = client.handle().clone();
@@ -326,7 +326,7 @@ impl CollaborationState {
         }
 
         // Send all commands
-        Some(iced::Task::future(async move {
+        Some(icy_ui::Task::future(async move {
             for cmd in commands {
                 // Use the send_command method which handles all command types
                 let _ = handle.send_command(cmd).await;

@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=Fișier
+menu-file=&Fișier
 menu-new=Nou…
 menu-open=Deschide…
 menu-open_recent=Deschide recent
@@ -60,7 +60,7 @@ menu-export=Exportă…
 menu-edit-font-outline=Contur font…
 menu-show_settings=Setări…
 
-menu-edit=Editează
+menu-edit=&Editează
 menu-undo=Anulează
 menu-redo=Refă
 menu-undo-op=Anulează: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Derulează zona la dreapta
 menu-mirror_mode=Mod oglindă
 menu-area_operations=Zonă
 
-menu-selection=Selecție
+menu-selection=&Selecție
 menu-select-all=Selectează tot
 menu-select_nothing=Deselectează
 menu-inverse_selection=Inversează selecția
 
-menu-colors=Culori
+menu-colors=&Culori
 menu-ice-mode=Mod Ice
 menu-ice-mode-unrestricted=Fără restricții
 menu-ice-mode-blink=Clipire
@@ -123,7 +123,7 @@ menu-next_bg_color=Următoarea culoare de fundal
 menu-prev_fg_color=Culoarea de prim-plan anterioară
 menu-prev_bg_color=Culoarea de fundal anterioară
 
-menu-view=Vizualizare
+menu-view=&Vizualizare
 menu-reference-image=Deschide imagine de referință…
 menu-toggle-reference-image=Comută imagine de referință
 menu-clear-reference-image=Curăță
@@ -158,12 +158,12 @@ menu-open_font_manager=Editează fonturile bufferului…
 menu-open_font_directoy=Deschide directorul de fonturi…
 menu-open_palettes_directoy=Deschide directorul de palete…
 
-menu-help=Ajutor
+menu-help=&Ajutor
 menu-discuss=Discută
 menu-open_log_file=Deschide fișier jurnal
 menu-report-bug=Raportează o eroare
 menu-about=Despre…
-menu-plugins=Pluginuri
+menu-plugins=&Pluginuri
 menu-open_plugin_directory=Deschide directorul de pluginuri…
 
 menu-upgrade_version=Actualizează la { $version }

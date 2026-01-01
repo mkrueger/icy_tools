@@ -14,7 +14,7 @@ pub use canvas::*;
 
 use std::path::PathBuf;
 
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length, Task,
 };
@@ -426,7 +426,7 @@ impl Dialog<Message> for FontImportDialog {
         let error_element: Element<'_, Message> = if let Some(err) = &self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
                 .into()
@@ -479,7 +479,7 @@ impl Dialog<Message> for FontImportDialog {
 impl FontImportDialog {
     /// View for the font preview (charset-like grid)
     fn view_preview_internal(&self) -> Element<'_, Message> {
-        use iced::widget::Canvas;
+        use icy_ui::widget::Canvas;
 
         if let Some(font) = &self.preview_font {
             let (font_width, font_height) = (font.size().width, font.size().height);
@@ -571,7 +571,7 @@ impl FontImportDialog {
                     .width(Length::Fixed(60.0));
 
                 let width_error = if !width_valid && !self.image_width.is_empty() {
-                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.destructive.base),
                     })
                 } else {
@@ -579,7 +579,7 @@ impl FontImportDialog {
                 };
 
                 let height_error = if !height_valid && !self.image_height.is_empty() {
-                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    text("> 0").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.destructive.base),
                     })
                 } else {

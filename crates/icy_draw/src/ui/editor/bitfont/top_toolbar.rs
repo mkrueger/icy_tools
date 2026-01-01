@@ -2,7 +2,7 @@
 //!
 //! Shows keyboard shortcut hints for actions not in the menu.
 
-use iced::{
+use icy_ui::{
     widget::{container, row, text},
     Element, Length, Task,
 };
@@ -100,7 +100,7 @@ impl BitFontTopToolbar {
             Self::hint("MMB", "Toggle Select"),
         ]
         .spacing(8)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         container(hints)
             .width(Length::Fill)
@@ -114,20 +114,20 @@ impl BitFontTopToolbar {
     /// Create a hint label: "Key: Action"
     fn hint<'a>(key: &'a str, action: &'a str) -> Element<'a, BitFontTopToolbarMessage> {
         row![
-            text(key).size(14).style(|theme: &iced::Theme| {
+            text(key).size(14).style(|theme: &icy_ui::Theme| {
                 text::Style {
                     color: Some(theme.background.on),
                 }
             }),
             text(":")
-                .style(|theme: &iced::Theme| {
+                .style(|theme: &icy_ui::Theme| {
                     text::Style {
                         color: Some(theme.secondary.on),
                     }
                 })
                 .size(14),
             text(action)
-                .style(|theme: &iced::Theme| {
+                .style(|theme: &icy_ui::Theme| {
                     text::Style {
                         color: Some(theme.secondary.on),
                     }
@@ -142,7 +142,7 @@ impl BitFontTopToolbar {
     fn sep() -> Element<'static, BitFontTopToolbarMessage> {
         text("|")
             .size(14)
-            .style(|theme: &iced::Theme| text::Style {
+            .style(|theme: &icy_ui::Theme| text::Style {
                 color: Some(theme.button.base),
             })
             .into()

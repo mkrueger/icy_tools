@@ -171,11 +171,11 @@ fn main() {
     let script_for_closure = args.run;
     let mcp_rx = Arc::new(mcp_rx);
 
-    iced::daemon(
+    icy_ui::daemon(
         move || {
             let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };
             if let Some(ref url) = url_for_closure {
-                let mut manager: (WindowManager, iced::Task<ui::WindowManagerMessage>) = WindowManager::with_url(mcp_receiver, url.clone());
+                let mut manager: (WindowManager, icy_ui::Task<ui::WindowManagerMessage>) = WindowManager::with_url(mcp_receiver, url.clone());
                 if let Some(ref script) = script_for_closure {
                     manager.0.script_to_run = Some(script.clone());
                 }
@@ -198,11 +198,11 @@ fn main() {
     log::info!("shutting down.");
 }
 
-fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+fn load_window_icon(png_bytes: &[u8]) -> Result<icy_ui::window::Icon, Box<dyn std::error::Error>> {
     // Add `image = "0.24"` (or latest) to Cargo.toml if not present.
     let img = image::load_from_memory(png_bytes)?;
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
-    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+    Ok(icy_ui::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }

@@ -11,7 +11,7 @@
 // Currently only a subset is used by the GPU renderer.
 #![allow(dead_code)]
 
-use iced::{Point, Rectangle};
+use icy_ui::{Point, Rectangle};
 
 use crate::ui::editor::ansi::constants::{TOP_CONTROL_HEIGHT, TOP_CONTROL_SHADOW_PADDING};
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use clap::Parser;
-use iced::{
+use icy_ui::{
     advanced::graphics::core::keyboard,
     widget::{operation, space},
     window, Element, Event, Subscription, Task, Theme, Vector,
@@ -31,7 +31,7 @@ pub enum WindowManagerMessage {
     FocusPrevious,
     WindowClosed(window::Id),
     WindowMessage(window::Id, crate::ui::Message),
-    Event(window::Id, iced::Event),
+    Event(window::Id, icy_ui::Event),
     _UpdateBuffers,
 }
 
@@ -102,7 +102,7 @@ impl WindowManager {
             WindowManagerMessage::WindowClosed(id) => {
                 self.windows.remove(&id);
                 if self.windows.is_empty() {
-                    iced::exit()
+                    icy_ui::exit()
                 } else {
                     Task::none()
                 }
@@ -133,9 +133,9 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
+            WindowManagerMessage::FocusNext => icy_ui::widget::operation::focus_next(),
 
-            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+            WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
 
             WindowManagerMessage::_UpdateBuffers => {
                 let mut tasks = vec![];
@@ -164,7 +164,7 @@ impl WindowManager {
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         let subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
-            iced::event::listen_with(|event, _status, window_id| {
+            icy_ui::event::listen_with(|event, _status, window_id| {
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
@@ -204,6 +204,6 @@ impl WindowManager {
                 Some(WindowManagerMessage::Event(window_id, event))
             }),
         ];
-        iced::Subscription::batch(subs)
+        icy_ui::Subscription::batch(subs)
     }
 }

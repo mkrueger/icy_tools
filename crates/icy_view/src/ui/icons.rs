@@ -1,6 +1,6 @@
 //! Material Design icons for navigation and toolbar
 
-use iced::{widget::svg, Length, Theme};
+use icy_ui::{widget::svg, Length, Theme};
 
 // Navigation icons
 const ARROW_BACK_SVG: &[u8] = include_bytes!("../../data/icons/arrow_back.svg");

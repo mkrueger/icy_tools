@@ -3,10 +3,10 @@
 //! Provides an iced Subscription that wraps the collaboration client
 //! and delivers events to the main application.
 
-use iced::futures::channel::mpsc::Sender;
-use iced::futures::SinkExt;
-use iced::stream::channel;
-use iced::Subscription;
+use icy_ui::futures::channel::mpsc::Sender;
+use icy_ui::futures::SinkExt;
+use icy_ui::stream::channel;
+use icy_ui::Subscription;
 use icy_engine_edit::collaboration::{ClientConfig, ClientHandle, CollaborationEvent};
 use std::sync::OnceLock;
 
@@ -156,7 +156,7 @@ pub fn connect(config: ClientConfig) -> Subscription<CollaborationMessage> {
     Subscription::run(collaboration_stream)
 }
 
-fn collaboration_stream() -> impl iced::futures::Stream<Item = CollaborationMessage> {
+fn collaboration_stream() -> impl icy_ui::futures::Stream<Item = CollaborationMessage> {
     channel(100, |output: Sender<CollaborationMessage>| async move {
         if let Some(config) = take_pending_config() {
             run_collaboration(config, output).await;

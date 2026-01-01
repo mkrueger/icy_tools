@@ -2,8 +2,8 @@
 //!
 //! Provides a consistent, professional look across all editor components.
 
-use iced::widget::canvas::{self, Frame};
-use iced::{Color, Point, Size, Theme};
+use icy_ui::widget::canvas::{self, Frame};
+use icy_ui::{Color, Point, Size, Theme};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Layout Constants
@@ -59,7 +59,7 @@ pub fn darken(color: Color, factor: f32) -> Color {
 /// Draws L-shaped corners at each corner of the cell, creating a subtle
 /// highlight effect without obscuring the cell content.
 pub fn draw_corner_brackets(frame: &mut Frame, x: f32, y: f32, width: f32, height: f32, color: Color, line_width: f32) {
-    use iced::widget::canvas::{Path, Stroke};
+    use icy_ui::widget::canvas::{Path, Stroke};
 
     // Corner length as fraction of cell size
     let corner_len = (width.min(height) * 0.3).max(3.0);
@@ -197,9 +197,9 @@ pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
             content: format!("{:X}", col),
             position: Point::new(cell_x, state.ruler_size / 2.0),
             color: ruler_color,
-            size: iced::Pixels(RULER_FONT_SIZE),
-            align_x: iced::alignment::Horizontal::Center.into(),
-            align_y: iced::alignment::Vertical::Center.into(),
+            size: icy_ui::Pixels(RULER_FONT_SIZE),
+            align_x: icy_ui::alignment::Horizontal::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center.into(),
             ..Default::default()
         });
     }
@@ -214,9 +214,9 @@ pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
             content: format!("{:X}", row),
             position: Point::new(state.ruler_size / 2.0, cell_y),
             color: ruler_color,
-            size: iced::Pixels(RULER_FONT_SIZE),
-            align_x: iced::alignment::Horizontal::Center.into(),
-            align_y: iced::alignment::Vertical::Center.into(),
+            size: icy_ui::Pixels(RULER_FONT_SIZE),
+            align_x: icy_ui::alignment::Horizontal::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center.into(),
             ..Default::default()
         });
     }

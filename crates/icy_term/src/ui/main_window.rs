@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-use iced::{keyboard, window, Element, Event, Task, Theme};
+use icy_ui::{keyboard, window, Element, Event, Task, Theme};
 use icy_engine::Position;
 use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
@@ -742,7 +742,7 @@ impl MainWindow {
                     let text = dialog.format_info_text();
 
                     // Copy text to clipboard using async API
-                    return iced::clipboard::STANDARD.write_text(text).map(|()| Message::ClipboardTextCopied(Ok(())));
+                    return icy_ui::clipboard::STANDARD.write_text(text).map(|()| Message::ClipboardTextCopied(Ok(())));
                 }
 
                 // Route other messages to dialog stack
@@ -803,12 +803,12 @@ impl MainWindow {
             Message::ToggleFullscreen => {
                 self._is_fullscreen_mode = !self._is_fullscreen_mode;
                 let mode = if self._is_fullscreen_mode {
-                    iced::window::Mode::Fullscreen
+                    icy_ui::window::Mode::Fullscreen
                 } else {
-                    iced::window::Mode::Windowed
+                    icy_ui::window::Mode::Windowed
                 };
 
-                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
+                icy_ui::window::latest().and_then(move |window| icy_ui::window::set_mode(window, mode))
             }
 
             Message::OpenLink(url) => {
@@ -851,7 +851,7 @@ impl MainWindow {
             Message::Paste => {
                 self.clear_selection();
                 // Read text from clipboard asynchronously
-                iced::clipboard::STANDARD.read_text().map(Message::ClipboardText)
+                icy_ui::clipboard::STANDARD.read_text().map(Message::ClipboardText)
             }
 
             Message::ClipboardText(text_opt) => {
@@ -896,7 +896,7 @@ impl MainWindow {
                 // Stop sound thread
                 self.sound_thread.lock().clear();
 
-                iced::exit()
+                icy_ui::exit()
             }
             Message::ClearScreen => {
                 {
@@ -934,8 +934,8 @@ impl MainWindow {
                 self.terminal_window.set_focus(focus);
                 Task::none()
             }
-            Message::FocusNext => iced::widget::operation::focus_next(),
-            Message::FocusPrevious => iced::widget::operation::focus_previous(),
+            Message::FocusNext => icy_ui::widget::operation::focus_next(),
+            Message::FocusPrevious => icy_ui::widget::operation::focus_previous(),
 
             Message::SendMouseEvent(evt) => {
                 let escape_sequence = evt.generate_mouse_report();
@@ -1669,7 +1669,7 @@ impl MainWindow {
 
     /// Handle mouse move (no button pressed)
     fn handle_mouse_move(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
-        use iced::mouse;
+        use icy_ui::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
 
         let screen = self.terminal_window.terminal.screen.lock();
@@ -1723,7 +1723,7 @@ impl MainWindow {
 
     /// Handle mouse drag (button held while moving)
     fn handle_mouse_drag(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
-        use iced::mouse;
+        use icy_ui::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
 
         // Set crosshair cursor during drag/selection
@@ -1924,19 +1924,19 @@ impl MainWindow {
             Event::Window(window::Event::Unfocused) => {
                 return (Some(Message::SetFocus(false)), Task::none());
             }
-            Event::Mouse(iced::mouse::Event::CursorLeft) => {
+            Event::Mouse(icy_ui::mouse::Event::CursorLeft) => {
                 return (Some(Message::CursorLeftWindow), Task::none());
             }
-            Event::Mouse(iced::mouse::Event::WheelScrolled { delta, modifiers: _ }) => {
+            Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, modifiers: _ }) => {
                 // Only handle mouse wheel in scrollback mode
                 if self.terminal_window.terminal.is_in_scrollback_mode() {
                     let line_height = self.terminal_window.terminal.char_height;
                     let scroll_amount = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. } => {
+                        icy_ui::mouse::ScrollDelta::Lines { y, .. } => {
                             // Each line of scroll = one character line
                             -y * line_height
                         }
-                        iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                        icy_ui::mouse::ScrollDelta::Pixels { y, .. } => {
                             // Direct pixel scrolling
                             -y
                         }
@@ -2106,7 +2106,7 @@ impl icy_engine_gui::Window for MainWindow {
         self.theme()
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         self.handle_event(event)
     }
 }

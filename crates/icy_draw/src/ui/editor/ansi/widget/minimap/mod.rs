@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use iced::widget::shader;
-use iced::{Element, Length, Task, Theme};
+use icy_ui::widget::shader;
+use icy_ui::{Element, Length, Task, Theme};
 use icy_engine::Screen;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::tile_cache::MAX_TEXTURE_SLICES;

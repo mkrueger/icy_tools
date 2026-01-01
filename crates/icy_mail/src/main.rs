@@ -130,7 +130,7 @@ fn main() {
 
     log::info!("Starting iCY MAIL {}", *VERSION);
 
-    iced::daemon(WindowManager::new, WindowManager::update, WindowManager::view)
+    icy_ui::daemon(WindowManager::new, WindowManager::update, WindowManager::view)
         .theme(WindowManager::theme)
         .subscription(WindowManager::subscription) // Add this line
         .title(WindowManager::title)
@@ -139,11 +139,11 @@ fn main() {
     log::info!("shutting down.");
 }
 
-fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+fn load_window_icon(png_bytes: &[u8]) -> Result<icy_ui::window::Icon, Box<dyn std::error::Error>> {
     // Add `image = "0.24"` (or latest) to Cargo.toml if not present.
     let img = image::load_from_memory(png_bytes)?;
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
-    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+    Ok(icy_ui::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }

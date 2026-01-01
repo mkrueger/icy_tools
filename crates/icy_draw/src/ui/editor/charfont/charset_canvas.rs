@@ -2,7 +2,7 @@
 //!
 //! Similar to the BitFont editor's charset grid, but displays TDF font characters.
 
-use iced::{
+use icy_ui::{
     keyboard,
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Frame, Path, Stroke},
@@ -30,7 +30,7 @@ pub struct CharSetCanvas<'a> {
     pub cursor_col: i32,
     pub cursor_row: i32,
     pub is_focused: bool,
-    pub selection: Option<(iced::Point<i32>, iced::Point<i32>, bool)>,
+    pub selection: Option<(icy_ui::Point<i32>, icy_ui::Point<i32>, bool)>,
     pub cell_width: f32,
     pub cell_height: f32,
     pub label_size: f32,
@@ -65,7 +65,7 @@ fn char_to_grid(ch: char) -> Option<(i32, i32)> {
 impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
     type State = CharSetCanvasState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         let bg_color = theme.background.base;
@@ -128,9 +128,9 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                         content: ch.to_string(),
                         position: Point::new(x + self.cell_width / 2.0, y + self.cell_height / 2.0),
                         color: cell_fg,
-                        size: iced::Pixels(12.0),
-                        align_x: iced::alignment::Horizontal::Center.into(),
-                        align_y: iced::alignment::Vertical::Center.into(),
+                        size: icy_ui::Pixels(12.0),
+                        align_x: icy_ui::alignment::Horizontal::Center.into(),
+                        align_y: icy_ui::alignment::Vertical::Center.into(),
                         ..Default::default()
                     });
 
@@ -268,7 +268,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<CharFontEditorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<CharFontEditorMessage>> {
         let cursor_pos = cursor.position_in(bounds);
 
         let old_hovered = state.hovered;
@@ -282,18 +282,18 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 state.hovered = Some(ch as u8);
 
                 match event {
-                    iced::Event::Mouse(mouse::Event::ButtonPressed {
+                    icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                         button: mouse::Button::Left, ..
                     }) => {
                         state.is_dragging = true;
                         return Some(Action::publish(CharFontEditorMessage::SelectCharAt(ch, col, row)));
                     }
-                    iced::Event::Mouse(mouse::Event::ButtonReleased {
+                    icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                         button: mouse::Button::Left, ..
                     }) => {
                         state.is_dragging = false;
                     }
-                    iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                         if state.is_dragging {
                             let is_rectangle = icy_engine_gui::is_alt_pressed();
                             return Some(Action::publish(CharFontEditorMessage::SetCharsetSelectionLead(col, row, is_rectangle)));
@@ -306,7 +306,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                 }
             } else {
                 state.hovered = None;
-                if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+                if let icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                     button: mouse::Button::Left, ..
                 }) = event
                 {
@@ -318,7 +318,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
             }
         } else {
             state.hovered = None;
-            if let iced::Event::Mouse(mouse::Event::ButtonReleased {
+            if let icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                 button: mouse::Button::Left, ..
             }) = event
             {
@@ -331,7 +331,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
 
         // Handle keyboard events when focused
         if self.is_focused {
-            if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+            if let icy_ui::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
                 match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
                         return Some(Action::publish(CharFontEditorMessage::HandleArrow(ArrowDirection::Up, *modifiers)));

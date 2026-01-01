@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, container, pick_list, row, text, text_input},
     Alignment, Element, Length,
 };

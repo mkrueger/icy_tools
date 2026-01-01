@@ -3,8 +3,8 @@ use crate::{
     qwk::{MessageDescriptor, QwkPackage},
     ui::Message,
 };
-use iced::widget::{button, column, container, row, scrollable, text, Space};
-use iced::{Alignment, Element, Length};
+use icy_ui::widget::{button, column, container, row, scrollable, text, Space};
+use icy_ui::{Alignment, Element, Length};
 use icy_engine_gui::TerminalView;
 
 impl MainWindow {
@@ -36,8 +36,8 @@ impl MainWindow {
             container(conference_list)
                 .width(Length::Fixed(350.0)) // Increased from 200.0 to accommodate wider descriptions
                 .height(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    border: iced::Border {
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    border: icy_ui::Border {
                         width: 1.0,
                         color: theme.primary.divider,
                         ..Default::default()
@@ -51,8 +51,8 @@ impl MainWindow {
             container(message_list)
                 .width(Length::FillPortion(2))
                 .height(Length::Fixed(250.0))
-                .style(|theme: &iced::Theme| container::Style {
-                    border: iced::Border {
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    border: icy_ui::Border {
                         width: 1.0,
                         color: theme.primary.divider,
                         ..Default::default()
@@ -62,8 +62,8 @@ impl MainWindow {
             container(message_view)
                 .width(Length::FillPortion(3))
                 .height(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    border: iced::Border {
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    border: icy_ui::Border {
                         width: 1.0,
                         color: theme.primary.divider,
                         ..Default::default()
@@ -75,8 +75,8 @@ impl MainWindow {
         if let Some(thread_view) = thread_view {
             let threads = container(thread_view)
                 .height(Length::FillPortion(1))
-                .style(|theme: &iced::Theme| container::Style {
-                    border: iced::Border {
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    border: icy_ui::Border {
                         width: 1.0,
                         color: theme.primary.divider,
                         ..Default::default()
@@ -123,9 +123,9 @@ impl MainWindow {
                 .padding([4, 8])
             )
             .width(Length::Fixed(335.0)) // Fixed width for the header
-            .style(|theme: &iced::Theme| {
+            .style(|theme: &icy_ui::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.primary.divider)),
+                    background: Some(icy_ui::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -148,7 +148,7 @@ impl MainWindow {
             .on_press(Message::SelectConference(0))
             .padding(0)
             .width(Length::Fixed(335.0)) // Fixed width to match header
-            .style(move |theme: &iced::Theme, status| button_style(theme, status, is_selected)),
+            .style(move |theme: &icy_ui::Theme, status| button_style(theme, status, is_selected)),
         );
 
         // Add conferences from control file
@@ -184,7 +184,7 @@ impl MainWindow {
                 .on_press(Message::SelectConference(conf_num))
                 .padding(0)
                 .width(Length::Fixed(335.0)) // Fixed width to match header
-                .style(move |theme: &iced::Theme, status| button_style(theme, status, is_selected)),
+                .style(move |theme: &icy_ui::Theme, status| button_style(theme, status, is_selected)),
             );
         }
 
@@ -197,21 +197,21 @@ impl MainWindow {
         let conference_scrollable = container(conference_scrollable)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |theme: &iced::Theme| container::Style {
+            .style(move |theme: &icy_ui::Theme| container::Style {
                 border: if self.conference_list_focused {
-                    iced::Border {
+                    icy_ui::Border {
                         width: 2.0,
                         color: theme.accent.base,
                         radius: 0.0.into(),
                     }
                 } else {
-                    iced::Border::default()
+                    icy_ui::Border::default()
                 },
                 ..Default::default()
             });
 
         // Use mouse_area to detect clicks on the conference list area
-        iced::widget::mouse_area(conference_scrollable).on_press(Message::FocusConferenceList).into()
+        icy_ui::widget::mouse_area(conference_scrollable).on_press(Message::FocusConferenceList).into()
     }
 
     fn build_message_list(&self, package: &QwkPackage) -> Element<'_, Message> {
@@ -227,9 +227,9 @@ impl MainWindow {
                 .padding(4)
             )
             .width(Length::Fill)
-            .style(|theme: &iced::Theme| {
+            .style(|theme: &icy_ui::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.primary.divider)),
+                    background: Some(icy_ui::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -278,7 +278,7 @@ impl MainWindow {
                 .on_press(Message::SelectMessage(*idx))
                 .padding(0)
                 .width(Length::Fill)
-                .style(move |theme: &iced::Theme, status| button_style(theme, status, is_selected)),
+                .style(move |theme: &icy_ui::Theme, status| button_style(theme, status, is_selected)),
             );
         }
 
@@ -311,9 +311,9 @@ impl MainWindow {
                     let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone(), None).map(Message::TerminalMessage);
 
                     return column![
-                        container(header_info).width(Length::Fill).style(|theme: &iced::Theme| {
+                        container(header_info).width(Length::Fill).style(|theme: &icy_ui::Theme| {
                             container::Style {
-                                background: Some(iced::Background::Color(theme.secondary.base)),
+                                background: Some(icy_ui::Background::Color(theme.secondary.base)),
                                 ..Default::default()
                             }
                         }),
@@ -332,9 +332,9 @@ impl MainWindow {
 
     fn build_thread_view(&self) -> Element<'_, Message> {
         let thread_content = column![
-            container(text("Thread").size(14)).padding(8).width(Length::Fill).style(|theme: &iced::Theme| {
+            container(text("Thread").size(14)).padding(8).width(Length::Fill).style(|theme: &icy_ui::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.primary.divider)),
+                    background: Some(icy_ui::Background::Color(theme.primary.divider)),
                     ..Default::default()
                 }
             }),
@@ -346,35 +346,37 @@ impl MainWindow {
     }
 }
 
-fn button_style(theme: &iced::Theme, status: iced::widget::button::Status, is_selected: bool) -> iced::widget::button::Style {
-    use iced::widget::button::{Status, Style};
+fn button_style(theme: &icy_ui::Theme, status: icy_ui::widget::button::Status, is_selected: bool) -> icy_ui::widget::button::Style {
+    use icy_ui::widget::button::{Status, Style};
 
     let base = if is_selected {
         Style {
-            background: Some(iced::Background::Color(theme.accent.base)),
+            background: Some(icy_ui::Background::Color(theme.accent.base)),
             text_color: theme.accent.on,
             border: Default::default(),
             shadow: Default::default(),
             snap: false, // Add the missing field
+            ..Default::default()
         }
     } else {
         Style {
-            background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+            background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
             text_color: theme.background.on,
             border: Default::default(),
             shadow: Default::default(),
             snap: false, // Add the missing field
+            ..Default::default()
         }
     };
 
     match status {
-        Status::Active => base,
+        Status::Active | Status::Selected => base,
         Status::Hovered if !is_selected => Style {
-            background: Some(iced::Background::Color(theme.secondary.base)),
+            background: Some(icy_ui::Background::Color(theme.secondary.base)),
             ..base
         },
         Status::Pressed => Style {
-            background: Some(iced::Background::Color(theme.accent.hover)),
+            background: Some(icy_ui::Background::Color(theme.accent.hover)),
             text_color: theme.accent.on,
             ..base
         },

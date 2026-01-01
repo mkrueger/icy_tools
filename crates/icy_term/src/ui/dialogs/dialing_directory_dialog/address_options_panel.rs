@@ -2,9 +2,9 @@ use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMs
 use crate::ui::Message;
 use crate::ConnectionInformation;
 use i18n_embed_fl::fl;
-use iced::widget::tooltip;
-use iced::Padding;
-use iced::{
+use icy_ui::widget::tooltip;
+use icy_ui::Padding;
+use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -132,7 +132,7 @@ impl super::DialingDirectoryState {
                 } else {
                     0
                 })))
-                .style(button::text);
+                .style(button::text_style);
 
             let calls = addr.number_of_calls;
             let last_call_text = match addr.last_call {
@@ -148,12 +148,12 @@ impl super::DialingDirectoryState {
             column![
                 row![name_input, star_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
                 row![
-                    container(text(format!("✆ {calls}")).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    container(text(format!("✆ {calls}")).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.button.on),
                         ..Default::default()
                     })),
                     Space::new().width(Length::Fill),
-                    container(text(last_call_text).style(|theme: &iced::Theme| iced::widget::text::Style {
+                    container(text(last_call_text).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.button.on),
                         ..Default::default()
                     })),
@@ -276,7 +276,7 @@ impl super::DialingDirectoryState {
                         left_label(String::new()), // Offset to align with the field
                         text(format!("⚠ {}", err_msg))
                             .size(TEXT_SIZE_SMALL)
-                            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                                 color: Some(theme.destructive.base),
                                 ..Default::default()
                             })
@@ -407,7 +407,7 @@ impl super::DialingDirectoryState {
             } else if addr.terminal_type == TerminalEmulation::ATAscii {
                 // ATAscii: Provide XEP80 module checkbox to choose 80 vs 40 column mode.
                 let is_xep80 = matches!(addr.screen_mode, ScreenMode::Atascii(80));
-                let toggle = iced::widget::checkbox(is_xep80)
+                let toggle = icy_ui::widget::checkbox(is_xep80)
                     .on_toggle(move |checked| {
                         let width = if checked { 80 } else { 40 };
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -473,7 +473,7 @@ impl super::DialingDirectoryState {
                 );
 
                 // IGS (Interactive Graphics System) checkbox
-                let igs_toggle = iced::widget::checkbox(current_igs)
+                let igs_toggle = icy_ui::widget::checkbox(current_igs)
                     .on_toggle(move |checked| {
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {
                             id,
@@ -486,13 +486,14 @@ impl super::DialingDirectoryState {
                     .on_press(Message::OpenLink(
                         "https://breakintochat.com/blog/category/instant-graphics-and-sound".to_string(),
                     ))
-                    .style(|theme: &iced::Theme, status| {
+                    .style(|theme: &icy_ui::Theme, status| {
                         let base = button::Style {
                             background: None,
                             text_color: theme.accent.hover,
-                            border: iced::Border::default(),
-                            shadow: iced::Shadow::default(),
+                            border: icy_ui::Border::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
+                            ..Default::default()
                         };
                         match status {
                             button::Status::Hovered => button::Style {
@@ -684,7 +685,7 @@ impl super::DialingDirectoryState {
             let mut options_content = column![].spacing(DIALOG_SPACING);
 
             // Mouse reporting checkbox
-            let mouse_reporting_checkbox = iced::widget::checkbox(addr.mouse_reporting_enabled)
+            let mouse_reporting_checkbox = icy_ui::widget::checkbox(addr.mouse_reporting_enabled)
                 .on_toggle(move |checked| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
                         id,
@@ -708,7 +709,7 @@ impl super::DialingDirectoryState {
         };
 
         // Main content layout
-        let mut content: iced::widget::Column<'_, Message> = column![header, Space::new().height(SECTION_SPACING), server_section,];
+        let mut content: icy_ui::widget::Column<'_, Message> = column![header, Space::new().height(SECTION_SPACING), server_section,];
 
         if !is_quick {
             if let Some(login) = login_section {

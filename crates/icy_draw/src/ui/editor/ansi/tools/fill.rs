@@ -2,8 +2,8 @@
 //!
 //! Fills connected regions with color/character.
 
-use iced::widget::{row, text, toggler, Space};
-use iced::{Element, Length};
+use icy_ui::widget::{row, text, toggler, Space};
+use icy_ui::{Element, Length};
 use icy_engine::{AttributedChar, MouseButton, Position, TextAttribute, TextPane};
 use icy_engine_gui::terminal::crt_state::is_shift_pressed;
 use icy_engine_gui::TerminalMessage;
@@ -411,12 +411,12 @@ impl ToolHandler for FillTool {
             Space::new().width(Length::Fill),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Crosshair
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::Crosshair
     }
 
     fn show_caret(&self) -> bool {

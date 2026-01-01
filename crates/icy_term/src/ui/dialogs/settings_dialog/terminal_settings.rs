@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, pick_list, row, text_input},
     Alignment, Element, Length,
 };
@@ -118,7 +118,7 @@ impl SettingsDialogState {
                             })
                             .width(Length::Fixed(100.0))
                             .size(TEXT_SIZE_NORMAL),
-                        iced::widget::text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines-unit"))
+                        icy_ui::widget::text(fl!(crate::LANGUAGE_LOADER, "settings-terminal-scrollback-lines-unit"))
                             .size(TEXT_SIZE_NORMAL)
                             .width(Length::Shrink),
                     ]

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use human_bytes::human_bytes;
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     gradient,
     widget::{button, column, container, progress_bar, row, scrollable, text, Space},
     Alignment, Border, Color, Element, Length, Padding,
@@ -149,8 +149,8 @@ impl FileTransferDialogState {
                 .align_y(Alignment::Center),
             )
             .padding(Padding::new(16.0).top(16).right(20).bottom(12).left(20))
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Gradient(iced::Gradient::Linear(
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Gradient(icy_ui::Gradient::Linear(
                     gradient::Linear::new(0.0)
                         .add_stop(0.0, theme.secondary.base)
                         .add_stop(1.0, theme.background.base),
@@ -180,12 +180,12 @@ impl FileTransferDialogState {
                 ]
                 .align_y(Alignment::Center),
                 Space::new().height(8.0),
-                container(progress_bar(0.0..=1.0, progress).style(|theme: &iced::Theme| progress_bar::Style {
-                    background: iced::Background::Color(theme.primary.divider),
-                    bar: iced::Background::Color(theme.accent.base),
+                container(progress_bar(0.0..=1.0, progress).style(|theme: &icy_ui::Theme| progress_bar::Style {
+                    background: icy_ui::Background::Color(theme.primary.divider),
+                    bar: icy_ui::Background::Color(theme.accent.base),
 
                     /*
-                    bar: iced::Background::Gradient(iced::Gradient::Linear(
+                    bar: icy_ui::Background::Gradient(icy_ui::Gradient::Linear(
                         gradient::Linear::new(0.0)
                             .add_stop(0.0, theme.accent.base)
                             .add_stop(1.0, theme.accent.hover)
@@ -197,7 +197,7 @@ impl FileTransferDialogState {
                     },
                 }))
                 .height(8.0)
-                .style(|_theme: &iced::Theme| container::Style {
+                .style(|_theme: &icy_ui::Theme| container::Style {
                     border: Border {
                         color: Color::TRANSPARENT,
                         width: 0.0,
@@ -266,17 +266,17 @@ impl FileTransferDialogState {
             let modal_content = container(main_column)
                 .width(Length::Fixed(MODAL_WIDTH))
                 .height(Length::Fixed(MODAL_HEIGHT))
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme.background.base)),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme.background.base)),
                     border: Border {
                         color: theme.primary.divider,
                         width: 1.0,
                         radius: 12.0.into(),
                     },
                     text_color: Some(theme.background.on),
-                    shadow: iced::Shadow {
+                    shadow: icy_ui::Shadow {
                         color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                        offset: iced::Vector::new(0.0, 8.0),
+                        offset: icy_ui::Vector::new(0.0, 8.0),
                         blur_radius: 20.0,
                     },
                     snap: false,
@@ -298,13 +298,13 @@ impl FileTransferDialogState {
             (
                 "✓",
                 fl!(crate::LANGUAGE_LOADER, "transfer-status-complete"),
-                text::success as fn(&iced::Theme) -> text::Style,
+                text::success as fn(&icy_ui::Theme) -> text::Style,
             )
         } else {
             (
                 "●",
                 fl!(crate::LANGUAGE_LOADER, "transfer-status-active"),
-                text::primary as fn(&iced::Theme) -> text::Style,
+                text::primary as fn(&icy_ui::Theme) -> text::Style,
             )
         };
 
@@ -317,10 +317,10 @@ impl FileTransferDialogState {
             .align_y(Alignment::Center),
         )
         .padding(Padding::from([4.0, 8.0]))
-        .style(move |theme: &iced::Theme| {
+        .style(move |theme: &icy_ui::Theme| {
             let color = if is_finished { theme.success.base } else { theme.accent.base };
             container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.15))),
+                background: Some(icy_ui::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.15))),
                 border: Border {
                     color,
                     width: 1.0,
@@ -344,8 +344,8 @@ impl FileTransferDialogState {
         ])
         .padding(10)
         .width(Length::Fill)
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.secondary.base)),
+        .style(|theme: &icy_ui::Theme| container::Style {
+            background: Some(icy_ui::Background::Color(theme.secondary.base)),
             border: Border {
                 color: theme.primary.divider,
                 width: 1.0,
@@ -404,9 +404,9 @@ impl FileTransferDialogState {
         }
 
         let log_scroll =
-            container(scrollable(container(log_column).width(Length::Fill).padding(12)).height(Length::Fixed(120.0))).style(|theme: &iced::Theme| {
+            container(scrollable(container(log_column).width(Length::Fill).padding(12)).height(Length::Fixed(120.0))).style(|theme: &icy_ui::Theme| {
                 container::Style {
-                    background: Some(iced::Background::Color(theme.secondary.base)),
+                    background: Some(icy_ui::Background::Color(theme.secondary.base)),
                     border: Border {
                         color: theme.primary.divider,
                         width: 1.0,
@@ -431,7 +431,7 @@ impl FileTransferDialogState {
         label: String,
         count: usize,
         tab: LogTab,
-        _text_style: Option<fn(&iced::Theme) -> text::Style>,
+        _text_style: Option<fn(&icy_ui::Theme) -> text::Style>,
     ) -> Element<'a, crate::ui::Message> {
         let is_selected = self.selected_log == tab;
 
@@ -445,7 +445,7 @@ impl FileTransferDialogState {
         )
         .on_press(crate::ui::Message::TransferDialog(TransferMsg::SelectLogTab(tab)))
         .padding([6, 12])
-        .style(move |theme: &iced::Theme, status| {
+        .style(move |theme: &icy_ui::Theme, status| {
             if is_selected {
                 button::primary(theme, status)
             } else {
@@ -456,7 +456,7 @@ impl FileTransferDialogState {
     }
 
     fn create_log_entry(&self, msg: OutputLogMessage) -> Element<'_, crate::ui::Message> {
-        let (icon, text_style, message): (String, fn(&iced::Theme) -> text::Style, String) = match &msg {
+        let (icon, text_style, message): (String, fn(&icy_ui::Theme) -> text::Style, String) = match &msg {
             OutputLogMessage::Error(msg) => ("●".to_string(), text::danger, msg.clone()),
             OutputLogMessage::Warning(msg) => ("▲".to_string(), text::warning, msg.clone()),
             OutputLogMessage::Info(msg) => ("ℹ".to_string(), text::secondary, msg.clone()),
@@ -468,14 +468,14 @@ impl FileTransferDialogState {
             text(message).size(TEXT_SIZE_SMALL).style(text::default),
         ])
         .padding(Padding::from([4.0, 8.0]))
-        .style(move |theme: &iced::Theme| {
+        .style(move |theme: &icy_ui::Theme| {
             let color = match &msg {
                 OutputLogMessage::Error(_) => theme.destructive.base,
                 OutputLogMessage::Warning(_) => theme.warning.base,
                 OutputLogMessage::Info(_) => theme.button.base,
             };
             container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.08))),
+                background: Some(icy_ui::Background::Color(Color::from_rgba(color.r, color.g, color.b, 0.08))),
                 border: Border {
                     color: Color::from_rgba(color.r, color.g, color.b, 0.2),
                     width: 0.0,
@@ -514,8 +514,8 @@ impl FileTransferDialogState {
                     .align_y(Alignment::Center)
                 )
                 .padding(16)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme.secondary.base)),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme.secondary.base)),
                     border: Border {
                         color: theme.primary.divider,
                         width: 1.0,
@@ -541,17 +541,17 @@ impl FileTransferDialogState {
         )
         .width(Length::Fixed(420.0))
         .height(Length::Shrink)
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.background.base)),
+        .style(|theme: &icy_ui::Theme| container::Style {
+            background: Some(icy_ui::Background::Color(theme.background.base)),
             border: Border {
                 color: theme.primary.divider,
                 width: 1.0,
                 radius: 12.0.into(),
             },
             text_color: Some(theme.background.on),
-            shadow: iced::Shadow {
+            shadow: icy_ui::Shadow {
                 color: Color::from_rgba8(0, 0, 0, 1.0),
-                offset: iced::Vector::new(0.0, 8.0),
+                offset: icy_ui::Vector::new(0.0, 8.0),
                 blur_radius: 20.0,
             },
             snap: false,
@@ -581,17 +581,17 @@ impl FileTransferDialogState {
                     .size(TEXT_SIZE_NORMAL)
                     .style(text::secondary),
                 Space::new().width(DIALOG_SPACING),
-                text(&ext.protocol_name).size(TEXT_SIZE_NORMAL).font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..iced::Font::default()
+                text(&ext.protocol_name).size(TEXT_SIZE_NORMAL).font(icy_ui::Font {
+                    weight: icy_ui::font::Weight::Bold,
+                    ..icy_ui::Font::default()
                 }),
             ]
             .align_y(Alignment::Center),
         )
         .padding([12, 16])
         .width(Length::Fill)
-        .style(|theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.secondary.base)),
+        .style(|theme: &icy_ui::Theme| container::Style {
+            background: Some(icy_ui::Background::Color(theme.secondary.base)),
             border: Border {
                 color: theme.primary.divider,
                 width: 1.0,
@@ -612,9 +612,9 @@ impl FileTransferDialogState {
                             text(fl!(crate::LANGUAGE_LOADER, "transfer-external-complete"))
                                 .size(TEXT_SIZE_NORMAL)
                                 .style(text::success)
-                                .font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::default()
+                                .font(icy_ui::Font {
+                                    weight: icy_ui::font::Weight::Bold,
+                                    ..icy_ui::Font::default()
                                 }),
                             text(fl!(crate::LANGUAGE_LOADER, "transfer-external-success-hint"))
                                 .size(TEXT_SIZE_SMALL)
@@ -626,10 +626,10 @@ impl FileTransferDialogState {
                 )
                 .padding(16)
                 .width(Length::Fill)
-                .style(|theme: &iced::Theme| {
+                .style(|theme: &icy_ui::Theme| {
                     let success_color = theme.success.base;
                     container::Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(
+                        background: Some(icy_ui::Background::Color(Color::from_rgba(
                             success_color.r,
                             success_color.g,
                             success_color.b,
@@ -658,9 +658,9 @@ impl FileTransferDialogState {
                             text(fl!(crate::LANGUAGE_LOADER, "transfer-external-failed"))
                                 .size(TEXT_SIZE_NORMAL)
                                 .style(text::danger)
-                                .font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::default()
+                                .font(icy_ui::Font {
+                                    weight: icy_ui::font::Weight::Bold,
+                                    ..icy_ui::Font::default()
                                 }),
                             text(error_msg).size(TEXT_SIZE_SMALL).style(text::secondary),
                         ]
@@ -670,10 +670,10 @@ impl FileTransferDialogState {
                 )
                 .padding(16)
                 .width(Length::Fill)
-                .style(|theme: &iced::Theme| {
+                .style(|theme: &icy_ui::Theme| {
                     let danger_color = theme.destructive.base;
                     container::Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(danger_color.r, danger_color.g, danger_color.b, 0.1))),
+                        background: Some(icy_ui::Background::Color(Color::from_rgba(danger_color.r, danger_color.g, danger_color.b, 0.1))),
                         border: Border {
                             color: danger_color.scale_alpha(0.5),
                             width: 1.0,
@@ -693,9 +693,9 @@ impl FileTransferDialogState {
                     column![
                         text(fl!(crate::LANGUAGE_LOADER, "transfer-external-in-progress"))
                             .size(TEXT_SIZE_NORMAL)
-                            .font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..iced::Font::default()
+                            .font(icy_ui::Font {
+                                weight: icy_ui::font::Weight::Bold,
+                                ..icy_ui::Font::default()
                             }),
                         text(fl!(crate::LANGUAGE_LOADER, "transfer-external-wait-hint"))
                             .size(TEXT_SIZE_SMALL)
@@ -707,8 +707,8 @@ impl FileTransferDialogState {
             )
             .padding(16)
             .width(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
                 border: Border {
                     color: theme.accent.selected,
                     width: 1.0,

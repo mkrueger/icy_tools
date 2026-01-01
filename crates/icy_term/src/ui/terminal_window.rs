@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, svg, text, Space},
     Alignment, Border, Color, Element, Length,
 };
@@ -109,15 +109,15 @@ impl TerminalWindow {
 
                     // Add scroll position indicator if in scrollback mode
                     if self.terminal.is_in_scrollback_mode() {
-                        let scroll_indicator = container(text(format!("↑ {:04}", scrollback_lines)).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| {
-                            iced::widget::text::Style {
+                        let scroll_indicator = container(text(format!("↑ {:04}", scrollback_lines)).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| {
+                            icy_ui::widget::text::Style {
                                 color: Some(theme.accent.selected),
                                 ..Default::default()
                             }
                         }))
                         .padding([2, 8])
-                        .style(|theme: &iced::Theme| container::Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
                             border: Border {
                                 color: theme.primary.divider,
                                 width: 1.0,
@@ -130,8 +130,8 @@ impl TerminalWindow {
                             container(scroll_indicator)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
-                                .align_x(iced::alignment::Horizontal::Right)
-                                .align_y(iced::alignment::Vertical::Top)
+                                .align_x(icy_ui::alignment::Horizontal::Right)
+                                .align_y(icy_ui::alignment::Vertical::Top)
                                 .padding([8, 16])
                                 .into(),
                         );
@@ -146,8 +146,8 @@ impl TerminalWindow {
                             container(vscrollbar_mapped)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
-                                .align_x(iced::alignment::Horizontal::Right)
-                                .align_y(iced::alignment::Vertical::Center)
+                                .align_x(icy_ui::alignment::Horizontal::Right)
+                                .align_y(icy_ui::alignment::Vertical::Center)
                                 .into(),
                         );
                     }
@@ -161,12 +161,12 @@ impl TerminalWindow {
                             container(hscrollbar_mapped)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
-                                .align_y(iced::alignment::Vertical::Bottom)
+                                .align_y(icy_ui::alignment::Vertical::Bottom)
                                 .into(),
                         );
                     }
 
-                    container(iced::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
+                    container(icy_ui::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
                 } else {
                     container(terminal_view)
                         .width(Length::Fill)
@@ -195,26 +195,27 @@ impl TerminalWindow {
             )
             .on_press(Message::OpenReleaseLink)
             .padding([4, 8])
-            .style(|_theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
+            .style(|_theme: &icy_ui::Theme, status| {
+                use icy_ui::widget::button::{Status, Style};
 
                 let info_color = Color::from_rgb(0.2, 0.6, 1.0);
                 let base = Style {
-                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                     text_color: info_color,
                     border: Border::default(),
                     shadow: Default::default(),
                     snap: false,
+                    ..Default::default()
                 };
 
                 match status {
-                    Status::Active => base,
+                    Status::Active | Status::Selected => base,
                     Status::Hovered => Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1))),
+                        background: Some(icy_ui::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1))),
                         ..base
                     },
                     Status::Pressed => Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15))),
+                        background: Some(icy_ui::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15))),
                         ..base
                     },
                     Status::Disabled => base,
@@ -304,11 +305,11 @@ impl TerminalWindow {
                 )
                 .on_press(Message::StopSound)
                 .padding([4, 6])
-                .style(|_theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(|_theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.2))), // Orange tint
+                        background: Some(icy_ui::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.2))), // Orange tint
                         text_color: Color::from_rgb(1.0, 0.6, 0.0),                                      // Orange text
                         border: Border {
                             color: Color::from_rgb(1.0, 0.5, 0.0),
@@ -317,16 +318,17 @@ impl TerminalWindow {
                         },
                         shadow: Default::default(),
                         snap: false,
+                        ..Default::default()
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.3))),
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.3))),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.4))),
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.4))),
                             ..base
                         },
                         Status::Disabled => base,
@@ -379,9 +381,9 @@ impl TerminalWindow {
         bar_content = bar_content.push(settings_menu);
 
         container(bar_content.padding([3, 6]))
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 0.0,
                     radius: 0.0.into(),
@@ -397,14 +399,14 @@ impl TerminalWindow {
         let connection_status = if let Some(serial) = &self.serial_connected {
             // Serial connection
             text(format!("{} ({} baud)", serial.device, serial.baud_rate))
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.success.hover),
                     ..Default::default()
                 })
                 .size(16.0)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..iced::Font::default()
+                .font(icy_ui::Font {
+                    weight: icy_ui::font::Weight::Bold,
+                    ..icy_ui::Font::default()
                 })
         } else if let Some(addr) = &self.current_address {
             if self.is_connected {
@@ -416,31 +418,31 @@ impl TerminalWindow {
                 };
 
                 text(system)
-                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.success.hover),
                         ..Default::default()
                     })
                     .size(16.0)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..iced::Font::default()
+                    .font(icy_ui::Font {
+                        weight: icy_ui::font::Weight::Bold,
+                        ..icy_ui::Font::default()
                     })
             } else if self.is_dialing {
                 // Dialing - show "DIALING..." in normal color
-                text("DIALING...").style(|theme: &iced::Theme| iced::widget::text::Style {
+                text("DIALING...").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.background.on),
                     ..Default::default()
                 })
             } else {
                 // Connection lost but address still set - show "NO CARRIER" in red
-                text("NO CARRIER").style(|theme: &iced::Theme| iced::widget::text::Style {
+                text("NO CARRIER").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                     ..Default::default()
                 })
             }
         } else {
             // No address - show "NO CARRIER" in red
-            text("NO CARRIER").style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("NO CARRIER").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
                 ..Default::default()
             })
@@ -518,13 +520,13 @@ impl TerminalWindow {
             )
             .on_press(Message::StopCapture)
             .padding([2, 8])
-            .style(|theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
+            .style(|theme: &icy_ui::Theme, status| {
+                use icy_ui::widget::button::{Status, Style};
 
                 let danger_color = theme.destructive.base;
 
                 let base = Style {
-                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                     text_color: danger_color,
                     border: Border {
                         color: danger_color,
@@ -533,12 +535,13 @@ impl TerminalWindow {
                     },
                     shadow: Default::default(),
                     snap: false,
+                    ..Default::default()
                 };
 
                 match status {
-                    Status::Active | Status::Disabled => base,
+                    Status::Active | Status::Disabled | Status::Selected => base,
                     Status::Hovered => Style {
-                        background: Some(iced::Background::Color(danger_color.scale_alpha(0.15))),
+                        background: Some(icy_ui::Background::Color(danger_color.scale_alpha(0.15))),
                         text_color: danger_color,
                         border: Border {
                             color: theme.destructive.hover,
@@ -548,7 +551,7 @@ impl TerminalWindow {
                         ..base
                     },
                     Status::Pressed => Style {
-                        background: Some(iced::Background::Color(danger_color.scale_alpha(0.25))),
+                        background: Some(icy_ui::Background::Color(danger_color.scale_alpha(0.25))),
                         text_color: theme.destructive.hover,
                         border: Border {
                             color: theme.destructive.hover,
@@ -575,13 +578,13 @@ impl TerminalWindow {
 
         let mut baud_button = button(text(baud_text).size(TEXT_SIZE_SMALL))
             .padding([2, 8])
-            .style(move |theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
+            .style(move |theme: &icy_ui::Theme, status| {
+                use icy_ui::widget::button::{Status, Style};
 
                 // Different styling for disabled state (not connected)
                 if !self.is_connected {
                     return Style {
-                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                         text_color: theme.button.on.scale_alpha(0.5),
                         border: Border {
                             color: theme.button.on.scale_alpha(0.3),
@@ -590,12 +593,13 @@ impl TerminalWindow {
                         },
                         shadow: Default::default(),
                         snap: false,
+                        ..Default::default()
                     };
                 }
 
                 // Normal styling when connected
                 let base = Style {
-                    background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                    background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                     text_color: theme.accent.hover,
                     border: Border {
                         color: theme.accent.selected,
@@ -604,17 +608,18 @@ impl TerminalWindow {
                     },
                     shadow: Default::default(),
                     snap: false,
+                    ..Default::default()
                 };
 
                 match status {
-                    Status::Active | Status::Disabled => base,
+                    Status::Active | Status::Disabled | Status::Selected => base,
                     Status::Hovered => Style {
-                        background: Some(iced::Background::Color(theme.accent.selected)),
+                        background: Some(icy_ui::Background::Color(theme.accent.selected)),
                         text_color: theme.accent.on,
                         ..base
                     },
                     Status::Pressed => Style {
-                        background: Some(iced::Background::Color(theme.accent.hover)),
+                        background: Some(icy_ui::Background::Color(theme.accent.hover)),
                         text_color: theme.accent.on,
                         ..base
                     },
@@ -635,11 +640,11 @@ impl TerminalWindow {
             let iemsi_button = button(text("IEMSI").size(TEXT_SIZE_SMALL))
                 .on_press(Message::ShowIemsiDialog)
                 .padding([2, 8])
-                .style(|theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(|theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = Style {
-                        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                         text_color: theme.accent.hover,
                         border: Border {
                             color: theme.accent.selected,
@@ -648,17 +653,18 @@ impl TerminalWindow {
                         },
                         shadow: Default::default(),
                         snap: false,
+                        ..Default::default()
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered => Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             text_color: theme.accent.on,
                             ..base
                         },
@@ -674,8 +680,8 @@ impl TerminalWindow {
         let info_button = button(text(info_text).size(TEXT_SIZE_SMALL))
             .on_press(Message::ShowTerminalInfoDialog)
             .padding(0)
-            .style(|theme: &iced::Theme, status| {
-                use iced::widget::button::{Status, Style};
+            .style(|theme: &icy_ui::Theme, status| {
+                use icy_ui::widget::button::{Status, Style};
 
                 let base = Style {
                     text_color: theme.button.on,
@@ -685,7 +691,7 @@ impl TerminalWindow {
                 };
 
                 match status {
-                    Status::Active => base,
+                    Status::Active | Status::Selected => base,
                     Status::Hovered => Style {
                         text_color: theme.accent.base,
                         ..base
@@ -704,9 +710,9 @@ impl TerminalWindow {
         status_row = status_row.push(text(format!(" • {connection_string}{pause_text}")).size(TEXT_SIZE_SMALL));
 
         container(status_row.padding([4, 12]))
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 0.0.into(),
@@ -776,8 +782,8 @@ fn _menu_button<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> b
     button(content)
         .padding([6, 12])
         .width(Length::Fill)
-        .style(|theme: &iced::Theme, status| {
-            use iced::widget::button::{Status, Style};
+        .style(|theme: &icy_ui::Theme, status| {
+            use icy_ui::widget::button::{Status, Style};
 
             let base = Style {
                 text_color: theme.background.on,

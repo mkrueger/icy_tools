@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use iced::widget::image;
+use icy_ui::widget::image;
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::formats::FileFormat;
 use icy_engine::{Rectangle, TextBuffer, TextPane};

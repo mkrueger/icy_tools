@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     widget::{button, column, container, row, scrollable, text, text_input, Space},
     Border, Color, Element, Event, Length,
@@ -120,31 +120,33 @@ impl SettingsDialog {
             let cat = category.clone();
             let cat_button = button(text(category.name()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
                 .on_press(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::SwitchCategory(cat)))
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(theme.accent.base)),
+                            background: Some(icy_ui::Background::Color(theme.accent.base)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     } else {
                         Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(
                                 theme.accent.base.r,
                                 theme.accent.base.g,
                                 theme.accent.base.b,
@@ -153,7 +155,7 @@ impl SettingsDialog {
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             ..base
                         },
                         _ => base,
@@ -178,7 +180,7 @@ impl SettingsDialog {
 
         let help_text = text("Type letter A-S  |  ←↑↓→: Navigate  |  Enter: Confirm")
             .size(TEXT_SIZE_SMALL)
-            .color(iced::Color::from_rgb(0.5, 0.5, 0.5));
+            .color(icy_ui::Color::from_rgb(0.5, 0.5, 0.5));
 
         column![
             section_header(fl!("settings-font-outline-header")),
@@ -213,13 +215,13 @@ impl SettingsDialog {
                 browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenConfigDir)),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
             row![
                 left_label(fl!("settings-paths-config-file")),
                 text_input("", &config_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
             row![
                 left_label(fl!("settings-paths-log-file")),
                 text_input("", &log_file).size(TEXT_SIZE_NORMAL).width(Length::Fill),
@@ -229,21 +231,21 @@ impl SettingsDialog {
                 ),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
             row![
                 left_label(fl!("settings-paths-font-dir")),
                 text_input("", &text_art_font_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
                 browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenFontDir)),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
             row![
                 left_label(fl!("settings-paths-plugin-dir")),
                 text_input("", &plugin_dir).size(TEXT_SIZE_NORMAL).width(Length::Fill),
                 browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenPluginDir)),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
             Space::new().height(Length::Fixed(8.0)),
             section_header("Tags".to_string()),
             row![
@@ -252,7 +254,7 @@ impl SettingsDialog {
                 browse_button(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::OpenTaglistsDir)),
             ]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center),
+            .align_y(icy_ui::Alignment::Center),
         ]
         .spacing(DIALOG_SPACING)
         .into();
@@ -502,13 +504,13 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
         DialogAction::CloseWith(crate::ui::main_window::Message::SettingsSaved(SettingsResult))
     }
 
-    fn theme(&self) -> Option<iced::Theme> {
+    fn theme(&self) -> Option<icy_ui::Theme> {
         // Return the theme from temp_monitor_settings so changes are previewed live
         Some(self.temp_monitor_settings.get_theme())
     }
 
     fn handle_event(&mut self, event: &Event) -> Option<DialogAction<crate::ui::main_window::Message>> {
-        let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event else {
+        let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) = event else {
             return None;
         };
 

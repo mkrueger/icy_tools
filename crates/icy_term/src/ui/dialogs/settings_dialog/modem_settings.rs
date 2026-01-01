@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, tooltip, Space},
     Alignment, Border, Color, Element, Length,
 };
@@ -27,7 +27,7 @@ impl SettingsDialogState {
         let selected_index = self.selected_modem_index;
 
         // Modem list with better styling
-        let mut modem_list: iced::widget::Column<'_, M> = column![].spacing(2);
+        let mut modem_list: icy_ui::widget::Column<'_, M> = column![].spacing(2);
         for (idx, modem) in modems.iter().enumerate() {
             let is_selected = idx == selected_index;
             let modem_name = modem.name.clone();
@@ -35,34 +35,36 @@ impl SettingsDialogState {
             let modem_button = button(container(text(modem_name).size(TEXT_SIZE_NORMAL)).width(Length::Fill).padding([8, 12]))
                 .on_press(on_msg(SettingsDialogMessage::SelectModem(idx)))
                 .width(Length::Fill)
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     } else {
                         Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(theme.secondary.base)),
+                            background: Some(icy_ui::Background::Color(theme.secondary.base)),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             text_color: theme.accent.on,
                             ..base
                         },
@@ -118,8 +120,8 @@ impl SettingsDialogState {
         let list_container = container(scrollable(modem_list).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
             .height(Length::Fill)
             .width(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
                 border: Border {
                     color: theme.primary.divider,
                     width: 1.0,
@@ -400,11 +402,11 @@ impl SettingsDialogState {
                     Space::new().height(DIALOG_SPACING),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-modem-nothing_selected"))
                         .size(TEXT_SIZE_NORMAL)
-                        .style(|theme: &iced::Theme| text::Style { color: Some(theme.primary.on) }),
+                        .style(|theme: &icy_ui::Theme| text::Style { color: Some(theme.primary.on) }),
                     Space::new().height(4),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-modem-no-selection-hint"))
                         .size(TEXT_SIZE_SMALL)
-                        .style(|theme: &iced::Theme| text::Style {
+                        .style(|theme: &icy_ui::Theme| text::Style {
                             color: Some(theme.primary.on.scale_alpha(0.7)),
                         }),
                 ]

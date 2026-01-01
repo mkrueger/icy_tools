@@ -6,7 +6,7 @@
 //! # Architecture
 //!
 //! - `ToolHandler`: Main trait that tools implement
-//! - Tools receive raw `iced::Event` (keyboard/window) and `TerminalMessage` (mouse)
+//! - Tools receive raw `icy_ui::Event` (keyboard/window) and `TerminalMessage` (mouse)
 //! - `ToolResult`: Results from tool operations (redraw, commit, switch tool, etc.)
 //! - `ToolMessage`: Centralized enum for all tool-specific UI messages
 //! - `ToolContext`: Mutable context passed to tools (EditState, resources, etc.)
@@ -59,8 +59,8 @@ pub use select::SelectTool;
 pub use shape::ShapeTool;
 pub use tag::{TagTool, TagToolState};
 
-use iced::widget::{column, text};
-use iced::Element;
+use icy_ui::widget::{column, text};
+use icy_ui::Element;
 use icy_engine::Position;
 use icy_engine::{BitFont, Palette, TextPane};
 use icy_engine_edit::tools::Tool;
@@ -164,7 +164,7 @@ pub enum ToolResult {
     /// End mouse capture
     EndCapture,
     /// Set the mouse cursor icon (UI-only)
-    SetCursorIcon(Option<iced::mouse::Interaction>),
+    SetCursorIcon(Option<icy_ui::mouse::Interaction>),
     /// Request a UI action owned by the editor (open dialogs/popups, etc.)
     Ui(UiAction),
     /// Multiple results (processed in order)
@@ -338,7 +338,7 @@ pub enum ToolMessage {
 /// (`Element<'static, _>`).
 #[derive(Clone)]
 pub struct ToolViewContext {
-    pub theme: iced::Theme,
+    pub theme: icy_ui::Theme,
     pub fkeys: FKeySets,
     pub font: Option<BitFont>,
     pub palette: Palette,
@@ -445,10 +445,10 @@ impl NavResult {
 /// - Insert (toggle insert mode)
 ///
 /// Does NOT handle: Backspace, Enter, Space, character input (tool-specific).
-pub fn handle_navigation_key(ctx: &mut ToolContext, key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> NavResult {
-    use iced::keyboard::key::Named;
+pub fn handle_navigation_key(ctx: &mut ToolContext, key: &icy_ui::keyboard::Key, modifiers: &icy_ui::keyboard::Modifiers) -> NavResult {
+    use icy_ui::keyboard::key::Named;
 
-    let iced::keyboard::Key::Named(named) = key else {
+    let icy_ui::keyboard::Key::Named(named) = key else {
         return NavResult::NotHandled;
     };
 
@@ -710,7 +710,7 @@ impl SelectionMouseState {
     }
 
     /// Get the cursor interaction for the current state.
-    pub fn cursor(&self) -> Option<iced::mouse::Interaction> {
+    pub fn cursor(&self) -> Option<icy_ui::mouse::Interaction> {
         if self.selection_drag != SelectionDrag::None {
             self.selection_drag.to_cursor_interaction()
         } else if self.hover_drag != SelectionDrag::None {
@@ -744,7 +744,7 @@ pub trait ToolHandler: Send + Sync {
     /// Handle non-terminal Iced events.
     ///
     /// Intended for keyboard/window lifecycle events.
-    fn handle_event(&mut self, _ctx: &mut ToolContext, _event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, _ctx: &mut ToolContext, _event: &icy_ui::Event) -> ToolResult {
         ToolResult::None
     }
 
@@ -792,8 +792,8 @@ pub trait ToolHandler: Send + Sync {
     /// Get cursor style for this tool.
     ///
     /// Default: Crosshair.
-    fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Crosshair
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::Crosshair
     }
 
     /// Whether the caret should be visible with this tool.

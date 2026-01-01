@@ -8,7 +8,7 @@
 //! - Dynamic layout with centering
 //! - Scale factor aware
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::shader::{self, Shader},
     Color, Element, Length, Rectangle,
@@ -243,13 +243,13 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<ToolPanelMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<ToolPanelMessage>> {
         let cols = self.cols;
         let rows = self.rows;
         let num_buttons = self.buttons.len();
 
         // Helper to get button slot from position
-        let get_slot = |pos: iced::Point, bounds: Rectangle| -> Option<usize> {
+        let get_slot = |pos: icy_ui::Point, bounds: Rectangle| -> Option<usize> {
             // Calculate center offset (same as shader)
             let content_width = cols as f32 * (ICON_SIZE + ICON_PADDING) + ICON_PADDING;
             let x_offset = (bounds.width - content_width) * 0.5;
@@ -288,20 +288,20 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
         };
 
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds));
 
                 if *state != new_hover {
                     *state = new_hover;
-                    return Some(iced::widget::Action::request_redraw());
+                    return Some(icy_ui::widget::Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(slot) = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds)) {
-                    return Some(iced::widget::Action::publish(ToolPanelMessage::ClickSlot(slot)));
+                    return Some(icy_ui::widget::Action::publish(ToolPanelMessage::ClickSlot(slot)));
                 }
                 None
             }
@@ -349,10 +349,10 @@ impl shader::Primitive for ToolPanelPrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        _device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        _device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let scale = viewport.scale_factor();
 
@@ -384,15 +384,15 @@ impl shader::Primitive for ToolPanelPrimitive {
         queue.write_buffer(&pipeline.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
-        let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+        let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("Tool Panel Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
@@ -424,11 +424,11 @@ impl shader::Primitive for ToolPanelPrimitive {
 
 /// GPU renderer/pipeline for the tool panel
 pub struct ToolPanelRenderer {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     #[allow(dead_code)]
-    icon_atlas: iced::wgpu::Texture,
+    icon_atlas: icy_ui::wgpu::Texture,
 }
 
 /// Standard icon atlas dimensions (4x4 grid for up to 16 icons)
@@ -438,18 +438,18 @@ const ATLAS_ROWS: u32 = 4;
 const ATLAS_ICON_SIZE: u32 = (ICON_SIZE * 2.0) as u32;
 
 impl shader::Pipeline for ToolPanelRenderer {
-    fn new(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
+    fn new(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
         // Load and compile shader
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Tool Panel Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("tool_panel_shader.wgsl").into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(include_str!("tool_panel_shader.wgsl").into()),
         });
 
         // Create uniform buffer
-        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("Tool Panel Uniform Buffer"),
             size: std::mem::size_of::<ToolPanelUniforms>() as u64,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -457,99 +457,99 @@ impl shader::Pipeline for ToolPanelRenderer {
         let (icon_atlas, icon_atlas_view) = create_standard_icon_atlas(device, queue);
 
         // Create sampler
-        let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Tool Icon Sampler"),
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
+            mag_filter: icy_ui::wgpu::FilterMode::Linear,
+            min_filter: icy_ui::wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
         // Create bind group layout
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Tool Panel Bind Group Layout"),
             entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::VERTEX | iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX | icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
         // Create bind group
-        let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
             label: Some("Tool Panel Bind Group"),
             layout: &bind_group_layout,
             entries: &[
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 0,
                     resource: uniform_buffer.as_entire_binding(),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: iced::wgpu::BindingResource::TextureView(&icon_atlas_view),
+                    resource: icy_ui::wgpu::BindingResource::TextureView(&icon_atlas_view),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: iced::wgpu::BindingResource::Sampler(&sampler),
+                    resource: icy_ui::wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
         });
 
         // Create pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Tool Panel Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
         // Create render pipeline
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Tool Panel Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
@@ -586,7 +586,7 @@ const STANDARD_ICONS: &[&[u8]] = &[
 ];
 
 /// Create the standard icon atlas with all tool icons
-fn create_standard_icon_atlas(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue) -> (iced::wgpu::Texture, iced::wgpu::TextureView) {
+fn create_standard_icon_atlas(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue) -> (icy_ui::wgpu::Texture, icy_ui::wgpu::TextureView) {
     create_icon_atlas(device, queue, STANDARD_ICONS, ATLAS_COLS, ATLAS_ROWS, ATLAS_ICON_SIZE)
 }
 
@@ -624,13 +624,13 @@ pub fn render_svg_to_rgba(svg_data: &[u8], width: u32, height: u32) -> Option<Ve
 
 /// Create an icon atlas texture from SVG data
 pub fn create_icon_atlas(
-    device: &iced::wgpu::Device,
-    queue: &iced::wgpu::Queue,
+    device: &icy_ui::wgpu::Device,
+    queue: &icy_ui::wgpu::Queue,
     icon_data: &[&[u8]],
     atlas_cols: u32,
     atlas_rows: u32,
     icon_size: u32,
-) -> (iced::wgpu::Texture, iced::wgpu::TextureView) {
+) -> (icy_ui::wgpu::Texture, icy_ui::wgpu::TextureView) {
     let atlas_width = atlas_cols * icon_size;
     let atlas_height = atlas_rows * icon_size;
 
@@ -661,41 +661,41 @@ pub fn create_icon_atlas(
         }
     }
 
-    let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+    let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
         label: Some("Tool Icon Atlas"),
-        size: iced::wgpu::Extent3d {
+        size: icy_ui::wgpu::Extent3d {
             width: atlas_width,
             height: atlas_height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
-        dimension: iced::wgpu::TextureDimension::D2,
-        format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+        dimension: icy_ui::wgpu::TextureDimension::D2,
+        format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
 
     queue.write_texture(
-        iced::wgpu::TexelCopyTextureInfo {
+        icy_ui::wgpu::TexelCopyTextureInfo {
             texture: &texture,
             mip_level: 0,
-            origin: iced::wgpu::Origin3d::ZERO,
-            aspect: iced::wgpu::TextureAspect::All,
+            origin: icy_ui::wgpu::Origin3d::ZERO,
+            aspect: icy_ui::wgpu::TextureAspect::All,
         },
         &atlas_data,
-        iced::wgpu::TexelCopyBufferLayout {
+        icy_ui::wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(atlas_width * 4),
             rows_per_image: Some(atlas_height),
         },
-        iced::wgpu::Extent3d {
+        icy_ui::wgpu::Extent3d {
             width: atlas_width,
             height: atlas_height,
             depth_or_array_layers: 1,
         },
     );
 
-    let view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+    let view = texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
     (texture, view)
 }

@@ -16,7 +16,7 @@ icy_net = { workspace = true }
 icy_sixel = { workspace = true }
 unarc-rs = { workspace = true }
 
-iced = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
+icy_ui = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
 image = { workspace = true }
 clap = { workspace = true }
 directories = { workspace = true }

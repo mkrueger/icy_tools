@@ -241,7 +241,7 @@ pub enum AnsiEditorMessage {
     ChatPanel(crate::ui::collaboration::ChatPanelMessage),
 
     /// Center pane (canvas/chat) resized
-    CenterPaneResized(iced::widget::pane_grid::ResizeEvent),
+    CenterPaneResized(icy_ui::widget::pane_grid::ResizeEvent),
 
     /// No-op message (used for message mapping when no action needed)
     Noop,

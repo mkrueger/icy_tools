@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, checkbox, column, container, row, scrollable, svg, text, text_input, tooltip, Space},
     Alignment, Border, Color, Element, Length,
 };
@@ -25,7 +25,7 @@ impl SettingsDialogState {
         let selected_index = self.selected_protocol_index;
 
         // Protocol list with styling similar to modem settings
-        let mut protocol_list: iced::widget::Column<'_, M> = column![].spacing(2);
+        let mut protocol_list: icy_ui::widget::Column<'_, M> = column![].spacing(2);
         for (idx, protocol) in protocols.iter().enumerate() {
             let is_selected = idx == selected_index;
             let protocol_name = protocol.get_name();
@@ -35,8 +35,8 @@ impl SettingsDialogState {
             let protocol_button = button(container(text(protocol_name).size(TEXT_SIZE_NORMAL)).width(Length::Fill).padding([8, 12]))
                 .on_press(on_msg(SettingsDialogMessage::SelectProtocol(idx)))
                 .width(Length::Fill)
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
                     let text_color = if is_enabled {
                         if is_selected {
                             theme.accent.on
@@ -49,30 +49,32 @@ impl SettingsDialogState {
 
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     } else {
                         Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color,
                             border: Border::default().rounded(6.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(theme.secondary.base)),
+                            background: Some(icy_ui::Background::Color(theme.secondary.base)),
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             text_color: theme.accent.on,
                             ..base
                         },
@@ -180,8 +182,8 @@ impl SettingsDialogState {
         let list_container = container(scrollable(protocol_list).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
             .height(Length::Fill)
             .width(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
                 border: Border {
                     color: theme.primary.divider,
                     width: 1.0,
@@ -326,7 +328,7 @@ impl SettingsDialogState {
             let internal_hint: Element<'_, M> = if is_internal {
                 text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-internal-hint"))
                     .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &iced::Theme| text::Style {
+                    .style(|theme: &icy_ui::Theme| text::Style {
                         color: Some(theme.primary.on.scale_alpha(0.7)),
                     })
                     .into()
@@ -502,11 +504,11 @@ impl SettingsDialogState {
                     Space::new().height(DIALOG_SPACING),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-nothing-selected"))
                         .size(TEXT_SIZE_NORMAL)
-                        .style(|theme: &iced::Theme| text::Style { color: Some(theme.primary.on) }),
+                        .style(|theme: &icy_ui::Theme| text::Style { color: Some(theme.primary.on) }),
                     Space::new().height(4),
                     text(fl!(crate::LANGUAGE_LOADER, "settings-protocol-no-selection-hint"))
                         .size(TEXT_SIZE_SMALL)
-                        .style(|theme: &iced::Theme| text::Style {
+                        .style(|theme: &icy_ui::Theme| text::Style {
                             color: Some(theme.primary.on.scale_alpha(0.7)),
                         }),
                 ]

@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=Plik
+menu-file=&Plik
 menu-new=Nowy…
 menu-open=Otwórz…
 menu-open_recent=Otwórz ostatnie
@@ -60,7 +60,7 @@ menu-export=Eksportuj…
 menu-edit-font-outline=Kontur czcionki…
 menu-show_settings=Ustawienia…
 
-menu-edit=Edytuj
+menu-edit=&Edytuj
 menu-undo=Cofnij
 menu-redo=Przywróć
 menu-undo-op=Cofnij: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Przewiń obszar w prawo
 menu-mirror_mode=Tryb lustrzany
 menu-area_operations=Obszar
 
-menu-selection=Zaznaczenie
+menu-selection=&Zaznaczenie
 menu-select-all=Zaznacz wszystko
 menu-select_nothing=Odznacz
 menu-inverse_selection=Odwróć zaznaczenie
 
-menu-colors=Kolory
+menu-colors=&Kolory
 menu-ice-mode=Tryb Ice
 menu-ice-mode-unrestricted=Bez ograniczeń
 menu-ice-mode-blink=Miganie
@@ -123,7 +123,7 @@ menu-next_bg_color=Następny kolor tła
 menu-prev_fg_color=Poprzedni kolor pierwszego planu
 menu-prev_bg_color=Poprzedni kolor tła
 
-menu-view=Widok
+menu-view=&Widok
 menu-reference-image=Otwórz obraz referencyjny…
 menu-toggle-reference-image=Przełącz obraz referencyjny
 menu-clear-reference-image=Wyczyść
@@ -158,12 +158,12 @@ menu-open_font_manager=Edytuj czcionki bufora…
 menu-open_font_directoy=Otwórz katalog czcionek…
 menu-open_palettes_directoy=Otwórz katalog palet…
 
-menu-help=Pomoc
+menu-help=&Pomoc
 menu-discuss=Dyskusja
 menu-open_log_file=Otwórz plik dziennika
 menu-report-bug=Zgłoś błąd
 menu-about=O programie…
-menu-plugins=Wtyczki
+menu-plugins=&Wtyczki
 menu-open_plugin_directory=Otwórz katalog wtyczek…
 
 menu-upgrade_version=Uaktualnij do { $version }

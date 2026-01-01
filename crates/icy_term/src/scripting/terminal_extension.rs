@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use iced::keyboard;
+use icy_ui::keyboard;
 use icy_engine::Screen;
 use icy_engine_scripting::{LuaExtension, LuaScreen};
 use icy_net::telnet::TerminalEmulation;

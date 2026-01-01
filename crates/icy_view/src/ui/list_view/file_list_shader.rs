@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use ab_glyph::Font;
-use iced::widget::shader;
-use iced::Rectangle;
+use icy_ui::widget::shader;
+use icy_ui::Rectangle;
 use icy_engine::FileFormat;
 use icy_engine_gui::ui::FileIcon;
 use once_cell::sync::Lazy;
@@ -765,7 +765,7 @@ impl Default for FileListThemeColors {
 
 impl FileListThemeColors {
     /// Create colors from an iced Theme
-    pub fn from_theme(theme: &iced::Theme) -> Self {
+    pub fn from_theme(theme: &icy_ui::Theme) -> Self {
         let is_dark = theme.is_dark;
 
         // Get base text color from theme
@@ -815,7 +815,7 @@ impl FileListThemeColors {
     }
 }
 
-fn color_to_array(color: iced::Color) -> [f32; 4] {
+fn color_to_array(color: icy_ui::Color) -> [f32; 4] {
     [color.r, color.g, color.b, color.a]
 }
 
@@ -871,57 +871,57 @@ impl std::fmt::Debug for FileListShaderPrimitive {
 
 struct ItemGpuResources {
     #[allow(dead_code)]
-    texture: iced::wgpu::Texture,
+    texture: icy_ui::wgpu::Texture,
     #[allow(dead_code)]
-    texture_view: iced::wgpu::TextureView,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
+    texture_view: icy_ui::wgpu::TextureView,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
     size: (u32, u32),
 }
 
 /// Shader pipeline for file list rendering
 pub struct FileListShaderPipeline {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group_layout: iced::wgpu::BindGroupLayout,
-    sampler: iced::wgpu::Sampler,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group_layout: icy_ui::wgpu::BindGroupLayout,
+    sampler: icy_ui::wgpu::Sampler,
     items: HashMap<u64, ItemGpuResources>,
     /// Tracked cache version - when this differs from global, clear items
     cache_version: u64,
 }
 
 impl shader::Pipeline for FileListShaderPipeline {
-    fn new(device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
+    fn new(device: &icy_ui::wgpu::Device, _queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
         let shader_source = include_str!("file_list.wgsl");
 
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("File List Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(shader_source.into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("File List Bind Group Layout"),
             entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -930,47 +930,47 @@ impl shader::Pipeline for FileListShaderPipeline {
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("File List Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("File List Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
-        let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("File List Sampler"),
-            address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
+            address_mode_u: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_v: icy_ui::wgpu::AddressMode::ClampToEdge,
+            mag_filter: icy_ui::wgpu::FilterMode::Linear,
+            min_filter: icy_ui::wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
@@ -990,10 +990,10 @@ impl shader::Primitive for FileListShaderPrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         _bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         icy_engine_gui::set_scale_factor(viewport.scale_factor() as f32);
 
@@ -1017,63 +1017,63 @@ impl shader::Primitive for FileListShaderPrimitive {
             let exists = pipeline.items.get(&item.id).map(|r| r.size == (item.width, item.height)).unwrap_or(false);
 
             if !exists {
-                let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+                let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                     label: Some(&format!("List Item Texture {}", item.id)),
-                    size: iced::wgpu::Extent3d {
+                    size: icy_ui::wgpu::Extent3d {
                         width: item.width,
                         height: item.height,
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
                     sample_count: 1,
-                    dimension: iced::wgpu::TextureDimension::D2,
-                    format: iced::wgpu::TextureFormat::Rgba8Unorm,
-                    usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+                    dimension: icy_ui::wgpu::TextureDimension::D2,
+                    format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+                    usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 });
 
                 queue.write_texture(
-                    iced::wgpu::TexelCopyTextureInfo {
+                    icy_ui::wgpu::TexelCopyTextureInfo {
                         texture: &texture,
                         mip_level: 0,
-                        origin: iced::wgpu::Origin3d::ZERO,
-                        aspect: iced::wgpu::TextureAspect::All,
+                        origin: icy_ui::wgpu::Origin3d::ZERO,
+                        aspect: icy_ui::wgpu::TextureAspect::All,
                     },
                     &item.rgba_data,
-                    iced::wgpu::TexelCopyBufferLayout {
+                    icy_ui::wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * item.width),
                         rows_per_image: Some(item.height),
                     },
-                    iced::wgpu::Extent3d {
+                    icy_ui::wgpu::Extent3d {
                         width: item.width,
                         height: item.height,
                         depth_or_array_layers: 1,
                     },
                 );
 
-                let texture_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
+                let texture_view = texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
 
-                let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+                let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
                     label: Some(&format!("List Item Uniforms {}", item.id)),
                     size: std::mem::size_of::<ListItemUniforms>() as u64,
-                    usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+                    usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
 
-                let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+                let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
                     label: Some(&format!("List Item BindGroup {}", item.id)),
                     layout: &pipeline.bind_group_layout,
                     entries: &[
-                        iced::wgpu::BindGroupEntry {
+                        icy_ui::wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: iced::wgpu::BindingResource::TextureView(&texture_view),
+                            resource: icy_ui::wgpu::BindingResource::TextureView(&texture_view),
                         },
-                        iced::wgpu::BindGroupEntry {
+                        icy_ui::wgpu::BindGroupEntry {
                             binding: 1,
-                            resource: iced::wgpu::BindingResource::Sampler(&pipeline.sampler),
+                            resource: icy_ui::wgpu::BindingResource::Sampler(&pipeline.sampler),
                         },
-                        iced::wgpu::BindGroupEntry {
+                        icy_ui::wgpu::BindGroupEntry {
                             binding: 2,
                             resource: uniform_buffer.as_entire_binding(),
                         },
@@ -1114,7 +1114,7 @@ impl shader::Primitive for FileListShaderPrimitive {
         pipeline.items.retain(|id, _| active_ids.contains(id));
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
         let scale_factor = icy_engine_gui::get_scale_factor();
 
         let widget_left = clip_bounds.x as f32;
@@ -1146,14 +1146,14 @@ impl shader::Primitive for FileListShaderPrimitive {
                     continue;
                 }
 
-                let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+                let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
                     label: Some(&format!("List Item Render {}", item.id)),
-                    color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                         view: target,
                         resolve_target: None,
-                        ops: iced::wgpu::Operations {
-                            load: iced::wgpu::LoadOp::Load,
-                            store: iced::wgpu::StoreOp::Store,
+                        ops: icy_ui::wgpu::Operations {
+                            load: icy_ui::wgpu::LoadOp::Load,
+                            store: icy_ui::wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
                     })],

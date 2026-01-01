@@ -8,17 +8,14 @@
 //! - ICY binary format (for paste between ICY applications)
 //!
 //! The clipboard operations return Tasks that need to be executed
-//! by the iced runtime.
+//! by the icy_ui runtime.
 
-use iced::clipboard::STANDARD;
-use iced::Task;
+use icy_ui::clipboard::{Format, STANDARD};
+use icy_ui::Task;
 use icy_engine::{RenderOptions, Screen};
 
 /// Clipboard type identifier for ICY binary format
-pub const ICY_CLIPBOARD_TYPE: &str = "application/x-icy-buffer";
-
-/// RTF MIME type
-pub const RTF_MIME_TYPE: &str = "text/rtf";
+pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";
 
 /// Error type for clipboard operations
 #[derive(Debug, Clone)]
@@ -141,13 +138,15 @@ pub fn copy_to_clipboard<Message: Clone + Send + 'static>(
         entries.push((icy_data, vec![ICY_CLIPBOARD_TYPE.to_string()]));
     }
 
-    // RTF format
+    // RTF format (platform-independent via icy_ui::clipboard::Format)
     if let Some(rtf) = data.rtf {
-        entries.push((rtf.into_bytes(), vec![RTF_MIME_TYPE.to_string()]));
+        let rtf_formats: Vec<String> = Format::Rtf.formats().iter().map(|s| s.to_string()).collect();
+        entries.push((rtf.into_bytes(), rtf_formats));
     }
 
-    // Plain text (using text/plain MIME type)
-    entries.push((data.text.into_bytes(), vec!["text/plain".to_string()]));
+    // Plain text (platform-independent via icy_ui::clipboard::Format)
+    let text_formats: Vec<String> = Format::Text.formats().iter().map(|s| s.to_string()).collect();
+    entries.push((data.text.into_bytes(), text_formats));
 
     // Write all MIME contents
     let write_task = STANDARD.write_multi(entries);

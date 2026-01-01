@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Stroke},
     window, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
@@ -107,13 +107,13 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
         vec![geometry]
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<()>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::canvas::Action<()>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {
             // Handle animation: on each redraw, update scrollbar AND scroll animations
             // This makes the scrollbar self-driving - no manual animation calls needed
-            iced::Event::Window(window::Event::RedrawRequested(now)) => {
+            icy_ui::Event::Window(window::Event::RedrawRequested(now)) => {
                 let next_redraw_at = self.viewport.with_viewport_mut(|vp| {
                     // Update scrollbar visibility animation
                     vp.scrollbar.update_animation();
@@ -136,12 +136,12 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
                 });
 
                 if let Some(next_frame) = next_redraw_at {
-                    return Some(iced::widget::canvas::Action::request_redraw_at(next_frame));
+                    return Some(icy_ui::widget::canvas::Action::request_redraw_at(next_frame));
                 }
             }
-            iced::Event::Mouse(mouse_event) => match mouse_event {
-                iced::mouse::Event::ButtonPressed {
-                    button: iced::mouse::Button::Left,
+            icy_ui::Event::Mouse(mouse_event) => match mouse_event {
+                icy_ui::mouse::Event::ButtonPressed {
+                    button: icy_ui::mouse::Button::Left,
                     ..
                 } => {
                     if is_hovered {
@@ -149,12 +149,12 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
                             self.viewport.with_viewport_mut(|vp| {
                                 vp.handle_vscrollbar_press(pos.y, bounds.height);
                             });
-                            return Some(iced::widget::canvas::Action::request_redraw().and_capture());
+                            return Some(icy_ui::widget::canvas::Action::request_redraw().and_capture());
                         }
                     }
                 }
-                iced::mouse::Event::ButtonReleased {
-                    button: iced::mouse::Button::Left,
+                icy_ui::mouse::Event::ButtonReleased {
+                    button: icy_ui::mouse::Button::Left,
                     ..
                 } => {
                     let released = self.viewport.with_viewport_mut(|vp| {
@@ -166,10 +166,10 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
                         }
                     });
                     if released {
-                        return Some(iced::widget::canvas::Action::request_redraw());
+                        return Some(icy_ui::widget::canvas::Action::request_redraw());
                     }
                 }
-                iced::mouse::Event::CursorMoved { .. } => {
+                icy_ui::mouse::Event::CursorMoved { .. } => {
                     let result = self.viewport.with_viewport_mut(|vp| {
                         if vp.scrollbar.is_dragging {
                             // Continue dragging even outside bounds
@@ -189,8 +189,8 @@ impl<'a, V: ViewportAccess> canvas::Program<()> for ScrollbarOverlay<'a, V> {
                         }
                     });
                     match result {
-                        Some(true) => return Some(iced::widget::canvas::Action::request_redraw().and_capture()),
-                        Some(false) => return Some(iced::widget::canvas::Action::request_redraw()),
+                        Some(true) => return Some(icy_ui::widget::canvas::Action::request_redraw().and_capture()),
+                        Some(false) => return Some(icy_ui::widget::canvas::Action::request_redraw()),
                         None => {}
                     }
                 }
@@ -282,13 +282,13 @@ where
         vec![geometry]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::canvas::Action<Message>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::canvas::Action<Message>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {
-            iced::Event::Mouse(mouse_event) => match mouse_event {
-                iced::mouse::Event::ButtonPressed {
-                    button: iced::mouse::Button::Left,
+            icy_ui::Event::Mouse(mouse_event) => match mouse_event {
+                icy_ui::mouse::Event::ButtonPressed {
+                    button: icy_ui::mouse::Button::Left,
                     ..
                 } => {
                     if is_hovered {
@@ -297,34 +297,34 @@ where
                             let scroll_ratio = self.calculate_scroll_from_position(pos.y, bounds.height);
                             let absolute_y = scroll_ratio * self.max_scroll_y;
                             let msg = (self.on_scroll)(0.0, absolute_y);
-                            return Some(iced::widget::canvas::Action::publish(msg).and_capture());
+                            return Some(icy_ui::widget::canvas::Action::publish(msg).and_capture());
                         }
                     }
                 }
-                iced::mouse::Event::ButtonReleased {
-                    button: iced::mouse::Button::Left,
+                icy_ui::mouse::Event::ButtonReleased {
+                    button: icy_ui::mouse::Button::Left,
                     ..
                 } => {
                     if state.is_dragging {
                         state.is_dragging = false;
                         let msg = (self.on_hover)(is_hovered);
-                        return Some(iced::widget::canvas::Action::publish(msg));
+                        return Some(icy_ui::widget::canvas::Action::publish(msg));
                     }
                 }
-                iced::mouse::Event::CursorMoved { .. } => {
+                icy_ui::mouse::Event::CursorMoved { .. } => {
                     if state.is_dragging {
                         if let Some(pos) = cursor.position() {
                             let relative_y = pos.y - bounds.y;
                             let scroll_ratio = self.calculate_scroll_from_position(relative_y, bounds.height);
                             let absolute_y = scroll_ratio * self.max_scroll_y;
                             let msg = (self.on_scroll)(0.0, absolute_y);
-                            return Some(iced::widget::canvas::Action::publish(msg).and_capture());
+                            return Some(icy_ui::widget::canvas::Action::publish(msg).and_capture());
                         }
                     } else {
                         let last_hover = self.last_hover_state.swap(is_hovered, Ordering::Relaxed);
                         if last_hover != is_hovered {
                             let msg = (self.on_hover)(is_hovered);
-                            return Some(iced::widget::canvas::Action::publish(msg));
+                            return Some(icy_ui::widget::canvas::Action::publish(msg));
                         }
                     }
                 }

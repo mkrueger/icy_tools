@@ -5,7 +5,7 @@
 //! - Codes: A-O, @, &, ÷
 //! - Results: The actual outline characters (CP437 codes)
 
-use iced::{
+use icy_ui::{
     Element, Font, Length,
     widget::{column, container, row, text},
 };

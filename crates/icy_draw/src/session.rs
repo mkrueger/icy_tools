@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use iced::window;
+use icy_ui::window;
 use serde::{Deserialize, Serialize};
 
 use crate::ui::EditMode;

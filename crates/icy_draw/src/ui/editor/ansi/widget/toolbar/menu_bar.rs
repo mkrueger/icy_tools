@@ -3,8 +3,8 @@
 //! Menu structure is defined as data, then rendered to UI.
 //! This allows hotkey handling and menu generation from a single source.
 
-use iced::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
-use iced::{
+use icy_ui::widget::menu::{bar as menu_bar_fn, root as menu_root, Tree as MenuTree};
+use icy_ui::{
     widget::{button, text},
     Element, Length, Theme,
 };
@@ -307,9 +307,9 @@ impl AnsiMenu {
 }
 
 /// Handle keyboard event by checking all ANSI menu commands
-pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, is_connected: bool) -> Option<Message> {
+pub fn handle_command_event(event: &icy_ui::Event, undo_desc: Option<&str>, redo_desc: Option<&str>, mirror_mode: bool, is_connected: bool) -> Option<Message> {
     let (key, modifiers) = match event {
-        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
+        icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) => (key, *modifiers),
         _ => return None,
     };
 
@@ -323,8 +323,8 @@ pub fn handle_command_event(event: &iced::Event, undo_desc: Option<&str>, redo_d
 // ============================================================================
 
 /// Build the guides submenu with predefined guide sizes
-fn build_guides_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
-    use iced::widget::text;
+fn build_guides_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
+    use icy_ui::widget::text;
 
     // Predefined guide sizes (common ANSI art formats)
     let guides: [(&str, i32, i32); 4] = [
@@ -334,7 +334,7 @@ fn build_guides_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Messag
         ("File_ID.DIZ 44x22", 44, 22),
     ];
 
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     // Off option
     let off_selected = state.guide.is_none();
@@ -381,13 +381,13 @@ fn build_guides_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Messag
 }
 
 /// Build the raster/grid submenu with predefined grid sizes
-fn build_raster_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
-    use iced::widget::text;
+fn build_raster_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
+    use icy_ui::widget::text;
 
     // Predefined raster sizes
     let rasters: [(i32, i32); 10] = [(1, 1), (2, 2), (4, 2), (4, 4), (8, 2), (8, 4), (8, 8), (16, 4), (16, 8), (16, 16)];
 
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     // Off option
     let off_selected = state.raster.is_none();
@@ -434,10 +434,10 @@ fn build_raster_submenu(state: &MarkerMenuState) -> Vec<MenuTree<'static, Messag
 }
 
 /// Build the zoom submenu with zoom levels
-fn build_zoom_submenu() -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
+fn build_zoom_submenu() -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
     use icy_engine_gui::commands::cmd;
 
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     // Zoom commands
     items.push(MenuTree::new(menu_item(&cmd::VIEW_ZOOM_RESET, Message::ZoomReset)));
@@ -462,11 +462,11 @@ fn build_zoom_submenu() -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>
 /// Build the view menu with conditional chat panel visibility
 fn build_view_menu(
     marker_state: &MarkerMenuState,
-    guides_submenu: Vec<MenuTree<'static, Message, Theme, iced::Renderer>>,
-    raster_submenu: Vec<MenuTree<'static, Message, Theme, iced::Renderer>>,
+    guides_submenu: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>>,
+    raster_submenu: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>>,
     is_connected: bool,
-) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     // Zoom submenu
     items.push(MenuTree::with_children(menu_item_submenu(fl!("menu-zoom")), build_zoom_submenu()));
@@ -524,10 +524,10 @@ fn build_view_menu(
 }
 
 /// Build the area operations submenu
-fn build_area_submenu() -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
+fn build_area_submenu() -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
     use crate::ui::editor::ansi::AnsiEditorMessage;
 
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     // Line justify operations
     items.push(MenuTree::new(menu_item(
@@ -612,8 +612,8 @@ fn build_area_submenu() -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>
 }
 
 /// Build the plugins submenu from loaded plugins
-fn build_plugins_menu(plugins: &[Plugin]) -> Vec<MenuTree<'static, Message, Theme, iced::Renderer>> {
-    let mut items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+fn build_plugins_menu(plugins: &[Plugin]) -> Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> {
+    let mut items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
 
     if plugins.is_empty() {
         // Show "No plugins" when empty
@@ -641,7 +641,7 @@ fn build_plugins_menu(plugins: &[Plugin]) -> Vec<MenuTree<'static, Message, Them
                 }
             } else {
                 // Submenu for grouped plugins
-                let mut sub_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = Vec::new();
+                let mut sub_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = Vec::new();
                 for (i, p) in plugin_items {
                     sub_items.push(MenuTree::new(
                         button(text(p.title.clone()).size(14))
@@ -671,7 +671,7 @@ pub fn view_ansi(
     let close_editor_hotkey = cmd::WINDOW_CLOSE.primary_hotkey_display().unwrap_or_default();
 
     // Build file menu items
-    let file_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
+    let file_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = vec![
         MenuTree::new(menu_item(&cmd::FILE_NEW, Message::NewFile)),
         MenuTree::new(menu_item(&cmd::FILE_OPEN, Message::OpenFile)),
         MenuTree::with_children(menu_item_submenu(fl!("menu-open_recent")), build_recent_files_menu(recent_files)),
@@ -696,7 +696,7 @@ pub fn view_ansi(
     ];
 
     // Build edit menu items
-    let edit_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
+    let edit_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = vec![
         MenuTree::new(menu_item_undo(&cmd::EDIT_UNDO, Message::Undo, undo_info.undo_description.as_deref())),
         MenuTree::new(menu_item_redo(&cmd::EDIT_REDO, Message::Redo, undo_info.redo_description.as_deref())),
         MenuTree::separator(separator()),
@@ -727,7 +727,7 @@ pub fn view_ansi(
     ];
 
     // Build selection menu items
-    let selection_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
+    let selection_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = vec![
         MenuTree::new(menu_item(&cmd::EDIT_SELECT_ALL, Message::SelectAll)),
         MenuTree::new(menu_item(&selection_cmd::SELECT_NONE, Message::Deselect)),
         MenuTree::new(menu_item(
@@ -762,7 +762,7 @@ pub fn view_ansi(
     ];
 
     // Build colors menu items
-    let colors_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
+    let colors_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = vec![
         MenuTree::new(menu_item_simple(fl!("menu-edit_palette"), Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
         MenuTree::separator(separator()),
         MenuTree::new(menu_item_simple_enabled(
@@ -818,7 +818,7 @@ pub fn view_ansi(
     );
 
     // Build help menu items
-    let help_items: Vec<MenuTree<'static, Message, Theme, iced::Renderer>> = vec![
+    let help_items: Vec<MenuTree<'static, Message, Theme, icy_ui::Renderer>> = vec![
         MenuTree::new(menu_item_simple(fl!("menu-discuss"), Message::OpenDiscussions)),
         MenuTree::new(menu_item_simple(fl!("menu-report-bug"), Message::ReportBug)),
         MenuTree::separator(separator()),

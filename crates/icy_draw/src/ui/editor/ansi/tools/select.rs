@@ -3,8 +3,8 @@
 //! Rectangle selection with move/resize support.
 //! Supports add (Shift), remove (Ctrl), and replace modes.
 
-use iced::widget::{row, text, Space};
-use iced::Element;
+use icy_ui::widget::{row, text, Space};
+use icy_ui::Element;
 use icy_engine::{AddType, Position, Rectangle, Selection, TextPane};
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::TerminalMessage;
@@ -298,12 +298,12 @@ impl ToolHandler for SelectTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
                 // Handle Delete/Backspace to erase selection
-                use iced::keyboard::key::Named;
-                if let iced::keyboard::Key::Named(named) = key {
+                use icy_ui::keyboard::key::Named;
+                if let icy_ui::keyboard::Key::Named(named) = key {
                     match named {
                         Named::Delete | Named::Backspace => {
                             if ctx.state.is_something_selected() {
@@ -345,24 +345,24 @@ impl ToolHandler for SelectTool {
             });
 
         row![
-            Space::new().width(iced::Length::Fill),
+            Space::new().width(icy_ui::Length::Fill),
             segmented_control,
-            Space::new().width(iced::Length::Fixed(16.0)),
+            Space::new().width(icy_ui::Length::Fixed(16.0)),
             text("⇧: add   ⌃/Ctrl: remove")
                 .size(14)
-                .style(|theme: &iced::Theme| text::Style { color: Some(theme.button.on) }),
-            Space::new().width(iced::Length::Fill),
+                .style(|theme: &icy_ui::Theme| text::Style { color: Some(theme.button.on) }),
+            Space::new().width(icy_ui::Length::Fill),
         ]
         .spacing(8)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
         if self.is_dragging {
-            self.drag_mode.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Crosshair)
+            self.drag_mode.to_cursor_interaction().unwrap_or(icy_ui::mouse::Interaction::Crosshair)
         } else {
-            self.hover_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Crosshair)
+            self.hover_drag.to_cursor_interaction().unwrap_or(icy_ui::mouse::Interaction::Crosshair)
         }
     }
 

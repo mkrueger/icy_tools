@@ -4,7 +4,7 @@
 //! Similar to the CharSelector popup, used for selecting TheDraw font outline styles.
 
 use codepages::tables::UNICODE_TO_CP437;
-use iced::{
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{
         canvas::{self, Canvas, Frame, Geometry, Path, Stroke},
@@ -207,7 +207,7 @@ pub struct OutlineSelectorState {
 impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
     type State = OutlineSelectorState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let hovered = state.hovered;
         let keyboard_cursor = state.cursor;
@@ -272,7 +272,7 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 content: shortcut.to_string(),
                 position: Point::new(rect.x + 3.0, rect.y + 2.0),
                 color: if is_selected { label_selected } else { label_color },
-                size: iced::Pixels(12.0),
+                size: icy_ui::Pixels(12.0),
                 ..Default::default()
             };
             frame.fill_text(label_text);
@@ -290,9 +290,9 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<OutlineSelectorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<OutlineSelectorMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.hit_test(p));
                 if state.hovered != new_hover {
                     state.hovered = new_hover;
@@ -304,7 +304,7 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {
@@ -317,9 +317,9 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
 
                 None
             }
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                use iced::keyboard::key::Named;
-                use iced::keyboard::Key;
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                use icy_ui::keyboard::key::Named;
+                use icy_ui::keyboard::Key;
 
                 match key {
                     Key::Named(Named::Escape) => {
@@ -404,7 +404,7 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if state.hovered.is_some() {
                     state.hovered = None;
                     return Some(Action::request_redraw());

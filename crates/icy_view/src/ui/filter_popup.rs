@@ -1,4 +1,4 @@
-use iced::{
+use icy_ui::{
     alignment::{Horizontal, Vertical},
     widget::{button, container, row, text, text_input, Id},
     Border, Color, Element, Length, Shadow, Theme,
@@ -58,10 +58,10 @@ impl FilterPopup {
     }
 
     /// Focus the input field
-    pub fn focus_input<T: 'static>(&self) -> iced::Task<T> {
-        iced::Task::batch([
-            iced::widget::operation::focus(self.input_id.clone()),
-            iced::widget::operation::select_all(self.input_id.clone()),
+    pub fn focus_input<T: 'static>(&self) -> icy_ui::Task<T> {
+        icy_ui::Task::batch([
+            icy_ui::widget::operation::focus(self.input_id.clone()),
+            icy_ui::widget::operation::select_all(self.input_id.clone()),
         ])
     }
 
@@ -102,7 +102,7 @@ impl FilterPopup {
 
         container(content)
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.background.base)),
+                background: Some(icy_ui::Background::Color(theme.background.base)),
                 border: Border {
                     color: theme.primary.divider,
                     width: 1.0,
@@ -111,7 +111,7 @@ impl FilterPopup {
                 text_color: None,
                 shadow: Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                    offset: iced::Vector::new(2.0, 2.0),
+                    offset: icy_ui::Vector::new(2.0, 2.0),
                     blur_radius: 8.0,
                 },
                 snap: false,
@@ -148,18 +148,18 @@ where
         .width(Length::Fill)
         .height(Length::Fill);
 
-    iced::widget::stack![content.into(), popup_view].into()
+    icy_ui::widget::stack![content.into(), popup_view].into()
 }
 
-fn popup_button_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
+fn popup_button_style(theme: &icy_ui::Theme, status: icy_ui::widget::button::Status) -> icy_ui::widget::button::Style {
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (theme.primary.divider, theme.primary.on),
-        iced::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
-        iced::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
-        iced::widget::button::Status::Disabled => (theme.secondary.base, theme.secondary.on.scale_alpha(0.5)),
+        icy_ui::widget::button::Status::Active | icy_ui::widget::button::Status::Selected => (theme.primary.divider, theme.primary.on),
+        icy_ui::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
+        icy_ui::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
+        icy_ui::widget::button::Status::Disabled => (theme.secondary.base, theme.secondary.on.scale_alpha(0.5)),
     };
-    iced::widget::button::Style {
-        background: Some(iced::Background::Color(bg)),
+    icy_ui::widget::button::Style {
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
         border: Border {
             color: theme.primary.divider,
@@ -170,9 +170,9 @@ fn popup_button_style(theme: &iced::Theme, status: iced::widget::button::Status)
     }
 }
 
-fn popup_button_disabled_style(theme: &iced::Theme, _status: iced::widget::button::Status) -> iced::widget::button::Style {
-    iced::widget::button::Style {
-        background: Some(iced::Background::Color(theme.secondary.base)),
+fn popup_button_disabled_style(theme: &icy_ui::Theme, _status: icy_ui::widget::button::Status) -> icy_ui::widget::button::Style {
+    icy_ui::widget::button::Style {
+        background: Some(icy_ui::Background::Color(theme.secondary.base)),
         text_color: theme.secondary.on.scale_alpha(0.3),
         border: Border {
             color: theme.primary.divider,

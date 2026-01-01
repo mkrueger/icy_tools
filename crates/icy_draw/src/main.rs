@@ -386,7 +386,7 @@ fn main() {
         None
     };
 
-    iced::daemon(
+    icy_ui::daemon(
         move || {
             let font_library = TextArtFontLibrary::create_shared();
 
@@ -402,7 +402,7 @@ fn main() {
         WindowManager::update,
         WindowManager::view,
     )
-    .settings(iced::Settings {
+    .settings(icy_ui::Settings {
         vsync: true,
         antialiasing: true,
         ..Default::default()
@@ -416,10 +416,10 @@ fn main() {
     log::info!("Shutting down.");
 }
 
-fn load_window_icon(png_bytes: &[u8]) -> Result<iced::window::Icon, Box<dyn std::error::Error>> {
+fn load_window_icon(png_bytes: &[u8]) -> Result<icy_ui::window::Icon, Box<dyn std::error::Error>> {
     let img = image::load_from_memory(png_bytes)?;
     let rgba = img.to_rgba8();
     let w = img.width();
     let h = img.height();
-    Ok(iced::window::icon::from_rgba(rgba.into_raw(), w, h)?)
+    Ok(icy_ui::window::icon::from_rgba(rgba.into_raw(), w, h)?)
 }

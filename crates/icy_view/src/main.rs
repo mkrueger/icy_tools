@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
-use iced::Settings;
+use icy_ui::Settings;
 use rust_embed::RustEmbed;
 use semver::Version;
 
@@ -116,7 +116,7 @@ fn main() {
 
     log::info!("Starting iCY VIEW {}", *VERSION);
 
-    iced::daemon(
+    icy_ui::daemon(
         move || {
             if let Some(ref path) = args.path {
                 window_manager::WindowManager::with_path(path.clone(), args.auto, args.bps)

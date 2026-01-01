@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, row, text_input},
     Alignment, Element, Length,
 };

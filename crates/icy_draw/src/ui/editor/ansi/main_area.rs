@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use iced::{
+use icy_ui::{
     widget::{column, container, pane_grid, row},
     Alignment, Element, Length, Task, Theme,
 };
@@ -465,7 +465,7 @@ impl AnsiEditorMainArea {
     }
 
     /// Render a Moebius/Collab `Blocks` rectangle to an RGBA image handle using the current font/palette.
-    pub fn render_collab_blocks_preview(&self, blocks: &icy_engine_edit::collaboration::Blocks) -> Option<(iced::widget::image::Handle, u32, u32)> {
+    pub fn render_collab_blocks_preview(&self, blocks: &icy_engine_edit::collaboration::Blocks) -> Option<(icy_ui::widget::image::Handle, u32, u32)> {
         use icy_engine::{AttributedChar, RenderOptions, TextAttribute, TextBuffer};
 
         if blocks.columns == 0 || blocks.rows == 0 {
@@ -541,7 +541,7 @@ impl AnsiEditorMainArea {
             return None;
         }
 
-        let handle = iced::widget::image::Handle::from_rgba(size.width as u32, size.height as u32, rgba);
+        let handle = icy_ui::widget::image::Handle::from_rgba(size.width as u32, size.height as u32, rgba);
         Some((handle, size.width as u32, size.height as u32))
     }
 
@@ -603,7 +603,7 @@ impl AnsiEditorMainArea {
         self.core.status_info()
     }
 
-    pub fn handle_event(&mut self, event: &iced::Event) -> bool {
+    pub fn handle_event(&mut self, event: &icy_ui::Event) -> bool {
         self.core.handle_event(event)
     }
 
@@ -614,7 +614,7 @@ impl AnsiEditorMainArea {
     pub fn cut<Message: Clone + Send + 'static>(
         &mut self,
         on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
-    ) -> iced::Task<Message> {
+    ) -> icy_ui::Task<Message> {
         let task = self.core.cut(on_complete);
         self.refresh_selection_display();
         task
@@ -623,7 +623,7 @@ impl AnsiEditorMainArea {
     pub fn copy<Message: Clone + Send + 'static>(
         &mut self,
         on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
-    ) -> iced::Task<Message> {
+    ) -> icy_ui::Task<Message> {
         let task = self.core.copy(on_complete);
         self.refresh_selection_display();
         task
@@ -1639,7 +1639,7 @@ impl AnsiEditorMainArea {
         let icon_color = theme.background.on;
 
         // In paste mode, show paste controls instead of tool panel
-        let left_sidebar: iced::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
+        let left_sidebar: icy_ui::widget::Column<'_, AnsiEditorMessage> = if editor.is_paste_mode() {
             let paste_controls = self.paste_controls.view(sidebar_width, bg_weakest).map(AnsiEditorMessage::PasteControls);
             column![palette_view, paste_controls].spacing(4)
         } else {

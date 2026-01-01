@@ -8,7 +8,7 @@ use icy_engine_edit::EditState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use iced::{Element, Length, Task};
+use icy_ui::{Element, Length, Task};
 use icy_engine::formats::FileFormat;
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::TerminalMessage;
@@ -314,7 +314,7 @@ impl AnsiEditorCore {
         };
 
         // Build the center area with optional line numbers overlay and tag context menu.
-        let mut center_layers: Vec<Element<'_, AnsiEditorCoreMessage>> = vec![iced::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
+        let mut center_layers: Vec<Element<'_, AnsiEditorCoreMessage>> = vec![icy_ui::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
 
         if self.show_line_numbers {
             let line_numbers_overlay = widget::line_numbers::line_numbers_overlay(
@@ -375,7 +375,7 @@ impl AnsiEditorCore {
             }
         }
 
-        iced::widget::stack(center_layers).width(Length::Fill).height(Length::Fill).into()
+        icy_ui::widget::stack(center_layers).width(Length::Fill).height(Length::Fill).into()
     }
 
     // NOTE (Layer-local coordinates)
@@ -553,7 +553,7 @@ impl AnsiEditorCore {
         }
     }
 
-    fn dispatch_current_tool_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+    fn dispatch_current_tool_event(&mut self, event: &icy_ui::Event) -> tools::ToolResult {
         self.tool_set_cursor_icon = false;
         let mut screen_guard = self.screen.lock();
         let state = screen_guard.as_any_mut().downcast_mut::<EditState>().unwrap();
@@ -615,7 +615,7 @@ impl AnsiEditorCore {
         self.process_tool_result_from(MouseCaptureTarget::Paste, result)
     }
 
-    fn dispatch_paste_event(&mut self, event: &iced::Event) -> tools::ToolResult {
+    fn dispatch_paste_event(&mut self, event: &icy_ui::Event) -> tools::ToolResult {
         use tools::ToolHandler;
 
         self.tool_set_cursor_icon = false;
@@ -1114,7 +1114,7 @@ impl AnsiEditorCore {
         &self,
         on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
     ) -> Task<Message> {
-        use iced::clipboard::STANDARD;
+        use icy_ui::clipboard::STANDARD;
 
         let image_data = self.with_edit_state_readonly(|state| {
             let layer = state.get_cur_layer()?;
@@ -1445,12 +1445,12 @@ impl AnsiEditorCore {
         }
     }
 
-    fn is_caret_scroll_navigation_key(key: &iced::keyboard::Key) -> bool {
-        use iced::keyboard::key::Named;
+    fn is_caret_scroll_navigation_key(key: &icy_ui::keyboard::Key) -> bool {
+        use icy_ui::keyboard::key::Named;
 
         matches!(
             key,
-            iced::keyboard::Key::Named(
+            icy_ui::keyboard::Key::Named(
                 Named::ArrowUp | Named::ArrowDown | Named::ArrowLeft | Named::ArrowRight | Named::Home | Named::End | Named::PageUp | Named::PageDown
             )
         )
@@ -2580,10 +2580,10 @@ impl AnsiEditorCore {
     /// global key presses).
     ///
     /// Returns `true` if the event was handled.
-    pub fn handle_event(&mut self, event: &iced::Event) -> bool {
+    pub fn handle_event(&mut self, event: &icy_ui::Event) -> bool {
         match event {
             // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
-            iced::Event::Window(iced::window::Event::Unfocused) | iced::Event::Mouse(iced::mouse::Event::CursorLeft) => {
+            icy_ui::Event::Window(icy_ui::window::Event::Unfocused) | icy_ui::Event::Mouse(icy_ui::mouse::Event::CursorLeft) => {
                 let _ = self.cancel_shape_drag();
                 // Also reset mouse capture state in case drag ended outside the widget
                 if self.mouse_capture_tool.is_some() {
@@ -2595,8 +2595,8 @@ impl AnsiEditorCore {
                 true
             }
             // Reset mouse capture state - the release may have happened outside the terminal widget
-            iced::Event::Mouse(iced::mouse::Event::ButtonReleased {
-                button: iced::mouse::Button::Left,
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonReleased {
+                button: icy_ui::mouse::Button::Left,
                 ..
             }) => {
                 if self.mouse_capture_tool.is_some() {
@@ -2608,12 +2608,12 @@ impl AnsiEditorCore {
                 true
             }
             // Forward keyboard events directly into the editor.
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers: _, .. }) => {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers: _, .. }) => {
                 let scroll_caret = Self::is_caret_scroll_navigation_key(&key);
 
                 // Character selector overlay has priority and is closed with Escape.
                 if self.char_selector_target.is_some() {
-                    if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                    if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                         self.char_selector_target = None;
                         return true;
                     }
@@ -2622,7 +2622,7 @@ impl AnsiEditorCore {
                 // Outline selector keyboard handling (Escape = Cancel)
                 if let Some(font_tool) = self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>() {
                     if font_tool.is_outline_selector_open() {
-                        if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                        if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                             font_tool.handle_outline_selector_message(&self.options, widget::outline_selector::OutlineSelectorMessage::Cancel);
                             return true;
                         }
@@ -2632,9 +2632,9 @@ impl AnsiEditorCore {
                 // Tag dialog keyboard handling (Escape = Cancel, Enter = Ok)
                 if let Some(tag_tool) = self.current_tool.as_any_mut().downcast_mut::<tools::TagTool>() {
                     if tag_tool.state().dialog.is_some() {
-                        use iced::keyboard::key::Named;
+                        use icy_ui::keyboard::key::Named;
                         match key {
-                            iced::keyboard::Key::Named(Named::Escape) => {
+                            icy_ui::keyboard::Key::Named(Named::Escape) => {
                                 // Send Cancel message
                                 let screen = Arc::clone(&self.screen);
                                 let mut screen_guard = screen.lock();
@@ -2648,7 +2648,7 @@ impl AnsiEditorCore {
                                 }
                                 return true;
                             }
-                            iced::keyboard::Key::Named(Named::Enter) => {
+                            icy_ui::keyboard::Key::Named(Named::Enter) => {
                                 // Send Ok message
                                 let screen = Arc::clone(&self.screen);
                                 let mut screen_guard = screen.lock();
@@ -2666,7 +2666,7 @@ impl AnsiEditorCore {
                     }
                     // Tag list dialog keyboard handling (Escape = Close)
                     if tag_tool.state().list_dialog.is_some() {
-                        if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                        if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                             let screen = Arc::clone(&self.screen);
                             let mut screen_guard = screen.lock();
                             if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
@@ -2682,7 +2682,7 @@ impl AnsiEditorCore {
                 }
 
                 // Editor-owned Escape handling for transient shape drag overlays and selection.
-                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                     let _ = self.cancel_shape_drag();
                     // Clear selection independent of current tool/mode
                     let _ = self.with_edit_state(|state| state.clear_selection());
@@ -2900,7 +2900,7 @@ impl AnsiEditorCore {
 
                             if let (Some(hit), Some(cur)) = (hit, current) {
                                 if hit != cur {
-                                    *self.canvas.terminal.cursor_icon.write() = Some(iced::mouse::Interaction::Pointer);
+                                    *self.canvas.terminal.cursor_icon.write() = Some(icy_ui::mouse::Interaction::Pointer);
                                 }
                             }
                         }
@@ -2913,7 +2913,7 @@ impl AnsiEditorCore {
                 // Wheel scrolling is handled by `CanvasView::update`.
                 // Handling it here as well would apply the delta twice (and with opposite sign),
                 // effectively cancelling scrolling.
-                iced::mouse::ScrollDelta::Lines { .. } | iced::mouse::ScrollDelta::Pixels { .. } => {}
+                icy_ui::mouse::ScrollDelta::Lines { .. } | icy_ui::mouse::ScrollDelta::Pixels { .. } => {}
             },
             TerminalMessage::Zoom(_) => {
                 // Zoom is handled elsewhere

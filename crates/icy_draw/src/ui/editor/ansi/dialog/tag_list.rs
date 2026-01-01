@@ -1,4 +1,4 @@
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Element, Length, Theme,
 };
@@ -45,7 +45,7 @@ impl TagListDialog {
             Space::new().width(Length::Fixed(44.0)),
         ]
         .spacing(DIALOG_SPACING)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         let mut rows = column![].spacing(2).padding(4);
 
@@ -55,7 +55,7 @@ impl TagListDialog {
                     .width(Length::Fill)
                     .padding(8)
                     .style(|theme: &Theme| container::Style {
-                        background: Some(iced::Background::Color(theme.background.base)),
+                        background: Some(icy_ui::Background::Color(theme.background.base)),
                         ..Default::default()
                     }),
             );
@@ -63,7 +63,7 @@ impl TagListDialog {
             for item in &self.items {
                 let preview_base = text(&item.preview)
                     .size(TEXT_SIZE_NORMAL)
-                    .font(iced::Font::MONOSPACE)
+                    .font(icy_ui::Font::MONOSPACE)
                     .width(Length::Fixed(140.0));
 
                 let preview = if item.is_enabled {
@@ -91,12 +91,12 @@ impl TagListDialog {
 
                 let delete_btn = button(text(fl!("tag-toolbar-delete")).size(TEXT_SIZE_SMALL))
                     .padding([2, 6])
-                    .style(button::text)
+                    .style(button::text_style)
                     .on_press(TagListDialogMessage::Delete(item.index));
 
                 let row_el = row![preview, pos, placement, repl, delete_btn]
                     .spacing(DIALOG_SPACING)
-                    .align_y(iced::Alignment::Center);
+                    .align_y(icy_ui::Alignment::Center);
 
                 rows = rows.push(row_el);
             }

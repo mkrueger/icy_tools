@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Border, Color, Element, Event, Length,
 };
@@ -374,31 +374,33 @@ impl SettingsDialogState {
             let on_msg = on_message.clone();
             let cat_button = button(text(category.name()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
                 .on_press(on_msg(SettingsDialogMessage::SwitchCategory(cat)))
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     } else {
                         Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(
                                 theme.accent.selected.r,
                                 theme.accent.selected.g,
                                 theme.accent.selected.b,
@@ -407,7 +409,7 @@ impl SettingsDialogState {
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             ..base
                         },
                         _ => base,
@@ -520,7 +522,7 @@ impl SettingsDialogState {
     }
 
     /// Get the current theme for live preview
-    pub fn get_theme(&self) -> iced::Theme {
+    pub fn get_theme(&self) -> icy_ui::Theme {
         self.temp_options.lock().monitor_settings.get_theme()
     }
 }
@@ -653,21 +655,21 @@ impl std::fmt::Display for FlowControlOption {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct ThemeOption(iced::Theme);
+struct ThemeOption(icy_ui::Theme);
 
 impl ThemeOption {
     fn all() -> Vec<ThemeOption> {
-        iced::Theme::all().into_iter().map(ThemeOption).collect()
+        icy_ui::Theme::all().into_iter().map(ThemeOption).collect()
     }
 }
 
-impl From<iced::Theme> for ThemeOption {
-    fn from(value: iced::Theme) -> Self {
+impl From<icy_ui::Theme> for ThemeOption {
+    fn from(value: icy_ui::Theme) -> Self {
         ThemeOption(value)
     }
 }
 
-impl From<ThemeOption> for iced::Theme {
+impl From<ThemeOption> for icy_ui::Theme {
     fn from(value: ThemeOption) -> Self {
         value.0
     }
@@ -784,7 +786,7 @@ where
         false // Settings dialog should not close on blur
     }
 
-    fn theme(&self) -> Option<iced::Theme> {
+    fn theme(&self) -> Option<icy_ui::Theme> {
         // Return the theme from temp_options so changes are previewed live
         Some(self.inner.state.get_theme())
     }

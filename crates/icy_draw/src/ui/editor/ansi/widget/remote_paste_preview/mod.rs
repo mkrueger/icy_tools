@@ -5,13 +5,13 @@
 //! transformed into screen space using the same math as the terminal renderer.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::advanced::image::Renderer as _;
-use iced::advanced::text::Renderer as _;
-use iced::advanced::widget::tree::{self, Tree};
-use iced::advanced::Renderer as _;
-use iced::advanced::{layout, renderer, widget};
-use iced::widget::image;
-use iced::{Border, Color, Element, Length, Point, Rectangle, Theme};
+use icy_ui::advanced::image::Renderer as _;
+use icy_ui::advanced::text::Renderer as _;
+use icy_ui::advanced::widget::tree::{self, Tree};
+use icy_ui::advanced::Renderer as _;
+use icy_ui::advanced::{layout, renderer, widget};
+use icy_ui::widget::image;
+use icy_ui::{Border, Color, Element, Length, Point, Rectangle, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ pub fn remote_paste_preview_overlay(
         buffer_height,
     };
 
-    iced::Element::new(overlay)
+    icy_ui::Element::new(overlay)
 }
 
 struct RemotePastePreviewOverlay {
@@ -72,23 +72,23 @@ struct RemotePastePreviewOverlay {
     buffer_height: usize,
 }
 
-impl<Message> widget::Widget<Message, Theme, iced::Renderer> for RemotePastePreviewOverlay {
-    fn size(&self) -> iced::Size<Length> {
-        iced::Size::new(Length::Fill, Length::Fill)
+impl<Message> widget::Widget<Message, Theme, icy_ui::Renderer> for RemotePastePreviewOverlay {
+    fn size(&self) -> icy_ui::Size<Length> {
+        icy_ui::Size::new(Length::Fill, Length::Fill)
     }
 
-    fn layout(&mut self, _tree: &mut Tree, _renderer: &iced::Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(&mut self, _tree: &mut Tree, _renderer: &icy_ui::Renderer, limits: &layout::Limits) -> layout::Node {
         layout::Node::new(limits.max())
     }
 
     fn draw(
         &self,
         _tree: &Tree,
-        renderer: &mut iced::Renderer,
+        renderer: &mut icy_ui::Renderer,
         _theme: &Theme,
         _style: &renderer::Style,
         layout: layout::Layout<'_>,
-        _cursor: iced::mouse::Cursor,
+        _cursor: icy_ui::mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         if self.previews.is_empty() {
@@ -151,7 +151,7 @@ impl<Message> widget::Widget<Message, Theme, iced::Renderer> for RemotePastePrev
                 renderer::Quad {
                     bounds: img_bounds,
                     border: Border::default().width(2.0).color(frame_border),
-                    shadow: iced::Shadow::default(),
+                    shadow: icy_ui::Shadow::default(),
                     snap: true,
                 },
                 frame_fill,
@@ -169,21 +169,21 @@ impl<Message> widget::Widget<Message, Theme, iced::Renderer> for RemotePastePrev
                     renderer::Quad {
                         bounds: inner,
                         border: Border::default().width(1.0).color(Color { a: 0.6, ..preview.color }),
-                        shadow: iced::Shadow::default(),
+                        shadow: icy_ui::Shadow::default(),
                         snap: true,
                     },
                     Color { a: 0.0, ..preview.color },
                 );
             }
 
-            let image = iced::advanced::image::Image::<image::Handle> {
+            let image = icy_ui::advanced::image::Image::<image::Handle> {
                 handle: preview.handle.clone(),
-                filter_method: iced::advanced::image::FilterMethod::Nearest,
-                rotation: iced::Radians(0.0),
+                filter_method: icy_ui::advanced::image::FilterMethod::Nearest,
+                rotation: icy_ui::Radians(0.0),
                 // Slightly transparent so the preview isn't overpowering.
                 opacity: 0.65,
                 snap: true,
-                border_radius: iced::border::Radius::default(),
+                border_radius: icy_ui::border::Radius::default(),
             };
 
             renderer.draw_image(image, img_bounds, clip);
@@ -205,22 +205,22 @@ impl<Message> widget::Widget<Message, Theme, iced::Renderer> for RemotePastePrev
                     renderer::Quad {
                         bounds: label_bounds,
                         border: Border::default().width(0.0),
-                        shadow: iced::Shadow::default(),
+                        shadow: icy_ui::Shadow::default(),
                         snap: true,
                     },
                     Color { a: 0.65, ..preview.color },
                 );
 
-                let text = iced::advanced::text::Text {
+                let text = icy_ui::advanced::text::Text {
                     content: preview.label.clone(),
                     bounds: label_bounds.size(),
-                    size: iced::Pixels(text_size),
-                    line_height: iced::advanced::text::LineHeight::Relative(1.0),
-                    font: iced::Font::MONOSPACE,
-                    align_x: iced::advanced::text::Alignment::Left,
-                    align_y: iced::alignment::Vertical::Top,
-                    shaping: iced::advanced::text::Shaping::Advanced,
-                    wrapping: iced::advanced::text::Wrapping::None,
+                    size: icy_ui::Pixels(text_size),
+                    line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+                    font: icy_ui::Font::MONOSPACE,
+                    align_x: icy_ui::advanced::text::Alignment::Left,
+                    align_y: icy_ui::alignment::Vertical::Top,
+                    shaping: icy_ui::advanced::text::Shaping::Advanced,
+                    wrapping: icy_ui::advanced::text::Wrapping::None,
                     hint_factor: Some(0.0),
                 };
 

@@ -4,11 +4,11 @@
 //!
 //! Clipboard format is custom BitFont data that preserves pixel data dimensions.
 //!
-//! All clipboard operations return Tasks that must be executed by the iced runtime.
+//! All clipboard operations return Tasks that must be executed by the icy_ui runtime.
 
 use crate::bitfont::BitFontUndoOp;
 use crate::Result;
-use iced::Task;
+use icy_ui::Task;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 

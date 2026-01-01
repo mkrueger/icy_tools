@@ -748,18 +748,18 @@ impl MonitorSettings {
         }
     }
 
-    pub fn get_theme(&self) -> iced::Theme {
+    pub fn get_theme(&self) -> icy_ui::Theme {
         // New Theme API: Theme is now a struct, use name to find matching theme
         // or default to light/dark based on stored name
         match self.theme.as_str() {
-            "Light" => iced::Theme::light(),
-            "Dark" => iced::Theme::dark(),
+            "Light" => icy_ui::Theme::light(),
+            "Dark" => icy_ui::Theme::dark(),
             // Default to Dark theme if theme string is empty or unrecognized
-            _ => iced::Theme::dark(),
+            _ => icy_ui::Theme::dark(),
         }
     }
 
-    pub fn set_theme(&mut self, theme: iced::Theme) {
+    pub fn set_theme(&mut self, theme: icy_ui::Theme) {
         // New Theme API: Theme is now a struct with a name field
         self.theme = theme.name.clone();
     }

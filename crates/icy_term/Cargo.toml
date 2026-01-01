@@ -13,7 +13,7 @@ icy_engine = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_parser_core = { workspace = true }
 mlua = { workspace = true }
-iced = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
+icy_ui = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
 
 clap-i18n-richformatter = { workspace = true }
 image = { workspace = true }

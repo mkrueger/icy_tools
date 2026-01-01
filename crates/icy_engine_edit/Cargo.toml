@@ -25,7 +25,7 @@ log = { workspace = true }
 base64 = { workspace = true }
 
 # UI framework for clipboard API
-iced = { workspace = true }
+icy_ui = { workspace = true }
 
 i18n-embed = { workspace = true }
 i18n-embed-fl= { workspace = true }

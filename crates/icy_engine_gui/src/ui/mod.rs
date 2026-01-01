@@ -1,6 +1,6 @@
 use i18n_embed_fl::fl;
-use iced::widget::{button, column, container, row, space, text, tooltip, Space};
-use iced::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
+use icy_ui::widget::{button, column, container, row, space, text, tooltip, Space};
+use icy_ui::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
 mod icons;
 pub use icons::*;
@@ -81,9 +81,9 @@ pub const SEPARATOR_ALPHA: f32 = 0.06;
 pub fn dialog_title<T: 'static>(title: String) -> Element<'static, T> {
     text(title)
         .size(HEADER_TEXT_SIZE)
-        .font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..iced::Font::default()
+        .font(icy_ui::Font {
+            weight: icy_ui::font::Weight::Bold,
+            ..icy_ui::Font::default()
         })
         .into()
 }
@@ -127,7 +127,7 @@ pub fn modal_container<'a, T: 'a>(content: Element<'a, T>, width: f32) -> contai
             text_color: Some(theme.background.on),
             shadow: Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
-                offset: iced::Vector::new(0.0, 4.0),
+                offset: icy_ui::Vector::new(0.0, 4.0),
                 blur_radius: 8.0,
             },
             snap: false,
@@ -136,19 +136,19 @@ pub fn modal_container<'a, T: 'a>(content: Element<'a, T>, width: f32) -> contai
 
 pub fn modal_overlay<'a, Message: 'a + Clone>(background: Element<'a, Message>, modal: Element<'a, Message>) -> Element<'a, Message> {
     // Overlay that blocks clicks to the background
-    let overlay = iced::widget::opaque(container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
+    let overlay = icy_ui::widget::opaque(container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| container::Style {
         background: Some(Color::from_rgba8(0, 0, 0, 0.55).into()),
         ..Default::default()
     }));
 
-    container(iced::widget::stack![
+    container(icy_ui::widget::stack![
         background,
         overlay,
         container(modal)
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center)
-            .align_y(iced::alignment::Vertical::Center),
+            .align_x(icy_ui::alignment::Horizontal::Center)
+            .align_y(icy_ui::alignment::Vertical::Center),
     ])
     .width(Length::Fill)
     .height(Length::Fill)
@@ -160,7 +160,7 @@ pub fn modal<'a, Message>(base: impl Into<Element<'a, Message>>, content: impl I
 where
     Message: Clone + 'a,
 {
-    use iced::widget::{center, mouse_area, opaque, stack};
+    use icy_ui::widget::{center, mouse_area, opaque, stack};
 
     stack![
         base.into(),
@@ -181,7 +181,7 @@ pub fn warning_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Messa
     use crate::ui::icons::warning_icon;
 
     tooltip(
-        warning_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
+        warning_icon(18.0).style(|theme: &Theme, _status| icy_ui::widget::svg::Style {
             color: Some(theme.warning.base),
         }),
         container(text(error_text)).style(container::rounded_box),
@@ -194,7 +194,7 @@ pub fn error_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message
     use crate::ui::icons::error_icon;
 
     tooltip(
-        error_icon(18.0).style(|theme: &Theme, _status| iced::widget::svg::Style {
+        error_icon(18.0).style(|theme: &Theme, _status| icy_ui::widget::svg::Style {
             color: Some(theme.destructive.base),
         }),
         container(text(error_text)).style(container::rounded_box),
@@ -206,7 +206,7 @@ pub fn error_tooltip<'a, Message: 'a>(error_text: String) -> Element<'a, Message
 // Button style functions
 pub fn primary_button_style(theme: &Theme, status: button::Status) -> button::Style {
     match status {
-        button::Status::Active => button::Style {
+        button::Status::Active | button::Status::Selected => button::Style {
             background: Some(theme.accent.base.into()),
             text_color: theme.accent.on,
             border: Border {
@@ -251,7 +251,7 @@ pub fn primary_button_style(theme: &Theme, status: button::Status) -> button::St
 
 pub fn secondary_button_style(theme: &Theme, status: button::Status) -> button::Style {
     match status {
-        button::Status::Active => button::Style {
+        button::Status::Active | button::Status::Selected => button::Style {
             background: Some(theme.button.base.into()),
             text_color: theme.button.on,
             border: Border {
@@ -296,7 +296,7 @@ pub fn secondary_button_style(theme: &Theme, status: button::Status) -> button::
 
 pub fn danger_button_style(theme: &Theme, status: button::Status) -> button::Style {
     match status {
-        button::Status::Active => button::Style {
+        button::Status::Active | button::Status::Selected => button::Style {
             background: Some(theme.destructive.base.into()),
             text_color: theme.destructive.on,
             border: Border {
@@ -341,7 +341,7 @@ pub fn danger_button_style(theme: &Theme, status: button::Status) -> button::Sty
 
 pub fn success_button_style(theme: &Theme, status: button::Status) -> button::Style {
     match status {
-        button::Status::Active => button::Style {
+        button::Status::Active | button::Status::Selected => button::Style {
             background: Some(theme.success.base.into()),
             text_color: theme.success.on,
             border: Border {
@@ -386,7 +386,7 @@ pub fn success_button_style(theme: &Theme, status: button::Status) -> button::St
 
 pub fn text_button_style(theme: &Theme, status: button::Status) -> button::Style {
     match status {
-        button::Status::Active => button::Style {
+        button::Status::Active | button::Status::Selected => button::Style {
             background: None,
             text_color: theme.accent.hover,
             border: Border {
@@ -504,7 +504,7 @@ pub fn browse_button<'a, Message: Clone + 'a>(on_press: Message) -> button::Butt
 }
 
 pub fn button_row<'a, Message: 'a>(buttons: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    use iced::widget::row;
+    use icy_ui::widget::row;
 
     let mut row_widget = row![Space::new().width(Length::Fill)].padding(Padding {
         left: SPACE_8,
@@ -524,7 +524,7 @@ pub fn button_row<'a, Message: 'a>(buttons: Vec<Element<'a, Message>>) -> Elemen
 }
 
 pub fn button_row_with_left<'a, Message: 'a>(left_buttons: Vec<Element<'a, Message>>, right_buttons: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    use iced::widget::row;
+    use icy_ui::widget::row;
 
     let mut row_widget = row![].padding(Padding {
         left: SPACE_8,
@@ -562,9 +562,9 @@ pub fn section_header<T: 'static>(title: String) -> Element<'static, T> {
             space().width(8.0),
             text(title)
                 .size(TEXT_SIZE_NORMAL)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..iced::Font::default()
+                .font(icy_ui::Font {
+                    weight: icy_ui::font::Weight::Bold,
+                    ..icy_ui::Font::default()
                 })
                 .style(|theme: &Theme| {
                     text::Style {
@@ -581,6 +581,6 @@ pub fn section_header<T: 'static>(title: String) -> Element<'static, T> {
 pub fn left_label_small<T: 'static>(txt: String) -> Element<'static, T> {
     container(text(txt).size(TEXT_SIZE_NORMAL))
         .width(Length::Fixed(LABEL_SMALL_WIDTH))
-        .align_x(iced::alignment::Horizontal::Left)
+        .align_x(icy_ui::alignment::Horizontal::Left)
         .into()
 }

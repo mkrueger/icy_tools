@@ -6,7 +6,7 @@
 //! - Hover glow effects
 //! - Consistent visual style with tool panel
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::shader::{self, Shader},
     Color, Element, Length, Rectangle,
@@ -114,15 +114,15 @@ impl shader::Program<PasteControlsMessage> for PasteControlsProgram {
     fn update(
         &self,
         state: &mut Self::State,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<PasteControlsMessage>> {
+    ) -> Option<icy_ui::widget::Action<PasteControlsMessage>> {
         let cols = self.cols;
         let rows = self.rows;
 
         // Helper to get button slot from position
-        let get_slot = |pos: iced::Point, bounds: Rectangle| -> Option<usize> {
+        let get_slot = |pos: icy_ui::Point, bounds: Rectangle| -> Option<usize> {
             // Calculate center offset (same as shader)
             let content_width = cols as f32 * (ICON_SIZE + ICON_PADDING) + ICON_PADDING;
             let x_offset = (bounds.width - content_width) * 0.5;
@@ -161,16 +161,16 @@ impl shader::Program<PasteControlsMessage> for PasteControlsProgram {
         };
 
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds));
 
                 if *state != new_hover {
                     *state = new_hover;
-                    return Some(iced::widget::Action::request_redraw());
+                    return Some(icy_ui::widget::Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(slot) = cursor.position_in(bounds).and_then(|p| get_slot(p, bounds)) {
@@ -179,7 +179,7 @@ impl shader::Program<PasteControlsMessage> for PasteControlsProgram {
                         1 => PasteControlsMessage::Cancel,
                         _ => return None,
                     };
-                    return Some(iced::widget::Action::publish(msg));
+                    return Some(icy_ui::widget::Action::publish(msg));
                 }
                 None
             }
@@ -218,10 +218,10 @@ impl shader::Primitive for PasteControlsPrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        _device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        _device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let scale = viewport.scale_factor();
 
@@ -239,15 +239,15 @@ impl shader::Primitive for PasteControlsPrimitive {
         queue.write_buffer(&pipeline.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
-        let mut render_pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+        let mut render_pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("Paste Controls Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
@@ -280,15 +280,15 @@ impl shader::Primitive for PasteControlsPrimitive {
 /// Renderer for the paste controls shader
 #[derive(Debug)]
 pub struct PasteControlsRenderer {
-    render_pipeline: iced::wgpu::RenderPipeline,
-    uniform_buffer: iced::wgpu::Buffer,
-    bind_group: iced::wgpu::BindGroup,
-    _icon_texture: iced::wgpu::Texture,
+    render_pipeline: icy_ui::wgpu::RenderPipeline,
+    uniform_buffer: icy_ui::wgpu::Buffer,
+    bind_group: icy_ui::wgpu::BindGroup,
+    _icon_texture: icy_ui::wgpu::Texture,
 }
 
 impl shader::Pipeline for PasteControlsRenderer {
-    fn new(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
-        use iced::wgpu;
+    fn new(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
+        use icy_ui::wgpu;
 
         // Create icon atlas texture (2x1 grid: Anchor, Cancel)
         let atlas_size = (ICON_SIZE as u32) * 2;
@@ -422,8 +422,8 @@ impl shader::Pipeline for PasteControlsRenderer {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Create icon atlas texture (2x1 grid: Anchor, Cancel)
-fn create_icon_atlas(device: &iced::wgpu::Device, queue: &iced::wgpu::Queue, icon_size: u32) -> (iced::wgpu::Texture, iced::wgpu::TextureView) {
-    use iced::wgpu;
+fn create_icon_atlas(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, icon_size: u32) -> (icy_ui::wgpu::Texture, icy_ui::wgpu::TextureView) {
+    use icy_ui::wgpu;
 
     let atlas_width = icon_size * 2;
     let atlas_height = icon_size;

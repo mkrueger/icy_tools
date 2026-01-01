@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     alignment::{Horizontal, Vertical},
     widget::{button, column, container, row, text, text_input, Id},
     Border, Color, Element, Length, Shadow, Theme,
@@ -356,7 +356,7 @@ impl DialogState {
 
         let content = column![
             row![search_input, prev_button, next_button, close_button,].spacing(4).align_y(Vertical::Center),
-            row![case_button, iced::widget::Space::new().width(Length::Fill), results_label,]
+            row![case_button, icy_ui::widget::Space::new().width(Length::Fill), results_label,]
                 .spacing(DIALOG_SPACING)
                 .align_y(Vertical::Center)
                 .padding([0, 4]),
@@ -366,7 +366,7 @@ impl DialogState {
 
         container(content)
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.background.base)),
+                background: Some(icy_ui::Background::Color(theme.background.base)),
                 border: Border {
                     color: theme.primary.divider,
                     width: 1.0,
@@ -375,7 +375,7 @@ impl DialogState {
                 text_color: None,
                 shadow: Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                    offset: iced::Vector::new(2.0, 2.0),
+                    offset: icy_ui::Vector::new(2.0, 2.0),
                     blur_radius: 4.0,
                 },
                 snap: false,
@@ -385,10 +385,10 @@ impl DialogState {
             .into()
     }
 
-    pub fn focus_search_input(&self) -> iced::Task<Message> {
-        iced::Task::batch([
-            iced::widget::operation::focus(self.search_input_id.clone()),
-            iced::widget::operation::select_all(self.search_input_id.clone()),
+    pub fn focus_search_input(&self) -> icy_ui::Task<Message> {
+        icy_ui::Task::batch([
+            icy_ui::widget::operation::focus(self.search_input_id.clone()),
+            icy_ui::widget::operation::select_all(self.search_input_id.clone()),
         ])
     }
 }
@@ -403,5 +403,5 @@ pub fn find_dialog_overlay<'a>(state: &'a DialogState, content: impl Into<Elemen
         .height(Length::Fill);
 
     // Stack the find dialog over the content without shadowing
-    iced::widget::stack![content.into(), find_dialog,].into()
+    icy_ui::widget::stack![content.into(), find_dialog,].into()
 }

@@ -35,7 +35,7 @@ server-error-invalid-bind-address = Fehler: Ungültige Bind-Adresse '{ $addr }':
 server-error-runtime = Fehler beim Erstellen der Tokio-Laufzeitumgebung
 server-error = Server-Fehler: { $error }
 
-menu-file=Datei
+menu-file=&Datei
 menu-new=Neu…
 menu-open=Datei öffnen…
 menu-open_recent=Zuletzt geöffnet
@@ -133,7 +133,7 @@ menu-set-font-size=Schriftgröße ändern…
 font-size-width=Breite
 font-size-height=Höhe
 
-menu-edit=Bearbeiten
+menu-edit=&Bearbeiten
 menu-undo=Rückgängig
 menu-redo=Wiederherstellen
 menu-undo-op=Rückgängig: { $op }
@@ -176,12 +176,12 @@ menu-scroll_area_right=Rechts scrollen
 menu-mirror_mode=Spiegelmodus
 menu-area_operations=Bereichsoperationen
 
-menu-selection=Auswahl
+menu-selection=Au&swahl
 menu-select-all=Alles auswählen
 menu-select_nothing=Nichts
 menu-inverse_selection=Invertieren
 
-menu-colors=Farben
+menu-colors=&Farben
 menu-ice-mode=Ice-Modus
 menu-ice-mode-unrestricted=Unbegrenzt
 menu-ice-mode-blink=Blinken
@@ -203,7 +203,7 @@ menu-color-mode-reset-palette=Palette zurücksetzen
 menu-color-mode-set-colors=Farben setzen
 menu-color-mode-set-palette=Palette setzen
 
-menu-view=Ansicht
+menu-view=&Ansicht
 menu-reference-image=Referenzbild setzen…
 menu-toggle-reference-image=Referenzbild ein/ausblenden
 menu-clear-reference-image=Löschen
@@ -240,12 +240,12 @@ menu-open_font_directoy=Text-Art-Fontverzeichnis öffnen…
 
 menu-edit_palette=Palette bearbeiten…
 
-menu-help=Hilfe
+menu-help=&Hilfe
 menu-discuss=Diskussion
 menu-open_log_file=Logdatei öffnen
 menu-report-bug=Fehler melden
 menu-about=Info…
-menu-plugins=Erweiterungen
+menu-plugins=&Erweiterungen
 menu-open_plugin_directory=Erweiterungsverzeichnis öffnen…
 menu-upgrade_version=Neue Version { $version }
 menu-update-available=⬆ Update verfügbar: { $version }

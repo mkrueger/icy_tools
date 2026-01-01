@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, svg, text, toggler, Space},
     Element, Length, Task, Theme,
 };
@@ -415,7 +415,7 @@ impl TopToolbar {
                     text(label).size(14),
                 ]
                 .spacing(4)
-                .align_y(iced::Alignment::Center),
+                .align_y(icy_ui::Alignment::Center),
             )
             .padding([4, 8])
             .on_press(msg)
@@ -435,7 +435,7 @@ impl TopToolbar {
         ]
         .spacing(8)
         .height(Length::Fill)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         container(content)
             .width(Length::Fill)
@@ -476,7 +476,7 @@ impl TopToolbar {
             Space::new().width(Length::Fill),
         ]
         .spacing(8)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
@@ -484,7 +484,7 @@ impl TopToolbar {
         let set_idx = fkeys.current_set;
         let set_count = fkeys.set_count();
 
-        let mut keys = row![].spacing(8).align_y(iced::Alignment::Center);
+        let mut keys = row![].spacing(8).align_y(icy_ui::Alignment::Center);
 
         for slot in 0..12usize {
             let code = fkeys.code_at(set_idx, slot);
@@ -499,10 +499,10 @@ impl TopToolbar {
             let fkey_label = text(format!("F{}:", slot + 1)).size(12);
             let char_text = button(text(display.to_string()).size(14))
                 .padding([1, 4])
-                .style(button::text)
+                .style(button::text_style)
                 .on_press(TopToolbarMessage::TypeFKey(slot));
 
-            keys = keys.push(row![fkey_label, char_text].spacing(1).align_y(iced::Alignment::Center));
+            keys = keys.push(row![fkey_label, char_text].spacing(1).align_y(icy_ui::Alignment::Center));
         }
 
         // SVG navigation arrows (no button backdrop)
@@ -514,16 +514,16 @@ impl TopToolbar {
             .height(Length::Fixed(16.0));
 
         let chooser = row![
-            button(prev_icon).padding(2).style(button::text).on_press(TopToolbarMessage::PrevFKeyPage),
+            button(prev_icon).padding(2).style(button::text_style).on_press(TopToolbarMessage::PrevFKeyPage),
             text(format!("{}", set_idx.saturating_add(1).min(set_count).max(1))).size(14),
-            button(next_icon).padding(2).style(button::text).on_press(TopToolbarMessage::NextFKeyPage),
+            button(next_icon).padding(2).style(button::text_style).on_press(TopToolbarMessage::NextFKeyPage),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         let content = row![keys, Space::new().width(Length::Fixed(16.0)), chooser]
             .spacing(8)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
         container(content)
             .width(Length::Fill)
@@ -618,7 +618,7 @@ impl TopToolbar {
         // Size number in secondary color, monospace 14pt
         let size_text = text(format!("{}", self.brush_options.brush_size))
             .size(14)
-            .font(iced::Font::MONOSPACE)
+            .font(icy_ui::Font::MONOSPACE)
             .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
 
         // Center the control with flexible space on both sides
@@ -639,9 +639,9 @@ impl TopToolbar {
                         _ => secondary,
                     };
                     button::Style {
-                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                        border: iced::Border {
-                            color: iced::Color::TRANSPARENT,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::TRANSPARENT,
                             width: 0.0,
                             radius: 0.0.into(),
                         },
@@ -661,9 +661,9 @@ impl TopToolbar {
                         _ => secondary,
                     };
                     button::Style {
-                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                        border: iced::Border {
-                            color: iced::Color::TRANSPARENT,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::TRANSPARENT,
                             width: 0.0,
                             radius: 0.0.into(),
                         },
@@ -674,7 +674,7 @@ impl TopToolbar {
             Space::new().width(Length::Fill),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
@@ -736,7 +736,7 @@ impl TopToolbar {
             Space::new().width(Length::Fill),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
@@ -744,7 +744,7 @@ impl TopToolbar {
     fn view_pipette_panel(&self, info: Option<&PipettePanelInfo>) -> Element<'_, TopToolbarMessage> {
         let info = info.cloned().unwrap_or_default();
 
-        let mut content = row![].spacing(16).align_y(iced::Alignment::Center);
+        let mut content = row![].spacing(16).align_y(icy_ui::Alignment::Center);
 
         // Add flexible space to center content
         content = content.push(Space::new().width(Length::Fill));
@@ -761,9 +761,9 @@ impl TopToolbar {
                     let fg_idx = ch.attribute.foreground();
                     // Calculate contrasting text color
                     let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
-                        iced::Color::BLACK
+                        icy_ui::Color::BLACK
                     } else {
-                        iced::Color::WHITE
+                        icy_ui::Color::WHITE
                     };
                     let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
 
@@ -771,19 +771,19 @@ impl TopToolbar {
                     let fg_box = container(
                         text(hex_text)
                             .size(TEXT_SIZE_SMALL)
-                            .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                            .style(move |_| icy_ui::widget::text::Style { color: Some(text_color) }),
                     )
                     .padding([4, 8])
                     .style(move |_theme| container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                        border: iced::Border {
-                            color: iced::Color::WHITE,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::WHITE,
                             width: 1.0,
                             radius: 4.0.into(),
                         },
                         ..Default::default()
                     });
-                    content = content.push(column![fg_label, fg_box].spacing(2).align_x(iced::Alignment::Center));
+                    content = content.push(column![fg_label, fg_box].spacing(2).align_x(icy_ui::Alignment::Center));
                 }
             }
 
@@ -793,9 +793,9 @@ impl TopToolbar {
                     let bg_idx = ch.attribute.background();
                     // Calculate contrasting text color
                     let text_color = if (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) > 186.0 {
-                        iced::Color::BLACK
+                        icy_ui::Color::BLACK
                     } else {
-                        iced::Color::WHITE
+                        icy_ui::Color::WHITE
                     };
                     let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
 
@@ -803,19 +803,19 @@ impl TopToolbar {
                     let bg_box = container(
                         text(hex_text)
                             .size(TEXT_SIZE_SMALL)
-                            .style(move |_| iced::widget::text::Style { color: Some(text_color) }),
+                            .style(move |_| icy_ui::widget::text::Style { color: Some(text_color) }),
                     )
                     .padding([4, 8])
                     .style(move |_theme| container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                        border: iced::Border {
-                            color: iced::Color::WHITE,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::WHITE,
                             width: 1.0,
                             radius: 4.0.into(),
                         },
                         ..Default::default()
                     });
-                    content = content.push(column![bg_label, bg_box].spacing(2).align_x(iced::Alignment::Center));
+                    content = content.push(column![bg_label, bg_box].spacing(2).align_x(icy_ui::Alignment::Center));
                 }
             }
         } else {
@@ -848,7 +848,7 @@ impl TopToolbar {
                 primary_button(fl!("font-tool-open_directory"), Some(TopToolbarMessage::OpenFontDirectory)),
             ]
             .spacing(SPACE_8)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
             return container(content)
                 .width(Length::Fill)
@@ -890,7 +890,7 @@ impl TopToolbar {
             outline_button,
         ]
         .spacing(SPACE_8)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         container(content)
             .width(Length::Fill)
@@ -902,7 +902,7 @@ impl TopToolbar {
 
     /// Build the character preview widget showing which chars are in the font
     fn build_char_preview(&self, char_availability: &[(char, bool)]) -> Element<'_, TopToolbarMessage> {
-        use iced::widget::Column;
+        use icy_ui::widget::Column;
 
         // Split into 3 rows
         let row1_chars: Vec<_> = char_availability.iter().filter(|(c, _)| *c >= '!' && *c <= 'O').collect();
@@ -911,7 +911,7 @@ impl TopToolbar {
         // Build row 1
         let mut r1 = row![].spacing(0);
         for (ch, available) in &row1_chars {
-            let t = text(ch.to_string()).font(iced::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
+            let t = text(ch.to_string()).font(icy_ui::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
             if *available {
                 r1 = r1.push(t);
             } else {
@@ -922,7 +922,7 @@ impl TopToolbar {
         // Build row 2
         let mut r2 = row![].spacing(0);
         for (ch, available) in &row2_chars {
-            let t = text(ch.to_string()).font(iced::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
+            let t = text(ch.to_string()).font(icy_ui::Font::MONOSPACE).size(TEXT_SIZE_NORMAL);
             if *available {
                 r2 = r2.push(t);
             } else {
@@ -952,7 +952,7 @@ impl TopToolbar {
             .style(button::secondary);
 
         // Left side: [Add] [Tags…]
-        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(iced::Alignment::Center);
+        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(icy_ui::Alignment::Center);
 
         // Check if tags are selected
         let has_selected_tags = tag_selection_count > 0;
@@ -977,7 +977,7 @@ impl TopToolbar {
 
             row![edit_button, pos_text, replacement_text]
                 .spacing(SPACE_8)
-                .align_y(iced::Alignment::Center)
+                .align_y(icy_ui::Alignment::Center)
                 .into()
         } else if tag_add_mode {
             text(fl!("tag-toolbar-add-hint")).size(TEXT_SIZE_SMALL).into()
@@ -1006,7 +1006,7 @@ impl TopToolbar {
             Space::new().width(Length::Fill),
         ]
         .spacing(SPACE_8)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 }

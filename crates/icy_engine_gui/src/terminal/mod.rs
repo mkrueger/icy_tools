@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use crate::ScalingMode;
 use crate::{EditorMarkers, ScrollbarState, Viewport};
-use iced::{mouse, widget, Color};
+use icy_ui::{mouse, widget, Color};
 use icy_engine::Screen;
 
 pub struct Terminal {

@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, text, Space},
     Alignment, Border, Color, Element, Event, Length, Theme,
 };
@@ -105,7 +105,7 @@ impl DialogType {
                 error_icon(48.0)
                     .style(move |theme: &Theme, _status| {
                         let color = c.icon_color(theme);
-                        iced::widget::svg::Style { color: Some(color) }
+                        icy_ui::widget::svg::Style { color: Some(color) }
                     })
                     .into(),
             ),
@@ -113,7 +113,7 @@ impl DialogType {
                 warning_icon(48.0)
                     .style(move |theme: &Theme, _status| {
                         let color = c.icon_color(theme);
-                        iced::widget::svg::Style { color: Some(color) }
+                        icy_ui::widget::svg::Style { color: Some(color) }
                     })
                     .into(),
             ),
@@ -198,16 +198,16 @@ impl ConfirmationDialog {
         self
     }
     pub fn view<'a, Message: 'a + Clone>(self, background: Element<'a, Message>, on_result: impl Fn(DialogResult) -> Message + 'a) -> Element<'a, Message> {
-        let mut text_column = column![text(self.title.clone()).size(22.0).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..iced::Font::default()
+        let mut text_column = column![text(self.title.clone()).size(22.0).font(icy_ui::Font {
+            weight: icy_ui::font::Weight::Bold,
+            ..icy_ui::Font::default()
         })];
 
         if let Some(secondary) = self.secondary_message.clone() {
             text_column = text_column.push(
                 text(secondary)
                     .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &Theme| iced::widget::text::Style { color: Some(theme.button.on) }),
+                    .style(|theme: &Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) }),
             );
         }
 
@@ -262,16 +262,16 @@ impl ConfirmationDialog {
 
     /// Build just the dialog content without modal overlay (for use with Dialog trait)
     pub fn view_content<'a, Message: 'a + Clone>(&'a self, on_result: impl Fn(DialogResult) -> Message + 'a) -> Element<'a, Message> {
-        let mut text_column = column![text(self.title.clone()).size(22.0).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..iced::Font::default()
+        let mut text_column = column![text(self.title.clone()).size(22.0).font(icy_ui::Font {
+            weight: icy_ui::font::Weight::Bold,
+            ..icy_ui::Font::default()
         })];
 
         if let Some(secondary) = self.secondary_message.clone() {
             text_column = text_column.push(
                 text(secondary)
                     .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &Theme| iced::widget::text::Style { color: Some(theme.button.on) }),
+                    .style(|theme: &Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) }),
             );
         }
 

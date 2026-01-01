@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use iced::{
+use icy_ui::{
     widget::{column, container, mouse_area, row, slider, text, text_input, Space},
     Alignment, Element, Length, Task,
 };
@@ -330,23 +330,23 @@ impl PaletteEditorDialog {
             .height(Length::Fixed(size))
             .center_x(Length::Fixed(size))
             .center_y(Length::Fixed(size))
-            .style(move |_theme: &iced::Theme| {
+            .style(move |_theme: &icy_ui::Theme| {
                 if is_selected {
                     // Selected: white inner border + black outer border (marching ants style)
-                    iced::widget::container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                        border: iced::Border {
-                            color: iced::Color::WHITE,
+                    icy_ui::widget::container::Style {
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::WHITE,
                             width: 2.0,
                             radius: 3.0.into(),
                         },
                         ..Default::default()
                     }
                 } else {
-                    iced::widget::container::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-                        border: iced::Border {
-                            color: iced::Color::from_rgb8(50, 50, 50),
+                    icy_ui::widget::container::Style {
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::from_rgb8(50, 50, 50),
                             width: 1.0,
                             radius: 4.0.into(),
                         },
@@ -362,10 +362,10 @@ impl PaletteEditorDialog {
                 .height(Length::Fixed(size + 4.0))
                 .center_x(Length::Fixed(size + 4.0))
                 .center_y(Length::Fixed(size + 4.0))
-                .style(|_theme: &iced::Theme| iced::widget::container::Style {
+                .style(|_theme: &icy_ui::Theme| icy_ui::widget::container::Style {
                     background: None,
-                    border: iced::Border {
-                        color: iced::Color::BLACK,
+                    border: icy_ui::Border {
+                        color: icy_ui::Color::BLACK,
                         width: 2.0,
                         radius: 5.0.into(),
                     },
@@ -390,21 +390,21 @@ impl PaletteEditorDialog {
         container(
             text(format!("#{:02X}{:02X}{:02X}", r, g, b))
                 .size(TEXT_SIZE_SMALL)
-                .style(move |_theme: &iced::Theme| {
+                .style(move |_theme: &icy_ui::Theme| {
                     // Choose text color based on luminance
                     let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
-                    let text_color = if lum > 128.0 { iced::Color::BLACK } else { iced::Color::WHITE };
-                    iced::widget::text::Style { color: Some(text_color) }
+                    let text_color = if lum > 128.0 { icy_ui::Color::BLACK } else { icy_ui::Color::WHITE };
+                    icy_ui::widget::text::Style { color: Some(text_color) }
                 }),
         )
         .width(Length::Fixed(72.0))
         .height(Length::Fixed(72.0))
         .center_x(Length::Fixed(72.0))
         .center_y(Length::Fixed(72.0))
-        .style(move |_theme: &iced::Theme| iced::widget::container::Style {
-            background: Some(iced::Background::Color(iced::Color::from_rgb8(r, g, b))),
-            border: iced::Border {
-                color: iced::Color::from_rgb8(80, 80, 80),
+        .style(move |_theme: &icy_ui::Theme| icy_ui::widget::container::Style {
+            background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgb8(r, g, b))),
+            border: icy_ui::Border {
+                color: icy_ui::Color::from_rgb8(80, 80, 80),
                 width: 1.0,
                 radius: 6.0.into(),
             },
@@ -510,7 +510,7 @@ impl Dialog<Message> for PaletteEditorDialog {
         let hex_error: Element<'_, Message> = if let Some(err) = &self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
                 .into()

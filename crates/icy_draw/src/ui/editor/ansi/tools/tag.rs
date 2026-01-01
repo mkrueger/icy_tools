@@ -5,8 +5,8 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use iced::widget::{button, row, text, Space};
-use iced::Element;
+use icy_ui::widget::{button, row, text, Space};
+use icy_ui::Element;
 use icy_engine::Position;
 use icy_engine::Rectangle;
 use icy_engine_edit::AtomicUndoGuard;
@@ -488,9 +488,9 @@ impl TagToolState {
         scroll_y: f32,
         display_scale: f32,
     ) -> Option<Element<'_, ToolMessage>> {
-        use iced::widget::{button, column, container, mouse_area, text};
-        use iced::Length;
-        use iced::Theme;
+        use icy_ui::widget::{button, column, container, mouse_area, text};
+        use icy_ui::Length;
+        use icy_ui::Theme;
         use icy_engine_gui::ui::TEXT_SIZE_NORMAL;
 
         let Some((tag_index, pos)) = self.context_menu else {
@@ -499,7 +499,7 @@ impl TagToolState {
 
         let edit_btn = button(text(fl!("tag-toolbar-edit")).size(TEXT_SIZE_NORMAL))
             .padding([4, 12])
-            .style(iced::widget::button::text)
+            .style(icy_ui::widget::button::text_style)
             .on_press(ToolMessage::TagEdit(tag_index));
 
         let mut menu_items: Vec<Element<'_, ToolMessage>> = vec![edit_btn.into()];
@@ -508,21 +508,21 @@ impl TagToolState {
         if self.selection.len() > 1 {
             let delete_selected_btn = button(text(fl!("tag-toolbar-delete-selected", count = self.selection.len())).size(TEXT_SIZE_NORMAL))
                 .padding([4, 12])
-                .style(iced::widget::button::text)
+                .style(icy_ui::widget::button::text_style)
                 .on_press(ToolMessage::TagDeleteSelected);
             menu_items.push(delete_selected_btn.into());
         } else {
             let delete_btn = button(text(fl!("tag-toolbar-delete")).size(TEXT_SIZE_NORMAL))
                 .padding([4, 12])
-                .style(iced::widget::button::text)
+                .style(icy_ui::widget::button::text_style)
                 .on_press(ToolMessage::TagDelete(tag_index));
             menu_items.push(delete_btn.into());
         }
 
         let menu_content = container(column(menu_items).spacing(2).width(Length::Fixed(150.0)))
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border {
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 4.0.into(),
@@ -538,7 +538,7 @@ impl TagToolState {
         let menu_x = ((pos.x as f32 - scroll_x) * font_w * scale) as f32;
         let menu_y = ((pos.y as f32 - scroll_y + 1.0) * font_h * scale) as f32;
 
-        let menu_positioned = container(menu_content).padding(iced::Padding {
+        let menu_positioned = container(menu_content).padding(icy_ui::Padding {
             top: menu_y,
             left: menu_x,
             right: 0.0,
@@ -833,12 +833,12 @@ impl ToolHandler for TagTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::key::Named;
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
+                use icy_ui::keyboard::key::Named;
                 match key {
-                    iced::keyboard::Key::Named(Named::Escape) => {
+                    icy_ui::keyboard::Key::Named(Named::Escape) => {
                         // Cancel add-tag mode (undo the newly created tag)
                         if self.state.add_new_index.is_some() {
                             self.state.add_new_index = None;
@@ -855,7 +855,7 @@ impl ToolHandler for TagTool {
                         }
                         ToolResult::None
                     }
-                    iced::keyboard::Key::Named(Named::Delete | Named::Backspace) => TagTool::handle_key(ctx.state, &mut self.state, key),
+                    icy_ui::keyboard::Key::Named(Named::Delete | Named::Backspace) => TagTool::handle_key(ctx.state, &mut self.state, key),
                     _ => ToolResult::None,
                 }
             }
@@ -928,7 +928,7 @@ impl ToolHandler for TagTool {
             .on_press(ToolMessage::TagOpenList)
             .style(button::secondary);
 
-        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(iced::Alignment::Center);
+        let left_side = row![add_button, tags_button].spacing(SPACE_8).align_y(icy_ui::Alignment::Center);
 
         let _has_selected_tags = ctx.tag_selection_count > 0;
 
@@ -950,7 +950,7 @@ impl ToolHandler for TagTool {
 
             row![edit_button, pos_text, replacement_text]
                 .spacing(SPACE_8)
-                .align_y(iced::Alignment::Center)
+                .align_y(icy_ui::Alignment::Center)
                 .into()
         } else if ctx.tag_add_mode {
             text(fl!("tag-toolbar-add-hint")).size(TEXT_SIZE_SMALL).into()
@@ -959,19 +959,19 @@ impl ToolHandler for TagTool {
         };
 
         row![
-            Space::new().width(iced::Length::Fill),
+            Space::new().width(icy_ui::Length::Fill),
             left_side,
-            Space::new().width(iced::Length::Fixed(SPACE_16)),
+            Space::new().width(icy_ui::Length::Fixed(SPACE_16)),
             middle,
-            Space::new().width(iced::Length::Fill),
+            Space::new().width(icy_ui::Length::Fill),
         ]
         .spacing(SPACE_8)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Pointer
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::Pointer
     }
 
     fn show_caret(&self) -> bool {
@@ -1231,10 +1231,10 @@ impl TagTool {
     }
 
     /// Handle keyboard events for Tag tool
-    pub fn handle_key(state: &mut icy_engine_edit::EditState, tag_state: &mut TagToolState, key: &iced::keyboard::Key) -> ToolResult {
-        use iced::keyboard::key::Named;
+    pub fn handle_key(state: &mut icy_engine_edit::EditState, tag_state: &mut TagToolState, key: &icy_ui::keyboard::Key) -> ToolResult {
+        use icy_ui::keyboard::key::Named;
 
-        if let iced::keyboard::Key::Named(named) = key {
+        if let icy_ui::keyboard::Key::Named(named) = key {
             match named {
                 Named::Delete | Named::Backspace => {
                     if !tag_state.selection.is_empty() {
@@ -1266,13 +1266,13 @@ impl TagTool {
     }
 
     /// Get cursor for current tag state
-    pub fn cursor_for_state(tag_state: &TagToolState) -> iced::mouse::Interaction {
+    pub fn cursor_for_state(tag_state: &TagToolState) -> icy_ui::mouse::Interaction {
         if tag_state.drag_active {
-            iced::mouse::Interaction::Grabbing
+            icy_ui::mouse::Interaction::Grabbing
         } else if tag_state.add_new_index.is_some() {
-            iced::mouse::Interaction::Crosshair
+            icy_ui::mouse::Interaction::Crosshair
         } else {
-            iced::mouse::Interaction::Pointer
+            icy_ui::mouse::Interaction::Pointer
         }
     }
 }

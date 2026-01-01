@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use iced::{
+use icy_ui::{
     widget::{container, stack},
     Alignment, Element, Length, Task,
 };
@@ -285,8 +285,8 @@ impl CanvasView {
             container(stack(layers))
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(main_area_background(theme))),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(main_area_background(theme))),
                     ..Default::default()
                 })
                 .into()
@@ -294,8 +294,8 @@ impl CanvasView {
             container(terminal_view)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(main_area_background(theme))),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(main_area_background(theme))),
                     ..Default::default()
                 })
                 .into()

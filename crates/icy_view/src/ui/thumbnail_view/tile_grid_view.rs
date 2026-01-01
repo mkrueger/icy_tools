@@ -6,10 +6,10 @@ use std::time::Instant;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use iced::mouse;
-use iced::widget::canvas::Cache;
-use iced::widget::{container, shader, stack, text};
-use iced::{Color, Element, Length, Point, Rectangle, Shadow};
+use icy_ui::mouse;
+use icy_ui::widget::canvas::Cache;
+use icy_ui::widget::{container, shader, stack, text};
+use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow};
 use tokio::sync::mpsc;
 
 use icy_engine_gui::{ScrollbarOverlayCallback, Viewport};
@@ -71,7 +71,7 @@ where
         }
     }
 
-    fn update(&self, _state: &mut Self::State, _event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+    fn update(&self, _state: &mut Self::State, _event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<Message>> {
         // Handle hover detection using correct relative coordinates
         let found_tile = if let Some(cursor_pos) = cursor.position_in(bounds) {
             let mut result = None;
@@ -237,7 +237,7 @@ impl TileGridView {
             shared_hovered_tile: Arc::new(Mutex::new(None)),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             last_cursor_position: None,
-            last_bounds: RefCell::new(Rectangle::new(Point::ORIGIN, iced::Size::new(800.0, 600.0))),
+            last_bounds: RefCell::new(Rectangle::new(Point::ORIGIN, icy_ui::Size::new(800.0, 600.0))),
             auto_scroll_active: false,
             scroll_speed: ScrollSpeed::Medium,
             last_click: None,
@@ -252,7 +252,7 @@ impl TileGridView {
     }
 
     /// Set background color from theme
-    pub fn set_background_color(&self, _color: iced::Color) {
+    pub fn set_background_color(&self, _color: icy_ui::Color) {
         // No-op: background_color field was removed as unused
     }
 
@@ -1248,7 +1248,7 @@ impl TileGridView {
 
     /// View the tile grid using responsive container to detect width
     pub fn view(&self) -> Element<'_, TileGridMessage> {
-        use iced::widget::responsive;
+        use icy_ui::widget::responsive;
 
         // Check if folder is empty (no items at all), show "Folder is empty" message
         if self.thumbnails.is_empty() {
@@ -1256,7 +1256,7 @@ impl TileGridView {
             return container(
                 text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
                     .size(14)
-                    .style(|theme: &iced::Theme| text::Style {
+                    .style(|theme: &icy_ui::Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(0.5)),
                     }),
             )
@@ -1273,7 +1273,7 @@ impl TileGridView {
             return container(
                 text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
                     .size(14)
-                    .style(|theme: &iced::Theme| text::Style {
+                    .style(|theme: &icy_ui::Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(0.5)),
                     }),
             )
@@ -1423,8 +1423,8 @@ impl TileGridView {
                 container(scrollbar_overlay.view().map(|m| m))
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .align_y(iced::alignment::Vertical::Center)
+                    .align_x(icy_ui::alignment::Horizontal::Right)
+                    .align_y(icy_ui::alignment::Vertical::Center)
             ]
             .width(Length::Fill)
             .height(Length::Fill)
@@ -1517,7 +1517,7 @@ impl TileGridView {
     /// * `event` - The iced event to handle
     /// * `x_offset` - X offset of this component (e.g. file browser width for folder preview)
     /// * `y_offset` - Y offset of this component (e.g. navigation bar height)
-    pub fn handle_event(&mut self, event: &iced::Event, x_offset: f32, y_offset: f32) -> Option<TileGridMessage> {
+    pub fn handle_event(&mut self, event: &icy_ui::Event, x_offset: f32, y_offset: f32) -> Option<TileGridMessage> {
         // Calculate bounds for this component
         let bounds = Rectangle {
             x: x_offset,
@@ -1528,8 +1528,8 @@ impl TileGridView {
 
         // Get cursor position from event if available
         let cursor_position = match event {
-            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position, .. }) => Some(*position),
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => self.last_cursor_position,
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::CursorMoved { position, .. }) => Some(*position),
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => self.last_cursor_position,
             _ => None,
         };
 
@@ -1540,8 +1540,8 @@ impl TileGridView {
                 return Some(TileGridMessage::OpenSelected);
             }
             // Check if a click happened (selection changed)
-            if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
-                button: iced::mouse::Button::Left,
+            if let icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonPressed {
+                button: icy_ui::mouse::Button::Left,
                 ..
             }) = event
             {
@@ -1557,7 +1557,7 @@ impl TileGridView {
     }
 
     /// Handle mouse events for scroll wheel and hover
-    pub fn handle_mouse_event(&mut self, event: &iced::Event, bounds: Rectangle, cursor_position: Option<Point>) -> bool {
+    pub fn handle_mouse_event(&mut self, event: &icy_ui::Event, bounds: Rectangle, cursor_position: Option<Point>) -> bool {
         // Update viewport size and bounds
         {
             let mut vp = self.viewport.borrow_mut();
@@ -1574,13 +1574,13 @@ impl TileGridView {
         }
 
         match event {
-            iced::Event::Mouse(iced::mouse::Event::WheelScrolled { delta, .. }) => {
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, .. }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
                 if let Some(pos) = pos {
                     if bounds.contains(pos) {
                         let scroll_delta = match delta {
-                            iced::mouse::ScrollDelta::Lines { y, .. } => *y * 50.0,
-                            iced::mouse::ScrollDelta::Pixels { y, .. } => *y,
+                            icy_ui::mouse::ScrollDelta::Lines { y, .. } => *y * 50.0,
+                            icy_ui::mouse::ScrollDelta::Pixels { y, .. } => *y,
                         };
                         self.scroll_by(scroll_delta);
                         // Mark interaction for scrollbar visibility and sync position
@@ -1597,7 +1597,7 @@ impl TileGridView {
                     }
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => {
                 // Update hover state
                 if let Some(pos) = cursor_position {
                     if bounds.contains(pos) {
@@ -1636,15 +1636,15 @@ impl TileGridView {
                     }
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::CursorLeft) => {
                 self.last_cursor_position = None;
                 if self.shared_hovered_tile.lock().is_some() {
                     *self.shared_hovered_tile.lock() = None;
                     return true;
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
-                button: iced::mouse::Button::Left,
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonPressed {
+                button: icy_ui::mouse::Button::Left,
                 ..
             }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
@@ -1712,7 +1712,7 @@ impl Default for TileGridView {
 fn tile_shadow() -> Shadow {
     Shadow {
         color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
-        offset: iced::Vector::new(2.0, 3.0),
+        offset: icy_ui::Vector::new(2.0, 3.0),
         blur_radius: 6.0,
     }
 }
@@ -1721,7 +1721,7 @@ fn tile_shadow() -> Shadow {
 fn tile_hover_shadow() -> Shadow {
     Shadow {
         color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
-        offset: iced::Vector::new(3.0, 4.0),
+        offset: icy_ui::Vector::new(3.0, 4.0),
         blur_radius: 10.0,
     }
 }

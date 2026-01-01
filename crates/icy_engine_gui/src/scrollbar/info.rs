@@ -3,7 +3,7 @@
 //! This module provides utilities for computing scrollbar state from Terminal
 //! and creating scrollbar overlay elements.
 
-use iced::{
+use icy_ui::{
     widget::{container, stack},
     Alignment, Element, Length,
 };

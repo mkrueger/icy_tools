@@ -1,4 +1,4 @@
-use iced::{
+use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space},
     Element, Length,
 };
@@ -134,7 +134,7 @@ impl TagDialog {
                 .on_input(TagDialogMessage::SetPreview),
         ]
         .spacing(DIALOG_SPACING)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         let replacement_row = row![
             left_label(fl!("tag-edit-replacement")),
@@ -147,7 +147,7 @@ impl TagDialog {
                 .on_press(TagDialogMessage::ToggleReplacements),
         ]
         .spacing(DIALOG_SPACING)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         let pos_x_input = text_input("", &self.pos_x)
             .size(TEXT_SIZE_NORMAL)
@@ -160,14 +160,14 @@ impl TagDialog {
 
         let pos_row = row![left_label(fl!("tag-edit-position")), pos_x_input, text(",").size(TEXT_SIZE_NORMAL), pos_y_input,]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
         let placement_row = row![
             left_label(fl!("tag-list-placement")),
             pick_list(TagPlacementChoice::ALL.as_slice(), Some(self.placement), TagDialogMessage::SetPlacement).width(Length::Fixed(140.0)),
         ]
         .spacing(DIALOG_SPACING)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         let form_rows: Vec<Element<'_, TagDialogMessage>> = vec![preview_row.into(), replacement_row.into(), pos_row.into(), placement_row.into()];
 
@@ -206,13 +206,13 @@ impl TagDialog {
 
         let header = row![taglist_picker, filter_input, import_btn]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
         let description = if !self.replacement_list.description.trim().is_empty() {
             Some(
                 text(&self.replacement_list.description)
                     .size(TEXT_SIZE_NORMAL)
-                    .wrapping(iced::widget::text::Wrapping::Word)
+                    .wrapping(icy_ui::widget::text::Wrapping::Word)
                     .width(Length::Fill),
             )
         } else {
@@ -232,10 +232,10 @@ impl TagDialog {
             let tag_text = text(&entry.tag).size(TEXT_SIZE_NORMAL).width(Length::Fixed(150.0));
             let desc_text = text(&entry.description).size(TEXT_SIZE_SMALL).width(Length::Fill);
 
-            let row_btn = button(row![tag_text, desc_text].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center))
+            let row_btn = button(row![tag_text, desc_text].spacing(DIALOG_SPACING).align_y(icy_ui::Alignment::Center))
                 .width(Length::Fill)
                 .padding([4, 8])
-                .style(button::text)
+                .style(button::text_style)
                 .on_press(TagDialogMessage::SelectReplacement(entry.example.clone(), entry.tag.clone()));
 
             list_items.push(row_btn.into());
@@ -248,7 +248,7 @@ impl TagDialog {
         let comments_box = if !self.replacement_list.comments.trim().is_empty() {
             let comments = text(&self.replacement_list.comments)
                 .size(TEXT_SIZE_SMALL)
-                .wrapping(iced::widget::text::Wrapping::Word)
+                .wrapping(icy_ui::widget::text::Wrapping::Word)
                 .width(Length::Fill);
 
             Some(effect_box(container(comments).padding(8).width(Length::Fill).into()))

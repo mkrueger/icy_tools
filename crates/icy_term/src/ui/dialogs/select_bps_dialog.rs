@@ -1,5 +1,5 @@
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{column, container, radio, row, text, text_input, Space},
     Alignment, Border, Color, Element, Length,
 };
@@ -127,8 +127,8 @@ impl SelectBpsDialogState {
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
             .text_size(TEXT_SIZE_NORMAL)
-            .style(move |theme: &iced::Theme, _status| iced::widget::radio::Style {
-                background: iced::Background::Color(if is_selected {
+            .style(move |theme: &icy_ui::Theme, _status| icy_ui::widget::radio::Style {
+                background: icy_ui::Background::Color(if is_selected {
                     theme.accent.base
                 } else {
                     Color::from_rgba(0.18, 0.18, 0.18, 0.85)
@@ -160,8 +160,8 @@ impl SelectBpsDialogState {
             .size(TEXT_SIZE_NORMAL)
             .spacing(DIALOG_SPACING)
             .text_size(TEXT_SIZE_NORMAL)
-            .style(move |theme: &iced::Theme, _| iced::widget::radio::Style {
-                background: iced::Background::Color(if is_custom_selected {
+            .style(move |theme: &icy_ui::Theme, _| icy_ui::widget::radio::Style {
+                background: icy_ui::Background::Color(if is_custom_selected {
                     theme.accent.base
                 } else {
                     Color::from_rgba(0.18, 0.18, 0.18, 0.85)
@@ -181,10 +181,10 @@ impl SelectBpsDialogState {
                 .padding(6)
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fixed(110.0))
-                .style(move |theme: &iced::Theme, status| {
+                .style(move |theme: &icy_ui::Theme, status| {
                     let focused = matches!(status, text_input::Status::Focused { .. });
                     text_input::Style {
-                        background: iced::Background::Color(if is_custom_selected {
+                        background: icy_ui::Background::Color(if is_custom_selected {
                             if focused {
                                 Color::from_rgba(0.12, 0.12, 0.2, 0.2)
                             } else {

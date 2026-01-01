@@ -5,7 +5,7 @@
 //! - Right: Chat messages (Discord-style grouped by user)
 //! - Bottom: Input field
 
-use iced::{
+use icy_ui::{
     widget::{column, container, row, scrollable, stack, text, text_input, Column, Row, Space},
     Border, Color, Element, Length, Padding, Theme,
 };
@@ -217,15 +217,15 @@ fn view_own_user(state: &CollaborationState) -> Element<'_, Message> {
 
     // Name column: Nick (14pt bold) + Group (12pt secondary)
     let mut name_column = Column::new().spacing(0);
-    name_column = name_column.push(text(display_name).size(14).color(BASE_COLOR).font(iced::Font {
-        weight: iced::font::Weight::Bold,
+    name_column = name_column.push(text(display_name).size(14).color(BASE_COLOR).font(icy_ui::Font {
+        weight: icy_ui::font::Weight::Bold,
         ..Default::default()
     }));
     if !group.is_empty() {
         name_column = name_column.push(text(group).size(12).color(SECONDARY_COLOR));
     }
 
-    let user_row = row![avatar_with_badge, name_column].spacing(8).align_y(iced::Alignment::Center);
+    let user_row = row![avatar_with_badge, name_column].spacing(8).align_y(icy_ui::Alignment::Center);
 
     let user_container = container(user_row).padding([6, 8]).width(Length::Fill);
 
@@ -251,8 +251,8 @@ fn view_user_entry<'a>(remote_user: &'a RemoteUser, state: &'a CollaborationStat
 
     // Name column: Nick (14pt bold) + Group (12pt secondary)
     let mut name_column = Column::new().spacing(0);
-    name_column = name_column.push(text(display_name).size(14).color(BASE_COLOR).font(iced::Font {
-        weight: iced::font::Weight::Bold,
+    name_column = name_column.push(text(display_name).size(14).color(BASE_COLOR).font(icy_ui::Font {
+        weight: icy_ui::font::Weight::Bold,
         ..Default::default()
     }));
     if !user_group.is_empty() {
@@ -260,9 +260,9 @@ fn view_user_entry<'a>(remote_user: &'a RemoteUser, state: &'a CollaborationStat
     }
 
     // Layout: [Avatar+Badge] [Name+Group]
-    let user_row = row![avatar_with_badge, name_column].spacing(8).align_y(iced::Alignment::Center);
+    let user_row = row![avatar_with_badge, name_column].spacing(8).align_y(icy_ui::Alignment::Center);
 
-    iced::widget::button(user_row)
+    icy_ui::widget::button(user_row)
         .on_press(Message::ChatPanel(ChatPanelMessage::GotoUser(user_id)))
         .padding([4, 6])
         .style(user_entry_style)
@@ -274,7 +274,7 @@ fn view_avatar_with_status<'a>(avatar: Avatar, status: UserStatus, avatar_size: 
     let avatar_svg = container(avatar.svg(avatar_size));
 
     let status_svg = container(status.svg(badge_size)).style(move |_theme: &Theme| container::Style {
-        background: Some(iced::Background::Color(status.color())),
+        background: Some(icy_ui::Background::Color(status.color())),
         border: Border::default().rounded(badge_size / 2.0),
         ..Default::default()
     });
@@ -341,8 +341,8 @@ fn view_system_message(msg: String) -> Element<'static, Message> {
     text(msg)
         .size(12)
         .color(SECONDARY_COLOR)
-        .font(iced::Font {
-            style: iced::font::Style::Italic,
+        .font(icy_ui::Font {
+            style: icy_ui::font::Style::Italic,
             ..Default::default()
         })
         .into()
@@ -365,8 +365,8 @@ fn view_message_group(group: MessageGroup) -> Element<'static, Message> {
     let mut header_row = Row::new().spacing(6);
 
     // Nick in 14pt bold
-    header_row = header_row.push(text(nick).size(14).color(BASE_COLOR).font(iced::Font {
-        weight: iced::font::Weight::Bold,
+    header_row = header_row.push(text(nick).size(14).color(BASE_COLOR).font(icy_ui::Font {
+        weight: icy_ui::font::Weight::Bold,
         ..Default::default()
     }));
 
@@ -392,7 +392,7 @@ fn view_message_group(group: MessageGroup) -> Element<'static, Message> {
     // Combine avatar + messages
     row![avatar_column, message_column.width(Length::Fill),]
         .spacing(8)
-        .align_y(iced::Alignment::Start)
+        .align_y(icy_ui::Alignment::Start)
         .into()
 }
 
@@ -426,7 +426,7 @@ fn view_input_area(input_text: &str) -> Element<'_, Message> {
 #[allow(dead_code)]
 fn chat_panel_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(theme.secondary.base)),
+        background: Some(icy_ui::Background::Color(theme.secondary.base)),
         border: Border {
             color: theme.primary.divider,
             width: 1.0,
@@ -438,26 +438,26 @@ fn chat_panel_style(theme: &Theme) -> container::Style {
 
 fn separator_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(theme.primary.divider)),
+        background: Some(icy_ui::Background::Color(theme.primary.divider)),
         ..Default::default()
     }
 }
 
-fn user_entry_style(theme: &Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
-    let base = iced::widget::button::Style {
-        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+fn user_entry_style(theme: &Theme, status: icy_ui::widget::button::Status) -> icy_ui::widget::button::Style {
+    let base = icy_ui::widget::button::Style {
+        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
         text_color: theme.background.on,
         border: Border::default().rounded(4.0),
         ..Default::default()
     };
 
     match status {
-        iced::widget::button::Status::Hovered => iced::widget::button::Style {
-            background: Some(iced::Background::Color(theme.accent.base.scale_alpha(0.2))),
+        icy_ui::widget::button::Status::Hovered => icy_ui::widget::button::Style {
+            background: Some(icy_ui::Background::Color(theme.accent.base.scale_alpha(0.2))),
             ..base
         },
-        iced::widget::button::Status::Pressed => iced::widget::button::Style {
-            background: Some(iced::Background::Color(theme.accent.base.scale_alpha(0.4))),
+        icy_ui::widget::button::Status::Pressed => icy_ui::widget::button::Style {
+            background: Some(icy_ui::Background::Color(theme.accent.base.scale_alpha(0.4))),
             ..base
         },
         _ => base,
@@ -466,7 +466,7 @@ fn user_entry_style(theme: &Theme, status: iced::widget::button::Status) -> iced
 
 fn chat_area_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(theme.background.base)),
+        background: Some(icy_ui::Background::Color(theme.background.base)),
         border: Border {
             color: theme.primary.divider,
             width: 1.0,

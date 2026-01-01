@@ -5,7 +5,7 @@
 //! Draws as an overlay on top of the terminal widget.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{widget::canvas, Element, Length, Renderer, Theme};
+use icy_ui::{widget::canvas, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -59,7 +59,7 @@ struct LineNumbersOverlayState {
 impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: iced::Rectangle, _cursor: iced::mouse::Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: icy_ui::Rectangle, _cursor: icy_ui::mouse::Cursor) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         // Get the effective zoom from RenderInfo (works for both Auto and Manual modes)
@@ -123,10 +123,10 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
             if left_x > 0.0 {
                 frame.fill_text(canvas::Text {
                     content: label.clone(),
-                    position: iced::Point::new(left_x, y + scaled_font_height * 0.15),
+                    position: icy_ui::Point::new(left_x, y + scaled_font_height * 0.15),
                     color,
-                    size: iced::Pixels(line_number_font_size),
-                    align_x: iced::alignment::Horizontal::Right.into(),
+                    size: icy_ui::Pixels(line_number_font_size),
+                    align_x: icy_ui::alignment::Horizontal::Right.into(),
                     ..Default::default()
                 });
             }
@@ -136,10 +136,10 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
             if right_x < bounds.width {
                 frame.fill_text(canvas::Text {
                     content: label,
-                    position: iced::Point::new(right_x, y + scaled_font_height * 0.15),
+                    position: icy_ui::Point::new(right_x, y + scaled_font_height * 0.15),
                     color,
-                    size: iced::Pixels(line_number_font_size),
-                    align_x: iced::alignment::Horizontal::Left.into(),
+                    size: icy_ui::Pixels(line_number_font_size),
+                    align_x: icy_ui::alignment::Horizontal::Left.into(),
                     ..Default::default()
                 });
             }
@@ -170,11 +170,11 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
             if top_y > 0.0 {
                 frame.fill_text(canvas::Text {
                     content: label.clone(),
-                    position: iced::Point::new(x, top_y),
+                    position: icy_ui::Point::new(x, top_y),
                     color,
-                    size: iced::Pixels(line_number_font_size),
-                    align_x: iced::alignment::Horizontal::Center.into(),
-                    align_y: iced::alignment::Vertical::Bottom.into(),
+                    size: icy_ui::Pixels(line_number_font_size),
+                    align_x: icy_ui::alignment::Horizontal::Center.into(),
+                    align_y: icy_ui::alignment::Vertical::Bottom.into(),
                     ..Default::default()
                 });
             }
@@ -184,11 +184,11 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
             if bottom_y < bounds.height {
                 frame.fill_text(canvas::Text {
                     content: label,
-                    position: iced::Point::new(x, bottom_y),
+                    position: icy_ui::Point::new(x, bottom_y),
                     color,
-                    size: iced::Pixels(line_number_font_size),
-                    align_x: iced::alignment::Horizontal::Center.into(),
-                    align_y: iced::alignment::Vertical::Top.into(),
+                    size: icy_ui::Pixels(line_number_font_size),
+                    align_x: icy_ui::alignment::Horizontal::Center.into(),
+                    align_y: icy_ui::alignment::Vertical::Top.into(),
                     ..Default::default()
                 });
             }

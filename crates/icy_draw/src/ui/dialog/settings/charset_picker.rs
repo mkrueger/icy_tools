@@ -7,7 +7,7 @@
 //! - 12 F-key slots displayed as clickable buttons with actual glyphs
 //! - Set navigation (multiple character sets)
 
-use iced::{
+use icy_ui::{
     mouse,
     mouse::Cursor,
     widget::{
@@ -104,7 +104,7 @@ impl CharGridProgram {
         }
     }
 
-    fn draw_char_cell(&self, frame: &mut Frame, char_code: u8, rect: Rectangle, fg: iced::Color, bg: iced::Color) {
+    fn draw_char_cell(&self, frame: &mut Frame, char_code: u8, rect: Rectangle, fg: icy_ui::Color, bg: icy_ui::Color) {
         let font_size = self.font.size();
         let font_w = font_size.width as usize;
         let font_h = font_size.height as usize;
@@ -137,9 +137,9 @@ impl CharGridProgram {
 impl Program<SettingsDialogMessage> for CharGridProgram {
     type State = Option<u8>; // Hovered character
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.hit_test(p));
                 if *state != new_hover {
                     *state = new_hover;
@@ -147,14 +147,14 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if state.is_some() {
                     *state = None;
                     return Some(Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(p) = cursor.position_in(bounds) else {
@@ -167,7 +167,7 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
         }
     }
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -269,7 +269,7 @@ impl FKeySlotsProgram {
         None
     }
 
-    fn draw_slot(&self, frame: &mut Frame, slot: usize, rect: Rectangle, fg: iced::Color, bg: iced::Color, label_color: iced::Color) {
+    fn draw_slot(&self, frame: &mut Frame, slot: usize, rect: Rectangle, fg: icy_ui::Color, bg: icy_ui::Color, label_color: icy_ui::Color) {
         let font_size = self.font.size();
         let font_w = font_size.width as usize;
         let font_h = font_size.height as usize;
@@ -283,8 +283,8 @@ impl FKeySlotsProgram {
             content: label,
             position: Point::new(rect.x + rect.width / 2.0, rect.y + 2.0),
             color: label_color,
-            size: iced::Pixels(10.0),
-            align_x: iced::alignment::Horizontal::Center.into(),
+            size: icy_ui::Pixels(10.0),
+            align_x: icy_ui::alignment::Horizontal::Center.into(),
             ..Default::default()
         };
         frame.fill_text(label_text);
@@ -318,9 +318,9 @@ impl FKeySlotsProgram {
 impl Program<SettingsDialogMessage> for FKeySlotsProgram {
     type State = Option<usize>; // Hovered slot
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.hit_test(p));
                 if *state != new_hover {
                     *state = new_hover;
@@ -328,14 +328,14 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if state.is_some() {
                     *state = None;
                     return Some(Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(p) = cursor.position_in(bounds) else {
@@ -348,7 +348,7 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
         }
     }
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -410,13 +410,13 @@ pub fn view_charset<'a>(font: &BitFont, fkeys: &FKeySets, selected_slot: Option<
             .on_press(crate::ui::main_window::Message::SettingsDialog(SettingsDialogMessage::NextCharsetSet)),
     ]
     .spacing(4)
-    .align_y(iced::Alignment::Center);
+    .align_y(icy_ui::Alignment::Center);
 
     // F-key slots
     let slots_widget = fkey_slots(font, fkeys, selected_slot).map(|msg| crate::ui::main_window::Message::SettingsDialog(msg));
 
     // Combined row: F-key slots + set navigation
-    let slots_row = row![slots_widget, iced::widget::Space::new().width(Length::Fixed(12.0)), set_nav,].align_y(iced::Alignment::Center);
+    let slots_row = row![slots_widget, icy_ui::widget::Space::new().width(Length::Fixed(12.0)), set_nav,].align_y(icy_ui::Alignment::Center);
 
     // Character grid (active only when a slot is selected)
     let is_active = selected_slot.is_some();
@@ -426,13 +426,13 @@ pub fn view_charset<'a>(font: &BitFont, fkeys: &FKeySets, selected_slot: Option<
     // Help label for keyboard shortcuts
     let help_text = text("F1-F12: Select slot  |  ←↑↓→: Navigate  |  Space: Assign")
         .size(icy_engine_gui::ui::TEXT_SIZE_SMALL)
-        .color(iced::Color::from_rgb(0.5, 0.5, 0.5));
+        .color(icy_ui::Color::from_rgb(0.5, 0.5, 0.5));
 
     let inner = column![
         container(slots_row).width(Length::Fill).center_x(Length::Fill),
-        iced::widget::Space::new().height(Length::Fixed(4.0)),
+        icy_ui::widget::Space::new().height(Length::Fixed(4.0)),
         container(grid_widget).width(Length::Fill).center_x(Length::Fill),
-        iced::widget::Space::new().height(Length::Fixed(4.0)),
+        icy_ui::widget::Space::new().height(Length::Fixed(4.0)),
         help_text,
     ]
     .spacing(UI_SPACING)

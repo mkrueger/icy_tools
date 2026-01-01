@@ -3,8 +3,8 @@
 //! SVG icons are embedded at compile time.
 
 use crate::fl;
-use iced::widget::Svg;
-use iced::Length;
+use icy_ui::widget::Svg;
+use icy_ui::Length;
 
 // ============================================================================
 // Avatar Icons (13 total)
@@ -82,7 +82,7 @@ impl Avatar {
 
     /// Create an iced Svg widget for this avatar
     pub fn svg(&self, size: f32) -> Svg<'static> {
-        let handle = iced::widget::svg::Handle::from_memory(self.svg_data());
+        let handle = icy_ui::widget::svg::Handle::from_memory(self.svg_data());
         Svg::new(handle).width(Length::Fixed(size)).height(Length::Fixed(size))
     }
 }
@@ -125,18 +125,18 @@ impl UserStatus {
     }
 
     /// Get the color for this status
-    pub fn color(&self) -> iced::Color {
+    pub fn color(&self) -> icy_ui::Color {
         match self {
-            UserStatus::Active => iced::Color::from_rgb(0.3, 0.8, 0.3), // Green
-            UserStatus::Idle => iced::Color::from_rgb(0.9, 0.7, 0.2),   // Yellow/Orange
-            UserStatus::Away => iced::Color::from_rgb(0.8, 0.3, 0.3),   // Red
-            UserStatus::Web => iced::Color::from_rgb(0.3, 0.5, 0.9),    // Blue
+            UserStatus::Active => icy_ui::Color::from_rgb(0.3, 0.8, 0.3), // Green
+            UserStatus::Idle => icy_ui::Color::from_rgb(0.9, 0.7, 0.2),   // Yellow/Orange
+            UserStatus::Away => icy_ui::Color::from_rgb(0.8, 0.3, 0.3),   // Red
+            UserStatus::Web => icy_ui::Color::from_rgb(0.3, 0.5, 0.9),    // Blue
         }
     }
 
     /// Create an iced Svg widget for this status badge
     pub fn svg(&self, size: f32) -> Svg<'static> {
-        let handle = iced::widget::svg::Handle::from_memory(self.svg_data());
+        let handle = icy_ui::widget::svg::Handle::from_memory(self.svg_data());
         Svg::new(handle).width(Length::Fixed(size)).height(Length::Fixed(size))
     }
 

@@ -11,8 +11,8 @@
 //! F-key mapping:
 //! - F1-F10 → 'A'-'J' (first 10 outline codes)
 
-use iced::widget::{column, container, row, text};
-use iced::{Element, Font};
+use icy_ui::widget::{column, container, row, text};
+use icy_ui::{Element, Font};
 use icy_engine::{Position, Selection, TextPane};
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 use icy_engine_gui::TerminalMessage;
@@ -247,14 +247,14 @@ impl ToolHandler for OutlineClickTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
-                use iced::keyboard::key::Named;
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
+                use icy_ui::keyboard::key::Named;
 
                 // Shift+Control+Space inserts 0xFF (hard blank) - works for all font types
                 if modifiers.shift() && modifiers.control() {
-                    if let iced::keyboard::Key::Named(Named::Space) = key {
+                    if let icy_ui::keyboard::Key::Named(Named::Space) = key {
                         return self.type_outline_char(ctx, '\u{00FF}');
                     }
                 }
@@ -283,13 +283,13 @@ impl ToolHandler for OutlineClickTool {
                 }
 
                 // Handle Space key (text field may not contain it)
-                if let iced::keyboard::Key::Named(Named::Space) = key {
+                if let icy_ui::keyboard::Key::Named(Named::Space) = key {
                     if !modifiers.shift() && !modifiers.control() {
                         return self.type_outline_char(ctx, ' ');
                     }
                 }
 
-                if let iced::keyboard::Key::Named(named) = key {
+                if let icy_ui::keyboard::Key::Named(named) = key {
                     match named {
                         // F1-F10 mapped to A-J
                         Named::F1 | Named::F2 | Named::F3 | Named::F4 | Named::F5 | Named::F6 | Named::F7 | Named::F8 | Named::F9 | Named::F10 => {
@@ -392,13 +392,13 @@ impl ToolHandler for OutlineClickTool {
         }
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
         if self.selection_drag != SelectionDrag::None {
-            self.selection_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
+            self.selection_drag.to_cursor_interaction().unwrap_or(icy_ui::mouse::Interaction::Text)
         } else if self.hover_drag != SelectionDrag::None {
-            self.hover_drag.to_cursor_interaction().unwrap_or(iced::mouse::Interaction::Text)
+            self.hover_drag.to_cursor_interaction().unwrap_or(icy_ui::mouse::Interaction::Text)
         } else {
-            iced::mouse::Interaction::Text
+            icy_ui::mouse::Interaction::Text
         }
     }
 

@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::canvas::{Action, Canvas, Frame, Geometry, Path, Program, Stroke},
     Color, Element, Length, Point, Rectangle, Size, Theme,
@@ -121,7 +121,7 @@ impl ColorSwitcherProgram {
 impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let height = SWITCHER_SIZE;
 
@@ -184,11 +184,11 @@ impl Program<ColorSwitcherMessage> for ColorSwitcherProgram {
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<Action<ColorSwitcherMessage>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<Action<ColorSwitcherMessage>> {
         let height = SWITCHER_SIZE;
         let rect_height = height * 0.618;
 
-        if let iced::Event::Mouse(mouse::Event::ButtonPressed {
+        if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
             button: mouse::Button::Left, ..
         }) = event
         {

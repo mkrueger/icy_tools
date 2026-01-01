@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 
-use iced::{
+use icy_ui::{
     widget::{column, container, pick_list, progress_bar, row, text, text_input, Space},
     Alignment, Element, Length, Task,
 };
@@ -262,7 +262,7 @@ impl Dialog<Message> for AnimationExportDialog {
         } else if let Some(ref err) = self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
                 .into()

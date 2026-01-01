@@ -31,7 +31,7 @@ pub use top_toolbar::*;
 use std::{path::PathBuf, sync::Arc};
 
 use codepages::tables::CP437_TO_UNICODE;
-use iced::{
+use icy_ui::{
     alignment::Horizontal,
     keyboard::{self, Key},
     mouse,
@@ -79,9 +79,9 @@ pub struct BitFontEditor {
     /// Value to paint during drag (determined by first pixel toggled)
     draw_value: Option<bool>,
     /// Edit grid canvas cache
-    pub(crate) edit_cache: iced::widget::canvas::Cache,
+    pub(crate) edit_cache: icy_ui::widget::canvas::Cache,
     /// Glyph selector canvas cache
-    selector_cache: iced::widget::canvas::Cache,
+    selector_cache: icy_ui::widget::canvas::Cache,
 
     // ═══════════════════════════════════════════════════════════════════════
     // Tool & UI-only state
@@ -121,8 +121,8 @@ impl BitFontEditor {
             is_left_pressed: false,
             is_right_pressed: false,
             draw_value: None,
-            edit_cache: iced::widget::canvas::Cache::new(),
-            selector_cache: iced::widget::canvas::Cache::new(),
+            edit_cache: icy_ui::widget::canvas::Cache::new(),
+            selector_cache: icy_ui::widget::canvas::Cache::new(),
             // New tool & cursor state
             current_tool: BitFontTool::Click,
             drag_start: None,
@@ -153,8 +153,8 @@ impl BitFontEditor {
             is_left_pressed: false,
             is_right_pressed: false,
             draw_value: None,
-            edit_cache: iced::widget::canvas::Cache::new(),
-            selector_cache: iced::widget::canvas::Cache::new(),
+            edit_cache: icy_ui::widget::canvas::Cache::new(),
+            selector_cache: icy_ui::widget::canvas::Cache::new(),
             // New tool & cursor state
             current_tool: BitFontTool::Click,
             drag_start: None,
@@ -573,8 +573,8 @@ impl BitFontEditor {
             is_left_pressed: false,
             is_right_pressed: false,
             draw_value: None,
-            edit_cache: iced::widget::canvas::Cache::new(),
-            selector_cache: iced::widget::canvas::Cache::new(),
+            edit_cache: icy_ui::widget::canvas::Cache::new(),
+            selector_cache: icy_ui::widget::canvas::Cache::new(),
             current_tool: BitFontTool::Click,
             drag_start: None,
             is_selecting: false,
@@ -1210,7 +1210,7 @@ impl BitFontEditor {
     // ═══════════════════════════════════════════════════════════════════════
 
     /// Handle arrow key based on focused panel and modifiers
-    fn handle_arrow_key(&mut self, direction: ArrowDirection, modifiers: iced::keyboard::Modifiers) -> Task<BitFontEditorMessage> {
+    fn handle_arrow_key(&mut self, direction: ArrowDirection, modifiers: icy_ui::keyboard::Modifiers) -> Task<BitFontEditorMessage> {
         let (dx, dy) = match direction {
             ArrowDirection::Up => (0, -1),
             ArrowDirection::Down => (0, 1),
@@ -1501,7 +1501,7 @@ impl BitFontEditor {
         ]
         .spacing(4);
 
-        let right_sidebar: iced::widget::Column<'_, BitFontEditorMessage> = column![Space::new().height(Length::Fixed(8.0)), tile_view]
+        let right_sidebar: icy_ui::widget::Column<'_, BitFontEditorMessage> = column![Space::new().height(Length::Fixed(8.0)), tile_view]
             .width(Length::Fixed(140.0))
             .align_x(Horizontal::Center);
 
@@ -1518,8 +1518,8 @@ impl BitFontEditor {
                 char_set,
                 Space::new().width(Length::Fill),
             ])
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme::main_area_background(theme))),
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
                 ..Default::default()
             }),
             // Tile View (top-right)
@@ -1651,7 +1651,7 @@ impl BitFontEditor {
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(main_area_background(theme))),
+                background: Some(icy_ui::Background::Color(main_area_background(theme))),
                 ..Default::default()
             })
             .into()
@@ -1713,16 +1713,16 @@ impl BitFontEditor {
         Ok(())
     }
 
-    pub(crate) fn handle_event(&self, event: &iced::Event) -> Option<BitFontEditorMessage> {
+    pub(crate) fn handle_event(&self, event: &icy_ui::Event) -> Option<BitFontEditorMessage> {
         // Font size dialog events are now handled by MainWindow's DialogStack
 
         // If in preview mode, any key or mouse click exits the preview
         if self.show_preview {
             match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
+                icy_ui::Event::Keyboard(keyboard::Event::KeyPressed { .. }) => {
                     return Some(BitFontEditorMessage::HidePreview);
                 }
-                iced::Event::Mouse(mouse::Event::ButtonPressed { .. }) => {
+                icy_ui::Event::Mouse(mouse::Event::ButtonPressed { .. }) => {
                     return Some(BitFontEditorMessage::HidePreview);
                 }
                 _ => {}
@@ -1734,7 +1734,7 @@ impl BitFontEditor {
         // This method only handles editor-specific shortcuts (tools, navigation)
 
         // Handle keyboard shortcuts directly (editor-specific, not in menu)
-        if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+        if let icy_ui::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
             match key {
                 // Tool selection shortcuts (c, s, l, r, g are mapped differently in bitfont)
                 Key::Character(c) if c.as_str().eq_ignore_ascii_case("c") && !modifiers.command() => {

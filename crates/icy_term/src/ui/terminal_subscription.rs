@@ -3,10 +3,10 @@
 //! Provides an async Subscription that wraps the terminal event receiver
 //! and delivers events without polling, saving CPU.
 
-use iced::futures::channel::mpsc::Sender;
-use iced::futures::SinkExt;
-use iced::stream::channel;
-use iced::Subscription;
+use icy_ui::futures::channel::mpsc::Sender;
+use icy_ui::futures::SinkExt;
+use icy_ui::stream::channel;
+use icy_ui::Subscription;
 use std::sync::OnceLock;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -126,7 +126,7 @@ pub fn mcp_events() -> Subscription<Arc<McpCommand>> {
     Subscription::run(mcp_stream)
 }
 
-fn mcp_stream() -> impl iced::futures::Stream<Item = Arc<McpCommand>> {
+fn mcp_stream() -> impl icy_ui::futures::Stream<Item = Arc<McpCommand>> {
     channel(100, move |output: Sender<Arc<McpCommand>>| async move {
         run_mcp_subscription(output).await;
     })

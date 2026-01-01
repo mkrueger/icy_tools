@@ -7,9 +7,9 @@
 //! adding font-specific character rendering, backspace, and enter handling.
 
 use i18n_embed_fl::fl;
-use iced::widget::{button, column, container, row, text, Space};
-use iced::Element;
-use iced::{Length, Theme};
+use icy_ui::widget::{button, column, container, row, text, Space};
+use icy_ui::Element;
+use icy_ui::{Length, Theme};
 use icy_engine::Position;
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::{OperationType, TdfEditStateRenderer};
@@ -307,13 +307,13 @@ impl ToolHandler for FontTool {
         }
     }
 
-    fn handle_event(&mut self, ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                use iced::keyboard::key::Named;
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                use icy_ui::keyboard::key::Named;
 
                 // Font-specific keys: Backspace, Enter, Space
-                if let iced::keyboard::Key::Named(named) = key {
+                if let icy_ui::keyboard::Key::Named(named) = key {
                     match named {
                         Named::Backspace => {
                             return self.backspace(ctx);
@@ -339,7 +339,7 @@ impl ToolHandler for FontTool {
                 }
 
                 // Handle font slot switching (0-9)
-                if let iced::keyboard::Key::Character(ch) = key {
+                if let icy_ui::keyboard::Key::Character(ch) = key {
                     if modifiers.control() {
                         if let Some(digit) = ch.chars().next().and_then(|c| c.to_digit(10)) {
                             self.font_slot = digit as usize;
@@ -349,7 +349,7 @@ impl ToolHandler for FontTool {
                 }
 
                 // Character input - render font glyph
-                if let iced::keyboard::Key::Character(s) = key {
+                if let icy_ui::keyboard::Key::Character(s) = key {
                     if !modifiers.control() && !modifiers.alt() {
                         if let Some(ch) = s.chars().next() {
                             return self.render_char(ctx, ch);
@@ -398,7 +398,7 @@ impl ToolHandler for FontTool {
                     .on_press(ToolMessage::FontOpenDirectory),
             ]
             .spacing(8)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
             return container(content)
                 .width(Length::Fill)
@@ -421,7 +421,7 @@ impl ToolHandler for FontTool {
         let row1: Element<'_, ToolMessage> = ('!'..='O')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
-                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| iced::widget::text::Style {
+                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| icy_ui::widget::text::Style {
                     color: Some(if ok { theme.background.on } else { theme.button.on }),
                 }))
             })
@@ -430,7 +430,7 @@ impl ToolHandler for FontTool {
         let row2: Element<'_, ToolMessage> = ('P'..='~')
             .fold(row![].spacing(1), |r, ch| {
                 let ok = self.font_tool.has_char(ch);
-                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| iced::widget::text::Style {
+                r.push(text(ch.to_string()).size(12).style(move |theme: &Theme| icy_ui::widget::text::Style {
                     color: Some(if ok { theme.background.on } else { theme.button.on }),
                 }))
             })
@@ -439,8 +439,8 @@ impl ToolHandler for FontTool {
         let char_preview: Element<'_, ToolMessage> = container(column![row1, row2].spacing(2))
             .padding([2, 6])
             .style(|theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(theme.secondary.base)),
-                border: iced::Border::default().rounded(4).width(1).color(theme.primary.divider),
+                background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                border: icy_ui::Border::default().rounded(4).width(1).color(theme.primary.divider),
                 ..Default::default()
             })
             .into();
@@ -465,13 +465,13 @@ impl ToolHandler for FontTool {
             Space::new().width(Length::Fill),
         ]
         .spacing(8)
-        .align_y(iced::Alignment::Center);
+        .align_y(icy_ui::Alignment::Center);
 
         content.into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
-        self.selection_mouse.cursor().unwrap_or(iced::mouse::Interaction::Text)
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        self.selection_mouse.cursor().unwrap_or(icy_ui::mouse::Interaction::Text)
     }
 
     fn show_caret(&self) -> bool {

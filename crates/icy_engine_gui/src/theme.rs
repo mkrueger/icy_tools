@@ -1,4 +1,4 @@
-use iced::{Color, Theme};
+use icy_ui::{Color, Theme};
 
 pub struct IcyTheme {
     pub margin: f32,

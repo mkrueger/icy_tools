@@ -15,7 +15,7 @@ use std::{
 use parking_lot::RwLock;
 
 use crate::{fl, SharedFontLibrary};
-use iced::{
+use icy_ui::{
     widget::{button, column, container, mouse_area, row, rule, text, Space},
     Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
 };
@@ -535,7 +535,7 @@ pub struct MainWindow {
 #[derive(Clone)]
 struct CachedRemotePastePreview {
     blocks_hash: u64,
-    handle: iced::widget::image::Handle,
+    handle: icy_ui::widget::image::Handle,
     width_px: u32,
     height_px: u32,
     columns: u32,
@@ -674,7 +674,7 @@ impl MainWindow {
     fn sync_remote_paste_previews_to_editor(&mut self) {
         use crate::ui::collaboration::state::CursorMode;
         use crate::ui::editor::ansi::widget::remote_paste_preview::RemotePastePreview;
-        use iced::Color;
+        use icy_ui::Color;
 
         let ModeState::Ansi(editor) = &mut self.mode_state else {
             return;
@@ -1289,7 +1289,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::Paste => {
-                use iced::clipboard::STANDARD;
+                use icy_ui::clipboard::STANDARD;
                 use icy_engine_gui::ICY_CLIPBOARD_TYPE;
 
                 match &self.mode_state {
@@ -1318,7 +1318,7 @@ impl MainWindow {
                 }
             }
             Message::ClipboardDataForPaste(data) => {
-                use iced::clipboard::STANDARD;
+                use icy_ui::clipboard::STANDARD;
 
                 if let Some(clipboard_data) = data {
                     match &mut self.mode_state {
@@ -1370,7 +1370,7 @@ impl MainWindow {
                 Task::none()
             }
             Message::PasteAsNewImage => {
-                use iced::clipboard::STANDARD;
+                use icy_ui::clipboard::STANDARD;
 
                 // Read image format for paste as new image
                 STANDARD.read_image().map(|clipboard_data| {
@@ -1555,7 +1555,7 @@ impl MainWindow {
                     let editor_task = editor.update(msg, &mut self.dialogs, &self.plugins).map(Message::AnsiEditor);
 
                     // Process pending collaboration events from tool results
-                    let mut collab_tasks: Vec<iced::Task<Message>> = Vec::new();
+                    let mut collab_tasks: Vec<icy_ui::Task<Message>> = Vec::new();
                     let pending_events = editor.take_pending_collab_events();
                     let is_connected = self.collaboration_state.is_connected();
                     if !pending_events.is_empty() {
@@ -1791,11 +1791,11 @@ impl MainWindow {
             Message::ToggleFullscreen => {
                 self.is_fullscreen = !self.is_fullscreen;
                 let mode = if self.is_fullscreen {
-                    iced::window::Mode::Fullscreen
+                    icy_ui::window::Mode::Fullscreen
                 } else {
-                    iced::window::Mode::Windowed
+                    icy_ui::window::Mode::Windowed
                 };
-                iced::window::latest().and_then(move |window| iced::window::set_mode(window, mode))
+                icy_ui::window::latest().and_then(move |window| icy_ui::window::set_mode(window, mode))
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -2119,7 +2119,7 @@ impl MainWindow {
 
     /// Get the collaboration subscription if connecting or connected
     pub fn subscription(&self) -> Subscription<Message> {
-        use iced::Subscription;
+        use icy_ui::Subscription;
 
         if self.collaboration_state.connecting || self.collaboration_state.active {
             if let (Some(url), Some(nick)) = (&self.collaboration_state.server_url, &self.collaboration_state.nick) {
@@ -2445,10 +2445,10 @@ impl MainWindow {
                 // Allow shortcuts (Ctrl/Alt/Logo) to still work.
                 // Block plain typing (and navigation keys) from reaching editor/commands.
                 match key_event {
-                    iced::keyboard::Event::KeyPressed { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
+                    icy_ui::keyboard::Event::KeyPressed { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
                         return (None, Task::none());
                     }
-                    iced::keyboard::Event::KeyReleased { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
+                    icy_ui::keyboard::Event::KeyReleased { modifiers, .. } if !modifiers.control() && !modifiers.alt() && !modifiers.logo() => {
                         return (None, Task::none());
                     }
                     _ => {}
@@ -2459,7 +2459,7 @@ impl MainWindow {
         // Try the command handler first for both keyboard and mouse events
         if let Some(msg) = self.commands.handle(event) {
             if self.collaboration_state.chat_input_focused {
-                if let Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) = event {
+                if let Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) = event {
                     self.collaboration_state.chat_input_focused = false;
                 }
             }
@@ -2522,7 +2522,7 @@ impl MainWindow {
             ModeState::Ansi(editor) => {
                 if editor.handle_event(event) {
                     if self.collaboration_state.chat_input_focused {
-                        if let Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) = event {
+                        if let Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) = event {
                             self.collaboration_state.chat_input_focused = false;
                         }
                     }
@@ -3269,7 +3269,7 @@ impl icy_engine_gui::Window for MainWindow {
         self.theme()
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>) {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         self.handle_event(event)
     }
 }
@@ -3280,9 +3280,9 @@ impl icy_engine_gui::Window for MainWindow {
 
 fn active_slot_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(theme.accent.base)),
+        background: Some(icy_ui::Background::Color(theme.accent.base)),
         text_color: Some(theme.background.on),
-        border: iced::Border {
+        border: icy_ui::Border {
             radius: 3.0.into(),
             width: 1.0,
             color: theme.accent.hover,
@@ -3293,9 +3293,9 @@ fn active_slot_style(theme: &Theme) -> container::Style {
 
 fn inactive_slot_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(theme.secondary.base)),
+        background: Some(icy_ui::Background::Color(theme.secondary.base)),
         text_color: Some(theme.background.on),
-        border: iced::Border {
+        border: icy_ui::Border {
             radius: 3.0.into(),
             ..Default::default()
         },
@@ -3311,7 +3311,7 @@ fn inactive_slot_style(theme: &Theme) -> container::Style {
 /// Default: secondary color, Hover: base.text color
 fn statusbar_toggle_style(theme: &Theme, status: button::Status) -> button::Style {
     let base = button::Style {
-        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
         text_color: theme.button.on,
         border: Border::default(),
         ..Default::default()
@@ -3330,7 +3330,7 @@ fn statusbar_toggle_style(theme: &Theme, status: button::Status) -> button::Styl
 /// Default: secondary color, Hover: base.text color
 fn statusbar_font_button_style(theme: &Theme, status: button::Status) -> button::Style {
     let base = button::Style {
-        background: Some(iced::Background::Color(Color::TRANSPARENT)),
+        background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
         text_color: theme.button.on,
         border: Border::default(),
         ..Default::default()

@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, container, row, text, tooltip},
     Element, Length,
 };
@@ -218,9 +218,9 @@ impl FileListToolbar {
             container(content)
                 .width(Length::Shrink)
                 .style(|theme| container::Style {
-                    background: Some(iced::Background::Color(theme.secondary.base).scale_alpha(0.9)),
-                    border: iced::Border {
-                        color: iced::Color::TRANSPARENT,
+                    background: Some(icy_ui::Background::Color(theme.secondary.base).scale_alpha(0.9)),
+                    border: icy_ui::Border {
+                        color: icy_ui::Color::TRANSPARENT,
                         width: 0.0,
                         radius: 0.0.into(),
                     },
@@ -232,8 +232,8 @@ impl FileListToolbar {
             container(content)
                 .width(Length::Fill)
                 .style(|theme| container::Style {
-                    background: Some(iced::Background::Color(theme.secondary.base)),
-                    border: iced::Border {
+                    background: Some(icy_ui::Background::Color(theme.secondary.base)),
+                    border: icy_ui::Border {
                         color: theme.primary.divider,
                         width: 0.0,
                         radius: 0.0.into(),
@@ -251,18 +251,18 @@ impl Default for FileListToolbar {
     }
 }
 
-fn toolbar_button_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
+fn toolbar_button_style(theme: &icy_ui::Theme, status: icy_ui::widget::button::Status) -> icy_ui::widget::button::Style {
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (iced::Color::TRANSPARENT, theme.primary.on),
-        iced::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
-        iced::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
-        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
+        icy_ui::widget::button::Status::Active | icy_ui::widget::button::Status::Selected => (icy_ui::Color::TRANSPARENT, theme.primary.on),
+        icy_ui::widget::button::Status::Hovered => (theme.accent.selected, theme.accent.on),
+        icy_ui::widget::button::Status::Pressed => (theme.accent.base, theme.accent.on),
+        icy_ui::widget::button::Status::Disabled => (icy_ui::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
-    iced::widget::button::Style {
-        background: Some(iced::Background::Color(bg)),
+    icy_ui::widget::button::Style {
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
-        border: iced::Border {
-            color: iced::Color::TRANSPARENT,
+        border: icy_ui::Border {
+            color: icy_ui::Color::TRANSPARENT,
             width: 0.0,
             radius: 3.0.into(),
         },
@@ -270,18 +270,18 @@ fn toolbar_button_style(theme: &iced::Theme, status: iced::widget::button::Statu
     }
 }
 
-fn sauce_button_active_style(theme: &iced::Theme, status: iced::widget::button::Status) -> iced::widget::button::Style {
+fn sauce_button_active_style(theme: &icy_ui::Theme, status: icy_ui::widget::button::Status) -> icy_ui::widget::button::Style {
     let (bg, text_color) = match status {
-        iced::widget::button::Status::Active => (theme.accent.base, theme.accent.on),
-        iced::widget::button::Status::Hovered => (theme.accent.hover, theme.primary.on),
-        iced::widget::button::Status::Pressed => (theme.accent.selected, theme.accent.on),
-        iced::widget::button::Status::Disabled => (iced::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
+        icy_ui::widget::button::Status::Active | icy_ui::widget::button::Status::Selected => (theme.accent.base, theme.accent.on),
+        icy_ui::widget::button::Status::Hovered => (theme.accent.hover, theme.primary.on),
+        icy_ui::widget::button::Status::Pressed => (theme.accent.selected, theme.accent.on),
+        icy_ui::widget::button::Status::Disabled => (icy_ui::Color::TRANSPARENT, theme.secondary.on.scale_alpha(0.3)),
     };
-    iced::widget::button::Style {
-        background: Some(iced::Background::Color(bg)),
+    icy_ui::widget::button::Style {
+        background: Some(icy_ui::Background::Color(bg)),
         text_color,
-        border: iced::Border {
-            color: iced::Color::TRANSPARENT,
+        border: icy_ui::Border {
+            color: icy_ui::Color::TRANSPARENT,
             width: 0.0,
             radius: 3.0.into(),
         },

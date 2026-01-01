@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use iced::Task;
+use icy_ui::Task;
 use icy_sauce::SauceRecord;
 use thiserror::Error;
 

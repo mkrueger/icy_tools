@@ -6,7 +6,7 @@
 //! Supports different cursor modes: Editing, Selection, Operation.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use iced::{widget::canvas, Color, Element, Length, Renderer, Theme};
+use icy_ui::{widget::canvas, Color, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -100,7 +100,7 @@ struct RemoteCursorsOverlayState {
 impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: iced::Rectangle, _cursor: iced::mouse::Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: icy_ui::Rectangle, _cursor: icy_ui::mouse::Cursor) -> Vec<canvas::Geometry> {
         if self.cursors.is_empty() {
             return vec![];
         }
@@ -166,7 +166,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     let max_x = (start_x + scaled_font_width).max(x + scaled_font_width);
                     let max_y = (start_y + scaled_font_height).max(y + scaled_font_height);
 
-                    let sel_rect = iced::Rectangle {
+                    let sel_rect = icy_ui::Rectangle {
                         x: min_x,
                         y: min_y,
                         width: max_x - min_x,
@@ -175,27 +175,27 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
 
                     // Draw selection fill (light transparent)
                     frame.fill_rectangle(
-                        iced::Point::new(sel_rect.x, sel_rect.y),
-                        iced::Size::new(sel_rect.width, sel_rect.height),
+                        icy_ui::Point::new(sel_rect.x, sel_rect.y),
+                        icy_ui::Size::new(sel_rect.width, sel_rect.height),
                         Color { a: 0.08, ..color },
                     );
 
                     // Draw outer border for selection
-                    let outer_path = canvas::Path::rectangle(iced::Point::new(sel_rect.x, sel_rect.y), iced::Size::new(sel_rect.width, sel_rect.height));
+                    let outer_path = canvas::Path::rectangle(icy_ui::Point::new(sel_rect.x, sel_rect.y), icy_ui::Size::new(sel_rect.width, sel_rect.height));
                     frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(Color { a: 0.9, ..color }));
 
                     // Draw inner border for double-line effect (to distinguish from regular cursor)
                     if sel_rect.width > 6.0 && sel_rect.height > 6.0 {
                         let inner_path = canvas::Path::rectangle(
-                            iced::Point::new(sel_rect.x + 3.0, sel_rect.y + 3.0),
-                            iced::Size::new(sel_rect.width - 6.0, sel_rect.height - 6.0),
+                            icy_ui::Point::new(sel_rect.x + 3.0, sel_rect.y + 3.0),
+                            icy_ui::Size::new(sel_rect.width - 6.0, sel_rect.height - 6.0),
                         );
                         frame.stroke(&inner_path, canvas::Stroke::default().with_width(1.0).with_color(Color { a: 0.6, ..color }));
                     }
                 }
                 RemoteCursorMode::Operation => {
                     // Draw operation cursor - double bordered rectangle
-                    let cursor_rect = iced::Rectangle {
+                    let cursor_rect = icy_ui::Rectangle {
                         x,
                         y,
                         width: scaled_font_width,
@@ -204,28 +204,28 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
 
                     // Inner fill
                     frame.fill_rectangle(
-                        iced::Point::new(cursor_rect.x, cursor_rect.y),
-                        iced::Size::new(cursor_rect.width, cursor_rect.height),
+                        icy_ui::Point::new(cursor_rect.x, cursor_rect.y),
+                        icy_ui::Size::new(cursor_rect.width, cursor_rect.height),
                         Color { a: 0.25, ..color },
                     );
 
                     // Inner border
                     let inner_path = canvas::Path::rectangle(
-                        iced::Point::new(cursor_rect.x + 2.0, cursor_rect.y + 2.0),
-                        iced::Size::new(cursor_rect.width - 4.0, cursor_rect.height - 4.0),
+                        icy_ui::Point::new(cursor_rect.x + 2.0, cursor_rect.y + 2.0),
+                        icy_ui::Size::new(cursor_rect.width - 4.0, cursor_rect.height - 4.0),
                     );
                     frame.stroke(&inner_path, canvas::Stroke::default().with_width(1.0).with_color(color));
 
                     // Outer border
                     let outer_path = canvas::Path::rectangle(
-                        iced::Point::new(cursor_rect.x, cursor_rect.y),
-                        iced::Size::new(cursor_rect.width, cursor_rect.height),
+                        icy_ui::Point::new(cursor_rect.x, cursor_rect.y),
+                        icy_ui::Size::new(cursor_rect.width, cursor_rect.height),
                     );
                     frame.stroke(&outer_path, canvas::Stroke::default().with_width(2.0).with_color(Color { a: 0.9, ..color }));
                 }
                 RemoteCursorMode::Editing | RemoteCursorMode::Hidden => {
                     // Normal cursor box (outline style like Moebius)
-                    let cursor_rect = iced::Rectangle {
+                    let cursor_rect = icy_ui::Rectangle {
                         x,
                         y,
                         width: scaled_font_width,
@@ -234,15 +234,15 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
 
                     // Draw filled rectangle with transparency
                     frame.fill_rectangle(
-                        iced::Point::new(cursor_rect.x, cursor_rect.y),
-                        iced::Size::new(cursor_rect.width, cursor_rect.height),
+                        icy_ui::Point::new(cursor_rect.x, cursor_rect.y),
+                        icy_ui::Size::new(cursor_rect.width, cursor_rect.height),
                         Color { a: 0.22, ..color },
                     );
 
                     // Draw border
                     let border_path = canvas::Path::rectangle(
-                        iced::Point::new(cursor_rect.x, cursor_rect.y),
-                        iced::Size::new(cursor_rect.width, cursor_rect.height),
+                        icy_ui::Point::new(cursor_rect.x, cursor_rect.y),
+                        icy_ui::Size::new(cursor_rect.width, cursor_rect.height),
                     );
                     frame.stroke(&border_path, canvas::Stroke::default().with_width(2.0).with_color(color));
                 }
@@ -257,20 +257,20 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                 let label_height = 14.0;
 
                 frame.fill_rectangle(
-                    iced::Point::new(x - 2.0, label_y - 2.0),
-                    iced::Size::new(label_width, label_height),
+                    icy_ui::Point::new(x - 2.0, label_y - 2.0),
+                    icy_ui::Size::new(label_width, label_height),
                     Color { a: 0.65, ..color },
                 );
 
                 // Nickname text
                 frame.fill_text(canvas::Text {
                     content: cursor.nick.clone(),
-                    position: iced::Point::new(x + 2.0, label_y),
+                    position: icy_ui::Point::new(x + 2.0, label_y),
                     color: Color::WHITE,
                     size: text_size.into(),
-                    font: iced::Font::MONOSPACE,
-                    align_x: iced::alignment::Horizontal::Left.into(),
-                    align_y: iced::alignment::Vertical::Top.into(),
+                    font: icy_ui::Font::MONOSPACE,
+                    align_x: icy_ui::alignment::Horizontal::Left.into(),
+                    align_y: icy_ui::alignment::Vertical::Top.into(),
                     ..Default::default()
                 });
             }

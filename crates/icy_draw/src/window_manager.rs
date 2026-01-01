@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use parking_lot::RwLock;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use iced::{keyboard, widget::space, window, Element, Event, Point, Size, Subscription, Task, Theme, Vector};
+use icy_ui::{keyboard, widget::space, window, Element, Event, Point, Size, Subscription, Task, Theme, Vector};
 
 use crate::mcp::McpCommand;
 use crate::session::{edit_mode_to_string, SessionManager, SessionState, WindowRestoreInfo, WindowState};
@@ -103,7 +103,7 @@ pub enum WindowManagerMessage {
     /// Window was resized - save session with new size  
     WindowResized(window::Id, Size),
     WindowMessage(window::Id, crate::ui::Message),
-    Event(window::Id, iced::Event),
+    Event(window::Id, icy_ui::Event),
     /// Autosave tick (periodic check)
     AutosaveTick,
     /// Debounced session-save tick
@@ -656,7 +656,7 @@ impl WindowManager {
                 self.window_geometry.remove(&id);
 
                 if self.windows.is_empty() {
-                    iced::exit()
+                    icy_ui::exit()
                 } else {
                     Task::none()
                 }
@@ -741,9 +741,9 @@ impl WindowManager {
 
             WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
-            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
+            WindowManagerMessage::FocusNext => icy_ui::widget::operation::focus_next(),
 
-            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+            WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
 
             WindowManagerMessage::AutosaveTick => {
                 // Increment session save counter
@@ -858,14 +858,14 @@ impl WindowManager {
                     _ => Some(WindowManagerMessage::Event(id, Event::Window(event))),
                 }
             }),
-            iced::event::listen_with(|event, _status, window_id| {
+            icy_ui::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events
-                    Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(iced::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(_) => None,
                     // Keyboard events are handled below
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
@@ -885,19 +885,19 @@ impl WindowManager {
                 }
             }),
             // Autosave tick - check every second
-            iced::time::every(std::time::Duration::from_secs(1)).map(|_| WindowManagerMessage::AutosaveTick),
+            icy_ui::time::every(std::time::Duration::from_secs(1)).map(|_| WindowManagerMessage::AutosaveTick),
         ];
 
         // Debounced session-save tick (only when something scheduled)
         // Keep session-save ticking even if nothing is scheduled.
         // This avoids edge cases where a deadline is set but the subscription
         // doesn't get activated soon enough due to update timing.
-        subs.push(iced::time::every(Duration::from_millis(200)).map(|_| WindowManagerMessage::SessionSaveTick));
+        subs.push(icy_ui::time::every(Duration::from_millis(200)).map(|_| WindowManagerMessage::SessionSaveTick));
 
         // Animation tick - only active when an animation editor is playing
         let needs_animation = self.windows.values().any(|w| w.needs_animation_tick());
         if needs_animation {
-            subs.push(iced::time::every(Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
+            subs.push(icy_ui::time::every(Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         // Add collaboration subscriptions from all windows

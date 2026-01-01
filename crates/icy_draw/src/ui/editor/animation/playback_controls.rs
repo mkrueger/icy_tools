@@ -2,7 +2,7 @@
 //!
 //! Professional video player-style controls with modern styling
 
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, slider, Space},
     Alignment, Background, Border, Element, Length, Shadow, Theme,
 };
@@ -28,11 +28,12 @@ fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
                 radius: 6.0.into(),
             },
             shadow: Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
+                color: icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                offset: icy_ui::Vector::new(0.0, 2.0),
                 blur_radius: 4.0,
             },
             snap: false,
+            ..Default::default()
         }
     } else {
         button::Style {
@@ -45,6 +46,7 @@ fn transport_button_style(theme: &Theme, is_active: bool) -> button::Style {
             },
             shadow: Shadow::default(),
             snap: false,
+            ..Default::default()
         }
     }
 }
@@ -59,18 +61,19 @@ fn play_button_style(theme: &Theme, is_playing: bool) -> button::Style {
 
     button::Style {
         background: Some(Background::Color(bg_color)),
-        text_color: iced::Color::WHITE,
+        text_color: icy_ui::Color::WHITE,
         border: Border {
-            color: iced::Color::TRANSPARENT,
+            color: icy_ui::Color::TRANSPARENT,
             width: 0.0,
             radius: 20.0.into(), // Circular
         },
         shadow: Shadow {
-            color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-            offset: iced::Vector::new(0.0, 3.0),
+            color: icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: icy_ui::Vector::new(0.0, 3.0),
             blur_radius: 6.0,
         },
         snap: false,
+        ..Default::default()
     }
 }
 
@@ -84,8 +87,8 @@ fn control_bar_style(theme: &Theme) -> container::Style {
             radius: 8.0.into(),
         },
         shadow: Shadow {
-            color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.2),
-            offset: iced::Vector::new(0.0, -2.0),
+            color: icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.2),
+            offset: icy_ui::Vector::new(0.0, -2.0),
             blur_radius: 8.0,
         },
         text_color: None,
@@ -182,7 +185,7 @@ pub fn view_playback_controls(editor: &AnimationEditor) -> Element<'_, Animation
         _ => "4x",
     };
 
-    let speed_picker = iced::widget::pick_list(SPEED_OPTIONS, Some(current_speed), |selected| {
+    let speed_picker = icy_ui::widget::pick_list(SPEED_OPTIONS, Some(current_speed), |selected| {
         let speed = match selected {
             "0.25x" => 0.25,
             "0.5x" => 0.5,

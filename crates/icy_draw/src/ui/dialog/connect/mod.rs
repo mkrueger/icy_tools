@@ -2,7 +2,7 @@
 //!
 //! Simple dialog to connect to Moebius-compatible collaboration servers.
 
-use iced::{
+use icy_ui::{
     widget::{button, column, container, pick_list, row, svg, text, text_input},
     Element, Length,
 };
@@ -116,7 +116,7 @@ impl Dialog<Message> for ConnectDialog {
             .width(Length::Fill);
 
         let url_row = if self.recent_servers.is_empty() {
-            row![url_label, url_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center)
+            row![url_label, url_input].spacing(DIALOG_SPACING).align_y(icy_ui::Alignment::Center)
         } else {
             let servers: Vec<String> = self.recent_servers.iter().rev().cloned().collect();
             let selected = if self.url.is_empty() { None } else { Some(self.url.clone()) };
@@ -125,7 +125,7 @@ impl Dialog<Message> for ConnectDialog {
                 .width(Length::Fixed(150.0));
             row![url_label, url_input, server_picker]
                 .spacing(DIALOG_SPACING)
-                .align_y(iced::Alignment::Center)
+                .align_y(icy_ui::Alignment::Center)
         };
 
         // Nickname input
@@ -134,7 +134,7 @@ impl Dialog<Message> for ConnectDialog {
             .on_input(|s| Message::ConnectDialog(ConnectDialogMessage::NickChanged(s)))
             .padding(8)
             .width(Length::Fill);
-        let nick_row = row![nick_label, nick_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center);
+        let nick_row = row![nick_label, nick_input].spacing(DIALOG_SPACING).align_y(icy_ui::Alignment::Center);
 
         // Group input (optional)
         let group_label = container(text(fl!("collab-group")).size(TEXT_SIZE_NORMAL)).width(label_width);
@@ -142,7 +142,7 @@ impl Dialog<Message> for ConnectDialog {
             .on_input(|s| Message::ConnectDialog(ConnectDialogMessage::GroupChanged(s)))
             .padding(8)
             .width(Length::Fill);
-        let group_row = row![group_label, group_input].spacing(DIALOG_SPACING).align_y(iced::Alignment::Center);
+        let group_row = row![group_label, group_input].spacing(DIALOG_SPACING).align_y(icy_ui::Alignment::Center);
 
         // Password input with visibility toggle
         let password_label = container(text(fl!("collab-password")).size(TEXT_SIZE_NORMAL)).width(label_width);
@@ -167,7 +167,7 @@ impl Dialog<Message> for ConnectDialog {
 
         let password_row = row![password_label, password_input, toggle_btn]
             .spacing(DIALOG_SPACING)
-            .align_y(iced::Alignment::Center);
+            .align_y(icy_ui::Alignment::Center);
 
         // Form content
         let form = column![url_row, nick_row, group_row, password_row,].spacing(DIALOG_SPACING).width(Length::Fill);
@@ -180,7 +180,7 @@ impl Dialog<Message> for ConnectDialog {
         };
 
         let connect_button = primary_button(fl!("collab-connect-button"), connect_msg);
-        let cancel_button = secondary_button(fl!("button-cancel"), Some(Message::ConnectDialog(ConnectDialogMessage::Cancel)));
+        let cancel_button: button::Button<'_, Message> = secondary_button(fl!("button-cancel"), Some(Message::ConnectDialog(ConnectDialogMessage::Cancel)));
 
         let button_row = button_row(vec![cancel_button.into(), connect_button.into()]);
 
@@ -242,10 +242,10 @@ impl Dialog<Message> for ConnectDialog {
         }
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
         // Handle Enter key to connect
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter),
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed {
+            key: icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Enter),
             ..
         }) = event
         {
@@ -261,8 +261,8 @@ impl Dialog<Message> for ConnectDialog {
         }
 
         // Handle Escape key to cancel
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed {
+            key: icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape),
             ..
         }) = event
         {

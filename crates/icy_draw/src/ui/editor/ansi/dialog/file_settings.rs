@@ -3,7 +3,7 @@
 //! Unified dialog for document settings including canvas size, SAUCE metadata,
 //! and format compatibility options. Has two pages: settings and comments editor.
 
-use iced::{
+use icy_ui::{
     widget::{checkbox, column, container, pick_list, row, text, text_editor, text_input, Space},
     Alignment, Element, Length,
 };
@@ -316,7 +316,7 @@ impl FileSettingsDialog {
             FormatMode::Unrestricted => fl!("file-settings-format-unrestricted"),
         };
 
-        let format_description = text(format_desc).size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+        let format_description = text(format_desc).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
             color: Some(theme.secondary.on),
         });
 
@@ -466,7 +466,7 @@ impl FileSettingsDialog {
         // Comments info
         let info_text = text(fl!("file-settings-comments-info"))
             .size(TEXT_SIZE_SMALL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.secondary.on),
             });
 

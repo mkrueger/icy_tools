@@ -1,7 +1,7 @@
 use crate::ui::dialing_directory_dialog::DialingDirectoryMsg;
 use crate::ui::Message;
 use i18n_embed_fl::fl;
-use iced::Element;
+use icy_ui::Element;
 use icy_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogResult, DialogType};
 
 impl super::DialingDirectoryState {
@@ -16,7 +16,7 @@ impl super::DialingDirectoryState {
         let question = fl!(crate::LANGUAGE_LOADER, "delete-bbs-question", system = system_name);
 
         // Create background element from the main content
-        let background = iced::widget::Space::new().width(iced::Length::Fill).height(iced::Length::Fill).into();
+        let background = icy_ui::widget::Space::new().width(icy_ui::Length::Fill).height(icy_ui::Length::Fill).into();
 
         let dialog = ConfirmationDialog::new(title, question)
             .dialog_type(DialogType::Question)

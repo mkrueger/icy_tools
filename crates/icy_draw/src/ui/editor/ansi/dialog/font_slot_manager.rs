@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     mouse,
     widget::{
@@ -288,7 +288,7 @@ impl FontSlotManagerDialog {
         // Wrap in Focus widget for keyboard navigation
         focus(list_row)
             .on_event(|event, _id| {
-                if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
                         Key::Named(Named::ArrowUp) => Some(msg(FontSlotManagerMessage::NavigateUp)),
                         Key::Named(Named::ArrowDown) => Some(msg(FontSlotManagerMessage::NavigateDown)),
@@ -394,7 +394,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
 
         let scroll_y = self.dialog.viewport.borrow().scroll_y;
 
-        let geometry = iced::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
+        let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
             for &slot in &self.dialog.slots {
@@ -444,7 +444,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                     content: format!("[{:2}]", slot),
                     position: Point::new(8.0, y + (SLOT_ITEM_HEIGHT - 13.0) / 2.0),
                     color: slot_color,
-                    size: iced::Pixels(13.0),
+                    size: icy_ui::Pixels(13.0),
                     ..Default::default()
                 });
 
@@ -463,7 +463,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                     content: font_name,
                     position: Point::new(52.0, y + (SLOT_ITEM_HEIGHT - 13.0) / 2.0),
                     color: name_color,
-                    size: iced::Pixels(13.0),
+                    size: icy_ui::Pixels(13.0),
                     ..Default::default()
                 });
 
@@ -474,9 +474,9 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
         vec![geometry]
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
@@ -490,7 +490,7 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                     }
                 }
             }
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let scroll_amount = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => -y * 26.0,
@@ -613,7 +613,7 @@ impl Dialog<Message> for FontSlotManagerDialog {
         }
     }
 
-    fn handle_event(&mut self, _event: &iced::Event) -> Option<DialogAction<Message>> {
+    fn handle_event(&mut self, _event: &icy_ui::Event) -> Option<DialogAction<Message>> {
         None
     }
 

@@ -5,16 +5,16 @@
 
 use std::fmt;
 
-use iced::advanced::layout::{self, Layout};
-use iced::advanced::overlay;
-use iced::advanced::renderer;
-use iced::advanced::widget::{self, Operation, Tree};
-use iced::advanced::{Clipboard, Shell, Widget};
-use iced::mouse;
-use iced::time::{Duration, Instant};
-use iced::widget::{button, container, row, text};
-use iced::window;
-use iced::{Alignment, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme, Vector};
+use icy_ui::advanced::layout::{self, Layout};
+use icy_ui::advanced::overlay;
+use icy_ui::advanced::renderer;
+use icy_ui::advanced::widget::{self, Operation, Tree};
+use icy_ui::advanced::{Clipboard, Shell, Widget};
+use icy_ui::mouse;
+use icy_ui::time::{Duration, Instant};
+use icy_ui::widget::{button, container, row, text};
+use icy_ui::window;
+use icy_ui::{Alignment, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme, Vector};
 
 use super::{TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 
@@ -112,10 +112,10 @@ where
             .enumerate()
             .map(|(index, toast)| {
                 let (icon, icon_color) = match toast.status {
-                    ToastStatus::Info => ("ℹ", iced::Color::from_rgb(0.4, 0.6, 0.9)),
-                    ToastStatus::Success => ("✓", iced::Color::from_rgb(0.3, 0.7, 0.3)),
-                    ToastStatus::Warning => ("⚠", iced::Color::from_rgb(0.9, 0.7, 0.2)),
-                    ToastStatus::Error => ("✕", iced::Color::from_rgb(0.9, 0.3, 0.3)),
+                    ToastStatus::Info => ("ℹ", icy_ui::Color::from_rgb(0.4, 0.6, 0.9)),
+                    ToastStatus::Success => ("✓", icy_ui::Color::from_rgb(0.3, 0.7, 0.3)),
+                    ToastStatus::Warning => ("⚠", icy_ui::Color::from_rgb(0.9, 0.7, 0.2)),
+                    ToastStatus::Error => ("✕", icy_ui::Color::from_rgb(0.9, 0.3, 0.3)),
                 };
 
                 container(
@@ -152,18 +152,18 @@ where
 
 fn toast_container_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(iced::Color {
+        background: Some(icy_ui::Background::Color(icy_ui::Color {
             a: 0.95,
             ..theme.background.base
         })),
-        border: iced::Border {
+        border: icy_ui::Border {
             color: theme.background.on.scale_alpha(0.2),
             width: 1.0,
             radius: 6.0.into(),
         },
-        shadow: iced::Shadow {
-            color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-            offset: iced::Vector::new(0.0, 2.0),
+        shadow: icy_ui::Shadow {
+            color: icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+            offset: icy_ui::Vector::new(0.0, 2.0),
             blur_radius: 8.0,
         },
         ..Default::default()
@@ -179,8 +179,11 @@ fn close_button_style(theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: None,
         text_color: theme.background.on.scale_alpha(base_alpha),
-        border: iced::Border::default(),
-        shadow: iced::Shadow::default(),
+        icon_color: None,
+        outline_color: icy_ui::Color::TRANSPARENT,
+        outline_width: 0.0,
+        border: icy_ui::Border::default(),
+        shadow: icy_ui::Shadow::default(),
         snap: false,
     }
 }

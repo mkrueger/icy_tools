@@ -4,7 +4,7 @@
 //! Used by the CharFont (TDF) editor outline preview panel.
 
 use codepages::tables::UNICODE_TO_CP437;
-use iced::{
+use icy_ui::{
     mouse::{self, Cursor},
     widget::{
         canvas::{self, Canvas, Frame, Geometry},
@@ -151,7 +151,7 @@ impl OutlineStyleSelectorProgram {
 impl canvas::Program<OutlineStyleSelectorMessage> for OutlineStyleSelectorProgram {
     type State = OutlineStyleSelectorState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, _theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         let panel_bg = Color::from_rgb8(40, 40, 45);
@@ -184,9 +184,9 @@ impl canvas::Program<OutlineStyleSelectorMessage> for OutlineStyleSelectorProgra
         vec![frame.into_geometry()]
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<OutlineStyleSelectorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<OutlineStyleSelectorMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.hit_test(p));
                 if state.hovered != new_hover {
                     state.hovered = new_hover;
@@ -194,7 +194,7 @@ impl canvas::Program<OutlineStyleSelectorMessage> for OutlineStyleSelectorProgra
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(cursor_pos) = cursor.position_in(bounds) else {

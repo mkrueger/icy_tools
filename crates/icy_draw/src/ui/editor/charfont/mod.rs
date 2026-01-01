@@ -17,7 +17,7 @@ pub use font_dialogs::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use iced::{
+use icy_ui::{
     keyboard::Modifiers,
     widget::{button, canvas, column, container, row, scrollable, text},
     Alignment, Element, Length, Task, Theme,
@@ -1076,10 +1076,10 @@ impl CharFontEditor {
     /// Tab switches focus between Edit and CharSet panels.
     /// Other events are forwarded to AnsiEditorCore only when the Edit panel has focus.
     /// Returns `true` if the event was handled.
-    pub fn handle_event(&mut self, event: &iced::Event) -> bool {
+    pub fn handle_event(&mut self, event: &icy_ui::Event) -> bool {
         // Handle Tab key to switch focus between panels
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
-            if *key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) && !modifiers.command() {
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+            if *key == icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Tab) && !modifiers.command() {
                 self.charset_state.focus_next_panel();
                 self.sync_canvas_focus();
                 return true;
@@ -1254,7 +1254,7 @@ impl CharFontEditor {
         let selection = self
             .charset_state
             .charset_selection()
-            .map(|(a, l, r)| (iced::Point::new(a.x, a.y), iced::Point::new(l.x, l.y), r));
+            .map(|(a, l, r)| (icy_ui::Point::new(a.x, a.y), icy_ui::Point::new(l.x, l.y), r));
 
         let charset_is_focused = self.charset_state.focused_panel() == CharSetFocusedPanel::CharSet;
         let edit_is_focused = self.charset_state.focused_panel() == CharSetFocusedPanel::Edit;
@@ -1274,10 +1274,10 @@ impl CharFontEditor {
         .height(Length::Fixed(canvas_height));
 
         // Focused container style with highlight border
-        let charset_container_style = move |theme: &iced::Theme| {
+        let charset_container_style = move |theme: &icy_ui::Theme| {
             let border_color = if charset_is_focused { theme.accent.base } else { theme.primary.divider };
             container::Style {
-                border: iced::Border {
+                border: icy_ui::Border {
                     color: border_color,
                     width: if charset_is_focused { 2.0 } else { 1.0 },
                     radius: 4.0.into(),
@@ -1290,10 +1290,10 @@ impl CharFontEditor {
 
         // === CENTER AREA: Editor canvas + optional style preview on right ===
         // Focused container style for ANSI editor
-        let ansi_container_style = move |theme: &iced::Theme| {
+        let ansi_container_style = move |theme: &icy_ui::Theme| {
             let border_color = if edit_is_focused { theme.accent.base } else { theme.primary.divider };
             container::Style {
-                border: iced::Border {
+                border: icy_ui::Border {
                     color: border_color,
                     width: if edit_is_focused { 2.0 } else { 1.0 },
                     radius: 4.0.into(),

@@ -21,9 +21,9 @@ pub use playback_controls::*;
 
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
-use iced::widget::canvas;
-use iced::widget::canvas::Canvas;
-use iced::{
+use icy_ui::widget::canvas;
+use icy_ui::widget::canvas::Canvas;
+use icy_ui::{
     highlighter, mouse,
     widget::{column, container, pane_grid, row, rule, scrollable, stack, text, text_editor, Space},
     Background, Border, Element, Length, Task, Theme,
@@ -176,22 +176,22 @@ impl Default for PlaybackRedrawTickerState {
     }
 }
 
-impl iced::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTicker {
+impl icy_ui::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTicker {
     type State = PlaybackRedrawTickerState;
 
     fn update(
         &self,
         state: &mut Self::State,
-        event: &iced::Event,
-        _bounds: iced::Rectangle,
+        event: &icy_ui::Event,
+        _bounds: icy_ui::Rectangle,
         _cursor: mouse::Cursor,
-    ) -> Option<iced::widget::canvas::Action<AnimationEditorMessage>> {
-        if let iced::Event::Window(iced::window::Event::RedrawRequested(now)) = event {
+    ) -> Option<icy_ui::widget::canvas::Action<AnimationEditorMessage>> {
+        if let icy_ui::Event::Window(icy_ui::window::Event::RedrawRequested(now)) = event {
             if self.playing || self.needs_update {
                 state.last_redraw = Some(*now);
                 // Publishing `Tick` will schedule the next redraw as long as `Tick`
                 // actually updates state (like the ColorSwitcher pattern).
-                return Some(iced::widget::canvas::Action::publish(AnimationEditorMessage::Tick));
+                return Some(icy_ui::widget::canvas::Action::publish(AnimationEditorMessage::Tick));
             }
 
             state.last_redraw = None;
@@ -203,11 +203,11 @@ impl iced::widget::canvas::Program<AnimationEditorMessage> for PlaybackRedrawTic
     fn draw(
         &self,
         _state: &Self::State,
-        renderer: &iced::Renderer,
+        renderer: &icy_ui::Renderer,
         _theme: &Theme,
-        bounds: iced::Rectangle,
+        bounds: icy_ui::Rectangle,
         _cursor: mouse::Cursor,
-    ) -> Vec<iced::widget::canvas::Geometry> {
+    ) -> Vec<icy_ui::widget::canvas::Geometry> {
         let geometry = _state.cache.draw(renderer, bounds.size(), |_| {
             // Intentionally draw nothing. A cached (empty) geometry keeps the widget
             // in the render tree so it can observe RedrawRequested events.
@@ -784,7 +784,7 @@ impl AnimationEditor {
         let code_editor = text_editor(&self.script)
             .on_action(AnimationEditorMessage::ScriptAction)
             .highlight("lua", highlighter::Theme::SolarizedDark)
-            .font(iced::Font::MONOSPACE)
+            .font(icy_ui::Font::MONOSPACE)
             .padding(8)
             .height(Length::Fill);
 
@@ -812,7 +812,7 @@ impl AnimationEditor {
         // Preview using TerminalView
         let preview_element: Element<'_, AnimationEditorMessage> = if self.has_error() {
             // Show error
-            container(text(error_msg).size(14).style(|theme: &Theme| iced::widget::text::Style {
+            container(text(error_msg).size(14).style(|theme: &Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             }))
             .width(Length::Fill)
@@ -914,16 +914,16 @@ impl AnimationEditor {
             fl!("animation-no-frames")
         };
 
-        let frame_label = container(text(frame_text).size(12).font(iced::Font::MONOSPACE))
+        let frame_label = container(text(frame_text).size(12).font(icy_ui::Font::MONOSPACE))
             .padding([4, 10])
             .style(|_theme: &Theme| container::Style {
-                background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                background: Some(Background::Color(icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
                 border: Border {
-                    color: iced::Color::TRANSPARENT,
+                    color: icy_ui::Color::TRANSPARENT,
                     width: 0.0,
                     radius: 4.0.into(),
                 },
-                text_color: Some(iced::Color::WHITE),
+                text_color: Some(icy_ui::Color::WHITE),
                 ..Default::default()
             });
 
@@ -935,16 +935,16 @@ impl AnimationEditor {
             AnimationEditor::format_time(total_time_ms)
         );
 
-        let time_label = container(text(time_text).size(12).font(iced::Font::MONOSPACE))
+        let time_label = container(text(time_text).size(12).font(icy_ui::Font::MONOSPACE))
             .padding([4, 10])
             .style(|_theme: &Theme| container::Style {
-                background: Some(Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                background: Some(Background::Color(icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
                 border: Border {
-                    color: iced::Color::TRANSPARENT,
+                    color: icy_ui::Color::TRANSPARENT,
                     width: 0.0,
                     radius: 4.0.into(),
                 },
-                text_color: Some(iced::Color::WHITE),
+                text_color: Some(icy_ui::Color::WHITE),
                 ..Default::default()
             });
 
@@ -976,7 +976,7 @@ impl AnimationEditor {
 
         if !error_text.is_empty() {
             // Show error
-            container(text(error_text).size(12).style(|theme: &Theme| iced::widget::text::Style {
+            container(text(error_text).size(12).style(|theme: &Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             }))
             .width(Length::Fill)
@@ -985,7 +985,7 @@ impl AnimationEditor {
             .into()
         } else if log_entries.is_empty() {
             // No log entries
-            container(text(fl!("animation-no-log")).size(12).style(|theme: &Theme| iced::widget::text::Style {
+            container(text(fl!("animation-no-log")).size(12).style(|theme: &Theme| icy_ui::widget::text::Style {
                 color: Some(theme.primary.divider),
             }))
             .width(Length::Fill)
@@ -998,7 +998,7 @@ impl AnimationEditor {
                 .into_iter()
                 .map(|(frame, entry_text)| {
                     row![
-                        text(format!("[{}]", frame)).size(11).style(|theme: &Theme| iced::widget::text::Style {
+                        text(format!("[{}]", frame)).size(11).style(|theme: &Theme| icy_ui::widget::text::Style {
                             color: Some(theme.accent.selected),
                         }),
                         Space::new().width(6),

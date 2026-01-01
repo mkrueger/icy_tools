@@ -11,7 +11,7 @@ mod image_export;
 use base64::{engine::general_purpose, Engine as _};
 use std::path::PathBuf;
 
-use iced::{
+use icy_ui::{
     widget::{column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length, Task,
 };
@@ -289,7 +289,7 @@ impl FontExportDialog {
         let cell_size: f32 = (available / 16.0).floor();
         let label_size: f32 = 16.0;
 
-        let canvas = iced::widget::Canvas::new(FontPreviewCanvas {
+        let canvas = icy_ui::widget::Canvas::new(FontPreviewCanvas {
             font: &self.font,
             cell_width: cell_size,
             cell_height: cell_size,
@@ -299,9 +299,9 @@ impl FontExportDialog {
         .height(Length::Fixed(label_size + 16.0 * cell_size));
 
         container(canvas)
-            .style(|theme: &iced::Theme| container::Style {
+            .style(|theme: &icy_ui::Theme| container::Style {
                 background: Some(theme.secondary.base.into()),
-                border: iced::Border {
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 4.0.into(),
@@ -370,14 +370,14 @@ impl Dialog<Message> for FontExportDialog {
         let message_element: Element<'_, Message> = if let Some(err) = &self.error {
             text(err)
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
                 })
                 .into()
         } else if let Some(success) = &self.success {
             text(success)
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.success.base),
                 })
                 .into()

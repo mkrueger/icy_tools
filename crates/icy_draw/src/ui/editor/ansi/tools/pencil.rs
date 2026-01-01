@@ -7,9 +7,9 @@
 //! - Shade mode: Lightens/darkens existing content
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
-use iced::keyboard::key::Physical;
-use iced::widget::{button, column, row, svg, text, Space};
-use iced::{Element, Length, Theme};
+use icy_ui::keyboard::key::Physical;
+use icy_ui::widget::{button, column, row, svg, text, Space};
+use icy_ui::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position};
 use icy_engine_edit::brushes;
 use icy_engine_edit::tools::Tool;
@@ -135,16 +135,16 @@ impl ToolHandler for PencilTool {
         self.cancel_drag();
     }
 
-    fn handle_event(&mut self, _ctx: &mut ToolContext, event: &iced::Event) -> ToolResult {
+    fn handle_event(&mut self, _ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed {
                 key: _,
                 modifiers,
                 physical_key,
                 ..
             }) => {
-                use iced::keyboard::key::Named;
-                use iced::keyboard::Key;
+                use icy_ui::keyboard::key::Named;
+                use icy_ui::keyboard::Key;
 
                 // - Alt+= increase
                 // - Alt+- decrease
@@ -152,21 +152,21 @@ impl ToolHandler for PencilTool {
                 if modifiers.alt() && !modifiers.control() {
                     let mut changed = false;
                     match physical_key {
-                        Physical::Code(iced::keyboard::key::Code::Equal) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::Equal) => {
                             let new_size: usize = (self.brush.brush_size + 1).min(9);
                             if new_size != self.brush.brush_size {
                                 self.brush.brush_size = new_size;
                                 changed = true;
                             }
                         }
-                        Physical::Code(iced::keyboard::key::Code::Minus) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::Minus) => {
                             let new_size = self.brush.brush_size.saturating_sub(1).max(1);
                             if new_size != self.brush.brush_size {
                                 self.brush.brush_size = new_size;
                                 changed = true;
                             }
                         }
-                        Physical::Code(iced::keyboard::key::Code::BracketRight) => {
+                        Physical::Code(icy_ui::keyboard::key::Code::BracketRight) => {
                             if self.brush.brush_size != 1 {
                                 self.brush.brush_size = 1;
                                 changed = true;
@@ -369,7 +369,7 @@ impl ToolHandler for PencilTool {
 
         let size_text = text(format!("{}", self.brush.brush_size))
             .size(14)
-            .font(iced::Font::MONOSPACE)
+            .font(icy_ui::Font::MONOSPACE)
             .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
 
         let dec_size = self.brush.brush_size.saturating_sub(1).max(1);
@@ -392,9 +392,9 @@ impl ToolHandler for PencilTool {
                         _ => secondary,
                     };
                     button::Style {
-                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                        border: iced::Border {
-                            color: iced::Color::TRANSPARENT,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::TRANSPARENT,
                             width: 0.0,
                             radius: 0.0.into(),
                         },
@@ -414,9 +414,9 @@ impl ToolHandler for PencilTool {
                         _ => secondary,
                     };
                     button::Style {
-                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                        border: iced::Border {
-                            color: iced::Color::TRANSPARENT,
+                        background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
+                        border: icy_ui::Border {
+                            color: icy_ui::Color::TRANSPARENT,
                             width: 0.0,
                             radius: 0.0.into(),
                         },
@@ -427,7 +427,7 @@ impl ToolHandler for PencilTool {
             Space::new().width(Length::Fill),
         ]
         .spacing(4)
-        .align_y(iced::Alignment::Center)
+        .align_y(icy_ui::Alignment::Center)
         .into()
     }
 
@@ -436,8 +436,8 @@ impl ToolHandler for PencilTool {
         column![].into()
     }
 
-    fn cursor(&self) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::Crosshair
+    fn cursor(&self) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::Crosshair
     }
 
     fn show_caret(&self) -> bool {

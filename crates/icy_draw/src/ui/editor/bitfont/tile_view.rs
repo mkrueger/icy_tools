@@ -1,6 +1,6 @@
 //! Tile view canvas for BitFont editor
 
-use iced::{
+use icy_ui::{
     mouse::Cursor,
     widget::canvas::{self, Frame},
     Color, Point, Rectangle, Size,
@@ -21,7 +21,7 @@ pub struct TileViewCanvas<'a> {
 impl<'a> canvas::Program<BitFontEditorMessage> for TileViewCanvas<'a> {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         // Get colors from palette

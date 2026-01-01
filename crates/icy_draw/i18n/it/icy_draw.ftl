@@ -26,7 +26,7 @@ server-stop-hint = Press Ctrl+C to stop the server
 server-none = (none)
 server-unlimited = unlimited
 
-menu-file=File
+menu-file=&File
 menu-new=Nuovo…
 menu-open=Apri…
 menu-open_recent=Apri recenti
@@ -60,7 +60,7 @@ menu-export=Esporta…
 menu-edit-font-outline=Contorno font…
 menu-show_settings=Impostazioni…
 
-menu-edit=Modifica
+menu-edit=&Modifica
 menu-undo=Annulla
 menu-redo=Ripeti
 menu-undo-op=Annulla: { $op }
@@ -101,12 +101,12 @@ menu-scroll_area_right=Scorri area a destra
 menu-mirror_mode=Modalità specchio
 menu-area_operations=Area
 
-menu-selection=Selezione
+menu-selection=&Selezione
 menu-select-all=Seleziona tutto
 menu-select_nothing=Deseleziona
 menu-inverse_selection=Inverti
 
-menu-colors=Colori
+menu-colors=&Colori
 menu-ice-mode=Modalità Ice
 menu-ice-mode-unrestricted=Senza restrizioni
 menu-ice-mode-blink=Lampadina
@@ -123,7 +123,7 @@ menu-next_bg_color=Prossimo colore sfondo
 menu-prev_fg_color=Colore primo piano precedente
 menu-prev_bg_color=Colore sfondo precedente
 
-menu-view=Visualizza
+menu-view=&Visualizza
 menu-reference-image=Apri immagine di riferimento…
 menu-toggle-reference-image=Attiva/disattiva immagine di riferimento
 menu-clear-reference-image=Pulisci
@@ -158,12 +158,12 @@ menu-open_font_manager=Modifica font buffer…
 menu-open_font_directoy=Apri directory font…
 menu-open_palettes_directoy=Apri directory palette…
 
-menu-help=Aiuto
+menu-help=&Aiuto
 menu-discuss=Discuti
 menu-open_log_file=Apri file di log
 menu-report-bug=Segnala bug
 menu-about=Informazioni…
-menu-plugins=Plugin
+menu-plugins=&Plugin
 menu-open_plugin_directory=Apri directory plugin…
 
 menu-upgrade_version=Aggiorna a { $version }

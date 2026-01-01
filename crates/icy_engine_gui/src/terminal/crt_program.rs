@@ -10,8 +10,8 @@ use crate::{
     tile_cache::MAX_TEXTURE_SLICES,
     CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData,
 };
-use iced::widget::shader;
-use iced::{mouse, window, Rectangle};
+use icy_ui::widget::shader;
+use icy_ui::{mouse, window, Rectangle};
 use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -772,10 +772,10 @@ impl<'a> CRTShaderProgram<'a> {
     pub fn internal_update(
         &self,
         state: &mut CRTShaderState,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<TerminalMessage>> {
+    ) -> Option<icy_ui::widget::Action<TerminalMessage>> {
         let now = crate::Blink::now_ms();
 
         // Gate blink work to cases where it is actually visible/relevant.
@@ -805,7 +805,7 @@ impl<'a> CRTShaderProgram<'a> {
         let is_over = cursor.is_over(bounds);
 
         // Handle animation: on each redraw, check if we need more animation frames
-        if let iced::Event::Window(window::Event::RedrawRequested(_instant)) = event {
+        if let icy_ui::Event::Window(window::Event::RedrawRequested(_instant)) = event {
             // Check if we need animation for:
             // 1. Caret blink
             // 2. Character blink
@@ -869,18 +869,18 @@ impl<'a> CRTShaderProgram<'a> {
 
             if let Some(delay) = next_frame {
                 let next = *_instant + delay;
-                return Some(iced::widget::Action::request_redraw_at(next));
+                return Some(icy_ui::widget::Action::request_redraw_at(next));
             }
         }
 
-        if let iced::Event::Mouse(mouse_event) = event {
+        if let icy_ui::Event::Mouse(mouse_event) = event {
             let viewport = self.term.viewport.read();
             let render_info = self.term.render_info.read();
 
             // Mouse events should be relative to the terminal widget.
             // `TerminalMouseEvent.pixel_position` is documented as widget-relative.
             let local_pos_in_bounds = cursor.position_in(bounds);
-            let local_pos_unclamped = cursor.position().map(|p| iced::Point {
+            let local_pos_unclamped = cursor.position().map(|p| icy_ui::Point {
                 x: p.x - bounds.x,
                 y: p.y - bounds.y,
             });
@@ -903,7 +903,7 @@ impl<'a> CRTShaderProgram<'a> {
                     let modifiers = Self::get_modifiers();
                     let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, state.drag_button, modifiers);
                     state.drag_button = MouseButton::None;
-                    return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
+                    return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                 }
             }
 
@@ -921,7 +921,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                         let modifiers = Self::get_modifiers();
                         let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), state.drag_button, modifiers);
-                        return Some(iced::widget::Action::publish(TerminalMessage::Drag(evt)));
+                        return Some(icy_ui::widget::Action::publish(TerminalMessage::Drag(evt)));
                     }
                 }
             }
@@ -950,9 +950,9 @@ impl<'a> CRTShaderProgram<'a> {
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
 
                         if state.dragging {
-                            return Some(iced::widget::Action::publish(TerminalMessage::Drag(evt)));
+                            return Some(icy_ui::widget::Action::publish(TerminalMessage::Drag(evt)));
                         } else {
-                            return Some(iced::widget::Action::publish(TerminalMessage::Move(evt)));
+                            return Some(icy_ui::widget::Action::publish(TerminalMessage::Move(evt)));
                         }
                     }
                 }
@@ -1021,7 +1021,7 @@ impl<'a> CRTShaderProgram<'a> {
                         let modifiers = Self::get_modifiers();
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
-                        return Some(iced::widget::Action::publish(TerminalMessage::Press(evt)));
+                        return Some(icy_ui::widget::Action::publish(TerminalMessage::Press(evt)));
                     }
                 }
 
@@ -1035,7 +1035,7 @@ impl<'a> CRTShaderProgram<'a> {
                             let modifiers = Self::get_modifiers();
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Middle, modifiers);
 
-                            return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
+                            return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
                     // Left/Right single-click (only if not dragging)
                     } else if !state.dragging {
@@ -1057,17 +1057,17 @@ impl<'a> CRTShaderProgram<'a> {
                             let modifiers = Self::get_modifiers();
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
-                            return Some(iced::widget::Action::publish(TerminalMessage::Release(evt)));
+                            return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
                     }
                 }
 
                 mouse::Event::WheelScrolled { delta, modifiers } => {
                     if modifiers.control() || crate::is_command_pressed() {
-                        return Some(iced::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
+                        return Some(icy_ui::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 
-                    return Some(iced::widget::Action::publish(TerminalMessage::Scroll(*delta)));
+                    return Some(icy_ui::widget::Action::publish(TerminalMessage::Scroll(*delta)));
                 }
 
                 _ => {}
@@ -1088,10 +1088,10 @@ impl<'a> shader::Program<TerminalMessage> for CRTShaderProgram<'a> {
     fn update(
         &self,
         state: &mut CRTShaderState,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<TerminalMessage>> {
+    ) -> Option<icy_ui::widget::Action<TerminalMessage>> {
         self.internal_update(state, event, bounds, cursor)
     }
 

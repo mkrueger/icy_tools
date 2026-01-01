@@ -1,6 +1,6 @@
 //! SVG icons for animation editor playback controls
 
-use iced::{widget::svg, Element, Length};
+use icy_ui::{widget::svg, Element, Length};
 
 // Playback control icons (Material Design)
 const PLAY_ARROW_SVG: &[u8] = include_bytes!("icons/play_arrow.svg");

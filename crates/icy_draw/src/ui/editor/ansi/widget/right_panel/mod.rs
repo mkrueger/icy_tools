@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use iced::{
+use icy_ui::{
     widget::{container, pane_grid},
     Element, Length, Task, Theme,
 };

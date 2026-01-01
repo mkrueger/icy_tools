@@ -84,7 +84,7 @@ macro_rules! dialog_msg {
     };
 }
 
-use iced::{keyboard, Event, Task, Theme};
+use icy_ui::{keyboard, Event, Task, Theme};
 
 /// Style for how a dialog is displayed
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -159,7 +159,7 @@ pub trait Dialog<M> {
     ///
     /// Return only the dialog box itself - the DialogStack will handle
     /// wrapping it with a modal overlay.
-    fn view(&self) -> iced::Element<'_, M>;
+    fn view(&self) -> icy_ui::Element<'_, M>;
 
     /// Handle a message sent to this dialog.
     ///
@@ -321,7 +321,7 @@ impl<M: Send + 'static> DialogStack<M> {
     /// Each dialog is rendered according to its style:
     /// - `Modal`: Wrapped with a semi-transparent overlay, content centered
     /// - `Fullscreen`: Content fills the entire window, no overlay
-    pub fn view<'a>(&'a self, mut background: iced::Element<'a, M>) -> iced::Element<'a, M>
+    pub fn view<'a>(&'a self, mut background: icy_ui::Element<'a, M>) -> icy_ui::Element<'a, M>
     where
         M: Clone + 'a,
     {
@@ -449,9 +449,9 @@ mod tests {
     }
 
     impl Dialog<TestMsg> for TestDialog {
-        fn view(&self) -> iced::Element<'_, TestMsg> {
+        fn view(&self) -> icy_ui::Element<'_, TestMsg> {
             // Return empty container for testing
-            iced::widget::container(iced::widget::text("test")).into()
+            icy_ui::widget::container(icy_ui::widget::text("test")).into()
         }
 
         fn request_cancel(&mut self) -> DialogAction<TestMsg> {

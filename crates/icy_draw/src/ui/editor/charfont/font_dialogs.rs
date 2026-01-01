@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use iced::{
+use icy_ui::{
     widget::{column, container, pick_list, row, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -146,7 +146,7 @@ impl Dialog<Message> for AddFontDialog {
             .width(Length::Fixed(80.0));
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
-            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {
@@ -314,7 +314,7 @@ impl Dialog<Message> for EditFontSettingsDialog {
             .width(Length::Fixed(80.0));
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
-            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {

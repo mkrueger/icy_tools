@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::ui::NavigateDirection;
 use crate::{qwk::QwkPackage, ui::Message};
-use iced::widget::{button, column, container, pane_grid, progress_bar, text, Space};
-use iced::{window, Alignment, Element, Length, Task, Theme};
+use icy_ui::widget::{button, column, container, pane_grid, progress_bar, text, Space};
+use icy_ui::{window, Alignment, Element, Length, Task, Theme};
 use icy_engine::{EditableScreen, Screen, Size, TextScreen};
 use icy_engine_gui::{MonitorSettings, Terminal};
 use parking_lot::Mutex;
@@ -26,7 +26,7 @@ pub struct MainWindow {
     // Mail reader state
     pub selected_conference: u16,
     pub selected_message: Option<usize>,
-    pub message_list_scroll: iced::widget::Id,
+    pub message_list_scroll: icy_ui::widget::Id,
     pub terminal: Terminal,
     pub monitor_settings: Arc<MonitorSettings>,
     pub _panes: pane_grid::State<PaneContent>,
@@ -72,7 +72,7 @@ impl MainWindow {
             loading_message: String::new(),
             selected_conference: 0,
             selected_message: None,
-            message_list_scroll: iced::widget::Id::unique(),
+            message_list_scroll: icy_ui::widget::Id::unique(),
             terminal,
             monitor_settings: Arc::new(MonitorSettings::default()),
             _panes: panes,
@@ -84,7 +84,7 @@ impl MainWindow {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::_QuitIcyMail => iced::exit(),
+            Message::_QuitIcyMail => icy_ui::exit(),
 
             Message::OpenPackage => Task::perform(
                 async {
@@ -434,37 +434,37 @@ impl MainWindow {
         }
     }
 
-    pub fn handle_event(&self, event: &iced::Event) -> Option<Message> {
-        use iced::keyboard::{Event as KeyEvent, Key};
+    pub fn handle_event(&self, event: &icy_ui::Event) -> Option<Message> {
+        use icy_ui::keyboard::{Event as KeyEvent, Key};
 
         match event {
-            iced::Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. }) => {
+            icy_ui::Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. }) => {
                 // Only handle if conference list is focused
                 if self.conference_list_focused {
                     match key {
-                        Key::Named(iced::keyboard::key::Named::ArrowUp) => {
+                        Key::Named(icy_ui::keyboard::key::Named::ArrowUp) => {
                             return Some(Message::NavigateConference(NavigateDirection::Up));
                         }
-                        Key::Named(iced::keyboard::key::Named::ArrowDown) => {
+                        Key::Named(icy_ui::keyboard::key::Named::ArrowDown) => {
                             return Some(Message::NavigateConference(NavigateDirection::Down));
                         }
-                        Key::Named(iced::keyboard::key::Named::Home) => {
+                        Key::Named(icy_ui::keyboard::key::Named::Home) => {
                             return Some(Message::NavigateConference(NavigateDirection::First));
                         }
-                        Key::Named(iced::keyboard::key::Named::End) => {
+                        Key::Named(icy_ui::keyboard::key::Named::End) => {
                             return Some(Message::NavigateConference(NavigateDirection::Last));
                         }
-                        Key::Named(iced::keyboard::key::Named::PageUp) => {
+                        Key::Named(icy_ui::keyboard::key::Named::PageUp) => {
                             return Some(Message::NavigateConference(NavigateDirection::PageUp));
                         }
-                        Key::Named(iced::keyboard::key::Named::PageDown) => {
+                        Key::Named(icy_ui::keyboard::key::Named::PageDown) => {
                             return Some(Message::NavigateConference(NavigateDirection::PageDown));
                         }
-                        Key::Named(iced::keyboard::key::Named::Enter) | Key::Named(iced::keyboard::key::Named::Space) => {
+                        Key::Named(icy_ui::keyboard::key::Named::Enter) | Key::Named(icy_ui::keyboard::key::Named::Space) => {
                             // Enter/Space confirms selection (already selected, but could trigger a message list update)
                             return Some(Message::SelectConference(self.selected_conference));
                         }
-                        Key::Named(iced::keyboard::key::Named::Tab) if !modifiers.shift() => {
+                        Key::Named(icy_ui::keyboard::key::Named::Tab) if !modifiers.shift() => {
                             // Tab to move focus to message list
                             return Some(Message::FocusMessageList);
                         }
@@ -472,34 +472,34 @@ impl MainWindow {
                     }
                 } else if self.message_list_focused {
                     match key {
-                        Key::Named(iced::keyboard::key::Named::ArrowUp) => {
+                        Key::Named(icy_ui::keyboard::key::Named::ArrowUp) => {
                             return Some(Message::NavigateMessage(NavigateDirection::Up));
                         }
-                        Key::Named(iced::keyboard::key::Named::ArrowDown) => {
+                        Key::Named(icy_ui::keyboard::key::Named::ArrowDown) => {
                             return Some(Message::NavigateMessage(NavigateDirection::Down));
                         }
-                        Key::Named(iced::keyboard::key::Named::Home) => {
+                        Key::Named(icy_ui::keyboard::key::Named::Home) => {
                             return Some(Message::NavigateMessage(NavigateDirection::First));
                         }
-                        Key::Named(iced::keyboard::key::Named::End) => {
+                        Key::Named(icy_ui::keyboard::key::Named::End) => {
                             return Some(Message::NavigateMessage(NavigateDirection::Last));
                         }
-                        Key::Named(iced::keyboard::key::Named::PageUp) => {
+                        Key::Named(icy_ui::keyboard::key::Named::PageUp) => {
                             return Some(Message::NavigateMessage(NavigateDirection::PageUp));
                         }
-                        Key::Named(iced::keyboard::key::Named::PageDown) => {
+                        Key::Named(icy_ui::keyboard::key::Named::PageDown) => {
                             return Some(Message::NavigateMessage(NavigateDirection::PageDown));
                         }
-                        Key::Named(iced::keyboard::key::Named::Enter) | Key::Named(iced::keyboard::key::Named::Space) => {
+                        Key::Named(icy_ui::keyboard::key::Named::Enter) | Key::Named(icy_ui::keyboard::key::Named::Space) => {
                             if let Some(idx) = self.selected_message {
                                 return Some(Message::SelectMessage(idx));
                             }
                         }
-                        Key::Named(iced::keyboard::key::Named::Tab) if modifiers.shift() => {
+                        Key::Named(icy_ui::keyboard::key::Named::Tab) if modifiers.shift() => {
                             // Shift+Tab to go back to conference list
                             return Some(Message::FocusConferenceList);
                         }
-                        Key::Named(iced::keyboard::key::Named::Tab) if !modifiers.shift() => {
+                        Key::Named(icy_ui::keyboard::key::Named::Tab) if !modifiers.shift() => {
                             // Tab to move focus to message content (if you want to add that)
                             return Some(Message::FocusMessageContent);
                         }
@@ -507,8 +507,8 @@ impl MainWindow {
                     }
                 }
             }
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed {
-                button: iced::mouse::Button::Left,
+            icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonPressed {
+                button: icy_ui::mouse::Button::Left,
                 ..
             }) => {
                 // We'll need to check if the click was in the conference area

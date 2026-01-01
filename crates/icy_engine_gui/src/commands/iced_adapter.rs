@@ -3,7 +3,7 @@
 //! This module bridges Iced's keyboard and mouse API with the command system.
 
 use super::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
-use iced::keyboard::{self, Key, Modifiers as IcedModifiers};
+use icy_ui::keyboard::{self, Key, Modifiers as IcedModifiers};
 
 /// Convert Iced modifiers to our Modifiers
 ///
@@ -79,19 +79,19 @@ pub fn hotkey_from_iced(key: &Key, modifiers: IcedModifiers) -> Option<Hotkey> {
 }
 
 /// Convert Iced mouse button to our MouseButton
-pub fn from_iced_mouse_button(button: iced::mouse::Button) -> MouseButton {
+pub fn from_iced_mouse_button(button: icy_ui::mouse::Button) -> MouseButton {
     match button {
-        iced::mouse::Button::Left => MouseButton::Left,
-        iced::mouse::Button::Right => MouseButton::Right,
-        iced::mouse::Button::Middle => MouseButton::Middle,
-        iced::mouse::Button::Back => MouseButton::Back,
-        iced::mouse::Button::Forward => MouseButton::Forward,
-        iced::mouse::Button::Other(n) => MouseButton::Other(n),
+        icy_ui::mouse::Button::Left => MouseButton::Left,
+        icy_ui::mouse::Button::Right => MouseButton::Right,
+        icy_ui::mouse::Button::Middle => MouseButton::Middle,
+        icy_ui::mouse::Button::Back => MouseButton::Back,
+        icy_ui::mouse::Button::Forward => MouseButton::Forward,
+        icy_ui::mouse::Button::Other(n) => MouseButton::Other(n),
     }
 }
 
 /// Create a MouseBinding from an Iced mouse button event
-pub fn mouse_binding_from_iced(button: iced::mouse::Button, modifiers: IcedModifiers) -> MouseBinding {
+pub fn mouse_binding_from_iced(button: icy_ui::mouse::Button, modifiers: IcedModifiers) -> MouseBinding {
     let btn = from_iced_mouse_button(button);
     let mods = from_iced_modifiers(modifiers);
     MouseBinding::new(btn, mods)
@@ -126,9 +126,9 @@ impl IntoHotkey for MouseBinding {
     }
 }
 
-impl IntoHotkey for iced::Event {
+impl IntoHotkey for icy_ui::Event {
     fn into_hotkey(&self) -> Option<Hotkey> {
-        if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) = self {
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) = self {
             hotkey_from_iced(key, *modifiers)
         } else {
             None
@@ -136,7 +136,7 @@ impl IntoHotkey for iced::Event {
     }
 
     fn into_mouse_binding(&self) -> Option<MouseBinding> {
-        if let iced::Event::Mouse(iced::mouse::Event::ButtonPressed { button, modifiers }) = self {
+        if let icy_ui::Event::Mouse(icy_ui::mouse::Event::ButtonPressed { button, modifiers }) = self {
             Some(MouseBinding::new(from_iced_mouse_button(*button), from_iced_modifiers(*modifiers)))
         } else {
             None
@@ -144,7 +144,7 @@ impl IntoHotkey for iced::Event {
     }
 }
 
-impl IntoHotkey for &iced::Event {
+impl IntoHotkey for &icy_ui::Event {
     fn into_hotkey(&self) -> Option<Hotkey> {
         (*self).into_hotkey()
     }

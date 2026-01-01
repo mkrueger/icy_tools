@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     mouse,
     widget::{
@@ -820,7 +820,7 @@ impl SetFontDialog {
         // Wrap in Focus widget for keyboard navigation
         let list_with_scrollbar: Element<'_, Message> = focus(list_row)
             .on_event(|event, _id| {
-                if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
                         Key::Named(Named::ArrowUp) => Some(msg(SetFontMessage::NavigateUp)),
                         Key::Named(Named::ArrowDown) => Some(msg(SetFontMessage::NavigateDown)),
@@ -906,7 +906,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
         let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
         let items = self.dialog.visible_items.borrow();
 
-        let geometry = iced::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
+        let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
             for item in items.iter() {
@@ -941,7 +941,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                             content: label,
                             position: Point::new(12.0, y + (height - 13.0) / 2.0),
                             color: theme.background.on,
-                            size: iced::Pixels(13.0),
+                            size: icy_ui::Pixels(13.0),
                             ..Default::default()
                         });
                     }
@@ -962,7 +962,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                             content: font_name.to_string(),
                             position: Point::new(FONT_ITEM_INDENT + 12.0, y + (height - 12.0) / 2.0),
                             color: text_color,
-                            size: iced::Pixels(12.0),
+                            size: icy_ui::Pixels(12.0),
                             ..Default::default()
                         });
                     }
@@ -975,9 +975,9 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
         vec![geometry]
     }
 
-    fn update(&self, _state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
+    fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
@@ -1008,7 +1008,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                     }
                 }
             }
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
                 if cursor.is_over(bounds) {
                     let scroll_amount = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => -y * 30.0,
@@ -1036,8 +1036,8 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
 
 fn preview_container_style(theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(iced::Background::Color(Color::from_rgb(0.05, 0.05, 0.08))),
-        border: iced::Border {
+        background: Some(icy_ui::Background::Color(Color::from_rgb(0.05, 0.05, 0.08))),
+        border: icy_ui::Border {
             radius: 8.0.into(),
             width: 1.0,
             color: theme.primary.divider,
@@ -1182,11 +1182,11 @@ impl Dialog<Message> for SetFontDialog {
         }
     }
 
-    fn handle_event(&mut self, event: &iced::Event) -> Option<DialogAction<Message>> {
+    fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
         match event {
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                use iced::keyboard::key::Named;
-                use iced::keyboard::Key;
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
+                use icy_ui::keyboard::key::Named;
+                use icy_ui::keyboard::Key;
 
                 match key {
                     // Only handle Enter globally for applying the selection

@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
-use iced::{
+use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Border, Color, Element, Event, Length,
 };
@@ -155,31 +155,33 @@ impl SettingsDialogState {
             let on_msg = on_message.clone();
             let cat_button = button(text(category.name()).size(TEXT_SIZE_NORMAL).wrapping(text::Wrapping::None))
                 .on_press(on_msg(SettingsDialogMessage::SwitchCategory(cat)))
-                .style(move |theme: &iced::Theme, status| {
-                    use iced::widget::button::{Status, Style};
+                .style(move |theme: &icy_ui::Theme, status| {
+                    use icy_ui::widget::button::{Status, Style};
 
                     let base = if is_selected {
                         Style {
-                            background: Some(iced::Background::Color(theme.accent.selected)),
+                            background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     } else {
                         Style {
-                            background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                            background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
                             shadow: Default::default(),
                             snap: false,
+                            ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active => base,
+                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
-                            background: Some(iced::Background::Color(Color::from_rgba(
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(
                                 theme.accent.selected.r,
                                 theme.accent.selected.g,
                                 theme.accent.selected.b,
@@ -188,7 +190,7 @@ impl SettingsDialogState {
                             ..base
                         },
                         Status::Pressed => Style {
-                            background: Some(iced::Background::Color(theme.accent.hover)),
+                            background: Some(icy_ui::Background::Color(theme.accent.hover)),
                             ..base
                         },
                         _ => base,
@@ -262,7 +264,7 @@ impl SettingsDialogState {
     }
 
     /// Get the current theme for live preview
-    pub fn get_theme(&self) -> iced::Theme {
+    pub fn get_theme(&self) -> icy_ui::Theme {
         self.temp_options.lock().monitor_settings.get_theme()
     }
 }
@@ -392,7 +394,7 @@ where
         false // Settings dialog should not close on blur
     }
 
-    fn theme(&self) -> Option<iced::Theme> {
+    fn theme(&self) -> Option<icy_ui::Theme> {
         // Return the theme from temp_options so changes are previewed live
         Some(self.inner.state.get_theme())
     }

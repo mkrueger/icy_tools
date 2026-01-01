@@ -1,6 +1,6 @@
 //! Edit grid canvas for BitFont editor
 
-use iced::{
+use icy_ui::{
     keyboard::{self, Key},
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Path, Stroke},
@@ -28,7 +28,7 @@ pub struct EditGridCanvas<'a> {
 impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
     type State = EditGridCanvasState;
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &iced::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
         // Get colors from palette
         let palette = icy_engine::Palette::dos_default();
         let (fg_r, fg_g, fg_b) = palette.rgb(self.fg_color);
@@ -199,7 +199,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                 let cell_size = self.editor.scaled_edit_cell_size();
                 let cell_gap = self.editor.scaled_edit_cell_gap();
 
-                let hover_geometry = iced::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame| {
+                let hover_geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame| {
                     let cell_x = RULER_SIZE + hover_x as f32 * (cell_size + cell_gap);
                     let cell_y = RULER_SIZE + hover_y as f32 * (cell_size + cell_gap);
 
@@ -215,9 +215,9 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
         geometries
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<BitFontEditorMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<BitFontEditorMessage>> {
         // Handle keyboard events
-        if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+        if let icy_ui::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
             // Tab to switch focus
             if matches!(key, Key::Named(keyboard::key::Named::Tab)) {
                 return Some(Action::publish(BitFontEditorMessage::FocusNextPanel));
@@ -313,22 +313,22 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
         let cursor_pos = cursor_pos?;
 
         match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftPressed(cursor_pos)))),
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Right, ..
             }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightPressed(cursor_pos)))),
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Middle, ..
             }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::MiddlePressed))),
-            iced::Event::Mouse(mouse::Event::ButtonReleased {
+            icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                 button: mouse::Button::Left, ..
             }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::LeftReleased))),
-            iced::Event::Mouse(mouse::Event::ButtonReleased {
+            icy_ui::Event::Mouse(mouse::Event::ButtonReleased {
                 button: mouse::Button::Right, ..
             }) => Some(Action::publish(BitFontEditorMessage::CanvasEvent(CanvasEvent::RightReleased))),
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 // Request redraw if hover changed
                 if old_hovered != state.hovered {
                     return Some(Action::request_redraw());

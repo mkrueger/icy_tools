@@ -7,7 +7,7 @@ use icy_engine_gui::music::music::SoundThread;
 use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 use parking_lot::Mutex;
 
-use iced::{
+use icy_ui::{
     advanced::graphics::core::keyboard,
     widget::{operation, space},
     window, Element, Event, Size, Subscription, Task, Theme, Vector,
@@ -59,7 +59,7 @@ pub enum WindowManagerMessage {
     WindowClosed(window::Id),
     WindowMessage(window::Id, Message),
     TitleChanged(window::Id, String),
-    Event(window::Id, iced::Event),
+    Event(window::Id, icy_ui::Event),
     /// Terminal event from async subscription (window_id, event)
     TerminalEvent(usize, TerminalEvent),
     /// MCP command from async subscription
@@ -168,8 +168,8 @@ impl WindowManager {
                     .map(WindowManagerMessage::WindowOpened)
             }
             WindowManagerMessage::CloseWindow(id) => window::close(id),
-            WindowManagerMessage::FocusNext => iced::widget::operation::focus_next(),
-            WindowManagerMessage::FocusPrevious => iced::widget::operation::focus_previous(),
+            WindowManagerMessage::FocusNext => icy_ui::widget::operation::focus_next(),
+            WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
             WindowManagerMessage::WindowOpened(id) => {
                 let mut window: MainWindow = MainWindow::new(
                     find_next_window_id(&self.windows),
@@ -298,14 +298,14 @@ impl WindowManager {
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         let mut subs: Vec<Subscription<WindowManagerMessage>> = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
-            iced::event::listen_with(|event, _status, window_id| {
+            icy_ui::event::listen_with(|event, _status, window_id| {
                 // Only forward events that are actually needed - skip mouse move events
                 // as they are handled directly by the shader's update() method
                 match &event {
                     // Window focus events are needed
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events: only CursorLeft and WheelScrolled are needed
-                    Event::Mouse(iced::mouse::Event::CursorLeft) | Event::Mouse(iced::mouse::Event::WheelScrolled { .. }) => {
+                    Event::Mouse(icy_ui::mouse::Event::CursorLeft) | Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => {
                         Some(WindowManagerMessage::Event(window_id, event))
                     }
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
@@ -348,6 +348,6 @@ impl WindowManager {
             subs.push(super::terminal_subscription::mcp_events().map(WindowManagerMessage::McpCommand));
         }
 
-        iced::Subscription::batch(subs)
+        icy_ui::Subscription::batch(subs)
     }
 }

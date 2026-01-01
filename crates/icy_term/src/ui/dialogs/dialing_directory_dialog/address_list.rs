@@ -2,9 +2,9 @@ use crate::ui::dialing_directory_dialog::{DialingDirectoryFilter, DialingDirecto
 use crate::ui::Message;
 use crate::Address;
 use i18n_embed_fl::fl;
-use iced::widget::space;
-use iced::Padding;
-use iced::{
+use icy_ui::widget::space;
+use icy_ui::Padding;
+use icy_ui::{
     widget::{button, column, container, row, scrollable, text, text_input, Column, Space},
     Alignment, Element, Length,
 };
@@ -105,10 +105,10 @@ impl super::DialingDirectoryState {
             space().height(Length::Fixed(4.0)),
             row![filter_input, clear_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
             container(list_scroll)
-                .style(|_theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.15))),
-                    border: iced::Border {
-                        color: iced::Color::from_rgba(0.3, 0.3, 0.3, 0.5),
+                .style(|_theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.15))),
+                    border: icy_ui::Border {
+                        color: icy_ui::Color::from_rgba(0.3, 0.3, 0.3, 0.5),
                         width: 1.0,
                         radius: 4.0.into(),
                     },
@@ -145,7 +145,7 @@ fn address_row_entry<'a>(
     }
 
     let star = if favored {
-        text("★").size(16).style(|theme: &iced::Theme| iced::widget::text::Style {
+        text("★").size(16).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
             color: Some(theme.warning.base),
             ..Default::default()
         })
@@ -160,7 +160,7 @@ fn address_row_entry<'a>(
     let name_element = if !search_text.is_empty() && truncated_name.to_lowercase().contains(&search_text.to_lowercase()) {
         highlight_name_text(truncated_name, search_text)
     } else {
-        text(truncated_name).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into()
+        text(truncated_name).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE).into()
     };
 
     let addr_element = if !search_text.is_empty() && truncated_addr.to_lowercase().contains(&search_text.to_lowercase()) {
@@ -168,11 +168,11 @@ fn address_row_entry<'a>(
     } else {
         text(truncated_addr)
             .size(TEXT_SIZE_SMALL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.button.base),
                 ..Default::default()
             })
-            .font(iced::Font::MONOSPACE)
+            .font(icy_ui::Font::MONOSPACE)
             .into()
     };
 
@@ -190,37 +190,38 @@ fn address_row_entry<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(0)
-        .style(|_theme: &iced::Theme, _status| button::Style {
-            background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-            border: iced::Border {
-                color: iced::Color::TRANSPARENT,
+        .style(|_theme: &icy_ui::Theme, _status| button::Style {
+            background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
+            border: icy_ui::Border {
+                color: icy_ui::Color::TRANSPARENT,
                 width: 0.0,
                 radius: 0.0.into(),
             },
-            text_color: iced::Color::BLACK,
+            text_color: icy_ui::Color::BLACK,
             shadow: Default::default(),
             snap: false,
+            ..Default::default()
         })
         .on_press(Message::from(DialingDirectoryMsg::SelectAddress(idx)));
 
-    let stacked = iced::widget::stack![entry_container, clickable];
+    let stacked = icy_ui::widget::stack![entry_container, clickable];
 
     if selected {
         container(stacked)
             .width(Length::Fill)
-            .style(|theme: &iced::Theme| {
+            .style(|theme: &icy_ui::Theme| {
                 let mut border_color = theme.accent.hover;
                 border_color.a = 0.6;
                 swap(&mut border_color.r, &mut border_color.g);
 
                 container::Style {
-                    background: Some(iced::Background::Color({
+                    background: Some(icy_ui::Background::Color({
                         let mut c = theme.accent.selected;
                         swap(&mut c.r, &mut c.g);
                         c.a = 0.10;
                         c
                     })),
-                    border: iced::Border {
+                    border: icy_ui::Border {
                         color: border_color,
                         width: 1.0,
                         radius: 3.0.into(),
@@ -239,7 +240,7 @@ fn address_row_entry<'a>(
 // Helper function to highlight text in name (larger font) - now takes owned String
 fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Message> {
     if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
-        return text(text_str).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into();
+        return text(text_str).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE).into();
     }
 
     let lower_text = text_str.to_lowercase();
@@ -251,14 +252,14 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
     for (idx, _) in lower_text.match_indices(&lower_search) {
         if idx > last {
             // Add non-highlighted part
-            row_elements.push(text(text_str[last..idx].to_string()).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into());
+            row_elements.push(text(text_str[last..idx].to_string()).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE).into());
         }
         // Add highlighted part with different style
         row_elements.push(
             text(text_str[idx..idx + search.len()].to_string())
                 .size(TEXT_SIZE_NORMAL)
-                .font(iced::Font::MONOSPACE)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .font(icy_ui::Font::MONOSPACE)
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.accent.hover),
                     ..Default::default()
                 })
@@ -267,7 +268,7 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         last = idx + search.len();
     }
     if last < text_str.len() {
-        row_elements.push(text(text_str[last..].to_string()).size(TEXT_SIZE_NORMAL).font(iced::Font::MONOSPACE).into());
+        row_elements.push(text(text_str[last..].to_string()).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE).into());
     }
 
     row(row_elements).into()
@@ -278,11 +279,11 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
     if search.is_empty() || !text_str.to_lowercase().contains(&search.to_lowercase()) {
         return text(text_str)
             .size(TEXT_SIZE_SMALL)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.button.on),
                 ..Default::default()
             })
-            .font(iced::Font::MONOSPACE)
+            .font(icy_ui::Font::MONOSPACE)
             .into();
     }
 
@@ -298,11 +299,11 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             row_elements.push(
                 text(text_str[last..idx].to_string())
                     .size(TEXT_SIZE_SMALL)
-                    .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.button.on),
                         ..Default::default()
                     })
-                    .font(iced::Font::MONOSPACE)
+                    .font(icy_ui::Font::MONOSPACE)
                     .into(),
             );
         }
@@ -310,8 +311,8 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         row_elements.push(
             text(text_str[idx..idx + search.len()].to_string())
                 .size(TEXT_SIZE_SMALL)
-                .font(iced::Font::MONOSPACE)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .font(icy_ui::Font::MONOSPACE)
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.accent.hover),
                     ..Default::default()
                 })
@@ -323,11 +324,11 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         row_elements.push(
             text(text_str[last..].to_string())
                 .size(TEXT_SIZE_SMALL)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.button.on),
                     ..Default::default()
                 })
-                .font(iced::Font::MONOSPACE)
+                .font(icy_ui::Font::MONOSPACE)
                 .into(),
         );
     }

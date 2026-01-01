@@ -3,7 +3,7 @@
 //! This dialog displays an about screen loaded from an .icy file and supports
 //! clickable hyperlinks.
 
-use iced::{
+use icy_ui::{
     widget::{column, container},
     Element, Length,
 };
@@ -79,7 +79,7 @@ impl AboutDialogState {
 
     /// Render the about dialog view
     pub fn view<'a, Message: Clone + 'static>(&'a self, on_message: impl Fn(AboutDialogMessage) -> Message + 'a + Clone) -> Element<'a, Message> {
-        use iced::mouse;
+        use icy_ui::mouse;
         use std::sync::Arc;
 
         let mut settings = MonitorSettings::neutral();

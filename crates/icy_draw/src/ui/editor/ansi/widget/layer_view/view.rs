@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::usize;
 
-use iced::{
+use icy_ui::{
     advanced::{
         image::{self as adv_image, Renderer as _},
         layout::{self, Layout},
@@ -28,7 +28,7 @@ use iced::{
     Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
 };
 
-use iced::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
+use icy_ui::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
 use icy_engine::{BitFont, Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
 use icy_engine_gui::theme::main_area_background;
@@ -77,7 +77,7 @@ pub enum LayerContextAction {
     Clear(usize),
 }
 
-impl iced::widget::menu::Action for LayerContextAction {
+impl icy_ui::widget::menu::Action for LayerContextAction {
     type Message = LayerMessage;
 
     fn message(&self) -> Self::Message {
@@ -348,7 +348,7 @@ impl LayerView {
                 ..Default::default()
             });
 
-        button(icon).on_press(message).padding(4).style(button::text).into()
+        button(icon).on_press(message).padding(4).style(button::text_style).into()
     }
 
     fn icon_button_opt<'a>(icon_data: &'static [u8], icon_color: Color, message: Option<LayerMessage>) -> Element<'a, LayerMessage> {
@@ -359,7 +359,7 @@ impl LayerView {
                 color: Some(icon_color),
                 ..Default::default()
             });
-        let mut b = button(icon).padding(4).style(button::text);
+        let mut b = button(icon).padding(4).style(button::text_style);
         if let Some(msg) = message {
             b = b.on_press(msg);
         }
@@ -577,8 +577,8 @@ impl LayerView {
     }
 
     /// Build the context menu items for a layer
-    fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuTree<'static, LayerMessage, Theme, iced::Renderer>> {
-        use iced::widget::menu::KeyBind;
+    fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuTree<'static, LayerMessage, Theme, icy_ui::Renderer>> {
+        use icy_ui::widget::menu::KeyBind;
         use std::collections::HashMap;
 
         let key_binds: HashMap<KeyBind, LayerContextAction> = HashMap::new();
@@ -693,7 +693,7 @@ impl LayerView {
 
         let scroll_y = self.viewport.borrow().scroll_y;
         let icon_color = theme.background.on;
-        let shader_bg: Element<'a, LayerMessage> = iced::widget::shader(LayerListBackgroundProgram {
+        let shader_bg: Element<'a, LayerMessage> = icy_ui::widget::shader(LayerListBackgroundProgram {
             row_count: layer_count as u32,
             row_height: LAYER_ROW_HEIGHT,
             scroll_y,
@@ -711,7 +711,7 @@ impl LayerView {
         .height(Length::Fill)
         .into();
 
-        let list_stack: Element<'a, LayerMessage> = iced::widget::stack![shader_bg, list_with_scrollbar]
+        let list_stack: Element<'a, LayerMessage> = icy_ui::widget::stack![shader_bg, list_with_scrollbar]
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
@@ -738,7 +738,7 @@ impl LayerView {
                 .width(Length::Fill)
                 .style(|theme: &Theme| container::Style {
                     // Slightly different background to indicate paste mode
-                    background: Some(iced::Background::Color(theme.accent.selected.scale_alpha(0.3))),
+                    background: Some(icy_ui::Background::Color(theme.accent.selected.scale_alpha(0.3))),
                     ..Default::default()
                 })
         } else {
@@ -753,7 +753,7 @@ impl LayerView {
                 .padding([2, 0])
                 .width(Length::Fill)
                 .style(|theme: &Theme| container::Style {
-                    background: Some(iced::Background::Color(theme.secondary.base)),
+                    background: Some(icy_ui::Background::Color(theme.secondary.base)),
                     ..Default::default()
                 })
         };
@@ -868,7 +868,7 @@ impl<'a> LayerListWidget<'a> {
 
     fn draw_row(
         &self,
-        renderer: &mut iced::Renderer,
+        renderer: &mut icy_ui::Renderer,
         theme: &Theme,
         list_bounds: Rectangle,
         row_bounds: Rectangle,
@@ -895,7 +895,7 @@ impl<'a> LayerListWidget<'a> {
             renderer::Quad {
                 bounds: toggle_bounds,
                 border: Border::default().width(1.0).color(theme.primary.divider).rounded(2.0),
-                shadow: iced::Shadow::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: true,
             },
             theme.secondary.base,
@@ -911,13 +911,13 @@ impl<'a> LayerListWidget<'a> {
                 height: (toggle_bounds.height - pad * 2.0).max(1.0),
             };
 
-            let image = adv_image::Image::<iced::widget::image::Handle> {
+            let image = adv_image::Image::<icy_ui::widget::image::Handle> {
                 handle: icon_handle,
                 filter_method: adv_image::FilterMethod::Linear,
-                rotation: iced::Radians(0.0),
+                rotation: icy_ui::Radians(0.0),
                 opacity: 1.0,
                 snap: true,
-                border_radius: iced::border::Radius::default(),
+                border_radius: icy_ui::border::Radius::default(),
             };
 
             if let Some(clip) = super_intersect(toggle_bounds, list_bounds) {
@@ -942,16 +942,16 @@ impl<'a> LayerListWidget<'a> {
         };
 
         let Some(font_key) = self.font_key else {
-            let title_text = iced::advanced::text::Text {
+            let title_text = icy_ui::advanced::text::Text {
                 content: row.title.clone(),
                 bounds: title_text_bounds,
-                size: iced::Pixels(title_font_px),
-                line_height: iced::advanced::text::LineHeight::Relative(1.0),
-                font: iced::Font::default(),
-                align_x: iced::advanced::text::Alignment::Left,
-                align_y: iced::alignment::Vertical::Top,
-                shaping: iced::advanced::text::Shaping::Advanced,
-                wrapping: iced::advanced::text::Wrapping::None,
+                size: icy_ui::Pixels(title_font_px),
+                line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+                font: icy_ui::Font::default(),
+                align_x: icy_ui::advanced::text::Alignment::Left,
+                align_y: icy_ui::alignment::Vertical::Top,
+                shaping: icy_ui::advanced::text::Shaping::Advanced,
+                wrapping: icy_ui::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
             renderer.fill_text(title_text, Point::new(title_bounds.x, title_text_y), title_fg, list_bounds);
@@ -998,13 +998,13 @@ impl<'a> LayerListWidget<'a> {
                 height: h,
             };
 
-            let image = adv_image::Image::<iced::widget::image::Handle> {
+            let image = adv_image::Image::<icy_ui::widget::image::Handle> {
                 handle: label.handle,
                 filter_method: adv_image::FilterMethod::Nearest,
-                rotation: iced::Radians(0.0),
+                rotation: icy_ui::Radians(0.0),
                 opacity: 1.0,
                 snap: true,
-                border_radius: iced::border::Radius::default(),
+                border_radius: icy_ui::border::Radius::default(),
             };
 
             if let Some(clip) = super_intersect(title_bounds, list_bounds) {
@@ -1012,16 +1012,16 @@ impl<'a> LayerListWidget<'a> {
             }
         } else {
             // Fallback (e.g. first frame or unsupported glyphs)
-            let title_text = iced::advanced::text::Text {
+            let title_text = icy_ui::advanced::text::Text {
                 content: row.title.clone(),
                 bounds: title_text_bounds,
-                size: iced::Pixels(title_font_px),
-                line_height: iced::advanced::text::LineHeight::Relative(1.0),
-                font: iced::Font::default(),
-                align_x: iced::advanced::text::Alignment::Left,
-                align_y: iced::alignment::Vertical::Top,
-                shaping: iced::advanced::text::Shaping::Advanced,
-                wrapping: iced::advanced::text::Wrapping::None,
+                size: icy_ui::Pixels(title_font_px),
+                line_height: icy_ui::advanced::text::LineHeight::Relative(1.0),
+                font: icy_ui::Font::default(),
+                align_x: icy_ui::advanced::text::Alignment::Left,
+                align_y: icy_ui::alignment::Vertical::Top,
+                shaping: icy_ui::advanced::text::Shaping::Advanced,
+                wrapping: icy_ui::advanced::text::Wrapping::None,
                 hint_factor: Some(0.0),
             };
             renderer.fill_text(title_text, Point::new(title_bounds.x, title_text_y), title_fg, list_bounds);
@@ -1029,7 +1029,7 @@ impl<'a> LayerListWidget<'a> {
     }
 }
 
-impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
+impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
     fn tag(&self) -> widget::tree::Tag {
         widget::tree::Tag::of::<LayerListWidgetState>()
     }
@@ -1042,7 +1042,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
         Size::new(Length::Fill, Length::Fill)
     }
 
-    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &iced::Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(&mut self, _tree: &mut widget::Tree, _renderer: &icy_ui::Renderer, limits: &layout::Limits) -> layout::Node {
         let size = limits.max();
         layout::Node::new(size)
     }
@@ -1050,7 +1050,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
     fn draw(
         &self,
         _tree: &widget::Tree,
-        renderer: &mut iced::Renderer,
+        renderer: &mut icy_ui::Renderer,
         theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
@@ -1096,12 +1096,12 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
     fn update(
         &mut self,
         tree: &mut widget::Tree,
-        event: &iced::Event,
+        event: &icy_ui::Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
-        _renderer: &iced::Renderer,
-        _clipboard: &mut dyn iced::advanced::Clipboard,
-        shell: &mut iced::advanced::Shell<'_, LayerMessage>,
+        _renderer: &icy_ui::Renderer,
+        _clipboard: &mut dyn icy_ui::advanced::Clipboard,
+        shell: &mut icy_ui::advanced::Shell<'_, LayerMessage>,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -1256,7 +1256,7 @@ impl Widget<LayerMessage, Theme, iced::Renderer> for LayerListWidget<'_> {
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
-        _renderer: &iced::Renderer,
+        _renderer: &icy_ui::Renderer,
     ) -> mouse::Interaction {
         let bounds = layout.bounds();
         if cursor.is_over(bounds) {
@@ -1330,11 +1330,11 @@ struct LayerListBackgroundProgram {
     checkerboard_colors: CheckerboardColors,
 }
 
-impl iced::widget::shader::Program<LayerMessage> for LayerListBackgroundProgram {
+impl icy_ui::widget::shader::Program<LayerMessage> for LayerListBackgroundProgram {
     type State = ();
     type Primitive = LayerListBackgroundPrimitive;
 
-    fn draw(&self, _state: &Self::State, _cursor: iced::mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
+    fn draw(&self, _state: &Self::State, _cursor: icy_ui::mouse::Cursor, _bounds: Rectangle) -> Self::Primitive {
         let hovered_row = self.hovered_row.load(Ordering::Relaxed);
         LayerListBackgroundPrimitive {
             row_count: self.row_count,
@@ -1356,15 +1356,15 @@ impl iced::widget::shader::Program<LayerMessage> for LayerListBackgroundProgram 
     fn update(
         &self,
         _state: &mut Self::State,
-        _event: &iced::Event,
+        _event: &icy_ui::Event,
         _bounds: Rectangle,
-        _cursor: iced::mouse::Cursor,
-    ) -> Option<iced::widget::Action<LayerMessage>> {
+        _cursor: icy_ui::mouse::Cursor,
+    ) -> Option<icy_ui::widget::Action<LayerMessage>> {
         None
     }
 
-    fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: iced::mouse::Cursor) -> iced::mouse::Interaction {
-        iced::mouse::Interaction::default()
+    fn mouse_interaction(&self, _state: &Self::State, _bounds: Rectangle, _cursor: icy_ui::mouse::Cursor) -> icy_ui::mouse::Interaction {
+        icy_ui::mouse::Interaction::default()
     }
 }
 
@@ -1385,16 +1385,16 @@ struct LayerListBackgroundPrimitive {
     checkerboard_colors: CheckerboardColors,
 }
 
-impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
+impl icy_ui::widget::shader::Primitive for LayerListBackgroundPrimitive {
     type Pipeline = LayerListBackgroundRenderer;
 
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        _device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        _device: &icy_ui::wgpu::Device,
+        queue: &icy_ui::wgpu::Queue,
         bounds: &Rectangle,
-        viewport: &iced::advanced::graphics::Viewport,
+        viewport: &icy_ui::advanced::graphics::Viewport,
     ) {
         let (atlas_version, atlas_pixels) = {
             let atlas = self.preview_atlas.lock();
@@ -1404,19 +1404,19 @@ impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
         let prev = pipeline.atlas_version.load(Ordering::Relaxed);
         if prev != atlas_version {
             queue.write_texture(
-                iced::wgpu::TexelCopyTextureInfo {
+                icy_ui::wgpu::TexelCopyTextureInfo {
                     texture: &pipeline.atlas_texture,
                     mip_level: 0,
-                    origin: iced::wgpu::Origin3d::ZERO,
-                    aspect: iced::wgpu::TextureAspect::All,
+                    origin: icy_ui::wgpu::Origin3d::ZERO,
+                    aspect: icy_ui::wgpu::TextureAspect::All,
                 },
                 atlas_pixels.as_slice(),
-                iced::wgpu::TexelCopyBufferLayout {
+                icy_ui::wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(PREVIEW_ATLAS_W * 4),
                     rows_per_image: Some(PREVIEW_ATLAS_H),
                 },
-                iced::wgpu::Extent3d {
+                icy_ui::wgpu::Extent3d {
                     width: PREVIEW_ATLAS_W,
                     height: PREVIEW_ATLAS_H,
                     depth_or_array_layers: 1,
@@ -1480,15 +1480,15 @@ impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
         queue.write_buffer(&pipeline.uniform_buffer, offset, bytemuck::bytes_of(&uniforms));
     }
 
-    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut iced::wgpu::CommandEncoder, target: &iced::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
-        let mut pass = encoder.begin_render_pass(&iced::wgpu::RenderPassDescriptor {
+    fn render(&self, pipeline: &Self::Pipeline, encoder: &mut icy_ui::wgpu::CommandEncoder, target: &icy_ui::wgpu::TextureView, clip_bounds: &Rectangle<u32>) {
+        let mut pass = encoder.begin_render_pass(&icy_ui::wgpu::RenderPassDescriptor {
             label: Some("Layer List Background Render Pass"),
-            color_attachments: &[Some(iced::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(icy_ui::wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
-                ops: iced::wgpu::Operations {
-                    load: iced::wgpu::LoadOp::Load,
-                    store: iced::wgpu::StoreOp::Store,
+                ops: icy_ui::wgpu::Operations {
+                    load: icy_ui::wgpu::LoadOp::Load,
+                    store: icy_ui::wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
@@ -1516,12 +1516,12 @@ impl iced::widget::shader::Primitive for LayerListBackgroundPrimitive {
 }
 
 pub struct LayerListBackgroundRenderer {
-    pipeline: iced::wgpu::RenderPipeline,
-    bind_group: iced::wgpu::BindGroup,
-    uniform_buffer: iced::wgpu::Buffer,
-    atlas_texture: iced::wgpu::Texture,
-    atlas_view: iced::wgpu::TextureView,
-    atlas_sampler: iced::wgpu::Sampler,
+    pipeline: icy_ui::wgpu::RenderPipeline,
+    bind_group: icy_ui::wgpu::BindGroup,
+    uniform_buffer: icy_ui::wgpu::Buffer,
+    atlas_texture: icy_ui::wgpu::Texture,
+    atlas_view: icy_ui::wgpu::TextureView,
+    atlas_sampler: icy_ui::wgpu::Sampler,
     atlas_version: AtomicU64,
     uniform_stride: u64,
     uniform_capacity: u32,
@@ -1535,11 +1535,11 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     ((value + alignment - 1) / alignment) * alignment
 }
 
-impl iced::widget::shader::Pipeline for LayerListBackgroundRenderer {
-    fn new(device: &iced::wgpu::Device, _queue: &iced::wgpu::Queue, format: iced::wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(iced::wgpu::ShaderModuleDescriptor {
+impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {
+    fn new(device: &icy_ui::wgpu::Device, _queue: &icy_ui::wgpu::Queue, format: icy_ui::wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(icy_ui::wgpu::ShaderModuleDescriptor {
             label: Some("Layer List Background Shader"),
-            source: iced::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: icy_ui::wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let uniform_size = std::mem::size_of::<LayerListBackgroundUniforms>() as u64;
@@ -1548,126 +1548,126 @@ impl iced::widget::shader::Pipeline for LayerListBackgroundRenderer {
         let uniform_capacity: u32 = 1024;
         let uniform_buffer_size = uniform_stride * (uniform_capacity as u64);
 
-        let uniform_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
+        let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
             label: Some("Layer List Background Uniforms (Dynamic)"),
             size: uniform_buffer_size,
-            usage: iced::wgpu::BufferUsages::UNIFORM | iced::wgpu::BufferUsages::COPY_DST,
+            usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let atlas_texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+        let atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
             label: Some("Layer List Preview Atlas"),
-            size: iced::wgpu::Extent3d {
+            size: icy_ui::wgpu::Extent3d {
                 width: PREVIEW_ATLAS_W,
                 height: PREVIEW_ATLAS_H,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
+            dimension: icy_ui::wgpu::TextureDimension::D2,
+            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
-        let atlas_view = atlas_texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-        let atlas_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
+        let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
+        let atlas_sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Layer List Preview Atlas Sampler"),
-            address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
-            mipmap_filter: iced::wgpu::FilterMode::Nearest,
+            address_mode_u: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_v: icy_ui::wgpu::AddressMode::ClampToEdge,
+            address_mode_w: icy_ui::wgpu::AddressMode::ClampToEdge,
+            mag_filter: icy_ui::wgpu::FilterMode::Linear,
+            min_filter: icy_ui::wgpu::FilterMode::Linear,
+            mipmap_filter: icy_ui::wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&iced::wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
             label: Some("Layer List Background Bind Group Layout"),
             entries: &[
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: iced::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: iced::wgpu::BindingType::Buffer {
-                        ty: iced::wgpu::BufferBindingType::Uniform,
+                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Buffer {
+                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
                         min_binding_size: NonZeroU64::new(uniform_size),
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Texture {
-                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: iced::wgpu::TextureViewDimension::D2,
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Texture {
+                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
                     count: None,
                 },
-                iced::wgpu::BindGroupLayoutEntry {
+                icy_ui::wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
+                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
         });
 
-        let bind_group = device.create_bind_group(&iced::wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
             label: Some("Layer List Background Bind Group"),
             layout: &bind_group_layout,
             entries: &[
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: iced::wgpu::BindingResource::Buffer(iced::wgpu::BufferBinding {
+                    resource: icy_ui::wgpu::BindingResource::Buffer(icy_ui::wgpu::BufferBinding {
                         buffer: &uniform_buffer,
                         offset: 0,
                         size: NonZeroU64::new(uniform_size),
                     }),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: iced::wgpu::BindingResource::TextureView(&atlas_view),
+                    resource: icy_ui::wgpu::BindingResource::TextureView(&atlas_view),
                 },
-                iced::wgpu::BindGroupEntry {
+                icy_ui::wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: iced::wgpu::BindingResource::Sampler(&atlas_sampler),
+                    resource: icy_ui::wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&iced::wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&icy_ui::wgpu::PipelineLayoutDescriptor {
             label: Some("Layer List Background Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
             label: Some("Layer List Background Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: iced::wgpu::VertexState {
+            vertex: icy_ui::wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
-            fragment: Some(iced::wgpu::FragmentState {
+            fragment: Some(icy_ui::wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(iced::wgpu::ColorTargetState {
+                targets: &[Some(icy_ui::wgpu::ColorTargetState {
                     format,
-                    blend: Some(iced::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: iced::wgpu::ColorWrites::ALL,
+                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: iced::wgpu::PrimitiveState {
-                topology: iced::wgpu::PrimitiveTopology::TriangleList,
+            primitive: icy_ui::wgpu::PrimitiveState {
+                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: iced::wgpu::MultisampleState::default(),
+            multisample: icy_ui::wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });

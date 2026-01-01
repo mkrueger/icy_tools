@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf};
 
 use directories::UserDirs;
-use iced::{
+use icy_ui::{
     keyboard::{key::Named, Key},
     widget::container,
     Element, Event, Length,
@@ -255,15 +255,15 @@ impl FileBrowser {
         self.visible_indices.len()
     }
 
-    pub fn view(&self, theme: &iced::Theme) -> Element<'_, FileBrowserMessage> {
+    pub fn view(&self, theme: &icy_ui::Theme) -> Element<'_, FileBrowserMessage> {
         use i18n_embed_fl::fl;
-        use iced::widget::text;
+        use icy_ui::widget::text;
 
         // If folder is empty (no files at all), show "Folder is empty" message
         if self.files.is_empty() {
             let empty_text = text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
                 .size(14)
-                .style(|theme: &iced::Theme| text::Style {
+                .style(|theme: &icy_ui::Theme| text::Style {
                     color: Some(theme.background.on.scale_alpha(0.5)),
                 });
             return container(empty_text)
@@ -278,7 +278,7 @@ impl FileBrowser {
         if !self.filter.is_empty() && self.visible_indices.is_empty() {
             let no_items_text = text(fl!(crate::LANGUAGE_LOADER, "filter-no-items-found"))
                 .size(14)
-                .style(|theme: &iced::Theme| text::Style {
+                .style(|theme: &icy_ui::Theme| text::Style {
                     color: Some(theme.background.on.scale_alpha(0.5)),
                 });
             return container(no_items_text)
@@ -305,7 +305,7 @@ impl FileBrowser {
         let focusable_list = focus(list_view)
             .on_event(|event, _id| {
                 // Handle keyboard events when focused
-                if let Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
+                if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
                         Key::Named(Named::ArrowUp) => Some(FileBrowserMessage::ListView(FileListViewMessage::SelectPrevious)),
                         Key::Named(Named::ArrowDown) => Some(FileBrowserMessage::ListView(FileListViewMessage::SelectNext)),

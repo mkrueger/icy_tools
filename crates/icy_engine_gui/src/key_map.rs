@@ -1,4 +1,4 @@
-use iced::keyboard::{self, key::Code};
+use icy_ui::keyboard::{self, key::Code};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyWithModifiers {

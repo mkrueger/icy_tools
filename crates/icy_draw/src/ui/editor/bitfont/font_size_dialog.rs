@@ -3,7 +3,7 @@
 //! Allows changing the width and height of the font.
 //! Implements the Dialog trait from icy_engine_gui for stack-based dialog management.
 
-use iced::{
+use icy_ui::{
     widget::{column, container, row, text, text_input, Space},
     Alignment, Element, Length,
 };
@@ -82,7 +82,7 @@ impl Dialog<Message> for FontSizeDialog {
             .width(Length::Fixed(80.0));
 
         let width_error = if !width_valid && !self.width.is_empty() {
-            text("1-8").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("1-8").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {
@@ -101,7 +101,7 @@ impl Dialog<Message> for FontSizeDialog {
             .width(Length::Fixed(80.0));
 
         let height_error = if !height_valid && !self.height.is_empty() {
-            text("1-32").size(TEXT_SIZE_SMALL).style(|theme: &iced::Theme| iced::widget::text::Style {
+            text("1-32").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
             })
         } else {

@@ -2,8 +2,8 @@ use crate::ui::dialogs::terminal_settings_ui;
 use crate::ui::{MainWindowMode, Message};
 use crate::{Address, AddressBook};
 use i18n_embed_fl::fl;
-use iced::keyboard;
-use iced::{
+use icy_ui::keyboard;
+use icy_ui::{
     widget::{button, column, container, row, svg, text, Space},
     Alignment, Element, Event, Length, Task,
 };
@@ -81,7 +81,7 @@ impl DialingDirectoryState {
     }
 
     fn create_bottom_bar(&self) -> Element<'_, Message> {
-        use iced::widget::tooltip;
+        use icy_ui::widget::tooltip;
         let delete_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-delete");
         let delete_icon = svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
         let can_delete = self.selected_bbs.is_some();
@@ -385,7 +385,7 @@ impl DialingDirectoryState {
         }
     }
 
-    pub(crate) fn handle_event(&self, event: &iced::Event) -> Option<Message> {
+    pub(crate) fn handle_event(&self, event: &icy_ui::Event) -> Option<Message> {
         match event {
             Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => match key {
                 keyboard::Key::Named(keyboard::key::Named::Tab) => {

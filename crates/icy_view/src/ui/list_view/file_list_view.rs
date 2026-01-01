@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced::{
+use icy_ui::{
     mouse,
     widget::{column, container, row, shader, stack, text},
     Element, Length,
@@ -560,14 +560,14 @@ impl FileListView {
                 container(scrollbar_view)
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .align_y(iced::alignment::Vertical::Center)
+                    .align_x(icy_ui::alignment::Horizontal::Right)
+                    .align_y(icy_ui::alignment::Vertical::Center)
             ])
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(theme.background.base)),
-                border: iced::Border {
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.background.base)),
+                border: icy_ui::Border {
                     color: theme.primary.divider,
                     width: 1.0,
                     radius: 0.0.into(),
@@ -585,9 +585,9 @@ impl FileListView {
             let list_content = container(shader_widget)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|theme: &iced::Theme| container::Style {
-                    background: Some(iced::Background::Color(theme.background.base)),
-                    border: iced::Border {
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme.background.base)),
+                    border: icy_ui::Border {
                         color: theme.primary.divider,
                         width: 1.0,
                         radius: 0.0.into(),
@@ -608,9 +608,9 @@ impl FileListView {
     fn render_header_row<Message: 'static>(&self) -> Element<'_, Message> {
         use i18n_embed_fl::fl;
 
-        let header_style = |theme: &iced::Theme| container::Style {
-            background: Some(iced::Background::Color(theme.secondary.base)),
-            border: iced::Border {
+        let header_style = |theme: &icy_ui::Theme| container::Style {
+            background: Some(icy_ui::Background::Color(theme.secondary.base)),
+            border: icy_ui::Border {
                 color: theme.primary.divider,
                 width: 0.0,
                 radius: 0.0.into(),
@@ -618,7 +618,7 @@ impl FileListView {
             ..Default::default()
         };
 
-        let header_text_style = |theme: &iced::Theme| text::Style {
+        let header_text_style = |theme: &icy_ui::Theme| text::Style {
             color: Some(theme.background.on.scale_alpha(0.7)),
         };
 
@@ -676,7 +676,7 @@ where
     type State = FileListShaderState;
     type Primitive = FileListShaderPrimitive;
 
-    fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: iced::Rectangle) -> Self::Primitive {
+    fn draw(&self, _state: &Self::State, _cursor: mouse::Cursor, bounds: icy_ui::Rectangle) -> Self::Primitive {
         // Apply hover state from shared state
         let hovered = *self.shared_hovered_index.lock();
         let items: Vec<ListItemRenderData> = self
@@ -699,7 +699,7 @@ where
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: iced::Rectangle, cursor: mouse::Cursor) -> Option<iced::widget::Action<Message>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: icy_ui::Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<Message>> {
         // Check if viewport size changed significantly (debounce threshold of 2px)
         let current_bounds = (bounds.width, bounds.height);
         let size_changed_significantly = match state.last_bounds {
@@ -709,7 +709,7 @@ where
         if size_changed_significantly {
             state.last_bounds = Some(current_bounds);
             let msg = (self.on_message)(FileListViewMessage::SetViewportSize(bounds.width, bounds.height));
-            return Some(iced::widget::Action::publish(msg));
+            return Some(icy_ui::widget::Action::publish(msg));
         }
 
         // Handle hover detection
@@ -734,7 +734,7 @@ where
         let is_over = cursor.is_over(bounds);
 
         match event {
-            iced::Event::Mouse(mouse_event) => match mouse_event {
+            icy_ui::Event::Mouse(mouse_event) => match mouse_event {
                 mouse::Event::WheelScrolled { delta, .. } => {
                     if is_over {
                         let (_dx, dy) = match delta {
@@ -742,7 +742,7 @@ where
                             mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
                         };
                         let msg = (self.on_message)(FileListViewMessage::Scroll(dy));
-                        return Some(iced::widget::Action::publish(msg));
+                        return Some(icy_ui::widget::Action::publish(msg));
                     }
                 }
                 mouse::Event::ButtonPressed {
@@ -751,7 +751,7 @@ where
                     if is_over {
                         if let Some(pos) = cursor.position_in(bounds) {
                             let msg = (self.on_message)(FileListViewMessage::Click(pos.y));
-                            return Some(iced::widget::Action::publish(msg));
+                            return Some(icy_ui::widget::Action::publish(msg));
                         }
                     }
                 }
@@ -763,7 +763,7 @@ where
         None
     }
 
-    fn mouse_interaction(&self, state: &Self::State, _bounds: iced::Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
+    fn mouse_interaction(&self, state: &Self::State, _bounds: icy_ui::Rectangle, _cursor: mouse::Cursor) -> mouse::Interaction {
         if state.hovered_index.is_some() {
             mouse::Interaction::Pointer
         } else {

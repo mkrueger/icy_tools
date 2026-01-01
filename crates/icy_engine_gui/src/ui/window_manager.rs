@@ -6,7 +6,7 @@
 //! - Helper functions for common window manager operations
 //! - Subscription builders for event handling
 
-use iced::{window, Element, Task, Theme};
+use icy_ui::{window, Element, Task, Theme};
 use std::collections::{BTreeMap, HashSet};
 
 // ============================================================================
@@ -38,7 +38,7 @@ pub enum WindowManagerMessage<M> {
     /// Window title changed
     TitleChanged(window::Id, String),
     /// Event for a specific window
-    Event(window::Id, iced::Event),
+    Event(window::Id, icy_ui::Event),
     /// Animation tick (for blink, scroll animations, etc.)
     AnimationTick,
 }
@@ -69,9 +69,9 @@ where
     match message {
         WindowManagerMessage::CloseWindow(id) => HandleResult::Handled(window::close(id)),
 
-        WindowManagerMessage::FocusNext => HandleResult::Handled(iced::widget::operation::focus_next()),
+        WindowManagerMessage::FocusNext => HandleResult::Handled(icy_ui::widget::operation::focus_next()),
 
-        WindowManagerMessage::FocusPrevious => HandleResult::Handled(iced::widget::operation::focus_previous()),
+        WindowManagerMessage::FocusPrevious => HandleResult::Handled(icy_ui::widget::operation::focus_previous()),
 
         WindowManagerMessage::FocusWindow(target_id) => HandleResult::Handled(focus_window_by_id(windows, target_id)),
 
@@ -110,7 +110,7 @@ where
 /// Handle an Event by delegating to the window's handle_event method.
 ///
 /// Returns a batch of tasks: one for any immediate message and one for the task.
-pub fn handle_event<W, M>(windows: &mut BTreeMap<window::Id, W>, window_id: window::Id, event: &iced::Event) -> Task<WindowManagerMessage<M>>
+pub fn handle_event<W, M>(windows: &mut BTreeMap<window::Id, W>, window_id: window::Id, event: &icy_ui::Event) -> Task<WindowManagerMessage<M>>
 where
     W: Window<Message = M>,
     M: Clone + Send + 'static,
@@ -160,7 +160,7 @@ pub trait Window {
     fn theme(&self) -> Theme;
 
     /// Handle an event, returning an optional message and a task.
-    fn handle_event(&mut self, event: &iced::Event) -> (Option<Self::Message>, Task<Self::Message>);
+    fn handle_event(&mut self, event: &icy_ui::Event) -> (Option<Self::Message>, Task<Self::Message>);
 }
 
 // ============================================================================
@@ -234,11 +234,11 @@ pub fn focus_window_by_id<W: Window, T: 'static>(windows: &BTreeMap<window::Id, 
 
 /// Handle the common WindowClosed logic.
 ///
-/// Removes the window and returns `iced::exit()` if no windows remain.
+/// Removes the window and returns `icy_ui::exit()` if no windows remain.
 pub fn handle_window_closed<W, T: 'static>(windows: &mut BTreeMap<window::Id, W>, id: window::Id) -> Task<T> {
     windows.remove(&id);
     if windows.is_empty() {
-        iced::exit()
+        icy_ui::exit()
     } else {
         Task::none()
     }
@@ -265,11 +265,11 @@ pub enum KeyboardAction {
 /// Window IDs: 1-9 map to windows 1-9, 0 maps to window 10.
 ///
 /// Note: Uses Alt on all platforms. On macOS, Cmd is also accepted (without Ctrl).
-pub fn handle_window_manager_keyboard_press(key: &iced::keyboard::Key, modifiers: &iced::keyboard::Modifiers) -> Option<KeyboardAction> {
-    use iced::keyboard::key::Named;
+pub fn handle_window_manager_keyboard_press(key: &icy_ui::keyboard::Key, modifiers: &icy_ui::keyboard::Modifiers) -> Option<KeyboardAction> {
+    use icy_ui::keyboard::key::Named;
 
     // Handle Tab / Shift+Tab for focus navigation
-    if let iced::keyboard::Key::Named(Named::Tab) = key {
+    if let icy_ui::keyboard::Key::Named(Named::Tab) = key {
         if modifiers.shift() {
             return Some(KeyboardAction::FocusPrevious);
         } else {
@@ -283,7 +283,7 @@ pub fn handle_window_manager_keyboard_press(key: &iced::keyboard::Key, modifiers
     let is_alt_or_cmd = modifiers.alt() || (modifiers.command() && !modifiers.control());
 
     if is_alt_or_cmd && !modifiers.shift() {
-        if let iced::keyboard::Key::Character(s) = key {
+        if let icy_ui::keyboard::Key::Character(s) = key {
             if let Some(digit) = s.chars().next() {
                 if digit.is_ascii_digit() {
                     let target_id = digit.to_digit(10).unwrap() as usize;

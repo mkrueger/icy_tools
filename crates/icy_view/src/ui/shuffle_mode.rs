@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use iced::{
+use icy_ui::{
     widget::{column, container, row, stack, text, Space},
     Color, Element, Length,
 };
@@ -532,8 +532,8 @@ impl ShuffleMode {
         // Wrap in container with semi-transparent background
         container(info_column)
             .style(|_theme| container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, INFO_OVERLAY_BG_OPACITY))),
-                border: iced::Border {
+                background: Some(icy_ui::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, INFO_OVERLAY_BG_OPACITY))),
+                border: icy_ui::Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
                     radius: 0.0.into(),
@@ -625,12 +625,12 @@ impl ShuffleMode {
             elements.push(container(comment_with_shadow).height(total_line_height).into());
         }
 
-        let comments_column = column(elements).padding(COMMENT_PADDING).align_x(iced::alignment::Horizontal::Center);
+        let comments_column = column(elements).padding(COMMENT_PADDING).align_x(icy_ui::alignment::Horizontal::Center);
 
         container(comments_column)
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center)
+            .align_x(icy_ui::alignment::Horizontal::Center)
             .into()
     }
 
@@ -649,8 +649,8 @@ impl ShuffleMode {
             container(info)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .align_x(iced::alignment::Horizontal::Left)
-                .align_y(iced::alignment::Vertical::Top),
+                .align_x(icy_ui::alignment::Horizontal::Left)
+                .align_y(icy_ui::alignment::Vertical::Top),
             // Comments overlay
             comments,
         ];

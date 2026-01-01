@@ -1,4 +1,4 @@
-use iced::{
+use icy_ui::{
     widget::{column, container, row, scrollable, text, Space},
     Alignment, Border, Color, Element, Length, Padding, Theme,
 };
@@ -98,9 +98,9 @@ fn pill<Message: 'static>(content: &str) -> Element<'static, Message> {
     container(
         text(content.to_owned())
             .size(TEXT_SIZE_NORMAL)
-            .font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::default()
+            .font(icy_ui::Font {
+                weight: icy_ui::font::Weight::Bold,
+                ..icy_ui::Font::default()
             })
             .style(|theme: &Theme| text::Style {
                 color: Some(theme.background.on),
@@ -292,15 +292,15 @@ pub fn help_dialog_content<Message: Clone + 'static>(config: &HelpDialogConfig, 
     .width(Length::Fixed(700.0))
     .height(Length::Fixed(500.0))
     .style(|theme: &Theme| container::Style {
-        background: Some(iced::Background::Color(theme.background.base)),
+        background: Some(icy_ui::Background::Color(theme.background.base)),
         border: Border {
             color: theme.primary.divider,
             width: 1.0,
             radius: 12.0.into(),
         },
-        shadow: iced::Shadow {
+        shadow: icy_ui::Shadow {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
-            offset: iced::Vector::new(0.0, 6.0),
+            offset: icy_ui::Vector::new(0.0, 6.0),
             blur_radius: 20.0,
         },
         ..Default::default()

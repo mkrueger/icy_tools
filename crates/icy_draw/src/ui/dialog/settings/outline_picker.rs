@@ -5,7 +5,7 @@
 //! the user to select one.
 
 use codepages::tables::UNICODE_TO_CP437;
-use iced::{
+use icy_ui::{
     mouse,
     mouse::Cursor,
     widget::canvas::{self, Action, Cache, Frame, Geometry, Program},
@@ -120,7 +120,7 @@ impl OutlinePickerProgram {
     }
 
     /// Draw a single outline preview cell
-    fn draw_outline_cell(&self, frame: &mut Frame, style: usize, rect: Rectangle, fg: iced::Color, bg: iced::Color) {
+    fn draw_outline_cell(&self, frame: &mut Frame, style: usize, rect: Rectangle, fg: icy_ui::Color, bg: icy_ui::Color) {
         let font_size = self.font.size();
         let font_w = font_size.width as usize;
         let font_h = font_size.height as usize;
@@ -170,9 +170,9 @@ impl OutlinePickerProgram {
 impl Program<SettingsDialogMessage> for OutlinePickerProgram {
     type State = Option<usize>; // Hovered style
 
-    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
+    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: Cursor) -> Option<Action<SettingsDialogMessage>> {
         match event {
-            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|p| self.hit_test(p));
                 if *state != new_hover {
                     *state = new_hover;
@@ -180,14 +180,14 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::CursorLeft) => {
+            icy_ui::Event::Mouse(mouse::Event::CursorLeft) => {
                 if state.is_some() {
                     *state = None;
                     return Some(Action::request_redraw());
                 }
                 None
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed {
+            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
                 let Some(p) = cursor.position_in(bounds) else {
@@ -200,7 +200,7 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
         }
     }
 
-    fn draw(&self, state: &Self::State, renderer: &iced::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
         let hovered = *state;
 
         let geometry = self.cache.draw(renderer, bounds.size(), |frame: &mut Frame| {
@@ -236,7 +236,7 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
                     } else {
                         theme.secondary.base
                     },
-                    size: iced::Pixels(13.0),
+                    size: icy_ui::Pixels(13.0),
                     ..Default::default()
                 };
                 frame.fill_text(label_text);

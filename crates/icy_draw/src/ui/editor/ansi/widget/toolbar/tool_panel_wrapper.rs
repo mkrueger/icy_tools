@@ -7,7 +7,7 @@
 //! The ToolPanel now takes a reference to the ToolRegistry and uses it to
 //! determine which tool slots to display and how to handle clicks.
 
-use iced::{Color, Element};
+use icy_ui::{Color, Element};
 use icy_engine_edit::tools::Tool;
 
 use crate::ui::editor::ansi::tool_registry::ToolRegistry;
@@ -101,7 +101,7 @@ impl ToolPanel {
     }
 
     /// Update the tool panel state (only handles Tick, ClickSlot is handled by the editor)
-    pub fn update(&mut self, message: ToolPanelMessage) -> iced::Task<ToolPanelMessage> {
+    pub fn update(&mut self, message: ToolPanelMessage) -> icy_ui::Task<ToolPanelMessage> {
         match message {
             ToolPanelMessage::ClickSlot(_) => {
                 // Click handling is done by the editor, not here
@@ -110,7 +110,7 @@ impl ToolPanel {
                 self.tick(delta);
             }
         }
-        iced::Task::none()
+        icy_ui::Task::none()
     }
 
     /// Render the tool panel with the given available width and background color
