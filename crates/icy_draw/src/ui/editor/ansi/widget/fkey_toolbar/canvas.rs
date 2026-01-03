@@ -8,6 +8,7 @@
 
 #![allow(dead_code)]
 
+use icy_engine::{BitFont, Palette};
 use icy_ui::{
     mouse::{self, Cursor},
     widget::{
@@ -16,7 +17,6 @@ use icy_ui::{
     },
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::{BitFont, Palette};
 
 use crate::ui::FKeySets;
 

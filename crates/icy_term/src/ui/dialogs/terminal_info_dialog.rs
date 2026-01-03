@@ -1,8 +1,4 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, container, row, text, tooltip, Space},
-    Alignment, Background, Element, Length, Theme,
-};
 use icy_engine::{Position, ScreenMode, Size, TerminalScrolling};
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
@@ -13,6 +9,10 @@ use icy_engine_gui::ui::{
 use icy_engine_gui::StateResult;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{BaudEmulation, CaretShape, MusicOption};
+use icy_ui::{
+    widget::{column, container, row, text, tooltip, Space},
+    Alignment, Background, Element, Length, Theme,
+};
 
 use super::terminal_settings_ui::{self, TerminalSettings, TerminalSettingsChange};
 

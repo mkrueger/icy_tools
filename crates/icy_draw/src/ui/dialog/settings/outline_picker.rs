@@ -5,13 +5,13 @@
 //! the user to select one.
 
 use codepages::tables::UNICODE_TO_CP437;
+use icy_engine::BitFont;
 use icy_ui::{
     mouse,
     mouse::Cursor,
     widget::canvas::{self, Action, Cache, Frame, Geometry, Program},
     Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::BitFont;
 
 use super::SettingsDialogMessage;
 

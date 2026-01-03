@@ -3,16 +3,16 @@
 //! Allows changing the width and height of the font.
 //! Implements the Dialog trait from icy_engine_gui for stack-based dialog management.
 
-use icy_ui::{
-    widget::{column, container, row, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
     button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
     DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::ButtonType;
+use icy_ui::{
+    widget::{column, container, row, text, text_input, Space},
+    Alignment, Element, Length,
+};
 
 use super::BitFontEditorMessage;
 use crate::fl;

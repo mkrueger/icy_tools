@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
+use icy_engine::Color as IcyColor;
 use icy_ui::widget::{button, container, row, slider, text};
 use icy_ui::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme};
-use icy_engine::Color as IcyColor;
 use lazy_static::lazy_static;
 use std::fmt;
 
@@ -125,7 +125,11 @@ fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Ele
                 } else {
                     Color::from_rgb(0.5, 0.5, 0.5)
                 },
-                width: if matches!(status, icy_ui::widget::button::Status::Hovered) { 2.0 } else { 1.0 },
+                width: if matches!(status, icy_ui::widget::button::Status::Hovered) {
+                    2.0
+                } else {
+                    1.0
+                },
                 radius: 4.0.into(),
             },
             shadow: if matches!(status, icy_ui::widget::button::Status::Pressed) {

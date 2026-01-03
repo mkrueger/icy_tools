@@ -14,10 +14,6 @@ pub use canvas::*;
 
 use std::path::PathBuf;
 
-use icy_ui::{
-    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
-    Alignment, Element, Length, Task,
-};
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::MAX_FONT_HEIGHT;
 use icy_engine_gui::ui::{
@@ -25,6 +21,10 @@ use icy_engine_gui::ui::{
     DIALOG_SPACING, DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::{settings::effect_box, ButtonType};
+use icy_ui::{
+    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
+    Alignment, Element, Length, Task,
+};
 
 use crate::fl;
 use crate::ui::editor::bitfont::BitFontEditorMessage;

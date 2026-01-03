@@ -59,14 +59,14 @@ pub use select::SelectTool;
 pub use shape::ShapeTool;
 pub use tag::{TagTool, TagToolState};
 
-use icy_ui::widget::{column, text};
-use icy_ui::Element;
 use icy_engine::Position;
 use icy_engine::{BitFont, Palette, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
 use icy_engine_gui::TerminalMessage;
+use icy_ui::widget::{column, text};
+use icy_ui::Element;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

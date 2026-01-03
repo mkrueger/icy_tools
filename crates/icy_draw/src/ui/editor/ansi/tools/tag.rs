@@ -5,8 +5,6 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use icy_ui::widget::{button, row, text, Space};
-use icy_ui::Element;
 use icy_engine::Position;
 use icy_engine::Rectangle;
 use icy_engine_edit::AtomicUndoGuard;
@@ -15,6 +13,8 @@ use icy_engine_edit::UndoState;
 use icy_engine_gui::ui::{SPACE_16, SPACE_8, TEXT_SIZE_SMALL};
 use icy_engine_gui::DoubleClickDetector;
 use icy_engine_gui::TerminalMessage;
+use icy_ui::widget::{button, row, text, Space};
+use icy_ui::Element;
 use parking_lot::RwLock;
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
@@ -488,10 +488,10 @@ impl TagToolState {
         scroll_y: f32,
         display_scale: f32,
     ) -> Option<Element<'_, ToolMessage>> {
+        use icy_engine_gui::ui::TEXT_SIZE_NORMAL;
         use icy_ui::widget::{button, column, container, mouse_area, text};
         use icy_ui::Length;
         use icy_ui::Theme;
-        use icy_engine_gui::ui::TEXT_SIZE_NORMAL;
 
         let Some((tag_index, pos)) = self.context_menu else {
             return None;

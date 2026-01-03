@@ -21,6 +21,8 @@ pub use playback_controls::*;
 
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
+use icy_engine_gui::{theme::main_area_background, ui::DialogStack, MonitorSettings, ScalingMode, Terminal, TerminalView};
+use icy_engine_scripting::Animator;
 use icy_ui::widget::canvas;
 use icy_ui::widget::canvas::Canvas;
 use icy_ui::{
@@ -28,8 +30,6 @@ use icy_ui::{
     widget::{column, container, pane_grid, row, rule, scrollable, stack, text, text_editor, Space},
     Background, Border, Element, Length, Task, Theme,
 };
-use icy_engine_gui::{theme::main_area_background, ui::DialogStack, MonitorSettings, ScalingMode, Terminal, TerminalView};
-use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 
 use crate::fl;

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use icy_ui::Task;
 use icy_sauce::SauceRecord;
+use icy_ui::Task;
 use thiserror::Error;
 
 mod archive;

@@ -3,10 +3,6 @@
 //! Unified dialog for document settings including canvas size, SAUCE metadata,
 //! and format compatibility options. Has two pages: settings and comments editor.
 
-use icy_ui::{
-    widget::{checkbox, column, container, pick_list, row, text, text_editor, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine::TextPane;
 use icy_engine_edit::bitfont::{MAX_FONT_HEIGHT, MIN_FONT_HEIGHT};
 use icy_engine_gui::settings::effect_box;
@@ -15,6 +11,10 @@ use icy_engine_gui::ui::{
     DialogAction, SauceFieldColor, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::ButtonType;
+use icy_ui::{
+    widget::{checkbox, column, container, pick_list, row, text, text_editor, text_input, Space},
+    Alignment, Element, Length,
+};
 
 use crate::fl;
 use crate::ui::Message;
@@ -316,9 +316,11 @@ impl FileSettingsDialog {
             FormatMode::Unrestricted => fl!("file-settings-format-unrestricted"),
         };
 
-        let format_description = text(format_desc).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-            color: Some(theme.secondary.on),
-        });
+        let format_description = text(format_desc)
+            .size(TEXT_SIZE_SMALL)
+            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+                color: Some(theme.secondary.on),
+            });
 
         let format_row = row![
             container(text(fl!("file-settings-format")).size(TEXT_SIZE_NORMAL)).width(label_width),

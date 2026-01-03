@@ -6,8 +6,8 @@
 //! Supports different cursor modes: Editing, Selection, Operation.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use icy_ui::{widget::canvas, Color, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
+use icy_ui::{widget::canvas, Color, Element, Length, Renderer, Theme};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -100,7 +100,14 @@ struct RemoteCursorsOverlayState {
 impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, _theme: &Theme, bounds: icy_ui::Rectangle, _cursor: icy_ui::mouse::Cursor) -> Vec<canvas::Geometry> {
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: icy_ui::Rectangle,
+        _cursor: icy_ui::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
         if self.cursors.is_empty() {
             return vec![];
         }

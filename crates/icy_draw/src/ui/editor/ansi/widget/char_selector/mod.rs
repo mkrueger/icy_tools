@@ -3,6 +3,7 @@
 //! A 16x16 grid of characters that can be selected with the mouse.
 //! Used for customizing F-key character assignments.
 
+use icy_engine::{BitFont, Palette};
 use icy_ui::{
     mouse::{self, Cursor},
     widget::{
@@ -11,7 +12,6 @@ use icy_ui::{
     },
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::{BitFont, Palette};
 
 /// Size of each character cell in the grid
 const CELL_SIZE: f32 = 28.0;

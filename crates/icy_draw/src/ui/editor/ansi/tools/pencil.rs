@@ -7,13 +7,13 @@
 //! - Shade mode: Lightens/darkens existing content
 
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
-use icy_ui::keyboard::key::Physical;
-use icy_ui::widget::{button, column, row, svg, text, Space};
-use icy_ui::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position};
 use icy_engine_edit::brushes;
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::TerminalMessage;
+use icy_ui::keyboard::key::Physical;
+use icy_ui::widget::{button, column, row, svg, text, Space};
+use icy_ui::{Element, Length, Theme};
 
 use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};

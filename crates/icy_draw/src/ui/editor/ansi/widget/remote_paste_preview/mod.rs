@@ -5,6 +5,7 @@
 //! transformed into screen space using the same math as the terminal renderer.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
+use icy_engine_gui::RenderInfo;
 use icy_ui::advanced::image::Renderer as _;
 use icy_ui::advanced::text::Renderer as _;
 use icy_ui::advanced::widget::tree::{self, Tree};
@@ -12,7 +13,6 @@ use icy_ui::advanced::Renderer as _;
 use icy_ui::advanced::{layout, renderer, widget};
 use icy_ui::widget::image;
 use icy_ui::{Border, Color, Element, Length, Point, Rectangle, Theme};
-use icy_engine_gui::RenderInfo;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

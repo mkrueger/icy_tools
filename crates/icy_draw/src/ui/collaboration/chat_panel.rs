@@ -5,11 +5,11 @@
 //! - Right: Chat messages (Discord-style grouped by user)
 //! - Bottom: Input field
 
+use icy_engine_edit::collaboration::ChatMessage;
 use icy_ui::{
     widget::{column, container, row, scrollable, stack, text, text_input, Column, Row, Space},
     Border, Color, Element, Length, Padding, Theme,
 };
-use icy_engine_edit::collaboration::ChatMessage;
 
 use super::icons::{Avatar, UserStatus};
 use crate::fl;

@@ -10,9 +10,9 @@ use crate::{
     tile_cache::MAX_TEXTURE_SLICES,
     CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData,
 };
+use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use icy_ui::widget::shader;
 use icy_ui::{mouse, window, Rectangle};
-use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;

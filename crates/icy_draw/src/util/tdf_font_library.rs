@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use icy_ui::widget::image;
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::formats::FileFormat;
 use icy_engine::{Rectangle, TextBuffer, TextPane};
+use icy_ui::widget::image;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use retrofont::Font;

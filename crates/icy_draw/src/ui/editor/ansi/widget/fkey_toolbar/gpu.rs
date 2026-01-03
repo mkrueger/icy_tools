@@ -10,14 +10,14 @@ use std::sync::{
     Arc,
 };
 
+use icy_engine::{BitFont, Palette};
+use icy_engine_gui::theme::main_area_background;
 use icy_ui::wgpu::util::DeviceExt;
 use icy_ui::{
     mouse::{self, Cursor},
     widget::{self, canvas, container, shader},
     Color, Element, Length, Point, Rectangle, Theme,
 };
-use icy_engine::{BitFont, Palette};
-use icy_engine_gui::theme::main_area_background;
 
 use super::layout::{
     FKeyLayout, HoverState, ARROW_SIZE, BORDER_WIDTH, CORNER_RADIUS, LABEL_HEIGHT, LABEL_WIDTH, LEFT_PADDING, NAV_GAP, NAV_NEXT_SHIFT_X, NAV_NUM_SHIFT_X,

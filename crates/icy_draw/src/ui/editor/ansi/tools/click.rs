@@ -7,13 +7,13 @@
 //! - Cursor navigation (arrows, home, end, etc.)
 //! - Layer dragging (Ctrl+Click+Drag, or always for Image layers)
 
-use icy_ui::keyboard::key::Physical;
-use icy_ui::Element;
 use icy_engine::{BufferType, Role};
 use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 use icy_engine_gui::TerminalMessage;
+use icy_ui::keyboard::key::Physical;
+use icy_ui::Element;
 
 use super::{handle_navigation_key, SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::{FKeyToolbarMessage, ShaderFKeyToolbar};

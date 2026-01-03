@@ -15,7 +15,7 @@ use icy_ui::{
     mouse,
     widget::{
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, row, text, text_input, Space,
+        column, container, row, scroll_area, scrollable, text, text_input, Space,
     },
     Alignment, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
@@ -28,7 +28,7 @@ use icy_engine_gui::{
         dialog_area, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING, HEADER_TEXT_SIZE,
         TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
-    ButtonType, ScrollbarOverlay, Viewport,
+    ButtonType,
 };
 
 use crate::{fl, ui::Message};
@@ -266,6 +266,7 @@ pub enum NewFileMessage {
 // Category State
 // ============================================================================
 
+#[derive(Clone)]
 struct CategoryState {
     expanded: bool,
     templates: Vec<FileTemplate>,
@@ -282,7 +283,6 @@ pub struct NewFileDialog {
     height: i32,
     width_input: String,
     height_input: String,
-    list_viewport: RefCell<Viewport>,
     visible_items: RefCell<Vec<ListItem>>,
     last_click: RefCell<Option<(Instant, FileTemplate)>>,
 }
@@ -311,7 +311,6 @@ impl NewFileDialog {
             height: template.default_height(),
             width_input: template.default_width().to_string(),
             height_input: template.default_height().to_string(),
-            list_viewport: RefCell::new(Viewport::default()),
             visible_items: RefCell::new(Vec::new()),
             last_click: RefCell::new(None),
         };
@@ -341,22 +340,7 @@ impl NewFileDialog {
             }
         }
 
-        // Update content height in viewport
-        let content_height = self.calculate_content_height(&items);
-        self.list_viewport.borrow_mut().content_height = content_height;
-
         *self.visible_items.borrow_mut() = items;
-    }
-
-    /// Calculate total content height for the list
-    fn calculate_content_height(&self, items: &[ListItem]) -> f32 {
-        items
-            .iter()
-            .map(|item| match item {
-                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
-            })
-            .sum()
     }
 
     /// Get all visible templates (in expanded categories)
@@ -372,46 +356,12 @@ impl NewFileDialog {
         result
     }
 
-    /// Get the Y position of the selected template in the list
-    fn get_selection_y_position(&self) -> Option<f32> {
-        let items = self.visible_items.borrow();
-        let mut y = 0.0;
-
-        for item in items.iter() {
-            let height = match item {
-                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                ListItem::TemplateItem { template } => {
-                    if *template == self.selected_template {
-                        return Some(y);
-                    }
-                    TEMPLATE_ITEM_HEIGHT
-                }
-            };
-            y += height;
-        }
-        None
-    }
-
     /// Scroll the list to make the selected item visible
+    /// Note: With scroll_area().show_viewport(), scrolling is handled by the native scrollbar.
+    /// Programmatic scrolling would require scroll_area.scroll_to() which we don't have access to here.
     fn scroll_to_selection(&self) {
-        if let Some(y) = self.get_selection_y_position() {
-            let mut vp = self.list_viewport.borrow_mut();
-            let visible_height = vp.visible_height;
-
-            // Check if selection is above visible area
-            if y < vp.scroll_y {
-                vp.scroll_y = y;
-                vp.target_scroll_y = y;
-                vp.sync_scrollbar_position();
-            }
-            // Check if selection is below visible area
-            else if y + TEMPLATE_ITEM_HEIGHT > vp.scroll_y + visible_height {
-                let new_scroll = y + TEMPLATE_ITEM_HEIGHT - visible_height;
-                vp.scroll_y = new_scroll;
-                vp.target_scroll_y = new_scroll;
-                vp.sync_scrollbar_position();
-            }
-        }
+        // No-op for now - native scrollbar handles scrolling
+        // TODO: Implement programmatic scrolling if icy_ui provides an API for it
     }
 
     fn find_prev_template(&self) -> Option<FileTemplate> {
@@ -462,8 +412,9 @@ impl NewFileDialog {
             return;
         }
 
-        let visible_height = self.list_viewport.borrow().visible_height;
-        let items_per_page = (visible_height / TEMPLATE_ITEM_HEIGHT).max(1.0) as usize;
+        // Estimate visible height based on typical dialog size
+        let estimated_visible_height = 400.0;
+        let items_per_page = (estimated_visible_height / TEMPLATE_ITEM_HEIGHT).max(1.0) as usize;
 
         if let Some(pos) = visible.iter().position(|&t| t == self.selected_template) {
             let new_pos = pos.saturating_sub(items_per_page);
@@ -482,8 +433,9 @@ impl NewFileDialog {
             return;
         }
 
-        let visible_height = self.list_viewport.borrow().visible_height;
-        let items_per_page = (visible_height / TEMPLATE_ITEM_HEIGHT).max(1.0) as usize;
+        // Estimate visible height based on typical dialog size
+        let estimated_visible_height = 400.0;
+        let items_per_page = (estimated_visible_height / TEMPLATE_ITEM_HEIGHT).max(1.0) as usize;
 
         if let Some(pos) = visible.iter().position(|&t| t == self.selected_template) {
             let new_pos = (pos + items_per_page).min(visible.len() - 1);
@@ -508,17 +460,48 @@ impl NewFileDialog {
     // ========================================================================
 
     fn view_left_panel(&self) -> Element<'_, Message> {
-        // Canvas-based list with overlay scrollbar
-        let list_canvas: Element<'_, Message> = Canvas::new(TemplateListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
+        // Calculate content height based on visible items
+        let content_height = self
+            .visible_items
+            .borrow()
+            .iter()
+            .map(|item| match item {
+                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
+                ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
+            })
+            .sum::<f32>();
+        let content_width = LEFT_PANEL_WIDTH - 12.0; // Account for scrollbar
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport)
-            .view()
-            .map(|_| Message::NewFileDialog(NewFileMessage::Cancel)); // Dummy mapping
+        // Clone data for the closure
+        let visible_items: Vec<ListItem> = self.visible_items.borrow().clone();
+        let categories: HashMap<EditorType, CategoryState> = self.categories.clone();
+        let selected_template = self.selected_template;
+        let last_click = self.last_click.clone();
 
-        let list_with_scrollbar = row![list_canvas, scrollbar];
+        // Use scroll_area with show_viewport
+        let scroll_list = scroll_area()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
+            .show_viewport(Size::new(content_width, content_height), move |viewport| {
+                let visible_items = visible_items.clone();
+                let categories = categories.clone();
+                let last_click = last_click.clone();
+
+                Canvas::new(TemplateListCanvasViewport {
+                    viewport,
+                    visible_items,
+                    categories,
+                    selected_template,
+                    last_click,
+                })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            });
 
         // Wrap in Focus widget for keyboard navigation
-        let focusable_list: Element<'_, Message> = focus(list_with_scrollbar)
+        let focusable_list: Element<'_, Message> = focus(scroll_list)
             .on_event(|event, _id| {
                 if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
@@ -645,28 +628,24 @@ impl NewFileDialog {
 // Template List Canvas
 // ============================================================================
 
-struct TemplateListCanvas<'a> {
-    dialog: &'a NewFileDialog,
+struct TemplateListCanvasViewport {
+    viewport: Rectangle,
+    visible_items: Vec<ListItem>,
+    categories: HashMap<EditorType, CategoryState>,
+    selected_template: FileTemplate,
+    last_click: RefCell<Option<(Instant, FileTemplate)>>,
 }
 
-impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
+impl canvas::Program<Message> for TemplateListCanvasViewport {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        // Update viewport dimensions
-        {
-            let mut vp = self.dialog.list_viewport.borrow_mut();
-            vp.visible_height = bounds.height;
-            vp.visible_width = bounds.width;
-        }
-
-        let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
-        let items = self.dialog.visible_items.borrow();
+        let scroll_y = self.viewport.y;
 
         let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
-            for item in items.iter() {
+            for item in self.visible_items.iter() {
                 let height = match item {
                     ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                     ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
@@ -690,7 +669,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                         frame.fill(&bg_rect, theme.primary.divider);
 
                         // Draw arrow and text
-                        let expanded = self.dialog.categories.get(editor).map(|s| s.expanded).unwrap_or(true);
+                        let expanded = self.categories.get(editor).map(|s| s.expanded).unwrap_or(true);
                         let arrow = if expanded { "▼" } else { "▶" };
                         let label = format!("{} {} {} ({})", arrow, editor.icon(), editor.label(), count);
 
@@ -703,7 +682,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                         });
                     }
                     ListItem::TemplateItem { template } => {
-                        let is_selected = self.dialog.selected_template == *template;
+                        let is_selected = self.selected_template == *template;
 
                         // Draw selection background
                         if is_selected {
@@ -748,12 +727,11 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     // Find which item was clicked
-                    let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
+                    let scroll_y = self.viewport.y;
                     let click_y = pos.y + scroll_y;
-                    let items = self.dialog.visible_items.borrow();
                     let mut current_y = 0.0;
 
-                    for item in items.iter() {
+                    for item in self.visible_items.iter() {
                         let height = match item {
                             ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                             ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
@@ -768,7 +746,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                                     // Check for double-click (within 500ms on same template)
                                     let now = Instant::now();
                                     let is_double_click = {
-                                        let last = self.dialog.last_click.borrow();
+                                        let last = self.last_click.borrow();
                                         if let Some((last_time, last_template)) = *last {
                                             last_template == *template && now.duration_since(last_time).as_millis() < 500
                                         } else {
@@ -778,7 +756,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
 
                                     if is_double_click {
                                         // Double-click: create the file
-                                        *self.dialog.last_click.borrow_mut() = None;
+                                        *self.last_click.borrow_mut() = None;
                                         return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::Create(
                                             *template,
                                             template.default_width(),
@@ -786,7 +764,7 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
                                         ))));
                                     } else {
                                         // Single click: select and record time
-                                        *self.dialog.last_click.borrow_mut() = Some((now, *template));
+                                        *self.last_click.borrow_mut() = Some((now, *template));
                                         return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::SelectTemplate(*template))));
                                     }
                                 }
@@ -795,21 +773,6 @@ impl<'a> canvas::Program<Message> for TemplateListCanvas<'a> {
 
                         current_y += height;
                     }
-                }
-            }
-            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
-                if cursor.is_over(bounds) {
-                    let scroll_amount = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => -y * 30.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => -y,
-                    };
-
-                    let mut vp = self.dialog.list_viewport.borrow_mut();
-                    let max_scroll = (vp.content_height - vp.visible_height).max(0.0);
-                    vp.scroll_y = (vp.scroll_y + scroll_amount).clamp(0.0, max_scroll);
-                    vp.target_scroll_y = vp.scroll_y;
-
-                    return Some(canvas::Action::request_redraw());
                 }
             }
             _ => {}

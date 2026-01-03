@@ -1,13 +1,13 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, pick_list, row},
-    Alignment, Length,
-};
 use icy_engine::{ScreenMode, VGA_MODES};
 use icy_engine_gui::settings::left_label;
 use icy_engine_gui::ui::{DIALOG_SPACING, SPACE_4, TEXT_SIZE_NORMAL};
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::MusicOption;
+use icy_ui::{
+    widget::{column, pick_list, row},
+    Alignment, Length,
+};
 use std::fmt;
 
 const COMBO_WIDTH: f32 = 120.0;

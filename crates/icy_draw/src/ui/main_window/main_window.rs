@@ -15,16 +15,16 @@ use std::{
 use parking_lot::RwLock;
 
 use crate::{fl, SharedFontLibrary};
-use icy_ui::{
-    widget::{button, column, container, mouse_area, row, rule, text, Space},
-    Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
-};
 use icy_engine::formats::FileFormat;
 use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
 use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage};
 use icy_engine_gui::{command_handler, command_handlers, Toast, ToastManager};
+use icy_ui::{
+    widget::{button, column, container, mouse_area, row, rule, text, Space},
+    Alignment, Border, Color, Element, Event, Length, Subscription, Task, Theme,
+};
 
 use super::commands::create_draw_commands;
 use super::menu::{MenuBarState, UndoInfo};
@@ -1289,8 +1289,8 @@ impl MainWindow {
                 Task::none()
             }
             Message::Paste => {
-                use icy_ui::clipboard::STANDARD;
                 use icy_engine_gui::ICY_CLIPBOARD_TYPE;
+                use icy_ui::clipboard::STANDARD;
 
                 match &self.mode_state {
                     ModeState::BitFont(_) => {

@@ -1,5 +1,5 @@
-use icy_ui::{widget::svg, Length, Theme};
 use icy_engine::formats::FileFormat;
+use icy_ui::{widget::svg, Length, Theme};
 
 // Status icons
 const WARNING_SVG: &[u8] = include_bytes!("icons/warning.svg");

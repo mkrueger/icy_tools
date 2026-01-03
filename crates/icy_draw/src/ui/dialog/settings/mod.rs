@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
+use icy_engine::BitFont;
+use icy_engine_gui::settings::{effect_box, left_label, show_monitor_settings_with_options, update_monitor_settings, MonitorSettingsMessage};
+use icy_engine_gui::ui::*;
+use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use icy_ui::{
     keyboard::{key::Named, Key},
     widget::{button, column, container, row, scrollable, text, text_input, Space},
     Border, Color, Element, Event, Length,
 };
-use icy_engine::BitFont;
-use icy_engine_gui::settings::{effect_box, left_label, show_monitor_settings_with_options, update_monitor_settings, MonitorSettingsMessage};
-use icy_engine_gui::ui::*;
-use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use parking_lot::RwLock;
 
 use crate::fl;

@@ -2,13 +2,13 @@ use crate::ui::dialing_directory_dialog::{DialingDirectoryFilter, DialingDirecto
 use crate::ui::Message;
 use crate::Address;
 use i18n_embed_fl::fl;
+use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use icy_ui::widget::space;
 use icy_ui::Padding;
 use icy_ui::{
     widget::{button, column, container, row, scrollable, text, text_input, Column, Space},
     Alignment, Element, Length,
 };
-use icy_engine_gui::ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use once_cell::sync::Lazy;
 use std::mem::swap;
 
@@ -252,7 +252,12 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
     for (idx, _) in lower_text.match_indices(&lower_search) {
         if idx > last {
             // Add non-highlighted part
-            row_elements.push(text(text_str[last..idx].to_string()).size(TEXT_SIZE_NORMAL).font(icy_ui::Font::MONOSPACE).into());
+            row_elements.push(
+                text(text_str[last..idx].to_string())
+                    .size(TEXT_SIZE_NORMAL)
+                    .font(icy_ui::Font::MONOSPACE)
+                    .into(),
+            );
         }
         // Add highlighted part with different style
         row_elements.push(

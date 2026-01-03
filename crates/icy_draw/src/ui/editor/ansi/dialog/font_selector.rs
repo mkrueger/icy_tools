@@ -8,19 +8,19 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use icy_engine::{get_sauce_font_names, AttributedChar, BitFont, FileFormat, FontMode, RenderOptions, TextAttribute, TextBuffer};
+use icy_engine_edit::FormatMode;
+use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
+use icy_engine_gui::{focus, ButtonType};
 use icy_ui::{
     keyboard::{key::Named, Key},
     mouse,
     widget::{
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, image, row, text, text_input, Space,
+        column, container, image, row, scroll_area, scrollable, text, text_input, Space,
     },
     Alignment, Color, Element, Event, Length, Point, Rectangle, Renderer, Size, Theme,
 };
-use icy_engine::{get_sauce_font_names, AttributedChar, BitFont, FileFormat, FontMode, RenderOptions, TextAttribute, TextBuffer};
-use icy_engine_edit::FormatMode;
-use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
-use icy_engine_gui::{focus, ButtonType, ScrollbarOverlay, Viewport};
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
@@ -201,6 +201,7 @@ pub enum FontSelectorResult {
 // ============================================================================
 
 /// Category state for collapsible sections
+#[derive(Clone)]
 struct CategoryState {
     expanded: bool,
     visible: bool,
@@ -232,9 +233,6 @@ pub struct SetFontDialog {
 
     /// Cached preview for large display
     large_preview_cache: RefCell<Option<(usize, CachedPreview)>>,
-
-    /// Viewport for font list scrolling
-    list_viewport: RefCell<Viewport>,
 
     /// Cached list of visible items (rebuilt when filter/categories change)
     visible_items: RefCell<Vec<ListItem>>,
@@ -364,7 +362,6 @@ impl SetFontDialog {
             categories,
             active_slot,
             large_preview_cache: RefCell::new(None),
-            list_viewport: RefCell::new(Viewport::default()),
             visible_items: RefCell::new(Vec::new()),
             pending_xbin_fonts: None,
         };
@@ -432,64 +429,15 @@ impl SetFontDialog {
             }
         }
 
-        // Update content height in viewport
-        let content_height = self.calculate_content_height(&items);
-        self.list_viewport.borrow_mut().content_height = content_height;
-
         *self.visible_items.borrow_mut() = items;
     }
 
-    /// Calculate total content height for the list
-    fn calculate_content_height(&self, items: &[ListItem]) -> f32 {
-        items
-            .iter()
-            .map(|item| match item {
-                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
-            })
-            .sum()
-    }
-
-    /// Get the Y position of the selected font in the list
-    fn get_selection_y_position(&self) -> Option<f32> {
-        let items = self.visible_items.borrow();
-        let mut y = 0.0;
-
-        for item in items.iter() {
-            let height = match item {
-                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                ListItem::FontItem { font_idx } => {
-                    if *font_idx == self.selected_index {
-                        return Some(y);
-                    }
-                    FONT_ITEM_HEIGHT
-                }
-            };
-            y += height;
-        }
-        None
-    }
-
     /// Scroll the list to make the selected item visible
+    /// Note: With scroll_area().show_viewport(), scrolling is handled by the native scrollbar.
+    /// Programmatic scrolling would require scroll_area.scroll_to() which we don't have access to here.
     fn scroll_to_selection(&self) {
-        if let Some(y) = self.get_selection_y_position() {
-            let mut vp = self.list_viewport.borrow_mut();
-            let visible_height = vp.visible_height;
-
-            // Check if selection is above visible area
-            if y < vp.scroll_y {
-                vp.scroll_y = y;
-                vp.target_scroll_y = y;
-                vp.sync_scrollbar_position();
-            }
-            // Check if selection is below visible area
-            else if y + FONT_ITEM_HEIGHT > vp.scroll_y + visible_height {
-                let new_scroll = y + FONT_ITEM_HEIGHT - visible_height;
-                vp.scroll_y = new_scroll;
-                vp.target_scroll_y = new_scroll;
-                vp.sync_scrollbar_position();
-            }
-        }
+        // No-op for now - native scrollbar handles scrolling
+        // TODO: Implement programmatic scrolling if icy_ui provides an API for it
     }
 
     /// Ensure the currently selected font is visible in the list
@@ -707,8 +655,9 @@ impl SetFontDialog {
             return;
         }
 
-        let visible_height = self.list_viewport.borrow().visible_height;
-        let items_per_page = (visible_height / FONT_ITEM_HEIGHT).max(1.0) as usize;
+        // Estimate visible height based on typical dialog size
+        let estimated_visible_height = 400.0;
+        let items_per_page = (estimated_visible_height / FONT_ITEM_HEIGHT).max(1.0) as usize;
 
         if let Some(current_pos) = visible_fonts.iter().position(|&i| i == self.selected_index) {
             let new_pos = current_pos.saturating_sub(items_per_page);
@@ -726,8 +675,9 @@ impl SetFontDialog {
             return;
         }
 
-        let visible_height = self.list_viewport.borrow().visible_height;
-        let items_per_page = (visible_height / FONT_ITEM_HEIGHT).max(1.0) as usize;
+        // Estimate visible height based on typical dialog size
+        let estimated_visible_height = 400.0;
+        let items_per_page = (estimated_visible_height / FONT_ITEM_HEIGHT).max(1.0) as usize;
 
         if let Some(current_pos) = visible_fonts.iter().position(|&i| i == self.selected_index) {
             let new_pos = (current_pos + items_per_page).min(visible_fonts.len() - 1);
@@ -810,15 +760,61 @@ impl SetFontDialog {
             .width(Length::Fill)
             .padding(8);
 
-        // Canvas-based font list with overlay scrollbar
-        let font_list_canvas: Element<'_, Message> = Canvas::new(FontListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
+        // Calculate content height based on visible items
+        let content_height = self
+            .visible_items
+            .borrow()
+            .iter()
+            .map(|item| match item {
+                ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
+                ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
+            })
+            .sum::<f32>();
+        let content_width = LEFT_PANEL_WIDTH - 12.0;
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.list_viewport).view().map(|_| msg(SetFontMessage::Cancel)); // Dummy mapping, scrollbar handles viewport directly
+        // Clone data for the closure
+        let visible_items: Vec<ListItem> = self.visible_items.borrow().clone();
+        let categories: HashMap<FontCategory, CategoryState> = self
+            .categories
+            .iter()
+            .map(|(k, v)| {
+                (
+                    *k,
+                    CategoryState {
+                        expanded: v.expanded,
+                        visible: v.visible,
+                        font_indices: v.font_indices.clone(),
+                    },
+                )
+            })
+            .collect();
+        let fonts: Vec<FontEntry> = self.fonts.clone();
+        let selected_index = self.selected_index;
 
-        let list_row = row![font_list_canvas, scrollbar,];
+        // Use scroll_area with show_viewport
+        let scroll_list = scroll_area()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
+            .show_viewport(Size::new(content_width, content_height), move |viewport| {
+                let visible_items = visible_items.clone();
+                let categories = categories.clone();
+                let fonts = fonts.clone();
+
+                Canvas::new(FontListCanvasViewport {
+                    viewport,
+                    visible_items,
+                    categories,
+                    fonts,
+                    selected_index,
+                })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            });
 
         // Wrap in Focus widget for keyboard navigation
-        let list_with_scrollbar: Element<'_, Message> = focus(list_row)
+        let list_with_scrollbar: Element<'_, Message> = focus(scroll_list)
             .on_event(|event, _id| {
                 if let Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
@@ -888,28 +884,24 @@ impl SetFontDialog {
 // Font List Canvas
 // ============================================================================
 
-struct FontListCanvas<'a> {
-    dialog: &'a SetFontDialog,
+struct FontListCanvasViewport {
+    viewport: Rectangle,
+    visible_items: Vec<ListItem>,
+    categories: HashMap<FontCategory, CategoryState>,
+    fonts: Vec<FontEntry>,
+    selected_index: usize,
 }
 
-impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
+impl canvas::Program<Message> for FontListCanvasViewport {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        // Update viewport dimensions
-        {
-            let mut vp = self.dialog.list_viewport.borrow_mut();
-            vp.visible_height = bounds.height;
-            vp.visible_width = bounds.width;
-        }
-
-        let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
-        let items = self.dialog.visible_items.borrow();
+        let scroll_y = self.viewport.y;
 
         let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
-            for item in items.iter() {
+            for item in self.visible_items.iter() {
                 let height = match item {
                     ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                     ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
@@ -933,7 +925,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         frame.fill(&bg_rect, theme.secondary.base);
 
                         // Draw arrow and text
-                        let expanded = self.dialog.categories.get(category).map(|s| s.expanded).unwrap_or(true);
+                        let expanded = self.categories.get(category).map(|s| s.expanded).unwrap_or(true);
                         let arrow = if expanded { "▼" } else { "▶" };
                         let label = format!("{} {} {} ({})", arrow, category.icon(), category.label(), count);
 
@@ -946,7 +938,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         });
                     }
                     ListItem::FontItem { font_idx } => {
-                        let is_selected = self.dialog.selected_index == *font_idx;
+                        let is_selected = self.selected_index == *font_idx;
 
                         // Draw selection background
                         if is_selected {
@@ -955,7 +947,7 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
                         }
 
                         // Draw font name
-                        let font_name = &self.dialog.fonts[*font_idx].font.name();
+                        let font_name = &self.fonts[*font_idx].font.name();
                         let text_color = if is_selected { theme.accent.on } else { theme.background.on };
 
                         frame.fill_text(Text {
@@ -982,12 +974,11 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     // Find which item was clicked
-                    let scroll_y = self.dialog.list_viewport.borrow().scroll_y;
+                    let scroll_y = self.viewport.y;
                     let click_y = pos.y + scroll_y;
-                    let items = self.dialog.visible_items.borrow();
                     let mut current_y = 0.0;
 
-                    for item in items.iter() {
+                    for item in self.visible_items.iter() {
                         let height = match item {
                             ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                             ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
@@ -1006,21 +997,6 @@ impl<'a> canvas::Program<Message> for FontListCanvas<'a> {
 
                         current_y += height;
                     }
-                }
-            }
-            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
-                if cursor.is_over(bounds) {
-                    let scroll_amount = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => -y * 30.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => -y,
-                    };
-
-                    let mut vp = self.dialog.list_viewport.borrow_mut();
-                    let max_scroll = (vp.content_height - vp.visible_height).max(0.0);
-                    vp.scroll_y = (vp.scroll_y + scroll_amount).clamp(0.0, max_scroll);
-                    vp.target_scroll_y = vp.scroll_y;
-
-                    return Some(canvas::Action::request_redraw());
                 }
             }
             _ => {}

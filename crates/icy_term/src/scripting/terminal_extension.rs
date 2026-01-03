@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use icy_ui::keyboard;
 use icy_engine::Screen;
 use icy_engine_scripting::{LuaExtension, LuaScreen};
 use icy_net::telnet::TerminalEmulation;
+use icy_ui::keyboard;
 use mlua::Lua;
 use parking_lot::Mutex;
 use regex::Regex;

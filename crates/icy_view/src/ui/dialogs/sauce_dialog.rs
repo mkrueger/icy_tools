@@ -1,8 +1,4 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, container, row, scrollable, text, text_input, Space},
-    Alignment, Element, Length, Theme,
-};
 use icy_engine_gui::{
     dialog_wrapper, section_header,
     ui::{
@@ -11,6 +7,10 @@ use icy_engine_gui::{
     },
 };
 use icy_sauce::{ArchiveFormat, AudioFormat, BitmapFormat, Capabilities, CharacterFormat, SauceDataType, SauceRecord, VectorFormat};
+use icy_ui::{
+    widget::{column, container, row, scrollable, text, text_input, Space},
+    Alignment, Element, Length, Theme,
+};
 
 const FIELD_SPACING: f32 = 4.0;
 

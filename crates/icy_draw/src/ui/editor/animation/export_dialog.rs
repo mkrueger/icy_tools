@@ -11,10 +11,6 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 
-use icy_ui::{
-    widget::{column, container, pick_list, progress_bar, row, text, text_input, Space},
-    Alignment, Element, Length, Task,
-};
 use icy_engine::{Position, Rectangle, RenderOptions, Screen};
 use icy_engine_gui::ui::{
     browse_button, button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
@@ -22,6 +18,10 @@ use icy_engine_gui::ui::{
 };
 use icy_engine_gui::ButtonType;
 use icy_engine_scripting::Animator;
+use icy_ui::{
+    widget::{column, container, pick_list, progress_bar, row, text, text_input, Space},
+    Alignment, Element, Length, Task,
+};
 use parking_lot::Mutex;
 
 use super::AnimationEditorMessage;

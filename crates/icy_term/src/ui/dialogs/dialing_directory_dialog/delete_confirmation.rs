@@ -1,8 +1,8 @@
 use crate::ui::dialing_directory_dialog::DialingDirectoryMsg;
 use crate::ui::Message;
 use i18n_embed_fl::fl;
-use icy_ui::Element;
 use icy_engine_gui::ui::{ButtonSet, ConfirmationDialog, DialogResult, DialogType};
+use icy_ui::Element;
 
 impl super::DialingDirectoryState {
     pub fn delete_confirmation_modal(&self, idx: usize) -> Element<'_, Message> {

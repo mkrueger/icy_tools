@@ -1,7 +1,7 @@
 #![allow(static_mut_refs)]
 use crate::{create_crt_shader, MonitorSettings, Terminal, ZoomMessage};
-use icy_ui::Element;
 use icy_engine::{KeyModifiers, MouseButton, Position};
+use icy_ui::Element;
 use std::sync::Arc;
 
 /// Re-export icy_ui's scroll delta for convenience

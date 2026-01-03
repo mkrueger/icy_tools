@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use i18n_embed_fl::fl;
+use icy_engine_gui::command_handler;
 use icy_ui::{
     widget::{button, container, row, text, text_input, tooltip, Space},
     Element, Event, Length,
 };
-use icy_engine_gui::command_handler;
 
 use super::icons::{arrow_back_icon, arrow_forward_icon, language_icon, refresh_icon, search_icon, settings_icon};
 use crate::commands::{cmd, create_icy_view_commands};

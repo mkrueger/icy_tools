@@ -1,8 +1,4 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, tooltip, Space},
-    Alignment, Border, Color, Element, Length,
-};
 use icy_engine_gui::{
     section_header,
     settings::effect_box,
@@ -10,6 +6,10 @@ use icy_engine_gui::{
     SECTION_PADDING, TEXT_SIZE_NORMAL,
 };
 use icy_net::modem::ModemCommand;
+use icy_ui::{
+    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, tooltip, Space},
+    Alignment, Border, Color, Element, Length,
+};
 
 use crate::ui::{
     select_bps_dialog::STANDARD_RATES,

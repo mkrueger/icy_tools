@@ -4,9 +4,9 @@
 
 use std::path::PathBuf;
 
-use icy_ui::Task;
 use icy_engine::formats::FileFormat;
 use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult};
+use icy_ui::Task;
 
 use super::main_window::{enforce_extension, MainWindow, Message, ModeState};
 use crate::fl;

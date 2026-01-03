@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,11 +7,11 @@ use tokio_util::sync::CancellationToken;
 
 use icy_ui::mouse;
 use icy_ui::widget::canvas::Cache;
-use icy_ui::widget::{container, shader, stack, text};
-use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow};
+use icy_ui::widget::{container, scroll_area, scrollable, shader, text};
+use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow, Size};
 use tokio::sync::mpsc;
 
-use icy_engine_gui::{ScrollbarOverlayCallback, Viewport};
+use icy_engine_gui::Viewport;
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{Thumbnail, ThumbnailResult, ThumbnailState, ERROR_PLACEHOLDER, LOADING_PLACEHOLDER};
@@ -130,10 +129,6 @@ pub enum TileGridMessage {
     AnimationTick,
     /// Thumbnail loading completed
     ThumbnailReady,
-    /// Scrollbar scroll event (from scrollbar overlay)
-    ScrollbarScroll(f32, f32),
-    /// Scrollbar hover state changed
-    ScrollbarHover(bool),
     /// Keyboard: select previous item (up arrow)
     SelectPrevious,
     /// Keyboard: select next item (down arrow)
@@ -184,8 +179,6 @@ pub struct TileGridView {
     blink_timer: f32,
     /// Shared hover state - updated by shader, read by click handler
     pub shared_hovered_tile: Arc<Mutex<Option<u64>>>,
-    /// Shared hover state for scrollbar overlay
-    scrollbar_hover_state: Arc<AtomicBool>,
     /// Last known cursor position (for click handling)
     pub last_cursor_position: Option<Point>,
     /// Last known widget bounds (for event handling, RefCell for interior mutability)
@@ -235,7 +228,6 @@ impl TileGridView {
             blink_on: true,
             blink_timer: 0.0,
             shared_hovered_tile: Arc::new(Mutex::new(None)),
-            scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             last_cursor_position: None,
             last_bounds: RefCell::new(Rectangle::new(Point::ORIGIN, icy_ui::Size::new(800.0, 600.0))),
             auto_scroll_active: false,
@@ -863,19 +855,20 @@ impl TileGridView {
 
     /// Check if animation/polling is needed (loading thumbnails or animated content)
     pub fn needs_animation(&self) -> bool {
-        // Check if any visible (filtered) thumbnails are still loading or need to be loaded
-        // Note: map_or(true, ...) treats missing entries as "needs loading"
-        let has_loading_or_missing = self.visible_indices.iter().any(|&idx| {
-            self.thumbnails
-                .get(idx)
-                .map_or(true, |t| matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
-        });
+        // Check if any visible (filtered) thumbnails are actively loading
+        // Note: Only check Loading state, not Pending - pending ones will be queued during tick()
+        // This prevents continuous animation when there are many unloaded thumbnails
+        let has_loading = self
+            .visible_indices
+            .iter()
+            .take(100)
+            .any(|&idx| self.thumbnails.get(idx).map_or(false, |t| matches!(t.state, ThumbnailState::Loading { .. })));
 
         // Or if any thumbnails have blinking/animated content
         // Or if viewport needs animation (includes scroll and scrollbar)
         // Or if auto-scroll is active
         // Or if we're waiting for async subitems to load
-        has_loading_or_missing || self.has_animated() || self.viewport.borrow().needs_animation() || self.auto_scroll_active || self.subitems_rx.is_some()
+        has_loading || self.has_animated() || self.auto_scroll_active || self.subitems_rx.is_some()
     }
 
     // ==================== Keyboard Navigation ====================
@@ -1307,131 +1300,98 @@ impl TileGridView {
             bounds.height = height;
         }
 
-        // Build tile textures from thumbnails - only process visible tiles
-        let mut tiles = Vec::with_capacity(self.visible_indices.len().min(50)); // Pre-allocate for visible tiles
-        let layout = self.layout.borrow();
-        let scroll_offset = self.viewport.borrow().scroll_y;
+        let content_height = self.viewport.borrow().content_height;
+        let content_width = width - 12.0; // Account for scrollbar
 
-        // Iterate over layout tiles (which only contain visible/filtered items)
-        for (layout_idx, layout_tile) in layout.iter().enumerate() {
-            let actual_index = layout_tile.index;
-            let Some(thumb) = self.thumbnails.get(actual_index) else { continue };
-            let Some(&tile_id) = self.tile_ids.get(actual_index) else { continue };
+        // Clone data needed for the closure
+        let thumbnails: Vec<_> = self.thumbnails.iter().map(|t| t.clone()).collect();
+        let tile_ids = self.tile_ids.clone();
+        let layout: Vec<_> = self.layout.borrow().clone();
+        let selected_index = self.selected_index;
+        let shared_hovered_tile = self.shared_hovered_tile.clone();
 
-            // Get layout position - layout_tile.height is the TOTAL tile height including label
-            let (x, y, tile_width, total_tile_height) = (layout_tile.x, layout_tile.y, layout_tile.width, layout_tile.height);
-
-            // Early visibility check - skip tiles outside viewport
-            let tile_top = y - scroll_offset;
-            let tile_bottom = tile_top + total_tile_height;
-            if tile_bottom < 0.0 || tile_top > height {
-                continue; // Skip tiles outside viewport
-            }
-
-            // Get RGBA data based on state - use pre-rendered placeholders with labels
-            let rgba = match &thumb.state {
-                ThumbnailState::Ready { rgba } => rgba,
-                ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame).unwrap_or(&*LOADING_PLACEHOLDER),
-                ThumbnailState::Loading { placeholder } | ThumbnailState::Pending { placeholder } => placeholder.as_ref().unwrap_or(&*LOADING_PLACEHOLDER),
-                ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().unwrap_or(&*ERROR_PLACEHOLDER),
-            };
-
-            let is_selected = self.selected_index == Some(layout_idx);
-            let is_hovered = *self.shared_hovered_tile.lock() == Some(tile_id);
-
-            // Get label RGBA data for separate GPU rendering
-            // label_size stores the RAW texture dimensions for texture creation
-            // The shader will scale the texture to fit the label_rect
-            let (label_rgba, label_raw_size) = if let Some(ref label) = thumb.label_rgba {
-                (Some(label.data.clone()), (label.width, label.height))
-            } else {
-                (None, (0, 0))
-            };
-
-            // Calculate the displayed image height - raw texture scaled to fit content_width
-            // This is the height the image will be rendered at, not the raw texture height
-            let content_width = tile_width - (TILE_PADDING * 2.0);
-            let scale = if rgba.width > 0 { content_width / rgba.width as f32 } else { 1.0 };
-            let scaled_image_height = rgba.height as f32 * scale;
-
-            // No height capping - multi-pass rendering handles tall tiles
-            let image_height = scaled_image_height;
-
-            // Label is rendered at 2x scale for readability
-            // label_size = scaled label dimensions for shader uniforms
-            const LABEL_SCALE: u32 = 2;
-            let label_size = (label_raw_size.0 * LABEL_SCALE, label_raw_size.1 * LABEL_SCALE);
-
-            tiles.push(TileTexture {
-                id: tile_id,
-                rgba_data: rgba.data.clone(),
-                width: rgba.width,
-                height: rgba.height,
-                label_rgba,
-                label_raw_size,
-                label_size,
-                position: (x, y),
-                display_size: (tile_width, total_tile_height),
-                image_height,
-                is_selected,
-                is_hovered,
-            });
-        }
-        drop(layout); // Release borrow before creating program
-
-        let vp = self.viewport.borrow();
-        let content_height = vp.content_height;
-        let scroll_y = vp.scroll_y;
-        let scrollbar_visibility = vp.scrollbar.visibility;
-        drop(vp);
-
-        // Create shader primitive
-        let program = TileShaderProgramWrapper {
-            tiles,
-            scroll_y,
-            _viewport_height: height,
-            _selected_tile_id: self.selected_index.and_then(|i| self.tile_ids.get(i).copied()),
-            shared_hovered_tile: self.shared_hovered_tile.clone(),
-        };
-
-        // Build the shader widget
-        let shader_widget = container(shader(program).width(Length::Fill).height(Length::Fill))
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        // Create overlay scrollbar if content is taller than viewport
-        let max_scroll = (content_height - height).max(0.0);
-        if max_scroll > 0.0 {
-            // Calculate scroll ratio and height ratio for scrollbar
-            let scroll_ratio = if max_scroll > 0.0 { (scroll_y / max_scroll).clamp(0.0, 1.0) } else { 0.0 };
-            let height_ratio = (height / content_height).clamp(0.0, 1.0);
-
-            let scrollbar_overlay = ScrollbarOverlayCallback::new(
-                scrollbar_visibility,
-                scroll_ratio,
-                height_ratio,
-                max_scroll,
-                self.scrollbar_hover_state.clone(),
-                |_x, y| TileGridMessage::ScrollbarScroll(0.0, y),
-                TileGridMessage::ScrollbarHover,
-            );
-
-            // Use stack to overlay scrollbar on top of shader widget
-            // Scrollbar aligned to right edge
-            stack![
-                shader_widget,
-                container(scrollbar_overlay.view().map(|m| m))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(icy_ui::alignment::Horizontal::Right)
-                    .align_y(icy_ui::alignment::Vertical::Center)
-            ]
+        // Use scroll_area with show_viewport for native scrollbar
+        scroll_area()
             .width(Length::Fill)
             .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
+            .show_viewport(Size::new(content_width, content_height), move |viewport| {
+                let scroll_offset = viewport.y;
+                let viewport_height = viewport.height;
+
+                // Build tile textures from thumbnails - only process visible tiles
+                let mut tiles = Vec::with_capacity(layout.len().min(50));
+
+                for (layout_idx, layout_tile) in layout.iter().enumerate() {
+                    let actual_index = layout_tile.index;
+                    let Some(thumb) = thumbnails.get(actual_index) else { continue };
+                    let Some(&tile_id) = tile_ids.get(actual_index) else { continue };
+
+                    let (x, y, tile_width, total_tile_height) = (layout_tile.x, layout_tile.y, layout_tile.width, layout_tile.height);
+
+                    // Early visibility check - skip tiles outside viewport
+                    let tile_top = y - scroll_offset;
+                    let tile_bottom = tile_top + total_tile_height;
+                    if tile_bottom < 0.0 || tile_top > viewport_height {
+                        continue;
+                    }
+
+                    // Get RGBA data based on state
+                    let rgba = match &thumb.state {
+                        ThumbnailState::Ready { rgba } => rgba,
+                        ThumbnailState::Animated { frames, current_frame } => frames.get(*current_frame).unwrap_or(&*LOADING_PLACEHOLDER),
+                        ThumbnailState::Loading { placeholder } | ThumbnailState::Pending { placeholder } => {
+                            placeholder.as_ref().unwrap_or(&*LOADING_PLACEHOLDER)
+                        }
+                        ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().unwrap_or(&*ERROR_PLACEHOLDER),
+                    };
+
+                    let is_selected = selected_index == Some(layout_idx);
+                    let is_hovered = *shared_hovered_tile.lock() == Some(tile_id);
+
+                    let (label_rgba, label_raw_size) = if let Some(ref label) = thumb.label_rgba {
+                        (Some(label.data.clone()), (label.width, label.height))
+                    } else {
+                        (None, (0, 0))
+                    };
+
+                    let content_width = tile_width - (TILE_PADDING * 2.0);
+                    let scale = if rgba.width > 0 { content_width / rgba.width as f32 } else { 1.0 };
+                    let image_height = rgba.height as f32 * scale;
+
+                    const LABEL_SCALE: u32 = 2;
+                    let label_size = (label_raw_size.0 * LABEL_SCALE, label_raw_size.1 * LABEL_SCALE);
+
+                    tiles.push(TileTexture {
+                        id: tile_id,
+                        rgba_data: rgba.data.clone(),
+                        width: rgba.width,
+                        height: rgba.height,
+                        label_rgba,
+                        label_raw_size,
+                        label_size,
+                        position: (x, y),
+                        display_size: (tile_width, total_tile_height),
+                        image_height,
+                        is_selected,
+                        is_hovered,
+                    });
+                }
+
+                let program = TileShaderProgramWrapper {
+                    tiles,
+                    scroll_y: scroll_offset,
+                    _viewport_height: viewport_height,
+                    _selected_tile_id: selected_index.and_then(|i| tile_ids.get(i).copied()),
+                    shared_hovered_tile: shared_hovered_tile.clone(),
+                };
+
+                container(shader(program).width(Length::Fill).height(Length::Fill))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+            })
             .into()
-        } else {
-            shader_widget.into()
-        }
     }
 
     /// Update with a message, returns true if an item should be opened
@@ -1447,31 +1407,6 @@ impl TileGridView {
             }
             TileGridMessage::ThumbnailReady => {
                 // Already handled in poll_results
-                false
-            }
-            TileGridMessage::ScrollbarScroll(_x, y) => {
-                // y is absolute scroll position
-                let max_scroll = self.viewport.borrow().max_scroll_y();
-                self.scroll_to(y.clamp(0.0, max_scroll));
-                {
-                    let mut vp = self.viewport.borrow_mut();
-                    vp.scrollbar.mark_interaction(true);
-                    // Sync scrollbar position
-                    if max_scroll > 0.0 {
-                        let scroll_y = vp.scroll_y;
-                        vp.scrollbar.set_scroll_position(scroll_y / max_scroll);
-                    }
-                }
-                // Queue loading for newly visible items
-                let (scroll, vh) = {
-                    let vp = self.viewport.borrow();
-                    (vp.scroll_y, vp.visible_height)
-                };
-                self.queue_visible_loads(scroll, vh);
-                false
-            }
-            TileGridMessage::ScrollbarHover(hovered) => {
-                self.viewport.borrow_mut().scrollbar.set_hovered(hovered);
                 false
             }
             TileGridMessage::SelectPrevious => {

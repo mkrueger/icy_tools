@@ -7,13 +7,13 @@
 
 use super::{ToolContext, ToolHandler, ToolMessage, ToolResult};
 use crate::fl;
-use icy_ui::widget::{button, row, text, tooltip, Space};
-use icy_ui::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, Sixel};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 use icy_engine_edit::EditState;
 use icy_engine_gui::TerminalMessage;
+use icy_ui::widget::{button, row, text, tooltip, Space};
+use icy_ui::{Element, Length, Theme};
 
 /// State for the paste/floating layer tool
 #[derive(Default)]

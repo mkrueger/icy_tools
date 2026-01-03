@@ -5,11 +5,11 @@
 
 #![allow(dead_code)]
 
+use icy_engine_gui::ui::{primary_button, secondary_button, SPACE_16, SPACE_8, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use icy_ui::{
     widget::{button, column, container, row, svg, text, toggler, Space},
     Element, Length, Task, Theme,
 };
-use icy_engine_gui::ui::{primary_button, secondary_button, SPACE_16, SPACE_8, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 
 use crate::fl;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};

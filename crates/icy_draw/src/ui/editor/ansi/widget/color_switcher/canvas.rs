@@ -13,12 +13,12 @@
 
 #![allow(dead_code)]
 
+use icy_engine::{Palette, TextAttribute};
 use icy_ui::{
     mouse,
     widget::canvas::{Action, Canvas, Frame, Geometry, Path, Program, Stroke},
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::{Palette, TextAttribute};
 
 /// Size of the color switcher widget (square like in egui version)
 pub const SWITCHER_SIZE: f32 = 62.0;

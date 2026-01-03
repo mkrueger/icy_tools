@@ -4,13 +4,13 @@
 //! including ANSI, ASCII, XBin, and image formats (PNG, GIF, etc.).
 
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{checkbox, column, container, pick_list, row, scrollable, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine::{
     formats::{FileFormat, FormatOptions, ImageFormat, SauceMetaData, SixelSettings},
     AnsiCompatibilityLevel, BufferType, SaveOptions, Screen, ScreenPreperation,
+};
+use icy_ui::{
+    widget::{checkbox, column, container, pick_list, row, scrollable, text, text_input, Space},
+    Alignment, Element, Length,
 };
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
@@ -600,9 +600,11 @@ impl ExportDialogState {
             row![
                 error_tooltip(error.clone()),
                 Space::new().width(4.0),
-                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                    color: Some(theme.destructive.base),
-                })
+                text(error_msg)
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+                        color: Some(theme.destructive.base),
+                    })
             ]
             .into()
         } else {

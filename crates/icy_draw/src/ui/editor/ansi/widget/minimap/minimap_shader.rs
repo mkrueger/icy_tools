@@ -401,7 +401,13 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<MinimapMessage>> {
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &icy_ui::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<icy_ui::widget::Action<MinimapMessage>> {
         match event {
             // Handle redraw requests for continuous drag scrolling
             icy_ui::Event::Window(icy_ui::window::Event::RedrawRequested(now)) => {

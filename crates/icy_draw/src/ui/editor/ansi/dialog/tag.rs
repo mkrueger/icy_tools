@@ -1,10 +1,10 @@
+use icy_engine::{Position, TagPlacement};
+use icy_engine_gui::settings::{effect_box, left_label};
+use icy_engine_gui::ui::*;
 use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space},
     Element, Length,
 };
-use icy_engine::{Position, TagPlacement};
-use icy_engine_gui::settings::{effect_box, left_label};
-use icy_engine_gui::ui::*;
 
 use crate::fl;
 use crate::util::{get_available_taglists, load_taglist, TagReplacementList, TaglistInfo};

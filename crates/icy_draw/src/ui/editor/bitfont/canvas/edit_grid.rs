@@ -1,13 +1,13 @@
 //! Edit grid canvas for BitFont editor
 
+use icy_engine_edit::bitfont::{brushes, BitFontFocusedPanel};
+use icy_engine_gui::theme::main_area_background;
 use icy_ui::{
     keyboard::{self, Key},
     mouse::{self, Cursor},
     widget::canvas::{self, Action, Path, Stroke},
     Color, Point, Rectangle, Size,
 };
-use icy_engine_edit::bitfont::{brushes, BitFontFocusedPanel};
-use icy_engine_gui::theme::main_area_background;
 
 use super::super::{style::*, ArrowDirection, BitFontEditor, BitFontEditorMessage, BitFontTool, CanvasEvent};
 

@@ -4,10 +4,6 @@ use std::{
     sync::Arc,
 };
 
-use icy_ui::{
-    widget::{column, container, pane_grid, row},
-    Alignment, Element, Length, Task, Theme,
-};
 use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{BitFont, TextPane};
 use icy_engine_edit::tools::Tool;
@@ -15,6 +11,10 @@ use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{export_dialog_with_defaults_from_msg, DialogStack};
+use icy_ui::{
+    widget::{column, container, pane_grid, row},
+    Alignment, Element, Length, Task, Theme,
+};
 use parking_lot::RwLock;
 
 use crate::ui::editor::palette::PaletteEditorDialog;

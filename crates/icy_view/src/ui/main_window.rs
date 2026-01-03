@@ -1,16 +1,16 @@
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use i18n_embed_fl::fl;
-use icy_ui::{
-    keyboard::{key::Named, Key},
-    widget::{column, container, image as iced_image, mouse_area, row, text, Space},
-    Element, Event, Length, Task, Theme,
-};
 use icy_engine_gui::{
     command_handler, dialog_msg, error_dialog,
     ui::{export_dialog_with_defaults_from_msg, DialogStack, ExportDialogMessage, HelpDialogMessage},
     version_helper::replace_version_marker,
     MonitorSettings, Toast, ToastManager,
+};
+use icy_ui::{
+    keyboard::{key::Named, Key},
+    widget::{column, container, image as iced_image, mouse_area, row, text, Space},
+    Element, Event, Length, Task, Theme,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -333,7 +333,7 @@ impl MainWindow {
                 let old_display_path = self.file_browser.get_display_path();
                 let old_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
 
-                let file_opened = self.file_browser.update(msg);
+                let (file_opened_bool, scroll_task) = self.file_browser.update(msg);
 
                 // Update history if path changed - use display_path for both local and web paths
                 let new_display_path = self.file_browser.get_display_path();
@@ -378,7 +378,7 @@ impl MainWindow {
                         new_selection,
                         is_container,
                         selection_changed,
-                        file_opened
+                        file_opened_bool
                     );
 
                     // Record selection change as new history point
@@ -387,7 +387,7 @@ impl MainWindow {
                         self.history.navigate_to(point);
                     }
 
-                    if selection_changed || file_opened {
+                    if selection_changed || file_opened_bool {
                         if is_container {
                             // For folders (including zip files), show thumbnail preview of contents
                             self.current_file = None;
@@ -418,12 +418,13 @@ impl MainWindow {
 
                             // Read the data from the item asynchronously (works for both local and virtual files)
                             if let Some(item) = self.file_browser.selected_item() {
-                                return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
+                                let load_task = crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
+                                return Task::batch([scroll_task.map(Message::FileBrowser), load_task]);
                             }
                         }
                     }
                 }
-                Task::none()
+                scroll_task.map(Message::FileBrowser)
             }
             Message::Navigation(nav_msg) => {
                 match nav_msg {
@@ -447,7 +448,7 @@ impl MainWindow {
                         let current_point = self.current_history_point();
                         self.history.navigate_to(current_point);
 
-                        self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        let _ = self.file_browser.update(FileBrowserMessage::ParentFolder);
                         // Reset SAUCE loader after navigation (so new files are available)
                         self.reset_sauce_loader_for_navigation();
                         // Update path input with the new display path
@@ -464,7 +465,7 @@ impl MainWindow {
                         // Cancel any ongoing loading operation on refresh
                         self.preview.cancel_loading();
 
-                        self.file_browser.update(FileBrowserMessage::Refresh);
+                        let _ = self.file_browser.update(FileBrowserMessage::Refresh);
                         // Reset SAUCE loader after refresh (directory contents may have changed)
                         self.reset_sauce_loader_for_navigation();
                         // Update can_go_up state for toolbar
@@ -1134,7 +1135,7 @@ impl MainWindow {
                         let current_point = self.current_history_point();
                         self.history.navigate_to(current_point);
 
-                        self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        let _ = self.file_browser.update(FileBrowserMessage::ParentFolder);
                         // Update path input with the new display path
                         let display_path = self.file_browser.get_display_path();
                         self.navigation_bar.set_path_input(display_path);
@@ -1240,7 +1241,7 @@ impl MainWindow {
                     let old_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
 
                     // Apply filter to file browser and tile grids
-                    self.file_browser.update(FileBrowserMessage::FilterChanged(filter.clone()));
+                    let _ = self.file_browser.update(FileBrowserMessage::FilterChanged(filter.clone()));
                     self.tile_grid.apply_filter(&filter);
                     self.folder_preview.apply_filter(&filter);
 
@@ -1425,7 +1426,7 @@ impl MainWindow {
                 }
 
                 // Forward tick to file browser's list view
-                self.file_browser.update(FileBrowserMessage::ListView(FileListViewMessage::Tick));
+                let _ = self.file_browser.update(FileBrowserMessage::ListView(FileListViewMessage::Tick));
                 // Poll tile grid results if in tiles mode
                 if self.view_mode() == ViewMode::Tiles {
                     let _ = self.tile_grid.poll_results();
@@ -1620,7 +1621,7 @@ impl MainWindow {
     fn close_filter_popup(&mut self) {
         self.filter_popup.hide();
         self.filter_popup.clear_filter();
-        self.file_browser.update(FileBrowserMessage::FilterChanged(String::new()));
+        let _ = self.file_browser.update(FileBrowserMessage::FilterChanged(String::new()));
         self.tile_grid.clear_filter();
         self.folder_preview.clear_filter();
     }
@@ -2185,8 +2186,7 @@ impl MainWindow {
 
     /// Check if animation is needed
     pub fn needs_animation(&self) -> bool {
-        self.file_browser.needs_animation()
-            || self.preview.needs_animation()
+        self.preview.needs_animation()
             || (self.view_mode() == ViewMode::Tiles && self.tile_grid.needs_animation())
             || (self.view_mode() == ViewMode::List && self.folder_preview_path.is_some() && self.folder_preview.needs_animation())
             || self.shuffle_mode.needs_animation()

@@ -4,12 +4,12 @@
 //! Supports 16, 64, and 256 color palettes.
 //! Ported from egui palette_editor_16.
 
+use icy_engine::{FontMode, IceMode, Palette};
 use icy_ui::{
     mouse,
     widget::canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke},
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::{FontMode, IceMode, Palette};
 
 /// Messages from the palette grid
 #[derive(Clone, Debug)]

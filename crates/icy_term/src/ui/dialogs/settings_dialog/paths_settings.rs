@@ -1,12 +1,12 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, row, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine_gui::{
     section_header,
     settings::{effect_box, left_label},
     ui::{browse_button, secondary_button, DIALOG_SPACING, TEXT_SIZE_NORMAL},
+};
+use icy_ui::{
+    widget::{column, row, text_input, Space},
+    Alignment, Element, Length,
 };
 
 use crate::ui::dialogs::settings_dialog::SettingsDialogMessage;

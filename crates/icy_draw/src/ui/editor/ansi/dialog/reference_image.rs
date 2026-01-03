@@ -4,16 +4,16 @@
 
 use std::path::PathBuf;
 
-use icy_ui::{
-    widget::{button, column, container, row, slider, text, text_input, Space},
-    Alignment, Element, Length, Task,
-};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
     dialog_area, dialog_title, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM,
     TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::ButtonType;
+use icy_ui::{
+    widget::{button, column, container, row, slider, text, text_input, Space},
+    Alignment, Element, Length, Task,
+};
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;

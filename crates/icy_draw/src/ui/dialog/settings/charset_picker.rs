@@ -7,6 +7,7 @@
 //! - 12 F-key slots displayed as clickable buttons with actual glyphs
 //! - Set navigation (multiple character sets)
 
+use icy_engine::BitFont;
 use icy_ui::{
     mouse,
     mouse::Cursor,
@@ -17,7 +18,6 @@ use icy_ui::{
     },
     Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::BitFont;
 
 use crate::fl;
 use crate::ui::FKeySets;

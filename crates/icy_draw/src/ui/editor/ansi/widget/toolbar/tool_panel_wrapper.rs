@@ -7,8 +7,8 @@
 //! The ToolPanel now takes a reference to the ToolRegistry and uses it to
 //! determine which tool slots to display and how to handle clicks.
 
-use icy_ui::{Color, Element};
 use icy_engine_edit::tools::Tool;
+use icy_ui::{Color, Element};
 
 use crate::ui::editor::ansi::tool_registry::ToolRegistry;
 use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage as SharedToolPanelMessage};

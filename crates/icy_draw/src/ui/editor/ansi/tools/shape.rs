@@ -5,12 +5,12 @@
 //!
 //! This tool handles: Line, RectangleOutline, RectangleFilled, EllipseOutline, EllipseFilled
 
-use icy_ui::keyboard::key::Physical;
-use icy_ui::widget::{button, row, svg, text, toggler, Space};
-use icy_ui::{Element, Length, Theme};
 use icy_engine::{MouseButton, Position, TextPane};
 use icy_engine_edit::AttributedChar;
 use icy_engine_gui::TerminalMessage;
+use icy_ui::keyboard::key::Physical;
+use icy_ui::widget::{button, row, svg, text, toggler, Space};
+use icy_ui::{Element, Length, Theme};
 
 use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings};
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};

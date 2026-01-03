@@ -3,15 +3,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
+use icy_engine::{Screen, Size, TextScreen};
+use icy_engine_gui::{command_handler, HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
+use icy_parser_core::BaudEmulation;
+use icy_sauce::SauceRecord;
 use icy_ui::Event;
 use icy_ui::{
     widget::{column, container, image as iced_image, stack, text, Space},
     Alignment, Element, Length, Task,
 };
-use icy_engine::{Screen, Size, TextScreen};
-use icy_engine_gui::{command_handler, HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
-use icy_parser_core::BaudEmulation;
-use icy_sauce::SauceRecord;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 

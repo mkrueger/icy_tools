@@ -8,13 +8,13 @@
 //! - Ctrl+click: Take background only
 
 use i18n_embed_fl::fl;
-use icy_ui::widget::canvas::{self, Frame, Geometry};
-use icy_ui::widget::{column, container, row, text, Canvas, Space};
-use icy_ui::{Alignment, Color, Element, Font, Length, Point, Rectangle, Size, Theme};
 use icy_engine::{AttributedChar, BitFont, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::TerminalMessage;
+use icy_ui::widget::canvas::{self, Frame, Geometry};
+use icy_ui::widget::{column, container, row, text, Canvas, Space};
+use icy_ui::{Alignment, Color, Element, Font, Length, Point, Rectangle, Size, Theme};
 
 use crate::LANGUAGE_LOADER;
 

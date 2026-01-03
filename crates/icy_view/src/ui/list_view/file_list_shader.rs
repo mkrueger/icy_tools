@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use ab_glyph::Font;
-use icy_ui::widget::shader;
-use icy_ui::Rectangle;
 use icy_engine::FileFormat;
 use icy_engine_gui::ui::FileIcon;
+use icy_ui::widget::shader;
+use icy_ui::Rectangle;
 use once_cell::sync::Lazy;
 
 use super::ITEM_HEIGHT;

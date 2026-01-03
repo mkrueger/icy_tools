@@ -3,9 +3,9 @@ use crate::{
     qwk::{MessageDescriptor, QwkPackage},
     ui::Message,
 };
+use icy_engine_gui::TerminalView;
 use icy_ui::widget::{button, column, container, row, scrollable, text, Space};
 use icy_ui::{Alignment, Element, Length};
-use icy_engine_gui::TerminalView;
 
 impl MainWindow {
     pub fn mail_reader_view(&self) -> Element<'_, Message> {
@@ -332,12 +332,15 @@ impl MainWindow {
 
     fn build_thread_view(&self) -> Element<'_, Message> {
         let thread_content = column![
-            container(text("Thread").size(14)).padding(8).width(Length::Fill).style(|theme: &icy_ui::Theme| {
-                container::Style {
-                    background: Some(icy_ui::Background::Color(theme.primary.divider)),
-                    ..Default::default()
-                }
-            }),
+            container(text("Thread").size(14))
+                .padding(8)
+                .width(Length::Fill)
+                .style(|theme: &icy_ui::Theme| {
+                    container::Style {
+                        background: Some(icy_ui::Background::Color(theme.primary.divider)),
+                        ..Default::default()
+                    }
+                }),
             scrollable(column![text("Thread view coming soon...").size(12),].padding(8))
                 .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())),
         ];

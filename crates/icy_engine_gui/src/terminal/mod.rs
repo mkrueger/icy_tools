@@ -29,8 +29,8 @@ use std::sync::Arc;
 
 use crate::ScalingMode;
 use crate::{EditorMarkers, ScrollbarState, Viewport};
-use icy_ui::{mouse, widget, Color};
 use icy_engine::Screen;
+use icy_ui::{mouse, widget, Color};
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,

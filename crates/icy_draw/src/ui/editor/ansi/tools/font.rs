@@ -7,13 +7,13 @@
 //! adding font-specific character rendering, backspace, and enter handling.
 
 use i18n_embed_fl::fl;
-use icy_ui::widget::{button, column, container, row, text, Space};
-use icy_ui::Element;
-use icy_ui::{Length, Theme};
 use icy_engine::Position;
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::{OperationType, TdfEditStateRenderer};
 use icy_engine_gui::TerminalMessage;
+use icy_ui::widget::{button, column, container, row, text, Space};
+use icy_ui::Element;
+use icy_ui::{Length, Theme};
 
 use super::{handle_navigation_key, SelectionMouseState, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 

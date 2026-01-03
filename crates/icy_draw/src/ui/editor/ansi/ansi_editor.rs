@@ -8,10 +8,10 @@ use icy_engine_edit::EditState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use icy_ui::{Element, Length, Task};
 use icy_engine::formats::FileFormat;
 use icy_engine::{MouseButton, Screen, TextBuffer, TextPane};
 use icy_engine_gui::TerminalMessage;
+use icy_ui::{Element, Length, Task};
 use parking_lot::{Mutex, RwLock};
 
 use super::widget::outline_selector::{outline_selector_width, OutlineSelector};
@@ -314,7 +314,8 @@ impl AnsiEditorCore {
         };
 
         // Build the center area with optional line numbers overlay and tag context menu.
-        let mut center_layers: Vec<Element<'_, AnsiEditorCoreMessage>> = vec![icy_ui::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
+        let mut center_layers: Vec<Element<'_, AnsiEditorCoreMessage>> =
+            vec![icy_ui::widget::container(canvas).width(Length::Fill).height(Length::Fill).into()];
 
         if self.show_line_numbers {
             let line_numbers_overlay = widget::line_numbers::line_numbers_overlay(

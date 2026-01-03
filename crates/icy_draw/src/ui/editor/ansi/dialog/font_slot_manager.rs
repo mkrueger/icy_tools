@@ -4,22 +4,21 @@
 //! Shows all 43 ANSI slots (0-42) plus any additional custom slots.
 //! Allows: Set font, Reset to default, Add new slot, Remove custom slot.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
+use icy_engine::BitFont;
+use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
+use icy_engine_gui::{focus, ButtonType};
 use icy_ui::{
     keyboard::{key::Named, Key},
     mouse,
     widget::{
         button,
         canvas::{self, Canvas, Frame, Geometry, Path, Text},
-        column, container, row, text, Space,
+        column, container, row, scroll_area, scrollable, text, Space,
     },
     Alignment, Color, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
-use icy_engine::BitFont;
-use icy_engine_gui::ui::{dialog_area, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction, DIALOG_SPACING};
-use icy_engine_gui::{focus, ButtonType, ScrollbarOverlay, Viewport};
 
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::Message;
@@ -111,9 +110,8 @@ pub struct FontSlotManagerDialog {
 
     /// Currently selected slot
     active_slot: usize,
-
-    /// Viewport for slot list scrolling
-    viewport: RefCell<Viewport>,
+    // Note: Programmatic scrolling with scroll_area requires a scrollable ID
+    // and returning a Task from update(). For now, we rely on manual scrolling.
 }
 
 impl FontSlotManagerDialog {
@@ -152,17 +150,11 @@ impl FontSlotManagerDialog {
         }
 
         // Calculate content height
-        let content_height = slots.len() as f32 * SLOT_ITEM_HEIGHT;
-
         Self {
             font_height,
             slots,
             slot_fonts,
             active_slot: current_font_page as usize,
-            viewport: RefCell::new(Viewport {
-                content_height,
-                ..Default::default()
-            }),
         }
     }
 
@@ -211,23 +203,12 @@ impl FontSlotManagerDialog {
     }
 
     /// Scroll to make active slot visible
+    /// TODO: Implement with scrollable ID and Task for programmatic scrolling
     fn scroll_to_active(&self) {
-        if let Some(idx) = self.slots.iter().position(|&s| s == self.active_slot) {
-            let y = idx as f32 * SLOT_ITEM_HEIGHT;
-            let mut vp = self.viewport.borrow_mut();
-            let visible_height = vp.visible_height;
-
-            if y < vp.scroll_y {
-                vp.scroll_y = y;
-                vp.target_scroll_y = y;
-                vp.sync_scrollbar_position();
-            } else if y + SLOT_ITEM_HEIGHT > vp.scroll_y + visible_height {
-                let new_scroll = y + SLOT_ITEM_HEIGHT - visible_height;
-                vp.scroll_y = new_scroll;
-                vp.target_scroll_y = new_scroll;
-                vp.sync_scrollbar_position();
-            }
-        }
+        // With scroll_area, programmatic scrolling requires:
+        // 1. A scrollable ID on the scroll_area
+        // 2. Returning scrollable::scroll_to() Task from update()
+        // For now, the selected slot will be highlighted but not auto-scrolled.
     }
 
     /// Find next available custom slot number
@@ -278,15 +259,41 @@ impl FontSlotManagerDialog {
     }
 
     fn view_slot_list(&self) -> Element<'_, Message> {
-        // Canvas-based slot list with overlay scrollbar
-        let slot_canvas: Element<'_, Message> = Canvas::new(SlotListCanvas { dialog: self }).width(Length::Fill).height(Length::Fill).into();
+        // Content size for virtual scrolling
+        let content_height = self.slots.len() as f32 * SLOT_ITEM_HEIGHT;
+        let content_width = 280.0; // Fixed width for slot list
 
-        let scrollbar: Element<'_, Message> = ScrollbarOverlay::new(&self.viewport).view().map(|_| msg(FontSlotManagerMessage::Cancel));
+        // Clone data needed for the closure (owned data to avoid lifetime issues)
+        let slots = self.slots.clone();
+        let slot_fonts = self.slot_fonts.clone();
+        let active_slot = self.active_slot;
+        let font_height = self.font_height;
 
-        let list_row = row![slot_canvas, scrollbar,];
+        // Use scroll_area with show_viewport for virtual scrolling with built-in scrollbars
+        let scroll_list = scroll_area()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
+            .show_viewport(Size::new(content_width, content_height), move |viewport| {
+                // Clone again for each render (move closure takes ownership)
+                let slots = slots.clone();
+                let slot_fonts = slot_fonts.clone();
+
+                // Create canvas that renders only visible slots
+                Canvas::new(SlotListCanvasViewport {
+                    viewport,
+                    slots,
+                    slot_fonts,
+                    active_slot,
+                    font_height,
+                })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            });
 
         // Wrap in Focus widget for keyboard navigation
-        focus(list_row)
+        focus(scroll_list)
             .on_event(|event, _id| {
                 if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
                     match key {
@@ -373,46 +380,55 @@ impl FontSlotManagerDialog {
 }
 
 // ============================================================================
-// Slot List Canvas
+// Slot List Canvas (viewport-based for scroll_area)
 // ============================================================================
 
-struct SlotListCanvas<'a> {
-    dialog: &'a FontSlotManagerDialog,
+/// Canvas program that renders slots based on the visible viewport.
+/// Used with scroll_area().show_viewport() - the viewport rectangle
+/// is provided by the scroll area and tells us which content region is visible.
+struct SlotListCanvasViewport {
+    /// The visible viewport in content coordinates (provided by scroll_area)
+    viewport: Rectangle,
+    /// All slot indices (cloned for ownership)
+    slots: Vec<usize>,
+    /// Fonts in each slot (cloned for ownership)
+    slot_fonts: HashMap<usize, Option<BitFont>>,
+    /// Currently selected slot
+    active_slot: usize,
+    /// Font height for ANSI default lookup
+    font_height: u8,
 }
 
-impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
+impl canvas::Program<Message> for SlotListCanvasViewport {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry> {
-        // Update viewport dimensions
-        {
-            let mut vp = self.dialog.viewport.borrow_mut();
-            vp.visible_height = bounds.height;
-            vp.visible_width = bounds.width;
-            vp.content_height = self.dialog.slots.len() as f32 * SLOT_ITEM_HEIGHT;
-        }
-
-        let scroll_y = self.dialog.viewport.borrow().scroll_y;
+        // The viewport tells us which part of the content is visible
+        // viewport.y = scroll position, viewport.height = visible height
+        let scroll_y = self.viewport.y;
 
         let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
-            let mut y = -scroll_y;
+            // Calculate which slots are visible
+            let first_visible = (scroll_y / SLOT_ITEM_HEIGHT).floor() as usize;
+            let last_visible = ((scroll_y + self.viewport.height) / SLOT_ITEM_HEIGHT).ceil() as usize;
 
-            for &slot in &self.dialog.slots {
-                if y + SLOT_ITEM_HEIGHT < 0.0 {
-                    y += SLOT_ITEM_HEIGHT;
+            for (list_idx, &slot) in self.slots.iter().enumerate() {
+                // Skip slots outside visible range
+                if list_idx < first_visible || list_idx > last_visible {
                     continue;
                 }
-                if y > bounds.height {
-                    break;
-                }
 
-                let is_active = slot == self.dialog.active_slot;
+                // Calculate y position in screen coordinates
+                let content_y = list_idx as f32 * SLOT_ITEM_HEIGHT;
+                let y = content_y - scroll_y;
+
+                let is_active = slot == self.active_slot;
 
                 // Get font info
-                let (font_name, is_empty, is_custom) = match self.dialog.slot_fonts.get(&slot) {
+                let (font_name, is_empty, is_custom) = match self.slot_fonts.get(&slot) {
                     Some(Some(font)) => {
                         let is_ansi_default = if slot < icy_engine::ANSI_FONTS {
-                            BitFont::from_ansi_font_page(slot as u8, self.dialog.font_height)
+                            BitFont::from_ansi_font_page(slot as u8, self.font_height)
                                 .map(|default| default.name() == font.name())
                                 .unwrap_or(false)
                         } else {
@@ -460,14 +476,12 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
                 };
 
                 frame.fill_text(Text {
-                    content: font_name,
+                    content: font_name.clone(),
                     position: Point::new(52.0, y + (SLOT_ITEM_HEIGHT - 13.0) / 2.0),
                     color: name_color,
                     size: icy_ui::Pixels(13.0),
                     ..Default::default()
                 });
-
-                y += SLOT_ITEM_HEIGHT;
             }
         });
 
@@ -475,38 +489,23 @@ impl<'a> canvas::Program<Message> for SlotListCanvas<'a> {
     }
 
     fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
-        match event {
-            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
-                button: mouse::Button::Left, ..
-            }) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    let scroll_y = self.dialog.viewport.borrow().scroll_y;
-                    let click_y = pos.y + scroll_y;
-                    let slot_idx = (click_y / SLOT_ITEM_HEIGHT) as usize;
+        // Handle mouse clicks - convert screen position to content position
+        if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
+            if let Some(pos) = cursor.position_in(bounds) {
+                // Convert screen position to content position
+                let content_y = pos.y + self.viewport.y;
+                let slot_idx = (content_y / SLOT_ITEM_HEIGHT) as usize;
 
-                    if slot_idx < self.dialog.slots.len() {
-                        let slot = self.dialog.slots[slot_idx];
-                        return Some(canvas::Action::publish(msg(FontSlotManagerMessage::SelectSlot(slot))));
-                    }
+                if slot_idx < self.slots.len() {
+                    let slot = self.slots[slot_idx];
+                    return Some(canvas::Action::publish(msg(FontSlotManagerMessage::SelectSlot(slot))));
                 }
             }
-            icy_ui::Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
-                if cursor.is_over(bounds) {
-                    let scroll_amount = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => -y * 26.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => -y,
-                    };
-
-                    let mut vp = self.dialog.viewport.borrow_mut();
-                    let max_scroll = (vp.content_height - vp.visible_height).max(0.0);
-                    vp.scroll_y = (vp.scroll_y + scroll_amount).clamp(0.0, max_scroll);
-                    vp.target_scroll_y = vp.scroll_y;
-
-                    return Some(canvas::Action::request_redraw());
-                }
-            }
-            _ => {}
         }
+        // Note: Scroll handling is now done by the scroll_area widget
         None
     }
 }
@@ -586,8 +585,7 @@ impl Dialog<Message> for FontSlotManagerDialog {
                             self.active_slot = self.slots[pos.min(self.slots.len() - 1)];
                         }
 
-                        // Update content height
-                        self.viewport.borrow_mut().content_height = self.slots.len() as f32 * SLOT_ITEM_HEIGHT;
+                        // Note: Content height is computed dynamically in view_slot_list
 
                         return Some(DialogAction::SendMessage(Message::AnsiEditor(AnsiEditorMessage::Core(
                             AnsiEditorCoreMessage::ApplyFontSlotChange(FontSlotManagerResult::RemoveSlot { slot: removed_slot }),

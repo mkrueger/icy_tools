@@ -1,11 +1,11 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{button, column, container, row, scrollable, text, Space},
-    Alignment, Border, Color, Element, Length,
-};
 use icy_engine_gui::{
     dialog_wrapper,
     ui::{StateResult, *},
+};
+use icy_ui::{
+    widget::{button, column, container, row, scrollable, text, Space},
+    Alignment, Border, Color, Element, Length,
 };
 
 use crate::TransferProtocol;

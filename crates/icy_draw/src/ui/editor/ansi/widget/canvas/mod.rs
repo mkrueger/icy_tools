@@ -10,11 +10,11 @@
 
 use std::sync::Arc;
 
+use icy_engine::Screen;
 use icy_ui::{
     widget::{container, stack},
     Alignment, Element, Length, Task,
 };
-use icy_engine::Screen;
 
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::TerminalMessage;

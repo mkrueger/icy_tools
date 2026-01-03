@@ -31,19 +31,19 @@ pub use top_toolbar::*;
 use std::{path::PathBuf, sync::Arc};
 
 use codepages::tables::CP437_TO_UNICODE;
-use icy_ui::{
-    alignment::Horizontal,
-    keyboard::{self, Key},
-    mouse,
-    widget::{column, container, row, text, Canvas, Space},
-    Element, Length, Point, Task, Theme,
-};
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::{BitFontEditState, BitFontFocusedPanel, BitFontUndoState};
 use icy_engine_gui::{
     theme::{self, main_area_background},
     ui::DialogStack,
     MonitorSettings, Terminal, TerminalView,
+};
+use icy_ui::{
+    alignment::Horizontal,
+    keyboard::{self, Key},
+    mouse,
+    widget::{column, container, row, text, Canvas, Space},
+    Element, Length, Point, Task, Theme,
 };
 use parking_lot::Mutex;
 

@@ -5,8 +5,8 @@
 //! Draws as an overlay on top of the terminal widget.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
-use icy_ui::{widget::canvas, Element, Length, Renderer, Theme};
 use icy_engine_gui::RenderInfo;
+use icy_ui::{widget::canvas, Element, Length, Renderer, Theme};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -59,7 +59,14 @@ struct LineNumbersOverlayState {
 impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
     type State = ();
 
-    fn draw(&self, _state: &Self::State, renderer: &Renderer, theme: &Theme, bounds: icy_ui::Rectangle, _cursor: icy_ui::mouse::Cursor) -> Vec<canvas::Geometry> {
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        theme: &Theme,
+        bounds: icy_ui::Rectangle,
+        _cursor: icy_ui::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         // Get the effective zoom from RenderInfo (works for both Auto and Manual modes)

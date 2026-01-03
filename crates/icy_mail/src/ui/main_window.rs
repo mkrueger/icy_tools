@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::ui::NavigateDirection;
 use crate::{qwk::QwkPackage, ui::Message};
-use icy_ui::widget::{button, column, container, pane_grid, progress_bar, text, Space};
-use icy_ui::{window, Alignment, Element, Length, Task, Theme};
 use icy_engine::{EditableScreen, Screen, Size, TextScreen};
 use icy_engine_gui::{MonitorSettings, Terminal};
+use icy_ui::widget::{button, column, container, pane_grid, progress_bar, text, Space};
+use icy_ui::{window, Alignment, Element, Length, Task, Theme};
 use parking_lot::Mutex;
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]

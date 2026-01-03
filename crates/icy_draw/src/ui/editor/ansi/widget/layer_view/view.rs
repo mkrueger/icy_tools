@@ -28,13 +28,13 @@ use icy_ui::{
     Border, Color, Element, Event, Length, Point, Rectangle, Size, Task, Theme,
 };
 
-use icy_ui::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
 use icy_engine::{BitFont, Layer, Position, RenderOptions, Screen, TextBuffer, TextPane};
 use icy_engine_edit::EditState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::DoubleClickDetector;
 use icy_engine_gui::{wrap_with_scrollbars, Viewport};
+use icy_ui::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
 use parking_lot::Mutex;
 
 use crate::fl;

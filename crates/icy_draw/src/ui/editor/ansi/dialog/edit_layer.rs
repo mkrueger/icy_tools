@@ -3,10 +3,6 @@
 //! Combined dialog for editing layer properties and size.
 //! Replaces the separate EditLayerDialog and ResizeLayerDialog from the egui version.
 
-use icy_ui::{
-    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine::{LayerProperties, Mode, Size};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
@@ -14,6 +10,10 @@ use icy_engine_gui::ui::{
     DIALOG_SPACING, DIALOG_WIDTH_MEDIUM, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::ButtonType;
+use icy_ui::{
+    widget::{checkbox, column, container, pick_list, row, text, text_input, Space},
+    Alignment, Element, Length,
+};
 
 use crate::fl;
 use crate::ui::editor::ansi::AnsiEditorMessage;

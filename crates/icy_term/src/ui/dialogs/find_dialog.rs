@@ -2,14 +2,14 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use i18n_embed_fl::fl;
+use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection, TextPane};
+use icy_engine_gui::ui::{
+    danger_button_style, primary_button_style, secondary_button_style, BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+};
 use icy_ui::{
     alignment::{Horizontal, Vertical},
     widget::{button, column, container, row, text, text_input, Id},
     Border, Color, Element, Length, Shadow, Theme,
-};
-use icy_engine::{AttributedChar, BufferType, EditableScreen, Position, Screen, Selection, TextPane};
-use icy_engine_gui::ui::{
-    danger_button_style, primary_button_style, secondary_button_style, BUTTON_FONT_SIZE, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 
 use crate::ui::{MainWindowMode, Message};

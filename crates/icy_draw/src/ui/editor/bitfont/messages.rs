@@ -1,7 +1,7 @@
 //! Messages for BitFont editor
 
-use icy_ui::{keyboard::Modifiers, Point};
 use icy_engine_edit::bitfont::BitFontFocusedPanel;
+use icy_ui::{keyboard::Modifiers, Point};
 
 use super::{BitFontTool, BitFontToolPanelMessage, BitFontTopToolbarMessage};
 use crate::ui::editor::ansi::PaletteGridMessage;

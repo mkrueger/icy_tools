@@ -13,6 +13,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use icy_engine_gui::{
+    ui::{
+        dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
+        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+    },
+    wrap_with_scrollbars, Viewport,
+};
 use icy_ui::{
     advanced::{
         image::{self as adv_image, Renderer as _},
@@ -24,13 +31,6 @@ use icy_ui::{
     mouse,
     widget::{button, column, container, row, text, text_input, Space},
     Alignment, Background, Border, Color, Element, Event, Length, Point, Rectangle, Size, Theme,
-};
-use icy_engine_gui::{
-    ui::{
-        dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
-        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
-    },
-    wrap_with_scrollbars, Viewport,
 };
 
 use crate::ui::editor::ansi::AnsiEditorMessage;

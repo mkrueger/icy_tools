@@ -6,16 +6,16 @@
 
 use std::fmt;
 
-use icy_ui::{
-    widget::{column, container, pick_list, row, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
     button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
     DIALOG_SPACING, DIALOG_WIDTH_SMALL, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_engine_gui::ButtonType;
+use icy_ui::{
+    widget::{column, container, pick_list, row, text, text_input, Space},
+    Alignment, Element, Length,
+};
 
 use super::CharFontEditorMessage;
 use crate::fl;
@@ -146,9 +146,11 @@ impl Dialog<Message> for AddFontDialog {
             .width(Length::Fixed(80.0));
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
-            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                color: Some(theme.destructive.base),
-            })
+            text("-10 to 10")
+                .size(TEXT_SIZE_SMALL)
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+                    color: Some(theme.destructive.base),
+                })
         } else {
             text("").size(TEXT_SIZE_SMALL)
         };
@@ -314,9 +316,11 @@ impl Dialog<Message> for EditFontSettingsDialog {
             .width(Length::Fixed(80.0));
 
         let spacing_error = if !spacing_valid && !self.spacing.is_empty() {
-            text("-10 to 10").size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                color: Some(theme.destructive.base),
-            })
+            text("-10 to 10")
+                .size(TEXT_SIZE_SMALL)
+                .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+                    color: Some(theme.destructive.base),
+                })
         } else {
             text("").size(TEXT_SIZE_SMALL)
         };

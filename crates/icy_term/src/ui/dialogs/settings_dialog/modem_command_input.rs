@@ -1,9 +1,9 @@
+use icy_engine_gui::ui::{error_tooltip, left_label_small, DIALOG_SPACING, TEXT_SIZE_NORMAL};
+use icy_net::modem::ModemCommand;
 use icy_ui::{
     widget::{row, text_input, Space},
     Alignment, Element, Length,
 };
-use icy_engine_gui::ui::{error_tooltip, left_label_small, DIALOG_SPACING, TEXT_SIZE_NORMAL};
-use icy_net::modem::ModemCommand;
 
 /// Creates a row with a label, text input for ModemCommand editing, and error indicator (generic version).
 ///

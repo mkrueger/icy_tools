@@ -2,12 +2,12 @@
 //!
 //! Simple dialog to connect to Moebius-compatible collaboration servers.
 
+use icy_engine_gui::ui::*;
+use icy_engine_gui::{Dialog, DialogAction};
 use icy_ui::{
     widget::{button, column, container, pick_list, row, svg, text, text_input},
     Element, Length,
 };
-use icy_engine_gui::ui::*;
-use icy_engine_gui::{Dialog, DialogAction};
 
 use crate::fl;
 use crate::ui::main_window::Message;

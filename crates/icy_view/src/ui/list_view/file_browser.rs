@@ -1,12 +1,12 @@
 use std::{env, path::PathBuf};
 
 use directories::UserDirs;
+use icy_engine::formats::FileFormat;
 use icy_ui::{
     keyboard::{key::Named, Key},
     widget::container,
-    Element, Event, Length,
+    Element, Event, Length, Task,
 };
-use icy_engine::formats::FileFormat;
 
 use super::file_list_view::{FileListView, FileListViewMessage};
 use super::sauce_loader::SharedSauceCache;
@@ -124,32 +124,32 @@ impl FileBrowser {
         (browser, file_to_select)
     }
 
-    /// Returns true if the message resulted in opening a file (not folder)
-    pub fn update(&mut self, message: FileBrowserMessage) -> bool {
+    /// Returns (should_open_file, scroll_task) tuple
+    pub fn update(&mut self, message: FileBrowserMessage) -> (bool, Task<FileBrowserMessage>) {
         match message {
             FileBrowserMessage::ListView(list_msg) => {
                 let item_count = self.visible_indices.len();
-                let should_open = self.list_view.update(list_msg, item_count);
+                let (should_open, scroll_task) = self.list_view.update(list_msg, item_count);
 
                 if should_open {
-                    return self.open_selected_item();
+                    return (self.open_selected_item(), scroll_task);
                 }
-                false
+                (false, scroll_task)
             }
             FileBrowserMessage::ParentFolder => {
                 self.navigate_parent();
-                false
+                (false, Task::none())
             }
             FileBrowserMessage::Refresh => {
                 self.refresh();
-                false
+                (false, Task::none())
             }
             FileBrowserMessage::FilterChanged(filter) => {
                 self.filter = filter;
                 self.update_visible_indices();
                 // Reset selection when filter changes
                 self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-                false
+                (false, Task::none())
             }
         }
     }
@@ -223,8 +223,6 @@ impl FileBrowser {
 
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-        self.list_view.viewport.scroll_x_to(0.0);
-        self.list_view.viewport.scroll_y_to(0.0);
         // Always invalidate after refresh to ensure cache is cleared
         self.list_view.invalidate();
     }
@@ -243,11 +241,6 @@ impl FileBrowser {
                 .collect();
         }
         self.list_view.set_item_count(self.visible_indices.len());
-    }
-
-    /// Check if animation is needed
-    pub fn needs_animation(&self) -> bool {
-        self.list_view.needs_animation()
     }
 
     /// Get the count of visible (filtered) files
@@ -350,8 +343,6 @@ impl FileBrowser {
         self.files = items;
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
-        self.list_view.viewport.scroll_x_to(0.0);
-        self.list_view.viewport.scroll_y_to(0.0);
         self.list_view.invalidate();
     }
 
@@ -389,7 +380,7 @@ impl FileBrowser {
             if let Some(item) = self.files.get(file_idx) {
                 if item.get_file_path() == path_str {
                     self.list_view.selected_index = Some(visible_idx);
-                    self.list_view.ensure_selected_visible();
+                    // Note: caller should scroll to make selection visible via Task
                     return true;
                 }
             }
@@ -404,7 +395,7 @@ impl FileBrowser {
             if let Some(item) = self.files.get(file_idx) {
                 if item.get_label() == label {
                     self.list_view.selected_index = Some(visible_idx);
-                    self.list_view.ensure_selected_visible();
+                    // Note: caller should scroll to make selection visible via Task
                     return true;
                 }
             }

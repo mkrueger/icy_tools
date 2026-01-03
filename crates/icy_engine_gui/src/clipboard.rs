@@ -10,9 +10,9 @@
 //! The clipboard operations return Tasks that need to be executed
 //! by the icy_ui runtime.
 
+use icy_engine::{RenderOptions, Screen};
 use icy_ui::clipboard::{Format, STANDARD};
 use icy_ui::Task;
-use icy_engine::{RenderOptions, Screen};
 
 /// Clipboard type identifier for ICY binary format
 pub const ICY_CLIPBOARD_TYPE: &str = "com.icy-tools.clipboard";

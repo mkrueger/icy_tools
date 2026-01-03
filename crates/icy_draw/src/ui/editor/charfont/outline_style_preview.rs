@@ -4,6 +4,7 @@
 //! Used by the CharFont (TDF) editor outline preview panel.
 
 use codepages::tables::UNICODE_TO_CP437;
+use icy_engine::BitFont;
 use icy_ui::{
     mouse::{self, Cursor},
     widget::{
@@ -12,7 +13,6 @@ use icy_ui::{
     },
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::BitFont;
 
 /// Number of available outline styles
 pub const OUTLINE_STYLE_COUNT: usize = 19;

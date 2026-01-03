@@ -225,19 +225,20 @@ impl WindowManager {
 
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         // Check if any window needs animation
+        let needs_animation = self.windows.values().any(|w| w.needs_animation());
 
-        let subs = vec![
+        let mut subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
             icy_ui::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
-                    // Mouse events - pass through for tile grid hover/click handling
+                    // Mouse events - only pass through button and wheel events
+                    // CursorMoved is handled by the widget system directly (shader update methods)
                     Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(icy_ui::mouse::Event::CursorLeft) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    // Skip other mouse events
+                    // Skip cursor move and other mouse events - hover is handled by widget update()
                     Event::Mouse(_) => None,
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
@@ -262,9 +263,17 @@ impl WindowManager {
                     _ => None,
                 }
             }),
-            // important for updating slow blinking and smooth scroll animations
-            icy_ui::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick),
         ];
+
+        // Only include animation tick subscription when needed - this prevents
+        // continuous view rebuilds when no animation is active
+        if needs_animation {
+            /*
+            subs.push(
+                icy_ui::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS))
+                    .map(|_| WindowManagerMessage::AnimationTick),
+            );*/
+        }
 
         Subscription::batch(subs)
     }

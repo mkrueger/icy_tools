@@ -4,6 +4,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use icy_engine_gui::{HorizontalScrollbarOverlayCallback, ScalingMode, ScrollbarOverlayCallback, ScrollbarState, Viewport, ZoomMessage};
 use icy_ui::advanced::image::Renderer as ImageRenderer;
 use icy_ui::advanced::layout::{self, Layout};
 use icy_ui::advanced::renderer::{self, Renderer as _};
@@ -11,7 +12,6 @@ use icy_ui::advanced::widget::{self, Widget};
 use icy_ui::mouse::ScrollDelta;
 use icy_ui::widget::{container, image as iced_image, stack};
 use icy_ui::{mouse, Element, Event, Length, Rectangle, Size, Theme};
-use icy_engine_gui::{HorizontalScrollbarOverlayCallback, ScalingMode, ScrollbarOverlayCallback, ScrollbarState, Viewport, ZoomMessage};
 use parking_lot::RwLock;
 
 /// Arrow key scroll step in pixels

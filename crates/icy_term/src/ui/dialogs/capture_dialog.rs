@@ -1,12 +1,12 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, container, row, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::*;
 use icy_engine_gui::StateResult;
+use icy_ui::{
+    widget::{column, container, row, text, text_input, Space},
+    Alignment, Element, Length,
+};
 use std::path::{Path, PathBuf};
 
 /// Result from the capture dialog
@@ -227,9 +227,11 @@ impl CaptureDialogState {
             row![
                 error_tooltip(error),
                 Space::new().width(4.0),
-                text(error_msg).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                    color: Some(theme.destructive.base),
-                })
+                text(error_msg)
+                    .size(TEXT_SIZE_SMALL)
+                    .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+                        color: Some(theme.destructive.base),
+                    })
             ]
             .align_y(Alignment::Center)
         } else if file_exists && !self.is_capturing {

@@ -1,8 +1,4 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{column, container, row, scrollable, text, text_input, Space},
-    Alignment, Element, Length, Theme,
-};
 use icy_engine_gui::{
     dialog_wrapper,
     ui::{
@@ -11,6 +7,10 @@ use icy_engine_gui::{
     },
 };
 use icy_net::iemsi::EmsiISI;
+use icy_ui::{
+    widget::{column, container, row, scrollable, text, text_input, Space},
+    Alignment, Element, Length, Theme,
+};
 
 const LABEL_WIDTH: f32 = 140.0;
 

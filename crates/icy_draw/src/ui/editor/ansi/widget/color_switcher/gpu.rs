@@ -10,12 +10,12 @@
 
 #![allow(dead_code)]
 
+use icy_engine::Palette;
 use icy_ui::{
     mouse,
     widget::shader::{self, Shader},
     Element, Length, Rectangle,
 };
-use icy_engine::Palette;
 use std::time::Instant;
 
 use crate::ui::editor::ansi::constants::{

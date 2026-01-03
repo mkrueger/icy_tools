@@ -1,11 +1,11 @@
 use i18n_embed_fl::fl;
+use icy_engine_gui::dialog_wrapper;
+use icy_engine_gui::ui::*;
+use icy_parser_core::BaudEmulation;
 use icy_ui::{
     widget::{column, container, radio, row, text, text_input, Space},
     Alignment, Border, Color, Element, Length,
 };
-use icy_engine_gui::dialog_wrapper;
-use icy_engine_gui::ui::*;
-use icy_parser_core::BaudEmulation;
 
 // Standard baud rates - index 0 is Off, 1-12 are rates, 13 is custom
 pub const STANDARD_RATES: [Option<u32>; 13] = [

@@ -3,12 +3,12 @@
 //! This dialog displays an about screen loaded from an .icy file and supports
 //! clickable hyperlinks.
 
+use icy_engine::{formats::FileFormat, Screen};
+use icy_parser_core::MusicOption;
 use icy_ui::{
     widget::{column, container},
     Element, Length,
 };
-use icy_engine::{formats::FileFormat, Screen};
-use icy_parser_core::MusicOption;
 use parking_lot::Mutex;
 use semver::Version;
 use std::sync::Arc;

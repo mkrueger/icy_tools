@@ -1,11 +1,11 @@
 use i18n_embed_fl::fl;
+use icy_engine_gui::command_handler;
+use icy_parser_core::BaudEmulation;
+use icy_sauce::{Capabilities, SauceRecord};
 use icy_ui::{
     widget::{button, container, row, text, Space},
     Alignment, Border, Color, Element, Event, Length, Theme,
 };
-use icy_engine_gui::command_handler;
-use icy_parser_core::BaudEmulation;
-use icy_sauce::{Capabilities, SauceRecord};
 
 use crate::commands::{cmd, create_icy_view_commands};
 use crate::LANGUAGE_LOADER;

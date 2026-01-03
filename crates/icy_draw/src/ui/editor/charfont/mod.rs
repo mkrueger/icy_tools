@@ -17,11 +17,6 @@ pub use font_dialogs::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use icy_ui::{
-    keyboard::Modifiers,
-    widget::{button, canvas, column, container, row, scrollable, text},
-    Alignment, Element, Length, Task, Theme,
-};
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::Screen;
 use icy_engine::{AttributedChar, BitFont, Layer, Size, TextAttribute, TextBuffer, TextPane};
@@ -31,6 +26,11 @@ use icy_engine_edit::UndoState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{add_icon, arrow_downward_icon, arrow_upward_icon, content_copy_icon, delete_icon, edit_icon, DialogStack};
 use icy_engine_gui::TerminalMessage;
+use icy_ui::{
+    keyboard::Modifiers,
+    widget::{button, canvas, column, container, row, scrollable, text},
+    Alignment, Element, Length, Task, Theme,
+};
 use parking_lot::{Mutex, RwLock};
 use retrofont::{transform_outline, Glyph, GlyphPart, RenderOptions};
 

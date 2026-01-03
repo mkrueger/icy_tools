@@ -2,18 +2,18 @@ use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMs
 use crate::ui::Message;
 use crate::ConnectionInformation;
 use i18n_embed_fl::fl;
-use icy_ui::widget::tooltip;
-use icy_ui::Padding;
-use icy_ui::{
-    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, Space},
-    Alignment, Element, Length,
-};
 use icy_engine::{ScreenMode, TerminalResolutionExt, VGA_MODES};
 use icy_engine_gui::settings::{effect_box, left_label};
 use icy_engine_gui::ui::{primary_button, secondary_button, text_button_style, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use icy_engine_gui::{section_header, LABEL_WIDTH, SECTION_SPACING};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
+use icy_ui::widget::tooltip;
+use icy_ui::Padding;
+use icy_ui::{
+    widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, Space},
+    Alignment, Element, Length,
+};
 use once_cell::sync::Lazy;
 use std::fmt;
 

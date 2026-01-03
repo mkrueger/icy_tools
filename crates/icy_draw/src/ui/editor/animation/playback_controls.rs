@@ -2,11 +2,11 @@
 //!
 //! Professional video player-style controls with modern styling
 
+use icy_engine_gui::theme::main_area_background;
 use icy_ui::{
     widget::{button, column, container, row, slider, Space},
     Alignment, Background, Border, Element, Length, Shadow, Theme,
 };
-use icy_engine_gui::theme::main_area_background;
 
 use super::{icons, AnimationEditor, AnimationEditorMessage};
 

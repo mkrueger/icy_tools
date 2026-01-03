@@ -1,10 +1,10 @@
+use icy_engine::{Position, TagPlacement};
+use icy_engine_gui::settings::effect_box;
+use icy_engine_gui::ui::*;
 use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Element, Length, Theme,
 };
-use icy_engine::{Position, TagPlacement};
-use icy_engine_gui::settings::effect_box;
-use icy_engine_gui::ui::*;
 
 use crate::fl;
 

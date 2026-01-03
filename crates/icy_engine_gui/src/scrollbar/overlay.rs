@@ -282,7 +282,13 @@ where
         vec![geometry]
     }
 
-    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::canvas::Action<Message>> {
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &icy_ui::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<icy_ui::widget::canvas::Action<Message>> {
         let is_hovered = cursor.is_over(bounds);
 
         match event {

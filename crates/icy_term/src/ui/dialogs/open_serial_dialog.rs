@@ -1,11 +1,11 @@
 use i18n_embed_fl::fl;
+use icy_engine_gui::settings::effect_box;
+use icy_engine_gui::ui::*;
+use icy_net::serial::{CharSize, FlowControl, Parity, Serial, StopBits};
 use icy_ui::{
     widget::{column, container, pick_list, row, text, text_input},
     Alignment, Element, Length,
 };
-use icy_engine_gui::settings::effect_box;
-use icy_engine_gui::ui::*;
-use icy_net::serial::{CharSize, FlowControl, Parity, Serial, StopBits};
 
 use crate::ui::MainWindowMode;
 

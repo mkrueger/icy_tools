@@ -243,7 +243,13 @@ impl shader::Program<ToolPanelMessage> for ToolPanelProgram {
         }
     }
 
-    fn update(&self, state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<icy_ui::widget::Action<ToolPanelMessage>> {
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &icy_ui::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<icy_ui::widget::Action<ToolPanelMessage>> {
         let cols = self.cols;
         let rows = self.rows;
         let num_buttons = self.buttons.len();

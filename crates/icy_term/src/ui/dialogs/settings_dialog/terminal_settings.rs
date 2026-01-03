@@ -1,14 +1,14 @@
 use i18n_embed_fl::fl;
-use icy_ui::{
-    widget::{checkbox, column, pick_list, row, text_input},
-    Alignment, Element, Length,
-};
 use icy_engine_gui::{
     music::music::DialTone,
     section_header,
     settings::{effect_box, left_label},
     ui::DIALOG_SPACING,
     SECTION_PADDING, TEXT_SIZE_NORMAL,
+};
+use icy_ui::{
+    widget::{checkbox, column, pick_list, row, text_input},
+    Alignment, Element, Length,
 };
 
 use crate::ui::settings_dialog::{SettingsDialogMessage, SettingsDialogState};

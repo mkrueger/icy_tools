@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use super::{CRTShaderProgram, TextureSliceData};
 use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
-use icy_ui::widget::shader;
-use icy_ui::Element;
 use icy_engine::GraphicsType;
 use icy_engine::MouseState;
 use icy_engine::Position;
 use icy_engine::Screen;
 use icy_engine::Size;
+use icy_ui::widget::shader;
+use icy_ui::Element;
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());

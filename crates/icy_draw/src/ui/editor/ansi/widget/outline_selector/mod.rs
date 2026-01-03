@@ -4,6 +4,7 @@
 //! Similar to the CharSelector popup, used for selecting TheDraw font outline styles.
 
 use codepages::tables::UNICODE_TO_CP437;
+use icy_engine::BitFont;
 use icy_ui::{
     mouse::{self, Cursor},
     widget::{
@@ -12,7 +13,6 @@ use icy_ui::{
     },
     Color, Element, Length, Point, Rectangle, Size, Theme,
 };
-use icy_engine::BitFont;
 
 /// Preview pattern dimensions (characters)
 const OUTLINE_WIDTH: usize = 8;

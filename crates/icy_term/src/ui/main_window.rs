@@ -19,10 +19,10 @@ use crate::{
     },
 };
 
-use icy_ui::{keyboard, window, Element, Event, Task, Theme};
 use icy_engine::Position;
 use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
+use icy_ui::{keyboard, window, Element, Event, Task, Theme};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -1669,8 +1669,8 @@ impl MainWindow {
 
     /// Handle mouse move (no button pressed)
     fn handle_mouse_move(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
-        use icy_ui::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
+        use icy_ui::mouse;
 
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
@@ -1723,8 +1723,8 @@ impl MainWindow {
 
     /// Handle mouse drag (button held while moving)
     fn handle_mouse_drag(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
-        use icy_ui::mouse;
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
+        use icy_ui::mouse;
 
         // Set crosshair cursor during drag/selection
         *self.terminal_window.terminal.cursor_icon.write() = Some(mouse::Interaction::Crosshair);
