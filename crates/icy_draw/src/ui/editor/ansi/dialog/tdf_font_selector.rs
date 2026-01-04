@@ -18,7 +18,7 @@ use icy_engine_gui::{
         dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
         TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
-    wrap_with_scrollbars, Viewport,
+    Viewport,
 };
 use icy_ui::{
     advanced::{
@@ -1046,9 +1046,8 @@ impl Dialog<Message> for TdfFontSelectorDialog {
         // Font list canvas (virtualized)
         let font_list: Element<'_, Message> = self.list_widget();
 
-        // Wrap canvas with scrollbar overlay
-        let needs_scrollbar = self.filtered_fonts.len() as f32 * FONT_ITEM_HEIGHT > LIST_HEIGHT;
-        let canvas_with_scrollbar = wrap_with_scrollbars(font_list, &self.viewport, needs_scrollbar, false);
+        // Font list canvas (scrollbars handled elsewhere if needed)
+        let canvas_with_scrollbar = font_list;
 
         let list_container = container(canvas_with_scrollbar)
             .width(Length::Fill)

@@ -1,17 +1,16 @@
 use i18n_embed_fl::fl;
 use icy_engine::Screen;
 use icy_engine_gui::ui::settings_icon;
-use icy_engine_gui::HorizontalScrollbarOverlay;
 use icy_engine_gui::{
     music::music::SoundThread,
     ui::{DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
 };
-use icy_engine_gui::{terminal::view::TerminalView, MonitorSettings, ScrollbarOverlay, Terminal};
+use icy_engine_gui::{terminal::view::TerminalView, MonitorSettings, Terminal};
 use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
 use icy_ui::{
-    widget::{button, column, container, row, svg, text, Space},
+    widget::{button, column, container, row, scrollable, svg, text, Space},
     Alignment, Border, Color, Element, Length,
 };
 use parking_lot::Mutex;
@@ -93,18 +92,36 @@ impl TerminalWindow {
         };
         // Create terminal area with optional scrollbar
         let terminal_area = {
-            // Get scrollbar info from terminal (uses shared logic from icy_engine_gui)
-            let scrollbar_info = self.terminal.scrollbar_info();
+            // Calculate scrollbar needs directly from viewport
+            let (needs_vscrollbar, needs_hscrollbar) = {
+                let vp = self.terminal.viewport.read();
+                let visible_height = vp.visible_content_height();
+                let visible_width = vp.visible_content_width();
+                let height_ratio = visible_height / vp.content_height.max(1.0);
+                let width_ratio = visible_width / vp.content_width.max(1.0);
+                (height_ratio < 1.0, width_ratio < 1.0)
+            };
 
             // Show scrollbar in:
             // - Scrollback mode (always)
             // - Manual scaling mode when zoomed in (content may exceed viewport)
             let is_manual_mode = !options.monitor_settings.scaling_mode.is_auto();
-            let show_vscrollbar = self.terminal.is_in_scrollback_mode() || (is_manual_mode && scrollbar_info.needs_vscrollbar);
-            let show_hscrollbar = is_manual_mode && scrollbar_info.needs_hscrollbar;
+            let show_vscrollbar = self.terminal.is_in_scrollback_mode() || (is_manual_mode && needs_vscrollbar);
+            let show_hscrollbar = is_manual_mode && needs_hscrollbar;
 
             if show_vscrollbar || show_hscrollbar {
-                let mut layers: Vec<Element<'_, Message>> = vec![container(terminal_view).width(Length::Fill).height(Length::Fill).into()];
+                let mut layers: Vec<Element<'_, Message>> = Vec::new();
+
+                // Wrap terminal view in scrollable
+                let scrollable_terminal = scrollable(terminal_view)
+                    .direction(scrollable::Direction::Both {
+                        vertical: scrollable::Scrollbar::default(),
+                        horizontal: scrollable::Scrollbar::default(),
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fill);
+
+                layers.push(container(scrollable_terminal).width(Length::Fill).height(Length::Fill).into());
 
                 // Add scroll position indicator if in scrollback mode
                 if self.terminal.is_in_scrollback_mode() {
@@ -132,35 +149,6 @@ impl TerminalWindow {
                             .align_x(icy_ui::alignment::Horizontal::Right)
                             .align_y(icy_ui::alignment::Vertical::Top)
                             .padding([8, 16])
-                            .into(),
-                    );
-                }
-
-                // Add vertical scrollbar if needed - uses viewport directly, no messages needed
-                if show_vscrollbar {
-                    let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
-                    let vscrollbar_mapped: Element<'_, Message> = vscrollbar_view.map(|_| unreachable!());
-
-                    layers.push(
-                        container(vscrollbar_mapped)
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .align_x(icy_ui::alignment::Horizontal::Right)
-                            .align_y(icy_ui::alignment::Vertical::Center)
-                            .into(),
-                    );
-                }
-
-                // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
-                if show_hscrollbar {
-                    let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
-                    let hscrollbar_mapped: Element<'_, Message> = hscrollbar_view.map(|_| unreachable!());
-
-                    layers.push(
-                        container(hscrollbar_mapped)
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .align_y(icy_ui::alignment::Vertical::Bottom)
                             .into(),
                     );
                 }

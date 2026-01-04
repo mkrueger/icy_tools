@@ -2231,6 +2231,29 @@ impl MainWindow {
         }
 
         match event {
+            // Handle Ctrl+Wheel for zoom (before other handlers consume it)
+            Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, modifiers }) => {
+                // Check if Ctrl is pressed for zoom
+                if modifiers.control() {
+                    // Convert delta to ZoomMessage
+                    let zoom_msg = match delta {
+                        icy_ui::mouse::ScrollDelta::Lines { y, .. } => {
+                            if *y > 0.0 {
+                                icy_engine_gui::ZoomMessage::In
+                            } else if *y < 0.0 {
+                                icy_engine_gui::ZoomMessage::Out
+                            } else {
+                                return (None, Task::none());
+                            }
+                        }
+                        icy_ui::mouse::ScrollDelta::Pixels { y, .. } => {
+                            icy_engine_gui::ZoomMessage::Wheel(icy_ui::mouse::ScrollDelta::Pixels { x: 0.0, y: *y })
+                        }
+                    };
+                    return (Some(Message::Preview(PreviewMessage::Zoom(zoom_msg))), Task::none());
+                }
+                (None, Task::none())
+            }
             Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
                 // Context-dependent keys that can't be in command handler
                 // Space: shuffle mode or auto-scroll toggle

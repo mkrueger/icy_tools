@@ -33,8 +33,9 @@ use icy_engine_edit::EditState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::DoubleClickDetector;
-use icy_engine_gui::{wrap_with_scrollbars, Viewport};
-use icy_ui::widget::menu::{context_menu, items as menu_items_fn, Item as MenuItemDef, Tree as MenuTree};
+use icy_engine_gui::Viewport;
+use icy_ui::menu::{item as menu_item, MenuNode};
+use icy_ui::widget::menu::context_menu;
 use parking_lot::Mutex;
 
 use crate::fl;
@@ -65,32 +66,6 @@ const PREVIEW_ATLAS_W: u32 = PREVIEW_TEX_W * PREVIEW_ATLAS_COLS;
 const PREVIEW_ATLAS_H: u32 = PREVIEW_TEX_H * PREVIEW_ATLAS_ROWS;
 
 const MAX_LABEL_CHARS: usize = 64;
-
-/// Context menu action for layers
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LayerContextAction {
-    Properties(usize),
-    NewLayer,
-    Duplicate(usize),
-    MergeDown(usize),
-    Delete(usize),
-    Clear(usize),
-}
-
-impl icy_ui::widget::menu::Action for LayerContextAction {
-    type Message = LayerMessage;
-
-    fn message(&self) -> Self::Message {
-        match *self {
-            LayerContextAction::Properties(i) => LayerMessage::EditLayer(i),
-            LayerContextAction::NewLayer => LayerMessage::Add,
-            LayerContextAction::Duplicate(i) => LayerMessage::Duplicate(i),
-            LayerContextAction::MergeDown(i) => LayerMessage::MergeDown(i),
-            LayerContextAction::Delete(i) => LayerMessage::Remove(i),
-            LayerContextAction::Clear(i) => LayerMessage::Clear(i),
-        }
-    }
-}
 
 /// Messages for the layer view
 #[derive(Clone, Debug)]
@@ -577,31 +552,26 @@ impl LayerView {
     }
 
     /// Build the context menu items for a layer
-    fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuTree<'static, LayerMessage, Theme, icy_ui::Renderer>> {
-        use icy_ui::widget::menu::KeyBind;
-        use std::collections::HashMap;
-
-        let key_binds: HashMap<KeyBind, LayerContextAction> = HashMap::new();
-
+    fn build_context_menu_items(index: usize, layer_count: usize) -> Vec<MenuNode<LayerMessage>> {
         let mut items = vec![
-            MenuItemDef::Button(fl!("layer_tool_menu_layer_properties"), LayerContextAction::Properties(index)),
-            MenuItemDef::Button(fl!("layer_tool_menu_new_layer"), LayerContextAction::NewLayer),
-            MenuItemDef::Button(fl!("layer_tool_menu_duplicate_layer"), LayerContextAction::Duplicate(index)),
+            menu_item!(fl!("layer_tool_menu_layer_properties"), LayerMessage::EditLayer(index)),
+            menu_item!(fl!("layer_tool_menu_new_layer"), LayerMessage::Add),
+            menu_item!(fl!("layer_tool_menu_duplicate_layer"), LayerMessage::Duplicate(index)),
         ];
 
         // Merge is only available if not the bottom layer
         if index > 0 {
-            items.push(MenuItemDef::Button(fl!("layer_tool_menu_merge_layer"), LayerContextAction::MergeDown(index)));
+            items.push(menu_item!(fl!("layer_tool_menu_merge_layer"), LayerMessage::MergeDown(index)));
         }
 
         // Delete is only available if there's more than one layer
         if layer_count > 1 {
-            items.push(MenuItemDef::Button(fl!("layer_tool_menu_delete_layer"), LayerContextAction::Delete(index)));
+            items.push(menu_item!(fl!("layer_tool_menu_delete_layer"), LayerMessage::Remove(index)));
         }
 
-        items.push(MenuItemDef::Button(fl!("layer_tool_menu_clear_layer"), LayerContextAction::Clear(index)));
+        items.push(menu_item!(fl!("layer_tool_menu_clear_layer"), LayerMessage::Clear(index)));
 
-        menu_items_fn(&key_binds, items)
+        items
     }
 
     /// Create a single menu item button
@@ -688,8 +658,8 @@ impl LayerView {
         }
         .into();
 
-        let needs_scrollbar = self.viewport.borrow().is_scrollable_y();
-        let list_with_scrollbar = wrap_with_scrollbars(list_widget, &self.viewport, needs_scrollbar, false);
+        // Layer list (scrollbars handled elsewhere if needed)
+        let list_with_scrollbar = list_widget;
 
         let scroll_y = self.viewport.borrow().scroll_y;
         let icon_color = theme.background.on;
@@ -763,7 +733,7 @@ impl LayerView {
         // Wrap with context menu (for current selection)
         if layer_count > 0 {
             let menu_items = Self::build_context_menu_items(current_layer, layer_count);
-            context_menu(content, Some(menu_items)).into()
+            context_menu(content, &menu_items).into()
         } else {
             content.into()
         }

@@ -322,11 +322,27 @@ pub fn create_crt_shader<'a>(
     monitor_settings: Arc<MonitorSettings>,
     editor_markers: Option<crate::EditorMarkers>,
 ) -> Element<'a, TerminalMessage> {
-    // Let the parent wrapper decide sizing; shader can just be Fill.
-    shader(CRTShaderProgram::new(term, monitor_settings, editor_markers))
-        .width(icy_ui::Length::Fill)
-        .height(icy_ui::Length::Fill)
-        .into()
+    // Get content size directly from screen (virtual_size is in pixels)
+    let screen = term.screen.lock();
+    let virtual_size = screen.virtual_size();
+    drop(screen);
+
+    // Get zoom from viewport (still needed for zoom level)
+    let zoom = term.viewport.read().zoom;
+
+    let zoomed_width = (virtual_size.width as f32 * zoom).max(1.0);
+    let zoomed_height = (virtual_size.height as f32 * zoom).max(1.0);
+
+    // Wrap the shader in a container with fixed size so it works inside scrollable
+    // The shader itself still uses Fill to expand into this container
+    icy_ui::widget::container(
+        shader(CRTShaderProgram::new(term, monitor_settings, editor_markers))
+            .width(icy_ui::Length::Fill)
+            .height(icy_ui::Length::Fill),
+    )
+    .width(icy_ui::Length::Fixed(zoomed_width))
+    .height(icy_ui::Length::Fixed(zoomed_height))
+    .into()
 }
 
 static SCALE_FACTOR_BITS: AtomicU32 = AtomicU32::new(f32::to_bits(1.0));

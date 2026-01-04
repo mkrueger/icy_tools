@@ -12,13 +12,13 @@ use std::sync::Arc;
 
 use icy_engine::Screen;
 use icy_ui::{
-    widget::{container, stack},
-    Alignment, Element, Length, Task,
+    widget::{container, scroll_area, scrollable},
+    Element, Length, Task,
 };
 
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::TerminalMessage;
-use icy_engine_gui::{EditorMarkers, HorizontalScrollbarOverlay, MonitorSettings, ScalingMode, ScrollbarOverlay, Terminal, TerminalView, ZoomMessage};
+use icy_engine_gui::{EditorMarkers, MonitorSettings, ScalingMode, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
 
 /// Canvas view state for the ANSI editor
@@ -254,51 +254,59 @@ impl CanvasView {
     /// * `editor_markers` - Optional editor markers (layer bounds, selection, etc.)
     ///   The caller should set layer_bounds, selection_rect, etc. before calling view().
     pub fn view(&self, editor_markers: Option<EditorMarkers>) -> Element<'_, TerminalMessage> {
-        // Use TerminalView to render with CRT shader effect
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, Arc::new(self.monitor_settings.read().clone()), editor_markers);
+        // Get scrollable content size from screen (virtual_size includes full document)
+        let screen = self.terminal.screen.lock();
+        let virtual_size = screen.virtual_size();
+        drop(screen);
 
-        // Get scrollbar info using shared logic from icy_engine_gui
-        let scrollbar_info = self.terminal.scrollbar_info();
+        // Get zoom from viewport
+        let zoom = self.terminal.viewport.read().zoom;
 
-        if scrollbar_info.needs_any_scrollbar() {
-            let mut layers: Vec<Element<'_, TerminalMessage>> = vec![terminal_view];
+        // Scrollable size in zoomed pixels (for scroll_area)
+        let scrollable_width = virtual_size.width as f32 * zoom;
+        let scrollable_height = virtual_size.height as f32 * zoom;
 
-            // Add vertical scrollbar if needed - uses viewport directly, no messages needed
-            if scrollbar_info.needs_vscrollbar {
-                let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
-                // Map () to CanvasMessage - scrollbar mutates viewport directly via Arc<RwLock>
-                let vscrollbar_mapped: Element<'_, TerminalMessage> = vscrollbar_view.map(|_| unreachable!());
-                let vscrollbar_container: container::Container<'_, TerminalMessage> =
-                    container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
-                layers.push(vscrollbar_container.into());
-            }
+        // Scrollable size in content pixels (for viewport)
+        let scrollable_content_width = virtual_size.width as f32;
+        let scrollable_content_height = virtual_size.height as f32;
 
-            // Add horizontal scrollbar if needed - uses viewport directly, no messages needed
-            if scrollbar_info.needs_hscrollbar {
-                let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
-                let hscrollbar_mapped: Element<'_, TerminalMessage> = hscrollbar_view.map(|_| unreachable!());
-                let hscrollbar_container: container::Container<'_, TerminalMessage> =
-                    container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
-                layers.push(hscrollbar_container.into());
-            }
+        let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
+        let monitor_settings = Arc::new(self.monitor_settings.read().clone());
+        let viewport_arc = self.terminal.viewport.clone();
 
-            container(stack(layers))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|theme: &icy_ui::Theme| container::Style {
-                    background: Some(icy_ui::Background::Color(main_area_background(theme))),
-                    ..Default::default()
-                })
-                .into()
-        } else {
-            container(terminal_view)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|theme: &icy_ui::Theme| container::Style {
-                    background: Some(icy_ui::Background::Color(main_area_background(theme))),
-                    ..Default::default()
-                })
-                .into()
-        }
+        let content = scroll_area()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Both {
+                vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+            })
+            .show_viewport(scrollable_size, move |scroll_viewport| {
+                // Update terminal viewport with scroll position and content size from scroll_area
+                // scroll_viewport.x/y are in zoomed pixel coordinates
+                {
+                    let mut vp = viewport_arc.write();
+                    // Convert from zoomed coordinates back to content coordinates
+                    vp.scroll_x = scroll_viewport.x / zoom;
+                    vp.scroll_y = scroll_viewport.y / zoom;
+                    vp.visible_width = scroll_viewport.width;
+                    vp.visible_height = scroll_viewport.height;
+                    // Set scrollable content size (in content pixels, not zoomed)
+                    vp.content_width = scrollable_content_width;
+                    vp.content_height = scrollable_content_height;
+                }
+
+                TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone())
+                    .map(|msg| msg)
+            });
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(main_area_background(theme))),
+                ..Default::default()
+            })
+            .into()
     }
 }

@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use icy_engine::{Screen, Size, TextScreen};
-use icy_engine_gui::{command_handler, HorizontalScrollbarOverlay, MonitorSettings, ScrollbarOverlay, Terminal, TerminalView};
+use icy_engine_gui::{command_handler, MonitorSettings, Terminal, TerminalView};
 use icy_parser_core::BaudEmulation;
 use icy_sauce::SauceRecord;
 use icy_ui::Event;
 use icy_ui::{
-    widget::{column, container, image as iced_image, stack, text, Space},
+    widget::{column, container, image as iced_image, scroll_area, scrollable, text, Space},
     Alignment, Element, Length, Task,
 };
 use parking_lot::Mutex;
@@ -281,11 +281,11 @@ impl PreviewView {
         let handle = iced_image::Handle::from_rgba(width, height, rgba);
 
         // Create image viewer with the pre-decoded image
-        let mut viewer = ImageViewer::new(handle.clone(), width, height);
+        let viewer = ImageViewer::new(handle.clone(), width, height);
 
         // If auto-scroll is enabled (e.g., shuffle mode), reset scroll to top
         if self.auto_scroll_enabled {
-            viewer.scroll_to(0.0, 0.0);
+            // scroll_area starts at 0,0 automatically
             self.scroll_mode = ScrollMode::AutoScroll;
         } else {
             self.scroll_mode = ScrollMode::Off;
@@ -372,7 +372,7 @@ impl PreviewView {
     /// Get maximum scroll Y using the active content view
     fn get_max_scroll_y(&self) -> f32 {
         if let Some(ref viewer) = self.image_viewer {
-            viewer.viewport.max_scroll_y()
+            viewer.max_scroll_y()
         } else {
             self.terminal.viewport.read().max_scroll_y()
         }
@@ -381,7 +381,7 @@ impl PreviewView {
     /// Get current scroll Y position using the active content view
     fn get_current_scroll_y(&self) -> f32 {
         if let Some(ref viewer) = self.image_viewer {
-            viewer.viewport.scroll_y
+            viewer.scroll_y()
         } else {
             self.terminal.viewport.read().scroll_y
         }
@@ -479,7 +479,7 @@ impl PreviewView {
     /// Get visible height in pixels (for shuffle mode overlay positioning)
     pub fn get_visible_height(&self) -> f32 {
         if let Some(ref viewer) = self.image_viewer {
-            viewer.viewport.visible_height
+            viewer.visible_height()
         } else {
             self.terminal.viewport.read().visible_height
         }
@@ -505,11 +505,11 @@ impl PreviewView {
                     match result {
                         Ok((handle, width, height)) => {
                             // Create image viewer with the loaded image
-                            let mut viewer = ImageViewer::new(handle.clone(), width, height);
+                            let viewer = ImageViewer::new(handle.clone(), width, height);
 
                             // If auto-scroll is enabled (e.g., shuffle mode), reset scroll to top
                             if self.auto_scroll_enabled {
-                                viewer.scroll_to(0.0, 0.0);
+                                // scroll_area starts at 0,0 automatically
                                 self.scroll_mode = ScrollMode::AutoScroll;
                             }
 
@@ -572,7 +572,7 @@ impl PreviewView {
 
                 // Forward remaining messages to viewer
                 if let Some(ref mut viewer) = self.image_viewer {
-                    viewer.update(msg);
+                    let _ = viewer.update::<PreviewMessage>(msg);
                 }
                 Task::none()
             }
@@ -893,50 +893,60 @@ impl PreviewView {
                 }
             }
             PreviewMode::Terminal => {
-                let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings, None).map(PreviewMessage::TerminalMessage);
+                // Get scrollable content size from screen (virtual_size includes scrollback)
+                let screen = self.terminal.screen.lock();
+                let virtual_size = screen.virtual_size();
+                drop(screen);
 
-                // Get scrollbar info using shared logic from icy_engine_gui
-                let scrollbar_info = self.terminal.scrollbar_info();
+                // Get zoom from viewport
+                let zoom = self.terminal.viewport.read().zoom;
 
-                if scrollbar_info.needs_any_scrollbar() {
-                    let mut layers: Vec<Element<'_, PreviewMessage>> = vec![terminal_view];
+                // Scrollable size in zoomed pixels (for scroll_area)
+                let scrollable_width = virtual_size.width as f32 * zoom;
+                let scrollable_height = virtual_size.height as f32 * zoom;
 
-                    // Add vertical scrollbar if needed - uses ViewportAccess to mutate viewport directly
-                    if scrollbar_info.needs_vscrollbar {
-                        let vscrollbar_view: Element<'_, ()> = ScrollbarOverlay::new(&self.terminal.viewport).view();
-                        let vscrollbar_mapped: Element<'_, PreviewMessage> = vscrollbar_view.map(|_| unreachable!());
-                        let vscrollbar_container: container::Container<'_, PreviewMessage> =
-                            container(vscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_x(Alignment::End);
-                        layers.push(vscrollbar_container.into());
-                    }
+                // Scrollable size in content pixels (for viewport)
+                let scrollable_content_width = virtual_size.width as f32;
+                let scrollable_content_height = virtual_size.height as f32;
 
-                    // Add horizontal scrollbar if needed - uses ViewportAccess to mutate viewport directly
-                    if scrollbar_info.needs_hscrollbar {
-                        let hscrollbar_view: Element<'_, ()> = HorizontalScrollbarOverlay::new(&self.terminal.viewport).view();
-                        let hscrollbar_mapped: Element<'_, PreviewMessage> = hscrollbar_view.map(|_| unreachable!());
-                        let hscrollbar_container: container::Container<'_, PreviewMessage> =
-                            container(hscrollbar_mapped).width(Length::Fill).height(Length::Fill).align_y(Alignment::End);
-                        layers.push(hscrollbar_container.into());
-                    }
+                let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
+                let monitor_settings_clone = monitor_settings.clone();
+                let viewport_arc = self.terminal.viewport.clone();
 
-                    container(stack(layers))
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .style(|theme: &icy_ui::Theme| container::Style {
-                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
-                            ..Default::default()
-                        })
-                        .into()
-                } else {
-                    container(terminal_view)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .style(|theme: &icy_ui::Theme| container::Style {
-                            background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
-                            ..Default::default()
-                        })
-                        .into()
-                }
+                let content = scroll_area()
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .direction(scrollable::Direction::Both {
+                        vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                        horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                    })
+                    .show_viewport(scrollable_size, move |scroll_viewport| {
+                        // Update terminal viewport with scroll position and content size from scroll_area
+                        // scroll_viewport.x/y are in zoomed pixel coordinates
+                        {
+                            let mut vp = viewport_arc.write();
+                            // Convert from zoomed coordinates back to content coordinates
+                            vp.scroll_x = scroll_viewport.x / zoom;
+                            vp.scroll_y = scroll_viewport.y / zoom;
+                            vp.visible_width = scroll_viewport.width;
+                            vp.visible_height = scroll_viewport.height;
+                            // Set scrollable content size (in content pixels, not zoomed)
+                            vp.content_width = scrollable_content_width;
+                            vp.content_height = scrollable_content_height;
+                        }
+
+                        TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None)
+                            .map(PreviewMessage::TerminalMessage)
+                    });
+
+                container(content)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|theme: &icy_ui::Theme| container::Style {
+                        background: Some(icy_ui::Background::Color(theme::main_area_background(theme))),
+                        ..Default::default()
+                    })
+                    .into()
             }
         }
     }

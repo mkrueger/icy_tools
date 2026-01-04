@@ -103,7 +103,7 @@ impl Terminal {
 
     /// Update viewport when screen size changes
     pub fn update_viewport_size(&mut self) {
-        let scr = self.screen.lock();
+        let scr: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = self.screen.lock();
         let virtual_size = scr.virtual_size();
         drop(scr);
 

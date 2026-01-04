@@ -280,7 +280,6 @@ impl<'a> CRTShaderProgram<'a> {
                 scroll_offset_y = params.scroll_offset_y;
                 scroll_offset_x = params.scroll_offset_x;
             }
-
             if cfg!(debug_assertions) && std::env::var("ICY_DEBUG_VIEWPORT").is_ok() && viewport_changed {
                 let max_scroll_x = (content_width - visible_width).max(0.0);
                 let max_scroll_y = (content_height - visible_height).max(0.0);
