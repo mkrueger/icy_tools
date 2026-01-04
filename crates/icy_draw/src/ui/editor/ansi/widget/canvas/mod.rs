@@ -296,8 +296,7 @@ impl CanvasView {
                     vp.content_height = scrollable_content_height;
                 }
 
-                TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone())
-                    .map(|msg| msg)
+                TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone()).map(|msg| msg)
             });
 
         container(content)

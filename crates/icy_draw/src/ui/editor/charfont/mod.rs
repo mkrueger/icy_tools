@@ -8,7 +8,6 @@
 
 mod charset_canvas;
 mod font_dialogs;
-pub mod menu_bar;
 mod outline_style_preview;
 
 pub use charset_canvas::*;

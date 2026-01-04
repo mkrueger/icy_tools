@@ -47,6 +47,7 @@ pub use dialog::reference_image::*;
 pub use dialog::tdf_font_selector::{TdfFontSelectorDialog, TdfFontSelectorMessage};
 
 pub use main_area::AnsiEditorMainArea;
+pub use main_area::AnsiViewMenuState;
 
 pub use widget::canvas::*;
 pub use widget::char_selector::*;

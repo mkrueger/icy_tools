@@ -21,11 +21,7 @@ use icy_ui::Element;
 /// Deprecated: Wrap content with scrollbar overlays
 /// This is now a no-op - use scroll_area with show_viewport instead for native scrollbars
 #[deprecated(note = "Use scroll_area with show_viewport instead")]
-pub fn wrap_with_scrollbars<'a, Message: 'a>(
-    content: Element<'a, Message>,
-    _needs_vscrollbar: bool,
-    _needs_hscrollbar: bool,
-) -> Element<'a, Message> {
+pub fn wrap_with_scrollbars<'a, Message: 'a>(content: Element<'a, Message>, _needs_vscrollbar: bool, _needs_hscrollbar: bool) -> Element<'a, Message> {
     // Just return content - scrollbars should be handled by scroll_area now
     content
 }

@@ -105,7 +105,7 @@ impl ImageViewer {
         let vp_w = state.visible_width;
         let vp_h = state.visible_height;
         drop(state);
-        
+
         if vp_w > 0.0 && vp_h > 0.0 {
             let scale_x = vp_w / self.image_size.0 as f32;
             let scale_y = vp_h / self.image_size.1 as f32;
@@ -165,33 +165,37 @@ impl ImageViewer {
     /// Handle a message, returns optional scroll task
     pub fn update<Message: 'static>(&mut self, message: ImageViewerMessage) -> Task<Message> {
         match message {
-            ImageViewerMessage::Zoom(zoom_msg) => {
-                match zoom_msg {
-                    ZoomMessage::In => self.zoom_in(),
-                    ZoomMessage::Out => self.zoom_out(),
-                    ZoomMessage::Reset => self.zoom_100(),
-                    ZoomMessage::AutoFit => self.zoom_fit(),
-                    ZoomMessage::Set(z) => self.set_zoom(z),
-                    ZoomMessage::Wheel(delta) => {
-                        let (y_delta, is_smooth) = match delta {
-                            ScrollDelta::Lines { y, .. } => {
-                                let sign = if y > 0.0 { 1.0 } else if y < 0.0 { -1.0 } else { 0.0 };
-                                (sign, false)
-                            }
-                            ScrollDelta::Pixels { y, .. } => (y / 200.0, true),
-                        };
-                        if y_delta != 0.0 {
-                            if is_smooth {
-                                self.set_zoom(self.zoom + y_delta)
-                            } else if y_delta > 0.0 {
-                                self.zoom_in()
+            ImageViewerMessage::Zoom(zoom_msg) => match zoom_msg {
+                ZoomMessage::In => self.zoom_in(),
+                ZoomMessage::Out => self.zoom_out(),
+                ZoomMessage::Reset => self.zoom_100(),
+                ZoomMessage::AutoFit => self.zoom_fit(),
+                ZoomMessage::Set(z) => self.set_zoom(z),
+                ZoomMessage::Wheel(delta) => {
+                    let (y_delta, is_smooth) = match delta {
+                        ScrollDelta::Lines { y, .. } => {
+                            let sign = if y > 0.0 {
+                                1.0
+                            } else if y < 0.0 {
+                                -1.0
                             } else {
-                                self.zoom_out()
-                            }
+                                0.0
+                            };
+                            (sign, false)
+                        }
+                        ScrollDelta::Pixels { y, .. } => (y / 200.0, true),
+                    };
+                    if y_delta != 0.0 {
+                        if is_smooth {
+                            self.set_zoom(self.zoom + y_delta)
+                        } else if y_delta > 0.0 {
+                            self.zoom_in()
+                        } else {
+                            self.zoom_out()
                         }
                     }
                 }
-            }
+            },
             // Keyboard navigation - scroll_area handles scrolling
             // These are kept for potential future programmatic scrolling needs
             ImageViewerMessage::Home
@@ -213,10 +217,7 @@ impl ImageViewer {
     }
 
     /// Create the view element with scroll_area
-    pub fn view<'a, Message: Clone + 'static>(
-        &'a self,
-        _on_message: impl Fn(ImageViewerMessage) -> Message + 'static + Clone,
-    ) -> Element<'a, Message> {
+    pub fn view<'a, Message: Clone + 'static>(&'a self, _on_message: impl Fn(ImageViewerMessage) -> Message + 'static + Clone) -> Element<'a, Message> {
         let zoomed = self.zoomed_size();
         let content_size = icy_ui::Size::new(zoomed.0, zoomed.1);
         let scroll_state = self.scroll_state.clone();

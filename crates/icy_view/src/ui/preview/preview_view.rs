@@ -935,8 +935,7 @@ impl PreviewView {
                             vp.content_height = scrollable_content_height;
                         }
 
-                        TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None)
-                            .map(PreviewMessage::TerminalMessage)
+                        TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None).map(PreviewMessage::TerminalMessage)
                     });
 
                 container(content)

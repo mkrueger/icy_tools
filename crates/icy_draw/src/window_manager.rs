@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use parking_lot::RwLock;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use icy_ui::{keyboard, widget::space, window, Element, Event, Point, Size, Subscription, Task, Theme, Vector};
+use icy_ui::{keyboard, menu, widget::space, window, Element, Event, Point, Size, Subscription, Task, Theme, Vector};
 
 use crate::mcp::McpCommand;
 use crate::session::{edit_mode_to_string, SessionManager, SessionState, WindowRestoreInfo, WindowState};
@@ -928,5 +928,835 @@ impl WindowManager {
             }
         }*/
         Task::none()
+    }
+
+    /// Build recent files submenu items with stable IDs
+    fn build_recent_files_submenu<F>(recent_files: &[std::path::PathBuf], wrap: F) -> Vec<menu::MenuNode<WindowManagerMessage>>
+    where
+        F: Fn(crate::ui::main_window::Message) -> WindowManagerMessage + Copy,
+    {
+        use crate::fl;
+        use crate::ui::main_window::Message;
+
+        let mut items: Vec<menu::MenuNode<WindowManagerMessage>> = Vec::new();
+
+        if recent_files.is_empty() {
+            items.push(menu::MenuNode::item_with_id(menu::MenuId::from_str("recent.empty"), fl!("menu-no_recent_files"), wrap(Message::Noop)).enabled(false));
+        } else {
+            for (i, file) in recent_files.iter().rev().take(10).enumerate() {
+                let file_name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| file.display().to_string());
+                items.push(menu::MenuNode::item_with_id(
+                    menu::MenuId::from_str(&format!("recent.{}", i)),
+                    file_name,
+                    wrap(Message::OpenRecentFile(file.clone())),
+                ));
+            }
+            items.push(menu::separator!());
+            items.push(menu::item!(fl!("menu-clear_recent_files"), wrap(Message::ClearRecentFiles)));
+        }
+
+        items
+    }
+
+    fn menu_id_escape(input: &str) -> String {
+        input.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
+    }
+
+    fn build_plugins_submenu<F>(plugins: &[crate::Plugin], wrap: F) -> Vec<menu::MenuNode<WindowManagerMessage>>
+    where
+        F: Fn(crate::ui::Message) -> WindowManagerMessage + Copy,
+    {
+        use crate::fl;
+        use crate::ui::editor::ansi::AnsiEditorMessage;
+        use crate::ui::Message;
+
+        if plugins.is_empty() {
+            return vec![menu::MenuNode::item_with_id(menu::MenuId::from_str("plugins.empty"), fl!("menu-no_plugins"), wrap(Message::Noop)).enabled(false)];
+        }
+
+        let mut out: Vec<menu::MenuNode<WindowManagerMessage>> = Vec::new();
+
+        for (group, items) in crate::Plugin::group_by_path(plugins) {
+            if group.is_empty() {
+                for (i, p) in items {
+                    out.push(menu::MenuNode::item_with_id(
+                        menu::MenuId::from_str(&format!("plugins.item.{i}")),
+                        p.title.clone(),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::RunPlugin(i))),
+                    ));
+                }
+                continue;
+            }
+
+            let group_id = Self::menu_id_escape(&group);
+            let mut group_nodes: Vec<menu::MenuNode<WindowManagerMessage>> = Vec::new();
+            for (i, p) in items {
+                group_nodes.push(menu::MenuNode::item_with_id(
+                    menu::MenuId::from_str(&format!("plugins.{group_id}.{i}")),
+                    p.title.clone(),
+                    wrap(Message::AnsiEditor(AnsiEditorMessage::RunPlugin(i))),
+                ));
+            }
+
+            out.push(menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str(&format!("plugins.group.{group_id}")),
+                group,
+                group_nodes,
+            ));
+        }
+
+        out
+    }
+
+    /// Application menu (native on macOS, widget-based on other platforms)
+    pub fn application_menu(state: &WindowManager, context: &menu::MenuContext) -> Option<menu::AppMenu<WindowManagerMessage>> {
+        use crate::fl;
+        use crate::ui::Message;
+        use icy_ui::keyboard::key::Named;
+        use icy_ui::keyboard::Key;
+
+        use crate::ui::editor::animation::AnimationEditorMessage;
+        use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMessage, AnsiViewMenuState, ColorSwitcherMessage};
+        use crate::ui::editor::bitfont::BitFontEditorMessage;
+        use crate::ui::editor::charfont::CharFontEditorMessage;
+
+        // Get the focused window from context, or fall back to first window
+        let (focused_window_id, focused_window) = match context.current_window.and_then(|id| state.windows.get(&id).map(|w| (id, w))) {
+            Some((id, window)) => (id, window),
+            None => match state.windows.iter().next() {
+                Some((id, window)) => (*id, window),
+                None => {
+                    // No windows yet - return basic menu without window-specific items
+                    let dummy_id = window::Id::unique();
+                    let wrap = move |msg: Message| WindowManagerMessage::WindowMessage(dummy_id, msg);
+
+                    let file_menu = menu::submenu!(
+                        fl!("menu-file"),
+                        [
+                            menu::item!(
+                                fl!("menu-new"),
+                                WindowManagerMessage::OpenWindow,
+                                menu::MenuShortcut::cmd(Key::Character("n".into()))
+                            ),
+                            menu::separator!(),
+                            menu::quit!(wrap(Message::QuitApp)),
+                        ]
+                    );
+                    let help_menu = menu::submenu!(fl!("menu-help"), [menu::about!(fl!("menu-about"), wrap(Message::ShowAbout)),]);
+                    return Some(menu::AppMenu::new(vec![file_menu, help_menu]));
+                }
+            },
+        };
+        let window_id = focused_window_id;
+        let edit_mode = focused_window.mode();
+
+        // Get window state for menu generation
+        let undo_info = focused_window.get_undo_info();
+        let is_connected = focused_window.is_connected();
+        let ansi_view_state: AnsiViewMenuState = focused_window.ansi_view_menu_state().unwrap_or_default();
+        let ansi_mirror_mode: bool = focused_window.ansi_mirror_mode().unwrap_or(false);
+        let plugins = focused_window.plugins().clone();
+
+        // Helper to wrap Message in WindowManagerMessage
+        let wrap = move |msg: Message| WindowManagerMessage::WindowMessage(window_id, msg);
+
+        // Build Recent Files submenu using helper
+        let recent_files = state.options.read().recent_files.files().clone();
+        let recent_items = Self::build_recent_files_submenu(&recent_files, wrap);
+
+        let file_export_item: menu::MenuNode<WindowManagerMessage> = match edit_mode {
+            crate::ui::EditMode::BitFont => menu::item!(
+                fl!("menu-export-font"),
+                wrap(Message::BitFontEditor(BitFontEditorMessage::ShowExportFontDialog))
+            ),
+            crate::ui::EditMode::CharFont => {
+                menu::item!(fl!("menu-export-font"), wrap(Message::CharFontEditor(CharFontEditorMessage::ExportFont)))
+            }
+            crate::ui::EditMode::Animation => {
+                menu::item!(fl!("menu-export"), wrap(Message::AnimationEditor(AnimationEditorMessage::ShowExportDialog)))
+            }
+            crate::ui::EditMode::Ansi => menu::item!(fl!("menu-export"), wrap(Message::ExportFile)),
+        };
+
+        // File menu with Recent Files submenu
+        let mut file_nodes: Vec<menu::MenuNode<WindowManagerMessage>> = vec![
+            menu::item!(fl!("menu-new"), wrap(Message::NewFile), menu::MenuShortcut::cmd(Key::Character("n".into()))),
+            menu::item!(fl!("menu-open"), wrap(Message::OpenFile), menu::MenuShortcut::cmd(Key::Character("o".into()))),
+            menu::MenuNode::submenu_with_id(menu::MenuId::from_str("menu.recent"), fl!("menu-open_recent"), recent_items),
+            menu::separator!(),
+            menu::item!(fl!("menu-save"), wrap(Message::SaveFile), menu::MenuShortcut::cmd(Key::Character("s".into()))).enabled(!is_connected),
+            menu::item!(
+                fl!("menu-save-as"),
+                wrap(Message::SaveFileAs),
+                menu::MenuShortcut::cmd_shift(Key::Character("s".into()))
+            )
+            .enabled(!is_connected),
+            menu::separator!(),
+            file_export_item,
+        ];
+
+        if edit_mode == crate::ui::EditMode::BitFont {
+            file_nodes.push(menu::item!(fl!("menu-import-font"), wrap(Message::ShowImportFontDialog)));
+        }
+
+        if edit_mode == crate::ui::EditMode::CharFont {
+            file_nodes.push(menu::item!(
+                fl!("menu-import-fonts"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::ImportFonts))
+            ));
+        }
+
+        if edit_mode == crate::ui::EditMode::Ansi {
+            file_nodes.push(menu::separator!());
+            file_nodes.push(menu::item!(fl!("menu-import-font"), wrap(Message::ShowImportFontDialog)));
+        }
+
+        file_nodes.extend([
+            menu::separator!(),
+            menu::item!(fl!("menu-connect-to-server"), wrap(Message::ShowConnectDialog)),
+            menu::separator!(),
+            menu::preferences!(fl!("menu-show_settings"), wrap(Message::ShowSettings)),
+            menu::separator!(),
+            menu::item!(
+                fl!("menu-close-editor"),
+                wrap(Message::CloseEditor),
+                menu::MenuShortcut::cmd(Key::Character("w".into()))
+            ),
+            menu::quit!(wrap(Message::QuitApp)),
+        ]);
+
+        let file_menu = menu::MenuNode::submenu_with_id(menu::MenuId::from_str("menu.file"), fl!("menu-file"), file_nodes);
+
+        // Edit menu - with dynamic undo/redo labels
+        let undo_label = match &undo_info.undo_description {
+            Some(desc) => format!("&Undo {}", desc),
+            None => "&Undo".to_string(),
+        };
+        let redo_label = match &undo_info.redo_description {
+            Some(desc) => format!("&Redo {}", desc),
+            None => "&Redo".to_string(),
+        };
+
+        let mut edit_nodes: Vec<menu::MenuNode<WindowManagerMessage>> = vec![
+            menu::item!(undo_label, wrap(Message::Undo), menu::MenuShortcut::cmd(Key::Character("z".into()))).enabled(undo_info.undo_description.is_some()),
+            menu::item!(redo_label, wrap(Message::Redo), menu::MenuShortcut::cmd_shift(Key::Character("z".into())))
+                .enabled(undo_info.redo_description.is_some()),
+            menu::separator!(),
+            menu::item!(fl!("menu-cut"), wrap(Message::Cut), menu::MenuShortcut::cmd(Key::Character("x".into()))),
+            menu::item!(fl!("menu-copy"), wrap(Message::Copy), menu::MenuShortcut::cmd(Key::Character("c".into()))),
+            menu::item!(fl!("menu-paste"), wrap(Message::Paste), menu::MenuShortcut::cmd(Key::Character("v".into()))),
+        ];
+
+        if edit_mode == crate::ui::EditMode::Ansi {
+            edit_nodes.push(menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.paste_as"),
+                fl!("menu-paste-as"),
+                vec![menu::item!(fl!("menu-paste-as-new-image"), wrap(Message::PasteAsNewImage))],
+            ));
+            edit_nodes.push(menu::item!(fl!("menu-insert-sixel-from-file"), wrap(Message::InsertSixelFromFile)));
+            edit_nodes.push(menu::separator!());
+
+            let area_ops = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.area_ops"),
+                fl!("menu-area_operations"),
+                vec![
+                    menu::item!(
+                        fl!("menu-justify_line_left"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineLeft)))
+                    ),
+                    menu::item!(
+                        fl!("menu-justify_line_center"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineCenter)))
+                    ),
+                    menu::item!(
+                        fl!("menu-justify_line_right"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLineRight)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-insert_row"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertRow)))
+                    ),
+                    menu::item!(
+                        fl!("menu-delete_row"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteRow)))
+                    ),
+                    menu::item!(
+                        fl!("menu-insert_colum"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::InsertColumn)))
+                    ),
+                    menu::item!(
+                        fl!("menu-delete_colum"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::DeleteColumn)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-erase_row"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRow)))
+                    ),
+                    menu::item!(
+                        fl!("menu-erase_row_to_start"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToStart)))
+                    ),
+                    menu::item!(
+                        fl!("menu-erase_row_to_end"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseRowToEnd)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-erase_column"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumn)))
+                    ),
+                    menu::item!(
+                        fl!("menu-erase_column_to_start"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToStart)))
+                    ),
+                    menu::item!(
+                        fl!("menu-erase_column_to_end"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::EraseColumnToEnd)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-scroll_area_up"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaUp)))
+                    ),
+                    menu::item!(
+                        fl!("menu-scroll_area_down"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaDown)))
+                    ),
+                    menu::item!(
+                        fl!("menu-scroll_area_left"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaLeft)))
+                    ),
+                    menu::item!(
+                        fl!("menu-scroll_area_right"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight)))
+                    ),
+                ],
+            );
+            edit_nodes.push(area_ops);
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("menu-open_font_selector"),
+                wrap(Message::AnsiEditor(AnsiEditorMessage::OpenFontSelector))
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::check_item!(
+                fl!("menu-mirror_mode"),
+                Some(ansi_mirror_mode),
+                wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleMirrorMode))),
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(fl!("menu-file-settings"), wrap(Message::ShowFileSettingsDialog)));
+        }
+
+        if edit_mode == crate::ui::EditMode::BitFont {
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("cmd-bitfont-swap_chars-menu"),
+                wrap(Message::BitFontEditor(BitFontEditorMessage::SwapChars))
+            ));
+            edit_nodes.push(menu::item!(
+                fl!("cmd-bitfont-duplicate_line-menu"),
+                wrap(Message::BitFontEditor(BitFontEditorMessage::DuplicateLine))
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("menu-set-font-size"),
+                wrap(Message::BitFontEditor(BitFontEditorMessage::ShowFontSizeDialog))
+            ));
+        }
+
+        if edit_mode == crate::ui::EditMode::CharFont {
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("menu-add_fonts"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::OpenAddFontDialog))
+            ));
+            edit_nodes.push(menu::item!(
+                fl!("tdf-dialog-edit-settings-title"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::OpenEditSettingsDialog))
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("tdf-editor-clone_button"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::CloneFont))
+            ));
+            edit_nodes.push(menu::item!(
+                fl!("menu-delete"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::DeleteFont))
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!("Move Up", wrap(Message::CharFontEditor(CharFontEditorMessage::MoveFontUp))));
+            edit_nodes.push(menu::item!("Move Down", wrap(Message::CharFontEditor(CharFontEditorMessage::MoveFontDown))));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                fl!("tdf-editor-clear_char_button"),
+                wrap(Message::CharFontEditor(CharFontEditorMessage::ClearChar))
+            ));
+        }
+
+        if edit_mode == crate::ui::EditMode::Animation {
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                "Play/Pause",
+                wrap(Message::AnimationEditor(AnimationEditorMessage::TogglePlayback))
+            ));
+            edit_nodes.push(menu::item!("Stop", wrap(Message::AnimationEditor(AnimationEditorMessage::Stop))));
+            edit_nodes.push(menu::item!("Restart", wrap(Message::AnimationEditor(AnimationEditorMessage::Restart))));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!(
+                "Previous Frame",
+                wrap(Message::AnimationEditor(AnimationEditorMessage::PreviousFrame))
+            ));
+            edit_nodes.push(menu::item!("Next Frame", wrap(Message::AnimationEditor(AnimationEditorMessage::NextFrame))));
+            edit_nodes.push(menu::item!("First Frame", wrap(Message::AnimationEditor(AnimationEditorMessage::FirstFrame))));
+            edit_nodes.push(menu::item!("Last Frame", wrap(Message::AnimationEditor(AnimationEditorMessage::LastFrame))));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!("Loop", wrap(Message::AnimationEditor(AnimationEditorMessage::ToggleLoop))));
+            edit_nodes.push(menu::item!("Toggle Scale", wrap(Message::AnimationEditor(AnimationEditorMessage::ToggleScale))));
+            edit_nodes.push(menu::item!(
+                "Toggle Log Panel",
+                wrap(Message::AnimationEditor(AnimationEditorMessage::ToggleLogPanel))
+            ));
+            edit_nodes.push(menu::separator!());
+            edit_nodes.push(menu::item!("Recompile", wrap(Message::AnimationEditor(AnimationEditorMessage::Recompile))));
+        }
+
+        let edit_menu = menu::MenuNode::submenu_with_id(menu::MenuId::from_str("menu.edit"), fl!("menu-edit"), edit_nodes);
+
+        let mut extra_top_level: Vec<menu::MenuNode<WindowManagerMessage>> = Vec::new();
+
+        if edit_mode == crate::ui::EditMode::Ansi {
+            let selection_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.selection"),
+                fl!("menu-selection"),
+                vec![
+                    menu::item!(
+                        fl!("menu-select-all"),
+                        wrap(Message::SelectAll),
+                        menu::MenuShortcut::cmd(Key::Character("a".into()))
+                    ),
+                    menu::item!(fl!("menu-select_nothing"), wrap(Message::Deselect)),
+                    menu::item!(fl!("menu-inverse_selection"), wrap(Message::AnsiEditor(AnsiEditorMessage::InverseSelection))),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-flipx"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipX)))
+                    ),
+                    menu::item!(
+                        fl!("menu-flipy"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::FlipY)))
+                    ),
+                    menu::item!(
+                        fl!("menu-crop"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::Crop)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-justifyleft"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyLeft)))
+                    ),
+                    menu::item!(
+                        fl!("menu-justifyright"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyRight)))
+                    ),
+                    menu::item!(
+                        fl!("menu-justifycenter"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::JustifyCenter)))
+                    ),
+                ],
+            );
+            extra_top_level.push(selection_menu);
+
+            let colors_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.colors"),
+                fl!("menu-colors"),
+                vec![
+                    menu::item!(fl!("menu-edit_palette"), wrap(Message::AnsiEditor(AnsiEditorMessage::EditPalette))),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-next_fg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)))
+                    ),
+                    menu::item!(
+                        fl!("menu-prev_fg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-next_bg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)))
+                    ),
+                    menu::item!(
+                        fl!("menu-prev_bg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-pick_attribute_under_caret"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)))
+                    ),
+                    menu::item!(
+                        fl!("menu-toggle_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(ColorSwitcherMessage::SwapColors)))
+                    ),
+                    menu::item!(
+                        fl!("menu-default_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor)))
+                    ),
+                ],
+            );
+            extra_top_level.push(colors_menu);
+
+            let zoom_sub = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("view.zoom"),
+                fl!("menu-zoom"),
+                vec![
+                    menu::item!(
+                        fl!("menu-zoom_reset"),
+                        wrap(Message::ZoomReset),
+                        menu::MenuShortcut::cmd(Key::Character("0".into()))
+                    ),
+                    menu::item!(fl!("menu-zoom_in"), wrap(Message::ZoomIn), menu::MenuShortcut::cmd(Key::Character("=".into()))),
+                    menu::item!(
+                        fl!("menu-zoom_out"),
+                        wrap(Message::ZoomOut),
+                        menu::MenuShortcut::cmd(Key::Character("-".into()))
+                    ),
+                    menu::separator!(),
+                    menu::item!("4:1 400%", wrap(Message::SetZoom(4.0))),
+                    menu::item!("2:1 200%", wrap(Message::SetZoom(2.0))),
+                    menu::item!("1:1 100%", wrap(Message::SetZoom(1.0))),
+                    menu::item!("1:2 50%", wrap(Message::SetZoom(0.5))),
+                    menu::item!("1:4 25%", wrap(Message::SetZoom(0.25))),
+                ],
+            );
+
+            // Helper to check if guide matches a specific size
+            let guide_is = |w: i32, h: i32| -> Option<bool> {
+                ansi_view_state
+                    .guide
+                    .and_then(|(gw, gh)| if gw as i32 == w && gh as i32 == h { Some(true) } else { None })
+            };
+
+            let guide_sub = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("view.guides"),
+                fl!("menu-guides"),
+                vec![
+                    menu::check_item!(
+                        "Off",
+                        if ansi_view_state.guide.is_none() { Some(true) } else { None },
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ClearGuide)))
+                    ),
+                    menu::separator!(),
+                    menu::check_item!(
+                        "Smallscale 80x25",
+                        guide_is(80, 25),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetGuide(80, 25))))
+                    ),
+                    menu::check_item!(
+                        "Square 80x40",
+                        guide_is(80, 40),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetGuide(80, 40))))
+                    ),
+                    menu::check_item!(
+                        "Instagram 80x50",
+                        guide_is(80, 50),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetGuide(80, 50))))
+                    ),
+                    menu::check_item!(
+                        "File_ID.DIZ 44x22",
+                        guide_is(44, 22),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetGuide(44, 22))))
+                    ),
+                    menu::separator!(),
+                    menu::check_item!(
+                        fl!("menu-toggle_guide"),
+                        Some(ansi_view_state.show_guide),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleGuide))),
+                    ),
+                ],
+            );
+
+            // Helper to check if raster matches a specific size
+            let raster_is = |w: i32, h: i32| -> Option<bool> {
+                ansi_view_state
+                    .raster
+                    .and_then(|(rw, rh)| if rw as i32 == w && rh as i32 == h { Some(true) } else { None })
+            };
+
+            let raster_sub = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("view.raster"),
+                fl!("menu-raster"),
+                vec![
+                    menu::check_item!(
+                        "Off",
+                        if ansi_view_state.raster.is_none() { Some(true) } else { None },
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ClearRaster)))
+                    ),
+                    menu::separator!(),
+                    menu::check_item!(
+                        "1x1",
+                        raster_is(1, 1),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(1, 1))))
+                    ),
+                    menu::check_item!(
+                        "2x2",
+                        raster_is(2, 2),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(2, 2))))
+                    ),
+                    menu::check_item!(
+                        "4x2",
+                        raster_is(4, 2),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(4, 2))))
+                    ),
+                    menu::check_item!(
+                        "4x4",
+                        raster_is(4, 4),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(4, 4))))
+                    ),
+                    menu::check_item!(
+                        "8x2",
+                        raster_is(8, 2),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(8, 2))))
+                    ),
+                    menu::check_item!(
+                        "8x4",
+                        raster_is(8, 4),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(8, 4))))
+                    ),
+                    menu::check_item!(
+                        "8x8",
+                        raster_is(8, 8),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(8, 8))))
+                    ),
+                    menu::check_item!(
+                        "16x4",
+                        raster_is(16, 4),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(16, 4))))
+                    ),
+                    menu::check_item!(
+                        "16x8",
+                        raster_is(16, 8),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(16, 8))))
+                    ),
+                    menu::check_item!(
+                        "16x16",
+                        raster_is(16, 16),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SetRaster(16, 16))))
+                    ),
+                    menu::separator!(),
+                    menu::check_item!(
+                        fl!("menu-toggle_raster"),
+                        Some(ansi_view_state.show_raster),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleRaster))),
+                    ),
+                ],
+            );
+
+            let mut view_nodes = vec![
+                zoom_sub,
+                menu::separator!(),
+                guide_sub,
+                raster_sub,
+                menu::check_item!(
+                    fl!("menu-show_layer_borders"),
+                    Some(ansi_view_state.show_layer_borders),
+                    wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLayerBorders))),
+                ),
+                menu::check_item!(
+                    fl!("menu-show_line_numbers"),
+                    Some(ansi_view_state.show_line_numbers),
+                    wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleLineNumbers))),
+                ),
+                menu::separator!(),
+                menu::item!(
+                    fl!("menu-toggle_fullscreen"),
+                    wrap(Message::ToggleFullscreen),
+                    menu::MenuShortcut::new(icy_ui::keyboard::Modifiers::empty(), Key::Named(Named::F11))
+                ),
+            ];
+
+            if is_connected {
+                view_nodes.push(menu::separator!());
+                view_nodes.push(menu::item!(fl!("menu-toggle-chat"), wrap(Message::ToggleChatPanel)));
+            }
+
+            view_nodes.push(menu::separator!());
+            view_nodes.push(menu::item!(
+                fl!("menu-reference-image"),
+                wrap(Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog))
+            ));
+            view_nodes.push(menu::item!(
+                fl!("menu-toggle-reference-image"),
+                wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)))
+            ));
+
+            let view_menu = menu::MenuNode::submenu_with_id(menu::MenuId::from_str("menu.view"), fl!("menu-view"), view_nodes);
+            extra_top_level.push(view_menu);
+
+            let plugins_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.plugins"),
+                fl!("menu-plugins"),
+                Self::build_plugins_submenu(&plugins, wrap),
+            );
+            extra_top_level.push(plugins_menu);
+        }
+
+        if edit_mode == crate::ui::EditMode::BitFont {
+            let selection_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.selection"),
+                fl!("menu-selection"),
+                vec![
+                    menu::item!(fl!("menu-select-all"), wrap(Message::BitFontEditor(BitFontEditorMessage::SelectAll))),
+                    menu::item!(fl!("menu-select_nothing"), wrap(Message::BitFontEditor(BitFontEditorMessage::ClearSelection))),
+                    menu::separator!(),
+                    menu::item!(fl!("cmd-bitfont-clear-menu"), wrap(Message::BitFontEditor(BitFontEditorMessage::Clear))),
+                    menu::item!(fl!("cmd-bitfont-fill-menu"), wrap(Message::BitFontEditor(BitFontEditorMessage::FillSelection))),
+                    menu::item!(fl!("cmd-bitfont-inverse-menu"), wrap(Message::BitFontEditor(BitFontEditorMessage::Inverse))),
+                    menu::separator!(),
+                    menu::item!(fl!("cmd-bitfont-flip_x-menu"), wrap(Message::BitFontEditor(BitFontEditorMessage::FlipX))),
+                    menu::item!(fl!("cmd-bitfont-flip_y-menu"), wrap(Message::BitFontEditor(BitFontEditorMessage::FlipY))),
+                ],
+            );
+            extra_top_level.push(selection_menu);
+
+            let view_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.view"),
+                fl!("menu-view"),
+                vec![
+                    menu::item!(
+                        fl!("cmd-bitfont-toggle_letter_spacing-menu"),
+                        wrap(Message::BitFontEditor(BitFontEditorMessage::ToggleLetterSpacing))
+                    ),
+                    menu::item!(
+                        fl!("cmd-bitfont-show_preview-menu"),
+                        wrap(Message::BitFontEditor(BitFontEditorMessage::ShowPreview))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-toggle_fullscreen"),
+                        wrap(Message::ToggleFullscreen),
+                        menu::MenuShortcut::new(icy_ui::keyboard::Modifiers::empty(), Key::Named(Named::F11))
+                    ),
+                ],
+            );
+            extra_top_level.push(view_menu);
+        }
+
+        if edit_mode == crate::ui::EditMode::CharFont {
+            let selection_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.selection"),
+                fl!("menu-selection"),
+                vec![
+                    menu::item!(
+                        "Select Char at Cursor",
+                        wrap(Message::CharFontEditor(CharFontEditorMessage::SelectCharAtCursor))
+                    ),
+                    menu::item!(
+                        fl!("menu-select_nothing"),
+                        wrap(Message::CharFontEditor(CharFontEditorMessage::ClearCharsetSelection))
+                    ),
+                ],
+            );
+            extra_top_level.push(selection_menu);
+
+            let colors_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.colors"),
+                fl!("menu-colors"),
+                vec![
+                    menu::item!(
+                        fl!("menu-next_fg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextFgColor)))
+                    ),
+                    menu::item!(
+                        fl!("menu-prev_fg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevFgColor)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-next_bg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::NextBgColor)))
+                    ),
+                    menu::item!(
+                        fl!("menu-prev_bg_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)))
+                    ),
+                    menu::separator!(),
+                    menu::item!(
+                        fl!("menu-default_color"),
+                        wrap(Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SwitchToDefaultColor)))
+                    ),
+                ],
+            );
+            extra_top_level.push(colors_menu);
+
+            let fonts_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.fonts"),
+                fl!("menu-fonts"),
+                vec![
+                    menu::item!(fl!("menu-add_fonts"), wrap(Message::CharFontEditor(CharFontEditorMessage::OpenAddFontDialog))),
+                    menu::item!(
+                        fl!("tdf-dialog-edit-settings-title"),
+                        wrap(Message::CharFontEditor(CharFontEditorMessage::OpenEditSettingsDialog))
+                    ),
+                    menu::separator!(),
+                    menu::item!(fl!("tdf-editor-clone_button"), wrap(Message::CharFontEditor(CharFontEditorMessage::CloneFont))),
+                    menu::item!(fl!("menu-delete"), wrap(Message::CharFontEditor(CharFontEditorMessage::DeleteFont))),
+                    menu::separator!(),
+                    menu::item!("Move Up", wrap(Message::CharFontEditor(CharFontEditorMessage::MoveFontUp))),
+                    menu::item!("Move Down", wrap(Message::CharFontEditor(CharFontEditorMessage::MoveFontDown))),
+                ],
+            );
+            extra_top_level.push(fonts_menu);
+
+            let view_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.view"),
+                fl!("menu-view"),
+                vec![menu::item!(
+                    fl!("menu-toggle_fullscreen"),
+                    wrap(Message::ToggleFullscreen),
+                    menu::MenuShortcut::new(icy_ui::keyboard::Modifiers::empty(), Key::Named(Named::F11))
+                )],
+            );
+            extra_top_level.push(view_menu);
+        }
+
+        if edit_mode == crate::ui::EditMode::Animation {
+            let view_menu = menu::MenuNode::submenu_with_id(
+                menu::MenuId::from_str("menu.view"),
+                fl!("menu-view"),
+                vec![menu::item!(
+                    fl!("menu-toggle_fullscreen"),
+                    wrap(Message::ToggleFullscreen),
+                    menu::MenuShortcut::new(icy_ui::keyboard::Modifiers::empty(), Key::Named(Named::F11))
+                )],
+            );
+            extra_top_level.push(view_menu);
+        }
+
+        // View menu
+        // Help menu
+        let help_menu = menu::MenuNode::submenu_with_id(
+            menu::MenuId::from_str("menu.help"),
+            fl!("menu-help"),
+            vec![
+                menu::item!(fl!("menu-discuss"), wrap(Message::OpenDiscussions)),
+                menu::item!(fl!("menu-open_log_file"), wrap(Message::OpenLogFile)),
+                menu::item!(fl!("menu-report-bug"), wrap(Message::ReportBug)),
+                menu::separator!(),
+                menu::about!(fl!("menu-about"), wrap(Message::ShowAbout)),
+            ],
+        );
+
+        let mut top_level = vec![file_menu, edit_menu];
+        top_level.extend(extra_top_level);
+        top_level.push(help_menu);
+
+        Some(menu::AppMenu::new(top_level))
     }
 }

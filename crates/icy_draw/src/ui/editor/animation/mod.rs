@@ -11,7 +11,6 @@
 
 pub mod export_dialog;
 mod icons;
-pub mod menu_bar;
 mod messages;
 mod playback_controls;
 

@@ -410,6 +410,7 @@ fn main() {
     .theme(WindowManager::theme)
     .subscription(WindowManager::subscription)
     .title(WindowManager::title)
+    .application_menu(WindowManager::application_menu)
     .run()
     .expect("Failed to run application");
 

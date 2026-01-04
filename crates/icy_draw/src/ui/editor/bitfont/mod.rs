@@ -14,7 +14,6 @@
 mod canvas;
 mod font_size_dialog;
 mod left_panel;
-pub mod menu_bar;
 mod messages;
 pub mod style;
 mod tile_view;

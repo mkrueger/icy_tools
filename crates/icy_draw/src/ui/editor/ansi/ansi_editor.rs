@@ -1336,18 +1336,6 @@ impl AnsiEditorCore {
         }
     }
 
-    /// Get the current marker state for menu display
-    pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
-        widget::toolbar::menu_bar::MarkerMenuState {
-            guide: self.guide.map(|(x, y)| (x as u32, y as u32)),
-            guide_visible: self.show_guide,
-            raster: self.raster.map(|(x, y)| (x as u32, y as u32)),
-            raster_visible: self.show_raster,
-            line_numbers_visible: self.show_line_numbers,
-            layer_borders_visible: self.show_layer_borders,
-        }
-    }
-
     /// Get the current mirror mode state
     pub fn get_mirror_mode(&self) -> bool {
         let mut screen = self.screen.lock();

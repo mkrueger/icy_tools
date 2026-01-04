@@ -182,15 +182,6 @@ menu-select_nothing=Deselect
 menu-inverse_selection=Inverse
 
 menu-colors=&Colors
-menu-ice-mode=Ice Mode
-menu-ice-mode-unrestricted=Unrestricted
-menu-ice-mode-blink=Blink
-menu-ice-mode-ice=Ice
-menu-palette-mode=Palette Mode
-menu-palette-mode-unrestricted=Unrestricted
-menu-palette-mode-dos=Dos 16
-menu-palette-mode-free=Free 16
-menu-palette-mode-free8=Free 8
 
 menu-edit_palette=Edit Palette…
 menu-next_fg_color=Next Foreground Color
@@ -214,19 +205,12 @@ menu-show_layer_borders=Show Layer Borders
 menu-show_line_numbers=Show Line Numbers
 menu-toggle_guide=Toggle Guides
 menu-toggle_raster=Toggle Grid
-menu-toggle_left_pane=Toggle Left Pane
-menu-toggle_right_pane=Toggle Right Pane
 
 menu-pick_attribute_under_caret=Pick up Attribute
 menu-default_color=Default Color
 menu-toggle_color=Switch Foreground/Background
 
 menu-fonts=Fonts
-menu-font-mode=Font Mode
-menu-font-mode-unrestricted=Unrestricted
-menu-font-mode-sauce=Sauce
-menu-font-mode-single=Single
-menu-font-mode-dual=Dual
 menu-open_font_selector=Select Font…
 menu-open_font_slot_manager=Manage Font Slots…
 menu-add_fonts=Add Fonts…

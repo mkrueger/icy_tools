@@ -27,13 +27,30 @@ use icy_ui::{
 };
 
 use super::commands::create_draw_commands;
-use super::menu::{MenuBarState, UndoInfo};
 use crate::ui::collaboration::CollaborationState;
 use crate::ui::editor::animation::{AnimationEditor, AnimationEditorMessage};
 use crate::ui::editor::ansi::{AnsiEditorCoreMessage, AnsiEditorMainArea, AnsiEditorMessage, AnsiStatusInfo};
 use crate::ui::editor::bitfont::{BitFontEditor, BitFontEditorMessage};
 use crate::Plugin;
 use crate::Settings;
+
+/// Undo/Redo information for menu display
+#[derive(Default, Clone)]
+pub struct UndoInfo {
+    /// Description of the next undo operation (None if nothing to undo)
+    pub undo_description: Option<String>,
+    /// Description of the next redo operation (None if nothing to redo)
+    pub redo_description: Option<String>,
+}
+
+impl UndoInfo {
+    pub fn new(undo_description: Option<String>, redo_description: Option<String>) -> Self {
+        Self {
+            undo_description,
+            redo_description,
+        }
+    }
+}
 
 /// The editing mode of a window
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +374,7 @@ pub enum Message {
     // Help
     // ═══════════════════════════════════════════════════════════════════════════
     OpenDiscussions,
+    OpenLogFile,
     ReportBug,
     ShowAbout,
     /// Open the GitHub releases page for the latest version
@@ -492,9 +510,6 @@ pub struct MainWindow {
     /// Shared font library for TDF/Figlet fonts
     pub(super) font_library: SharedFontLibrary,
 
-    /// Menu bar state (tracks expanded menus)
-    menu_state: MenuBarState,
-
     /// Fullscreen mode toggle
     is_fullscreen: bool,
 
@@ -613,7 +628,6 @@ impl MainWindow {
             mode_state,
             options,
             font_library,
-            menu_state: MenuBarState::new(),
             is_fullscreen: false,
             dialogs,
             commands: MainWindowCommands::new(),
@@ -641,7 +655,6 @@ impl MainWindow {
             mode_state,
             options,
             font_library,
-            menu_state: MenuBarState::new(),
             is_fullscreen: false,
             dialogs: DialogStack::new(),
             commands: MainWindowCommands::new(),
@@ -933,7 +946,6 @@ impl MainWindow {
             mode_state,
             options,
             font_library,
-            menu_state: MenuBarState::new(),
             is_fullscreen: false,
             dialogs,
             commands: MainWindowCommands::new(),
@@ -1013,6 +1025,24 @@ impl MainWindow {
     /// Get current edit mode
     pub fn mode(&self) -> EditMode {
         self.mode_state.mode()
+    }
+
+    pub fn plugins(&self) -> &Arc<Vec<Plugin>> {
+        &self.plugins
+    }
+
+    pub fn ansi_view_menu_state(&self) -> Option<crate::ui::editor::ansi::AnsiViewMenuState> {
+        match &self.mode_state {
+            ModeState::Ansi(editor) => Some(editor.view_menu_state()),
+            _ => None,
+        }
+    }
+
+    pub fn ansi_mirror_mode(&self) -> Option<bool> {
+        match &self.mode_state {
+            ModeState::Ansi(editor) => Some(editor.mirror_mode()),
+            _ => None,
+        }
     }
 
     /// Get current undo stack length (for autosave tracking)
@@ -1780,6 +1810,31 @@ impl MainWindow {
             }
 
             // ═══════════════════════════════════════════════════════════════════
+            // Help
+            // ═══════════════════════════════════════════════════════════════════
+            Message::OpenLogFile => {
+                if let Some(log_file) = Settings::log_file() {
+                    if log_file.exists() {
+                        #[cfg(windows)]
+                        {
+                            let _ = std::process::Command::new("notepad").arg(&log_file).spawn();
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            if let Err(err) = open::that(&log_file) {
+                                log::error!("Failed to open log file: {}", err);
+                            }
+                        }
+                    } else if let Some(parent) = log_file.parent() {
+                        if let Err(err) = open::that(parent) {
+                            log::error!("Failed to open log directory: {}", err);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            // ═══════════════════════════════════════════════════════════════════
             // View operations
             // ═══════════════════════════════════════════════════════════════════
             Message::SetZoom(zoom) => {
@@ -2140,38 +2195,8 @@ impl MainWindow {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        // Build the UI based on current mode
-        let options = self.options.clone();
-
         // Cache current theme for this view pass
         let theme = self.theme();
-
-        // Get undo/redo descriptions for menu
-        let undo_info = self.get_undo_info();
-
-        // Get marker state for menu display
-        let marker_state = match &self.mode_state {
-            ModeState::Ansi(editor) => editor.get_marker_menu_state(),
-            _ => crate::ui::main_window::menu::MarkerMenuState::default(),
-        };
-
-        // Get mirror mode state from editor
-        let mirror_mode = match &self.mode_state {
-            ModeState::Ansi(editor) => editor.get_mirror_mode(),
-            _ => false,
-        };
-
-        let is_connected = self.collaboration_state.active;
-
-        let menu_bar = self.menu_state.view(
-            &self.mode_state.mode(),
-            options,
-            &undo_info,
-            &marker_state,
-            self.plugins.clone(),
-            mirror_mode,
-            is_connected,
-        );
 
         // Pass collaboration state to the ANSI editor; it builds the chat pane and splitter itself.
         let content: Element<'_, Message> = match &self.mode_state {
@@ -2187,7 +2212,10 @@ impl MainWindow {
         // Status bar
         let status_bar = self.view_status_bar();
 
-        let main_content: Element<'_, Message> = column![menu_bar, content, rule::horizontal(1), status_bar,].into();
+        // Note: The menu bar is now handled by the application_menu in WindowManager.
+        // On non-macOS, icy_ui automatically prepends the menu bar widget to the view.
+        // On macOS, the native menu bar is used instead.
+        let main_content: Element<'_, Message> = column![content, rule::horizontal(1), status_bar,].into();
 
         // Show dialogs from dialog stack
         let with_dialogs = self.dialogs.view(main_content);
@@ -2426,13 +2454,18 @@ impl MainWindow {
     }
 
     /// Get undo/redo descriptions for menu display
-    fn get_undo_info(&self) -> UndoInfo {
+    pub fn get_undo_info(&self) -> UndoInfo {
         match &self.mode_state {
             ModeState::Ansi(editor) => editor.with_edit_state_readonly(|state| UndoInfo::new(state.undo_description(), state.redo_description())),
             ModeState::BitFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::CharFont(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
             ModeState::Animation(editor) => UndoInfo::new(editor.undo_description(), editor.redo_description()),
         }
+    }
+
+    /// Check if the window is connected to a collaboration server
+    pub fn is_connected(&self) -> bool {
+        self.collaboration_state.active
     }
 
     /// Handle events passed from the window manager
@@ -2473,49 +2506,9 @@ impl MainWindow {
             return (None, task);
         }
 
-        // Handle mode-specific menu commands
-        match &self.mode_state {
-            ModeState::Ansi(editor) => {
-                // Check ANSI menu commands
-                let undo_desc = editor.undo_description();
-                let redo_desc = editor.redo_description();
-                let mirror_mode = editor.mirror_mode();
-                let is_connected = self.collaboration_state.is_connected();
-                if let Some(msg) = crate::ui::editor::ansi::widget::toolbar::menu_bar::handle_command_event(
-                    event,
-                    undo_desc.as_deref(),
-                    redo_desc.as_deref(),
-                    mirror_mode,
-                    is_connected,
-                ) {
-                    return (Some(msg), Task::none());
-                }
-            }
-            ModeState::BitFont(editor) => {
-                // Check BitFont menu commands
-                let undo_desc = editor.undo_description();
-                let redo_desc = editor.redo_description();
-                if let Some(msg) = crate::ui::editor::bitfont::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
-                    return (Some(msg), Task::none());
-                }
-            }
-            ModeState::Animation(editor) => {
-                // Check Animation menu commands
-                let undo_desc = editor.undo_description();
-                let redo_desc = editor.redo_description();
-                if let Some(msg) = crate::ui::editor::animation::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
-                    return (Some(msg), Task::none());
-                }
-            }
-            ModeState::CharFont(editor) => {
-                // Check CharFont menu commands (uses embedded ANSI editor core)
-                let undo_desc = editor.undo_description();
-                let redo_desc = editor.redo_description();
-                if let Some(msg) = crate::ui::editor::charfont::menu_bar::handle_command_event(event, undo_desc.as_deref(), redo_desc.as_deref()) {
-                    return (Some(msg), Task::none());
-                }
-            }
-        }
+        // Note: Menu hotkeys are now handled by icy_ui's AppMenu system in WindowManager.
+        // The application_menu() function defines shortcuts via MenuShortcut, which are
+        // automatically processed by the shell before events reach here.
 
         // Handle editor-specific events (tools, navigation, etc.)
         match &mut self.mode_state {

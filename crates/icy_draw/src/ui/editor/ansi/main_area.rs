@@ -51,6 +51,18 @@ pub struct AnsiEditorMainArea {
     paste_controls: PasteControls,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AnsiViewMenuState {
+    pub show_guide: bool,
+    pub show_raster: bool,
+    pub show_line_numbers: bool,
+    pub show_layer_borders: bool,
+    /// Current guide size (width, height) in characters, or None if disabled
+    pub guide: Option<(f32, f32)>,
+    /// Current raster size (width, height) in characters, or None if disabled
+    pub raster: Option<(f32, f32)>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CenterPane {
     Canvas,
@@ -236,10 +248,6 @@ impl AnsiEditorMainArea {
         }
     }
 
-    pub fn get_marker_menu_state(&self) -> widget::toolbar::menu_bar::MarkerMenuState {
-        self.core.get_marker_menu_state()
-    }
-
     pub fn get_mirror_mode(&self) -> bool {
         self.core.get_mirror_mode()
     }
@@ -257,6 +265,17 @@ impl AnsiEditorMainArea {
     /// Get mirror mode state for menu display
     pub fn mirror_mode(&self) -> bool {
         self.get_mirror_mode()
+    }
+
+    pub fn view_menu_state(&self) -> AnsiViewMenuState {
+        AnsiViewMenuState {
+            show_guide: self.core.show_guide,
+            show_raster: self.core.show_raster,
+            show_line_numbers: self.core.show_line_numbers,
+            show_layer_borders: self.core.show_layer_borders,
+            guide: self.core.guide,
+            raster: self.core.raster,
+        }
     }
 
     pub fn zoom_in(&mut self) {
