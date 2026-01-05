@@ -295,12 +295,12 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
                     }) => {
                         state.is_dragging = false;
                     }
-                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { modifiers, .. }) => {
                         if state.is_dragging {
                             // Extend charset selection while dragging
                             // Uses anchor/lead: anchor stays fixed, lead follows cursor
-                            // Alt key toggles rectangle mode (uses global modifier state)
-                            let is_rectangle = icy_engine_gui::is_alt_pressed();
+                            // Alt key toggles rectangle mode
+                            let is_rectangle = modifiers.alt();
                             return Some(Action::publish(BitFontEditorMessage::SetCharsetSelectionLead(col, row, is_rectangle)));
                         }
                         // Request redraw if hover changed

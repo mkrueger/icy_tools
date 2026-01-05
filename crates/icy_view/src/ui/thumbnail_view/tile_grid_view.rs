@@ -11,7 +11,7 @@ use icy_ui::widget::{container, scroll_area, scrollable, shader, text};
 use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow, Size};
 use tokio::sync::mpsc;
 
-use icy_engine_gui::Viewport;
+use icy_engine_gui::ScrollViewport;
 
 use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{Thumbnail, ThumbnailResult, ThumbnailState, ERROR_PLACEHOLDER, LOADING_PLACEHOLDER};
@@ -162,7 +162,7 @@ pub struct TileGridView {
     /// Computed layout (RefCell for interior mutability in view())
     pub layout: RefCell<Vec<LayoutTile>>,
     /// Viewport for smooth scrolling (includes scrollbar state and content dimensions)
-    viewport: RefCell<Viewport>,
+    viewport: RefCell<ScrollViewport>,
     /// Last layout width (to detect when recalculation is needed, RefCell for interior mutability in view())
     last_layout_width: RefCell<f32>,
     /// Currently selected tile index
@@ -211,7 +211,7 @@ impl TileGridView {
     pub fn new() -> Self {
         let (loader, result_rx) = ThumbnailLoader::spawn();
 
-        let viewport = Viewport::default();
+        let viewport = ScrollViewport::default();
 
         Self {
             thumbnails: Vec::new(),
@@ -808,7 +808,7 @@ impl TileGridView {
         // This ensures thumbnails get loaded even when view() is called with &self
         let (viewport_top, viewport_height) = {
             let vp = self.viewport.borrow();
-            (vp.scroll_y, vp.visible_height)
+            (vp.scroll_y(), vp.visible_height_px())
         };
         if viewport_height > 0.0 {
             self.queue_visible_range_loads(viewport_top, viewport_height);
@@ -820,7 +820,7 @@ impl TileGridView {
             let scroll_delta = scroll_speed * delta_seconds;
             let (current_y, max_scroll_y) = {
                 let vp = self.viewport.borrow();
-                (vp.scroll_y, vp.max_scroll_y())
+                (vp.scroll_y(), vp.max_scroll_y())
             };
             let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
@@ -882,7 +882,7 @@ impl TileGridView {
         let tile_bottom = tile.y + tile.height;
         let (visible_top, visible_height) = {
             let vp = self.viewport.borrow();
-            (vp.scroll_y, vp.visible_height)
+            (vp.scroll_y(), vp.visible_height_px())
         };
         let visible_bottom = visible_top + visible_height;
 
@@ -1130,21 +1130,19 @@ impl TileGridView {
     /// Page up - scroll viewport up by one page (no selection change)
     fn page_up(&mut self) {
         // Use last_bounds.height as it's more reliably updated than viewport.visible_height
-        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height);
+        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height_px());
         // Scroll up by nearly a full page (leave some overlap for context)
         let page_height = (visible_height - 50.0).max(100.0);
         self.scroll_by_smooth(page_height);
-        self.viewport.borrow_mut().scrollbar.mark_interaction(true);
     }
 
     /// Page down - scroll viewport down by one page (no selection change)
     fn page_down(&mut self) {
         // Use last_bounds.height as it's more reliably updated than viewport.visible_height
-        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height);
+        let visible_height = self.last_bounds.borrow().height.max(self.viewport.borrow().visible_height_px());
         // Scroll down by nearly a full page (leave some overlap for context)
         let page_height = (visible_height - 50.0).max(100.0);
         self.scroll_by_smooth(-page_height);
-        self.viewport.borrow_mut().scrollbar.mark_interaction(true);
     }
 
     /// Go to first tile with smooth scroll
@@ -1196,7 +1194,7 @@ impl TileGridView {
 
     /// Get the current viewport height
     pub fn get_viewport_height(&self) -> f32 {
-        self.viewport.borrow().visible_height
+        self.viewport.borrow().visible_height_px()
     }
 
     /// Get the selected item (if any)
@@ -1300,7 +1298,7 @@ impl TileGridView {
             bounds.height = height;
         }
 
-        let content_height = self.viewport.borrow().content_height;
+        let content_height = self.viewport.borrow().content_height();
         let content_width = width - 12.0; // Account for scrollbar
 
         // Clone data needed for the closure
@@ -1521,11 +1519,12 @@ impl TileGridView {
                         // Mark interaction for scrollbar visibility and sync position
                         {
                             let mut vp = self.viewport.borrow_mut();
-                            vp.scrollbar.mark_interaction(true);
+                            // vp.scrollbar.mark_interaction(true);
                             let max_scroll = vp.max_scroll_y();
                             if max_scroll > 0.0 {
-                                let scroll_y = vp.scroll_y;
-                                vp.scrollbar.set_scroll_position(scroll_y / max_scroll);
+                                let scroll_y = vp.scroll_y();
+                                // TODO: sync scrollbar position
+                                // vp.scrollbar.set_scroll_position(scroll_y / max_scroll);
                             }
                         }
                         return true;
@@ -1538,7 +1537,7 @@ impl TileGridView {
                     if bounds.contains(pos) {
                         // Calculate position relative to widget
                         let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y;
+                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y();
 
                         // Find which tile is under the cursor
                         let mut found_tile = None;
@@ -1587,7 +1586,7 @@ impl TileGridView {
                     if bounds.contains(pos) {
                         // Calculate position relative to widget
                         let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y;
+                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y();
 
                         // Find which tile is under the cursor
                         let layout = self.layout.borrow();

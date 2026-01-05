@@ -10,7 +10,6 @@
 use icy_engine::{BufferType, Role};
 use icy_engine::{Position, TextPane};
 use icy_engine_edit::AtomicUndoGuard;
-use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 use icy_engine_gui::TerminalMessage;
 use icy_ui::keyboard::key::Physical;
 use icy_ui::Element;
@@ -223,7 +222,7 @@ impl ToolHandler for ClickTool {
 
                 // Image layers: always start layer drag on click (no Ctrl needed)
                 // Normal layers: require Ctrl/Cmd for layer drag
-                let start_layer_drag = evt.button == icy_engine::MouseButton::Left && (self.is_on_image_layer || is_ctrl_pressed() || is_command_pressed());
+                let start_layer_drag = evt.button == icy_engine::MouseButton::Left && (self.is_on_image_layer || evt.modifiers.ctrl || evt.modifiers.meta);
 
                 if start_layer_drag {
                     // Start layer drag

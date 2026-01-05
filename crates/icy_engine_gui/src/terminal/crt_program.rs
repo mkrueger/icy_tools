@@ -5,7 +5,7 @@
 //! one tile above and below for smooth scrolling.
 
 use crate::{
-    compute_viewport_auto, compute_viewport_manual, get_scale_factor, is_alt_pressed, is_ctrl_pressed, is_shift_pressed,
+    compute_viewport_auto, compute_viewport_manual, get_scale_factor,
     shared_render_cache::{SharedCachedTile, TileCacheKey, TILE_HEIGHT},
     tile_cache::MAX_TEXTURE_SLICES,
     CRTShaderState, MonitorSettings, Terminal, TerminalMessage, TerminalMouseEvent, TerminalShader, TextureSliceData,
@@ -83,13 +83,13 @@ impl<'a> CRTShaderProgram<'a> {
         }
     }
 
-    /// Helper function to get current keyboard modifier state
-    fn get_modifiers() -> KeyModifiers {
+    /// Helper function to convert icy_ui Modifiers to icy_engine KeyModifiers
+    fn convert_modifiers(modifiers: icy_ui::keyboard::Modifiers) -> KeyModifiers {
         KeyModifiers {
-            shift: is_shift_pressed(),
-            ctrl: is_ctrl_pressed(),
-            alt: is_alt_pressed(),
-            meta: false,
+            shift: modifiers.shift(),
+            ctrl: modifiers.control(),
+            alt: modifiers.alt(),
+            meta: modifiers.logo(),
         }
     }
 
@@ -107,6 +107,8 @@ impl<'a> CRTShaderProgram<'a> {
         let blink_on: bool;
         let char_blink_supported: bool;
         let zoom: f32;
+        let viewport_width: f32;
+        let viewport_height: f32;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -164,6 +166,24 @@ impl<'a> CRTShaderProgram<'a> {
             let original_res_h = original_resolution.height as f32;
             let original_res_w = original_resolution.width as f32;
 
+            // When the terminal is wrapped in a scrollable, `bounds` can represent the *content*
+            // size, not the visible viewport size. For fitting the terminal window height we
+            // must use the actual visible viewport height (reported via `show_viewport`).
+            let scroll_state_for_fit = self.term.scroll_state();
+            let fit_bounds_w = if scroll_state_for_fit.viewport_width_px > 1.0 {
+                scroll_state_for_fit.viewport_width_px
+            } else {
+                bounds.width
+            };
+            let fit_bounds_h = if scroll_state_for_fit.viewport_height_px > 1.0 {
+                scroll_state_for_fit.viewport_height_px
+            } else {
+                bounds.height
+            };
+
+            viewport_width = fit_bounds_w;
+            viewport_height = fit_bounds_h;
+
             // Pre-compute the zoom level (needed for clamp_terminal_height_to_viewport)
             let pre_zoom = if self.monitor_settings.scaling_mode.is_auto() {
                 1.0
@@ -173,8 +193,8 @@ impl<'a> CRTShaderProgram<'a> {
                     .compute_zoom(
                         original_res_w,
                         original_res_h,
-                        bounds.width,
-                        bounds.height,
+                        fit_bounds_w,
+                        fit_bounds_h,
                         self.monitor_settings.use_integer_scaling,
                     )
                     .max(0.001)
@@ -183,9 +203,16 @@ impl<'a> CRTShaderProgram<'a> {
             // Optional: Clamp the terminal window height to fit within bounds.
             // For small documents, this preserves their height (enabling centering).
             // For large documents, this shrinks to viewport (using full screen).
-            if self.term.fit_terminal_height_to_bounds && !self.monitor_settings.scaling_mode.is_auto() {
+            // IMPORTANT: Do NOT apply in FitWidth mode.
+            // FitWidth is implemented via uniform scaling + vertical scrolling; clamping the
+            // terminal window height based on zoom causes a perceived "max height" and can
+            // break aspect-ratio expectations when the window is resized.
+            if self.term.fit_terminal_height_to_bounds
+                && !matches!(self.monitor_settings.scaling_mode, crate::ScalingMode::Auto)
+                && !self.monitor_settings.scaling_mode.is_fit_width()
+            {
                 if let Some(editable) = screen.as_editable() {
-                    clamp_terminal_height_to_viewport(editable, bounds.height, scan_lines, get_scale_factor(), pre_zoom);
+                    clamp_terminal_height_to_viewport(editable, fit_bounds_h, scan_lines, get_scale_factor(), pre_zoom);
                 }
             }
 
@@ -195,33 +222,14 @@ impl<'a> CRTShaderProgram<'a> {
             char_blink_supported = screen.ice_mode().has_blink();
             blink_on = if char_blink_supported { state.character_blink.is_on() } else { false };
 
-            // Snapshot viewport inputs (keep lock scopes small and borrow-check friendly).
-            let (
-                content_width,
-                content_height,
-                requested_scroll_x,
-                requested_scroll_y,
-                vp_visible_w,
-                vp_visible_h,
-                vp_zoom_before,
-                vp_sb_x,
-                vp_sb_y,
-                viewport_changed,
-            ) = {
-                let vp = self.term.viewport.read();
-                (
-                    vp.content_width,
-                    vp.content_height,
-                    vp.scroll_x,
-                    vp.scroll_y,
-                    vp.visible_width,
-                    vp.visible_height,
-                    vp.zoom,
-                    vp.scrollbar.scroll_position_x,
-                    vp.scrollbar.scroll_position,
-                    vp.changed.load(std::sync::atomic::Ordering::Acquire),
-                )
-            };
+            // Snapshot scroll inputs (scrolling is owned by `scroll_area`).
+            let scroll_state = self.term.scroll_state();
+            let virtual_size = screen.virtual_size();
+            let content_width = virtual_size.width as f32;
+            let content_height = virtual_size.height as f32;
+            let requested_scroll_x = scroll_state.scroll_x;
+            let requested_scroll_y = scroll_state.scroll_y;
+            let viewport_changed = false;
 
             // The visible region must maintain the content's aspect ratio.
             // We use resolution() for the visible aspect ratio (terminal size × font),
@@ -237,8 +245,57 @@ impl<'a> CRTShaderProgram<'a> {
             // the actual content dimensions to avoid stretching.
             //
             // For Auto scaling: show the entire terminal (resolution), centered in widget
+            // For FitWidth: fill width but ensure minimum rows visible
             // For Manual scaling: show a portion based on zoom level
-            if self.monitor_settings.scaling_mode.is_auto() {
+            if self.monitor_settings.scaling_mode.is_fit_width() {
+                // FitWidth mode: fill width, but ensure terminal_height rows are visible
+                // This allows x-stretch but never y-stretch (cutting off rows)
+                let min_visible_h = original_res_h; // At least show terminal_height rows
+                let dbg = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_FITWIDTH").is_ok();
+                if dbg {
+                    eprintln!(
+                        "[crt] bounds=({:.3}x{:.3}) fit_bounds=({:.3}x{:.3}) viewport_px=({:.3}x{:.3}) res=({:.3}x{:.3}) orig_res=({:.3}x{:.3}) content=({:.3}x{:.3}) req_scroll=({:.3},{:.3})",
+                        bounds.width,
+                        bounds.height,
+                        fit_bounds_w,
+                        fit_bounds_h,
+                        scroll_state_for_fit.viewport_width_px,
+                        scroll_state_for_fit.viewport_height_px,
+                        res_w,
+                        res_h,
+                        original_res_w,
+                        original_res_h,
+                        content_width,
+                        content_height,
+                        requested_scroll_x,
+                        requested_scroll_y
+                    );
+                }
+                let params = crate::compute_viewport_fit_width(
+                    res_w,
+                    res_h,
+                    fit_bounds_w,
+                    fit_bounds_h,
+                    content_width,
+                    content_height,
+                    min_visible_h,
+                    requested_scroll_x,
+                    requested_scroll_y,
+                    self.monitor_settings.use_integer_scaling,
+                );
+                visible_width = params.visible_width;
+                visible_height = params.visible_height;
+                scroll_offset_y = params.scroll_offset_y;
+                scroll_offset_x = params.scroll_offset_x;
+                zoom = params.zoom;
+
+                if dbg {
+                    eprintln!(
+                        "[crt] fitwidth -> zoom={:.6} visible=({:.3}x{:.3}) scroll=({:.3},{:.3})",
+                        zoom, visible_width, visible_height, scroll_offset_x, scroll_offset_y
+                    );
+                }
+            } else if self.monitor_settings.scaling_mode.is_auto() {
                 // Auto mode: entire resolution is visible, shader will center it
                 let params = compute_viewport_auto(res_w, res_h, content_width, content_height, requested_scroll_x, requested_scroll_y);
                 visible_width = params.visible_width;
@@ -294,15 +351,12 @@ impl<'a> CRTShaderProgram<'a> {
                     0.0
                 };
                 eprintln!(
-                    "[viewport] bounds=({:.1},{:.1}) res=({:.1},{:.1}) orig_res_h={:.1} vp_visible=({:.1},{:.1}) vp_zoom_before={:.3} -> zoom_eff={:.3} vis=({:.1},{:.1}) content=({:.1},{:.1}) scroll_req=({:.1},{:.1}) scroll_px=({:.1},{:.1}) max_scroll=({:.1},{:.1}) ratio=({:.3},{:.3}) vp_sb_before=({:.3},{:.3}) mode={:?} int_scale={} ",
+                    "[viewport] bounds=({:.1},{:.1}) res=({:.1},{:.1}) orig_res_h={:.1} -> zoom_eff={:.3} vis=({:.1},{:.1}) content=({:.1},{:.1}) scroll_req=({:.1},{:.1}) scroll_px=({:.1},{:.1}) max_scroll=({:.1},{:.1}) ratio=({:.3},{:.3}) mode={:?} int_scale={} ",
                     bounds.width,
                     bounds.height,
                     res_w,
                     res_h,
                     original_res_h,
-                    vp_visible_w,
-                    vp_visible_h,
-                    vp_zoom_before,
                     zoom,
                     visible_width,
                     visible_height,
@@ -316,8 +370,6 @@ impl<'a> CRTShaderProgram<'a> {
                     max_scroll_y,
                     ratio_x,
                     ratio_y,
-                    vp_sb_x,
-                    vp_sb_y,
                     self.monitor_settings.scaling_mode,
                     self.monitor_settings.use_integer_scaling
                 );
@@ -326,29 +378,8 @@ impl<'a> CRTShaderProgram<'a> {
             full_content_height = content_height;
             texture_width = resolution.width as u32;
 
-            // Keep Viewport zoom in sync with effective zoom used for rendering.
-            // This fixes scrollbar/minimap sizing at high zoom levels (e.g. 400%).
-            {
-                let mut vp = self.term.viewport.write();
-                // The Viewport visible size must be the widget bounds (screen pixels).
-                // `visible_content_*()` derives from this via division by `zoom`.
-                vp.visible_width = bounds.width.max(1.0);
-                vp.visible_height = bounds.height.max(1.0);
-
-                vp.zoom = zoom;
-
-                // Publish the same clamped scroll offsets that the shader uses.
-                // This keeps minimap and scrollbars in sync even if other code directly
-                // mutates vp.scroll_x/y without calling the helpers.
-                vp.scroll_x = scroll_offset_x;
-                vp.scroll_y = scroll_offset_y;
-
-                // Clamp targets using the new visible size/zoom and sync thumb positions.
-                vp.clamp_scroll();
-                if viewport_changed {
-                    vp.changed.store(false, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
+            // Scrolling is owned by the scroll_area widget. The shader clamps offsets locally
+            // and exposes effective values via the shared render cache.
 
             // Check for content changes that require cache invalidation
             // Use the shared render cache from Terminal
@@ -715,6 +746,8 @@ impl<'a> CRTShaderProgram<'a> {
             instance_id: state.instance_id,
             render_generation,
             zoom,
+            viewport_width,
+            viewport_height,
             render_info: self.term.render_info.clone(),
             font_width: font_w as f32,
             font_height: font_h as f32,
@@ -873,7 +906,7 @@ impl<'a> CRTShaderProgram<'a> {
         }
 
         if let icy_ui::Event::Mouse(mouse_event) = event {
-            let viewport = self.term.viewport.read();
+            let scroll_state = self.term.scroll_state();
             let render_info = self.term.render_info.read();
 
             // Mouse events should be relative to the terminal widget.
@@ -884,7 +917,7 @@ impl<'a> CRTShaderProgram<'a> {
                 y: p.y - bounds.y,
             });
 
-            if let mouse::Event::ButtonReleased { button, .. } = mouse_event {
+            if let mouse::Event::ButtonReleased { button, modifiers } = mouse_event {
                 if state.dragging && (matches!(button, mouse::Button::Left) || matches!(button, mouse::Button::Right)) {
                     state.dragging = false;
                     state.drag_anchor = None;
@@ -893,13 +926,13 @@ impl<'a> CRTShaderProgram<'a> {
                     // Use unclamped for drag release to get position even outside viewport
                     let (pixel_pos, cell_pos) = if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
                         (pixel_pos, Some(cell_pos))
                     } else {
                         ((0.0, 0.0), None)
                     };
 
-                    let modifiers = Self::get_modifiers();
+                    let modifiers = Self::convert_modifiers(*modifiers);
                     let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, state.drag_button, modifiers);
                     state.drag_button = MouseButton::None;
                     return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
@@ -907,18 +940,18 @@ impl<'a> CRTShaderProgram<'a> {
             }
 
             if state.dragging {
-                if let mouse::Event::CursorMoved { .. } = mouse_event {
+                if let mouse::Event::CursorMoved { modifiers, .. } = mouse_event {
                     if let Some(position) = local_pos_unclamped {
                         let pixel_pos = (position.x, position.y);
                         // Use unclamped version during drag to allow operations beyond viewport
-                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
                         if state.last_drag_position == Some(cell_pos) {
                             return None;
                         }
                         state.last_drag_position = Some(cell_pos);
 
-                        let modifiers = Self::get_modifiers();
+                        let modifiers = Self::convert_modifiers(*modifiers);
                         let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), state.drag_button, modifiers);
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Drag(evt)));
                     }
@@ -930,10 +963,10 @@ impl<'a> CRTShaderProgram<'a> {
             }
 
             match mouse_event {
-                mouse::Event::CursorMoved { .. } => {
+                mouse::Event::CursorMoved { modifiers, .. } => {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
                         if state.last_move_position == cell_pos {
                             return None;
@@ -944,7 +977,7 @@ impl<'a> CRTShaderProgram<'a> {
                             state.hovered_cell = cell_pos;
                         }
 
-                        let modifiers = Self::get_modifiers();
+                        let modifiers = Self::convert_modifiers(*modifiers);
                         let button = if state.dragging { state.drag_button } else { MouseButton::None };
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
 
@@ -956,10 +989,10 @@ impl<'a> CRTShaderProgram<'a> {
                     }
                 }
 
-                mouse::Event::ButtonPressed { button, .. } => {
+                mouse::Event::ButtonPressed { button, modifiers } => {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
-                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
                         if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
                             let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
@@ -967,8 +1000,8 @@ impl<'a> CRTShaderProgram<'a> {
                             let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
                             let font_w = render_info.font_width.max(1.0);
                             let font_h = render_info.font_height.max(1.0);
-                            let abs_px_x = term_x_u + viewport.scroll_x;
-                            let abs_px_y = term_y_u + viewport.scroll_y;
+                            let abs_px_x = term_x_u + scroll_state.scroll_x;
+                            let abs_px_y = term_y_u + scroll_state.scroll_y;
                             let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
                             let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
 
@@ -985,11 +1018,11 @@ impl<'a> CRTShaderProgram<'a> {
                                 abs_px_y,
                                 dbg_cell_x,
                                 dbg_cell_y,
-                                viewport.scroll_x,
-                                viewport.scroll_y,
-                                viewport.visible_width,
-                                viewport.visible_height,
-                                viewport.zoom,
+                                scroll_state.scroll_x,
+                                scroll_state.scroll_y,
+                                scroll_state.viewport_width_px,
+                                scroll_state.viewport_height_px,
+                                self.term.get_zoom(),
                                 render_info.display_scale,
                                 render_info.viewport_x,
                                 render_info.viewport_y,
@@ -1017,21 +1050,21 @@ impl<'a> CRTShaderProgram<'a> {
                             state.last_drag_position = cell_pos;
                         }
 
-                        let modifiers = Self::get_modifiers();
+                        let modifiers = Self::convert_modifiers(*modifiers);
                         let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Press(evt)));
                     }
                 }
 
-                mouse::Event::ButtonReleased { button, .. } => {
+                mouse::Event::ButtonReleased { button, modifiers } => {
                     // Middle button single-click (Middle doesn't support drag)
                     if matches!(button, mouse::Button::Middle) {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
-                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
-                            let modifiers = Self::get_modifiers();
+                            let modifiers = Self::convert_modifiers(*modifiers);
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Middle, modifiers);
 
                             return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
@@ -1040,7 +1073,7 @@ impl<'a> CRTShaderProgram<'a> {
                     } else if !state.dragging {
                         if let Some(position) = local_pos_in_bounds {
                             let pixel_pos = (position.x, position.y);
-                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, &viewport);
+                            let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
                             state.dragging = false;
                             state.drag_anchor = None;
@@ -1053,7 +1086,7 @@ impl<'a> CRTShaderProgram<'a> {
                                 _ => return None,
                             };
 
-                            let modifiers = Self::get_modifiers();
+                            let modifiers = Self::convert_modifiers(*modifiers);
                             let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
 
                             return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
@@ -1062,7 +1095,8 @@ impl<'a> CRTShaderProgram<'a> {
                 }
 
                 mouse::Event::WheelScrolled { delta, modifiers } => {
-                    if modifiers.control() || crate::is_command_pressed() {
+                    // Check for Ctrl (or Cmd on macOS) for zoom
+                    if modifiers.control() || modifiers.logo() {
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 

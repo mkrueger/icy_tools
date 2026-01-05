@@ -242,8 +242,6 @@ impl WindowManager {
                     Event::Mouse(_) => None,
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Track modifiers globally (replaces ModifiersChanged event)
-                        icy_engine_gui::set_global_modifiers(modifiers.control(), modifiers.alt(), modifiers.shift(), modifiers.command());
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                         if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
                             use icy_engine_gui::KeyboardAction;

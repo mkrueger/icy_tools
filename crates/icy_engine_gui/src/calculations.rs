@@ -60,17 +60,39 @@ pub fn compute_terminal_rect(
     let avail_w = avail_w.max(1.0);
     let avail_h = avail_h.max(1.0);
 
-    let scale = scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_integer_scaling);
+    // For FitWidth mode, compute scale based on WIDTH ONLY to preserve aspect ratio.
+    // The content should fill the width and allow vertical scrolling.
+    let scale = match scaling_mode {
+        ScalingMode::FitWidth => {
+            let scale_x = avail_w / term_w;
+            if use_integer_scaling {
+                scale_x.floor().max(1.0)
+            } else {
+                scale_x.max(0.1)
+            }
+        }
+        _ => scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_integer_scaling),
+    };
+
     let scaled_w = (term_w * scale).min(avail_w);
-    let scaled_h = (term_h * scale).min(avail_h);
+    // For FitWidth, don't clamp scaled_h to avail_h - allow content to extend beyond viewport for scrolling
+    let scaled_h = match scaling_mode {
+        ScalingMode::FitWidth => term_h * scale,
+        _ => (term_h * scale).min(avail_h),
+    };
 
     // Snap to pixel grid so the terminal's top-left is never at sub-pixel coordinates.
     // This avoids blurry/unstable positioning when the centering delta is odd.
     let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0).floor();
-    let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0).floor();
+    // For FitWidth, content starts at top (no vertical centering since we scroll)
+    let offset_y = match scaling_mode {
+        ScalingMode::FitWidth => 0.0,
+        _ => ((avail_h - scaled_h) / 2.0).max(0.0).floor(),
+    };
     let start_x = offset_x / avail_w;
     let start_y = offset_y / avail_h;
     let width_n = scaled_w / avail_w;
+    // For FitWidth, height_n can be > 1.0 (content extends beyond viewport)
     let height_n = scaled_h / avail_h;
 
     TerminalRect {
@@ -170,6 +192,94 @@ pub fn compute_viewport_manual(
 
     let max_scroll_x = (content_width - visible_width).max(0.0);
     let scroll_offset_x = scroll_x.clamp(0.0, max_scroll_x);
+
+    ViewportParams {
+        visible_width,
+        visible_height,
+        scroll_offset_y,
+        scroll_offset_x,
+        zoom,
+    }
+}
+
+/// Computes viewport parameters for FitWidth scaling mode.
+///
+/// In FitWidth mode, the content fills the viewport width, but the zoom is
+/// clamped so that at least `min_visible_height` pixels are visible vertically.
+/// This prevents cutting off content (y-stretch) while allowing x-stretch.
+///
+/// # Arguments
+/// * `res_w` - Resolution width (terminal width × font width)
+/// * `res_h` - Resolution height (terminal height × font height)
+/// * `bounds_width` - Widget bounds width
+/// * `bounds_height` - Widget bounds height
+/// * `content_width` - Total content width
+/// * `content_height` - Total content height
+/// * `min_visible_height` - Minimum content height that must be visible (e.g., terminal_height × font_height)
+/// * `scroll_x` - Requested horizontal scroll position
+/// * `scroll_y` - Requested vertical scroll position
+/// * `use_integer_scaling` - Whether to use integer scaling
+pub fn compute_viewport_fit_width(
+    res_w: f32,
+    _res_h: f32,
+    bounds_width: f32,
+    bounds_height: f32,
+    content_width: f32,
+    content_height: f32,
+    _min_visible_height: f32, // IGNORED for FitWidth - we allow vertical scrolling
+    scroll_x: f32,
+    scroll_y: f32,
+    use_integer_scaling: bool,
+) -> ViewportParams {
+    let dbg = cfg!(debug_assertions) && std::env::var("ICY_DEBUG_FITWIDTH").is_ok();
+
+    // FitWidth: scale to fill the width completely, allow vertical scrolling
+    // The zoom is determined ONLY by how much we need to scale the content width to fill bounds_width
+    let scale_x = bounds_width / res_w.max(1.0);
+
+    // NO height constraint for FitWidth - we scroll vertically instead of squishing
+    let raw_zoom = scale_x.max(0.1);
+
+    let zoom = if use_integer_scaling { raw_zoom.floor().max(1.0) } else { raw_zoom };
+
+    // In FitWidth mode:
+    // - visible_width is the full content width (we show all of it horizontally)
+    // - visible_height is how much content fits in the viewport at this zoom
+    let visible_width = res_w;
+    let visible_height = bounds_height / zoom;
+
+    if dbg {
+        eprintln!(
+            "[fitwidth] res=({:.3}x{:.3}) bounds=({:.3}x{:.3}) content=({:.3}x{:.3}) req_scroll=({:.3},{:.3}) int_scale={} -> scale_x={:.6} zoom={:.6} vis=({:.3}x{:.3})",
+            res_w,
+            _res_h,
+            bounds_width,
+            bounds_height,
+            content_width,
+            content_height,
+            scroll_x,
+            scroll_y,
+            use_integer_scaling,
+            scale_x,
+            zoom,
+            visible_width,
+            visible_height
+        );
+    }
+
+    let max_scroll_y = (content_height - visible_height).max(0.0);
+    let scroll_offset_y = scroll_y.clamp(0.0, max_scroll_y);
+
+    // No horizontal scrolling in FitWidth - we show the full width
+    let max_scroll_x = (content_width - visible_width).max(0.0);
+    let scroll_offset_x = scroll_x.clamp(0.0, max_scroll_x);
+
+    if dbg {
+        eprintln!(
+            "[fitwidth] max_scroll=({:.3},{:.3}) clamped_scroll=({:.3},{:.3})",
+            max_scroll_x, max_scroll_y, scroll_offset_x, scroll_offset_y
+        );
+    }
 
     ViewportParams {
         visible_width,

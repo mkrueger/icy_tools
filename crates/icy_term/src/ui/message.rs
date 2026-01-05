@@ -90,9 +90,6 @@ pub enum Message {
     SetScrollbackBufferSize(usize),   // Set scrollback buffer size
     RefreshMonitorSettingsCache,      // Refresh cached monitor settings after settings change
     McpCommand(Arc<crate::mcp::McpCommand>),
-    ScrollbarHovered(bool),  // Vertical scrollbar hover state changed
-    HScrollbarHovered(bool), // Horizontal scrollbar hover state changed
-    CursorLeftWindow,        // Cursor left the window
 
     // Terminal mouse events (from icy_engine_gui)
     MousePress(icy_engine_gui::TerminalMouseEvent),

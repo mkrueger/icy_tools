@@ -10,8 +10,8 @@ use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
 use icy_ui::{
-    widget::{button, column, container, row, scrollable, svg, text, Space},
-    Alignment, Border, Color, Element, Length,
+    widget::{button, column, container, row, scroll_area, scrollable, svg, text, Space},
+    Alignment, Border, Color, Element, Length, Size,
 };
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -64,15 +64,16 @@ impl TerminalWindow {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
 
-        // Create the main terminal area
-        let terminal_view = TerminalView::show_with_effects(&self.terminal, monitor_settings, None).map(|terminal_msg| match terminal_msg {
-            icy_engine_gui::TerminalMessage::Press(evt) => Message::MousePress(evt),
-            icy_engine_gui::TerminalMessage::Release(evt) => Message::MouseRelease(evt),
-            icy_engine_gui::TerminalMessage::Move(evt) => Message::MouseMove(evt),
-            icy_engine_gui::TerminalMessage::Drag(evt) => Message::MouseDrag(evt),
-            icy_engine_gui::TerminalMessage::Scroll(delta) => Message::MouseScroll(delta),
-            icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
-        });
+        let mk_terminal_view = |monitor_settings: Arc<MonitorSettings>| {
+            TerminalView::show_with_effects(&self.terminal, monitor_settings, None).map(|terminal_msg| match terminal_msg {
+                icy_engine_gui::TerminalMessage::Press(evt) => Message::MousePress(evt),
+                icy_engine_gui::TerminalMessage::Release(evt) => Message::MouseRelease(evt),
+                icy_engine_gui::TerminalMessage::Move(evt) => Message::MouseMove(evt),
+                icy_engine_gui::TerminalMessage::Drag(evt) => Message::MouseDrag(evt),
+                icy_engine_gui::TerminalMessage::Scroll(delta) => Message::MouseScroll(delta),
+                icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
+            })
+        };
 
         // Get scrollback info from Box<dyn Screen>
 
@@ -83,9 +84,8 @@ impl TerminalWindow {
             let font_height = screen.font_dimensions().height as f32;
             drop(screen);
             // Calculate how many lines we've scrolled from the bottom
-            let vp = self.terminal.viewport.read();
-            let max_scroll_y = (vp.content_height - vp.visible_height).max(0.0);
-            let scroll_from_bottom = max_scroll_y - vp.scroll_y;
+            let max_scroll_y = self.terminal.max_scroll_y();
+            let scroll_from_bottom = max_scroll_y - self.terminal.scroll_y();
             (scroll_from_bottom / font_height) as i32
         } else {
             0
@@ -94,11 +94,10 @@ impl TerminalWindow {
         let terminal_area = {
             // Calculate scrollbar needs directly from viewport
             let (needs_vscrollbar, needs_hscrollbar) = {
-                let vp = self.terminal.viewport.read();
-                let visible_height = vp.visible_content_height();
-                let visible_width = vp.visible_content_width();
-                let height_ratio = visible_height / vp.content_height.max(1.0);
-                let width_ratio = visible_width / vp.content_width.max(1.0);
+                let visible_height = self.terminal.visible_content_height();
+                let visible_width = self.terminal.visible_content_width();
+                let height_ratio = visible_height / self.terminal.content_height().max(1.0);
+                let width_ratio = visible_width / self.terminal.content_width().max(1.0);
                 (height_ratio < 1.0, width_ratio < 1.0)
             };
 
@@ -112,14 +111,44 @@ impl TerminalWindow {
             if show_vscrollbar || show_hscrollbar {
                 let mut layers: Vec<Element<'_, Message>> = Vec::new();
 
-                // Wrap terminal view in scrollable
-                let scrollable_terminal = scrollable(terminal_view)
-                    .direction(scrollable::Direction::Both {
+                // Compute scrollable content size from the active screen.
+                // `virtual_size` includes scrollback (if present).
+                let screen = self.terminal.screen.lock();
+                let virtual_size = screen.virtual_size();
+                drop(screen);
+
+                // Scroll state is kept in *content pixels at zoom 1.0*.
+                // The scroll_area viewport is in *zoomed* pixels, so we pass `zoom` to
+                // `update_scroll_from_viewport` for the inverse conversion.
+                let zoom = self.terminal.get_zoom();
+
+                let scrollable_size = Size::new(virtual_size.width as f32 * zoom, virtual_size.height as f32 * zoom);
+                let monitor_settings_clone = monitor_settings.clone();
+
+                let direction = match (show_vscrollbar, show_hscrollbar) {
+                    (true, true) => scrollable::Direction::Both {
                         vertical: scrollable::Scrollbar::default(),
                         horizontal: scrollable::Scrollbar::default(),
-                    })
+                    },
+                    (true, false) => scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
+                    (false, true) => scrollable::Direction::Horizontal(scrollable::Scrollbar::default()),
+                    (false, false) => scrollable::Direction::Both {
+                        vertical: scrollable::Scrollbar::default(),
+                        horizontal: scrollable::Scrollbar::default(),
+                    },
+                };
+
+                // Use scroll_area().show_viewport(...) so the shader can sample the
+                // correct content region while scrolling.
+                let scrollable_terminal = scroll_area()
+                    .id(self.terminal.scroll_area_id())
                     .width(Length::Fill)
-                    .height(Length::Fill);
+                    .height(Length::Fill)
+                    .direction(direction)
+                    .show_viewport(scrollable_size, move |scroll_viewport| {
+                        self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
+                        mk_terminal_view(monitor_settings_clone.clone())
+                    });
 
                 layers.push(container(scrollable_terminal).width(Length::Fill).height(Length::Fill).into());
 
@@ -155,11 +184,7 @@ impl TerminalWindow {
 
                 container(icy_ui::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
             } else {
-                container(terminal_view)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
+                container(mk_terminal_view(monitor_settings.clone())).width(Length::Fill).height(Length::Fill)
             }
         };
 

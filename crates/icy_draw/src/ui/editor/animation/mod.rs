@@ -558,7 +558,7 @@ impl AnimationEditor {
             terminal.update_viewport_size();
 
             // Mark viewport as changed to force re-render
-            terminal.viewport.write().changed.store(true, std::sync::atomic::Ordering::Relaxed);
+            terminal.mark_viewport_changed();
 
             self.preview_screen = Some(screen_arc);
             self.preview_terminal = Some(terminal);

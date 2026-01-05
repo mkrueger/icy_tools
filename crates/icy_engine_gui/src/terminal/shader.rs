@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::tile_cache::MAX_TEXTURE_SLICES;
-use crate::{now_ms, set_scale_factor, MonitorSettings, RenderInfo, TextureSliceData, PENDING_INSTANCE_REMOVALS};
+use crate::{now_ms, set_scale_factor, MonitorSettings, RenderInfo, ScalingMode, TextureSliceData, PENDING_INSTANCE_REMOVALS};
 use icy_ui::widget::shader;
 use icy_ui::Rectangle;
 
@@ -225,6 +225,10 @@ pub struct TerminalShader {
     pub render_generation: u64,
     /// Zoom level (1.0 = 100%)
     pub zoom: f32,
+    /// Visible viewport width (used for FitWidth and centering; may differ from `bounds.width` inside scrollables)
+    pub viewport_width: f32,
+    /// Visible viewport height (used for FitWidth and centering; may differ from `bounds.height` inside scrollables)
+    pub viewport_height: f32,
     /// Shared render info for mouse mapping
     pub render_info: Arc<RwLock<RenderInfo>>,
     /// Font dimensions for mouse mapping
@@ -1267,22 +1271,44 @@ impl shader::Primitive for TerminalShader {
             return;
         };
 
-        // Calculate display size
-        // IMPORTANT: The CRT shader maps `uv.x` over `visible_width` (document pixels).
-        // Using the full texture width here would make auto-scale and `terminal_area`
-        // inconsistent and can lead to perceived stretching.
+        // Calculate display size.
         let term_w = self.visible_width.max(1.0);
         let term_h = self.visible_height.max(1.0);
-        let avail_w = bounds.width.max(1.0);
-        let avail_h = bounds.height.max(1.0);
+        let avail_w = self.viewport_width.max(1.0);
+        let avail_h = self.viewport_height.max(1.0);
         let use_int = self.monitor_settings.use_integer_scaling;
-        let final_scale = self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int);
+
+        // Use uniform (non-stretching) scaling in all modes.
+        // - Auto: fit (min of x/y)
+        // - Manual: fixed zoom
+        // - FitWidth: scale based on width only (height follows with the same factor)
+        let final_scale = match &self.monitor_settings.scaling_mode {
+            ScalingMode::FitWidth => {
+                let scale_x = avail_w / term_w;
+                if use_int {
+                    scale_x.floor().max(1.0)
+                } else {
+                    scale_x.max(0.1)
+                }
+            }
+            _ => self.monitor_settings.scaling_mode.compute_zoom(term_w, term_h, avail_w, avail_h, use_int),
+        };
+
         let scaled_w = (term_w * final_scale).min(avail_w);
         let scaled_h = (term_h * final_scale).min(avail_h);
 
         // terminal_rect is consumed by WGSL as (start_x, start_y, width, height) in normalized 0-1 coords.
-        let offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
-        let offset_y = ((avail_h - scaled_h) / 2.0).max(0.0);
+        // Snap to pixel grid for stable positioning in integer scaling.
+        let mut offset_x = ((avail_w - scaled_w) / 2.0).max(0.0);
+        // For FitWidth, content starts at top (we scroll vertically)
+        let mut offset_y = match &self.monitor_settings.scaling_mode {
+            ScalingMode::FitWidth => 0.0,
+            _ => ((avail_h - scaled_h) / 2.0).max(0.0),
+        };
+        if use_int {
+            offset_x = offset_x.round();
+            offset_y = offset_y.round();
+        }
         let start_x = offset_x / avail_w;
         let start_y = offset_y / avail_h;
         let width_n = scaled_w / avail_w;
@@ -1294,8 +1320,8 @@ impl shader::Primitive for TerminalShader {
         {
             let mut info = self.render_info.write();
             info.display_scale = final_scale;
-            info.viewport_x = if use_int { offset_x.round() } else { offset_x };
-            info.viewport_y = if use_int { offset_y.round() } else { offset_y };
+            info.viewport_x = offset_x;
+            info.viewport_y = offset_y;
             info.viewport_width = scaled_w;
             info.viewport_height = scaled_h;
             info.terminal_width = term_w;

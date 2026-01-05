@@ -284,10 +284,7 @@ impl AnsiEditorCore {
         let canvas = self.canvas.view(Some(editor_markers)).map(AnsiEditorCoreMessage::Canvas);
 
         // Get scroll position from viewport for overlay positioning.
-        let (scroll_x, scroll_y) = {
-            let vp = self.canvas.terminal.viewport.read();
-            (vp.scroll_x, vp.scroll_y)
-        };
+        let (scroll_x, scroll_y) = (self.canvas.terminal.scroll_x(), self.canvas.terminal.scroll_y());
 
         // Get font dimensions for overlays.
         let (font_width, font_height) = {
@@ -392,7 +389,7 @@ impl AnsiEditorCore {
     /// `pixel_position` is widget-local (relative to terminal bounds).
     fn compute_half_block_pos(&self, pixel_position: (f32, f32)) -> icy_engine::Position {
         let render_info = self.canvas.terminal.render_info.read();
-        let viewport = self.canvas.terminal.viewport.read();
+        let (scroll_x, scroll_y) = (self.canvas.terminal.scroll_x(), self.canvas.terminal.scroll_y());
 
         // Convert widget-local to screen coordinates (RenderInfo methods expect screen coords)
         let screen_x = render_info.bounds_x + pixel_position.0;
@@ -403,11 +400,11 @@ impl AnsiEditorCore {
 
         // scroll_x is in content coordinates - convert to columns
         let font_width = render_info.font_width.max(1.0);
-        let scroll_offset_cols = (viewport.scroll_x / font_width).floor() as i32;
+        let scroll_offset_cols = (scroll_x / font_width).floor() as i32;
 
         // scroll_y is in content coordinates - convert to half-block lines (2x)
         let font_height = render_info.font_height.max(1.0);
-        let scroll_offset_half_lines = (viewport.scroll_y / font_height * 2.0).floor() as i32;
+        let scroll_offset_half_lines = (scroll_y / font_height * 2.0).floor() as i32;
 
         // Get absolute half-block coordinates (with scroll offset)
         let abs_half_block = icy_engine::Position::new(cell_x + scroll_offset_cols, half_block_y + scroll_offset_half_lines);
@@ -529,7 +526,7 @@ impl AnsiEditorCore {
 
     fn build_half_block_mapper(&self, state: &EditState) -> tools::HalfBlockMapper {
         let render_info = self.canvas.terminal.render_info.read();
-        let viewport = self.canvas.terminal.viewport.read();
+        let (scroll_x, scroll_y) = (self.canvas.terminal.scroll_x(), self.canvas.terminal.scroll_y());
 
         let layer_offset = state
             .get_cur_layer()
@@ -548,8 +545,8 @@ impl AnsiEditorCore {
             scan_lines: render_info.scan_lines,
             font_width: render_info.font_width,
             font_height: render_info.font_height,
-            scroll_x: viewport.scroll_x,
-            scroll_y: viewport.scroll_y,
+            scroll_x,
+            scroll_y,
             layer_offset,
         }
     }
@@ -1407,15 +1404,13 @@ impl AnsiEditorCore {
         // Read current viewport geometry from the *live* viewport, not render_cache.
         // The render_cache is only updated after GPU render, but we need the current
         // scroll position to decide if scrolling is required.
-        let vp = self.canvas.terminal.viewport.read();
-        let scroll_x = vp.scroll_x;
-        let scroll_y = vp.scroll_y;
+        let scroll_x = self.canvas.terminal.scroll_x();
+        let scroll_y = self.canvas.terminal.scroll_y();
         // Visible size in content pixels (screen pixels / zoom).
-        let visible_width = vp.visible_content_width();
-        let visible_height = vp.visible_content_height();
-        let content_width = vp.content_width;
-        let content_height = vp.content_height;
-        drop(vp);
+        let visible_width = self.canvas.terminal.visible_content_width();
+        let visible_height = self.canvas.terminal.visible_content_height();
+        let content_width = self.canvas.terminal.content_width();
+        let content_height = self.canvas.terminal.content_height();
 
         // Use the pure calculation function.
         if let Some((new_scroll_x, new_scroll_y)) = compute_scroll_to_keep_caret_visible(
@@ -1456,7 +1451,7 @@ impl AnsiEditorCore {
         drop(cache);
 
         // Keep current X when horizontal scrolling isn't possible.
-        let current_scroll_x = self.canvas.terminal.viewport.read().scroll_x;
+        let current_scroll_x = self.canvas.terminal.scroll_x();
 
         let target_x = if content_width > visible_width {
             norm_x * content_width - visible_width / 2.0

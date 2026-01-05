@@ -18,7 +18,7 @@ use icy_ui::{
 
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::TerminalMessage;
-use icy_engine_gui::{EditorMarkers, MonitorSettings, ScalingMode, Terminal, TerminalView, ZoomMessage};
+use icy_engine_gui::{EditorMarkers, MonitorSettings, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
 
 /// Canvas view state for the ANSI editor
@@ -47,30 +47,26 @@ impl CanvasView {
 
     /// Scroll viewport by delta
     pub fn scroll_by(&mut self, dx: f32, dy: f32) {
-        self.terminal.scroll_x_by(dx);
-        self.terminal.scroll_y_by(dy);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (dx, dy);
+        // scroll_area owns scrolling; programmatic scrolling is task-driven
     }
 
     /// Scroll viewport by delta with smooth animation
     pub fn scroll_by_smooth(&mut self, dx: f32, dy: f32) {
-        self.terminal.scroll_x_by_smooth(dx);
-        self.terminal.scroll_y_by_smooth(dy);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (dx, dy);
+        // scroll_area owns scrolling; programmatic scrolling is task-driven
     }
 
     /// Scroll viewport to absolute position
     pub fn scroll_to(&mut self, x: f32, y: f32) {
-        self.terminal.scroll_x_to(x);
-        self.terminal.scroll_y_to(y);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (x, y);
+        // scroll_area owns scrolling; programmatic scrolling is task-driven
     }
 
     /// Scroll viewport to absolute position with smooth animation
     pub fn scroll_to_smooth(&mut self, x: f32, y: f32) {
-        self.terminal.scroll_x_to_smooth(x);
-        self.terminal.scroll_y_to_smooth(y);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (x, y);
+        // scroll_area owns scrolling; programmatic scrolling is task-driven
     }
 
     /// Set zoom level
@@ -100,14 +96,6 @@ impl CanvasView {
         // Create a new Arc with updated scaling_mode
         let mut new_settings = self.monitor_settings.read().clone();
         new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-        match new_settings.scaling_mode {
-            ScalingMode::Auto => {
-                self.terminal.zoom_auto_fit(use_integer);
-            }
-            ScalingMode::Manual(z) => {
-                self.terminal.set_zoom(z);
-            }
-        }
         *self.monitor_settings.write() = new_settings;
     }
 
@@ -215,11 +203,8 @@ impl CanvasView {
                 self.handle_terminal_mouse_event(evt);
             }
             icy_engine_gui::TerminalMessage::Scroll(delta) => {
-                let (dx, dy) = match delta {
-                    icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
-                    icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
-                };
-                self.scroll_by(-dx, -dy);
+                let _ = delta;
+                // scroll_area handles wheel scrolling
             }
             icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => {
                 self.apply_zoom(zoom_msg);
@@ -260,41 +245,38 @@ impl CanvasView {
         drop(screen);
 
         // Get zoom from viewport
-        let zoom = self.terminal.viewport.read().zoom;
+        let zoom = self.terminal.get_zoom();
+
+        let monitor_settings = Arc::new(self.monitor_settings.read().clone());
 
         // Scrollable size in zoomed pixels (for scroll_area)
-        let scrollable_width = virtual_size.width as f32 * zoom;
+        // In FitWidth mode, zoom depends on the available viewport width. Ensure the content
+        // width is always >= the widget width so `show_viewport` reports the real viewport width.
+        // Horizontal scrolling is disabled in FitWidth.
+        let is_fit_width = monitor_settings.scaling_mode.is_fit_width();
+        let scrollable_width = if is_fit_width {
+            (virtual_size.width as f32 * zoom).max(100_000.0)
+        } else {
+            virtual_size.width as f32 * zoom
+        };
         let scrollable_height = virtual_size.height as f32 * zoom;
 
-        // Scrollable size in content pixels (for viewport)
-        let scrollable_content_width = virtual_size.width as f32;
-        let scrollable_content_height = virtual_size.height as f32;
-
         let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
-        let monitor_settings = Arc::new(self.monitor_settings.read().clone());
-        let viewport_arc = self.terminal.viewport.clone();
 
         let content = scroll_area()
+            .id(self.terminal.scroll_area_id())
             .width(Length::Fill)
             .height(Length::Fill)
-            .direction(scrollable::Direction::Both {
-                vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
-                horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+            .direction(if is_fit_width {
+                scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6))
+            } else {
+                scrollable::Direction::Both {
+                    vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                    horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                }
             })
             .show_viewport(scrollable_size, move |scroll_viewport| {
-                // Update terminal viewport with scroll position and content size from scroll_area
-                // scroll_viewport.x/y are in zoomed pixel coordinates
-                {
-                    let mut vp = viewport_arc.write();
-                    // Convert from zoomed coordinates back to content coordinates
-                    vp.scroll_x = scroll_viewport.x / zoom;
-                    vp.scroll_y = scroll_viewport.y / zoom;
-                    vp.visible_width = scroll_viewport.width;
-                    vp.visible_height = scroll_viewport.height;
-                    // Set scrollable content size (in content pixels, not zoomed)
-                    vp.content_width = scrollable_content_width;
-                    vp.content_height = scrollable_content_height;
-                }
+                self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
 
                 TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone()).map(|msg| msg)
             });

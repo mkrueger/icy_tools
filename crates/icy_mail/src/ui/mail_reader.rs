@@ -4,7 +4,7 @@ use crate::{
     ui::Message,
 };
 use icy_engine_gui::TerminalView;
-use icy_ui::widget::{button, column, container, row, scrollable, text, Space};
+use icy_ui::widget::{button, column, container, row, scroll_area, scrollable, text, Space};
 use icy_ui::{Alignment, Element, Length};
 
 impl MainWindow {
@@ -308,7 +308,41 @@ impl MainWindow {
                     .padding(8);
 
                     // Use TerminalView to display the message content with ANSI rendering
-                    let terminal_view = TerminalView::show_with_effects(&self.terminal, self.monitor_settings.clone(), None).map(Message::TerminalMessage);
+                    let zoom = self.terminal.get_zoom();
+                    let virtual_size = {
+                        let screen = self.terminal.screen.lock();
+                        screen.virtual_size()
+                    };
+
+                    // In FitWidth mode, zoom depends on the available viewport width. Ensure the
+                    // content width is always >= widget width so `show_viewport` reports the real
+                    // viewport width. Horizontal scrolling is disabled in FitWidth.
+                    let is_fit_width = self.monitor_settings.scaling_mode.is_fit_width();
+                    let scrollable_width = if is_fit_width {
+                        (virtual_size.width as f32 * zoom).max(100_000.0)
+                    } else {
+                        virtual_size.width as f32 * zoom
+                    };
+                    let scrollable_height = virtual_size.height as f32 * zoom;
+                    let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
+                    let monitor_settings_clone = self.monitor_settings.clone();
+
+                    let terminal_view = scroll_area()
+                        .id(self.terminal.scroll_area_id())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .direction(if is_fit_width {
+                            scrollable::Direction::Vertical(scrollable::Scrollbar::default())
+                        } else {
+                            scrollable::Direction::Both {
+                                vertical: scrollable::Scrollbar::default(),
+                                horizontal: scrollable::Scrollbar::default(),
+                            }
+                        })
+                        .show_viewport(scrollable_size, move |viewport| {
+                            self.terminal.update_scroll_from_viewport(viewport, zoom);
+                            TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None).map(Message::TerminalMessage)
+                        });
 
                     return column![
                         container(header_info).width(Length::Fill).style(|theme: &icy_ui::Theme| {

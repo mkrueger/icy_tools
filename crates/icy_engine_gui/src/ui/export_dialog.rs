@@ -47,6 +47,8 @@ pub enum ExportDialogMessage {
     ToggleSaveSauce(bool),
     /// Set ANSI compatibility level
     SetAnsiLevel(AnsiCompatibilityLevel),
+    /// Toggle forcing RGB (truecolor) output for ANSI
+    ToggleAnsiRgbOutput(bool),
     /// Set screen preparation
     SetScreenPrep(ScreenPreperation),
     /// Toggle max line length limit
@@ -125,6 +127,8 @@ pub struct ExportDialogState {
     // Format-specific options
     /// ANSI compatibility level
     ansi_level: AnsiCompatibilityLevel,
+    /// When true, force RGB (truecolor) output for ANSI
+    ansi_rgb_output: bool,
     /// Screen preparation
     screen_prep: ScreenPreperation,
     /// Max line length enabled
@@ -200,6 +204,7 @@ impl ExportDialogState {
             has_sixels: false,
             // Format options
             ansi_level: AnsiCompatibilityLevel::default(),
+            ansi_rgb_output: false,
             screen_prep: ScreenPreperation::None,
             max_line_length_enabled: false,
             max_line_length: 80,
@@ -307,6 +312,7 @@ impl ExportDialogState {
             FormatCategory::Ansi => {
                 options.format = FormatOptions::Ansi(icy_engine::AnsiFormatOptions {
                     level: self.ansi_level,
+                    always_use_rgb: self.ansi_rgb_output && self.ansi_level == AnsiCompatibilityLevel::Utf8Terminal,
                     screen_prep: self.screen_prep,
                     line_length: if self.max_line_length_enabled {
                         icy_engine::LineLength::Maximum(self.max_line_length)
@@ -388,6 +394,13 @@ impl ExportDialogState {
             }
             ExportDialogMessage::SetAnsiLevel(level) => {
                 self.ansi_level = level;
+                if self.ansi_level != AnsiCompatibilityLevel::Utf8Terminal {
+                    self.ansi_rgb_output = false;
+                }
+                StateResult::None
+            }
+            ExportDialogMessage::ToggleAnsiRgbOutput(enabled) => {
+                self.ansi_rgb_output = enabled;
                 StateResult::None
             }
             ExportDialogMessage::SetScreenPrep(prep) => {
@@ -669,6 +682,18 @@ impl ExportDialogState {
             .spacing(DIALOG_SPACING)
             .align_y(Alignment::Center);
 
+        // RGB output (truecolor)
+        let rgb_enabled = self.ansi_level == AnsiCompatibilityLevel::Utf8Terminal;
+        let mut rgb_checkbox = checkbox(self.ansi_rgb_output).size(18);
+        if rgb_enabled {
+            let on_msg = on_message.clone();
+            rgb_checkbox = rgb_checkbox.on_toggle(move |checked| on_msg(ExportDialogMessage::ToggleAnsiRgbOutput(checked)));
+        }
+
+        let rgb_row = row![left_label_small("RGB output".to_string()), rgb_checkbox]
+            .spacing(DIALOG_SPACING)
+            .align_y(Alignment::Center);
+
         // Max line length (checkbox + input)
         let on_msg = on_message.clone();
         let line_length_checkbox = checkbox(self.max_line_length_enabled)
@@ -699,6 +724,8 @@ impl ExportDialogState {
                 level_row,
                 Space::new().height(DIALOG_SPACING),
                 prep_row,
+                Space::new().height(DIALOG_SPACING),
+                rgb_row,
                 Space::new().height(DIALOG_SPACING),
                 line_length_row,
             ]

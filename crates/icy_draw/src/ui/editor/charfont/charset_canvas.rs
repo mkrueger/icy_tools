@@ -293,9 +293,9 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                     }) => {
                         state.is_dragging = false;
                     }
-                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    icy_ui::Event::Mouse(mouse::Event::CursorMoved { modifiers, .. }) => {
                         if state.is_dragging {
-                            let is_rectangle = icy_engine_gui::is_alt_pressed();
+                            let is_rectangle = modifiers.alt();
                             return Some(Action::publish(CharFontEditorMessage::SetCharsetSelectionLead(col, row, is_rectangle)));
                         }
                         if old_hovered != state.hovered {

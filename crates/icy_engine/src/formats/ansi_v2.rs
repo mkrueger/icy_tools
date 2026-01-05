@@ -236,16 +236,22 @@ impl AnsiSaveOptions {
     pub fn from_save_options(options: &super::SaveOptions) -> Self {
         let ansi_opts = options.ansi_options();
 
+        // RGB output is only supported/allowed for UTF-8 terminal output.
+        let always_use_rgb = ansi_opts.always_use_rgb && ansi_opts.level.supports_utf8();
+
         // Map AnsiCompatibilityLevel from new to old
-        let level = Some(match ansi_opts.level {
+        let requested_level = match ansi_opts.level {
             super::save_options::AnsiCompatibilityLevel::AnsiSys => AnsiCompatibilityLevel::AnsiSys,
             super::save_options::AnsiCompatibilityLevel::Vt100 => AnsiCompatibilityLevel::Vt100,
             super::save_options::AnsiCompatibilityLevel::IcyTerm => AnsiCompatibilityLevel::IcyTerm,
             super::save_options::AnsiCompatibilityLevel::Utf8Terminal => AnsiCompatibilityLevel::Utf8Terminal,
-        });
+        };
 
-        let modern_terminal_output = ansi_opts.level.supports_utf8();
-        let use_extended_colors = ansi_opts.level.supports_256_colors();
+        // RGB output is only enabled for UTF-8 output; otherwise keep the requested level.
+        let effective_level = requested_level;
+
+        let modern_terminal_output = effective_level.supports_utf8();
+        let use_extended_colors = effective_level.supports_256_colors();
 
         let (preserve_line_length, output_line_length) = match ansi_opts.line_length {
             super::save_options::LineLength::Default => (false, None),
@@ -259,11 +265,11 @@ impl AnsiSaveOptions {
             format_type: 0,
             screen_preparation: ansi_opts.screen_prep,
             modern_terminal_output,
-            level,
+            level: Some(effective_level),
             save_sauce: options.sauce.clone(),
             compress: true, // ANSI uses compression sequences when available
-            use_cursor_forward: ansi_opts.level.supports_cursor_forward(),
-            use_repeat_sequences: ansi_opts.level.supports_repeat(),
+            use_cursor_forward: effective_level.supports_cuf(),
+            use_repeat_sequences: effective_level.supports_rep(),
             preserve_line_length,
             output_line_length,
             longer_terminal_output,
@@ -277,7 +283,7 @@ impl AnsiSaveOptions {
                 Some(ansi_opts.skip_lines.clone())
             },
             alt_rgb: false,
-            always_use_rgb: false,
+            always_use_rgb,
             skip_thumbnail: false,
             sixel_settings: SixelSettings {
                 max_colors: ansi_opts.sixel.max_colors,
@@ -421,7 +427,9 @@ impl StringGeneratorV2 {
     }
 
     fn screen_prep(&mut self) {
-        if self.use_ice_colors {
+        // When forcing RGB output, iCE mode is unnecessary (and would risk
+        // interacting with blink semantics on some terminals).
+        if self.use_ice_colors && !self.options.always_use_rgb {
             self.push_bytes(b"\x1b[?33h");
         }
 
@@ -495,17 +503,29 @@ impl StringGeneratorV2 {
         let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_back_rgb);
 
         // DOS bright foreground colors (8..15) are typically represented via bold + base color.
-        let (fore_base_idx, fore_needs_bold) = match fore_idx {
-            Some(idx) if (8..16).contains(&idx) => (Some(idx - 8), true),
-            Some(idx) => (Some(idx), false),
-            None => (None, false),
+        // When forcing RGB output, don't use bold as a color-encoding mechanism.
+        let (fore_base_idx, fore_needs_bold) = if self.options.always_use_rgb {
+            (None, false)
+        } else {
+            match fore_idx {
+                Some(idx) if (8..16).contains(&idx) => (Some(idx - 8), true),
+                Some(idx) => (Some(idx), false),
+                None => (None, false),
+            }
         };
 
         // Foreground-only style bits are irrelevant for blank cells and keeping
         // them stable greatly reduces output size (avoids SGR resets between
         // bold glyphs and non-bold spaces).
         let is_bold: bool = if is_blank_cell { state.is_bold } else { attr.is_bold() || fore_needs_bold };
-        let mut is_blink = attr.is_blinking();
+        // In iCE mode, blink is commonly used to encode bright backgrounds.
+        // When forcing RGB output, encode the background directly and avoid
+        // producing blink SGR sequences for iCE colors.
+        let mut is_blink = if self.options.always_use_rgb && matches!(buf.ice_mode, crate::IceMode::Ice) {
+            false
+        } else {
+            attr.is_blinking()
+        };
         let is_faint = if is_blank_cell { state.is_faint } else { attr.is_faint() };
         let is_italic = if is_blank_cell { state.is_italic } else { attr.is_italic() };
         let is_underlined = if is_blank_cell { state.is_underlined } else { attr.is_underlined() };
@@ -517,28 +537,30 @@ impl StringGeneratorV2 {
         let is_crossed_out = if is_blank_cell { state.is_crossed_out } else { attr.is_crossed_out() };
         let is_concealed: bool = if is_blank_cell { state.is_concealed } else { attr.is_concealed() };
 
-        match buf.ice_mode {
-            crate::IceMode::Unlimited => {
-                if let Some(idx) = back_idx {
-                    if idx > 7 {
-                        back_idx = None;
+        if !self.options.always_use_rgb {
+            match buf.ice_mode {
+                crate::IceMode::Unlimited => {
+                    if let Some(idx) = back_idx {
+                        if idx > 7 {
+                            back_idx = None;
+                        }
                     }
                 }
-            }
-            crate::IceMode::Blink => {
-                if let Some(idx) = back_idx {
-                    if (8..16).contains(&idx) {
-                        back_idx = None;
+                crate::IceMode::Blink => {
+                    if let Some(idx) = back_idx {
+                        if (8..16).contains(&idx) {
+                            back_idx = None;
+                        }
                     }
                 }
-            }
-            crate::IceMode::Ice => {
-                if let Some(idx) = back_idx {
-                    if idx < 8 {
-                        is_blink |= attr.is_blinking();
-                    } else if (8..16).contains(&idx) {
-                        is_blink = true;
-                        back_idx = Some(idx - 8);
+                crate::IceMode::Ice => {
+                    if let Some(idx) = back_idx {
+                        if idx < 8 {
+                            is_blink |= attr.is_blinking();
+                        } else if (8..16).contains(&idx) {
+                            is_blink = true;
+                            back_idx = Some(idx - 8);
+                        }
                     }
                 }
             }
@@ -614,7 +636,21 @@ impl StringGeneratorV2 {
         // Foreground
         // Only skip foreground changes for truly blank cells (space/NUL).
         if cur_fore_rgb != state.fg.rgb() && !(ch.ch == '\0' || ch.ch == ' ') {
-            if fg_is_ext && self.level.supports_256_colors() {
+            if self.options.always_use_rgb {
+                if self.level.supports_truecolor() {
+                    if self.level == AnsiCompatibilityLevel::IcyTerm {
+                        extra_esc.extend_from_slice(format!("\x1b[1;{};{};{}t", cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2).as_bytes());
+                        state.fg_idx = u32::MAX;
+                    } else {
+                        sgr.extend([38, 2, cur_fore_rgb.0, cur_fore_rgb.1, cur_fore_rgb.2]);
+                        state.fg_idx = u32::MAX;
+                    }
+                } else {
+                    // Best effort fallback (should not happen due to effective_level forcing).
+                    sgr.push(37);
+                    state.fg_idx = 7;
+                }
+            } else if fg_is_ext && self.level.supports_256_colors() {
                 sgr.extend([38, 5, attr.foreground_ext()]);
                 state.fg_idx = attr.foreground_ext() as u32;
             } else if let Some(base) = fore_base_idx {
@@ -655,7 +691,21 @@ impl StringGeneratorV2 {
 
         // Background
         if cur_back_rgb != state.bg.rgb() {
-            if bg_is_ext && self.level.supports_256_colors() {
+            if self.options.always_use_rgb {
+                if self.level.supports_truecolor() {
+                    if self.level == AnsiCompatibilityLevel::IcyTerm {
+                        extra_esc.extend_from_slice(format!("\x1b[0;{};{};{}t", cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2).as_bytes());
+                        state.bg_idx = u32::MAX;
+                    } else {
+                        sgr.extend([48, 2, cur_back_rgb.0, cur_back_rgb.1, cur_back_rgb.2]);
+                        state.bg_idx = u32::MAX;
+                    }
+                } else {
+                    // Best effort fallback (should not happen due to effective_level forcing).
+                    sgr.push(40);
+                    state.bg_idx = 0;
+                }
+            } else if bg_is_ext && self.level.supports_256_colors() {
                 sgr.extend([48, 5, attr.background_ext()]);
                 state.bg_idx = attr.background_ext() as u32;
             } else if let Some(bg_idx) = back_idx {

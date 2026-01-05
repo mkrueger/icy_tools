@@ -1,9 +1,9 @@
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::Arc;
 
 use super::{CRTShaderProgram, TextureSliceData};
-use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache, Viewport};
+use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache};
 use icy_engine::GraphicsType;
 use icy_engine::MouseState;
 use icy_engine::Position;
@@ -14,44 +14,6 @@ use icy_ui::Element;
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
-
-// Global modifier state - survives widget state resets
-static GLOBAL_CTRL_PRESSED: AtomicBool = AtomicBool::new(false);
-static GLOBAL_ALT_PRESSED: AtomicBool = AtomicBool::new(false);
-static GLOBAL_SHIFT_PRESSED: AtomicBool = AtomicBool::new(false);
-static GLOBAL_COMMAND_PRESSED: AtomicBool = AtomicBool::new(false);
-
-/// Set global modifier state (called from keyboard events)
-/// `command` should be true when the platform "command" key is pressed:
-/// - macOS: Command (⌘) key
-/// - Windows/Linux: Ctrl key
-pub fn set_global_modifiers(ctrl: bool, alt: bool, shift: bool, command: bool) {
-    GLOBAL_CTRL_PRESSED.store(ctrl, Ordering::Relaxed);
-    GLOBAL_ALT_PRESSED.store(alt, Ordering::Relaxed);
-    GLOBAL_SHIFT_PRESSED.store(shift, Ordering::Relaxed);
-    GLOBAL_COMMAND_PRESSED.store(command, Ordering::Relaxed);
-}
-
-/// Get global Ctrl state
-pub fn is_ctrl_pressed() -> bool {
-    GLOBAL_CTRL_PRESSED.load(Ordering::Relaxed)
-}
-
-/// Get global Alt state
-pub fn is_alt_pressed() -> bool {
-    GLOBAL_ALT_PRESSED.load(Ordering::Relaxed)
-}
-
-/// Get global Shift state
-pub fn is_shift_pressed() -> bool {
-    GLOBAL_SHIFT_PRESSED.load(Ordering::Relaxed)
-}
-
-/// Get global Command state (Cmd on macOS, Ctrl on Windows/Linux)
-/// Use this for cross-platform shortcuts like Cmd/Ctrl+C, Cmd/Ctrl+scroll for zoom
-pub fn is_command_pressed() -> bool {
-    GLOBAL_COMMAND_PRESSED.load(Ordering::Relaxed)
-}
 
 /// Selection color constants for different selection modes
 pub mod selection_colors {
@@ -207,7 +169,7 @@ impl CRTShaderState {
 
     /// Map mouse coordinates to cell position using shared RenderInfo from shader.
     /// Returns absolute document coordinates (with scroll offset applied).
-    pub fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Option<Position> {
+    pub(crate) fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Option<Position> {
         // RenderInfo is now in logical coordinates, matching mouse coordinates
         // No need to scale - both are in logical coords
 
@@ -230,8 +192,8 @@ impl CRTShaderState {
         // IMPORTANT: scroll_x/scroll_y can be fractional (smooth scrolling).
         // Computing floor(term/font) + floor(scroll/font) is WRONG due to carry.
         // Correct: floor((term + scroll) / font).
-        let abs_px_x = term_x + viewport.scroll_x;
-        let abs_px_y = (term_y) + viewport.scroll_y;
+        let abs_px_x = term_x + scroll_x;
+        let abs_px_y = term_y + scroll_y;
 
         let abs_cx = (abs_px_x / render_info.font_width).floor() as i32;
         let abs_cy = (abs_px_y / effective_font_height).floor() as i32;
@@ -253,7 +215,7 @@ impl CRTShaderState {
     /// Map mouse coordinates to cell position without bounds checking.
     /// Used during drag operations where mouse can leave the viewport.
     /// Returns absolute document coordinates (with scroll offset applied).
-    pub fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, viewport: &Viewport) -> Position {
+    pub(crate) fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Position {
         // RenderInfo is now in logical coordinates, matching mouse coordinates
         // No need to scale - both are in logical coords
 
@@ -273,8 +235,8 @@ impl CRTShaderState {
 
         // IMPORTANT: scroll_x/scroll_y can be fractional (smooth scrolling).
         // Use combined pixel coordinates to avoid carry bugs.
-        let abs_px_x = term_x + viewport.scroll_x;
-        let abs_px_y = term_y + viewport.scroll_y;
+        let abs_px_x = term_x + scroll_x;
+        let abs_px_y = term_y + scroll_y;
 
         let abs_cx = (abs_px_x / font_width).floor() as i32;
         let abs_cy = (abs_px_y / font_height).floor() as i32;
@@ -322,27 +284,41 @@ pub fn create_crt_shader<'a>(
     monitor_settings: Arc<MonitorSettings>,
     editor_markers: Option<crate::EditorMarkers>,
 ) -> Element<'a, TerminalMessage> {
-    // Get content size directly from screen (virtual_size is in pixels)
-    let screen = term.screen.lock();
-    let virtual_size = screen.virtual_size();
-    drop(screen);
+    let shader_widget = shader(CRTShaderProgram::new(term, monitor_settings.clone(), editor_markers))
+        .width(icy_ui::Length::Fill)
+        .height(icy_ui::Length::Fill);
 
-    // Get zoom from viewport (still needed for zoom level)
-    let zoom = term.viewport.read().zoom;
+    // Use Fixed size when:
+    // - Manual scaling mode (so scroll container can size content correctly with zoom)
+    //
+    // IMPORTANT: Do NOT force fixed sizing in Auto mode, even in scrollback.
+    // Auto scaling needs the shader's widget bounds to match the viewport so it can
+    // recompute fit/centering when the window is resized.
+    let needs_fixed_size = !monitor_settings.scaling_mode.is_auto();
 
-    let zoomed_width = (virtual_size.width as f32 * zoom).max(1.0);
-    let zoomed_height = (virtual_size.height as f32 * zoom).max(1.0);
+    if needs_fixed_size {
+        // Get content size directly from screen (virtual_size is in pixels)
+        let screen = term.screen.lock();
+        let virtual_size = screen.virtual_size();
+        drop(screen);
 
-    // Wrap the shader in a container with fixed size so it works inside scrollable
-    // The shader itself still uses Fill to expand into this container
-    icy_ui::widget::container(
-        shader(CRTShaderProgram::new(term, monitor_settings, editor_markers))
+        // Get the last effective zoom/scale from the shader
+        let zoom = term.get_zoom();
+
+        let zoomed_width = (virtual_size.width as f32 * zoom).max(1.0);
+        let zoomed_height = (virtual_size.height as f32 * zoom).max(1.0);
+
+        // Wrap the shader in a container with fixed size so it works inside scrollable
+        icy_ui::widget::container(shader_widget)
+            .width(icy_ui::Length::Fixed(zoomed_width))
+            .height(icy_ui::Length::Fixed(zoomed_height))
+            .into()
+    } else {
+        icy_ui::widget::container(shader_widget)
             .width(icy_ui::Length::Fill)
-            .height(icy_ui::Length::Fill),
-    )
-    .width(icy_ui::Length::Fixed(zoomed_width))
-    .height(icy_ui::Length::Fixed(zoomed_height))
-    .into()
+            .height(icy_ui::Length::Fill)
+            .into()
+    }
 }
 
 static SCALE_FACTOR_BITS: AtomicU32 = AtomicU32::new(f32::to_bits(1.0));

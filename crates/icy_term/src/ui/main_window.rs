@@ -956,72 +956,33 @@ impl MainWindow {
             }
 
             Message::ScrollViewport(dx, dy) => {
-                let mut vp = self.terminal_window.terminal.viewport.write();
-                vp.scroll_x_by(dx);
-                vp.scroll_y_by(dy);
-                Task::none()
+                let current_x = self.terminal_window.terminal.scroll_x();
+                let current_y = self.terminal_window.terminal.scroll_y();
+                self.terminal_window.terminal.scroll_to_content(Some(current_x + dx), Some(current_y + dy))
             }
 
             Message::ScrollViewportTo(smooth, x, y) => {
                 // Scroll both axes
-                let mut vp = self.terminal_window.terminal.viewport.write();
                 if smooth {
-                    vp.scroll_x_to_smooth(x);
-                    vp.scroll_y_to_smooth(y);
+                    self.terminal_window.terminal.scroll_to_content_animated(Some(x), Some(y))
                 } else {
-                    vp.scroll_x_to(x);
-                    vp.scroll_y_to(y);
+                    self.terminal_window.terminal.scroll_to_content(Some(x), Some(y))
                 }
-                drop(vp);
-                self.terminal_window.terminal.sync_scrollbar_with_viewport();
-                Task::none()
             }
 
             Message::ScrollViewportYToImmediate(y) => {
                 // Vertical scrollbar: only change Y, keep X unchanged
-                self.terminal_window.terminal.scroll_y_to(y);
-                self.terminal_window.terminal.sync_scrollbar_with_viewport();
-                Task::none()
+                self.terminal_window.terminal.scroll_to_content(None, Some(y))
             }
 
             Message::ScrollViewportXToImmediate(x) => {
                 // Horizontal scrollbar: only change X, keep Y unchanged
-                self.terminal_window.terminal.scroll_x_to(x);
-                self.terminal_window.terminal.sync_scrollbar_with_viewport();
-                Task::none()
+                self.terminal_window.terminal.scroll_to_content(Some(x), None)
             }
 
             Message::ViewportTick => {
                 // Update viewport animation
-                self.terminal_window.terminal.viewport.write().update_animation();
-                Task::none()
-            }
-
-            Message::ScrollbarHovered(is_hovered) => {
-                // Update vertical scrollbar hover state for animation
-                self.terminal_window.terminal.scrollbar.set_hovered(is_hovered);
-                Task::none()
-            }
-
-            Message::HScrollbarHovered(is_hovered) => {
-                // Update horizontal scrollbar hover state for animation
-                self.terminal_window.terminal.scrollbar.set_hovered_x(is_hovered);
-                Task::none()
-            }
-
-            Message::CursorLeftWindow => {
-                // Fade out scrollbars when cursor leaves window
-                self.terminal_window.terminal.scrollbar.set_hovered(false);
-                self.terminal_window.terminal.scrollbar.set_hovered_x(false);
-                // Reset hover tracking state so next cursor move triggers hover update
-                self.terminal_window
-                    .terminal
-                    .scrollbar_hover_state
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
-                self.terminal_window
-                    .terminal
-                    .hscrollbar_hover_state
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                self.terminal_window.terminal.update_viewport_animation();
                 Task::none()
             }
 
@@ -1248,9 +1209,6 @@ impl MainWindow {
                 let use_integer = opts.monitor_settings.use_integer_scaling;
                 let current_zoom = self.terminal_window.terminal.get_zoom();
                 let new_scaling = opts.monitor_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-                if let icy_engine_gui::ScalingMode::Manual(z) = new_scaling {
-                    self.terminal_window.terminal.set_zoom(z);
-                }
                 opts.monitor_settings.scaling_mode = new_scaling;
                 // Update cached monitor settings
                 self.cached_monitor_settings = Arc::new(opts.monitor_settings.clone());
@@ -1924,9 +1882,6 @@ impl MainWindow {
             Event::Window(window::Event::Unfocused) => {
                 return (Some(Message::SetFocus(false)), Task::none());
             }
-            Event::Mouse(icy_ui::mouse::Event::CursorLeft) => {
-                return (Some(Message::CursorLeftWindow), Task::none());
-            }
             Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, modifiers: _ }) => {
                 // Only handle mouse wheel in scrollback mode
                 if self.terminal_window.terminal.is_in_scrollback_mode() {
@@ -1978,7 +1933,7 @@ impl MainWindow {
                         if self.terminal_window.terminal.is_in_scrollback_mode() {
                             // Get font height for line-based scrolling
                             let line_height = self.terminal_window.terminal.char_height;
-                            let page_height = self.terminal_window.terminal.viewport.read().visible_height;
+                            let page_height = self.terminal_window.terminal.visible_height_px();
 
                             match key {
                                 // ESC exits scrollback mode
@@ -2007,7 +1962,7 @@ impl MainWindow {
                                 }
                                 // End: scroll to bottom
                                 keyboard::Key::Named(keyboard::key::Named::End) => {
-                                    let max_y = self.terminal_window.terminal.viewport.read().max_scroll_y();
+                                    let max_y = self.terminal_window.terminal.max_scroll_y();
                                     return (Some(Message::ScrollViewportTo(true, 0.0, max_y)), Task::none());
                                 }
                                 // Any other key exits scrollback mode

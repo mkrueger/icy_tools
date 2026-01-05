@@ -8,9 +8,8 @@
 //! - Ctrl+click: Take background only
 
 use i18n_embed_fl::fl;
-use icy_engine::{AttributedChar, BitFont, MouseButton, Position, TextPane};
+use icy_engine::{AttributedChar, BitFont, KeyModifiers, MouseButton, Position, TextPane};
 use icy_engine_edit::tools::Tool;
-use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::TerminalMessage;
 use icy_ui::widget::canvas::{self, Frame, Geometry};
 use icy_ui::widget::{column, container, row, text, Canvas, Space};
@@ -29,6 +28,8 @@ pub struct PipetteTool {
     hovered_font: Option<BitFont>,
     /// Current hover position
     hovered_pos: Option<Position>,
+    /// Last known keyboard modifiers (from mouse events)
+    last_modifiers: KeyModifiers,
 }
 
 impl PipetteTool {
@@ -111,6 +112,8 @@ impl ToolHandler for PipetteTool {
     fn handle_terminal_message(&mut self, ctx: &mut ToolContext, msg: &TerminalMessage) -> ToolResult {
         match msg {
             TerminalMessage::Move(evt) | TerminalMessage::Drag(evt) => {
+                // Track modifiers for view preview
+                self.last_modifiers = evt.modifiers.clone();
                 // Update hover preview
                 if let Some(pos) = evt.text_position {
                     self.hovered_pos = Some(pos);
@@ -169,9 +172,9 @@ impl ToolHandler for PipetteTool {
             // - If taking FG: use hovered FG, else use caret FG
             // - If taking BG: use hovered BG, else use caret BG
             if let Some(font) = &self.hovered_font {
-                let (take_fg_preview, take_bg_preview) = if is_shift_pressed() {
+                let (take_fg_preview, take_bg_preview) = if self.last_modifiers.shift {
                     (true, false)
-                } else if is_ctrl_pressed() || is_command_pressed() {
+                } else if self.last_modifiers.ctrl || self.last_modifiers.meta {
                     (false, true)
                 } else {
                     (true, true)
@@ -215,9 +218,9 @@ impl ToolHandler for PipetteTool {
 
             // Show in the labels what would be taken on click, based on current modifier state.
             // (Right click is still BG-only, but the main confusion was Shift/Ctrl behavior.)
-            let (take_fg_hint, take_bg_hint) = if is_shift_pressed() {
+            let (take_fg_hint, take_bg_hint) = if self.last_modifiers.shift {
                 (true, false)
-            } else if is_ctrl_pressed() || is_command_pressed() {
+            } else if self.last_modifiers.ctrl || self.last_modifiers.meta {
                 (false, true)
             } else {
                 (true, true)

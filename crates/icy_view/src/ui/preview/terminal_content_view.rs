@@ -20,43 +20,40 @@ impl<'a> TerminalContentView<'a> {
 
 impl ContentView for TerminalContentView<'_> {
     fn scroll_y(&self) -> f32 {
-        self.terminal.viewport.read().scroll_y
+        self.terminal.scroll_y()
     }
 
     fn scroll_x(&self) -> f32 {
-        self.terminal.viewport.read().scroll_x
+        self.terminal.scroll_x()
     }
 
     fn scroll_y_to(&mut self, y: f32) {
-        self.terminal.scroll_y_to(y);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = y;
+        // scroll_area owns scrolling
     }
 
     fn scroll_x_to(&mut self, x: f32) {
-        self.terminal.scroll_x_to(x);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = x;
+        // scroll_area owns scrolling
     }
 
     fn scroll_by(&mut self, dx: f32, dy: f32) {
-        self.terminal.scroll_x_by(dx);
-        self.terminal.scroll_y_by(dy);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (dx, dy);
+        // scroll_area owns scrolling
     }
 
     fn scroll_by_smooth(&mut self, dx: f32, dy: f32) {
-        self.terminal.scroll_x_by_smooth(dx);
-        self.terminal.scroll_y_by_smooth(dy);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (dx, dy);
+        // scroll_area owns scrolling
     }
 
     fn scroll_to_smooth(&mut self, x: f32, y: f32) {
-        self.terminal.scroll_x_to_smooth(x);
-        self.terminal.scroll_y_to_smooth(y);
-        self.terminal.sync_scrollbar_with_viewport();
+        let _ = (x, y);
+        // scroll_area owns scrolling
     }
 
     fn sync_scrollbar(&mut self) {
-        self.terminal.sync_scrollbar_with_viewport();
+        // scroll_area owns scrollbars
     }
 
     fn update_animations(&mut self, _dt: f32) {

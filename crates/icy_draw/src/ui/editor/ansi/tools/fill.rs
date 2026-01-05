@@ -3,7 +3,6 @@
 //! Fills connected regions with color/character.
 
 use icy_engine::{AttributedChar, MouseButton, Position, TextAttribute, TextPane};
-use icy_engine_gui::terminal::crt_state::is_shift_pressed;
 use icy_engine_gui::TerminalMessage;
 use icy_ui::widget::{row, text, toggler, Space};
 use icy_ui::{Element, Length};
@@ -140,7 +139,7 @@ impl ToolHandler for FillTool {
                 use std::collections::HashSet;
 
                 let swap_colors = evt.button == MouseButton::Right;
-                let shift_swap = is_shift_pressed();
+                let shift_swap = evt.modifiers.shift;
 
                 // Begin atomic undo for the entire fill.
                 let _undo = ctx.state.begin_atomic_undo("Bucket fill".to_string());

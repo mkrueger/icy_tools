@@ -146,7 +146,9 @@ impl MainWindow {
                         self.load_message_to_screen(&message.text);
                     }
                 }
-                Task::none()
+
+                // Reset scroll to the top for the newly-loaded content.
+                self.terminal.scroll_to_content(Some(0.0), Some(0.0))
             }
 
             Message::ToggleThreadView => {
@@ -321,10 +323,7 @@ impl MainWindow {
                 Task::none()
             }
 
-            Message::TerminalMessage(msg) => {
-                self.handle_terminal_message(msg);
-                Task::none()
-            }
+            Message::TerminalMessage(msg) => self.handle_terminal_message(msg),
 
             _ => Task::none(),
         }
@@ -348,11 +347,6 @@ impl MainWindow {
         let screen = Arc::new(Mutex::new(screen));
         self.terminal = Terminal::new(screen);
         self.terminal.set_fit_terminal_height_to_bounds(true);
-
-        // Reset scroll position
-        self.terminal.scroll_x_to(0.0);
-        self.terminal.scroll_y_to(0.0);
-        self.terminal.sync_scrollbar_with_viewport();
     }
 
     /// Clear the message screen
@@ -364,26 +358,9 @@ impl MainWindow {
     }
 
     /// Handle terminal messages (scrolling, etc.)
-    fn handle_terminal_message(&mut self, msg: icy_engine_gui::TerminalMessage) {
-        use icy_engine_gui::TerminalMessage;
-        match msg {
-            TerminalMessage::Scroll(delta) => {
-                // Handle scroll events
-                match delta {
-                    icy_engine_gui::WheelDelta::Lines { x: _, y } => {
-                        let scroll_amount = y * 20.0; // Adjust scroll speed
-                        let mut vp = self.terminal.viewport.write();
-                        vp.scroll_y = (vp.scroll_y - scroll_amount).max(0.0);
-                    }
-                    icy_engine_gui::WheelDelta::Pixels { x: _, y } => {
-                        let mut vp = self.terminal.viewport.write();
-                        vp.scroll_y = (vp.scroll_y - y).max(0.0);
-                    }
-                }
-                self.terminal.sync_scrollbar_with_viewport();
-            }
-            _ => {}
-        }
+    fn handle_terminal_message(&mut self, _msg: icy_engine_gui::TerminalMessage) -> Task<Message> {
+        // Scrolling is owned by the surrounding `scroll_area`.
+        Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {

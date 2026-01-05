@@ -21,14 +21,11 @@ pub use commands::{
 // Re-export proc macros
 pub use icy_engine_gui_macros::dialog_wrapper;
 
-pub mod scrollbar;
-pub use scrollbar::*;
-
 pub mod clipboard;
 pub use clipboard::*;
 
-pub mod viewport;
-pub use viewport::*;
+pub mod scroll_viewport;
+pub use scroll_viewport::ScrollViewport;
 
 // Re-export mouse event types from icy_engine
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
@@ -123,11 +120,19 @@ impl From<i32> for MonitorType {
 /// Scaling mode for terminal/viewer content
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum ScalingMode {
-    /// Automatically scale to fit the available space
+    /// Automatically scale to fit the available space (uniform scaling)
+    /// Uses min(scale_x, scale_y) to preserve aspect ratio
     /// With integer_scaling: uses largest integer factor that fits
     /// Without integer_scaling: uses exact fit factor
     #[default]
     Auto,
+
+    /// Fit to width, preserving aspect ratio (x-stretched to fill width)
+    /// The zoom is based on width, but clamped so that at least
+    /// `min_visible_rows` lines are visible (preventing y-stretch).
+    /// Ideal for viewers where width-filling is desired but vertical
+    /// content should not be cut off.
+    FitWidth,
 
     /// Manual zoom level (1.0 = 100%, 2.0 = 200%, etc.)
     /// With integer_scaling: rounds to nearest integer
@@ -170,6 +175,20 @@ impl ScalingMode {
     /// (uniform scaling) so the content is never stretched/distorted.
     /// If the content is smaller than the viewport after scaling, it will be centered.
     pub fn compute_zoom(&self, content_width: f32, content_height: f32, viewport_width: f32, viewport_height: f32, use_integer_scaling: bool) -> f32 {
+        self.compute_zoom_with_min_rows(content_width, content_height, viewport_width, viewport_height, use_integer_scaling, None)
+    }
+
+    /// Like `compute_zoom` but for FitWidth mode, ensures at least `min_rows` are visible.
+    /// `min_rows` is the minimum number of content rows that must be visible (in content pixels).
+    pub fn compute_zoom_with_min_rows(
+        &self,
+        content_width: f32,
+        content_height: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+        use_integer_scaling: bool,
+        min_visible_height: Option<f32>,
+    ) -> f32 {
         match self {
             ScalingMode::Auto => {
                 // Calculate uniform scale that fits content in viewport without distortion
@@ -186,6 +205,29 @@ impl ScalingMode {
                 }
             }
 
+            ScalingMode::FitWidth => {
+                // Scale based on width to fill horizontal space
+                let scale_x = viewport_width / content_width.max(1.0);
+
+                // But clamp so that min_visible_height rows are always visible
+                // (prevents cutting off content vertically)
+                let max_scale_for_min_rows = if let Some(min_h) = min_visible_height {
+                    viewport_height / min_h.max(1.0)
+                } else {
+                    // If no min specified, use content_height (show all)
+                    viewport_height / content_height.max(1.0)
+                };
+
+                // Use the smaller of width-based scale and max allowed scale
+                let fit_scale = scale_x.min(max_scale_for_min_rows).max(0.1);
+
+                if use_integer_scaling {
+                    fit_scale.floor().max(1.0)
+                } else {
+                    fit_scale
+                }
+            }
+
             ScalingMode::Manual(zoom) => {
                 if use_integer_scaling {
                     zoom.round().max(1.0)
@@ -196,15 +238,20 @@ impl ScalingMode {
         }
     }
 
-    /// Check if in auto mode
+    /// Check if in auto mode (Auto or FitWidth)
     pub fn is_auto(&self) -> bool {
-        matches!(self, ScalingMode::Auto)
+        matches!(self, ScalingMode::Auto | ScalingMode::FitWidth)
     }
 
-    /// Get manual zoom value, or 1.0 if auto
+    /// Check if in FitWidth mode
+    pub fn is_fit_width(&self) -> bool {
+        matches!(self, ScalingMode::FitWidth)
+    }
+
+    /// Get manual zoom value, or 1.0 if auto/fit-width
     pub fn get_manual_zoom(&self) -> f32 {
         match self {
-            ScalingMode::Auto => 1.0,
+            ScalingMode::Auto | ScalingMode::FitWidth => 1.0,
             ScalingMode::Manual(z) => *z,
         }
     }
@@ -214,6 +261,7 @@ impl ScalingMode {
     pub fn format_zoom_string(&self) -> String {
         match self {
             ScalingMode::Auto => "[AUTO]".to_string(),
+            ScalingMode::FitWidth => "[FIT-W]".to_string(),
             ScalingMode::Manual(zoom) => {
                 let clamped = Self::clamp_zoom(*zoom);
                 format!("[{:.0}%]", clamped * 100.0)

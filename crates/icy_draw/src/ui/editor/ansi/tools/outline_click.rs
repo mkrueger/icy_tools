@@ -12,7 +12,6 @@
 //! - F1-F10 → 'A'-'J' (first 10 outline codes)
 
 use icy_engine::{Position, Selection, TextPane};
-use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed};
 use icy_engine_gui::TerminalMessage;
 use icy_ui::widget::{column, container, row, text};
 use icy_ui::{Element, Font};

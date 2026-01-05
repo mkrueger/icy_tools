@@ -27,16 +27,31 @@ use parking_lot::{Mutex, RwLock};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use crate::ScalingMode;
-use crate::{EditorMarkers, ScrollbarState, Viewport};
+use crate::EditorMarkers;
 use icy_engine::Screen;
-use icy_ui::{mouse, widget, Color};
+use icy_ui::{mouse, widget, Color, Rectangle, Task};
+
+/// Scroll state for the terminal, sourced from `scroll_area().show_viewport()`.
+///
+/// Important: This is *not* an authorative scroll model. The scrollable widget owns scrolling.
+/// We only cache the last viewport position so the renderer can sample the correct content region.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct TerminalScrollState {
+    /// Horizontal scroll offset in *content pixels* (zoom 1.0).
+    pub scroll_x: f32,
+    /// Vertical scroll offset in *content pixels* (zoom 1.0).
+    pub scroll_y: f32,
+    /// Visible viewport width in *zoomed* pixels, as reported by `show_viewport`.
+    pub viewport_width_px: f32,
+    /// Visible viewport height in *zoomed* pixels, as reported by `show_viewport`.
+    pub viewport_height_px: f32,
+}
 
 pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub original_screen: Option<Arc<Mutex<Box<dyn Screen>>>>,
-    pub viewport: Arc<RwLock<Viewport>>,
-    pub scrollbar: ScrollbarState,
+    scroll_state: Arc<RwLock<TerminalScrollState>>,
+    scroll_area_id: widget::Id,
     pub scrollbar_hover_state: Arc<AtomicBool>,  // Shared atomic hover state for vertical scrollbar
     pub hscrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for horizontal scrollbar
     /// Shared render information for mouse mapping
@@ -66,19 +81,11 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
-        // Initialize viewport with screen size
-        let viewport = {
-            let scr: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = screen.lock();
-            let virtual_size = scr.virtual_size();
-            let resolution: icy_engine::Size = scr.resolution();
-            Arc::new(RwLock::new(Viewport::new(resolution, virtual_size)))
-        };
-
         Self {
             screen,
             original_screen: None,
-            viewport,
-            scrollbar: ScrollbarState::new(),
+            scroll_state: Arc::new(RwLock::new(TerminalScrollState::default())),
+            scroll_area_id: widget::Id::unique(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             render_info: RenderInfo::new_shared(),
@@ -96,6 +103,55 @@ impl Terminal {
         }
     }
 
+    /// Id of the surrounding `scroll_area` that should own scrolling for this terminal.
+    /// Use this for programmatic scrolling via `icy_ui::widget::operation::scroll_to(_animated)`.
+    pub fn scroll_area_id(&self) -> widget::Id {
+        self.scroll_area_id.clone()
+    }
+
+    /// Create a task that scrolls the owning `scroll_area` to the given content coordinates.
+    ///
+    /// `x`/`y` are in content pixels at zoom 1.0. The task converts to the scroll area's
+    /// coordinate system (zoomed pixels) using the last effective zoom.
+    pub fn scroll_to_content<T>(&self, x: Option<f32>, y: Option<f32>) -> Task<T> {
+        let zoom = self.get_zoom().max(0.001);
+        let offset = icy_ui::widget::operation::AbsoluteOffset {
+            x: x.map(|v| (v * zoom).max(0.0)),
+            y: y.map(|v| (v * zoom).max(0.0)),
+        };
+
+        icy_ui::widget::operation::scroll_to(self.scroll_area_id.clone(), offset)
+    }
+
+    /// Like `scroll_to_content`, but animated.
+    pub fn scroll_to_content_animated<T>(&self, x: Option<f32>, y: Option<f32>) -> Task<T> {
+        let zoom = self.get_zoom().max(0.001);
+        let offset = icy_ui::widget::operation::AbsoluteOffset {
+            x: x.map(|v| (v * zoom).max(0.0)),
+            y: y.map(|v| (v * zoom).max(0.0)),
+        };
+
+        icy_ui::widget::operation::scroll_to_animated(self.scroll_area_id.clone(), offset)
+    }
+
+    /// Update cached scroll offsets from `scroll_area().show_viewport(...)`.
+    ///
+    /// `viewport` is in the same coordinate system as the content size passed to
+    /// `show_viewport` (typically *zoomed* pixels). `zoom` is the effective scale.
+    pub fn update_scroll_from_viewport(&self, viewport: Rectangle, zoom: f32) {
+        let zoom = zoom.max(0.001);
+        let mut state = self.scroll_state.write();
+        state.viewport_width_px = viewport.width.max(1.0);
+        state.viewport_height_px = viewport.height.max(1.0);
+        state.scroll_x = (viewport.x / zoom).max(0.0);
+        state.scroll_y = (viewport.y / zoom).max(0.0);
+    }
+
+    /// Current cached scroll state (content coordinates).
+    pub fn scroll_state(&self) -> TerminalScrollState {
+        *self.scroll_state.read()
+    }
+
     /// Enable/disable automatic adjustment of the terminal window height to the widget bounds.
     pub fn set_fit_terminal_height_to_bounds(&mut self, enabled: bool) {
         self.fit_terminal_height_to_bounds = enabled;
@@ -103,114 +159,86 @@ impl Terminal {
 
     /// Update viewport when screen size changes
     pub fn update_viewport_size(&mut self) {
-        let scr: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Box<dyn Screen + 'static>> = self.screen.lock();
-        let virtual_size = scr.virtual_size();
-        drop(scr);
-
-        {
-            let mut vp = self.viewport.write();
-            // Only update content size, not visible size (which is the widget size, not screen size)
-            vp.set_content_size(virtual_size.width as f32, virtual_size.height as f32);
-        }
-        // Sync scrollbar position with viewport (after the lock is dropped)
-        self.sync_scrollbar_with_viewport();
+        // No-op: content size is derived from `Screen::virtual_size()` during rendering.
     }
 
     /// Update viewport visible size based on available widget dimensions
     /// Call this when the widget size changes to properly calculate scrollbar
     pub fn set_viewport_visible_size(&mut self, width: f32, height: f32) {
-        self.viewport.write().set_visible_size(width, height);
-        self.sync_scrollbar_with_viewport();
+        let mut state = self.scroll_state.write();
+        state.viewport_width_px = width.max(1.0);
+        state.viewport_height_px = height.max(1.0);
     }
 
     /// Sync scrollbar state with viewport scroll position
     /// scroll_x/y are now in CONTENT coordinates
     /// max_scroll = content_size - visible_content_size (in content pixels)
     pub fn sync_scrollbar_with_viewport(&mut self) {
-        let mut vp = self.viewport.write();
-
-        // Use viewport's max_scroll methods which use shader-computed values if available
-        let max_scroll_x = vp.max_scroll_x();
-        let max_scroll_y = vp.max_scroll_y();
-
-        vp.scroll_x = vp.scroll_x.clamp(0.0, max_scroll_x);
-        vp.scroll_y = vp.scroll_y.clamp(0.0, max_scroll_y);
-        vp.target_scroll_x = vp.target_scroll_x.clamp(0.0, max_scroll_x);
-        vp.target_scroll_y = vp.target_scroll_y.clamp(0.0, max_scroll_y);
-
-        // IMPORTANT: The scrollbar overlays read `vp.scrollbar.*` (the Viewport-owned
-        // scrollbar state). If we clamp scroll positions here, we must also sync
-        // the viewport scrollbar ratios so the thumb ends up at the correct position.
-        vp.sync_scrollbar_position();
-
-        // Vertical scrollbar
-        if max_scroll_y > 0.0 {
-            let scroll_ratio = vp.scroll_y / max_scroll_y;
-            self.scrollbar.set_scroll_position(scroll_ratio.clamp(0.0, 1.0));
-        } else {
-            self.scrollbar.set_scroll_position(0.0);
-        }
-
-        // Horizontal scrollbar
-        if max_scroll_x > 0.0 {
-            let scroll_ratio_x = vp.scroll_x / max_scroll_x;
-            self.scrollbar.set_scroll_position_x(scroll_ratio_x.clamp(0.0, 1.0));
-        } else {
-            self.scrollbar.set_scroll_position_x(0.0);
-        }
+        // Deprecated: use `scroll_area` scrollbars.
     }
 
     /// Get maximum scroll Y value in content coordinates
     pub fn max_scroll_y(&self) -> f32 {
-        self.viewport.read().max_scroll_y()
+        let scr = self.screen.lock();
+        let virtual_size = scr.virtual_size();
+        let resolution = scr.resolution();
+        drop(scr);
+        (virtual_size.height as f32 - resolution.height as f32).max(0.0)
     }
 
-    /// Scroll X by delta with proper clamping (delta in content coordinates)
-    pub fn scroll_x_by(&mut self, dx: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_x_by(dx);
+    /// Current scroll X in content coordinates.
+    pub fn scroll_x(&self) -> f32 {
+        self.scroll_state.read().scroll_x
     }
 
-    /// Scroll Y by delta with proper clamping (delta in content coordinates)
-    pub fn scroll_y_by(&mut self, dy: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_y_by(dy);
+    /// Current scroll Y in content coordinates.
+    pub fn scroll_y(&self) -> f32 {
+        self.scroll_state.read().scroll_y
     }
 
-    /// Scroll X by delta with smooth animation (for PageUp/PageDown)
-    pub fn scroll_x_by_smooth(&mut self, dx: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_x_by_smooth(dx);
+    /// Visible height in screen pixels (widget bounds).
+    pub fn visible_height_px(&self) -> f32 {
+        self.scroll_state.read().viewport_height_px
     }
 
-    /// Scroll Y by delta with smooth animation (for PageUp/PageDown)
-    pub fn scroll_y_by_smooth(&mut self, dy: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_y_by_smooth(dy);
+    /// Visible width in screen pixels (widget bounds).
+    pub fn visible_width_px(&self) -> f32 {
+        self.scroll_state.read().viewport_width_px
     }
 
-    /// Scroll X to position with proper clamping (position in content coordinates)
-    pub fn scroll_x_to(&mut self, x: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_x_to(x);
+    /// Content height in content pixels (at zoom 1.0).
+    pub fn content_height(&self) -> f32 {
+        let scr = self.screen.lock();
+        let h = scr.virtual_size().height as f32;
+        drop(scr);
+        h
     }
 
-    /// Scroll Y to position with proper clamping (position in content coordinates)
-    pub fn scroll_y_to(&mut self, y: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_y_to(y);
+    /// Content width in content pixels (at zoom 1.0).
+    pub fn content_width(&self) -> f32 {
+        let scr = self.screen.lock();
+        let w = scr.virtual_size().width as f32;
+        drop(scr);
+        w
     }
 
-    /// Scroll X to position with smooth animation (for Home/End/PageUp/PageDown)
-    pub fn scroll_x_to_smooth(&mut self, x: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_x_to_smooth(x);
+    /// Visible height in content pixels (derived from visible bounds and zoom).
+    pub fn visible_content_height(&self) -> f32 {
+        // Best-effort: derive from cached viewport size + effective zoom.
+        self.visible_height_px() / self.get_zoom().max(0.001)
     }
 
-    /// Scroll Y to position with smooth animation (for Home/End/PageUp/PageDown)
-    pub fn scroll_y_to_smooth(&mut self, y: f32) {
-        let mut vp = self.viewport.write();
-        vp.scroll_y_to_smooth(y);
+    /// Visible width in content pixels (derived from visible bounds and zoom).
+    pub fn visible_content_width(&self) -> f32 {
+        self.visible_width_px() / self.get_zoom().max(0.001)
+    }
+
+    pub fn mark_viewport_changed(&self) {
+        // No-op: scroll state is sourced from scroll_area.
+    }
+
+    pub fn update_viewport_animation(&mut self) {
+        // No-op: smooth scrolling is handled by scrollable animations/tasks.
     }
 
     pub fn is_in_scrollback_mode(&self) -> bool {
@@ -223,38 +251,29 @@ impl Terminal {
             self.original_screen = Some(self.screen.clone());
             // Switch to scrollback
             self.screen = scrollback;
+
+            // IMPORTANT: the terminal shader uses a shared tile cache.
+            // When switching screens (live <-> scrollback) we must invalidate it,
+            // otherwise cached textures from the previous screen will be reused and
+            // the wrong content is displayed.
+            self.render_cache.write().invalidate();
+
             // Update viewport for scrollback content
             self.update_viewport_size();
-
-            // Get the resolution to use as visible size for scrolling calculations
-            let scr = self.screen.lock();
-            let resolution = scr.resolution();
-            drop(scr);
-
-            {
-                let mut vp = self.viewport.write();
-                // Use resolution as visible size and scroll to bottom immediately (no animation)
-                // max_scroll is now in content coordinates
-                let visible_content_height = resolution.height as f32 / vp.zoom;
-                let max_scroll_y = (vp.content_height - visible_content_height).max(0.0);
-                vp.scroll_x_to(0.0);
-                vp.scroll_y_to(max_scroll_y);
-                // Clamp with the correct visible size
-                vp.clamp_scroll_with_size(resolution.width as f32, resolution.height as f32);
-            }
-
-            // Sync scrollbar position with the new viewport position
-            self.sync_scrollbar_with_viewport();
+            // NOTE: Programmatic scrolling (e.g. to bottom) must be performed by the owning
+            // view via `icy_ui::widget::operation::scroll_to(_animated)`.
         }
     }
 
     pub fn exit_scrollback_mode(&mut self) {
         if let Some(original) = self.original_screen.take() {
             self.screen = original;
+
+            // See `enter_scrollback_mode`.
+            self.render_cache.write().invalidate();
+
             // Update viewport back to normal content
             self.update_viewport_size();
-            // Sync scrollbar position when exiting scrollback
-            self.sync_scrollbar_with_viewport();
         }
     }
 
@@ -269,67 +288,19 @@ impl Terminal {
 
     /// Get current zoom level
     pub fn get_zoom(&self) -> f32 {
-        self.viewport.read().zoom
-    }
-
-    /// Set zoom level with clamping
-    pub fn set_zoom(&mut self, zoom: f32) {
-        let clamped_zoom = zoom.clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
-        let mut vp = self.viewport.write();
-
-        // Keep the center of the view stable when zooming
-        let center_x = vp.visible_width / 2.0;
-        let center_y = vp.visible_height / 2.0;
-        vp.set_zoom(clamped_zoom, center_x, center_y);
-        vp.changed.store(true, std::sync::atomic::Ordering::Relaxed);
-        drop(vp);
-
-        self.sync_scrollbar_with_viewport();
-    }
-
-    /// Zoom in by one step (respects integer scaling setting)
-    pub fn zoom_in(&mut self) {
-        let current = self.get_zoom();
-        self.set_zoom(current + Self::ZOOM_STEP);
-    }
-
-    /// Zoom in by integer step (for integer scaling mode)
-    pub fn zoom_in_int(&mut self) {
-        let current = self.get_zoom();
-        self.set_zoom((current + Self::ZOOM_STEP_INT).floor());
-    }
-
-    /// Zoom out by one step
-    pub fn zoom_out(&mut self) {
-        let current = self.get_zoom();
-        self.set_zoom(current - Self::ZOOM_STEP);
-    }
-
-    /// Zoom out by integer step (for integer scaling mode)
-    pub fn zoom_out_int(&mut self) {
-        let current = self.get_zoom();
-        self.set_zoom((current - Self::ZOOM_STEP_INT).ceil().max(1.0));
-    }
-
-    /// Reset zoom to 100% (1:1 pixel mapping)
-    pub fn zoom_reset(&mut self) {
-        self.set_zoom(1.0);
+        let z = self.render_info.read().display_scale;
+        if z <= 0.0 {
+            1.0
+        } else {
+            z
+        }
     }
 
     /// Calculate and set auto-fit zoom based on content and viewport size
     /// Returns the calculated zoom factor
     pub fn zoom_auto_fit(&mut self, use_integer_scaling: bool) -> f32 {
-        let vp: parking_lot::lock_api::RwLockReadGuard<'_, parking_lot::RawRwLock, Viewport> = self.viewport.read();
-        let content_width = vp.content_width;
-        let content_height = vp.content_height;
-        let visible_width = vp.visible_width;
-        let visible_height = vp.visible_height;
-        drop(vp);
-
-        let zoom = ScalingMode::Auto.compute_zoom(content_width, content_height, visible_width, visible_height, use_integer_scaling);
-
-        self.set_zoom(zoom);
-        zoom
+        let _ = use_integer_scaling;
+        self.get_zoom()
     }
 
     pub fn reset_caret_blink(&mut self) {}

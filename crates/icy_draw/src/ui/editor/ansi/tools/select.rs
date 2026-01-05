@@ -4,7 +4,6 @@
 //! Supports add (Shift), remove (Ctrl), and replace modes.
 
 use icy_engine::{AddType, Position, Rectangle, Selection, TextPane};
-use icy_engine_gui::terminal::crt_state::{is_command_pressed, is_ctrl_pressed, is_shift_pressed};
 use icy_engine_gui::TerminalMessage;
 use icy_ui::widget::{row, text, Space};
 use icy_ui::Element;
@@ -148,10 +147,10 @@ impl ToolHandler for SelectTool {
                     return ToolResult::None;
                 };
 
-                // Determine modifier from *global* keyboard state (event modifiers can be stale).
-                self.modifier = if is_shift_pressed() {
+                // Determine modifier from the mouse event's keyboard modifiers
+                self.modifier = if evt.modifiers.shift {
                     SelectionModifier::Add
-                } else if is_ctrl_pressed() || is_command_pressed() {
+                } else if evt.modifiers.ctrl || evt.modifiers.meta {
                     SelectionModifier::Remove
                 } else {
                     SelectionModifier::Replace

@@ -33,7 +33,7 @@ use icy_engine_edit::EditState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::CheckerboardColors;
 use icy_engine_gui::DoubleClickDetector;
-use icy_engine_gui::Viewport;
+use icy_engine_gui::ScrollViewport;
 use icy_ui::menu::{item as menu_item, MenuNode};
 use icy_ui::widget::menu::context_menu;
 use parking_lot::Mutex;
@@ -164,7 +164,7 @@ pub struct LayerView {
     label_cache: RefCell<HashMap<LabelKey, LabelTexture>>,
 
     /// Viewport for owner-rendered list (overlay scrollbar)
-    viewport: RefCell<Viewport>,
+    viewport: RefCell<ScrollViewport>,
 
     hovered_list_idx: Arc<AtomicU32>,
 
@@ -185,12 +185,9 @@ impl Default for LayerView {
 
 impl LayerView {
     pub fn new() -> Self {
-        let mut viewport = Viewport::default();
-        viewport.zoom = 1.0;
-        viewport.content_width = 400.0;
-        viewport.content_height = 0.0;
-        viewport.visible_width = 400.0;
-        viewport.visible_height = 300.0;
+        let mut viewport = ScrollViewport::default();
+        viewport.set_content_size(400.0, 0.0);
+        viewport.set_visible_size(400.0, 300.0);
 
         Self {
             preview_cache: RefCell::new(HashMap::new()),
@@ -345,10 +342,10 @@ impl LayerView {
         let total_height = row_count as f32 * LAYER_ROW_HEIGHT;
         let mut viewport = self.viewport.borrow_mut();
         // Avoid marking the viewport as changed every frame.
-        if (viewport.content_height - total_height).abs() > 0.5 {
-            viewport.content_height = total_height;
-            viewport.sync_scrollbar_position();
-            viewport.changed.store(true, Ordering::Relaxed);
+        if (viewport.content_height() - total_height).abs() > 0.5 {
+            let w = viewport.content_width();
+            viewport.set_content_size(w, total_height);
+            viewport.mark_changed();
         }
     }
 
@@ -365,7 +362,7 @@ impl LayerView {
     fn ensure_previews_and_atlas(&self, screen: &Arc<Mutex<Box<dyn Screen>>>, rows: &[LayerRowInfo]) {
         let (scroll_y, visible_height) = {
             let vp = self.viewport.borrow();
-            (vp.scroll_y, vp.visible_height)
+            (vp.scroll_y(), vp.visible_height_px())
         };
 
         // Track changes that affect the visible range.
@@ -661,7 +658,7 @@ impl LayerView {
         // Layer list (scrollbars handled elsewhere if needed)
         let list_with_scrollbar = list_widget;
 
-        let scroll_y = self.viewport.borrow().scroll_y;
+        let scroll_y = self.viewport.borrow().scroll_y();
         let icon_color = theme.background.on;
         let shader_bg: Element<'a, LayerMessage> = icy_ui::widget::shader(LayerListBackgroundProgram {
             row_count: layer_count as u32,
@@ -748,7 +745,7 @@ struct LayerListWidget<'a> {
     label_cache: &'a RefCell<HashMap<LabelKey, LabelTexture>>,
     font_page: Option<usize>,
     font_key: Option<u64>,
-    viewport: &'a RefCell<Viewport>,
+    viewport: &'a RefCell<ScrollViewport>,
     double_click: &'a RefCell<DoubleClickDetector<usize>>,
 
     hovered_list_idx: Arc<AtomicU32>,
@@ -800,7 +797,7 @@ impl<'a> LayerListWidget<'a> {
     }
 
     fn visible_range(&self, bounds: Rectangle) -> (usize, usize) {
-        let scroll_offset = self.viewport.borrow().scroll_y;
+        let scroll_offset = self.viewport.borrow().scroll_y();
         let first_visible = (scroll_offset / LAYER_ROW_HEIGHT).floor().max(0.0) as usize;
         let visible_count = (bounds.height / LAYER_ROW_HEIGHT).ceil() as usize + 2;
         let last_visible = (first_visible + visible_count).min(self.rows.len());
@@ -808,7 +805,7 @@ impl<'a> LayerListWidget<'a> {
     }
 
     fn row_bounds(&self, list_bounds: Rectangle, list_idx: usize) -> Rectangle {
-        let scroll_offset = self.viewport.borrow().scroll_y;
+        let scroll_offset = self.viewport.borrow().scroll_y();
         let y = list_bounds.y + list_idx as f32 * LAYER_ROW_HEIGHT - scroll_offset;
         Rectangle {
             x: list_bounds.x,
@@ -1083,7 +1080,7 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                 let hovered = cursor
                     .position_in(bounds)
                     .map(|pos| {
-                        let y = pos.y + self.viewport.borrow().scroll_y;
+                        let y = pos.y + self.viewport.borrow().scroll_y();
                         (y / LAYER_ROW_HEIGHT) as usize
                     })
                     .filter(|&idx| idx < self.rows.len())
@@ -1112,7 +1109,7 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                 state.pressed_was_selected = false;
 
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let scroll_offset = self.viewport.borrow().scroll_y;
+                    let scroll_offset = self.viewport.borrow().scroll_y();
                     let clicked_y = pos.y + scroll_offset;
                     let list_idx = (clicked_y / LAYER_ROW_HEIGHT) as usize;
                     if list_idx < self.rows.len() {
@@ -1163,7 +1160,7 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                     }
                 }
 
-                let scroll_offset = self.viewport.borrow().scroll_y;
+                let scroll_offset = self.viewport.borrow().scroll_y();
                 let released_y = pos.y + scroll_offset;
                 let released_idx = (released_y / LAYER_ROW_HEIGHT) as usize;
                 if released_idx != pressed_idx {
@@ -1212,7 +1209,6 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                             vp.scroll_y_by(-y);
                         }
                     }
-                    vp.scrollbar.mark_interaction(true);
                     shell.request_redraw();
                 }
             }

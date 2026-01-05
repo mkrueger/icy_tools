@@ -52,11 +52,13 @@ pub fn is_sixel_file(path: &PathBuf) -> bool {
 }
 
 // Command handler for PreviewView
+// Note: We use ZoomMessage::AutoFit but convert it to FitWidth in the update handler
+// because icy_view should never use Auto mode (only FitWidth or Manual)
 command_handler!(PreviewCommands, create_icy_view_commands(), => PreviewMessage {
     cmd::VIEW_ZOOM_IN => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::In),
     cmd::VIEW_ZOOM_OUT => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Out),
     cmd::VIEW_ZOOM_RESET => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::Reset),
-    cmd::VIEW_ZOOM_FIT => PreviewMessage::Zoom(icy_engine_gui::ZoomMessage::AutoFit),
+    cmd::VIEW_ZOOM_FIT => PreviewMessage::ZoomFitWidth,
 });
 
 /// Preview mode - either terminal or image
@@ -97,6 +99,8 @@ pub enum PreviewMessage {
     ImageViewerMessage(ImageViewerMessage),
     /// Unified zoom message
     Zoom(icy_engine_gui::ZoomMessage),
+    /// Zoom to FitWidth mode (icy_view's auto-fit, preserves minimum visible rows)
+    ZoomFitWidth,
 }
 
 /// Preview view for displaying ANSI files and images
@@ -151,6 +155,12 @@ impl PreviewView {
         // Create view thread
         let (command_tx, event_rx) = create_view_thread(screen);
 
+        // Use FitWidth scaling mode for icy_view:
+        // - Fills width (x-stretch allowed)
+        // - Never shows fewer than terminal_height rows (no y-stretch)
+        let mut monitor_settings = MonitorSettings::default();
+        monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::FitWidth;
+
         Self {
             commands: PreviewCommands::new(),
             terminal,
@@ -158,7 +168,7 @@ impl PreviewView {
             event_rx: Arc::new(Mutex::new(event_rx)),
             current_file: None,
             is_loading: false,
-            monitor_settings: Arc::new(MonitorSettings::default()),
+            monitor_settings: Arc::new(monitor_settings),
             baud_emulation: BaudEmulation::Off,
             preview_mode: PreviewMode::None,
             current_image_load_id: 0,
@@ -175,6 +185,15 @@ impl PreviewView {
 
     /// Handle an event and return the corresponding message if it matches a command
     pub fn handle_event(&self, event: &Event) -> Option<PreviewMessage> {
+        use icy_engine_gui::commands::IntoHotkey;
+        if let Some(hotkey) = event.into_hotkey() {
+            println!("PreviewView: hotkey = {:?}", hotkey);
+            if let Some(cmd_id) = self.commands.commands.match_hotkey(&hotkey) {
+                println!("PreviewView: matched command = {:?}", cmd_id);
+            } else {
+                println!("PreviewView: no command matched");
+            }
+        }
         self.commands.handle(event)
     }
 
@@ -183,10 +202,13 @@ impl PreviewView {
         self.current_file = Some(path.clone());
         self.is_loading = true;
 
+        // The terminal uses a shared tile cache for rendered textures.
+        // When switching files the underlying screen may be replaced/rewritten by the view thread,
+        // so we must invalidate the cache to avoid showing stale tiles from the previous file.
+        self.terminal.render_cache.write().invalidate();
+
         // Reset scroll position to top when loading new file
-        self.terminal.scroll_x_to(0.0);
-        self.terminal.scroll_y_to(0.0);
-        self.terminal.sync_scrollbar_with_viewport();
+        let reset_scroll = self.terminal.scroll_to_content(Some(0.0), Some(0.0));
 
         // Reset scroll mode (background thread will set it)
         self.scroll_mode = ScrollMode::Off;
@@ -209,7 +231,7 @@ impl PreviewView {
             let is_sixel = is_sixel_file(&path);
 
             // Spawn background task to load image from data
-            Task::perform(
+            let load_task = Task::perform(
                 async move {
                     log::info!("Loading image for preview: {:?}", path);
                     // Load image in blocking thread pool
@@ -244,7 +266,9 @@ impl PreviewView {
                     .unwrap_or_else(|e: tokio::task::JoinError| (load_id, Err(format!("Task error: {}", e))))
                 },
                 |(id, result)| PreviewMessage::ImageLoaded(id, result),
-            )
+            );
+
+            Task::batch(vec![reset_scroll, load_task])
         } else {
             // Load in terminal view thread (ANSI, etc.)
             self.preview_mode = PreviewMode::Terminal;
@@ -255,7 +279,7 @@ impl PreviewView {
 
             // Send auto_scroll_enabled to background thread so it can decide scroll mode
             let _ = self.command_tx.send(ViewCommand::LoadData(path, data, self.auto_scroll_enabled));
-            Task::none()
+            reset_scroll
         }
     }
 
@@ -267,9 +291,7 @@ impl PreviewView {
         self.is_loading = false;
 
         // Reset scroll position to top when loading new file
-        self.terminal.scroll_x_to(0.0);
-        self.terminal.scroll_y_to(0.0);
-        self.terminal.sync_scrollbar_with_viewport();
+        let reset_scroll = self.terminal.scroll_to_content(Some(0.0), Some(0.0));
 
         // Clear image viewer when loading new file
         self.image_viewer = None;
@@ -295,7 +317,7 @@ impl PreviewView {
         self.preview_mode = PreviewMode::Image(handle, width, height);
 
         log::debug!("Loaded pre-decoded image {}x{}", width, height);
-        Task::none()
+        reset_scroll
     }
 
     /// Set baud emulation rate
@@ -374,7 +396,7 @@ impl PreviewView {
         if let Some(ref viewer) = self.image_viewer {
             viewer.max_scroll_y()
         } else {
-            self.terminal.viewport.read().max_scroll_y()
+            self.terminal.max_scroll_y()
         }
     }
 
@@ -383,7 +405,7 @@ impl PreviewView {
         if let Some(ref viewer) = self.image_viewer {
             viewer.scroll_y()
         } else {
-            self.terminal.viewport.read().scroll_y
+            self.terminal.scroll_y()
         }
     }
 
@@ -458,14 +480,16 @@ impl PreviewView {
     }
 
     /// Enable auto-scroll mode (for shuffle mode)
-    pub fn enable_auto_scroll(&mut self) {
+    pub fn enable_auto_scroll(&mut self) -> Task<PreviewMessage> {
         self.auto_scroll_enabled = true;
         self.scroll_mode = ScrollMode::AutoScroll;
-        // Reset scroll position to top using unified API
-        self.with_content_view(|cv| {
-            cv.scroll_to(0.0, 0.0);
-            cv.sync_scrollbar();
-        });
+
+        // Reset scroll position to top (programmatic scrolling is task-driven).
+        if self.image_viewer.is_some() {
+            Task::none()
+        } else {
+            self.terminal.scroll_to_content(Some(0.0), Some(0.0))
+        }
     }
 
     /// Check if scroll has completed (reached bottom)
@@ -481,7 +505,7 @@ impl PreviewView {
         if let Some(ref viewer) = self.image_viewer {
             viewer.visible_height()
         } else {
-            self.terminal.viewport.read().visible_height
+            self.terminal.visible_height_px()
         }
     }
 
@@ -585,11 +609,19 @@ impl PreviewView {
                     match event {
                         ViewEvent::LoadingStarted(_path) => {
                             self.is_loading = true;
+
+                            // Screen content is about to be replaced/rewritten.
+                            // Clear cached tiles so we don't reuse textures from the previous file.
+                            self.terminal.render_cache.write().invalidate();
                         }
                         ViewEvent::LoadingCompleted => {
                             self.is_loading = false;
                             // Update terminal viewport after loading
                             self.terminal.update_viewport_size();
+
+                            // Loading typically replaces a large portion (or all) of the screen.
+                            // Ensure the next frame re-renders all tiles for the new file.
+                            self.terminal.render_cache.write().invalidate();
                         }
                         ViewEvent::SetScrollMode(mode) => {
                             self.scroll_mode = mode;
@@ -618,10 +650,9 @@ impl PreviewView {
                     ScrollMode::ClampToBottom => {
                         // Clamp to bottom during baud emulation loading
                         let max_scroll_y = self.get_max_scroll_y();
-                        self.with_content_view(|cv| {
-                            cv.scroll_y_to(max_scroll_y);
-                            cv.sync_scrollbar();
-                        });
+                        if self.image_viewer.is_none() {
+                            extra_tasks.push(self.terminal.scroll_to_content(None, Some(max_scroll_y)));
+                        }
                     }
                     ScrollMode::AutoScroll => {
                         // Animated scrolling after loading completes
@@ -631,10 +662,9 @@ impl PreviewView {
                         let current_y = self.get_current_scroll_y();
                         let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-                        self.with_content_view(|cv| {
-                            cv.scroll_y_to(new_y);
-                            cv.sync_scrollbar();
-                        });
+                        if self.image_viewer.is_none() {
+                            extra_tasks.push(self.terminal.scroll_to_content(None, Some(new_y)));
+                        }
 
                         // Stop auto-scroll when we reach the bottom
                         if new_y >= max_scroll_y {
@@ -648,10 +678,11 @@ impl PreviewView {
 
                 // Handle inertia scrolling (after drag release)
                 if let Some((dx, dy)) = self.drag_scroll.update_inertia(delta_seconds) {
-                    self.with_content_view(|cv| {
-                        cv.scroll_by(dx, dy);
-                        cv.sync_scrollbar();
-                    });
+                    if self.image_viewer.is_none() {
+                        let current_x = self.terminal.scroll_x();
+                        let current_y = self.terminal.scroll_y();
+                        extra_tasks.push(self.terminal.scroll_to_content(Some(current_x + dx), Some(current_y + dy)));
+                    }
                 }
 
                 // Return any extra tasks
@@ -664,29 +695,33 @@ impl PreviewView {
             PreviewMessage::ScrollViewport(dx, dy) => {
                 // User is scrolling manually, disable auto-scroll modes
                 self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_by(dx, dy);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
+                if self.image_viewer.is_some() {
+                    Task::none()
+                } else {
+                    let current_x = self.terminal.scroll_x();
+                    let current_y = self.terminal.scroll_y();
+                    self.terminal.scroll_to_content(Some(current_x + dx), Some(current_y + dy))
+                }
             }
             PreviewMessage::ScrollViewportSmooth(dx, dy) => {
                 // User is scrolling with animation (PageUp/PageDown)
                 self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_by_smooth(dx, dy);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
+                if self.image_viewer.is_some() {
+                    Task::none()
+                } else {
+                    let current_x = self.terminal.scroll_x();
+                    let current_y = self.terminal.scroll_y();
+                    self.terminal.scroll_to_content_animated(Some(current_x + dx), Some(current_y + dy))
+                }
             }
             PreviewMessage::ScrollViewportToSmooth(x, y) => {
                 // User is scrolling to absolute position with animation (Home/End)
                 self.scroll_mode = ScrollMode::Off;
-                self.with_content_view(|cv| {
-                    cv.scroll_to_smooth(x, y);
-                    cv.sync_scrollbar();
-                });
-                Task::none()
+                if self.image_viewer.is_some() {
+                    Task::none()
+                } else {
+                    self.terminal.scroll_to_content_animated(Some(x), Some(y))
+                }
             }
             PreviewMessage::TerminalMessage(msg) => {
                 use icy_ui::mouse;
@@ -722,35 +757,31 @@ impl PreviewView {
                     icy_engine_gui::TerminalMessage::Drag(evt) => {
                         let zoom = self.terminal.get_zoom();
                         if let Some((x, y)) = self.drag_scroll.process_drag(evt.pixel_position, zoom) {
-                            self.with_content_view(|cv| {
-                                cv.scroll_to(x, y);
-                                cv.sync_scrollbar();
-                            });
+                            if self.image_viewer.is_none() {
+                                return self.terminal.scroll_to_content(Some(x), Some(y));
+                            }
                         }
                     }
                     icy_engine_gui::TerminalMessage::Scroll(delta) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
                         self.drag_scroll.stop();
-                        let (dx, dy) = match delta {
-                            icy_engine_gui::WheelDelta::Lines { x, y } => (x * 10.0, y * 20.0),
-                            icy_engine_gui::WheelDelta::Pixels { x, y } => (x, y),
-                        };
-                        self.with_content_view(|cv| {
-                            cv.scroll_by(-dx, -dy);
-                            cv.sync_scrollbar();
-                        });
+                        let _ = delta;
+                        // scroll_area handles wheel scrolling
                     }
                     icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => {
                         // Handle zoom via unified ZoomMessage
                         // Create a new Arc with updated scaling_mode
+                        // Note: icy_view only uses FitWidth or Manual, never Auto
                         let current_zoom = self.terminal.get_zoom();
                         let use_integer = self.monitor_settings.use_integer_scaling;
                         let mut new_settings = (*self.monitor_settings).clone();
-                        new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-                        if let icy_engine_gui::ScalingMode::Manual(z) = new_settings.scaling_mode {
-                            self.terminal.set_zoom(z);
-                        }
+                        let new_scaling = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                        // Convert Auto to FitWidth for icy_view
+                        new_settings.scaling_mode = match new_scaling {
+                            icy_engine_gui::ScalingMode::Auto => icy_engine_gui::ScalingMode::FitWidth,
+                            other => other,
+                        };
                         self.monitor_settings = Arc::new(new_settings);
                     }
                 }
@@ -759,30 +790,44 @@ impl PreviewView {
             PreviewMessage::Zoom(zoom_msg) => {
                 // Unified zoom handling for both terminal and image viewer
                 // Create a new Arc with updated scaling_mode
+                // Note: icy_view only uses FitWidth or Manual, never Auto
                 let use_integer = self.monitor_settings.use_integer_scaling;
                 let mut new_settings = (*self.monitor_settings).clone();
                 if let Some(ref mut viewer) = self.image_viewer {
                     // Apply zoom to image viewer
                     let current_zoom = viewer.zoom();
                     let new_scaling = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    // Convert Auto to FitWidth for icy_view
+                    let new_scaling = match new_scaling {
+                        icy_engine_gui::ScalingMode::Auto => icy_engine_gui::ScalingMode::FitWidth,
+                        other => other,
+                    };
                     match new_scaling {
-                        icy_engine_gui::ScalingMode::Auto => viewer.zoom_fit(),
+                        icy_engine_gui::ScalingMode::FitWidth => viewer.zoom_fit(),
                         icy_engine_gui::ScalingMode::Manual(z) => viewer.set_zoom(z),
+                        icy_engine_gui::ScalingMode::Auto => unreachable!("Auto converted to FitWidth above"),
                     }
                     new_settings.scaling_mode = new_scaling;
                 } else {
                     // Apply zoom to terminal
                     let current_zoom = self.terminal.get_zoom();
-                    new_settings.scaling_mode = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
-                    match new_settings.scaling_mode {
-                        icy_engine_gui::ScalingMode::Auto => {
-                            self.terminal.zoom_auto_fit(use_integer);
-                        }
-                        icy_engine_gui::ScalingMode::Manual(z) => {
-                            self.terminal.set_zoom(z);
-                        }
-                    }
+                    let new_scaling = new_settings.scaling_mode.apply_zoom(zoom_msg, current_zoom, use_integer);
+                    // Convert Auto to FitWidth for icy_view
+                    new_settings.scaling_mode = match new_scaling {
+                        icy_engine_gui::ScalingMode::Auto => icy_engine_gui::ScalingMode::FitWidth,
+                        other => other,
+                    };
                 }
+                self.monitor_settings = Arc::new(new_settings);
+                Task::none()
+            }
+            PreviewMessage::ZoomFitWidth => {
+                // Explicit FitWidth zoom (icy_view's auto-fit mode)
+                let mut new_settings = (*self.monitor_settings).clone();
+                if let Some(ref mut viewer) = self.image_viewer {
+                    viewer.zoom_fit();
+                }
+                new_settings.scaling_mode = icy_engine_gui::ScalingMode::FitWidth;
                 self.monitor_settings = Arc::new(new_settings);
                 Task::none()
             }
@@ -899,41 +944,45 @@ impl PreviewView {
                 drop(screen);
 
                 // Get zoom from viewport
-                let zoom = self.terminal.viewport.read().zoom;
+                let zoom = self.terminal.get_zoom();
+
+                let is_fit_width = monitor_settings.scaling_mode.is_fit_width();
 
                 // Scrollable size in zoomed pixels (for scroll_area)
-                let scrollable_width = virtual_size.width as f32 * zoom;
+                // NOTE: `show_viewport` reports viewport sizes in the coordinate system of the
+                // content size passed in. If the content width is smaller than the actual widget
+                // width, the reported viewport width will be capped to the content width.
+                //
+                // In FitWidth mode, zoom depends on the available viewport width, so we must
+                // avoid a circular dependency by ensuring the content width is always >= the
+                // widget width. We do this by using a very large content width and disabling
+                // horizontal scrolling.
+                let scrollable_width = if is_fit_width {
+                    // Large enough to exceed typical window widths, keeping viewport.width accurate.
+                    // Vertical scrolling still uses the correct height computed from `zoom`.
+                    (virtual_size.width as f32 * zoom).max(100_000.0)
+                } else {
+                    virtual_size.width as f32 * zoom
+                };
                 let scrollable_height = virtual_size.height as f32 * zoom;
-
-                // Scrollable size in content pixels (for viewport)
-                let scrollable_content_width = virtual_size.width as f32;
-                let scrollable_content_height = virtual_size.height as f32;
 
                 let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
                 let monitor_settings_clone = monitor_settings.clone();
-                let viewport_arc = self.terminal.viewport.clone();
 
                 let content = scroll_area()
+                    .id(self.terminal.scroll_area_id())
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .direction(scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
-                        horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                    .direction(if is_fit_width {
+                        scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6))
+                    } else {
+                        scrollable::Direction::Both {
+                            vertical: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                            horizontal: scrollable::Scrollbar::new().width(8).scroller_width(6),
+                        }
                     })
                     .show_viewport(scrollable_size, move |scroll_viewport| {
-                        // Update terminal viewport with scroll position and content size from scroll_area
-                        // scroll_viewport.x/y are in zoomed pixel coordinates
-                        {
-                            let mut vp = viewport_arc.write();
-                            // Convert from zoomed coordinates back to content coordinates
-                            vp.scroll_x = scroll_viewport.x / zoom;
-                            vp.scroll_y = scroll_viewport.y / zoom;
-                            vp.visible_width = scroll_viewport.width;
-                            vp.visible_height = scroll_viewport.height;
-                            // Set scrollable content size (in content pixels, not zoomed)
-                            vp.content_width = scrollable_content_width;
-                            vp.content_height = scrollable_content_height;
-                        }
+                        self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
 
                         TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None).map(PreviewMessage::TerminalMessage)
                     });

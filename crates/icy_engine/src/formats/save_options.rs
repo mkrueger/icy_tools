@@ -347,6 +347,12 @@ pub struct AnsiFormatOptions {
     /// Compatibility level determining available features.
     pub level: AnsiCompatibilityLevel,
 
+    /// When true, always emit 24-bit truecolor (RGB) escape sequences for colors.
+    /// This bakes the current palette colors into the output so the result looks
+    /// the same even if the viewer's palette differs.
+    #[serde(default)]
+    pub always_use_rgb: bool,
+
     /// Screen preparation sequence.
     pub screen_prep: ScreenPreperation,
 
@@ -381,6 +387,7 @@ impl AnsiFormatOptions {
     pub fn new(level: AnsiCompatibilityLevel) -> Self {
         Self {
             level,
+            always_use_rgb: false,
             screen_prep: ScreenPreperation::None,
             line_length: LineLength::Default,
             line_break: LineBreakBehavior::Wrap,
