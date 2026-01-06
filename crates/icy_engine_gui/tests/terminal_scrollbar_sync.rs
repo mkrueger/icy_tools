@@ -1,38 +1,31 @@
 use icy_engine::Screen;
 use icy_engine_gui::terminal::Terminal;
+use icy_ui::Rectangle;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
 #[test]
-fn terminal_sync_scrollbar_updates_viewport_scrollbar_positions() {
-    // Use a real Screen implementation to keep this test focused on scrollbar sync.
+fn terminal_update_scroll_from_viewport_tracks_content_scroll_in_content_pixels() {
+    // Use a real Screen implementation to keep this test focused on scroll state caching.
     let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(icy_engine::TextScreen::new(icy_engine::Size::new(80, 25)))));
 
-    let mut term = Terminal::new(screen);
+    let term = Terminal::new(screen);
 
-    // Simulate a 400% zoom view with a small visible area.
-    {
-        let mut vp = term.viewport.write();
-        vp.zoom = 4.0;
-        vp.set_visible_size(800.0, 500.0);
-        vp.set_content_size(2000.0, 1500.0);
+    // `show_viewport` reports the viewport rectangle in *zoomed* pixels.
+    // The terminal caches scroll in *content* pixels by dividing by the effective zoom.
+    let zoom = 4.0;
+    let viewport = Rectangle {
+        x: 400.0,
+        y: 200.0,
+        width: 800.0,
+        height: 500.0,
+    };
 
-        // Force scroll to bottom-right (max).
-        let max_x = vp.max_scroll_x();
-        let max_y = vp.max_scroll_y();
-        vp.scroll_x = max_x;
-        vp.scroll_y = max_y;
-        vp.target_scroll_x = max_x;
-        vp.target_scroll_y = max_y;
+    term.update_scroll_from_viewport(viewport, zoom);
+    let state = term.scroll_state();
 
-        // Intentionally desync viewport scrollbar to reproduce the bug.
-        vp.scrollbar.set_scroll_position_x(0.0);
-        vp.scrollbar.set_scroll_position(0.0);
-    }
-
-    term.sync_scrollbar_with_viewport();
-
-    let vp = term.viewport.read();
-    assert!((vp.scrollbar.scroll_position_x - 1.0).abs() < 1e-6, "expected horizontal scrollbar at end");
-    assert!((vp.scrollbar.scroll_position - 1.0).abs() < 1e-6, "expected vertical scrollbar at end");
+    assert!((state.scroll_x - 100.0).abs() < 1e-6);
+    assert!((state.scroll_y - 50.0).abs() < 1e-6);
+    assert!((state.viewport_width_px - 800.0).abs() < 1e-6);
+    assert!((state.viewport_height_px - 500.0).abs() < 1e-6);
 }

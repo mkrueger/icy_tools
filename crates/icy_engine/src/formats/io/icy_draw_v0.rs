@@ -152,6 +152,19 @@ pub(crate) fn load_icy_draw_v0_base64_text_chunks(data: &[u8]) -> Result<Option<
         return Ok(None);
     }
 
+    // Some legacy files contain layers that are smaller than the declared canvas size.
+    // Normalize by ensuring the base layer matches the buffer so the editor can draw
+    // into the full canvas area.
+    let buf_size = result.size();
+    if let Some(base_layer) = result.layers.get_mut(0) {
+        if base_layer.role == crate::Role::Normal && base_layer.base_offset() == Position::default() {
+            let layer_size = base_layer.size();
+            if layer_size.width < buf_size.width || layer_size.height < buf_size.height {
+                base_layer.set_size(buf_size);
+            }
+        }
+    }
+
     Ok(Some((TextScreen::from_buffer(result), sauce_opt)))
 }
 
@@ -216,7 +229,7 @@ fn process_icy_draw_v0_decoded_chunk(
             o += 1;
             result.ice_mode = crate::IceMode::from_byte(ice_mode);
 
-            // legacey
+            // legacy
             let _palette_mode = bytes[o];
             o += 1;
 
@@ -237,7 +250,13 @@ fn process_icy_draw_v0_decoded_chunk(
             let height: i32 = i32::try_from(height_u32).map_err(|_| crate::EngineError::UnsupportedFormat {
                 description: format!("ICED height out of range: {height_u32}"),
             })?;
+
             result.set_size((width, height));
+
+            // Keep terminal state dimensions in sync with the buffer size.
+            // Some UI/layout code uses TerminalState sizes even for non-terminal buffers.
+            result.terminal_state.set_width(width);
+            result.terminal_state.set_height(height);
         }
 
         "PALETTE" => {
@@ -246,7 +265,7 @@ fn process_icy_draw_v0_decoded_chunk(
 
         "SAUCE" => {
             if let Some(sauce) = SauceRecord::from_bytes(bytes)? {
-                super::super::apply_sauce_to_buffer(result, &sauce);
+                super::super::apply_sauce_to_buffer_without_resize(result, &sauce);
                 *sauce_opt = Some(sauce);
             }
         }

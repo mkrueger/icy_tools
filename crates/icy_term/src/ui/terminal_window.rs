@@ -122,7 +122,20 @@ impl TerminalWindow {
                 // `update_scroll_from_viewport` for the inverse conversion.
                 let zoom = self.terminal.get_zoom();
 
-                let scrollable_size = Size::new(virtual_size.width as f32 * zoom, virtual_size.height as f32 * zoom);
+                let is_manual = !monitor_settings.scaling_mode.is_auto();
+                let last_viewport_w = self.terminal.visible_width_px();
+                let last_viewport_h = self.terminal.visible_height_px();
+
+                let mut scrollable_width = virtual_size.width as f32 * zoom;
+                let mut scrollable_height = virtual_size.height as f32 * zoom;
+
+                // Manual mode: center content when it's smaller than the viewport.
+                if is_manual {
+                    scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
+                    scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
+                }
+
+                let scrollable_size = Size::new(scrollable_width, scrollable_height);
                 let monitor_settings_clone = monitor_settings.clone();
 
                 let direction = match (show_vscrollbar, show_hscrollbar) {
@@ -147,7 +160,18 @@ impl TerminalWindow {
                     .direction(direction)
                     .show_viewport(scrollable_size, move |scroll_viewport| {
                         self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
-                        mk_terminal_view(monitor_settings_clone.clone())
+
+                        let term = mk_terminal_view(monitor_settings_clone.clone());
+                        if is_manual {
+                            container(term)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(icy_ui::alignment::Horizontal::Center)
+                                .align_y(icy_ui::alignment::Vertical::Center)
+                                .into()
+                        } else {
+                            term
+                        }
                     });
 
                 layers.push(container(scrollable_terminal).width(Length::Fill).height(Length::Fill).into());
@@ -184,7 +208,17 @@ impl TerminalWindow {
 
                 container(icy_ui::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
             } else {
-                container(mk_terminal_view(monitor_settings.clone())).width(Length::Fill).height(Length::Fill)
+                let is_manual = !monitor_settings.scaling_mode.is_auto();
+                let term = mk_terminal_view(monitor_settings.clone());
+                if is_manual {
+                    container(term)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(icy_ui::alignment::Horizontal::Center)
+                        .align_y(icy_ui::alignment::Vertical::Center)
+                } else {
+                    container(term).width(Length::Fill).height(Length::Fill)
+                }
             }
         };
 

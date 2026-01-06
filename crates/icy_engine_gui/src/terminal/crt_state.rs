@@ -169,7 +169,7 @@ impl CRTShaderState {
 
     /// Map mouse coordinates to cell position using shared RenderInfo from shader.
     /// Returns absolute document coordinates (with scroll offset applied).
-    pub(crate) fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Option<Position> {
+    pub fn map_mouse_to_cell(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Option<Position> {
         // RenderInfo is now in logical coordinates, matching mouse coordinates
         // No need to scale - both are in logical coords
 

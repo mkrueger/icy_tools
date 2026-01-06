@@ -72,6 +72,14 @@ impl ScrollViewport {
         self.scroll_y
     }
 
+    pub fn target_scroll_x(&self) -> f32 {
+        self.target_scroll_x
+    }
+
+    pub fn target_scroll_y(&self) -> f32 {
+        self.target_scroll_y
+    }
+
     pub fn zoom(&self) -> f32 {
         self.zoom
     }
@@ -141,6 +149,36 @@ impl ScrollViewport {
 
     pub fn max_scroll_y(&self) -> f32 {
         (self.content_height - self.visible_content_height()).max(0.0)
+    }
+
+    pub fn is_scrollable_x(&self) -> bool {
+        self.max_scroll_x() > 0.0
+    }
+
+    pub fn is_scrollable_y(&self) -> bool {
+        self.max_scroll_y() > 0.0
+    }
+
+    /// Set zoom while keeping the content under the given screen-space center stable.
+    ///
+    /// `center_x`/`center_y` are in screen pixels relative to the viewport.
+    pub fn set_zoom(&mut self, zoom: f32, center_x: f32, center_y: f32) {
+        let zoom = zoom.max(0.001);
+
+        // Content coordinate under the center before zoom change.
+        let content_before_x = center_x / self.zoom.max(0.001) + self.scroll_x;
+        let content_before_y = center_y / self.zoom.max(0.001) + self.scroll_y;
+
+        self.zoom = zoom;
+
+        // Adjust scroll so the same content point stays under the center.
+        self.scroll_x = content_before_x - center_x / self.zoom;
+        self.scroll_y = content_before_y - center_y / self.zoom;
+        self.target_scroll_x = self.scroll_x;
+        self.target_scroll_y = self.scroll_y;
+
+        self.clamp_scroll();
+        self.changed.store(true, Ordering::Relaxed);
     }
 
     pub fn clamp_scroll(&mut self) {

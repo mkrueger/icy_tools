@@ -344,6 +344,7 @@ fn process_icy_draw_v1_decoded_chunk(
 
             let width: i32 = i32::try_from(width_u32).map_err(|_| IcedError::InvalidHeader(format!("width out of range: {width_u32}")))?;
             let height: i32 = i32::try_from(height_u32).map_err(|_| IcedError::InvalidHeader(format!("height out of range: {height_u32}")))?;
+
             result.set_size((width, height));
             // Keep terminal state dimensions in sync with the buffer size.
             // Some UI/layout code uses TerminalState sizes even for non-terminal buffers.
@@ -363,7 +364,7 @@ fn process_icy_draw_v1_decoded_chunk(
 
         "SAUCE" => {
             if let Some(sauce) = SauceRecord::from_bytes(bytes).map_err(|e| IcedError::InvalidRecord(format!("sauce: {e}")))? {
-                super::super::apply_sauce_to_buffer(result, &sauce);
+                super::super::apply_sauce_to_buffer_without_resize(result, &sauce);
                 *sauce_opt = Some(sauce);
             }
         }
@@ -906,6 +907,19 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Opt
         let keep_running = process_icy_draw_v1_decoded_chunk(&keyword, actual_bytes, &mut result, &mut compression, &mut sauce_opt)?;
         if !keep_running {
             break;
+        }
+    }
+
+    // Some legacy files contain layers that are smaller than the declared canvas size.
+    // In the editor this shows up as a checkerboard area that cannot be edited even though
+    // the buffer/canvas is larger. Normalize by ensuring the base layer matches the buffer.
+    let buf_size = result.size();
+    if let Some(base_layer) = result.layers.get_mut(0) {
+        if base_layer.role == crate::Role::Normal && base_layer.base_offset() == Position::default() {
+            let layer_size = base_layer.size();
+            if layer_size.width < buf_size.width || layer_size.height < buf_size.height {
+                base_layer.set_size(buf_size);
+            }
         }
     }
 

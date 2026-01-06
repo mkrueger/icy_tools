@@ -248,18 +248,29 @@ impl CanvasView {
         let zoom = self.terminal.get_zoom();
 
         let monitor_settings = Arc::new(self.monitor_settings.read().clone());
+        let is_manual = !monitor_settings.scaling_mode.is_auto();
+        let last_viewport_w = self.terminal.visible_width_px();
+        let last_viewport_h = self.terminal.visible_height_px();
 
         // Scrollable size in zoomed pixels (for scroll_area)
         // In FitWidth mode, zoom depends on the available viewport width. Ensure the content
         // width is always >= the widget width so `show_viewport` reports the real viewport width.
         // Horizontal scrolling is disabled in FitWidth.
         let is_fit_width = monitor_settings.scaling_mode.is_fit_width();
-        let scrollable_width = if is_fit_width {
+        let mut scrollable_width = if is_fit_width {
             (virtual_size.width as f32 * zoom).max(100_000.0)
         } else {
             virtual_size.width as f32 * zoom
         };
-        let scrollable_height = virtual_size.height as f32 * zoom;
+        let mut scrollable_height = virtual_size.height as f32 * zoom;
+
+        // Manual mode: center the content when it's smaller than the viewport.
+        // `show_viewport` caps viewport sizes to the provided content size, so we
+        // must ensure content size is at least the last known viewport size.
+        if is_manual {
+            scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
+            scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
+        }
 
         let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
 
@@ -278,7 +289,18 @@ impl CanvasView {
             .show_viewport(scrollable_size, move |scroll_viewport| {
                 self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
 
-                TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone()).map(|msg| msg)
+                let term = TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone()).map(|msg| msg);
+
+                if is_manual {
+                    container(term)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(icy_ui::alignment::Horizontal::Center)
+                        .align_y(icy_ui::alignment::Vertical::Center)
+                        .into()
+                } else {
+                    term
+                }
             });
 
         container(content)

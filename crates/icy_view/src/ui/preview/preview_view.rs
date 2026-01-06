@@ -957,14 +957,24 @@ impl PreviewView {
                 // avoid a circular dependency by ensuring the content width is always >= the
                 // widget width. We do this by using a very large content width and disabling
                 // horizontal scrolling.
-                let scrollable_width = if is_fit_width {
+                let is_manual = !monitor_settings.scaling_mode.is_auto();
+                let last_viewport_w = self.terminal.visible_width_px();
+                let last_viewport_h = self.terminal.visible_height_px();
+
+                let mut scrollable_width = if is_fit_width {
                     // Large enough to exceed typical window widths, keeping viewport.width accurate.
                     // Vertical scrolling still uses the correct height computed from `zoom`.
                     (virtual_size.width as f32 * zoom).max(100_000.0)
                 } else {
                     virtual_size.width as f32 * zoom
                 };
-                let scrollable_height = virtual_size.height as f32 * zoom;
+                let mut scrollable_height = virtual_size.height as f32 * zoom;
+
+                // Manual mode: center content when it's smaller than the viewport.
+                if is_manual {
+                    scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
+                    scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
+                }
 
                 let scrollable_size = icy_ui::Size::new(scrollable_width, scrollable_height);
                 let monitor_settings_clone = monitor_settings.clone();
@@ -984,7 +994,18 @@ impl PreviewView {
                     .show_viewport(scrollable_size, move |scroll_viewport| {
                         self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
 
-                        TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None).map(PreviewMessage::TerminalMessage)
+                        let term = TerminalView::show_with_effects(&self.terminal, monitor_settings_clone.clone(), None).map(PreviewMessage::TerminalMessage);
+
+                        if is_manual {
+                            container(term)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(icy_ui::alignment::Horizontal::Center)
+                                .align_y(icy_ui::alignment::Vertical::Center)
+                                .into()
+                        } else {
+                            term
+                        }
                     });
 
                 container(content)

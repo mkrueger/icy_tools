@@ -253,10 +253,11 @@ impl MinimapView {
                 let content_height = content_height_f32;
 
                 // Compute a scroll position that keeps the viewport visible.
-                // Do NOT mutate widget state from view() (can trigger layout invalidation loops).
+                // Only update if the viewport would go out of view (ensure-rect-visible behavior).
+                // The minimap is independently scrollable; we only auto-scroll when necessary.
                 let scroll_normalized = {
                     let current = *self.scroll_position.borrow();
-                    self.compute_scroll_to_show_viewport(
+                    let ensured = self.compute_scroll_to_show_viewport(
                         current,
                         viewport_info.y,
                         viewport_info.height,
@@ -264,7 +265,17 @@ impl MinimapView {
                         content_height,
                         avail_width,
                         avail_height,
-                    )
+                    );
+
+                    // Only update scroll_position when the viewport rect would leave the visible area.
+                    // This preserves manual scrolling by the user while still ensuring the preview
+                    // rectangle stays visible when the main canvas scrolls far enough.
+                    if (ensured - current).abs() > 0.0001 {
+                        *self.scroll_position.borrow_mut() = ensured;
+                    }
+
+                    // Use the current (potentially updated) scroll position
+                    *self.scroll_position.borrow()
                 };
 
                 // Calculate which tiles to select based on visible area

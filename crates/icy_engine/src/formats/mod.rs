@@ -183,6 +183,31 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
     }
 }
 
+/// Apply SAUCE settings to a `TextBuffer` without changing its size.
+///
+/// IcyDraw (`.icy`) files store the authoritative buffer dimensions in the ICED header.
+/// Some legacy files carry SAUCE `columns/lines` that don't match the document and would
+/// otherwise inflate the scrollable area (e.g. 120x110 art with SAUCE lines=200).
+pub fn apply_sauce_to_buffer_without_resize(buf: &mut TextBuffer, sauce: &SauceRecord) {
+    if let Some(
+        Capabilities::Character(CharacterCapabilities { font_opt, ice_colors, .. }) | Capabilities::Binary(BinaryCapabilities { font_opt, ice_colors, .. }),
+    ) = sauce.capabilities()
+    {
+        // Apply font if specified
+        if let Some(font_name) = &font_opt {
+            if let Ok(font) = BitFont::from_sauce_name(&font_name.to_string()) {
+                buf.set_font(0, font);
+            }
+        }
+
+        // Apply ice colors
+        if ice_colors {
+            buf.ice_mode = IceMode::Ice;
+        }
+        buf.terminal_state.ice_colors = ice_colors;
+    }
+}
+
 /// Parse data using a `CommandParser` from `icy_parser_core`
 ///
 /// # Errors
