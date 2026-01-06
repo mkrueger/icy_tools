@@ -150,7 +150,7 @@ impl ExportDialogState {
     /// * `initial_path` - Initial file path (can include directory and filename)
     /// * `buffer_type` - The type of buffer being exported (determines available formats)
     /// * `screen` - The screen buffer to export
-    pub fn new(initial_path: String, buffer_type: BufferType, screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
+    pub fn new(initial_path: PathBuf, buffer_type: BufferType, screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
         let path: &Path = Path::new(&initial_path);
 
         // Get available formats for this buffer type (including image formats)
@@ -223,15 +223,6 @@ impl ExportDialogState {
     /// Set whether the buffer has sixels
     pub fn with_has_sixels(mut self, has_sixels: bool) -> Self {
         self.has_sixels = has_sixels;
-        self
-    }
-
-    /// Set a function that provides the default directory
-    pub fn with_default_directory_fn<F>(mut self, f: F) -> Self
-    where
-        F: Fn() -> PathBuf + Send + Sync + 'static,
-    {
-        self.default_directory_fn = Some(Box::new(f));
         self
     }
 
@@ -896,7 +887,7 @@ where
     F: Fn(ExportDialogMessage) -> M + Clone + 'static,
     E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
 {
-    ExportDialogWrapper::new(ExportDialogState::new(initial_path.into(), buffer_type, screen), on_message, extract_message)
+    ExportDialogWrapper::new(ExportDialogState::new(PathBuf::from(initial_path.into()), buffer_type, screen), on_message, extract_message)
 }
 
 /// Create an export dialog with a default directory provider.
@@ -919,7 +910,6 @@ pub fn export_dialog_with_defaults<M, F, D, E>(
     initial_path: impl Into<String>,
     buffer_type: BufferType,
     screen: Arc<Mutex<Box<dyn Screen>>>,
-    default_dir_fn: D,
     on_message: F,
     extract_message: E,
 ) -> ExportDialogWrapper<M, F, E>
@@ -930,7 +920,7 @@ where
     E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
 {
     ExportDialogWrapper::new(
-        ExportDialogState::new(initial_path.into(), buffer_type, screen).with_default_directory_fn(default_dir_fn),
+        ExportDialogState::new(PathBuf::from(initial_path.into()), buffer_type, screen),
         on_message,
         extract_message,
     )
@@ -952,21 +942,19 @@ where
 ///     .on_confirm(|path| Message::ExportComplete(path))
 /// );
 /// ```
-pub fn export_dialog_with_defaults_from_msg<M, F, D, E>(
-    initial_path: impl Into<String>,
+pub fn export_dialog_with_defaults_from_msg<M, F, E>(
+    initial_path: impl Into<PathBuf>,
     buffer_type: BufferType,
     screen: Arc<Mutex<Box<dyn Screen>>>,
-    default_dir_fn: D,
     msg_tuple: (F, E),
 ) -> ExportDialogWrapper<M, F, E>
 where
     M: Clone + Send + 'static,
     F: Fn(ExportDialogMessage) -> M + Clone + 'static,
-    D: Fn() -> PathBuf + Send + Sync + 'static,
     E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
 {
     ExportDialogWrapper::new(
-        ExportDialogState::new(initial_path.into(), buffer_type, screen).with_default_directory_fn(default_dir_fn),
+        ExportDialogState::new(initial_path.into(), buffer_type, screen),
         msg_tuple.0,
         msg_tuple.1,
     )

@@ -1565,7 +1565,6 @@ impl MainWindow {
                                 export_path.to_string_lossy().to_string(),
                                 buffer_type,
                                 screen,
-                                move || options.lock().export_path(),
                                 dialog_msg!(Message::ExportDialog),
                             )
                             .on_confirm(|path| {

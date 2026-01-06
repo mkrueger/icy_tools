@@ -10,7 +10,7 @@ use icy_engine_edit::tools::Tool;
 use icy_engine_edit::EditState;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::theme::main_area_background;
-use icy_engine_gui::ui::{export_dialog_with_defaults_from_msg, DialogStack};
+use icy_engine_gui::ui::DialogStack;
 use icy_ui::{
     widget::{column, container, pane_grid, row},
     Alignment, Element, Length, Task, Theme,
@@ -1430,39 +1430,7 @@ impl AnsiEditorMainArea {
                 Task::none()
             }
             AnsiEditorMessage::ExportFile => {
-                // Get buffer type and screen
-                let buffer_type = self.with_edit_state(|state| state.get_buffer().buffer_type);
-                let screen = self.screen().clone();
-
-                // Get export path from file path or default
-                let export_path = self
-                    .file_path()
-                    .and_then(|p| p.file_stem())
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("export")
-                    .to_string();
-
-                // Get export directory from file path or current directory
-                let export_dir = self
-                    .file_path()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-                dialogs.push(
-                    export_dialog_with_defaults_from_msg(
-                        export_path,
-                        buffer_type,
-                        screen,
-                        move || export_dir.clone(),
-                        (Message::ExportDialog, |msg: &Message| match msg {
-                            Message::ExportDialog(inner) => Some(inner),
-                            _ => None,
-                        }),
-                    )
-                    .on_confirm(Message::ExportComplete)
-                    .on_cancel(|| Message::CloseDialog),
-                );
+                // Handled by MainWindow which has access to settings for last_export_directory
                 Task::none()
             }
 

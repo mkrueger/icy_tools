@@ -55,6 +55,14 @@ impl MainWindow {
             .unwrap_or_else(|| "Untitled".to_string());
         let default_file_name = format!("{}.{}", default_name, default_ext);
 
+        // Use the current file's directory as the default, or fall back to current directory
+        let default_directory = self
+            .mode_state
+            .file_path()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+
         Task::perform(
             async move {
                 rfd::AsyncFileDialog::new()
@@ -62,6 +70,7 @@ impl MainWindow {
                     .add_filter(&all_files, &["*"])
                     .set_title(&title)
                     .set_file_name(default_file_name)
+                    .set_directory(default_directory)
                     .save_file()
                     .await
                     .map(|f| f.path().to_path_buf())

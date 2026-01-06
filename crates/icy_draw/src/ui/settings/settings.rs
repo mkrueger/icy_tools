@@ -37,6 +37,10 @@ struct PersistedSettings {
     /// Selected tag replacement list name (without extension)
     #[serde(default)]
     pub selected_taglist: String,
+
+    /// Last used export directory (persisted)
+    #[serde(default)]
+    pub last_export_directory: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +89,7 @@ impl Default for PersistedSettings {
             show_line_numbers: false,
             collaboration: Default::default(),
             selected_taglist: String::new(),
+            last_export_directory: None,
         }
     }
 }
@@ -116,6 +121,9 @@ pub struct Settings {
 
     /// Selected tag replacement list name (persisted)
     pub selected_taglist: String,
+
+    /// Last used export directory (persisted)
+    pub last_export_directory: Option<PathBuf>,
 }
 
 impl Settings {
@@ -132,6 +140,7 @@ impl Settings {
             show_line_numbers: persistent.show_line_numbers,
             collaboration: persistent.collaboration,
             selected_taglist: persistent.selected_taglist,
+            last_export_directory: persistent.last_export_directory,
         }
     }
 
@@ -143,6 +152,7 @@ impl Settings {
             show_line_numbers: self.show_line_numbers,
             collaboration: self.collaboration.clone(),
             selected_taglist: self.selected_taglist.clone(),
+            last_export_directory: self.last_export_directory.clone(),
         };
         Self::store_options_file(&settings);
     }

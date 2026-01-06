@@ -686,7 +686,6 @@ impl MainWindow {
                         default_export_path.to_string_lossy().to_string(),
                         buffer_type,
                         self.terminal_window.terminal.screen.clone(),
-                        crate::data::Options::default_capture_directory,
                         icy_engine_gui::dialog_msg!(Message::ExportDialog),
                     )
                     .on_cancel(|| Message::None),

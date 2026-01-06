@@ -1754,9 +1754,46 @@ impl MainWindow {
             }
             Message::ExportFile => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    return editor
-                        .update(AnsiEditorMessage::ExportFile, &mut self.dialogs, &self.plugins)
-                        .map(Message::AnsiEditor);
+                    use icy_engine_gui::ui::export_dialog_with_defaults_from_msg;
+
+                    // Get buffer type and screen
+                    let buffer_type = editor.with_edit_state(|state| state.get_buffer().buffer_type);
+                    let screen = editor.screen().clone();
+
+                    // Get export filename from file path or default
+                    let export_filename = editor
+                        .file_path()
+                        .and_then(|p| p.file_stem())
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("export")
+                        .to_string();
+
+                    // Get export directory: prefer last export directory from settings,
+                    // then file path directory, then current directory
+                    let export_dir = self
+                        .options
+                        .read()
+                        .last_export_directory
+                        .clone()
+                        .or_else(|| editor.file_path().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+                    // Combine directory and filename for the initial path
+                    let initial_path = export_dir.join(&export_filename);
+
+                    self.dialogs.push(
+                        export_dialog_with_defaults_from_msg(
+                            initial_path,
+                            buffer_type,
+                            screen,
+                            (Message::ExportDialog, |msg: &Message| match msg {
+                                Message::ExportDialog(inner) => Some(inner),
+                                _ => None,
+                            }),
+                        )
+                        .on_confirm(Message::ExportComplete)
+                        .on_cancel(|| Message::CloseDialog),
+                    );
                 }
                 Task::none()
             }
@@ -1768,8 +1805,14 @@ impl MainWindow {
                 Task::none()
             }
             Message::ExportComplete(path) => {
-                log::info!("Export complete: {:?}", path);
-                // TODO: Could show a toast notification here
+
+                // Save the export directory for next time
+                if let Some(parent) = path.parent() {
+                    let mut opts = self.options.write();
+                    opts.last_export_directory = Some(parent.to_path_buf());
+                    opts.store_persistent();
+                }
+
                 Task::none()
             }
             Message::ShowSettings => {
