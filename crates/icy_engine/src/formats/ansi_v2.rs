@@ -777,7 +777,7 @@ impl StringGeneratorV2 {
     fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<u8, u8>) -> (AnsiState, Vec<Vec<CharCell>>) {
         let mut result: Vec<Vec<CharCell>> = Vec::new();
 
-        let mut state = AnsiState {
+        let default_state = AnsiState {
             is_bold: false,
             is_blink: false,
             is_italic: false,
@@ -792,8 +792,17 @@ impl StringGeneratorV2 {
             bg_idx: 0,
         };
 
+        let mut state = default_state.clone();
+
         for y in area.y_range() {
             let mut line = Vec::new();
+
+            // In UTF-8 mode we emit SGR resets between lines (see `generate()`), so we must
+            // also reset the exporter state between lines. Otherwise the next line may start
+            // without re-emitting attributes (e.g. bold/colors) after an `ESC[0m`.
+            if self.level.supports_utf8() {
+                state = default_state.clone();
+            }
 
             if self.options.longer_terminal_output {
                 if let Some(skip_lines) = &self.options.skip_lines {
@@ -961,8 +970,13 @@ impl StringGeneratorV2 {
                         continue;
                     }
                 }
+                // In longer-terminal-output mode we position each line explicitly.
+                // For UTF-8 terminal output we also reset SGR for each emitted line to avoid
+                // attribute bleed and to match the per-line state reset in `generate_cells()`.
                 if is_first_output_line {
                     is_first_output_line = false;
+                    result.extend_from_slice(b"\x1b[0m");
+                } else if self.level.supports_utf8() {
                     result.extend_from_slice(b"\x1b[0m");
                 }
                 result.extend_from_slice(b"\x1b[");

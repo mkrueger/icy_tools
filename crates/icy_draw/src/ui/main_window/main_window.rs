@@ -1966,7 +1966,9 @@ impl MainWindow {
                             if let Some((col, row)) = user.cursor {
                                 log::info!("Goto user {} at ({}, {})", user.user.nick, col, row);
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                                    editor.scroll_to_position(col, row);
+                                    // Clicking elsewhere removes focus from chat input
+                                    self.collaboration_state.chat_input_focused = false;
+                                    return editor.scroll_to_position(col, row).map(Message::AnsiEditor);
                                 }
                             }
                         }

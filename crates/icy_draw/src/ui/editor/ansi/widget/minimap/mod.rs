@@ -124,20 +124,22 @@ impl MinimapView {
         )
     }
 
-    /// Ensure the viewport rectangle is visible in the minimap
-    /// Adjusts scroll_position so the viewport is always on screen
-    /// Uses interior mutability so it can be called from view()
+    /// Compute the scroll position (0..1) that would keep the viewport rectangle visible.
     ///
-    /// viewport_y and viewport_height are normalized (0-1) relative to full buffer
-    /// content_width and content_height are in pixels
-    fn ensure_viewport_visible(&self, viewport_y: f32, viewport_height: f32, content_width: f32, content_height: f32) {
-        let shared = self.shared_state.lock();
-        let avail_width = shared.available_width;
-        let avail_height = shared.available_height;
-        drop(shared);
-
+    /// This is intentionally **pure** (does not mutate `self.scroll_position`) so it can be
+    /// called from `view()` without triggering layout invalidation/redraw loops.
+    fn compute_scroll_to_show_viewport(
+        &self,
+        current_scroll: f32,
+        viewport_y: f32,
+        viewport_height: f32,
+        content_width: f32,
+        content_height: f32,
+        avail_width: f32,
+        avail_height: f32,
+    ) -> f32 {
         if avail_width <= 0.0 || avail_height <= 0.0 || content_height <= 0.0 || content_width <= 0.0 {
-            return;
+            return current_scroll;
         }
 
         // Scale factor: minimap fills available width
@@ -148,21 +150,20 @@ impl MinimapView {
 
         // If content fits in available space, no scrolling needed
         if scaled_content_height <= avail_height {
-            *self.scroll_position.borrow_mut() = 0.0;
-            return;
+            return 0.0;
         }
 
-        // viewport_y and viewport_height are already normalized (0-1)
+        // viewport_y and viewport_height are normalized (0-1)
         // Convert to scaled pixels
         let viewport_top_scaled = viewport_y * content_height * scale;
         let viewport_height_scaled = viewport_height * content_height * scale;
         let viewport_bottom_scaled = viewport_top_scaled + viewport_height_scaled;
 
         // Maximum scroll offset in pixels
-        let max_scroll_px = scaled_content_height - avail_height;
+        let max_scroll_px = (scaled_content_height - avail_height).max(0.0);
 
         // Current scroll offset in pixels
-        let current_scroll = *self.scroll_position.borrow();
+        let current_scroll = current_scroll.clamp(0.0, 1.0);
         let current_scroll_px = current_scroll * max_scroll_px;
 
         // Visible range in scaled pixels
@@ -172,24 +173,20 @@ impl MinimapView {
         // If viewport is larger than visible area, align to viewport top to avoid oscillation
         if viewport_height_scaled >= avail_height {
             let new_scroll_px = viewport_top_scaled;
-            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
-            *self.scroll_position.borrow_mut() = new_scroll;
-            return;
+            return (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
         }
 
         // Check if viewport is above visible area
         if viewport_top_scaled < visible_top {
-            // Scroll up to show viewport at top
             let new_scroll_px = viewport_top_scaled;
-            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
-            *self.scroll_position.borrow_mut() = new_scroll;
+            (new_scroll_px / max_scroll_px).clamp(0.0, 1.0)
         } else if viewport_bottom_scaled > visible_bottom {
-            // Scroll down to show viewport at bottom
             let new_scroll_px = viewport_bottom_scaled - avail_height;
-            let new_scroll = (new_scroll_px / max_scroll_px).clamp(0.0, 1.0);
-            *self.scroll_position.borrow_mut() = new_scroll;
+            (new_scroll_px / max_scroll_px).clamp(0.0, 1.0)
+        } else {
+            // If viewport is within visible area, don't change scroll
+            current_scroll
         }
-        // If viewport is within visible area, don't change scroll
     }
 
     /// Update the minimap view state
@@ -255,12 +252,24 @@ impl MinimapView {
                 let content_width = content_width_u32 as f32;
                 let content_height = content_height_f32;
 
-                // Auto-scroll to keep viewport visible
-                self.ensure_viewport_visible(viewport_info.y, viewport_info.height, content_width, content_height);
+                        // Compute a scroll position that keeps the viewport visible.
+                        // Do NOT mutate widget state from view() (can trigger layout invalidation loops).
+                        let scroll_normalized = {
+                            let current = *self.scroll_position.borrow();
+                            self.compute_scroll_to_show_viewport(
+                                current,
+                                viewport_info.y,
+                                viewport_info.height,
+                                content_width,
+                                content_height,
+                                avail_width,
+                                avail_height,
+                            )
+                        };
 
                 // Calculate which tiles to select based on visible area
                 let tile_height = TILE_HEIGHT as f32;
-                let scroll_normalized = *self.scroll_position.borrow();
+                let scroll_normalized = scroll_normalized;
 
                 let max_tile_idx = ((content_height / tile_height).ceil().max(1.0) as i32) - 1;
 

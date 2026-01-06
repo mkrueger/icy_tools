@@ -409,19 +409,10 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
         cursor: mouse::Cursor,
     ) -> Option<icy_ui::widget::Action<MinimapMessage>> {
         match event {
-            // Handle redraw requests for continuous drag scrolling
-            icy_ui::Event::Window(icy_ui::window::Event::RedrawRequested(now)) => {
-                if state.is_dragging {
-                    state.last_redraw = Some(*now);
-                    // Re-send scroll position based on last known pointer position
-                    if let Some(last_pos) = state.last_pointer_position {
-                        if let Some((norm_x, norm_y)) = self.calculate_normalized_position(last_pos, bounds) {
-                            return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
-                        }
-                    }
-                } else {
-                    state.last_redraw = None;
-                }
+            // IMPORTANT: Do not publish messages from RedrawRequested.
+            // Doing so can create redraw → message → layout invalidation loops in winit.
+            icy_ui::Event::Window(icy_ui::window::Event::RedrawRequested(_now)) => {
+                state.last_redraw = None;
             }
 
             // Handle mouse button press - start dragging

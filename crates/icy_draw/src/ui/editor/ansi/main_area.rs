@@ -565,8 +565,39 @@ impl AnsiEditorMainArea {
     }
 
     /// Scroll the canvas to show the given character position (used for goto user)
-    pub fn scroll_to_position(&mut self, col: i32, row: i32) {
-        self.core.scroll_to_position(col, row);
+    pub fn scroll_to_position(&mut self, col: i32, row: i32) -> Task<AnsiEditorMessage> {
+        let (buf_width, buf_height) = {
+            let mut screen_guard = self.core.screen.lock();
+            let state = screen_guard
+                .as_any_mut()
+                .downcast_mut::<EditState>()
+                .expect("AnsiEditor screen should always be EditState");
+            let buffer = state.get_buffer();
+            (buffer.width().max(1) as f32, buffer.height().max(1) as f32)
+        };
+
+        let norm_x: f32 = (col as f32 + 0.5) / buf_width;
+        let norm_y: f32 = (row as f32 + 0.5) / buf_height;
+
+        let terminal = &self.core.canvas.terminal;
+        let content_width = terminal.content_width().max(1.0);
+        let content_height = terminal.content_height().max(1.0);
+        let visible_width = terminal.visible_content_width().max(1.0);
+        let visible_height = terminal.visible_content_height().max(1.0);
+
+        // Keep current X when horizontal scrolling isn't possible.
+        let current_scroll_x = terminal.scroll_x();
+
+        let target_x = if content_width > visible_width {
+            norm_x.clamp(0.0, 1.0) * content_width - visible_width / 2.0
+        } else {
+            current_scroll_x
+        };
+
+        let target_y = norm_y.clamp(0.0, 1.0) * content_height - visible_height / 2.0;
+
+        // Programmatic scrolling is task-driven via the owning scroll_area.
+        terminal.scroll_to_content::<AnsiEditorMessage>(Some(target_x), Some(target_y))
     }
 
     pub fn zoom_info_string(&self) -> String {
@@ -1548,7 +1579,25 @@ impl AnsiEditorMainArea {
                     RightPanelMessage::Minimap(minimap_msg) => {
                         match minimap_msg {
                             MinimapMessage::ScrollTo { norm_x, norm_y } => {
-                                self.core.scroll_canvas_to_normalized(norm_x, norm_y);
+                                let terminal = &self.core.canvas.terminal;
+                                let content_width = terminal.content_width().max(1.0);
+                                let content_height = terminal.content_height().max(1.0);
+                                let visible_width = terminal.visible_content_width().max(1.0);
+                                let visible_height = terminal.visible_content_height().max(1.0);
+
+                                // Keep current X when horizontal scrolling isn't possible.
+                                let current_scroll_x = terminal.scroll_x();
+
+                                let target_x = if content_width > visible_width {
+                                    norm_x.clamp(0.0, 1.0) * content_width - visible_width / 2.0
+                                } else {
+                                    current_scroll_x
+                                };
+
+                                let target_y = norm_y.clamp(0.0, 1.0) * content_height - visible_height / 2.0;
+
+                                let scroll_task = terminal.scroll_to_content::<AnsiEditorMessage>(Some(target_x), Some(target_y));
+                                return Task::batch(vec![task, scroll_task]);
                             }
                             MinimapMessage::Scroll(_dy) => {
                                 // handled internally by the minimap view
