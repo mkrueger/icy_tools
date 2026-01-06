@@ -252,20 +252,20 @@ impl MinimapView {
                 let content_width = content_width_u32 as f32;
                 let content_height = content_height_f32;
 
-                        // Compute a scroll position that keeps the viewport visible.
-                        // Do NOT mutate widget state from view() (can trigger layout invalidation loops).
-                        let scroll_normalized = {
-                            let current = *self.scroll_position.borrow();
-                            self.compute_scroll_to_show_viewport(
-                                current,
-                                viewport_info.y,
-                                viewport_info.height,
-                                content_width,
-                                content_height,
-                                avail_width,
-                                avail_height,
-                            )
-                        };
+                // Compute a scroll position that keeps the viewport visible.
+                // Do NOT mutate widget state from view() (can trigger layout invalidation loops).
+                let scroll_normalized = {
+                    let current = *self.scroll_position.borrow();
+                    self.compute_scroll_to_show_viewport(
+                        current,
+                        viewport_info.y,
+                        viewport_info.height,
+                        content_width,
+                        content_height,
+                        avail_width,
+                        avail_height,
+                    )
+                };
 
                 // Calculate which tiles to select based on visible area
                 let tile_height = TILE_HEIGHT as f32;
