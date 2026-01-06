@@ -79,6 +79,84 @@ pub struct WindowManager {
     commands: WindowCommands,
     /// MCP command receiver (optional)
     _mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
+    /// Current keyboard modifiers state (for DnD with modifiers)
+    current_modifiers: keyboard::Modifiers,
+}
+
+fn percent_decode(input: &str) -> String {
+    fn hex_value(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h1), Some(h2)) = (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
+                out.push(h1 * 16 + h2);
+                i += 3;
+                continue;
+            }
+        }
+
+        out.push(bytes[i]);
+        i += 1;
+    }
+
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn file_uri_to_pathbuf(uri: &str) -> Option<PathBuf> {
+    let rest = uri.strip_prefix("file://")?;
+
+    // Handle `file:///path` and `file://localhost/path`.
+    let path_part = if rest.starts_with('/') {
+        rest
+    } else if let Some(without_host) = rest.strip_prefix("localhost") {
+        without_host
+    } else {
+        // `file://<host>/...` (remote host) is ignored.
+        return None;
+    };
+
+    Some(PathBuf::from(percent_decode(path_part)))
+}
+
+fn extract_paths_from_drag_drop(format: &str, data: &[u8]) -> Vec<PathBuf> {
+    let Ok(text) = std::str::from_utf8(data) else {
+        return Vec::new();
+    };
+
+    let mut lines = text.lines();
+
+    // `x-special/gnome-copied-files` is typically:
+    //   copy\nfile:///...\nfile:///...
+    if format == "x-special/gnome-copied-files" {
+        let _ = lines.next();
+    }
+
+    let mut paths = Vec::new();
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if let Some(path) = file_uri_to_pathbuf(line) {
+            paths.push(path);
+        } else if line.starts_with('/') {
+            // Some backends may provide a direct path.
+            paths.push(PathBuf::from(percent_decode(line)));
+        }
+    }
+
+    paths
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +190,8 @@ pub enum WindowManagerMessage {
     AnimationTick,
     /// MCP command received from automation server
     McpCommand(Arc<McpCommand>),
+    /// File was dropped onto the window (with Ctrl state for new window)
+    FileDropped(window::Id, PathBuf, bool),
 }
 
 fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
@@ -242,6 +322,7 @@ impl WindowManager {
             session_save_counter: 0,
             commands,
             _mcp_rx: mcp_rx,
+            current_modifiers: keyboard::Modifiers::default(),
         };
 
         // Store first window info for later
@@ -299,6 +380,7 @@ impl WindowManager {
             session_save_counter: 0,
             commands,
             _mcp_rx: mcp_rx,
+            current_modifiers: keyboard::Modifiers::default(),
         };
 
         let task: Task<WindowManagerMessage> = open.map(WindowManagerMessage::WindowOpened);
@@ -719,15 +801,36 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::Event(window_id, event) => {
+            WindowManagerMessage::Event(window_id, ref event) => {
+                // Track keyboard modifiers from keyboard events
+                if let Event::Keyboard(keyboard::Event::KeyPressed { modifiers, .. } | keyboard::Event::KeyReleased { modifiers, .. }) = event {
+                    self.current_modifiers = *modifiers;
+                }
+
+                // Track modifiers while dragging (new DnD API)
+                if let Event::Window(window::Event::DragMoved { modifiers, .. }) = event {
+                    self.current_modifiers = *modifiers;
+                }
+
+                // Handle file drop events - use current modifier state
+                if let Event::Window(window::Event::DragDropped { data, format, .. }) = event {
+                    let paths = extract_paths_from_drag_drop(format, data);
+                    let Some(path) = paths.last() else {
+                        return Task::none();
+                    };
+
+                    let open_in_new_window = self.current_modifiers.control();
+                    return Task::done(WindowManagerMessage::FileDropped(window_id, path.clone(), open_in_new_window));
+                }
+
                 // Handle keyboard commands at window manager level
-                if let Some(msg) = self.commands.handle(&event, window_id) {
+                if let Some(msg) = self.commands.handle(event, window_id) {
                     return Task::done(msg);
                 }
 
                 // Pass event to window for other handling
                 if let Some(window) = self.windows.get_mut(&window_id) {
-                    let (msg_opt, task) = window.handle_event(&event);
+                    let (msg_opt, task) = window.handle_event(event);
                     let msg_task = if let Some(msg) = msg_opt {
                         Task::done(WindowManagerMessage::WindowMessage(window_id, msg))
                     } else {
@@ -814,6 +917,39 @@ impl WindowManager {
                 }
                 Task::none()
             }
+
+            WindowManagerMessage::FileDropped(window_id, path, open_in_new_window) => {
+                if open_in_new_window {
+                    // Ctrl+Drop: Open in new window
+                    // Store the path in pending_restores and open a new window
+                    self.pending_restores.push(WindowRestoreInfo {
+                        original_path: Some(path),
+                        load_path: None,
+                        mark_dirty: false,
+                        position: None,
+                        size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                        session_data_path: None,
+                    });
+                    return Task::done(WindowManagerMessage::OpenWindow);
+                } else {
+                    // Normal drop: Open in current window (like File Open)
+                    if let Some(window) = self.windows.get(&window_id) {
+                        // Check if current window has unsaved changes
+                        if window.is_modified() {
+                            // Route through the dirty check flow
+                            return Task::done(WindowManagerMessage::WindowMessage(
+                                window_id,
+                                crate::ui::Message::OpenRecentFile(path),
+                            ));
+                        }
+                    }
+                    // No unsaved changes - open directly
+                    return Task::done(WindowManagerMessage::WindowMessage(
+                        window_id,
+                        crate::ui::Message::FileOpened(path),
+                    ));
+                }
+            }
         };
 
         Task::batch([main_task, mcp_task])
@@ -862,6 +998,12 @@ impl WindowManager {
                 match &event {
                     // Window focus events
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
+                    // External drag-and-drop events (new DnD API)
+                    Event::Window(window::Event::DragEntered { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Window(window::Event::DragMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Window(window::Event::DragDropped { .. }) => Some(WindowManagerMessage::Event(window_id, event.clone())),
+                    Event::Window(window::Event::DragLeft) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Window(window::Event::DragSource(_)) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events
                     Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
