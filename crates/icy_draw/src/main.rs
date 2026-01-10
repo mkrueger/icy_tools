@@ -136,6 +136,38 @@ pub enum Command {
     },
 }
 
+#[cfg(test)]
+mod i18n_tests {
+    use super::Localizations;
+
+    #[test]
+    fn en_has_menu_strings() {
+        let loader = i18n_embed::fluent::fluent_language_loader!();
+        let languages: Vec<i18n_embed::unic_langid::LanguageIdentifier> = vec!["en".parse().unwrap()];
+        i18n_embed::select(&loader, &Localizations, &languages).unwrap();
+
+        for message_id in [
+            "menu-reference-image",
+            "menu-toggle-reference-image",
+            "menu-view",
+            "menu-plugins",
+            "menu-no_plugins",
+            "menu-help",
+            "menu-discuss",
+            "menu-open_log_file",
+            "menu-report-bug",
+            "menu-about",
+        ] {
+            let translated = loader.get(message_id);
+            assert_ne!(
+                translated,
+                message_id,
+                "Missing or untranslated message: {message_id}"
+            );
+        }
+    }
+}
+
 fn get_log_dir() -> Option<PathBuf> {
     if let Some(dir) = Settings::config_dir() {
         if !dir.exists() {

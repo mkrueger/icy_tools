@@ -92,8 +92,8 @@ crc32fast = "1.5.0"
 resvg = "0.45"
 ab_glyph = "0.2"
 
-icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
-#icy_ui = { path = "../icy/crates/icy_ui" }
+#icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
+icy_ui = { path = "../icy/crates/icy_ui" }
 
 versions = "7.0.0"
 github_release_check = "0.2.1"

@@ -920,6 +920,8 @@ paste-tool-flip-x=X spiegeln
 paste-tool-flip-y=Y spiegeln
 paste-tool-transparent=Transparent (T)
 paste-tool-hint=Enter: Verankern | Esc: Abbrechen | Pfeile: Bewegen
+paste-image-title=Bild einfügen
+paste-image-hint=Enter: Verankern | Esc: Abbrechen | Pfeile: Bewegen
 
 # Animation Export Dialog
 animation-export-format=Format

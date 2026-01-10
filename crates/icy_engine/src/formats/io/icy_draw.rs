@@ -706,7 +706,12 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     for layer in &buf.layers {
         if layer.role == crate::Role::Image {
             // SIXEL chunk - separate format for image layers
-            let sixel = &layer.sixels[0];
+            let sixel = layer.sixels.first().ok_or_else(|| {
+                IcedError::InvalidRecord(format!(
+                    "image layer '{}' contains no sixels",
+                    layer.properties.title
+                ))
+            })?;
             let mut sixel_data = Vec::new();
             write_utf8_encoded_string(&mut sixel_data, &layer.properties.title);
 

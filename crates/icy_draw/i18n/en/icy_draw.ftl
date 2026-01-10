@@ -914,6 +914,8 @@ paste-tool-flip-x=Flip X
 paste-tool-flip-y=Flip Y
 paste-tool-transparent=Transparent (T)
 paste-tool-hint=Enter: Anchor | Esc: Cancel | Arrows: Move
+paste-image-title=Paste Image
+paste-image-hint=Enter: Anchor | Esc: Cancel | Arrows: Move
 
 # Font Import Dialog
 menu-import-font=Import Font…

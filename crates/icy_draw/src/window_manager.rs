@@ -1289,14 +1289,18 @@ impl WindowManager {
             menu::separator!(),
             menu::item!(fl!("menu-cut"), wrap(Message::Cut), menu::MenuShortcut::cmd(Key::Character("x".into()))),
             menu::item!(fl!("menu-copy"), wrap(Message::Copy), menu::MenuShortcut::cmd(Key::Character("c".into()))),
-            menu::item!(fl!("menu-paste"), wrap(Message::Paste), menu::MenuShortcut::cmd(Key::Character("v".into()))),
+            menu::item!(
+                fl!("menu-paste"),
+                wrap(Message::Paste),
+                menu::MenuShortcut::cmd(Key::Character("v".into()))
+            ),
         ];
 
         if edit_mode == crate::ui::EditMode::Ansi {
             edit_nodes.push(menu::MenuNode::submenu_with_id(
                 menu::MenuId::from_str("menu.paste_as"),
                 fl!("menu-paste-as"),
-                vec![menu::item!(fl!("menu-paste-as-new-image"), wrap(Message::PasteAsNewImage))],
+                vec![menu::item!(fl!("menu-paste-as-new-image"), wrap(Message::PasteAsNewImage(None)))],
             ));
             edit_nodes.push(menu::item!(fl!("menu-insert-sixel-from-file"), wrap(Message::InsertSixelFromFile)));
             edit_nodes.push(menu::separator!());

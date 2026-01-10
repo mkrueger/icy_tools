@@ -108,12 +108,9 @@ impl EditState {
 
         let role = self.screen.buffer.layers[floating_idx].role;
 
-        // PasteImage layers are handled differently (just convert role)
+        // Anchoring image layers is not supported.
         if matches!(role, Role::Image) {
-            // Just convert the role to Image
-            self.screen.buffer.layers[floating_idx].role = Role::Image;
-            // Keep current_layer pointing to this layer (now a normal Image layer)
-            return Ok(());
+            return Err(crate::EngineError::Generic("Cannot anchor image layer".to_string()));
         }
 
         // PastePreview layers are merged down
@@ -147,62 +144,70 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn merge_layer_down(&mut self, layer: usize) -> Result<()> {
+        println!("Merging layer {} down", layer);
         if layer == 0 {
             return Err(crate::EngineError::Generic("Cannot merge down base layer".to_string()));
         }
+        println!("1");
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
-        let Some(cur_layer) = self.get_cur_layer() else {
-            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
-        };
-        let role = cur_layer.role;
+        println!("2");
+        let role: Role = self.screen.buffer.layers[layer].role;
         if matches!(role, Role::Image) {
-            return Ok(());
+            return Err(crate::EngineError::Generic("Cannot merge down image layer".to_string()));
         }
+        println!("3");
 
         let base_layer = &self.screen.buffer.layers[layer - 1];
         let cur_layer = &self.screen.buffer.layers[layer];
 
         let start: Position = Position::new(base_layer.offset().x.min(cur_layer.offset().x), base_layer.offset().y.min(cur_layer.offset().y));
 
-        let mut merge_layer = base_layer.clone();
-        merge_layer.clear();
-
-        merge_layer.set_offset(start);
-
         let width = (base_layer.offset().x + base_layer.width()).max(cur_layer.offset().x + cur_layer.width()) - start.x;
         let height = (base_layer.offset().y + base_layer.height()).max(cur_layer.offset().y + cur_layer.height()) - start.y;
         if width < 0 || height < 0 {
-            return Ok(());
+            return Err(crate::EngineError::Generic(format!(
+                "Invalid merged layer size: {width}x{height}"
+            )));
         }
-        merge_layer.set_size((width, height));
+        println!("4");
+        let mut merge_layer = base_layer.clone();
+        merge_layer.clear();
+        merge_layer.set_offset(start);
+        // Preallocate and use unchecked writes so merge works regardless of layer lock/visibility.
+        merge_layer.preallocate_lines(width, height);
 
         for y in 0..base_layer.height() {
             for x in 0..base_layer.width() {
-                let pos = Position::new(x, y);
-                let ch = base_layer.char_at(pos);
-                let pos = pos - merge_layer.offset() + base_layer.offset();
-                merge_layer.set_char(pos, ch);
+                let src = Position::new(x, y);
+                let ch = base_layer.char_at(src);
+                let dst = src + base_layer.offset() - start;
+                if dst.x >= 0 && dst.y >= 0 && dst.x < width && dst.y < height {
+                    merge_layer.set_char_unchecked(dst, ch);
+                }
             }
         }
 
         for y in 0..cur_layer.height() {
             for x in 0..cur_layer.width() {
-                let pos = Position::new(x, y);
-                let mut ch = cur_layer.char_at(pos);
+                let src = Position::new(x, y);
+                let mut ch = cur_layer.char_at(src);
                 if !ch.is_visible() {
                     continue;
                 }
 
-                let pos = pos - merge_layer.offset() + cur_layer.offset();
+                let dst = src + cur_layer.offset() - start;
+                if dst.x < 0 || dst.y < 0 || dst.x >= width || dst.y >= height {
+                    continue;
+                }
 
-                let ch_below = merge_layer.char_at(pos);
+                let ch_below = merge_layer.char_at(dst);
                 if ch_below.is_visible() && (ch.attribute.is_foreground_transparent() || ch.attribute.is_background_transparent()) {
                     ch = self.screen.buffer.make_solid_color(ch, ch_below);
                 }
 
-                merge_layer.set_char(pos, ch);
+                merge_layer.set_char_unchecked(dst, ch);
             }
         }
 
@@ -270,48 +275,128 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn stamp_layer_down(&mut self) -> Result<()> {
-        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-stamp-down"));
+        let _undo: crate::AtomicUndoGuard = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-stamp-down"));
         let layer_idx = self.screen.current_layer;
-        let layer = if let Some(layer) = self.get_cur_layer() {
-            layer.clone()
-        } else {
-            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        println!("Stamping layer {} down", layer_idx);
+        if layer_idx == 0 {
+            return Err(crate::EngineError::Generic("Cannot stamp down base layer".to_string()));
+        }
+
+        let (src_offset, src_size) = {
+            let src = self
+                .screen
+                .buffer
+                .layers
+                .get(layer_idx)
+                .ok_or_else(|| crate::EngineError::Generic("Current layer is invalid".to_string()))?;
+            (src.offset(), src.size())
         };
+        let base_offset = self.screen.buffer.layers[layer_idx - 1].offset();
+        let target_pos = src_offset - base_offset;
 
-        let base_layer = &mut self.screen.buffer.layers[layer_idx - 1];
-        let area = layer.rectangle() + base_layer.offset();
-        let old_layer = crate::layer_from_area(base_layer, area);
-
-        for x in 0..layer.width() as u32 {
-            for y in 0..layer.height() as u32 {
-                let pos = Position::new(x as i32, y as i32);
-                let ch = layer.char_at(pos);
-                if !ch.is_visible() {
-                    continue;
-                }
-
-                let dest = pos + area.top_left();
-                base_layer.set_char(dest, ch);
+        println!("target_pos: {:?}", target_pos);
+        // Capture old and new content in source-local coordinates (offset=0),
+        // so undo/redo stamping is independent of document offsets.
+        let width = src_size.width.max(0) as usize;
+        let height = src_size.height.max(0) as usize;
+        let mut old_chars = vec![vec![AttributedChar::invisible(); width]; height];
+        let mut new_chars = vec![vec![AttributedChar::invisible(); width]; height];
+        println!("Stamping at target pos {:?} with size {:?}", target_pos, src_size);
+        for y in 0..src_size.height {
+            for x in 0..src_size.width {
+                let src_local = Position::new(x, y);
+                old_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx - 1].char_at(target_pos + src_local);
+                new_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx].char_at(src_local);
+                println!("  At {:?}: old={:?}, new={:?}", src_local, old_chars[y as usize][x as usize].ch, new_chars[y as usize][x as usize].ch);
             }
         }
 
-        let new_layer = crate::layer_from_area(base_layer, area);
-        let op = EditorUndoOp::LayerChange {
+        let op: EditorUndoOp = EditorUndoOp::LayerChange {
             layer: layer_idx - 1,
-            pos: area.start,
-            old_chars: old_layer,
-            new_chars: new_layer,
+            pos: target_pos,
+            old_chars,
+            new_chars,
         };
-        self.push_plain_undo(op)
+        self.push_undo_action(op)
     }
 
     /// Rotate the floating paste layer 90° clockwise.
     /// This is only used in paste mode and generates collaboration ROTATE command.
     pub fn paste_rotate(&mut self) -> Result<()> {
         let current_layer = self.screen.current_layer;
+        let font_dims = self.get_buffer().font_dimensions();
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
             let old_size = layer.size();
             let new_size = crate::Size::new(old_size.height, old_size.width);
+
+            // Image/SIXEL paste: rotate pixel data and update sixel positions.
+            if !layer.sixels.is_empty() {
+                fn rotate_rgba_90_cw(pixels: &[u8], width: i32, height: i32) -> Option<(i32, i32, Vec<u8>)> {
+                    if width <= 0 || height <= 0 {
+                        return None;
+                    }
+                    let w = width as usize;
+                    let h = height as usize;
+                    let expected_len = w.checked_mul(h)?.checked_mul(4)?;
+                    if pixels.len() != expected_len {
+                        return None;
+                    }
+
+                    let new_w = height;
+                    let new_h = width;
+                    let new_w_usize = new_w as usize;
+                    let mut out = vec![0u8; expected_len];
+
+                    for y in 0..h {
+                        for x in 0..w {
+                            let src_idx = (y * w + x) * 4;
+                            let dst_x = (h - 1 - y) as i32;
+                            let dst_y = x as i32;
+                            let dst_idx = ((dst_y as usize) * new_w_usize + (dst_x as usize)) * 4;
+                            out[dst_idx..dst_idx + 4].copy_from_slice(&pixels[src_idx..src_idx + 4]);
+                        }
+                    }
+                    Some((new_w, new_h, out))
+                }
+
+                let old_sixels: Vec<_> = layer.sixels.iter().map(Into::into).collect();
+                let new_sixels: Vec<_> = layer
+                    .sixels
+                    .iter()
+                    .map(|s| {
+                        let rect_old = s.as_rectangle(font_dims);
+                        let mut rotated = s.clone();
+
+                        // Rotate pixels + swap dimensions.
+                        if let Some((new_w, new_h, rotated_pixels)) = rotate_rgba_90_cw(&rotated.picture_data, rotated.width(), rotated.height()) {
+                            rotated.picture_data = rotated_pixels;
+                            rotated.set_size(crate::Size::new(new_w, new_h));
+                        } else {
+                            // Fallback: still swap the pixel size even if data is inconsistent.
+                            let size = rotated.size();
+                            rotated.set_size(crate::Size::new(size.height, size.width));
+                        }
+
+                        // Swap scaling axes.
+                        std::mem::swap(&mut rotated.vertical_scale, &mut rotated.horizontal_scale);
+
+                        // Reposition within the rotated layer (cell-space rotation).
+                        rotated.position = crate::Position::new(old_size.height - s.position.y - rect_old.size.height, s.position.x);
+
+                        (&rotated).into()
+                    })
+                    .collect();
+
+                let op = EditorUndoOp::PasteRotateImage {
+                    layer: current_layer,
+                    old_sixels,
+                    new_sixels,
+                    old_size,
+                    new_size,
+                };
+                return self.push_undo_action(op);
+            }
+
             let mut new_layer = Layer::new("", new_size);
             for y in 0..old_size.width {
                 for x in 0..old_size.height {
@@ -422,7 +507,7 @@ impl EditState {
                 start: Position::new(0, 0),
                 size: layer.size(),
             };
-            let old_layer = crate::layer_from_area(layer, area);
+            let old_layer = crate::chars_from_area(layer, area);
 
             for x in 0..layer.width() as u32 {
                 for y in 0..layer.height() as u32 {
@@ -433,7 +518,7 @@ impl EditState {
                     }
                 }
             }
-            let new_layer = crate::layer_from_area(layer, area);
+            let new_layer = crate::chars_from_area(layer, area);
             let op = EditorUndoOp::LayerChange {
                 layer: layer_idx,
                 pos: area.start,

@@ -1744,6 +1744,7 @@ impl AnsiEditorMainArea {
             tag_add_mode,
             selected_tag: selected_tag_info,
             tag_selection_count: tag_selection.len(),
+            is_image_layer: editor.is_on_image_layer(),
         };
 
         let top_toolbar_content: Element<'_, AnsiEditorMessage> = if editor.is_paste_mode() {

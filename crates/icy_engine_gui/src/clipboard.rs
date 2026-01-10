@@ -110,9 +110,6 @@ pub fn prepare_clipboard_data(screen: &mut dyn Screen) -> Result<ClipboardData, 
     // RTF (rich text with colors and formatting)
     let rtf = screen.copy_rich_text();
 
-    // Clear selection after preparing data
-    let _ = screen.clear_selection();
-
     Ok(ClipboardData { text, rtf, image, icy_data })
 }
 
@@ -148,26 +145,19 @@ pub fn copy_to_clipboard<Message: Clone + Send + 'static>(
     let text_formats: Vec<String> = Format::Text.formats().iter().map(|s| s.to_string()).collect();
     entries.push((data.text.into_bytes(), text_formats));
 
-    // Write all MIME contents
-    let write_task = STANDARD.write_multi(entries);
-
-    // If we have an image, chain the image write
+    // Image format - include in write_multi to avoid overwriting other formats
     if let Some((rgba_data, width, height)) = data.image {
-        let on_complete_clone = on_complete.clone();
-        // Create an image::RgbaImage from the raw data and encode as PNG
         if let Some(img) = image::RgbaImage::from_raw(width, height, rgba_data) {
             let mut png_bytes = Vec::new();
             if img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png).is_ok() {
-                write_task.chain(STANDARD.write_image(png_bytes)).map(move |()| on_complete_clone(Ok(())))
-            } else {
-                write_task.map(move |()| on_complete(Ok(())))
+                let image_formats: Vec<String> = Format::Image.formats().iter().map(|s| s.to_string()).collect();
+                entries.push((png_bytes, image_formats));
             }
-        } else {
-            write_task.map(move |()| on_complete(Ok(())))
         }
-    } else {
-        write_task.map(move |()| on_complete(Ok(())))
     }
+
+    // Write all formats in a single call
+    STANDARD.write_multi(entries).map(move |()| on_complete(Ok(())))
 }
 
 /// Convenience function to prepare and copy in one step

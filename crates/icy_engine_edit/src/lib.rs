@@ -8,7 +8,7 @@ pub mod charset;
 pub mod brushes;
 
 mod layer_utils;
-pub use layer_utils::{layer_from_area, stamp_layer};
+pub use layer_utils::{chars_from_area, stamp_char_grid, CharGrid, layer_from_area, stamp_layer};
 
 pub mod tools;
 
@@ -42,6 +42,24 @@ use once_cell::sync::Lazy;
 pub static LANGUAGE_LOADER: Lazy<FluentLanguageLoader> = Lazy::new(|| {
     let loader = fluent_language_loader!();
     let requested_languages = DesktopLanguageRequester::requested_languages();
-    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
+    if i18n_embed::select(&loader, &Localizations, &requested_languages).is_err() {
+        let fallback: Vec<i18n_embed::unic_langid::LanguageIdentifier> = vec!["en".parse().unwrap()];
+        let _ = i18n_embed::select(&loader, &Localizations, &fallback);
+    }
     loader
 });
+
+#[cfg(test)]
+mod i18n_tests {
+    use super::Localizations;
+
+    #[test]
+    fn en_has_undo_set_selection() {
+        let loader = i18n_embed::fluent::fluent_language_loader!();
+        let languages: Vec<i18n_embed::unic_langid::LanguageIdentifier> = vec!["en".parse().unwrap()];
+        i18n_embed::select(&loader, &Localizations, &languages).unwrap();
+
+        let translated = i18n_embed_fl::fl!(&loader, "undo-set_selection");
+        assert_ne!(translated, "undo-set_selection");
+    }
+}

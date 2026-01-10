@@ -349,6 +349,9 @@ pub struct ToolViewContext {
     pub tag_add_mode: bool,
     pub selected_tag: Option<SelectedTagInfo>,
     pub tag_selection_count: usize,
+
+    // Paste mode: whether the current layer is an image layer
+    pub is_image_layer: bool,
 }
 
 // ============================================================================

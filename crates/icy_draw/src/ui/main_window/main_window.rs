@@ -69,10 +69,31 @@ use super::commands::{area_cmd, color_cmd, selection_cmd, view_cmd};
 
 // Command handler for MainWindow keyboard shortcuts
 command_handler!(MainWindowCommands, create_draw_commands(), => Message {
-    // View
+    // File operations
+    cmd::FILE_NEW => Message::NewFile,
+    cmd::FILE_OPEN => Message::OpenFile,
+    cmd::FILE_SAVE => Message::SaveFile,
+    cmd::FILE_SAVE_AS => Message::SaveFileAs,
+    cmd::FILE_EXPORT => Message::ExportFile,
+    cmd::FILE_CLOSE => Message::CloseEditor,
+
+    // Edit operations
+    cmd::EDIT_UNDO => Message::Undo,
+    cmd::EDIT_REDO => Message::Redo,
+    cmd::EDIT_CUT => Message::Cut,
+    cmd::EDIT_COPY => Message::Copy,
+    cmd::EDIT_PASTE => Message::Paste,
+    cmd::EDIT_SELECT_ALL => Message::SelectAll,
+
+    // View/Zoom operations
+    cmd::VIEW_ZOOM_IN => Message::ZoomIn,
+    cmd::VIEW_ZOOM_OUT => Message::ZoomOut,
+    cmd::VIEW_ZOOM_RESET => Message::ZoomReset,
     cmd::VIEW_FULLSCREEN => Message::ToggleFullscreen,
     view_cmd::REFERENCE_IMAGE => Message::AnsiEditor(AnsiEditorMessage::ShowReferenceImageDialog),
     view_cmd::TOGGLE_REFERENCE_IMAGE => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ToggleReferenceImage)),
+
+    // Help
     cmd::HELP_ABOUT => Message::ShowAbout,
 
     // Colors
@@ -267,16 +288,11 @@ pub(super) fn enforce_extension(mut path: PathBuf, required_ext: &str) -> PathBu
     path
 }
 
-/// Result from reading clipboard data
-/// Holds all available clipboard formats read in one operation
 #[derive(Clone, Debug)]
-pub struct ClipboardReadResult {
-    /// ICY binary format data (if available)
-    pub icy_data: Option<Vec<u8>>,
-    /// Image data as RGBA with dimensions (if available)
-    pub image: Option<image::RgbaImage>,
-    /// Plain text content (if available)
-    pub text: Option<String>,
+pub enum PasteData {
+    Icy(Vec<u8>),
+    Image(image::RgbaImage),
+    Text(String),
 }
 
 /// Message type for MainWindow
@@ -342,12 +358,12 @@ pub enum Message {
     /// Copy completed (clipboard write finished)
     CopyCompleted(Result<(), String>),
     Paste,
-    /// Clipboard data received for paste operation
-    ClipboardDataForPaste(Option<ClipboardReadResult>),
+    /// Internal: clipboard formats discovered for paste.
+    PasteWithFormats(Vec<String>),
+    /// Internal: resolved paste payload (or None if nothing usable).
+    PasteApply(Option<PasteData>),
     /// Paste clipboard image (or ICY buffer) as a new ANSI document with a Sixel layer
-    PasteAsNewImage,
-    /// Clipboard data received for PasteAsNewImage operation
-    ClipboardDataForNewImage(Option<ClipboardReadResult>),
+    PasteAsNewImage(Option<image::RgbaImage>),
     /// Open file dialog to insert a Sixel from an image file
     InsertSixelFromFile,
     /// Insert a Sixel from the selected image file path
@@ -1319,134 +1335,119 @@ impl MainWindow {
                 Task::none()
             }
             Message::Paste => {
-                use icy_engine_gui::ICY_CLIPBOARD_TYPE;
                 use icy_ui::clipboard::STANDARD;
 
                 match &self.mode_state {
                     ModeState::BitFont(_) => {
-                        // BitFont paste is handled separately via its own clipboard format
-                        // Read BitFont format first
                         return icy_engine_edit::bitfont::get_from_clipboard(|result| match result {
-                            Ok(data) => Message::ClipboardDataForPaste(Some(ClipboardReadResult {
-                                icy_data: Some(data.to_bytes()),
-                                image: None,
-                                text: None,
-                            })),
-                            Err(_) => Message::ClipboardDataForPaste(None),
+                            Ok(data) => Message::PasteApply(Some(PasteData::Icy(data.to_bytes()))),
+                            Err(_) => Message::PasteApply(None),
                         });
                     }
                     _ => {
-                        // For ANSI and other editors, read ICY format first
-                        return STANDARD.read_format(&[ICY_CLIPBOARD_TYPE]).map(|icy_result| {
-                            Message::ClipboardDataForPaste(Some(ClipboardReadResult {
-                                icy_data: icy_result.map(|d| d.data),
-                                image: None,
-                                text: None,
-                            }))
-                        });
+                        return STANDARD.available_formats().map(Message::PasteWithFormats);
                     }
                 }
             }
-            Message::ClipboardDataForPaste(data) => {
-                use icy_ui::clipboard::STANDARD;
+            Message::PasteWithFormats(formats) => {
+                use icy_engine_gui::ICY_CLIPBOARD_TYPE;
+                use icy_ui::clipboard::{Format, STANDARD};
 
-                if let Some(clipboard_data) = data {
-                    match &mut self.mode_state {
-                        ModeState::BitFont(editor) => {
-                            // BitFont paste from our custom format
-                            if let Some(data) = clipboard_data.icy_data {
-                                if let Ok(parsed) = icy_engine_edit::bitfont::BitFontClipboardData::from_bytes(&data) {
-                                    if let Err(e) = editor.state.paste_data(parsed) {
-                                        log::error!("BitFont paste failed: {}", e);
-                                    }
-                                }
-                            }
-                            editor.invalidate_caches();
-                        }
-                        ModeState::Ansi(editor) => {
-                            // Try ICY format first
-                            if let Some(icy_data) = clipboard_data.icy_data {
-                                if let Err(e) = editor.paste_icy_data(&icy_data) {
-                                    log::error!("Paste ICY data failed: {}", e);
-                                }
-                            } else if let Some(img) = clipboard_data.image {
-                                if let Err(e) = editor.paste_image(img) {
-                                    log::error!("Paste image failed: {}", e);
-                                }
-                            } else if let Some(text) = clipboard_data.text {
-                                if let Err(e) = editor.paste_text(&text) {
-                                    log::error!("Paste text failed: {}", e);
-                                }
-                            } else {
-                                // No ICY data, try reading image next
-                                return STANDARD.read_image().map(|clipboard_data| {
-                                    let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
-                                    Message::ClipboardDataForPaste(Some(ClipboardReadResult {
-                                        icy_data: None,
-                                        image: img,
-                                        text: None,
-                                    }))
-                                });
-                            }
-                        }
-                        ModeState::CharFont(_) => {
-                            // TODO: Implement paste for CharFont
-                        }
-                        ModeState::Animation(_) => {
-                            // TODO: Implement paste for Animation
-                        }
-                    }
+                let has_icy = formats.iter().any(|f| f == ICY_CLIPBOARD_TYPE);
+                let has_image = Format::Image.formats().iter().any(|f| formats.iter().any(|a| a == f));
+                let has_text = Format::Text.formats().iter().any(|f| formats.iter().any(|a| a == f));
+                println!("Paste formats: {:?} (icy: {}, image: {}, text: {})", formats, has_icy, has_image, has_text);
+                
+                if has_icy {
+                    return STANDARD
+                        .read_format(&[ICY_CLIPBOARD_TYPE])
+                        .map(|d| Message::PasteApply(d.map(|d| PasteData::Icy(d.data))));
                 }
+
+                if has_image {
+                    return STANDARD.read_image().map(|clipboard_data| {
+                        let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
+                        Message::PasteApply(img.map(PasteData::Image))
+                    });
+                }
+
+                if has_text {
+                    return STANDARD.read_text().map(|text| Message::PasteApply(text.map(PasteData::Text)));
+                }
+
                 Task::none()
             }
-            Message::PasteAsNewImage => {
+            Message::PasteApply(payload) => {
+                match (&mut self.mode_state, payload) {
+                    (ModeState::BitFont(editor), Some(PasteData::Icy(data))) => {
+                        if let Ok(parsed) = icy_engine_edit::bitfont::BitFontClipboardData::from_bytes(&data) {
+                            if let Err(e) = editor.state.paste_data(parsed) {
+                                log::error!("BitFont paste failed: {}", e);
+                            }
+                        }
+                        editor.invalidate_caches();
+                    }
+                    (ModeState::Ansi(editor), Some(PasteData::Icy(data))) => {
+                        if let Err(e) = editor.paste_icy_data(&data) {
+                            log::error!("Paste ICY data failed: {}", e);
+                        }
+                    }
+                    (ModeState::Ansi(editor), Some(PasteData::Image(img))) => {
+                        if let Err(e) = editor.paste_image(img) {
+                            log::error!("Paste image failed: {}", e);
+                        }
+                    }
+                    (ModeState::Ansi(editor), Some(PasteData::Text(text))) => {
+                        if let Err(e) = editor.paste_text(&text) {
+                            log::error!("Paste text failed: {}", e);
+                        }
+                    }
+                    _ => {}
+                }
+
+                Task::none()
+            }
+            Message::PasteAsNewImage(img) => {
                 use icy_ui::clipboard::STANDARD;
 
-                // Read image format for paste as new image
-                STANDARD.read_image().map(|clipboard_data| {
-                    let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
-                    Message::ClipboardDataForNewImage(Some(ClipboardReadResult {
-                        icy_data: None,
-                        image: img,
-                        text: None,
-                    }))
-                })
-            }
-            Message::ClipboardDataForNewImage(data) => {
-                use icy_engine::{Layer, Position, Role, Sixel, Size, TextBuffer, TextPane};
+                if img.is_none() {
+                    return STANDARD.read_image().map(|clipboard_data| {
+                        let img = clipboard_data.and_then(|cd| image::load_from_memory(&cd.data).ok().map(|i| i.to_rgba8()));
+                        Message::PasteAsNewImage(img)
+                    });
+                }
 
-                if let Some(clipboard_data) = data {
-                    // Try image first since that's what PasteAsNewImage is mainly for
-                    if let Some(img) = clipboard_data.image {
-                        let w = img.width();
-                        let h = img.height();
+                use icy_engine::{Layer, Position, Role, Sixel, Size, TextBuffer};
 
-                        let mut sixel = Sixel::new(Position::default());
-                        sixel.picture_data = img.into_raw();
-                        sixel.set_width(w as i32);
-                        sixel.set_height(h as i32);
+                if let Some(img) = img {
+                    let w = img.width();
+                    let h = img.height();
 
-                        // Calculate buffer size based on default font dimensions (8x16)
-                        let font_width = 8;
-                        let font_height = 16;
-                        let buf_width = ((w as i32 + font_width - 1) / font_width).max(1);
-                        let buf_height = ((h as i32 + font_height - 1) / font_height).max(1);
+                    let mut sixel = Sixel::new(Position::default());
+                    sixel.picture_data = img.into_raw();
+                    sixel.set_width(w as i32);
+                    sixel.set_height(h as i32);
 
-                        let mut buf = TextBuffer::new(Size::new(buf_width, buf_height));
+                    // Calculate buffer size based on default font dimensions (8x16)
+                    let font_width = 8;
+                    let font_height = 16;
+                    let buf_width = ((w as i32 + font_width - 1) / font_width).max(1);
+                    let buf_height = ((h as i32 + font_height - 1) / font_height).max(1);
 
-                        // Create a dedicated image layer for the sixel
-                        let mut layer = Layer::new("Image".to_string(), (buf_width, buf_height));
-                        layer.role = Role::Image;
-                        layer.properties.has_alpha_channel = true;
-                        layer.sixels.push(sixel);
-                        buf.layers.push(layer);
+                    let mut buf = TextBuffer::new(Size::new(buf_width, buf_height));
 
-                        // Store buffer in global static for WindowManager to pick up
-                        if let Ok(mut pending) = crate::PENDING_NEW_WINDOW_BUFFERS.lock() {
-                            pending.push(buf);
-                        }
-                        return Task::done(Message::OpenNewWindowWithBuffer);
+                    // Create a dedicated image layer for the sixel
+                    let mut layer = Layer::new("Image".to_string(), (buf_width, buf_height));
+                    layer.role = Role::Image;
+                    layer.properties.has_alpha_channel = true;
+                    layer.sixels.push(sixel);
+                    buf.layers.push(layer);
+
+                    // Store buffer in global static for WindowManager to pick up
+                    if let Ok(mut pending) = crate::PENDING_NEW_WINDOW_BUFFERS.lock() {
+                        pending.push(buf);
                     }
+                    return Task::done(Message::OpenNewWindowWithBuffer);
                 }
                 Task::none()
             }
@@ -1501,11 +1502,9 @@ impl MainWindow {
             }
             Message::SelectAll => {
                 if let ModeState::Ansi(editor) = &mut self.mode_state {
-                    editor.with_edit_state(|state| {
-                        let w = state.get_buffer().width();
-                        let h = state.get_buffer().height();
-                        let _ = state.set_selection(icy_engine::Rectangle::from(0, 0, w, h));
-                    });
+                    return editor
+                        .update(AnsiEditorMessage::Core(AnsiEditorCoreMessage::SelectAll), &mut self.dialogs, &self.plugins)
+                        .map(Message::AnsiEditor);
                 }
                 Task::none()
             }

@@ -178,6 +178,7 @@ pub enum AnsiEditorCoreMessage {
     ApplyFontSlotChange(FontSlotManagerResult),
 
     // --- Selection Operations ---
+    SelectAll,
     Deselect,
 }
 

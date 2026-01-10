@@ -6,12 +6,42 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    stamp_layer, AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, SauceMetaData, Selection,
+    stamp_char_grid, AttributedChar, BitFont, EngineError, IceMode, Layer, LayerProperties, Line, Palette, Position, Result, SauceMetaData, Selection,
     SelectionMask, Size, Tag, TextPane,
 };
 
 use super::undo_stack::OperationType;
 use super::EditState;
+
+#[doc(hidden)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct UndoSixel {
+    position: Position,
+    vertical_scale: i32,
+    horizontal_scale: i32,
+    picture_data: Vec<u8>,
+    size: Size,
+}
+
+impl From<&crate::Sixel> for UndoSixel {
+    fn from(value: &crate::Sixel) -> Self {
+        Self {
+            position: value.position,
+            vertical_scale: value.vertical_scale,
+            horizontal_scale: value.horizontal_scale,
+            picture_data: value.picture_data.clone(),
+            size: value.size(),
+        }
+    }
+}
+
+impl From<UndoSixel> for crate::Sixel {
+    fn from(value: UndoSixel) -> Self {
+        let mut sixel = crate::Sixel::from_data(value.size, value.vertical_scale, value.horizontal_scale, value.picture_data);
+        sixel.position = value.position;
+        sixel
+    }
+}
 
 /// Serializable editor undo operation enum
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -81,8 +111,8 @@ pub enum EditorUndoOp {
     LayerChange {
         layer: usize,
         pos: Position,
-        old_chars: Layer,
-        new_chars: Layer,
+        old_chars: Vec<Vec<AttributedChar>>,
+        new_chars: Vec<Vec<AttributedChar>>,
     },
 
     /// Crop buffer
@@ -115,6 +145,15 @@ pub enum EditorUndoOp {
         layer: usize,
         old_lines: Vec<Line>,
         new_lines: Vec<Line>,
+        old_size: Size,
+        new_size: Size,
+    },
+
+    /// Rotate floating paste image/SIXEL layer 90° clockwise (for collaboration: Moebius ROTATE=18)
+    PasteRotateImage {
+        layer: usize,
+        old_sixels: Vec<UndoSixel>,
+        new_sixels: Vec<UndoSixel>,
         old_size: Size,
         new_size: Size,
     },
@@ -275,6 +314,7 @@ impl EditorUndoOp {
             EditorUndoOp::ScrollWholeLayerUp { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_up"),
             EditorUndoOp::ScrollWholeLayerDown { .. } => fl!(crate::LANGUAGE_LOADER, "undo-scroll_layer_down"),
             EditorUndoOp::PasteRotate { .. } => fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer"),
+            EditorUndoOp::PasteRotateImage { .. } => fl!(crate::LANGUAGE_LOADER, "undo-rotate_layer"),
             EditorUndoOp::PasteFlipX { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_x"),
             EditorUndoOp::PasteFlipY { .. } => fl!(crate::LANGUAGE_LOADER, "undo-flip_layer_y"),
             EditorUndoOp::PasteAnchor { .. } => fl!(crate::LANGUAGE_LOADER, "undo-anchor"),
@@ -470,11 +510,7 @@ impl EditorUndoOp {
                 new_chars: _,
             } => {
                 if let Some(target_layer) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
-                    if target_layer.size() == old_chars.size() {
-                        target_layer.lines = old_chars.lines.clone();
-                    } else {
-                        stamp_layer(target_layer, *pos, old_chars);
-                    }
+                    stamp_char_grid(target_layer, *pos, old_chars);
                 }
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -562,6 +598,22 @@ impl EditorUndoOp {
                 std::mem::swap(old_size, new_size);
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
+                    l.set_size(*new_size);
+                }
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::PasteRotateImage {
+                layer,
+                old_sixels,
+                new_sixels,
+                old_size,
+                new_size,
+            } => {
+                std::mem::swap(old_sixels, new_sixels);
+                std::mem::swap(old_size, new_size);
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.sixels = new_sixels.iter().cloned().map(crate::Sixel::from).collect();
                     l.set_size(*new_size);
                 }
                 edit_state.get_buffer_mut().mark_dirty();
@@ -919,11 +971,7 @@ impl EditorUndoOp {
                 new_chars,
             } => {
                 if let Some(target_layer) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
-                    if target_layer.size() == new_chars.size() {
-                        target_layer.lines = new_chars.lines.clone();
-                    } else {
-                        stamp_layer(target_layer, *pos, new_chars);
-                    }
+                    stamp_char_grid(target_layer, *pos, new_chars);
                 }
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -1012,6 +1060,22 @@ impl EditorUndoOp {
                     l.set_size(*new_size);
                 }
                 std::mem::swap(old_lines, new_lines);
+                std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::PasteRotateImage {
+                layer,
+                old_sixels,
+                new_sixels,
+                old_size,
+                new_size,
+            } => {
+                if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
+                    l.sixels = new_sixels.iter().cloned().map(crate::Sixel::from).collect();
+                    l.set_size(*new_size);
+                }
+                std::mem::swap(old_sixels, new_sixels);
                 std::mem::swap(old_size, new_size);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -1301,8 +1365,8 @@ mod collab_mapping {
 
                 EditorUndoOp::LayerChange { pos, new_chars, .. } => {
                     let mut cmds = Vec::new();
-                    for (y, line) in new_chars.lines.iter().enumerate() {
-                        for (x, ch) in line.chars.iter().enumerate() {
+                    for (y, row) in new_chars.iter().enumerate() {
+                        for (x, ch) in row.iter().enumerate() {
                             cmds.push(ClientCommand::Draw {
                                 col: pos.x + x as i32,
                                 row: pos.y + y as i32,
@@ -1343,7 +1407,7 @@ mod collab_mapping {
 
                 EditorUndoOp::SetUseLetterSpacing { new_ls } => Some(vec![ClientCommand::SetUse9px { value: *new_ls }]),
 
-                EditorUndoOp::PasteRotate { .. } => Some(vec![ClientCommand::Rotate]),
+                EditorUndoOp::PasteRotate { .. } | EditorUndoOp::PasteRotateImage { .. } => Some(vec![ClientCommand::Rotate]),
 
                 EditorUndoOp::PasteFlipX { .. } => Some(vec![ClientCommand::FlipX]),
 
@@ -1445,8 +1509,8 @@ mod collab_mapping {
 
                 EditorUndoOp::LayerChange { pos, old_chars, .. } => {
                     let mut cmds = Vec::new();
-                    for (y, line) in old_chars.lines.iter().enumerate() {
-                        for (x, ch) in line.chars.iter().enumerate() {
+                    for (y, row) in old_chars.iter().enumerate() {
+                        for (x, ch) in row.iter().enumerate() {
                             cmds.push(ClientCommand::Draw {
                                 col: pos.x + x as i32,
                                 row: pos.y + y as i32,
@@ -1492,7 +1556,7 @@ mod collab_mapping {
 
                 // For rotate/flip, we'd need to send the opposite operation
                 // but the protocol doesn't have "undo rotate", so we skip
-                EditorUndoOp::PasteRotate { .. } => None,
+                EditorUndoOp::PasteRotate { .. } | EditorUndoOp::PasteRotateImage { .. } => None,
                 EditorUndoOp::PasteFlipX { .. } => None,
                 EditorUndoOp::PasteFlipY { .. } => None,
                 EditorUndoOp::PasteAnchor { .. } => None,

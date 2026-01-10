@@ -247,6 +247,20 @@ fn test_iced_v1_compression_on_writes_zstd_records() {
     assert!(have_layer, "expected at least one LAYER record");
 }
 
+#[test]
+fn test_save_image_layer_without_sixels_returns_error() {
+    let mut buf = TextBuffer::new((2, 2));
+
+    let mut image_layer = Layer::new("Image".to_string(), buf.size());
+    image_layer.role = Role::Image;
+    image_layer.sixels.clear();
+    buf.layers.push(image_layer);
+
+    let draw = FileFormat::IcyDraw;
+    let res = draw.to_bytes(&mut buf, &SaveOptions::default());
+    assert!(res.is_err(), "expected error when saving image layer with no sixels");
+}
+
 /// Load a PNG file and return RGBA pixel data + dimensions
 fn load_png_as_rgba(path: &std::path::Path) -> (i32, i32, Vec<u8>) {
     use std::io::BufReader;

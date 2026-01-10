@@ -1194,6 +1194,7 @@ impl CharFontEditor {
             tag_add_mode: false,
             selected_tag: None,
             tag_selection_count: 0,
+            is_image_layer: false,
         };
 
         let tool_toolbar = self

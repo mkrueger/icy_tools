@@ -83,7 +83,6 @@ impl PasteTool {
         if !self.active {
             return ToolResult::None;
         }
-
         match action {
             PasteAction::None => ToolResult::None,
 
@@ -99,6 +98,13 @@ impl PasteTool {
             }
 
             PasteAction::Stamp => {
+                // If stamp is triggered while a paste drag preview is active,
+                // first commit the pending move so stamping matches what the user sees.
+                if let Some(new_offset) = self.finish_pending_move() {
+                    state.set_layer_preview_offset(None);
+                    let _ = state.move_layer(new_offset);
+                }
+
                 if let Err(e) = state.stamp_layer_down() {
                     log::warn!("Failed to stamp layer: {}", e);
                 }
@@ -378,9 +384,28 @@ impl ToolHandler for PasteTool {
         self.perform_action(ctx.state, action)
     }
 
-    fn view_toolbar(&self, _ctx: &super::ToolViewContext) -> Element<'static, ToolMessage> {
+    fn view_toolbar(&self, ctx: &super::ToolViewContext) -> Element<'static, ToolMessage> {
         if !self.active {
             return row![].into();
+        }
+
+        // For image layers, show a simplified toolbar without transform operations
+        if ctx.is_image_layer {
+            let hint_text = fl!("paste-image-hint");
+            let content = row![
+                Space::new().width(Length::Fill),
+                text(fl!("paste-image-title")).size(14).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
+                Space::new().width(16),
+                text(hint_text).size(12).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
+                Space::new().width(Length::Fill),
+            ]
+            .spacing(2)
+            .height(Length::Fill)
+            .align_y(icy_ui::Alignment::Center);
+
+            return row![Space::new().width(Length::Fill), content, Space::new().width(Length::Fill)]
+                .align_y(icy_ui::Alignment::Center)
+                .into();
         }
 
         // Icon button style: transparent background, secondary color on normal, base color on hover
