@@ -56,9 +56,11 @@ impl PasteTool {
     }
 
     /// Set paste mode active (used when paste data is received asynchronously)
-    pub fn set_active(&mut self, previous_tool: super::ToolId) {
+    /// The undo_guard is stored so that cancel can properly undo the paste operation.
+    pub fn set_active(&mut self, previous_tool: super::ToolId, undo_guard: AtomicUndoGuard) {
         self.active = true;
         self.previous_tool = Some(previous_tool);
+        self.paste_undo = Some(undo_guard);
         self.abort();
     }
 

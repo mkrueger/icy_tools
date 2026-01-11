@@ -147,16 +147,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let shadow_alpha = drop_shadow(sdf, SHADOW_OFFSET, SHADOW_BLUR) * SHADOW_COLOR.a;
         color = mix(color, vec4<f32>(SHADOW_COLOR.rgb, 1.0), shadow_alpha * 0.5);
         
-        // Draw hover glow
-        if (is_hovered) {
-            let glow_dist = max(0.0, -sdf - CORNER_RADIUS);
-            let glow_alpha = glow_col.a * exp(-glow_dist * glow_dist / (GLOW_RADIUS * GLOW_RADIUS * 2.0));
-            color = mix(color, vec4<f32>(glow_col.rgb, 1.0), glow_alpha);
-        }
-        
         // Draw button background (constant color, no change on hover)
         if (sdf < 0.0) {
             color = bg_col;
+            
+            // Draw hover glow only inside the button (so backdrop doesn't change)
+            if (is_hovered) {
+                let glow_dist = max(0.0, -sdf - CORNER_RADIUS);
+                let glow_alpha = glow_col.a * exp(-glow_dist * glow_dist / (GLOW_RADIUS * GLOW_RADIUS * 2.0));
+                color = mix(color, vec4<f32>(glow_col.rgb, 1.0), glow_alpha);
+            }
         }
         
         // Draw border

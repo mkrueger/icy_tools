@@ -1248,10 +1248,9 @@ impl AnsiEditorCore {
 
         state.paste_clipboard_data(data).map_err(|e| e.to_string())?;
 
-        drop(undo_guard);
         drop(screen_guard);
 
-        self.paste_handler.set_active(previous_tool);
+        self.paste_handler.set_active(previous_tool, undo_guard);
         Ok(())
     }
 
@@ -1283,10 +1282,9 @@ impl AnsiEditorCore {
 
         state.paste_sixel(sixel).map_err(|e| e.to_string())?;
 
-        drop(undo_guard);
         drop(screen_guard);
 
-        self.paste_handler.set_active(previous_tool);
+        self.paste_handler.set_active(previous_tool, undo_guard);
         Ok(())
     }
 
@@ -1309,10 +1307,9 @@ impl AnsiEditorCore {
 
         state.paste_text(text).map_err(|e| e.to_string())?;
 
-        drop(undo_guard);
         drop(screen_guard);
 
-        self.paste_handler.set_active(previous_tool);
+        self.paste_handler.set_active(previous_tool, undo_guard);
         Ok(())
     }
 
