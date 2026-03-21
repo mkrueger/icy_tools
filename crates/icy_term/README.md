@@ -121,7 +121,7 @@ Available tools:
 Settings are stored in platform-specific locations:
 
 - **Linux**: `~/.config/icy_term/`
-- **macOS**: `~/Library/Application Support/icy_term/`
+- **macOS**: `~/Library/Application Support/com.GitHub.icy_term'`
 - **Windows**: `%APPDATA%\icy_term\`
 
 ## Contributing
