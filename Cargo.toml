@@ -120,8 +120,3 @@ strip = false
 # sevenz-rust2 v0.20.0 pins lzma-rust2 = "=0.15.3" which is incompatible with crc v2.x
 # Override to v0.15.4 which has the fix
 lzma-rust2 = { git = "https://github.com/hasenbanck/lzma-rust2", branch = "master" }
-# internal-russh-forked-ssh-key 0.6.16 is broken with rand_core 0.10.0 (RngCore trait
-# was deprecated and its methods moved to Rng/TryRng). Vendored with fix until russh
-# releases a new version (PR Eugeny/russh#628 merged but unreleased).
-internal-russh-forked-ssh-key = { path = "vendor/internal-russh-forked-ssh-key" }
-
