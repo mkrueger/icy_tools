@@ -43,7 +43,7 @@ icy_engine_edit = { path = "crates/icy_engine_edit" }
 libyaff = { git = "https://github.com/mkrueger/libyaff" }
 
 codepages = { git ="https://github.com/mkrueger/icy_board" }
-zip = "7.0.0"
+zip = "8.4.0"
 lazy_static = "1.5.0"
 semver = "1.0.27"
 thiserror = "2.0.17"
@@ -58,25 +58,25 @@ i18n-embed-fl = "0.10.0"
 fluent-bundle = "0.16.0"
 rust-embed = "8.3.0"
 once_cell = "1.18.0"
-toml = "0.9.10"
+toml = "1.1.0+spec-1.1.0"
 bstr = "1.12.1"
 fastrand = "2.3.0"
 base64 = "0.22.1"
-rmcp = "0.12.0"
+rmcp = "1.3.0"
 serde_json = "1.0.146"
 image = "0.25.9"
 bitflags = "2.10.0"
-rfd = "0.16.0"
+rfd = "0.17.2"
 open = "5.3.3"
 bytemuck = "1.24.0"
 
 regex = "1.12.2"
 directories = "6.0.0"
 tokio = { version = "1.49.0", features = ["full"] }
-tokio-tungstenite = "0.28.0"
+tokio-tungstenite = "0.29.0"
 futures-util = "0.3"
-anstream = "0.6.21"
-rodio = { version = "0.21.1" }
+anstream = "1.0.0"
+rodio = { version = "0.22.2" }
 anyhow = "1.0.100"
 webbrowser = "1.0.6"
 rayon = "1.11.0"
@@ -89,7 +89,7 @@ quantette = "0.5.1"
 crc32fast = "1.5.0"
 
 # SVG and font rendering
-resvg = "0.45"
+resvg = "0.47.0"
 ab_glyph = "0.2"
 
 icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
