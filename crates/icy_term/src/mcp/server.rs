@@ -22,11 +22,7 @@ impl McpServer {
 
     pub async fn start(self: Arc<Self>, port: u16) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let session_manager = Arc::new(LocalSessionManager::default());
-        let config = StreamableHttpServerConfig {
-            // We want a robust, spec-aligned HTTP MCP server with sessions.
-            stateful_mode: true,
-            ..Default::default()
-        };
+        let config = StreamableHttpServerConfig::default();
 
         // rmcp's StreamableHttpService expects a factory that can create a fresh service per session.
         let handler = self.handler.clone();

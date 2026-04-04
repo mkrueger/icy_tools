@@ -396,7 +396,9 @@ impl ToolHandler for PasteTool {
             let hint_text = fl!("paste-image-hint");
             let content = row![
                 Space::new().width(Length::Fill),
-                text(fl!("paste-image-title")).size(14).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
+                text(fl!("paste-image-title"))
+                    .size(14)
+                    .style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
                 Space::new().width(16),
                 text(hint_text).size(12).style(|theme: &Theme| text::Style { color: Some(theme.button.on) }),
                 Space::new().width(Length::Fill),

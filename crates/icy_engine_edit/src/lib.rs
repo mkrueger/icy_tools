@@ -8,7 +8,7 @@ pub mod charset;
 pub mod brushes;
 
 mod layer_utils;
-pub use layer_utils::{chars_from_area, stamp_char_grid, CharGrid, layer_from_area, stamp_layer};
+pub use layer_utils::{chars_from_area, layer_from_area, stamp_char_grid, stamp_layer, CharGrid};
 
 pub mod tools;
 

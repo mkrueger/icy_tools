@@ -937,17 +937,11 @@ impl WindowManager {
                         // Check if current window has unsaved changes
                         if window.is_modified() {
                             // Route through the dirty check flow
-                            return Task::done(WindowManagerMessage::WindowMessage(
-                                window_id,
-                                crate::ui::Message::OpenRecentFile(path),
-                            ));
+                            return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::OpenRecentFile(path)));
                         }
                     }
                     // No unsaved changes - open directly
-                    return Task::done(WindowManagerMessage::WindowMessage(
-                        window_id,
-                        crate::ui::Message::FileOpened(path),
-                    ));
+                    return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::FileOpened(path)));
                 }
             }
         };
@@ -1289,11 +1283,7 @@ impl WindowManager {
             menu::separator!(),
             menu::item!(fl!("menu-cut"), wrap(Message::Cut), menu::MenuShortcut::cmd(Key::Character("x".into()))),
             menu::item!(fl!("menu-copy"), wrap(Message::Copy), menu::MenuShortcut::cmd(Key::Character("c".into()))),
-            menu::item!(
-                fl!("menu-paste"),
-                wrap(Message::Paste),
-                menu::MenuShortcut::cmd(Key::Character("v".into()))
-            ),
+            menu::item!(fl!("menu-paste"), wrap(Message::Paste), menu::MenuShortcut::cmd(Key::Character("v".into()))),
         ];
 
         if edit_mode == crate::ui::EditMode::Ansi {

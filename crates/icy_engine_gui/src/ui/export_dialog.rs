@@ -887,7 +887,11 @@ where
     F: Fn(ExportDialogMessage) -> M + Clone + 'static,
     E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
 {
-    ExportDialogWrapper::new(ExportDialogState::new(PathBuf::from(initial_path.into()), buffer_type, screen), on_message, extract_message)
+    ExportDialogWrapper::new(
+        ExportDialogState::new(PathBuf::from(initial_path.into()), buffer_type, screen),
+        on_message,
+        extract_message,
+    )
 }
 
 /// Create an export dialog with a default directory provider.
@@ -953,9 +957,5 @@ where
     F: Fn(ExportDialogMessage) -> M + Clone + 'static,
     E: Fn(&M) -> Option<&ExportDialogMessage> + Clone + 'static,
 {
-    ExportDialogWrapper::new(
-        ExportDialogState::new(initial_path.into(), buffer_type, screen),
-        msg_tuple.0,
-        msg_tuple.1,
-    )
+    ExportDialogWrapper::new(ExportDialogState::new(initial_path.into(), buffer_type, screen), msg_tuple.0, msg_tuple.1)
 }

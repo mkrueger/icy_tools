@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    num::NonZero,
     sync::{
         mpsc::{channel, Receiver, SendError, Sender, TryRecvError},
         Arc,
@@ -239,7 +240,7 @@ impl SoundThread {
 
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
             // Create audio stream inside the thread (OutputStream is not Send)
-            let (stream, mixer, sample_rate) = match rodio::OutputStreamBuilder::open_default_stream() {
+            let (stream, mixer, sample_rate) = match rodio::DeviceSinkBuilder::open_default_sink() {
                 Ok(handle) => {
                     let rate = handle.config().sample_rate();
                     let mixer = handle.mixer().clone();
@@ -247,7 +248,7 @@ impl SoundThread {
                 }
                 Err(e) => {
                     log::error!("Failed to open audio stream: {}", e);
-                    (None, None, 44100)
+                    (None, None, NonZero::new(44100).unwrap())
                 }
             };
 
@@ -263,7 +264,7 @@ impl SoundThread {
                 sample_rate,
                 ym_audio_device: None,
                 ym_ring_buffer: None,
-                gist_player: GistPlayer::with_sample_rate(sample_rate),
+                gist_player: GistPlayer::with_sample_rate(sample_rate.get()),
                 gist_playing: false,
             };
 
@@ -314,9 +315,9 @@ pub struct SoundBackgroundThreadData {
 
     // Persistent audio stream for ANSI music, beeps, dial tones etc.
     #[allow(dead_code)]
-    stream: Option<rodio::OutputStream>,
+    stream: Option<rodio::MixerDeviceSink>,
     mixer: Option<rodio::mixer::Mixer>,
-    sample_rate: u32,
+    sample_rate: NonZero<u32>,
 
     // YM2149 audio device for GIST sounds (uses the real chip emulator)
     #[allow(dead_code)]
@@ -343,6 +344,7 @@ impl SoundBackgroundThreadData {
                 self.ym_audio_device = Some(device);
                 self.ym_ring_buffer = Some(buffer);
                 self.gist_player = GistPlayer::with_sample_rate(config.sample_rate as u32);
+
                 log::info!("YM2149 audio device initialized at {}Hz", config.sample_rate);
             }
             Err(e) => {
@@ -414,7 +416,7 @@ impl SoundBackgroundThreadData {
         self.mixer = None;
 
         // Create new stream
-        match rodio::OutputStreamBuilder::open_default_stream() {
+        match rodio::DeviceSinkBuilder::open_default_sink() {
             Ok(handle) => {
                 self.sample_rate = handle.config().sample_rate();
                 self.mixer = Some(handle.mixer().clone());
@@ -721,7 +723,7 @@ impl SoundBackgroundThreadData {
                         break;
                     }
 
-                    let click = PulseClick::new_kind(kind, sample_rate, click_ms);
+                    let click = PulseClick::new_kind(kind, sample_rate.get(), click_ms);
                     mixer.add(click);
                     thread::sleep(Duration::from_millis(click_ms));
 
@@ -881,7 +883,7 @@ impl SoundBackgroundThreadData {
     }
 }
 
-fn mix_dial_tone(tone: DialTone, sample_rate: u32) -> impl Source<Item = f32> + Send {
+fn mix_dial_tone(tone: DialTone, sample_rate: NonZero<u32>) -> impl Source<Item = f32> + Send {
     match tone {
         DialTone::US => {
             // Phone line dial tone: 350 Hz + 440 Hz combined (North American standard)
@@ -1166,11 +1168,11 @@ impl Iterator for PulseClick {
 }
 
 impl Source for PulseClick {
-    fn channels(&self) -> u16 {
-        1
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(1).unwrap()
     }
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(self.sample_rate).unwrap()
     }
     fn total_duration(&self) -> Option<Duration> {
         Some(Duration::from_secs_f64(self.total_samples as f64 / self.sample_rate as f64))

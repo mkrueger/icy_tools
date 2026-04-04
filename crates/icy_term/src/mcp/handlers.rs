@@ -9,8 +9,8 @@ use rmcp::{
         wrapper::Parameters,
     },
     model::{
-        Annotated, CallToolRequestParam, CallToolResult, Content, Implementation, InitializeResult, ListResourcesResult, ListToolsResult,
-        PaginatedRequestParam, ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
+        Annotated, CallToolRequestParams, CallToolResult, Content, Implementation, InitializeResult, ListResourcesResult, ListToolsResult,
+        PaginatedRequestParams, ProtocolVersion, RawResource, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
     },
     tool, tool_router, ErrorData as McpError, ServerHandler,
 };
@@ -196,23 +196,15 @@ impl IcyTermMcpHandler {
 
 impl ServerHandler for IcyTermMcpHandler {
     fn get_info(&self) -> InitializeResult {
-        InitializeResult {
-            protocol_version: ProtocolVersion::V_2025_06_18,
-            capabilities: ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info: Implementation {
-                name: "icy_term_mcp".to_string(),
-                title: None,
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some("IcyTerm MCP server (HTTP)".to_string()),
-        }
+        InitializeResult::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
+            .with_protocol_version(ProtocolVersion::V_2025_06_18)
+            .with_server_info(Implementation::new("icy_term_mcp", env!("CARGO_PKG_VERSION")))
+            .with_instructions("IcyTerm MCP server (HTTP)")
     }
 
     fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         let tools = self.tool_router.list_all();
@@ -221,7 +213,7 @@ impl ServerHandler for IcyTermMcpHandler {
 
     fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);
@@ -230,7 +222,7 @@ impl ServerHandler for IcyTermMcpHandler {
 
     fn list_resources(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
         let mut raw = RawResource::new("icy_term://scripting_api", "IcyTerm Scripting API");
@@ -242,7 +234,7 @@ impl ServerHandler for IcyTermMcpHandler {
 
     fn read_resource(
         &self,
-        request: ReadResourceRequestParam,
+        request: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         if request.uri != "icy_term://scripting_api" {
@@ -256,7 +248,7 @@ impl ServerHandler for IcyTermMcpHandler {
             meta: None,
         };
 
-        std::future::ready(Ok(ReadResourceResult { contents: vec![contents] }))
+        std::future::ready(Ok(ReadResourceResult::new(vec![contents])))
     }
 
     fn on_initialized(&self, _context: rmcp::service::NotificationContext<rmcp::RoleServer>) -> impl std::future::Future<Output = ()> + Send + '_ {

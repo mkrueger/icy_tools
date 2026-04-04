@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-	"crates/icy_draw", 
+	"crates/icy_draw",
 	"crates/icy_engine",
 	"crates/icy_engine_gui",
 	"crates/icy_engine_gui_macros",
 	"crates/icy_engine_edit",
- 	"crates/icy_play", 
+	"crates/icy_play",
 	"crates/icy_term",
 	"crates/icy_engine_scripting",
 	"crates/icy_view",
@@ -22,10 +22,10 @@ license = "MIT or Apache-2.0"
 
 [workspace.dependencies]
 icy_engine = { path = "crates/icy_engine" }
-icy_parser_core = { path = "crates/icy_parser_core"} 
-icy_engine_scripting = { path = "crates/icy_engine_scripting"} 
+icy_parser_core = { path = "crates/icy_parser_core" }
+icy_engine_scripting = { path = "crates/icy_engine_scripting" }
 
-icy_sauce =  { git ="https://github.com/mkrueger/icy_sauce" }
+icy_sauce = { git = "https://github.com/mkrueger/icy_sauce" }
 
 #icy_sauce = { path = "../icy_sauce" }
 icy_sixel = "0.5.0"
@@ -36,7 +36,7 @@ unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
 retrofont = { git = "https://github.com/mkrueger/retrofont" }
 #retrofont = { path ="../retrofont/crates/retrofont" }
 
-icy_engine_gui = { path = "crates/icy_engine_gui" } 
+icy_engine_gui = { path = "crates/icy_engine_gui" }
 icy_engine_edit = { path = "crates/icy_engine_edit" }
 
 #libyaff = { path = "../libyaff" }
@@ -53,12 +53,15 @@ flexi_logger = "0.31.7"
 chrono = { version = "0.4.42", features = ["serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
 walkdir = "2.5.0"
-i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"]} 
+i18n-embed = { version = "0.16.0", features = [
+	"fluent-system",
+	"desktop-requester",
+] }
 i18n-embed-fl = "0.10.0"
 fluent-bundle = "0.16.0"
 rust-embed = "8.3.0"
 once_cell = "1.18.0"
-toml = "1.1.0+spec-1.1.0"
+toml = "1.1.0"
 bstr = "1.12.1"
 fastrand = "2.3.0"
 base64 = "0.22.1"
@@ -101,11 +104,11 @@ parking_lot = "0.12.5"
 clap-i18n-richformatter = { git = "https://github.com/eatradish/clap-i18n-richformatter" }
 
 [profile.release]
-opt-level = 'z'     # Optimize for size
-lto = true          # Enable link-time optimization
-codegen-units = 1   # Reduce number of codegen units to increase optimizations
-panic = 'abort'     # Abort on panic
-strip = true        # Strip symbols from binary*
+opt-level = 'z'   # Optimize for size
+lto = true        # Enable link-time optimization
+codegen-units = 1 # Reduce number of codegen units to increase optimizations
+panic = 'abort'   # Abort on panic
+strip = true      # Strip symbols from binary*
 
 [profile.profiling]
 inherits = "release"

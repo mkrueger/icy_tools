@@ -27,10 +27,7 @@ impl McpServer {
     /// Start the HTTP server on the specified port
     pub async fn start(self: Arc<Self>, port: u16) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let session_manager = Arc::new(LocalSessionManager::default());
-        let config = StreamableHttpServerConfig {
-            stateful_mode: true,
-            ..Default::default()
-        };
+        let config = StreamableHttpServerConfig::default();
 
         let handler = self.handler.clone();
         let mcp_service = StreamableHttpService::new(move || Ok(handler.clone()), session_manager, config);

@@ -159,11 +159,7 @@ mod i18n_tests {
             "menu-about",
         ] {
             let translated = loader.get(message_id);
-            assert_ne!(
-                translated,
-                message_id,
-                "Missing or untranslated message: {message_id}"
-            );
+            assert_ne!(translated, message_id, "Missing or untranslated message: {message_id}");
         }
     }
 }

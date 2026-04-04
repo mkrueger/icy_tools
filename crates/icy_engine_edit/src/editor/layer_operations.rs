@@ -167,9 +167,7 @@ impl EditState {
         let width = (base_layer.offset().x + base_layer.width()).max(cur_layer.offset().x + cur_layer.width()) - start.x;
         let height = (base_layer.offset().y + base_layer.height()).max(cur_layer.offset().y + cur_layer.height()) - start.y;
         if width < 0 || height < 0 {
-            return Err(crate::EngineError::Generic(format!(
-                "Invalid merged layer size: {width}x{height}"
-            )));
+            return Err(crate::EngineError::Generic(format!("Invalid merged layer size: {width}x{height}")));
         }
         println!("4");
         let mut merge_layer = base_layer.clone();
@@ -307,7 +305,10 @@ impl EditState {
                 let src_local = Position::new(x, y);
                 old_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx - 1].char_at(target_pos + src_local);
                 new_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx].char_at(src_local);
-                println!("  At {:?}: old={:?}, new={:?}", src_local, old_chars[y as usize][x as usize].ch, new_chars[y as usize][x as usize].ch);
+                println!(
+                    "  At {:?}: old={:?}, new={:?}",
+                    src_local, old_chars[y as usize][x as usize].ch, new_chars[y as usize][x as usize].ch
+                );
             }
         }
 

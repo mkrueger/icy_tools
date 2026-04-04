@@ -16,7 +16,7 @@ use rmcp::{
         wrapper::Parameters,
     },
     model::{
-        CallToolRequestParam, CallToolResult, Content, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
+        CallToolRequestParams, CallToolResult, Content, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
         ServerCapabilities,
     },
     tool, tool_router, ErrorData as McpError, ServerHandler,
@@ -798,24 +798,15 @@ impl IcyDrawMcpHandler {
 
 impl ServerHandler for IcyDrawMcpHandler {
     fn get_info(&self) -> InitializeResult {
-        let result = InitializeResult {
-            protocol_version: ProtocolVersion::V_2025_06_18,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "icy_draw_mcp".to_string(),
-                title: None,
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some("icy_draw MCP server for ANSI/ASCII art editing automation".to_string()),
-        };
-        result
+        InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(ProtocolVersion::V_2025_06_18)
+            .with_server_info(Implementation::new("icy_draw_mcp", env!("CARGO_PKG_VERSION")))
+            .with_instructions("icy_draw MCP server for ANSI/ASCII art editing automation")
     }
 
     fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         let tools = self.tool_router.list_all();
@@ -825,7 +816,7 @@ impl ServerHandler for IcyDrawMcpHandler {
 
     fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);

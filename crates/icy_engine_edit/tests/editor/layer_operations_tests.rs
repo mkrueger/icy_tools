@@ -1,6 +1,6 @@
 //! Tests for layer operations (add, remove, raise, lower, duplicate, merge, etc.)
 
-use icy_engine::{AttributedChar, LayerProperties, Position, Role, Size, Sixel, TextAttribute, TextPane};
+use icy_engine::{AttributedChar, LayerProperties, Position, Role, Sixel, Size, TextAttribute, TextPane};
 use icy_engine_edit::EditState;
 
 /// Helper to create an EditState with a given size
@@ -238,12 +238,7 @@ fn test_merge_layer_down_respects_layer_offsets() {
 
     // Add a top layer and offset it relative to the base.
     state.add_new_layer(0).unwrap();
-    state
-        .get_buffer_mut()
-        .layers
-        .get_mut(1)
-        .unwrap()
-        .set_offset(Position::new(17, 0));
+    state.get_buffer_mut().layers.get_mut(1).unwrap().set_offset(Position::new(17, 0));
     state
         .get_buffer_mut()
         .layers
@@ -311,12 +306,7 @@ fn test_stamp_layer_down_respects_base_layer_offset() {
     // Add a top layer (the paste/floating layer) and position it in document space.
     state.add_new_layer(0).unwrap();
     state.set_current_layer(1);
-    state
-        .get_buffer_mut()
-        .layers
-        .get_mut(1)
-        .unwrap()
-        .set_offset(Position::new(17, 0));
+    state.get_buffer_mut().layers.get_mut(1).unwrap().set_offset(Position::new(17, 0));
 
     // Put a visible character at the top-left of the source layer.
     state

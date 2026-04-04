@@ -1357,7 +1357,7 @@ impl MainWindow {
                 let has_image = Format::Image.formats().iter().any(|f| formats.iter().any(|a| a == f));
                 let has_text = Format::Text.formats().iter().any(|f| formats.iter().any(|a| a == f));
                 println!("Paste formats: {:?} (icy: {}, image: {}, text: {})", formats, has_icy, has_image, has_text);
-                
+
                 if has_icy {
                     return STANDARD
                         .read_format(&[ICY_CLIPBOARD_TYPE])
@@ -1804,7 +1804,6 @@ impl MainWindow {
                 Task::none()
             }
             Message::ExportComplete(path) => {
-
                 // Save the export directory for next time
                 if let Some(parent) = path.parent() {
                     let mut opts = self.options.write();
