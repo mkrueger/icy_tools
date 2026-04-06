@@ -13,7 +13,7 @@ icy_engine = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_parser_core = { workspace = true }
 mlua = { workspace = true }
-icy_ui = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
+icy_ui = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
 
 clap-i18n-richformatter = { workspace = true }
 image = { workspace = true }
@@ -41,7 +41,7 @@ lazy_static = { workspace = true }
 notify = { workspace = true }
 human_bytes = { version = "0.4", default-features = false }
 
-chrono = { workspace = true }  # Utc hanldung
+chrono = { workspace = true }      # Utc hanldung
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
@@ -63,8 +63,10 @@ async-recursion = "1.1.1"
 async-trait = "0.1"
 
 # for Atari ST GIST sounds (IGS)
-ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }
-ym2149-gist-replayer = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound" }
+ym2149 = { git = "https://github.com/mkrueger/ym2149-rs", branch = "feature/gist_sound", features = [
+    "streaming",
+] }
+ym2149-gist-replayer = { git = "https://github.com/mkrueger/ym2149-rs", branch = "feature/gist_sound" }
 
 # MCP (rmcp + HTTP server)
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
@@ -77,18 +79,34 @@ winres = "0.1"
 [package.metadata.bundle]
 name = "Icy Term"
 identifier = "com.github.icy_term"
-icon = [ "build/mac/128x128@2x.png" ]
+icon = ["build/mac/128x128@2x.png"]
 resources = []
 copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 
 [package.metadata.deb]
-section="Network"
+section = "Network"
 copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
-revision=""
+revision = ""
 depends = "$auto, libasound2"
 assets = [
-    ["target/release/icy_term", "/usr/bin/", "755"],
-    ["build/linux/icy_term.desktop", "/usr/share/applications/", "644"],
-    ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_term.png", "644"],
-    ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_term.png", "644"],
+    [
+        "target/release/icy_term",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "build/linux/icy_term.desktop",
+        "/usr/share/applications/",
+        "644",
+    ],
+    [
+        "build/linux/128x128.png",
+        "/usr/share/icons/hicolor/128x128/apps/icy_term.png",
+        "644",
+    ],
+    [
+        "build/linux/256x256.png",
+        "/usr/share/icons/hicolor/256x256/apps/icy_term.png",
+        "644",
+    ],
 ]

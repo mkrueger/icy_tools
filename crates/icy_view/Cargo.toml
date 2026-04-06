@@ -33,7 +33,13 @@ github_release_check = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 clap-i18n-richformatter = { workspace = true }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "fs"] }
+tokio = { workspace = true, features = [
+    "rt",
+    "rt-multi-thread",
+    "time",
+    "sync",
+    "fs",
+] }
 tokio-util = "0.7"
 async-trait = "0.1"
 bytemuck = { workspace = true, features = ["derive"] }
@@ -71,8 +77,24 @@ copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 revision = ""
 depends = "$auto, libasound2"
 assets = [
-    ["target/release/icy_view", "/usr/bin/", "755"],
-    ["build/linux/icy_view.desktop", "/usr/share/applications/", "644"],
-    ["build/linux/128x128.png", "/usr/share/icons/hicolor/128x128/apps/icy_view.png", "644"],
-    ["build/linux/256x256.png", "/usr/share/icons/hicolor/256x256/apps/icy_view.png", "644"],
+    [
+        "target/release/icy_view",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "build/linux/icy_view.desktop",
+        "/usr/share/applications/",
+        "644",
+    ],
+    [
+        "build/linux/128x128.png",
+        "/usr/share/icons/hicolor/128x128/apps/icy_view.png",
+        "644",
+    ],
+    [
+        "build/linux/256x256.png",
+        "/usr/share/icons/hicolor/256x256/apps/icy_view.png",
+        "644",
+    ],
 ]

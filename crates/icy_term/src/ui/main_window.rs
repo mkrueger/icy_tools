@@ -1971,14 +1971,23 @@ impl MainWindow {
                             }
                         }
 
-                        // Try command handler for keyboard shortcuts
-                        if let Some(msg) = self.commands.handle(event) {
-                            return (Some(msg), Task::none());
-                        }
-
-                        // Try to map the key with modifiers using the key map (for terminal input)
-                        if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
-                            return (Some(Message::SendData(bytes)), Task::none());
+                        // When connected to a BBS, terminal key mapping takes priority
+                        // so that Ctrl+letter combos are sent as control characters
+                        // (e.g. Ctrl+W = 0x17) instead of being intercepted as app shortcuts.
+                        if self.terminal_window.is_connected {
+                            if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
+                                return (Some(Message::SendData(bytes)), Task::none());
+                            }
+                            if let Some(msg) = self.commands.handle(event) {
+                                return (Some(msg), Task::none());
+                            }
+                        } else {
+                            if let Some(msg) = self.commands.handle(event) {
+                                return (Some(msg), Task::none());
+                            }
+                            if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
+                                return (Some(Message::SendData(bytes)), Task::none());
+                            }
                         }
 
                         if let Some(text) = text {
