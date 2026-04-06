@@ -69,7 +69,7 @@ copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 section = "utils"
 copyright = "Copyright (c) Mike Krüger 2023. All rights reserved."
 revision = ""
-depends = "libasound2"
+depends = "$auto, libasound2"
 assets = [
     ["target/release/icy_view", "/usr/bin/", "755"],
     ["build/linux/icy_view.desktop", "/usr/share/applications/", "644"],

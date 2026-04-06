@@ -85,7 +85,7 @@ copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 section="Network"
 copyright = "Copyright (c) Mike Krüger 2022. All rights reserved."
 revision=""
-depends = "libasound2"
+depends = "$auto, libasound2"
 assets = [
     ["target/release/icy_term", "/usr/bin/", "755"],
     ["build/linux/icy_term.desktop", "/usr/share/applications/", "644"],
