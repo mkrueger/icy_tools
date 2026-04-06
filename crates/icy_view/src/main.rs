@@ -86,33 +86,34 @@ pub struct Args {
     /// Baud rate emulation (e.g., 9600, 19200, 38400)
     #[clap(long, value_name = "RATE", help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-bps-help"))]
     bps: Option<u32>,
-}
 
-fn get_log_dir() -> Option<PathBuf> {
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_view") {
-        let dir = proj_dirs.config_dir().to_path_buf();
-        if !dir.exists() {
-            std::fs::create_dir_all(&dir).ok()?;
-        }
-        return Some(dir);
-    }
-    None
+    /// Run in portable mode (config saved next to executable)
+    #[clap(long, default_value_t = false, help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-portable-help"))]
+    portable: bool,
+
+    /// Custom configuration directory path
+    #[clap(long, value_name = "DIR", help = i18n_embed_fl::fl!(LANGUAGE_LOADER, "arg-config-dir-help"))]
+    config_dir: Option<PathBuf>,
 }
 
 fn main() {
     let args = Args::parse_i18n_or_exit();
 
-    if let Some(log_dir) = get_log_dir() {
-        let _logger = Logger::try_with_env_or_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error")
-            .unwrap()
-            .log_to_file(FileSpec::default().directory(&log_dir).basename("icy_view").suffix("log").suppress_timestamp())
-            .rotate(Criterion::Size(64 * 1024), Naming::Numbers, Cleanup::KeepLogFiles(3))
-            .create_symlink(log_dir.join("icy_view.log"))
-            .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
-            .start();
-    } else {
-        eprintln!("Failed to create log file");
+    // Initialize the global config directory based on CLI args and auto-detection.
+    // Must happen before logger init and options loading.
+    options::init_config_dir(args.portable, args.config_dir.clone());
+
+    let log_dir = options::get_config_dir();
+    if !log_dir.exists() {
+        let _ = std::fs::create_dir_all(log_dir);
     }
+    let _logger = Logger::try_with_env_or_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error")
+        .unwrap()
+        .log_to_file(FileSpec::default().directory(log_dir).basename("icy_view").suffix("log").suppress_timestamp())
+        .rotate(Criterion::Size(64 * 1024), Naming::Numbers, Cleanup::KeepLogFiles(3))
+        .create_symlink(log_dir.join("icy_view.log"))
+        .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
+        .start();
 
     log::info!("Starting iCY VIEW {}", *VERSION);
 

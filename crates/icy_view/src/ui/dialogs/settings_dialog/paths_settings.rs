@@ -10,21 +10,15 @@ use icy_ui::{
 };
 
 use super::SettingsDialogMessage;
-use crate::Options;
+use crate::{options::get_config_dir, Options};
 
 pub fn paths_settings_content_generic<M: Clone + 'static>(
     export_path: String,
     on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
 ) -> Element<'static, M> {
-    let config_dir = directories::ProjectDirs::from("com", "GitHub", "icy_view")
-        .map(|p| p.config_dir().display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
-
-    let config_file = directories::ProjectDirs::from("com", "GitHub", "icy_view")
-        .map(|p| p.config_dir().join("options.toml").display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
-
-    let log_file = Options::get_log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+    let config_dir = get_config_dir().display().to_string();
+    let config_file = get_config_dir().join("options.toml").display().to_string();
+    let log_file = Options::get_log_file().display().to_string();
 
     let on_msg_1 = on_message.clone();
     let on_msg_2 = on_message.clone();

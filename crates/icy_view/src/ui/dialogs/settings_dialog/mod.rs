@@ -76,32 +76,29 @@ impl SettingsDialogState {
                 StateResult::None
             }
             SettingsDialogMessage::OpenSettingsFolder => {
-                if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_view") {
-                    if let Err(err) = open::that(proj_dirs.config_dir()) {
-                        log::error!("Failed to open settings folder: {}", err);
-                    }
+                if let Err(err) = open::that(crate::options::get_config_dir()) {
+                    log::error!("Failed to open settings folder: {}", err);
                 }
                 StateResult::None
             }
             SettingsDialogMessage::OpenLogFile => {
-                if let Some(log_file) = Options::get_log_file() {
-                    if log_file.exists() {
-                        #[cfg(windows)]
-                        {
-                            if let Err(err) = std::process::Command::new("notepad").arg(&log_file).spawn() {
-                                log::error!("Failed to open log file: {}", err);
-                            }
+                let log_file = Options::get_log_file();
+                if log_file.exists() {
+                    #[cfg(windows)]
+                    {
+                        if let Err(err) = std::process::Command::new("notepad").arg(&log_file).spawn() {
+                            log::error!("Failed to open log file: {}", err);
                         }
-                        #[cfg(not(windows))]
-                        {
-                            if let Err(err) = open::that(&log_file) {
-                                log::error!("Failed to open log file: {}", err);
-                            }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        if let Err(err) = open::that(&log_file) {
+                            log::error!("Failed to open log file: {}", err);
                         }
-                    } else if let Some(parent) = log_file.parent() {
-                        if let Err(err) = open::that(parent) {
-                            log::error!("Failed to open log file directory: {}", err);
-                        }
+                    }
+                } else if let Some(parent) = log_file.parent() {
+                    if let Err(err) = open::that(parent) {
+                        log::error!("Failed to open log file directory: {}", err);
                     }
                 }
                 StateResult::None

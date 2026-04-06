@@ -1,9 +1,75 @@
 use crate::sort_order::SortOrder;
 use icy_engine_gui::MonitorSettings;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, path::Path, path::PathBuf, sync::OnceLock};
 
 use futures::executor::block_on;
+
+/// Global config directory, resolved once at startup.
+static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Resolve the configuration directory based on CLI args and auto-detection.
+///
+/// Priority:
+/// 1. `--config-dir <PATH>` (explicit override)
+/// 2. `--portable` flag → directory containing the executable
+/// 3. Auto-detect: if `options.toml` exists next to the executable → use that directory
+/// 4. Platform default via `directories::ProjectDirs`
+pub fn init_config_dir(portable: bool, config_dir: Option<PathBuf>) {
+    let dir = resolve_config_dir(portable, config_dir);
+    if let Err(_existing) = CONFIG_DIR.set(dir) {
+        log::warn!("Config directory was already initialized");
+    }
+}
+
+/// Returns the active configuration directory.
+pub fn get_config_dir() -> &'static Path {
+    CONFIG_DIR.get().expect("CONFIG_DIR not initialized; call init_config_dir() first")
+}
+
+fn resolve_config_dir(portable: bool, config_dir: Option<PathBuf>) -> PathBuf {
+    // 1. Explicit --config-dir
+    if let Some(dir) = config_dir {
+        if let Err(err) = fs::create_dir_all(&dir) {
+            log::error!("Can't create custom config directory {:?}: {}", dir, err);
+        }
+        return dir;
+    }
+
+    // 2. --portable flag
+    if portable {
+        if let Some(dir) = exe_dir() {
+            if let Err(err) = fs::create_dir_all(&dir) {
+                log::error!("Can't create portable config directory {:?}: {}", dir, err);
+            }
+            return dir;
+        }
+    }
+
+    // 3. Auto-detect: options.toml next to executable
+    if let Some(dir) = exe_dir() {
+        if dir.join("options.toml").exists() {
+            return dir;
+        }
+    }
+
+    // 4. Platform default
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_view") {
+        let dir = proj_dirs.config_dir().to_path_buf();
+        if let Err(err) = fs::create_dir_all(&dir) {
+            log::error!("Can't create config directory {:?}: {}", dir, err);
+        }
+        return dir;
+    }
+
+    // Last resort: current directory
+    PathBuf::from(".")
+}
+
+/// Returns the directory containing the current executable, if available.
+fn exe_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.canonicalize().ok()?.parent().map(|p| p.to_path_buf())
+}
 
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
 
@@ -132,54 +198,47 @@ impl Default for Options {
 
 impl Options {
     pub fn load_options() -> Self {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_view") {
-            if !proj_dirs.config_dir().exists() && fs::create_dir_all(proj_dirs.config_dir()).is_err() {
-                log::error!("Can't create configuration directory {:?}", proj_dirs.config_dir());
-                return Self::default();
-            }
-            let options_file = proj_dirs.config_dir().join("options.toml");
-            if options_file.exists() {
-                match fs::read_to_string(options_file) {
-                    Ok(txt) => {
-                        if let Ok(result) = toml::from_str(&txt) {
-                            return result;
-                        }
+        let config_dir = get_config_dir();
+        let options_file = config_dir.join("options.toml");
+        if options_file.exists() {
+            match fs::read_to_string(&options_file) {
+                Ok(txt) => {
+                    if let Ok(result) = toml::from_str(&txt) {
+                        return result;
                     }
-                    Err(err) => log::error!("Error reading options file: {}", err),
                 }
+                Err(err) => log::error!("Error reading options file: {}", err),
             }
         }
         Self::default()
     }
 
     pub fn store_options(&self) {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_view") {
-            let file_name = proj_dirs.config_dir().join("options.toml");
-            match toml::to_string(self) {
-                Ok(text) => {
-                    if let Err(err) = fs::write(file_name, text) {
-                        log::error!("Error writing options file: {}", err);
-                    }
+        let config_dir = get_config_dir();
+        let file_name = config_dir.join("options.toml");
+        match toml::to_string(self) {
+            Ok(text) => {
+                if let Err(err) = fs::write(file_name, text) {
+                    log::error!("Error writing options file: {}", err);
                 }
-                Err(err) => log::error!("Error writing options file: {}", err),
             }
+            Err(err) => log::error!("Error writing options file: {}", err),
         }
     }
 
     /// Returns the log directory path
-    pub fn get_log_dir() -> Option<PathBuf> {
-        directories::ProjectDirs::from("com", "GitHub", "icy_view").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
+    pub fn get_log_dir() -> PathBuf {
+        get_config_dir().to_path_buf()
     }
 
     /// Returns the path to the current log file.
-    pub fn get_log_file() -> Option<PathBuf> {
-        Self::get_log_dir().map(|log_dir| {
-            if cfg!(windows) {
-                log_dir.join("icy_view_rCURRENT.log")
-            } else {
-                log_dir.join("icy_view.log")
-            }
-        })
+    pub fn get_log_file() -> PathBuf {
+        let log_dir = Self::get_log_dir();
+        if cfg!(windows) {
+            log_dir.join("icy_view_rCURRENT.log")
+        } else {
+            log_dir.join("icy_view.log")
+        }
     }
 
     /// Returns the export path, falling back to default if not set
