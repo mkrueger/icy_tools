@@ -5,10 +5,14 @@ on:
     branches: [master]
     types: 
       - completed
+  push:
+    tags:
+      - 'v*'
 env:
   CARGO_TERM_COLOR: always
 jobs:
   build_linux:
+   if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
    strategy:
      matrix:
        app: [icy_term, icy_view, icy_draw]
@@ -67,9 +71,12 @@ jobs:
      uses: actions/upload-artifact@v4
      with:
       name: ${{ env.APP_IMG }}
-      path: ${{ env.APP_IMG }}
+      path: |
+        ${{ env.APP_IMG }}
+        file_id.diz
 
   build_windows:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     strategy:
       matrix:
         app: [icy_term, icy_view, icy_play, icy_draw]
@@ -97,6 +104,7 @@ jobs:
           file_id.diz
   
   build_mac:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     strategy:
       matrix:
         app: [icy_term, icy_view, icy_draw]
@@ -167,3 +175,42 @@ jobs:
           path: |
             ${{ matrix.app }}-${{ env.VERSION }}-universal.dmg
             file_id.diz
+
+  create_release:
+    needs: [build_linux, build_windows, build_mac]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    - name: Prepare release assets
+      run: |
+        mkdir -p release
+
+        # Create zip archives (with file_id.diz for BBS redistribution)
+        cd artifacts
+        for dir in */; do
+          dir_name="${dir%/}"
+          cd "$dir_name"
+          zip -r "../../release/${dir_name}.zip" .
+          cd ..
+        done
+        cd ..
+
+        # Copy individual files for direct download
+        find artifacts -name "*.deb" -exec cp {} release/ \;
+        find artifacts -name "*.AppImage" -exec cp {} release/ \;
+        find artifacts -name "*.exe" -exec cp {} release/ \;
+        find artifacts -name "*.dmg" -exec cp {} release/ \;
+
+        echo "Release assets:"
+        ls -la release/
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: release/*
+        generate_release_notes: true
