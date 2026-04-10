@@ -190,6 +190,10 @@ fn main() {
         WindowManager::view,
     )
     .antialiasing(true)
+    .settings(icy_ui::Settings {
+        focus_level: icy_ui::widget::operation::FocusLevel::Manual,
+        ..Default::default()
+    })
     .theme(WindowManager::theme)
     .subscription(WindowManager::subscription)
     .title(WindowManager::title)

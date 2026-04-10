@@ -25,8 +25,6 @@ command_handler!(WindowCommands, create_common_commands(), _window_id: window::I
     cmd::WINDOW_NEW => WindowManagerMessage::OpenWindow,
     cmd::WINDOW_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
     cmd::FILE_CLOSE => WindowManagerMessage::CloseWindow(_window_id),
-    cmd::FOCUS_NEXT => WindowManagerMessage::FocusNext,
-    cmd::FOCUS_PREVIOUS => WindowManagerMessage::FocusPrevious,
 });
 
 pub struct WindowManager {
@@ -168,8 +166,6 @@ impl WindowManager {
                     .map(WindowManagerMessage::WindowOpened)
             }
             WindowManagerMessage::CloseWindow(id) => window::close(id),
-            WindowManagerMessage::FocusNext => icy_ui::widget::operation::focus_next(),
-            WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
             WindowManagerMessage::WindowOpened(id) => {
                 let mut window: MainWindow = MainWindow::new(
                     find_next_window_id(&self.windows),
@@ -234,9 +230,34 @@ impl WindowManager {
             }
 
             WindowManagerMessage::Event(window_id, event) => {
-                // Handle keyboard commands at window manager level first
-                if let Some(msg) = self.commands.handle(&event, window_id) {
-                    return Task::done(msg);
+                // In terminal view mode, Tab/Shift+Tab must reach the terminal
+                // instead of being consumed by the focus-navigation commands.
+                let is_tab_in_terminal = matches!(
+                    &event,
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: keyboard::Key::Named(keyboard::key::Named::Tab),
+                        ..
+                    })
+                ) && self
+                    .windows
+                    .get(&window_id)
+                    .map(|w| matches!(w.state.mode, MainWindowMode::ShowTerminal) && w.dialogs.is_empty())
+                    .unwrap_or(false);
+                println!("Event: {event:?}, is_tab_in_terminal: {is_tab_in_terminal}");
+
+                if !is_tab_in_terminal {
+                    // Handle Alt+Number window switching
+                    if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
+                        if let Some(icy_engine_gui::KeyboardAction::FocusWindow(target_id)) =
+                            icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers)
+                        {
+                            return Task::done(WindowManagerMessage::FocusWindow(target_id));
+                        }
+                    }
+                    // Handle keyboard commands at window manager level
+                    if let Some(msg) = self.commands.handle(&event, window_id) {
+                        return Task::done(msg);
+                    }
                 }
 
                 // Pass event to window for other handling
@@ -279,6 +300,8 @@ impl WindowManager {
             WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
             WindowManagerMessage::AnimationTick => Task::none(),
+
+            _ => Task::none(),
         }
     }
 
@@ -311,22 +334,8 @@ impl WindowManager {
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
                     Event::Mouse(_) => None,
 
-                    // Keyboard events need special handling
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
-                        if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
-                            use icy_engine_gui::KeyboardAction;
-                            return match action {
-                                KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
-                                KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
-                                KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
-                            };
-                        }
-
-                        // Forward all key events - command matching happens in update()
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
-                    // Forward other keyboard events (KeyReleased)
+                    // Forward all keyboard events to update() where we can
+                    // inspect the active window's mode before deciding on shortcuts.
                     Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip touch events
                     Event::Touch(_) => None,

@@ -1971,6 +1971,14 @@ impl MainWindow {
                             }
                         }
 
+                        // Tab/Shift+Tab always go to the terminal, never to focus navigation.
+                        let is_tab = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
+                        if is_tab {
+                            if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
+                                return (Some(Message::SendData(bytes)), Task::none());
+                            }
+                        }
+
                         // When connected to a BBS, terminal key mapping takes priority
                         // so that Ctrl+letter combos are sent as control characters
                         // (e.g. Ctrl+W = 0x17) instead of being intercepted as app shortcuts.
