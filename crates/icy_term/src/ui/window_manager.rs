@@ -243,7 +243,6 @@ impl WindowManager {
                     .get(&window_id)
                     .map(|w| matches!(w.state.mode, MainWindowMode::ShowTerminal) && w.dialogs.is_empty())
                     .unwrap_or(false);
-                println!("Event: {event:?}, is_tab_in_terminal: {is_tab_in_terminal}");
 
                 if !is_tab_in_terminal {
                     // Handle Alt+Number window switching

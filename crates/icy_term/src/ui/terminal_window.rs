@@ -9,6 +9,8 @@ use icy_engine_gui::{terminal::view::TerminalView, MonitorSettings, Terminal};
 use icy_net::serial::Serial;
 use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::BaudEmulation;
+use icy_ui::menu::{item as menu_item, separator as menu_separator, MenuNode};
+use icy_ui::widget::menu::context_menu;
 use icy_ui::{
     widget::{button, column, container, row, scroll_area, scrollable, svg, text, Space},
     Alignment, Border, Color, Element, Length, Size,
@@ -225,8 +227,37 @@ impl TerminalWindow {
         // Status bar at the bottom - add scrollback info
         let status_bar = self.create_status_bar(options, pause_message);
 
+        // Build context menu items for right-click on terminal area
+        let menu_items = self.build_context_menu_items();
+        let terminal_area_with_menu = context_menu(terminal_area, &menu_items);
+
         // Combine all elements
-        column![button_bar, terminal_area, status_bar].spacing(0).into()
+        column![button_bar, terminal_area_with_menu, status_bar].spacing(0).into()
+    }
+
+    fn build_context_menu_items(&self) -> Vec<MenuNode<Message>> {
+        let mut items = Vec::new();
+
+        if self.is_connected {
+            items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-hangup"), Message::Hangup));
+        } else {
+            items.push(menu_item!(
+                fl!(crate::LANGUAGE_LOADER, "terminal-dialing_directory"),
+                Message::ShowDialingDirectory
+            ));
+        }
+
+        items.push(menu_separator!());
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-upload"), Message::Upload));
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-download"), Message::Download));
+        items.push(menu_separator!());
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-menu-copy"), Message::Copy));
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-menu-paste"), Message::Paste));
+        items.push(menu_separator!());
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "terminal-menu-info"), Message::ShowTerminalInfoDialog));
+        items.push(menu_item!(fl!(crate::LANGUAGE_LOADER, "settings-heading"), Message::ShowSettings));
+
+        items
     }
 
     fn create_update_notification(&self) -> Element<'_, Message> {

@@ -122,4 +122,7 @@ pub enum Message {
 
     // Zoom (unified)
     Zoom(icy_engine_gui::ZoomMessage),
+
+    // Toast notifications
+    CloseToast(icy_ui::widget::toaster::Id),
 }

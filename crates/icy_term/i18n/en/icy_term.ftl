@@ -167,7 +167,10 @@ terminal-menu = Menu
 terminal-menu-copy = Copy
 terminal-menu-paste = Paste
 terminal-menu-export = Export buffer…
+terminal-menu-info = Terminal Info
 terminal-find-hint = Find text
+
+toast-copied-to-clipboard = Copied to clipboard
 terminal-find-no-results = No results
 terminal-find-results = { $cur } of { $total }
 

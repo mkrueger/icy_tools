@@ -22,6 +22,7 @@ use crate::{
 use icy_engine::Position;
 use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
+use icy_ui::widget::toaster;
 use icy_ui::{keyboard, window, Element, Event, Task, Theme};
 use tokio::sync::mpsc;
 
@@ -128,6 +129,8 @@ pub struct MainWindow {
     commands: MainWindowCommands,
     /// Cached monitor settings as Arc for efficient rendering
     cached_monitor_settings: Arc<MonitorSettings>,
+    /// Toast notifications for user feedback
+    toasts: toaster::Toasts<Message>,
 }
 
 impl MainWindow {
@@ -193,6 +196,7 @@ impl MainWindow {
             terminal_emulation: TerminalEmulation::Ansi,
             commands: MainWindowCommands::new(),
             cached_monitor_settings,
+            toasts: toaster::Toasts::new(Message::CloseToast),
         }
     }
 
@@ -818,6 +822,7 @@ impl MainWindow {
             }
 
             Message::Copy => {
+                println!("1");
                 // Check if in scrollback mode - text copy isn't available there
                 // because scrollback only stores rendered pixels, not character data
                 if self.terminal_window.terminal.is_in_scrollback_mode() {
@@ -829,9 +834,15 @@ impl MainWindow {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
                     match icy_engine_gui::copy_selection(&mut **screen, Message::CopyCompleted) {
-                        Ok(task) => {
+                        Ok(_task) => {
                             self.shift_pressed_during_selection = false;
-                            return task;
+                            return self
+                                .toasts
+                                .push(
+                                    toaster::Toast::new(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "toast-copied-to-clipboard"))
+                                    .duration(Duration::from_secs(2))
+                                    .style(toaster::success_style)
+                                );
                         }
                         Err(err) => log::error!("Failed to copy: {err}"),
                     }
@@ -1213,6 +1224,11 @@ impl MainWindow {
                 self.cached_monitor_settings = Arc::new(opts.monitor_settings.clone());
                 Task::none()
             }
+
+            Message::CloseToast(id) => {
+                self.toasts.remove(id);
+                Task::none()
+            }
         }
     }
 
@@ -1592,7 +1608,10 @@ impl MainWindow {
         };
 
         // Wrap with dialog stack (for new trait-based dialogs)
-        self.dialogs.view(mode_view)
+        let with_dialogs = self.dialogs.view(mode_view);
+
+        // Wrap with toaster for toast notifications
+        toaster::toaster(&self.toasts, with_dialogs).into()
     }
 
     pub fn get_mode(&self) -> MainWindowMode {
