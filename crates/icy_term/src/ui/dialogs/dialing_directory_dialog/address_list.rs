@@ -10,7 +10,6 @@ use icy_ui::{
     Alignment, Element, Length,
 };
 use once_cell::sync::Lazy;
-use std::mem::swap;
 
 static CONNECT_TOADDRESS_PLACEHOLDER: Lazy<String> = Lazy::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to-address"));
 
@@ -96,6 +95,11 @@ impl super::DialingDirectoryState {
                 left: 0.0,
                 right: 13.0,
             }))
+            .id(self.scroll_id.clone())
+            .on_scroll(|viewport| {
+                let offset = viewport.absolute_offset();
+                Message::from(DialingDirectoryMsg::ScrollChanged(offset.y, viewport.bounds().height))
+            })
             .height(Length::Fill)
             .width(Length::Fill)
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new()))
@@ -105,16 +109,14 @@ impl super::DialingDirectoryState {
             space().height(Length::Fixed(4.0)),
             row![filter_input, clear_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
             container(list_scroll)
-                .style(|_theme: &icy_ui::Theme| container::Style {
-                    background: Some(icy_ui::Background::Color(icy_ui::Color::from_rgba(0.0, 0.0, 0.0, 0.15))),
+                .style(|theme: &icy_ui::Theme| container::Style {
+                    background: Some(icy_ui::Background::Color(theme.background.base)),
                     border: icy_ui::Border {
-                        color: icy_ui::Color::from_rgba(0.3, 0.3, 0.3, 0.5),
+                        color: theme.secondary.base,
                         width: 1.0,
                         radius: 4.0.into(),
                     },
-                    text_color: None,
-                    shadow: Default::default(),
-                    snap: false,
+                    ..Default::default()
                 })
                 .padding(4),
         ]
@@ -132,7 +134,7 @@ fn address_row_entry<'a>(
     addr: String,
     favored: bool,
     calls: u32,
-    search_text: &'a str, // Add search text parameter
+    search_text: &'a str,
 ) -> Element<'a, Message> {
     fn truncate_text(text: String, max_chars: usize) -> String {
         if text.chars().count() <= max_chars {
@@ -156,7 +158,7 @@ fn address_row_entry<'a>(
     let truncated_name = truncate_text(name, 33);
     let truncated_addr = truncate_text(addr, 31);
 
-    // Create highlighted text elements - pass owned Strings
+    // Create highlighted text elements
     let name_element = if !search_text.is_empty() && truncated_name.to_lowercase().contains(&search_text.to_lowercase()) {
         highlight_name_text(truncated_name, search_text)
     } else {
@@ -169,14 +171,19 @@ fn address_row_entry<'a>(
         text(truncated_addr)
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                color: Some(theme.button.base),
+                color: Some(theme.background.on.scale_alpha(0.55)),
                 ..Default::default()
             })
             .font(icy_ui::Font::MONOSPACE)
             .into()
     };
 
-    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) }).size(TEXT_SIZE_SMALL);
+    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) })
+        .size(TEXT_SIZE_SMALL)
+        .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
+            color: Some(theme.background.on.scale_alpha(0.4)),
+            ..Default::default()
+        });
 
     let content = column![
         row![name_element, Space::new().width(Length::Fill), star].align_y(Alignment::Center),
@@ -190,17 +197,28 @@ fn address_row_entry<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(0)
-        .style(|_theme: &icy_ui::Theme, _status| button::Style {
-            background: Some(icy_ui::Background::Color(icy_ui::Color::TRANSPARENT)),
-            border: icy_ui::Border {
-                color: icy_ui::Color::TRANSPARENT,
-                width: 0.0,
-                radius: 0.0.into(),
-            },
-            text_color: icy_ui::Color::BLACK,
-            shadow: Default::default(),
-            snap: false,
-            ..Default::default()
+        .style(move |theme: &icy_ui::Theme, status| {
+            let hover_bg = if selected {
+                icy_ui::Color::TRANSPARENT
+            } else {
+                match status {
+                    button::Status::Hovered => theme.accent.base.scale_alpha(0.08),
+                    button::Status::Pressed => theme.accent.base.scale_alpha(0.14),
+                    _ => icy_ui::Color::TRANSPARENT,
+                }
+            };
+            button::Style {
+                background: Some(icy_ui::Background::Color(hover_bg)),
+                border: icy_ui::Border {
+                    color: icy_ui::Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: 4.0.into(),
+                },
+                text_color: icy_ui::Color::TRANSPARENT,
+                shadow: Default::default(),
+                snap: false,
+                ..Default::default()
+            }
         })
         .on_press(Message::from(DialingDirectoryMsg::SelectAddress(idx)));
 
@@ -209,31 +227,28 @@ fn address_row_entry<'a>(
     if selected {
         container(stacked)
             .width(Length::Fill)
-            .style(|theme: &icy_ui::Theme| {
-                let mut border_color = theme.accent.hover;
-                border_color.a = 0.6;
-                swap(&mut border_color.r, &mut border_color.g);
-
-                container::Style {
-                    background: Some(icy_ui::Background::Color({
-                        let mut c = theme.accent.selected;
-                        swap(&mut c.r, &mut c.g);
-                        c.a = 0.10;
-                        c
-                    })),
-                    border: icy_ui::Border {
-                        color: border_color,
-                        width: 1.0,
-                        radius: 3.0.into(),
-                    },
-                    text_color: None,
-                    shadow: Default::default(),
-                    snap: false,
-                }
+            .style(|theme: &icy_ui::Theme| container::Style {
+                background: Some(icy_ui::Background::Color(theme.accent.base.scale_alpha(0.15))),
+                border: icy_ui::Border {
+                    color: theme.accent.base.scale_alpha(0.5),
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
             })
             .into()
     } else {
-        container(stacked).width(Length::Fill).into()
+        container(stacked)
+            .width(Length::Fill)
+            .style(|_theme: &icy_ui::Theme| container::Style {
+                border: icy_ui::Border {
+                    color: icy_ui::Color::TRANSPARENT,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
     }
 }
 
@@ -285,7 +300,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
         return text(text_str)
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                color: Some(theme.button.on),
+                color: Some(theme.background.on.scale_alpha(0.55)),
                 ..Default::default()
             })
             .font(icy_ui::Font::MONOSPACE)
@@ -305,14 +320,14 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 text(text_str[last..idx].to_string())
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                        color: Some(theme.button.on),
+                        color: Some(theme.background.on.scale_alpha(0.55)),
                         ..Default::default()
                     })
                     .font(icy_ui::Font::MONOSPACE)
                     .into(),
             );
         }
-        // Add highlighted part with warning color
+        // Add highlighted part with accent color
         row_elements.push(
             text(text_str[idx..idx + search.len()].to_string())
                 .size(TEXT_SIZE_SMALL)
@@ -330,7 +345,7 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             text(text_str[last..].to_string())
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                    color: Some(theme.button.on),
+                    color: Some(theme.background.on.scale_alpha(0.55)),
                     ..Default::default()
                 })
                 .font(icy_ui::Font::MONOSPACE)

@@ -8,7 +8,7 @@ use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use icy_ui::keyboard;
 use icy_ui::{
-    widget::{button, column, container, row, svg, text, Space},
+    widget::{self, button, column, container, row, svg, text, Space},
     Alignment, Element, Event, Length, Task,
 };
 use parking_lot::Mutex;
@@ -41,6 +41,11 @@ pub struct DialingDirectoryState {
     pub show_passwords: bool,
     pub pending_delete: Option<usize>,
     pub quick_connect_address: Address,
+    pub scroll_id: widget::Id,
+
+    // Scroll viewport tracking
+    scroll_offset_y: f32,
+    visible_height: f32,
 
     // Double-click detection
     last_click_time: Option<std::time::Instant>,
@@ -57,6 +62,9 @@ impl DialingDirectoryState {
             show_passwords: false,
             pending_delete: None,
             quick_connect_address: Address::default(),
+            scroll_id: widget::Id::unique(),
+            scroll_offset_y: 0.0,
+            visible_height: 0.0,
             last_click_time: None,
             last_clicked_index: None,
         }
@@ -333,6 +341,12 @@ impl DialingDirectoryState {
                 Task::none()
             }
 
+            DialingDirectoryMsg::ScrollChanged(offset_y, height) => {
+                self.scroll_offset_y = offset_y;
+                self.visible_height = height;
+                Task::none()
+            }
+
             DialingDirectoryMsg::NavigateUp => {
                 let addresses = self.filtered();
 
@@ -356,7 +370,7 @@ impl DialingDirectoryState {
                     let (idx, _) = addresses[addresses.len() - 1];
                     self.selected_bbs = Some(idx);
                 }
-                Task::none()
+                self.scroll_to_selected()
             }
 
             DialingDirectoryMsg::NavigateDown => {
@@ -380,8 +394,59 @@ impl DialingDirectoryState {
                     let (idx, _) = addresses[0];
                     self.selected_bbs = Some(idx);
                 }
-                Task::none()
+                self.scroll_to_selected()
             }
+        }
+    }
+
+    /// Estimate the height of a single address row entry (content + padding + spacing).
+    const ITEM_HEIGHT: f32 = 52.0;
+
+    fn scroll_to_selected(&self) -> Task<Message> {
+        let addresses = self.filtered();
+        let show_quick_connect = self.filter_text.is_empty() && matches!(self.filter_mode, DialingDirectoryFilter::All);
+
+        // Find the visual position of the selected item in the filtered list
+        let visual_pos = if let Some(selected_idx) = self.selected_bbs {
+            addresses
+                .iter()
+                .position(|(idx, _)| *idx == selected_idx)
+                .map(|pos| if show_quick_connect { pos + 1 } else { pos })
+        } else {
+            // Quick connect is always position 0
+            if show_quick_connect {
+                Some(0)
+            } else {
+                None
+            }
+        };
+
+        let Some(pos) = visual_pos else {
+            return Task::none();
+        };
+
+        let item_top = pos as f32 * Self::ITEM_HEIGHT;
+        let item_bottom = item_top + Self::ITEM_HEIGHT;
+
+        // Only scroll if the selected item is outside the visible area
+        let scroll_y = self.scroll_offset_y;
+        let visible_bottom = scroll_y + self.visible_height;
+
+        let new_scroll_y = if item_top < scroll_y {
+            // Item is above the visible area — scroll up to show it at the top
+            Some(item_top)
+        } else if item_bottom > visible_bottom {
+            // Item is below the visible area — scroll down so it's at the bottom
+            Some(item_bottom - self.visible_height)
+        } else {
+            None
+        };
+
+        if let Some(y) = new_scroll_y {
+            let offset = icy_ui::widget::operation::AbsoluteOffset { x: None, y: Some(y.max(0.0)) };
+            icy_ui::widget::operation::scroll_to(self.scroll_id.clone(), offset)
+        } else {
+            Task::none()
         }
     }
 
@@ -418,6 +483,7 @@ pub enum DialingDirectoryMsg {
     NavigateUp,
     NavigateDown,
     ConfirmDelete(usize),
+    ScrollChanged(f32, f32),
 }
 
 #[derive(Debug, Clone)]
