@@ -836,13 +836,11 @@ impl MainWindow {
                     match icy_engine_gui::copy_selection(&mut **screen, Message::CopyCompleted) {
                         Ok(_task) => {
                             self.shift_pressed_during_selection = false;
-                            return self
-                                .toasts
-                                .push(
-                                    toaster::Toast::new(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "toast-copied-to-clipboard"))
+                            return self.toasts.push(
+                                toaster::Toast::new(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "toast-copied-to-clipboard"))
                                     .duration(Duration::from_secs(2))
-                                    .style(toaster::success_style)
-                                );
+                                    .style(toaster::success_style),
+                            );
                         }
                         Err(err) => log::error!("Failed to copy: {err}"),
                     }
