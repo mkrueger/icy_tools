@@ -405,6 +405,22 @@ impl Screen for PaletteScreenBuffer {
         self.pixel_size
     }
 
+    fn get_dirty_lines(&self) -> Option<(i32, i32)> {
+        if self.buffer_dirty.load(std::sync::atomic::Ordering::Acquire) {
+            // PaletteScreenBuffer doesn't track per-line dirty ranges,
+            // so mark all lines dirty when the buffer has been modified.
+            let font_h = self.font_dimensions().height.max(1);
+            let total_lines = (self.pixel_size.height + font_h - 1) / font_h;
+            Some((0, total_lines))
+        } else {
+            None
+        }
+    }
+
+    fn clear_dirty_lines(&self) {
+        self.buffer_dirty.store(false, std::sync::atomic::Ordering::Release);
+    }
+
     fn screen(&self) -> &[u8] {
         &self.screen
     }

@@ -281,22 +281,16 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             buf.clear_mouse_fields();
         }
 
-        RipCommand::BeginText {
-            x0: _,
-            y0: _,
-            x1: _,
-            y1: _,
-            res: _,
-        } => {
-            // BeginText not implemented in current BGI
+        RipCommand::BeginText { x0, y0, x1, y1, res: _ } => {
+            bgi.begin_formatted_text_region(x0.into(), y0.into(), x1.into(), y1.into());
         }
 
-        RipCommand::RegionText { .. } => {
-            // RegionText not implemented in current BGI
+        RipCommand::RegionText { justify, text } => {
+            bgi.out_formatted_text_region(buf, justify, &text);
         }
 
         RipCommand::EndText => {
-            // EndText not implemented in current BGI
+            bgi.end_formatted_text_region();
         }
 
         RipCommand::GetImage { x0, y0, x1, y1, res: _ } => {

@@ -345,10 +345,24 @@ pub struct Bgi {
     line_pattern: Vec<bool>,
     current_pos: Position,
     char_size: i32,
+    formatted_text_region: Option<FormattedTextRegion>,
     pub suspend_text: bool,
     pub rip_image: Option<Image>,
 
     pub file_path: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FormattedTextRegion {
+    rect: Rectangle,
+    next_line_y: i32,
+}
+
+impl FormattedTextRegion {
+    fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
+        let rect = Rectangle::from_coords(x0, y0, x1, y1);
+        Self { next_line_y: rect.top(), rect }
+    }
 }
 
 mod bezier_handler {
@@ -457,6 +471,7 @@ impl Bgi {
             line_thickness: 1,
             current_pos: Position::new(0, 0),
             char_size: 4,
+            formatted_text_region: None,
             rip_image: None,
             button_style: ButtonStyle2::default(),
             suspend_text: false,
@@ -560,6 +575,74 @@ impl Bgi {
         self.font = font;
         self.direction = direction;
         self.char_size = char_size.clamp(1, 10);
+    }
+
+    pub fn begin_formatted_text_region(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        self.formatted_text_region = Some(FormattedTextRegion::new(x0, y0, x1, y1));
+    }
+
+    pub fn end_formatted_text_region(&mut self) {
+        self.formatted_text_region = None;
+    }
+
+    fn out_text_xy_justified(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, width: i32, text: &str) {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        if words.len() <= 1 || width <= 0 {
+            self.out_text_xy(buf, x, y, text);
+            return;
+        }
+
+        let gap_count = words.len() as i32 - 1;
+        let space_width = self.text_size(" ").width.max(0);
+        let word_width: i32 = words.iter().map(|word| self.text_size(word).width).sum();
+        let normal_width = word_width + space_width * gap_count;
+        let extra_width = width - normal_width;
+
+        if extra_width <= 0 {
+            self.out_text_xy(buf, x, y, text);
+            return;
+        }
+
+        let extra_per_gap = extra_width / gap_count;
+        let remainder = extra_width % gap_count;
+        let mut cursor_x = x;
+
+        for (index, word) in words.iter().enumerate() {
+            cursor_x = self.out_text_xy(buf, cursor_x, y, word).x;
+            if index + 1 < words.len() {
+                cursor_x += space_width + extra_per_gap;
+                if index < remainder as usize {
+                    cursor_x += 1;
+                }
+            }
+        }
+    }
+
+    pub fn out_formatted_text_region(&mut self, buf: &mut dyn EditableScreen, justify: bool, text: &str) {
+        let Some(region) = self.formatted_text_region else {
+            return;
+        };
+        if region.rect.is_empty() {
+            return;
+        }
+
+        let old_direction = self.direction;
+        self.direction = Direction::Horizontal;
+
+        let line_height = self.text_size("Ay").height.max(1);
+        if region.next_line_y + line_height <= region.rect.bottom() {
+            if justify {
+                self.out_text_xy_justified(buf, region.rect.left(), region.next_line_y, region.rect.width(), text);
+            } else {
+                self.out_text_xy(buf, region.rect.left(), region.next_line_y, text);
+            }
+
+            if let Some(active_region) = self.formatted_text_region.as_mut() {
+                active_region.next_line_y += line_height;
+            }
+        }
+
+        self.direction = old_direction;
     }
 
     #[inline(always)]
@@ -1677,6 +1760,7 @@ impl Bgi {
         self.char_size = 4;
         self.font = FontType::Small;
         buf.clear_mouse_fields();
+        self.formatted_text_region = None;
         self.suspend_text = false;
     }
 

@@ -12,6 +12,7 @@ pub fn test_rip() {
         let data = fs::read(&cur_entry).unwrap_or_else(|e| panic!("Error reading file {:?}: {}", cur_entry, e));
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let mut screen = ScreenMode::Rip.create_screen(TerminalEmulation::Rip, None);
+        println!("Testing file: {:?}", cur_entry);
         super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }

@@ -216,7 +216,7 @@ impl<'a> CRTShaderProgram<'a> {
                 }
             }
 
-            state.update_cached_screen_info(&**screen);
+            let screen_type_changed = state.update_cached_screen_info(&**screen);
             *state.cached_mouse_state.lock() = Some(screen.terminal_state().mouse_state.clone());
 
             char_blink_supported = screen.ice_mode().has_blink();
@@ -385,6 +385,11 @@ impl<'a> CRTShaderProgram<'a> {
             // Use the shared render cache from Terminal
             {
                 let mut cache: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, crate::SharedRenderCache> = self.term.render_cache.write();
+
+                // Full invalidation when screen type changes (e.g. TextScreen → PaletteScreenBuffer on connect)
+                if screen_type_changed {
+                    cache.invalidate();
+                }
 
                 // Selective tile invalidation based on dirty lines
                 if let Some((first_dirty_line, last_dirty_line)) = screen.get_dirty_lines() {

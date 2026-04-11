@@ -2,7 +2,7 @@ use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::AutoTransferScanner;
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
-use crate::ConnectionInformation;
+use crate::{normalize_screen_mode, ConnectionInformation};
 use crate::TransferProtocol;
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
@@ -658,9 +658,8 @@ impl TerminalThread {
         self.connection = Some(connection);
         self.connection_time = Some(Instant::now());
 
-        let (mut new_screen, parser) = config
-            .screen_mode
-            .create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
+        let screen_mode = normalize_screen_mode(config.terminal_type, config.screen_mode);
+        let (mut new_screen, parser) = screen_mode.create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
         {
             new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
             // Set mouse tracking enabled based on connection config
@@ -1016,7 +1015,6 @@ impl TerminalThread {
 
             // IEMSI auto-login: scan for EMSI_IRQ
             if let Some(scanner) = &mut self.iemsi_scanner {
-                print!("{}", byte as char);
                 if scanner.scan_byte(byte) {
                     // EMSI_IRQ detected - perform handshake
                     if let (Some(conn), Some(user_settings)) = (&mut self.connection, &self.iemsi_user_settings) {
@@ -1995,6 +1993,7 @@ impl TerminalThread {
     /// This reinitializes the screen and parser similar to connect()
     async fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
         self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
+        let screen_mode = normalize_screen_mode(terminal_type, screen_mode);
 
         // Create new screen and parser for the new terminal type
         let (mut new_screen, parser) = screen_mode.create_screen(terminal_type, Some(CreationOptions { ansi_music }));

@@ -154,8 +154,10 @@ impl CRTShaderState {
 
     /// Update cached screen info from a screen reference
     /// Called during internal_draw while screen is already locked
-    pub fn update_cached_screen_info(&self, screen: &dyn Screen) {
+    /// Returns true if the graphics type changed (requires full cache invalidation)
+    pub fn update_cached_screen_info(&self, screen: &dyn Screen) -> bool {
         let mut info = self.cached_screen_info.lock();
+        let old_graphics_type = info.graphics_type;
         if let Some(font) = screen.font(0) {
             info.font_w = font.size().width as f32;
             info.font_h = font.size().height as f32;
@@ -165,6 +167,7 @@ impl CRTShaderState {
         info.resolution = screen.resolution();
         info.scan_lines = screen.scan_lines();
         info.graphics_type = screen.graphics_type();
+        old_graphics_type != info.graphics_type
     }
 
     /// Map mouse coordinates to cell position using shared RenderInfo from shader.

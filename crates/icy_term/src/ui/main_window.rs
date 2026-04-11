@@ -241,6 +241,8 @@ impl MainWindow {
                     None
                 };
                 let options = &self.options.lock();
+                let screen_mode = address.get_screen_mode();
+                let window_size = screen_mode.window_size();
 
                 self.terminal_emulation = address.terminal_type;
 
@@ -249,7 +251,7 @@ impl MainWindow {
                     connection_info: address.clone().into(),
                     terminal_type: address.terminal_type,
                     baud_emulation: address.baud_emulation,
-                    window_size: (80, 25),
+                    window_size: (window_size.width as u16, window_size.height as u16),
                     timeout: Duration::from_secs(30),
                     user_name: if address.user_name.is_empty() {
                         None
@@ -261,7 +263,7 @@ impl MainWindow {
                     proxy_command: None, // fill from settings if needed
                     modem,
                     ansi_music: address.ansi_music,
-                    screen_mode: address.get_screen_mode(),
+                    screen_mode,
                     iemsi_auto_login: options.iemsi.autologin,
                     auto_login_exp: address.auto_login.clone(),
                     max_scrollback_lines: options.max_scrollback_lines,
@@ -822,7 +824,6 @@ impl MainWindow {
             }
 
             Message::Copy => {
-                println!("1");
                 // Check if in scrollback mode - text copy isn't available there
                 // because scrollback only stores rendered pixels, not character data
                 if self.terminal_window.terminal.is_in_scrollback_mode() {

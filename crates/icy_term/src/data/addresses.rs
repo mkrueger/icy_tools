@@ -45,6 +45,30 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
     }
 }
 
+pub fn normalize_screen_mode(terminal_type: TerminalEmulation, screen_mode: ScreenMode) -> ScreenMode {
+    match terminal_type {
+        TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii => screen_mode,
+        TerminalEmulation::Utf8Ansi => match screen_mode {
+            ScreenMode::Vga(w, h) => ScreenMode::Unicode(w, h),
+            ScreenMode::Unicode(w, h) => ScreenMode::Unicode(w, h),
+            _ => ScreenMode::Unicode(80, 25),
+        },
+        TerminalEmulation::PETscii => ScreenMode::Vic,
+        TerminalEmulation::ATAscii => match screen_mode {
+            ScreenMode::Atascii(w) => ScreenMode::Atascii(w),
+            _ => ScreenMode::Atascii(40),
+        },
+        TerminalEmulation::ViewData => ScreenMode::Videotex,
+        TerminalEmulation::Mode7 => ScreenMode::Mode7,
+        TerminalEmulation::Rip => ScreenMode::Rip,
+        TerminalEmulation::Skypix => ScreenMode::SkyPix,
+        TerminalEmulation::AtariST => match screen_mode {
+            ScreenMode::AtariST(res, igs) => ScreenMode::AtariST(res, igs),
+            _ => ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false),
+        },
+    }
+}
+
 /**/
 
 /*
@@ -456,23 +480,7 @@ impl Address {
     }
 
     pub(crate) fn get_screen_mode(&self) -> ScreenMode {
-        match self.terminal_type {
-            TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii => self.screen_mode.clone(),
-            TerminalEmulation::Utf8Ansi => match self.screen_mode {
-                ScreenMode::Vga(w, h) => ScreenMode::Unicode(w, h),
-                _ => ScreenMode::Unicode(80, 25),
-            },
-            TerminalEmulation::PETscii => ScreenMode::Vic,
-            TerminalEmulation::ATAscii => self.screen_mode.clone(),
-            TerminalEmulation::ViewData => ScreenMode::Videotex,
-            TerminalEmulation::Mode7 => ScreenMode::Mode7,
-            TerminalEmulation::Rip => ScreenMode::Rip,
-            TerminalEmulation::Skypix => ScreenMode::SkyPix,
-            TerminalEmulation::AtariST => match self.screen_mode {
-                ScreenMode::AtariST(res, igs) => ScreenMode::AtariST(res, igs),
-                _ => ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false),
-            },
-        }
+        normalize_screen_mode(self.terminal_type, self.screen_mode)
     }
 }
 

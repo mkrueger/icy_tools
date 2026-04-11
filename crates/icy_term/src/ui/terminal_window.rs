@@ -810,7 +810,7 @@ impl TerminalWindow {
             Some(addr) => {
                 self.baud_emulation = addr.baud_emulation;
                 self.terminal_emulation = addr.terminal_type.clone();
-                self.screen_mode = addr.screen_mode;
+                self.screen_mode = addr.get_screen_mode();
                 self.ansi_music = addr.ansi_music;
             }
             None => {

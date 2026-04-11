@@ -66,9 +66,8 @@ pub fn supports_ansi_music(terminal_type: TerminalEmulation) -> bool {
 /// Get the default screen mode for a terminal type
 pub fn get_default_screen_mode(terminal_type: TerminalEmulation) -> ScreenMode {
     match terminal_type {
-        TerminalEmulation::Ansi | TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Rip | TerminalEmulation::Utf8Ansi => {
-            ScreenMode::Vga(80, 25)
-        }
+        TerminalEmulation::Ansi | TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),
+        TerminalEmulation::Rip => ScreenMode::Rip,
         TerminalEmulation::AtariST => ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, true),
         TerminalEmulation::PETscii => ScreenMode::Vic,
         TerminalEmulation::ATAscii => ScreenMode::Atascii(40),
