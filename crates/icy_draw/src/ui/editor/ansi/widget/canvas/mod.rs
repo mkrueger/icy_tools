@@ -27,6 +27,9 @@ pub struct CanvasView {
     pub terminal: Terminal,
     /// Monitor settings for CRT effects (cached as Arc for efficient rendering)
     pub monitor_settings: Arc<RwLock<MonitorSettings>>,
+    /// When enabled, manual scaling expands the scrollable content to the viewport
+    /// and centers smaller content. Useful for previews, but not for the main editor.
+    expand_to_viewport_in_manual_mode: bool,
 }
 
 impl CanvasView {
@@ -37,7 +40,15 @@ impl CanvasView {
         let mut terminal = Terminal::new(screen);
         terminal.set_fit_terminal_height_to_bounds(true);
 
-        Self { terminal, monitor_settings }
+        Self {
+            terminal,
+            monitor_settings,
+            expand_to_viewport_in_manual_mode: true,
+        }
+    }
+
+    pub fn set_expand_to_viewport_in_manual_mode(&mut self, enabled: bool) {
+        self.expand_to_viewport_in_manual_mode = enabled;
     }
 
     /// Set whether the terminal has focus (controls caret visibility/blinking)
@@ -251,6 +262,7 @@ impl CanvasView {
         let is_manual = !monitor_settings.scaling_mode.is_auto();
         let last_viewport_w = self.terminal.visible_width_px();
         let last_viewport_h = self.terminal.visible_height_px();
+        let expand_to_viewport = is_manual && self.expand_to_viewport_in_manual_mode;
 
         // Scrollable size in zoomed pixels (for scroll_area)
         // In FitWidth mode, zoom depends on the available viewport width. Ensure the content
@@ -267,7 +279,7 @@ impl CanvasView {
         // Manual mode: center the content when it's smaller than the viewport.
         // `show_viewport` caps viewport sizes to the provided content size, so we
         // must ensure content size is at least the last known viewport size.
-        if is_manual {
+        if expand_to_viewport {
             scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
             scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
         }
@@ -291,7 +303,7 @@ impl CanvasView {
 
                 let term = TerminalView::show_with_effects(&self.terminal, monitor_settings.clone(), editor_markers.clone()).map(|msg| msg);
 
-                if is_manual {
+                if expand_to_viewport {
                     container(term)
                         .width(Length::Fill)
                         .height(Length::Fill)

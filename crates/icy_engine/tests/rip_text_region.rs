@@ -21,9 +21,7 @@ fn count_nonzero_pixels(screen: &PaletteScreenBuffer, left: i32, top: i32, right
     (top as usize..bottom as usize)
         .map(|y| {
             let row_start = y * width;
-            (left as usize..right as usize)
-                .filter(|x| screen.screen()[row_start + *x] != 0)
-                .count()
+            (left as usize..right as usize).filter(|x| screen.screen()[row_start + *x] != 0).count()
         })
         .sum()
 }
@@ -125,8 +123,7 @@ fn justified_region_text_uses_available_width() {
         .as_any_mut()
         .downcast_mut::<PaletteScreenBuffer>()
         .expect("RIP screen should downcast to PaletteScreenBuffer");
-    let justified_rightmost =
-        rightmost_nonzero_pixel(justified_palette, 10, 10, 220, 10 + line_height).expect("justified text should draw pixels");
+    let justified_rightmost = rightmost_nonzero_pixel(justified_palette, 10, 10, 220, 10 + line_height).expect("justified text should draw pixels");
 
     assert!(justified_rightmost > left_rightmost + 10);
 }

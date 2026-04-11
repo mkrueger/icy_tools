@@ -768,6 +768,7 @@ impl AnsiEditorCore {
         // Create canvas with cloned Arc to screen + shared monitor settings
         let shared_monitor_settings = Arc::new(RwLock::new(options.read().monitor_settings.clone()));
         let mut canvas = CanvasView::new(screen.clone(), shared_monitor_settings);
+        canvas.terminal.set_fit_terminal_height_to_bounds(false);
         // Enable caret blinking by default (Click tool is the default)
         canvas.set_has_focus(true);
 

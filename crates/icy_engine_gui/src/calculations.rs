@@ -184,8 +184,12 @@ pub fn compute_viewport_manual(
         .compute_zoom(res_w, original_res_h, bounds_width, bounds_height, use_integer_scaling)
         .max(0.001);
 
-    let visible_width = (bounds_width / zoom).min(res_w);
-    let visible_height = (bounds_height / zoom).min(original_res_h);
+    // Clamp visible dimensions to content size, not resolution.
+    // Resolution is the terminal window size (e.g. 80×25 = 640×400), which may be
+    // much smaller than the actual content for editor documents (e.g. 80×152 = 640×2432).
+    // Using resolution would limit the viewport to only 25 visible rows.
+    let visible_width = (bounds_width / zoom).min(content_width);
+    let visible_height = (bounds_height / zoom).min(content_height);
 
     let max_scroll_y = (content_height - visible_height).max(0.0);
     let scroll_offset_y = scroll_y.clamp(0.0, max_scroll_y);
@@ -543,7 +547,7 @@ mod tests {
         );
 
         // At 50% zoom, visible = bounds / zoom = 400/0.5 = 800, 300/0.5 = 600
-        // But clamped to resolution
+        // Clamped to content size (800x1200), so width=800, height=600
         assert!((params.visible_width - 800.0).abs() < 0.001);
         assert!((params.visible_height - 600.0).abs() < 0.001);
         assert!((params.zoom - 0.5).abs() < 0.001);

@@ -229,7 +229,8 @@ impl FileFormat {
     /// * `ext` - File extension without the leading dot (e.g., "ans", "xb")
     ///
     /// # Returns
-    /// `Some(FileFormat)` if the extension is recognized, `None` otherwise.
+    /// `Some(FileFormat)` matching the extension. Unrecognized extensions
+    /// default to `FileFormat::Ansi`.
     ///
     /// # Example
     /// ```
@@ -237,7 +238,7 @@ impl FileFormat {
     ///
     /// assert_eq!(FileFormat::from_extension("ans"), Some(FileFormat::Ansi));
     /// assert_eq!(FileFormat::from_extension("ANS"), Some(FileFormat::Ansi));
-    /// assert_eq!(FileFormat::from_extension("unknown"), None);
+    /// assert_eq!(FileFormat::from_extension("unknown"), Some(FileFormat::Ansi));
     /// ```
     pub fn from_extension(ext: &str) -> Option<FileFormat> {
         let ext_lower = ext.to_ascii_lowercase();
@@ -324,14 +325,16 @@ impl FileFormat {
             "bmp" => Some(FileFormat::Image(ImageFormat::Bmp)),
             "six" | "sixel" => Some(FileFormat::Image(ImageFormat::Sixel)),
 
-            // Try CharacterFont formats, then BitFont formats, then archive formats
+            // Try CharacterFont formats, then BitFont formats, then archive formats, then default to ANSI
             _ => {
                 if let Some(char_font_fmt) = CharacterFontFormat::from_extension(&ext_lower) {
                     Some(FileFormat::CharacterFont(char_font_fmt))
                 } else if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
                     Some(FileFormat::BitFont(font_fmt))
+                } else if let Some(arc_fmt) = archive_format_from_extension(&ext_lower) {
+                    Some(FileFormat::Archive(arc_fmt))
                 } else {
-                    archive_format_from_extension(&ext_lower).map(FileFormat::Archive)
+                    Some(FileFormat::Ansi)
                 }
             }
         }

@@ -1272,10 +1272,13 @@ impl shader::Primitive for TerminalShader {
         };
 
         // Calculate display size.
+        // IMPORTANT: In manual mode the shader is already wrapped in a fixed-size content widget.
+        // Using the scroll viewport size here would re-normalize the content against the window
+        // again and make it appear smaller as the window grows.
         let term_w = self.visible_width.max(1.0);
         let term_h = self.visible_height.max(1.0);
-        let avail_w = self.viewport_width.max(1.0);
-        let avail_h = self.viewport_height.max(1.0);
+        let avail_w = bounds.width.max(1.0);
+        let avail_h = bounds.height.max(1.0);
         let use_int = self.monitor_settings.use_integer_scaling;
 
         // Use uniform (non-stretching) scaling in all modes.

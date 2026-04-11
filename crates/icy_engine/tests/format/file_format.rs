@@ -7,7 +7,7 @@ fn file_format_from_extension() {
     assert_eq!(FileFormat::from_extension("ANS"), Some(FileFormat::Ansi));
     assert_eq!(FileFormat::from_extension("diz"), Some(FileFormat::Ansi));
     assert_eq!(FileFormat::from_extension("xb"), Some(FileFormat::XBin));
-    assert_eq!(FileFormat::from_extension("unknown"), None);
+    assert_eq!(FileFormat::from_extension("unknown"), Some(FileFormat::Ansi));
 }
 
 #[test]
