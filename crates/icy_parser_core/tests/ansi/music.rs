@@ -467,3 +467,72 @@ fn test_pipe_complex_sequence() {
     let has_pause = music.music_actions.iter().any(|action| matches!(action, MusicAction::Pause(_)));
     assert!(has_pause, "Should contain a pause action");
 }
+
+#[test]
+fn test_mso1d16_parsed_as_music() {
+    // ESC[MSO1D16\x0E — M-style music parses one leading style character
+    // before entering the command loop.
+    // S = staccato, O1 = octave 1, D16 = note D length 16
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Conflicting);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[MSO1D16\x0E", &mut sink);
+
+    let music = sink.get_music().expect("ESC[MSO1D16 should produce music");
+    assert_eq!(2, music.music_actions.len(), "Should have 2 actions: SetStyle + PlayNote");
+
+    // First action: staccato style (from leading 'S')
+    assert!(
+        matches!(music.music_actions[0], MusicAction::SetStyle(icy_parser_core::MusicStyle::Staccato)),
+        "First action should be SetStyle(Staccato), got {:?}",
+        music.music_actions[0]
+    );
+
+    // Second action: note D in octave 1 with length 16
+    if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[1] {
+        // D in octave 1: ~73.42 Hz
+        assert!((freq - 73.4162).abs() < 0.1, "Expected D in octave 1 (~73.4 Hz), got {}", freq);
+        assert_eq!(16 * 120, len, "Length should be 16 * tempo(120)");
+        assert!(!dotted);
+    } else {
+        panic!("Expected PlayNote, got {:?}", music.music_actions[1]);
+    }
+}
+
+#[test]
+fn test_bansi_skips_leading_style_char() {
+    // ESC[N (BANSI style) does NOT parse a leading style character —
+    // it jumps straight into the command loop.
+    // So ESC[NSO1D16 would treat 'S' as an unknown command and abort.
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Banana);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[NSO1D16\x0E", &mut sink);
+
+    // 'S' is not valid in the command loop — music should abort
+    assert!(sink.get_music().is_none(), "BANSI should NOT parse leading style char");
+}
+
+#[test]
+fn test_bansi_direct_commands() {
+    // ESC[N (BANSI style) goes directly into command loop.
+    // ESC[NO1D16 = octave 1, note D length 16 (no style prefix)
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Banana);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[NO1D16\x0E", &mut sink);
+
+    let music = sink.get_music().expect("ESC[NO1D16 should produce music");
+    assert_eq!(1, music.music_actions.len(), "Should have 1 action: PlayNote");
+
+    if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[0] {
+        assert!((freq - 73.4162).abs() < 0.1, "Expected D in octave 1 (~73.4 Hz), got {}", freq);
+        assert_eq!(16 * 120, len, "Length should be 16 * tempo(120)");
+        assert!(!dotted);
+    } else {
+        panic!("Expected PlayNote, got {:?}", music.music_actions[0]);
+    }
+}

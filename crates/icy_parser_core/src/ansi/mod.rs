@@ -1754,10 +1754,11 @@ impl AnsiParser {
                 // CSI M can be either Delete Line or ANSI Music (conflicting)
                 if self.music_option == music::MusicOption::Conflicting || self.music_option == music::MusicOption::Both {
                     if self.params.is_empty() {
-                        // Start ANSI music parsing
+                        // Start ANSI music parsing — M-style parses one leading
+                        // style character (F/B/N/L/S) before the command loop.
                         self.state = ParserState::AnsiMusic;
                         self.cur_music = Some(music::AnsiMusic::default());
-                        self.music_state = MusicState::Default;
+                        self.music_state = MusicState::ParseMusicStyle;
                         return; // Don't reset - stay in AnsiMusic state
                     }
                 }
