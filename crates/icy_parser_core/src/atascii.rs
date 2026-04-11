@@ -167,11 +167,11 @@ impl CommandParser for AtasciiParser {
                     start = i + 1;
                 }
                 0xFF => {
-                    // Insert blank character (space) at current position
+                    // Insert character - shift characters right at cursor, insert blank
                     if start < i {
                         sink.print(&input[start..i]);
                     }
-                    sink.print(&[b' ']);
+                    sink.emit(TerminalCommand::CsiInsertCharacter(1));
                     start = i + 1;
                 }
                 _ => {

@@ -23,6 +23,7 @@ enum MappingCommand {
     InsertLine,
     ClearTab,
     SetTab,
+    InsertCharacter,
 }
 
 impl MappingTestSink {
@@ -79,6 +80,9 @@ impl CommandSink for MappingTestSink {
             }
             TerminalCommand::EscSetTab => {
                 self.commands.push(MappingCommand::SetTab);
+            }
+            TerminalCommand::CsiInsertCharacter(_) => {
+                self.commands.push(MappingCommand::InsertCharacter);
             }
             _ => {}
         }
@@ -243,17 +247,15 @@ fn test_atascii_all_byte_mappings() {
     }
     assert!(found_escaped_char, "Expected literal 0x1C character from ESC+0x1C sequence");
 
-    // Verify 0xFF: Insert blank character (space)
-    let mut found_space_from_ff = false;
+    // Verify 0xFF: Insert character
+    let mut found_insert_char = false;
     for cmd in &all_commands {
-        if let MappingCommand::Text(data) = cmd {
-            if data.contains(&b' ') {
-                found_space_from_ff = true;
-                break;
-            }
+        if let MappingCommand::InsertCharacter = cmd {
+            found_insert_char = true;
+            break;
         }
     }
-    assert!(found_space_from_ff, "Expected space character from 0xFF insert");
+    assert!(found_insert_char, "Expected InsertCharacter command from 0xFF");
 }
 
 #[test]
@@ -318,8 +320,8 @@ fn test_atascii_control_codes() {
     assert_eq!(sink.commands.last(), Some(&MappingCommand::Delete));
 
     let mut sink = MappingTestSink::new();
-    parser.parse(&[0xFF], &mut sink); // Insert blank (space)
-    assert_eq!(sink.commands.last(), Some(&MappingCommand::Text(vec![b' '])));
+    parser.parse(&[0xFF], &mut sink); // Insert character
+    assert_eq!(sink.commands.last(), Some(&MappingCommand::InsertCharacter));
 }
 
 #[test]

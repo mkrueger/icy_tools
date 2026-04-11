@@ -59,6 +59,9 @@ impl CommandSink for TestSink {
             TerminalCommand::EscSetTab => {
                 self.commands.push("SetTab".to_string());
             }
+            TerminalCommand::CsiInsertCharacter(n) => {
+                self.commands.push(format!("InsertCharacter: {}", n));
+            }
             _ => {
                 self.commands.push(format!("Other: {:?}", cmd));
             }
@@ -200,7 +203,7 @@ fn test_atascii_delete_insert_char() {
     assert_eq!(sink.commands.len(), 4);
     assert_eq!(sink.commands[0], "Delete");
     assert_eq!(sink.commands[1], "Text: \"Delete\"");
-    assert_eq!(sink.commands[2], "Text: \" \""); // Space from 0xFF
+    assert_eq!(sink.commands[2], "InsertCharacter: 1"); // 0xFF inserts blank at cursor
     assert_eq!(sink.commands[3], "Text: \"Insert\"");
 }
 
