@@ -19,7 +19,7 @@ use icy_engine::formats::FileFormat;
 use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::commands::cmd;
-use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage};
+use icy_engine_gui::ui::{confirm_yes_no_cancel, error_dialog, DialogResult, DialogStack, ExportDialogMessage, ExportSettings};
 use icy_engine_gui::{command_handler, command_handlers, Toast, ToastManager};
 use icy_ui::{
     widget::{button, column, container, mouse_area, row, rule, text, Space},
@@ -341,7 +341,7 @@ pub enum Message {
     SettingsSaved(crate::ui::dialog::settings::SettingsResult),
 
     ExportDialog(ExportDialogMessage),
-    ExportComplete(PathBuf),
+    ExportComplete((PathBuf, ExportSettings)),
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Dialog
@@ -1769,30 +1769,31 @@ impl MainWindow {
 
                     // Get export directory: prefer last export directory from settings,
                     // then file path directory, then current directory
-                    let export_dir = self
-                        .options
-                        .read()
+                    let opts = self.options.read();
+                    let export_dir = opts
                         .last_export_directory
                         .clone()
                         .or_else(|| editor.file_path().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+                    let saved_export_settings = opts.export_settings.clone();
+                    drop(opts);
 
                     // Combine directory and filename for the initial path
                     let initial_path = export_dir.join(&export_filename);
 
-                    self.dialogs.push(
-                        export_dialog_with_defaults_from_msg(
-                            initial_path,
-                            buffer_type,
-                            screen,
-                            (Message::ExportDialog, |msg: &Message| match msg {
-                                Message::ExportDialog(inner) => Some(inner),
-                                _ => None,
-                            }),
-                        )
-                        .on_confirm(Message::ExportComplete)
-                        .on_cancel(|| Message::CloseDialog),
+                    let mut dialog = export_dialog_with_defaults_from_msg(
+                        initial_path,
+                        buffer_type,
+                        screen,
+                        (Message::ExportDialog, |msg: &Message| match msg {
+                            Message::ExportDialog(inner) => Some(inner),
+                            _ => None,
+                        }),
                     );
+                    // Restore persisted export settings
+                    dialog.state_mut().apply_export_settings(&saved_export_settings);
+
+                    self.dialogs.push(dialog.on_confirm(Message::ExportComplete).on_cancel(|| Message::CloseDialog));
                 }
                 Task::none()
             }
@@ -1803,11 +1804,12 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::ExportComplete(path) => {
-                // Save the export directory for next time
+            Message::ExportComplete((path, export_settings)) => {
+                // Save the export directory and format settings for next time
                 if let Some(parent) = path.parent() {
                     let mut opts = self.options.write();
                     opts.last_export_directory = Some(parent.to_path_buf());
+                    opts.export_settings = export_settings;
                     opts.store_persistent();
                 }
 

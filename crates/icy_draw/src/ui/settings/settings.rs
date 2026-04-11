@@ -1,4 +1,4 @@
-use icy_engine_gui::MonitorSettings;
+use icy_engine_gui::{ExportSettings, MonitorSettings};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
@@ -41,6 +41,10 @@ struct PersistedSettings {
     /// Last used export directory (persisted)
     #[serde(default)]
     pub last_export_directory: Option<PathBuf>,
+
+    /// Export dialog settings (persisted)
+    #[serde(default)]
+    pub export_settings: ExportSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +94,7 @@ impl Default for PersistedSettings {
             collaboration: Default::default(),
             selected_taglist: String::new(),
             last_export_directory: None,
+            export_settings: ExportSettings::default(),
         }
     }
 }
@@ -124,6 +129,9 @@ pub struct Settings {
 
     /// Last used export directory (persisted)
     pub last_export_directory: Option<PathBuf>,
+
+    /// Export dialog settings (persisted)
+    pub export_settings: ExportSettings,
 }
 
 impl Settings {
@@ -141,6 +149,7 @@ impl Settings {
             collaboration: persistent.collaboration,
             selected_taglist: persistent.selected_taglist,
             last_export_directory: persistent.last_export_directory,
+            export_settings: persistent.export_settings,
         }
     }
 
@@ -153,6 +162,7 @@ impl Settings {
             collaboration: self.collaboration.clone(),
             selected_taglist: self.selected_taglist.clone(),
             last_export_directory: self.last_export_directory.clone(),
+            export_settings: self.export_settings.clone(),
         };
         Self::store_options_file(&settings);
     }

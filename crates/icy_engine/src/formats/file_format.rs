@@ -244,7 +244,7 @@ impl FileFormat {
         let ext_lower = ext.to_ascii_lowercase();
         match ext_lower.as_str() {
             // ANSI variants
-            "ans" | "diz" | "nfo" | "ice" => Some(FileFormat::Ansi),
+            "ans" | "diz" | "nfo" | "ice" | "gfx" => Some(FileFormat::Ansi),
 
             // ANSI Music
             "ams" | "mus" => Some(FileFormat::AnsiMusic),

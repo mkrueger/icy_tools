@@ -13,6 +13,7 @@ use icy_ui::{
     Alignment, Element, Length,
 };
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -89,8 +90,63 @@ enum FormatCategory {
     Other,
 }
 
+/// Persisted export dialog settings.
+///
+/// This struct captures the format-specific options from the export dialog
+/// so they can be saved to disk and restored on the next export.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportSettings {
+    /// Last used export format extension (e.g. "ans", "pcb", "icy")
+    #[serde(default)]
+    pub export_format_ext: Option<String>,
+
+    #[serde(default)]
+    pub ansi_level: AnsiCompatibilityLevel,
+
+    #[serde(default)]
+    pub ansi_rgb_output: bool,
+
+    #[serde(default)]
+    pub screen_prep: ScreenPreperation,
+
+    #[serde(default)]
+    pub max_line_length_enabled: bool,
+
+    #[serde(default = "default_max_line_length")]
+    pub max_line_length: u16,
+
+    #[serde(default)]
+    pub utf8_output: bool,
+
+    #[serde(default)]
+    pub compress: bool,
+
+    #[serde(default)]
+    pub sixel_settings: SixelSettings,
+}
+
+fn default_max_line_length() -> u16 {
+    80
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            export_format_ext: None,
+            ansi_level: AnsiCompatibilityLevel::default(),
+            ansi_rgb_output: false,
+            screen_prep: ScreenPreperation::None,
+            max_line_length_enabled: false,
+            max_line_length: 80,
+            utf8_output: false,
+            compress: false,
+            sixel_settings: SixelSettings::default(),
+        }
+    }
+}
+
 /// State for the export dialog
-#[dialog_wrapper(result_type = PathBuf)]
+#[dialog_wrapper(result_type = (PathBuf, ExportSettings))]
 pub struct ExportDialogState {
     /// The screen buffer to export
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
@@ -226,6 +282,48 @@ impl ExportDialogState {
         self
     }
 
+    /// Restore persisted export settings into this dialog state.
+    pub fn with_export_settings(mut self, settings: &ExportSettings) -> Self {
+        self.apply_export_settings(settings);
+        self
+    }
+
+    /// Apply persisted export settings to this dialog state (mutable reference version).
+    pub fn apply_export_settings(&mut self, settings: &ExportSettings) {
+        // Restore the export format if it was saved and is compatible
+        if let Some(ref ext) = settings.export_format_ext {
+            if let Some(fmt) = FileFormat::from_extension(ext) {
+                if self.available_formats.contains(&fmt) {
+                    self.export_format = fmt;
+                    self.temp_format = fmt;
+                }
+            }
+        }
+        self.ansi_level = settings.ansi_level;
+        self.ansi_rgb_output = settings.ansi_rgb_output;
+        self.screen_prep = settings.screen_prep;
+        self.max_line_length_enabled = settings.max_line_length_enabled;
+        self.max_line_length = settings.max_line_length;
+        self.utf8_output = settings.utf8_output;
+        self.compress = settings.compress;
+        self.sixel_settings = settings.sixel_settings.clone();
+    }
+
+    /// Snapshot the current dialog options into an `ExportSettings` for persistence.
+    pub fn export_settings(&self) -> ExportSettings {
+        ExportSettings {
+            export_format_ext: Some(self.export_format.primary_extension().to_string()),
+            ansi_level: self.ansi_level,
+            ansi_rgb_output: self.ansi_rgb_output,
+            screen_prep: self.screen_prep,
+            max_line_length_enabled: self.max_line_length_enabled,
+            max_line_length: self.max_line_length,
+            utf8_output: self.utf8_output,
+            compress: self.compress,
+            sixel_settings: self.sixel_settings.clone(),
+        }
+    }
+
     /// Get the format category for the current format
     fn format_category(&self) -> FormatCategory {
         match self.temp_format {
@@ -346,7 +444,7 @@ impl ExportDialogState {
     /// - `StateResult::Success(path)` if export was successful
     /// - `StateResult::Close` if cancelled
     /// - `StateResult::None` to keep dialog open
-    pub fn handle_message(&mut self, message: ExportDialogMessage) -> StateResult<PathBuf> {
+    pub fn handle_message(&mut self, message: ExportDialogMessage) -> StateResult<(PathBuf, ExportSettings)> {
         match message {
             ExportDialogMessage::Export => {
                 // Update the actual values
@@ -354,11 +452,14 @@ impl ExportDialogState {
                 self.export_filename = self.temp_filename.clone();
                 self.export_format = self.temp_format;
 
+                // Snapshot current settings before export (so they can be persisted by the caller)
+                let settings = self.export_settings();
+
                 // Perform the export
                 match self.export_buffer() {
                     Ok(path) => {
                         log::info!("Successfully exported to: {}", path.display());
-                        StateResult::Success(path)
+                        StateResult::Success((path, settings))
                     }
                     Err(e) => {
                         log::error!("Export failed: {}", e);

@@ -1567,7 +1567,7 @@ impl MainWindow {
                                 screen,
                                 dialog_msg!(Message::ExportDialog),
                             )
-                            .on_confirm(|path| {
+                            .on_confirm(|(path, _export_settings)| {
                                 Message::ShowToast(Toast::success(fl!(crate::LANGUAGE_LOADER, "export-success", path = path.display().to_string())))
                             })
                             .on_cancel(|| Message::None),
