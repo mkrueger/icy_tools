@@ -102,25 +102,25 @@ category = "edit"
 [[commands]]
 id = "view.zoom_in"
 hotkey = ["Ctrl++", "Ctrl+="]
-hotkey_mac = ["Cmd++", "Cmd+=", "+", "="]
+hotkey_mac = ["Cmd++", "Cmd+="]
 category = "view"
 
 [[commands]]
 id = "view.zoom_out"
 hotkey = ["Ctrl+-"]
-hotkey_mac = ["Cmd+-", "-"]
+hotkey_mac = ["Cmd+-"]
 category = "view"
 
 [[commands]]
 id = "view.zoom_reset"
 hotkey = ["Ctrl+0"]
-hotkey_mac = ["Cmd+0", "0"]
+hotkey_mac = ["Cmd+0"]
 category = "view"
 
 [[commands]]
 id = "view.zoom_fit"
 hotkey = ["Ctrl+9"]
-hotkey_mac = ["Cmd+9", "9"]
+hotkey_mac = ["Cmd+9"]
 category = "view"
 
 [[commands]]
