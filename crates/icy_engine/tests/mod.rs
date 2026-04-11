@@ -166,7 +166,10 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font
     // Load expected PNG
     let file = File::open(&png_file).unwrap_or_else(|e| panic!("Error opening PNG file {:?}: {}", png_file, e));
     let decoder = png::Decoder::new(BufReader::new(file));
-    let mut reader = decoder.read_info().unwrap();
+    let mut reader = match decoder.read_info() {
+        Ok(reader) => reader,
+        Err(err) => panic!("Error reading PNG info for {} ({}): {}", filename, png_file.display(), err),
+    };
 
     // Get expected dimensions and color type
     let (width, height, color_type) = {

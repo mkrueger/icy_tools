@@ -336,27 +336,41 @@ impl EditableScreen for TextScreen {
     }
 
     fn clear_line(&mut self) {
-        let line = self.caret.position().y;
-        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(line as usize) {
-            l.chars.clear();
+        let mut pos = self.caret.position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..self.width() {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
     }
 
     fn clear_line_end(&mut self) {
-        let pos = self.caret.position();
-        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(pos.y as usize) {
-            l.chars.truncate(pos.x as usize);
+        let mut pos = self.caret.position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in pos.x..self.width() {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
     }
 
     fn clear_line_start(&mut self) {
-        let pos = self.caret.position();
-        if let Some(l) = self.buffer.layers[self.current_layer].lines.get_mut(pos.y as usize) {
-            for i in 0..pos.x.min(l.chars.len() as i32) {
-                l.chars[i as usize] = AttributedChar::default();
-            }
+        let mut pos = self.caret.position();
+        let ch: AttributedChar = AttributedChar {
+            attribute: self.caret().attribute,
+            ..Default::default()
+        };
+        for x in 0..pos.x {
+            pos.x = x;
+            self.set_char(pos, ch);
         }
     }
+
     fn clear_mouse_fields(&mut self) {
         self.mouse_fields.clear();
     }

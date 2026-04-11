@@ -1016,12 +1016,15 @@ impl TerminalThread {
 
             // IEMSI auto-login: scan for EMSI_IRQ
             if let Some(scanner) = &mut self.iemsi_scanner {
+                print!("{}", byte as char);
                 if scanner.scan_byte(byte) {
                     // EMSI_IRQ detected - perform handshake
                     if let (Some(conn), Some(user_settings)) = (&mut self.connection, &self.iemsi_user_settings) {
+                        println!("[IEMSI] EMSI_IRQ detected, starting handshake...");
                         let terminal_settings = ICITerminalSettings::default();
                         match complete_iemsi_handshake(conn, user_settings, &terminal_settings, 5000).await {
                             Ok(Some(isi)) => {
+                                println!("[IEMSI] Handshake successful, received ISI: {:?}", isi);
                                 log::info!("[IEMSI] Login successful: {}", isi.name);
                                 let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi)));
                                 // Clear scanner after login
@@ -1029,10 +1032,12 @@ impl TerminalThread {
                                 self.iemsi_user_settings = None;
                             }
                             Ok(None) => {
+                                println!("[IEMSI] Handshake failed or timed out");
                                 log::warn!("[IEMSI] Handshake failed or timed out");
                                 scanner.reset();
                             }
                             Err(e) => {
+                                println!("[IEMSI] Handshake error: {}", e);
                                 log::error!("[IEMSI] Handshake error: {}", e);
                                 scanner.reset();
                             }

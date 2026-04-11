@@ -321,10 +321,16 @@ fn test_editable_clear_line() {
     }
 
     screen.set_caret_position(Position::new(5, 0));
+    screen.caret_mut().attribute.set_foreground(2);
+    screen.caret_mut().attribute.set_background(4);
+    let expected_attr = screen.caret().attribute;
     screen.clear_line();
 
-    // Line should be cleared
-    assert_eq!(screen.line_length(0), 0);
+    for i in 0..screen.width() {
+        let ch = screen.char_at(Position::new(i, 0));
+        assert_eq!(ch.ch, ' ');
+        assert_eq!(ch.attribute, expected_attr);
+    }
 }
 
 #[test]
@@ -337,10 +343,21 @@ fn test_editable_clear_line_end() {
     }
 
     screen.set_caret_position(Position::new(5, 0));
+    screen.caret_mut().attribute.set_foreground(2);
+    screen.caret_mut().attribute.set_background(4);
+    let expected_attr = screen.caret().attribute;
     screen.clear_line_end();
 
-    // Only first 5 characters should remain
-    assert_eq!(screen.line_length(0), 5);
+    for i in 0..5 {
+        let ch = screen.char_at(Position::new(i, 0));
+        assert_eq!(ch.ch, 'X');
+        assert_eq!(ch.attribute, TextAttribute::default());
+    }
+    for i in 5..screen.width() {
+        let ch = screen.char_at(Position::new(i, 0));
+        assert_eq!(ch.ch, ' ');
+        assert_eq!(ch.attribute, expected_attr);
+    }
 }
 
 #[test]
@@ -353,15 +370,22 @@ fn test_editable_clear_line_start() {
     }
 
     screen.set_caret_position(Position::new(5, 0));
+    screen.caret_mut().attribute.set_foreground(2);
+    screen.caret_mut().attribute.set_background(4);
+    let expected_attr = screen.caret().attribute;
     screen.clear_line_start();
 
-    // First 5 characters should be cleared (default char is ' ')
+    // First 5 characters should be cleared with the caret attribute
     for i in 0..5 {
-        assert_eq!(screen.char_at(Position::new(i, 0)).ch, ' ');
+        let ch = screen.char_at(Position::new(i, 0));
+        assert_eq!(ch.ch, ' ');
+        assert_eq!(ch.attribute, expected_attr);
     }
     // Rest should still be 'X'
     for i in 5..10 {
-        assert_eq!(screen.char_at(Position::new(i, 0)).ch, 'X');
+        let ch = screen.char_at(Position::new(i, 0));
+        assert_eq!(ch.ch, 'X');
+        assert_eq!(ch.attribute, TextAttribute::default());
     }
 }
 
