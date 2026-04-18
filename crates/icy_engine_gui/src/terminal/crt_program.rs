@@ -1049,6 +1049,14 @@ impl<'a> CRTShaderProgram<'a> {
                         };
 
                         if matches!(button, mouse::Button::Left | mouse::Button::Right) {
+                            // If a previous drag was in progress (e.g. the matching
+                            // ButtonReleased was consumed by an overlay like a context
+                            // menu), reset the stale drag state before starting a new one.
+                            if state.dragging {
+                                state.drag_anchor = None;
+                                state.last_drag_position = None;
+                                state.drag_button = MouseButton::None;
+                            }
                             state.dragging = true;
                             state.drag_button = mouse_button;
                             state.drag_anchor = cell_pos;

@@ -29,7 +29,7 @@ icy_sauce = { git = "https://github.com/mkrueger/icy_sauce" }
 
 #icy_sauce = { path = "../icy_sauce" }
 icy_sixel = "0.5.0"
-icy_net = { git ="https://github.com/mkrueger/icy_board" }
+icy_net = { git = "https://github.com/mkrueger/icy_board" }
 #icy_net = { path ="../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
 unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
@@ -42,7 +42,7 @@ icy_engine_edit = { path = "crates/icy_engine_edit" }
 #libyaff = { path = "../libyaff" }
 libyaff = { git = "https://github.com/mkrueger/libyaff" }
 
-codepages = { git ="https://github.com/mkrueger/icy_board" }
+codepages = { git = "https://github.com/mkrueger/icy_board" }
 zip = "8.4.0"
 lazy_static = "1.5.0"
 semver = "1.0.27"
@@ -95,8 +95,8 @@ crc32fast = "1.5.0"
 resvg = "0.47.0"
 ab_glyph = "0.2"
 
-icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
 #icy_ui = { path = "../icy/crates/icy_ui" }
+icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
 
 versions = "7.0.0"
 github_release_check = "0.2.1"
