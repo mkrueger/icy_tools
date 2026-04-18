@@ -835,13 +835,14 @@ impl MainWindow {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
                     match icy_engine_gui::copy_selection(&mut **screen, Message::CopyCompleted) {
-                        Ok(_task) => {
+                        Ok(clipboard_task) => {
                             self.shift_pressed_during_selection = false;
-                            return self.toasts.push(
+                            let toast_task = self.toasts.push(
                                 toaster::Toast::new(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "toast-copied-to-clipboard"))
                                     .duration(Duration::from_secs(2))
                                     .style(toaster::success_style),
                             );
+                            return Task::batch([clipboard_task, toast_task]);
                         }
                         Err(err) => log::error!("Failed to copy: {err}"),
                     }
