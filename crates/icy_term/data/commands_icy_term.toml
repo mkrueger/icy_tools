@@ -9,6 +9,22 @@
 #   category = "terminal"       # Optional category for help dialog grouping
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Edit (override shared defaults: Ctrl+Shift+C/V to avoid conflict with terminal)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "edit.copy"
+hotkey = ["Ctrl+Shift+C"]
+hotkey_mac = ["Cmd+C"]
+category = "edit"
+
+[[commands]]
+id = "edit.paste"
+hotkey = ["Ctrl+Shift+V"]
+hotkey_mac = ["Cmd+V"]
+category = "edit"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Connection
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -81,6 +81,23 @@ mod tests {
         assert!(set.get(cmd::VIEW_ZOOM_IN.command_id()).is_some());
         assert!(set.get(cmd::EDIT_COPY.command_id()).is_some());
 
+        // edit.copy should be overridden to Ctrl+Shift+C in icy_term
+        #[cfg(not(target_os = "macos"))]
+        {
+            let copy_cmd = set.get(cmd::EDIT_COPY.command_id()).unwrap();
+            assert_eq!(
+                copy_cmd.primary_hotkey_display(),
+                Some("Ctrl+Shift+C".to_string()),
+                "edit.copy should be overridden to Ctrl+Shift+C in icy_term"
+            );
+            let paste_cmd = set.get(cmd::EDIT_PASTE.command_id()).unwrap();
+            assert_eq!(
+                paste_cmd.primary_hotkey_display(),
+                Some("Ctrl+Shift+V".to_string()),
+                "edit.paste should be overridden to Ctrl+Shift+V in icy_term"
+            );
+        }
+
         // Should have icy_term specific commands
         assert!(set.get(cmd::CONNECTION_DIALING_DIRECTORY.command_id()).is_some());
         assert!(set.get(cmd::TRANSFER_UPLOAD.command_id()).is_some());
