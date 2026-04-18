@@ -1945,6 +1945,7 @@ impl MainWindow {
                         modifiers,
                         text,
                         physical_key,
+                        location,
                         ..
                     }) => {
                         // Handle scrollback mode navigation (context-specific, not in command handler)
@@ -1995,6 +1996,18 @@ impl MainWindow {
                         if is_tab {
                             if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
                                 return (Some(Message::SendData(bytes)), Task::none());
+                            }
+                        }
+
+                        // Numpad with NumLock ON: the OS reports the logical key as a
+                        // navigation Named key (ArrowUp, Home, …) but the `text` field
+                        // contains the digit the user intended.  Send the text directly
+                        // so that NumLock state is respected.
+                        if *location == keyboard::Location::Numpad {
+                            if let Some(txt) = text {
+                                if !txt.is_empty() && matches!(key, keyboard::Key::Named(_)) {
+                                    return (Some(Message::SendString(txt.to_string())), Task::none());
+                                }
                             }
                         }
 
