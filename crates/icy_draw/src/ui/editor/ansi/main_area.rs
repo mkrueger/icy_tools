@@ -28,6 +28,25 @@ use crate::ui::widget::paste_controls::{PasteControls, PasteControlsMessage};
 
 use super::*;
 
+/// Parse a `Tool` enum variant name (as produced by `format!("{tool:?}")`).
+fn parse_tool_name(name: &str) -> Option<Tool> {
+    match name {
+        "Click" => Some(Tool::Click),
+        "Select" => Some(Tool::Select),
+        "Pencil" => Some(Tool::Pencil),
+        "Line" => Some(Tool::Line),
+        "RectangleOutline" => Some(Tool::RectangleOutline),
+        "RectangleFilled" => Some(Tool::RectangleFilled),
+        "EllipseOutline" => Some(Tool::EllipseOutline),
+        "EllipseFilled" => Some(Tool::EllipseFilled),
+        "Pipette" => Some(Tool::Pipette),
+        "Fill" => Some(Tool::Fill),
+        "Font" => Some(Tool::Font),
+        "Tag" => Some(Tool::Tag),
+        _ => None,
+    }
+}
+
 /// Public entrypoint for the ANSI editor mode.
 ///
 /// Owns the core editor (`AnsiEditorCore`) privately and provides the surrounding
@@ -218,12 +237,160 @@ impl AnsiEditorMainArea {
 
     /// Get session data for serialization
     pub fn get_session_data(&self) -> Option<icy_engine_edit::AnsiEditorSessionState> {
-        self.core.get_session_data()
+        let mut state = self.core.get_session_data()?;
+        state.tool_state_blob = self.collect_tool_session_state().encode();
+        Some(state)
     }
 
     /// Restore session data from serialization
     pub fn set_session_data(&mut self, state: icy_engine_edit::AnsiEditorSessionState) {
+        // Decode tool state blob (if present) before delegating, then apply it
+        // after the core has restored the rest of the editor state.
+        let tool_state = tool_session::AnsiToolSessionState::decode(&state.tool_state_blob);
+        let selected_tool_name = state.selected_tool.clone();
+
         self.core.set_session_data(state);
+
+        if let Some(tool_state) = tool_state {
+            self.apply_tool_session_state(&tool_state);
+        }
+
+        // Switch to the previously selected tool if we can resolve its name.
+        if let Some(tool) = parse_tool_name(&selected_tool_name) {
+            self.core.change_tool(&mut self.tool_panel.registry, tools::ToolId::Tool(tool));
+            self.tool_panel.set_tool(self.core.current_tool_for_panel());
+        }
+    }
+
+    /// Collect per-tool settings from both the registry (inactive tools) and
+    /// the currently active tool.
+    fn collect_tool_session_state(&self) -> tool_session::AnsiToolSessionState {
+        use tool_session::{AnsiToolSessionState, BrushSessionState, FillSessionState, ShapeSessionState};
+
+        let mut out = AnsiToolSessionState::default();
+
+        // Selected tool — fall back to Click for Paste mode.
+        out.selected_tool = match self.core.current_tool_id() {
+            tools::ToolId::Tool(t) => t,
+            tools::ToolId::Paste => Tool::Click,
+        };
+
+        // Pencil
+        if let Some(p) = self.tool_panel.registry.get_ref::<tools::PencilTool>() {
+            out.pencil = BrushSessionState::from(p.brush_settings());
+        } else if let Some(p) = self.core.current_tool_any().downcast_ref::<tools::PencilTool>() {
+            out.pencil = BrushSessionState::from(p.brush_settings());
+        }
+
+        // Shape
+        if let Some(s) = self.tool_panel.registry.get_ref::<tools::ShapeTool>() {
+            out.shape = ShapeSessionState {
+                brush: BrushSessionState::from(s.brush_settings()),
+                shape: s.tool(),
+            };
+        } else if let Some(s) = self.core.current_tool_any().downcast_ref::<tools::ShapeTool>() {
+            out.shape = ShapeSessionState {
+                brush: BrushSessionState::from(s.brush_settings()),
+                shape: s.tool(),
+            };
+        }
+
+        // Fill
+        if let Some(f) = self.tool_panel.registry.get_ref::<tools::FillTool>() {
+            out.fill = FillSessionState::from(f.settings());
+        } else if let Some(f) = self.core.current_tool_any().downcast_ref::<tools::FillTool>() {
+            out.fill = FillSessionState::from(f.settings());
+        }
+
+        // Select
+        if let Some(s) = self.tool_panel.registry.get_ref::<tools::SelectTool>() {
+            out.selection_mode = s.selection_mode();
+        } else if let Some(s) = self.core.current_tool_any().downcast_ref::<tools::SelectTool>() {
+            out.selection_mode = s.selection_mode();
+        }
+
+        // Font slot
+        if let Some(f) = self.tool_panel.registry.get_ref::<tools::FontTool>() {
+            out.font_slot = f.font_slot();
+        } else if let Some(f) = self.core.current_tool_any().downcast_ref::<tools::FontTool>() {
+            out.font_slot = f.font_slot();
+        }
+
+        out
+    }
+
+    /// Apply per-tool settings loaded from a session blob to both the registry
+    /// and the currently active tool (whichever holds each tool instance).
+    fn apply_tool_session_state(&mut self, state: &tool_session::AnsiToolSessionState) {
+        // Pencil
+        let pencil_brush: tools::BrushSettings = state.pencil.into();
+        if self
+            .tool_panel
+            .registry
+            .with_mut::<tools::PencilTool, _>(|p| p.set_brush(pencil_brush))
+            .is_none()
+        {
+            if let Some(p) = self.core.current_tool_any_mut().downcast_mut::<tools::PencilTool>() {
+                p.set_brush(pencil_brush);
+            }
+        }
+
+        // Shape
+        let shape_brush: tools::BrushSettings = state.shape.brush.into();
+        let shape_variant = state.shape.shape;
+        if self
+            .tool_panel
+            .registry
+            .with_mut::<tools::ShapeTool, _>(|s| {
+                s.set_brush(shape_brush);
+                s.set_tool(shape_variant);
+            })
+            .is_none()
+        {
+            if let Some(s) = self.core.current_tool_any_mut().downcast_mut::<tools::ShapeTool>() {
+                s.set_brush(shape_brush);
+                s.set_tool(shape_variant);
+            }
+        }
+
+        // Fill
+        let fill_settings: tools::FillSettings = state.fill.into();
+        if self
+            .tool_panel
+            .registry
+            .with_mut::<tools::FillTool, _>(|f| f.set_settings(fill_settings))
+            .is_none()
+        {
+            if let Some(f) = self.core.current_tool_any_mut().downcast_mut::<tools::FillTool>() {
+                f.set_settings(fill_settings);
+            }
+        }
+
+        // Select
+        let selection_mode = state.selection_mode;
+        if self
+            .tool_panel
+            .registry
+            .with_mut::<tools::SelectTool, _>(|s| s.set_selection_mode(selection_mode))
+            .is_none()
+        {
+            if let Some(s) = self.core.current_tool_any_mut().downcast_mut::<tools::SelectTool>() {
+                s.set_selection_mode(selection_mode);
+            }
+        }
+
+        // Font slot
+        let font_slot = state.font_slot;
+        if self
+            .tool_panel
+            .registry
+            .with_mut::<tools::FontTool, _>(|f| f.set_font_slot(font_slot))
+            .is_none()
+        {
+            if let Some(f) = self.core.current_tool_any_mut().downcast_mut::<tools::FontTool>() {
+                f.set_font_slot(font_slot);
+            }
+        }
     }
 
     pub fn save(&mut self, path: &Path) -> Result<(), String> {

@@ -52,6 +52,14 @@ pub struct AnsiEditorSessionState {
     #[serde(default)]
     pub selected_tool: String,
 
+    /// Opaque tool-specific session state (serialized by the editor frontend).
+    ///
+    /// This is a bitcode-encoded blob owned by `icy_draw`'s tool session state
+    /// types. Stored here so the autosave mechanism can persist per-tool
+    /// settings (brush mode, paint char, fg/bg flags, selection mode, etc.).
+    #[serde(default)]
+    pub tool_state_blob: Vec<u8>,
+
     /// Current outline style index
     #[serde(default)]
     pub outline_style: usize,
@@ -109,6 +117,7 @@ impl Default for AnsiEditorSessionState {
             zoom_level: 1.0,
             auto_zoom: true,
             selected_tool: String::new(),
+            tool_state_blob: Vec::new(),
             outline_style: 0,
             mirror_mode: false,
             current_tag: 0,

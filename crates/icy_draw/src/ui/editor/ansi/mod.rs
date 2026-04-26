@@ -29,6 +29,7 @@ pub mod main_area;
 pub mod selection_drag;
 mod shape_points;
 pub mod tool_registry;
+pub mod tool_session;
 pub mod tools;
 pub mod widget;
 pub(crate) use ansi_editor::*;

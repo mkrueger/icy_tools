@@ -62,6 +62,10 @@ impl SelectTool {
         self.selection_mode = mode;
     }
 
+    pub fn selection_mode(&self) -> SelectionMode {
+        self.selection_mode
+    }
+
     fn cancel_drag(&mut self) {
         self.drag_mode = SelectionDrag::None;
         self.hover_drag = SelectionDrag::None;

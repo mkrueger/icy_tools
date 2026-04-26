@@ -1005,15 +1005,24 @@ impl AnsiEditorCore {
         // Get layer visibility
         let layer_visibility: Vec<bool> = buffer.layers.iter().map(|l| l.is_visible()).collect();
 
+        // Encode the active tool name. The full per-tool blob is filled in
+        // by `AnsiEditorMainArea::get_session_data` (which has access to the
+        // tool registry holding inactive tools).
+        let selected_tool = match self.current_tool.id() {
+            tools::ToolId::Tool(t) => format!("{t:?}"),
+            tools::ToolId::Paste => String::new(),
+        };
+
         Some(icy_engine_edit::AnsiEditorSessionState {
             version: 1,
             undo_stack,
             caret_position: caret.position(),
             caret_attribute: caret.attribute,
-            scroll_offset: (0.0, 0.0),    // TODO: Get from canvas
-            zoom_level: 1.0,              // TODO: Get from canvas
-            auto_zoom: true,              // TODO: Get from canvas
-            selected_tool: String::new(), // TODO: Get from tool panel
+            scroll_offset: (0.0, 0.0), // TODO: Get from canvas
+            zoom_level: 1.0,           // TODO: Get from canvas
+            auto_zoom: true,           // TODO: Get from canvas
+            selected_tool,
+            tool_state_blob: Vec::new(),
             outline_style: edit_state.get_outline_style(),
             mirror_mode: edit_state.get_mirror_mode(),
             current_tag: edit_state.get_current_tag().unwrap_or(0),
@@ -3133,6 +3142,21 @@ impl AnsiEditorCore {
             tools::ToolId::Tool(t) => t,
             tools::ToolId::Paste => Tool::Click,
         }
+    }
+
+    /// Access the currently active tool as `&dyn Any` for downcasting.
+    pub(crate) fn current_tool_any(&self) -> &dyn std::any::Any {
+        self.current_tool.as_any()
+    }
+
+    /// Access the currently active tool as `&mut dyn Any` for downcasting.
+    pub(crate) fn current_tool_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self.current_tool.as_any_mut()
+    }
+
+    /// The current ToolId.
+    pub(crate) fn current_tool_id(&self) -> tools::ToolId {
+        self.current_tool.id()
     }
 
     /// Check if the current tool shows cursor position for collaboration

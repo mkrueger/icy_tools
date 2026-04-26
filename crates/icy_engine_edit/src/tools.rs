@@ -4,7 +4,7 @@
 //! toggle pairs - clicking on an already-selected tool switches to its partner.
 
 /// Available editing tools
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Tool {
     // === Toggle Pair 1: Click / Select ===
     /// Keyboard input mode - type characters, navigate with cursor

@@ -26,7 +26,7 @@ pub(crate) const ARROW_LEFT_SVG: &[u8] = include_bytes!("../../../../../../data/
 pub(crate) const ARROW_RIGHT_SVG: &[u8] = include_bytes!("../../../../../../data/icons/arrow_right.svg");
 
 /// Selection mode for the select tool
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SelectionMode {
     /// Normal rectangle selection
     #[default]
@@ -166,7 +166,7 @@ pub struct SelectedTagInfo {
 /// Primary brush mode (exclusive).
 ///
 /// Note: only `colorize_fg`/`colorize_bg` are additive flags.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BrushPrimaryMode {
     /// Paint with a chosen character
     #[default]

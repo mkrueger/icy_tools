@@ -91,6 +91,16 @@ impl FontTool {
         self.font_tool.prev_char = '\0';
     }
 
+    /// Currently selected font slot (0-9).
+    pub fn font_slot(&self) -> usize {
+        self.font_slot
+    }
+
+    /// Restore the font slot from a saved session.
+    pub fn set_font_slot(&mut self, slot: usize) {
+        self.font_slot = slot.min(9);
+    }
+
     fn outline_style_from_ctx(ctx: &ToolContext) -> usize {
         ctx.options.and_then(|opts| Some(opts.read().font_outline_style)).unwrap_or(0)
     }
