@@ -296,7 +296,7 @@ impl CharFontEditor {
         };
 
         // Create AnsiEditorCore with a ClickTool from the registry
-        let current_tool = tool_registry.take_for(tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
+        let current_tool = tool_registry.take_for(tools::ToolId::Click);
         let (ansi_core, _, _) = AnsiEditorCore::from_buffer_inner(buffer, options.clone(), current_tool, brush.clone());
 
         // Create separate outline preview buffer/screen/canvas
@@ -535,7 +535,7 @@ impl CharFontEditor {
         // Switch to click tool from the new registry (force because tool ID might be same but implementation differs)
         {
             self.ansi_core
-                .force_change_tool(&mut new_registry, tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
+                .force_change_tool(&mut new_registry, tools::ToolId::Click);
         }
 
         // Create new tool panel with the new registry
@@ -735,7 +735,7 @@ impl CharFontEditor {
                 if let ToolPanelMessage::ClickSlot(slot) = msg {
                     let current_tool = self.ansi_core.current_tool_for_panel();
                     let new_tool = { self.tool_panel.registry.click_tool_slot(slot, current_tool) };
-                    self.ansi_core.change_tool(&mut self.tool_panel.registry, tools::ToolId::Tool(new_tool));
+                    self.ansi_core.change_tool(&mut self.tool_panel.registry, tools::ToolId::from(new_tool));
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.ansi_core.current_tool_for_panel());
                 }

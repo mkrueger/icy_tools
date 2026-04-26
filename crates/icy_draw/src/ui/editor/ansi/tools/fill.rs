@@ -54,7 +54,7 @@ impl FillTool {
 
 impl ToolHandler for FillTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(Tool::Fill)
+        ToolId::Fill
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

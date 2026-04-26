@@ -95,7 +95,7 @@ impl SelectTool {
 
 impl ToolHandler for SelectTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(Tool::Select)
+        ToolId::Select
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

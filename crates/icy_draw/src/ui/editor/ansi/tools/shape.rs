@@ -268,7 +268,7 @@ pub struct ShapeDragSnapshot {
 
 impl ToolHandler for ShapeTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(self.tool)
+        self.tool.into()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -334,7 +334,7 @@ impl ToolHandler for ShapeTool {
                 };
 
                 if new_tool != self.tool {
-                    ToolResult::SwitchTool(super::ToolId::Tool(new_tool))
+                    ToolResult::SwitchTool(super::ToolId::from(new_tool))
                 } else {
                     ToolResult::None
                 }

@@ -22,7 +22,7 @@
 //!                     let ch = ctx.state.get_buffer().char_at(pos);
 //!                     ctx.state.set_caret_foreground(ch.attribute.foreground());
 //!                 }
-//!                 ToolResult::SwitchTool(ToolId::Tool(Tool::Click))
+//!                 ToolResult::SwitchTool(ToolId::Click)
 //!             }
 //!             _ => ToolResult::None,
 //!         }
@@ -224,11 +224,66 @@ impl ToolResult {
 
 /// Identifier for the currently active editor tool.
 ///
-/// This extends the engine-level `Tool` with editor-only modes.
+/// This is a flat mirror of the engine-level [`Tool`] enum plus editor-only
+/// modes such as `Paste`. Use [`ToolId::as_engine_tool`] / `From<Tool>` to
+/// convert to and from the engine enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ToolId {
-    Tool(Tool),
+    Click,
+    Select,
+    Pencil,
+    Line,
+    RectangleOutline,
+    RectangleFilled,
+    EllipseOutline,
+    EllipseFilled,
+    Pipette,
+    Fill,
+    Font,
+    Tag,
+    /// Editor-only paste mode (no corresponding engine `Tool`).
     Paste,
+}
+
+impl ToolId {
+    /// Convert to the engine-level [`Tool`] if this id represents one.
+    /// Returns `None` for editor-only modes (e.g. `Paste`).
+    pub fn as_engine_tool(self) -> Option<Tool> {
+        match self {
+            ToolId::Click => Some(Tool::Click),
+            ToolId::Select => Some(Tool::Select),
+            ToolId::Pencil => Some(Tool::Pencil),
+            ToolId::Line => Some(Tool::Line),
+            ToolId::RectangleOutline => Some(Tool::RectangleOutline),
+            ToolId::RectangleFilled => Some(Tool::RectangleFilled),
+            ToolId::EllipseOutline => Some(Tool::EllipseOutline),
+            ToolId::EllipseFilled => Some(Tool::EllipseFilled),
+            ToolId::Pipette => Some(Tool::Pipette),
+            ToolId::Fill => Some(Tool::Fill),
+            ToolId::Font => Some(Tool::Font),
+            ToolId::Tag => Some(Tool::Tag),
+            ToolId::Paste => None,
+        }
+    }
+}
+
+impl From<Tool> for ToolId {
+    fn from(tool: Tool) -> Self {
+        match tool {
+            Tool::Click => ToolId::Click,
+            Tool::Select => ToolId::Select,
+            Tool::Pencil => ToolId::Pencil,
+            Tool::Line => ToolId::Line,
+            Tool::RectangleOutline => ToolId::RectangleOutline,
+            Tool::RectangleFilled => ToolId::RectangleFilled,
+            Tool::EllipseOutline => ToolId::EllipseOutline,
+            Tool::EllipseFilled => ToolId::EllipseFilled,
+            Tool::Pipette => ToolId::Pipette,
+            Tool::Fill => ToolId::Fill,
+            Tool::Font => ToolId::Font,
+            Tool::Tag => ToolId::Tag,
+        }
+    }
 }
 
 /// UI actions that must be performed by the editor (outside the tool object).

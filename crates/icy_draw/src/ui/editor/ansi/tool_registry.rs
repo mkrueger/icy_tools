@@ -223,20 +223,20 @@ impl ToolRegistry {
 
     pub fn take_for(&mut self, id: ToolId) -> Box<dyn ToolHandler> {
         let type_id = match id {
-            ToolId::Tool(Tool::Click) => {
+            ToolId::Click => {
                 if self.use_outline_click {
                     TypeId::of::<tools::OutlineClickTool>()
                 } else {
                     TypeId::of::<tools::ClickTool>()
                 }
             }
-            ToolId::Tool(Tool::Select) => TypeId::of::<tools::SelectTool>(),
-            ToolId::Tool(Tool::Pencil) => TypeId::of::<tools::PencilTool>(),
-            ToolId::Tool(Tool::Pipette) => TypeId::of::<tools::PipetteTool>(),
-            ToolId::Tool(Tool::Fill) => TypeId::of::<tools::FillTool>(),
-            ToolId::Tool(Tool::Font) => TypeId::of::<tools::FontTool>(),
-            ToolId::Tool(Tool::Tag) => TypeId::of::<tools::TagTool>(),
-            ToolId::Tool(Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled) => {
+            ToolId::Select => TypeId::of::<tools::SelectTool>(),
+            ToolId::Pencil => TypeId::of::<tools::PencilTool>(),
+            ToolId::Pipette => TypeId::of::<tools::PipetteTool>(),
+            ToolId::Fill => TypeId::of::<tools::FillTool>(),
+            ToolId::Font => TypeId::of::<tools::FontTool>(),
+            ToolId::Tag => TypeId::of::<tools::TagTool>(),
+            ToolId::Line | ToolId::RectangleOutline | ToolId::RectangleFilled | ToolId::EllipseOutline | ToolId::EllipseFilled => {
                 TypeId::of::<tools::ShapeTool>()
             }
             ToolId::Paste => {
@@ -255,9 +255,9 @@ impl ToolRegistry {
             .unwrap_or_else(|| panic!("ToolRegistry: missing tool for {type_id:?}"));
 
         // Configure shape variant if needed.
-        if let ToolId::Tool(Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled) = id {
+        if let ToolId::Line | ToolId::RectangleOutline | ToolId::RectangleFilled | ToolId::EllipseOutline | ToolId::EllipseFilled = id {
             if let Some(shape) = tool.as_any_mut().downcast_mut::<tools::ShapeTool>() {
-                if let ToolId::Tool(t) = id {
+                if let Some(t) = id.as_engine_tool() {
                     shape.set_tool(t);
                 }
             }

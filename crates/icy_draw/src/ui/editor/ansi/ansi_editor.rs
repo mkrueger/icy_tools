@@ -384,7 +384,7 @@ impl AnsiEditorCore {
     }
 
     fn select_visible_layer_at_doc_pos_for_click_tool(&mut self, pos: icy_engine::Position) -> bool {
-        if !matches!(self.current_tool.id(), tools::ToolId::Tool(Tool::Click)) {
+        if !matches!(self.current_tool.id(), tools::ToolId::Click) {
             return false;
         }
         if self.is_paste_mode() {
@@ -933,9 +933,9 @@ impl AnsiEditorCore {
         // Encode the active tool name. The full per-tool blob is filled in
         // by `AnsiEditorMainArea::get_session_data` (which has access to the
         // tool registry holding inactive tools).
-        let selected_tool = match self.current_tool.id() {
-            tools::ToolId::Tool(t) => format!("{t:?}"),
-            tools::ToolId::Paste => String::new(),
+        let selected_tool = match self.current_tool.id().as_engine_tool() {
+            Some(t) => format!("{t:?}"),
+            None => String::new(),
         };
 
         Some(icy_engine_edit::AnsiEditorSessionState {
@@ -1402,7 +1402,7 @@ impl AnsiEditorCore {
 
                 let processed = self.process_tool_result_from(source, result);
 
-                if self.current_tool.id() == tools::ToolId::Tool(Tool::Tag) && !matches!(processed, tools::ToolResult::None) {
+                if self.current_tool.id() == tools::ToolId::Tag && !matches!(processed, tools::ToolResult::None) {
                     self.update_tag_overlays();
                     if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
                         if tag_tool.state().add_new_index.is_none() && !tag_tool.state().selection_drag_active {
@@ -2135,12 +2135,12 @@ impl AnsiEditorCore {
 
                 // UI-only updates owned by the editor.
                 match self.current_tool.id() {
-                    tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
+                    tools::ToolId::Click | tools::ToolId::Font | tools::ToolId::Select => {
                         if !matches!(result, tools::ToolResult::None) {
                             self.update_selection_mask_display();
                         }
                     }
-                    tools::ToolId::Tool(Tool::Tag) => {
+                    tools::ToolId::Tag => {
                         if !matches!(result, tools::ToolResult::None) {
                             self.update_tag_overlays();
                             if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
@@ -2184,7 +2184,7 @@ impl AnsiEditorCore {
                 // Post-dispatch UI updates (only if tool signaled a redraw)
                 if result.needs_redraw() {
                     match self.current_tool.id() {
-                        tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
+                        tools::ToolId::Click | tools::ToolId::Font | tools::ToolId::Select => {
                             // Use lightweight rect-only update during drag, full mask update otherwise
                             if result.needs_selection_mask_update() {
                                 self.update_selection_mask_display();
@@ -2192,7 +2192,7 @@ impl AnsiEditorCore {
                                 self.update_selection_rect_only();
                             }
                         }
-                        tools::ToolId::Tool(Tool::Tag) => {
+                        tools::ToolId::Tag => {
                             self.update_tag_overlays();
                         }
                         _ => {}
@@ -2218,10 +2218,10 @@ impl AnsiEditorCore {
                         let ev = self.dispatch_current_tool_terminal_message(msg);
 
                         match self.current_tool.id() {
-                            tools::ToolId::Tool(Tool::Click | Tool::Font | Tool::Select) => {
+                            tools::ToolId::Click | tools::ToolId::Font | tools::ToolId::Select => {
                                 self.update_selection_mask_display();
                             }
-                            tools::ToolId::Tool(Tool::Tag) => {
+                            tools::ToolId::Tag => {
                                 self.update_tag_overlays();
                                 if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
                                     if !tag_tool.state().selection_drag_active {
@@ -2264,19 +2264,19 @@ impl AnsiEditorCore {
                         let ev = self.dispatch_current_tool_terminal_message(msg);
 
                         match self.current_tool.id() {
-                            tools::ToolId::Tool(Tool::Select) => {
+                            tools::ToolId::Select => {
                                 self.update_selection_mask_display();
                                 if let Some(select) = self.current_tool.as_any().downcast_ref::<tools::SelectTool>() {
                                     *self.canvas.terminal.cursor_icon.write() = Some(select.cursor());
                                 }
                             }
-                            tools::ToolId::Tool(Tool::Click | Tool::Font) => {
+                            tools::ToolId::Click | tools::ToolId::Font => {
                                 self.update_selection_mask_display();
                                 if let Some(click) = self.current_tool.as_any().downcast_ref::<tools::ClickTool>() {
                                     *self.canvas.terminal.cursor_icon.write() = Some(click.cursor());
                                 }
                             }
-                            tools::ToolId::Tool(Tool::Tag) => {
+                            tools::ToolId::Tag => {
                                 self.update_tag_overlays();
                                 if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
                                     if tag_tool.state().selection_drag_active {
@@ -2313,7 +2313,7 @@ impl AnsiEditorCore {
                         // show a pointer cursor to indicate layer switching is possible.
                         if !self.is_dragging
                             && self.mouse_capture_tool.is_none()
-                            && matches!(self.current_tool.id(), tools::ToolId::Tool(Tool::Click))
+                            && matches!(self.current_tool.id(), tools::ToolId::Click)
                             && !self.is_paste_mode()
                         {
                             let (hit, current) = self.with_edit_state_readonly(|state| {
@@ -2346,7 +2346,7 @@ impl AnsiEditorCore {
     }
 
     fn update_brush_preview(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) {
-        if self.current_tool.id() != tools::ToolId::Tool(Tool::Pencil) {
+        if self.current_tool.id() != tools::ToolId::Pencil {
             self.canvas.set_brush_preview(None);
             return;
         }
@@ -2413,7 +2413,7 @@ impl AnsiEditorCore {
         let _palette_limit = (format_mode == icy_engine_edit::FormatMode::XBinExtended).then_some(8);
         self.color_switcher.sync_palette(&palette);
         // Tag selection pruning is handled by the wrapper (owns the tool registry).
-        if self.current_tool.id() == tools::ToolId::Tool(Tool::Tag) {
+        if self.current_tool.id() == tools::ToolId::Tag {
             self.update_tag_overlays();
         }
         // If overlay was marked dirty (e.g., selection changed via undo/redo), update selection display
@@ -2496,10 +2496,7 @@ impl AnsiEditorCore {
     }
 
     pub(crate) fn current_tool_for_panel(&self) -> Tool {
-        match self.current_tool.id() {
-            tools::ToolId::Tool(t) => t,
-            tools::ToolId::Paste => Tool::Click,
-        }
+        self.current_tool.id().as_engine_tool().unwrap_or(Tool::Click)
     }
 
     /// Clone the editor's shared brush state. Used by wrappers that need to
@@ -2528,16 +2525,18 @@ impl AnsiEditorCore {
     /// Tools like Click and Select show cursor to other users.
     /// Drawing tools hide cursor since the user is focused on drawing.
     pub fn current_tool_shows_cursor(&self) -> bool {
-        match self.current_tool.id() {
-            tools::ToolId::Tool(t) => t.shows_cursor_for_collaboration(),
-            tools::ToolId::Paste => false, // Paste mode hides cursor
-        }
+        // Paste mode (None) hides cursor; otherwise defer to engine tool.
+        self.current_tool.id().as_engine_tool().is_some_and(|t| t.shows_cursor_for_collaboration())
     }
 
     fn is_shape_tool_id(id: tools::ToolId) -> bool {
         matches!(
             id,
-            tools::ToolId::Tool(Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled)
+            tools::ToolId::Line
+                | tools::ToolId::RectangleOutline
+                | tools::ToolId::RectangleFilled
+                | tools::ToolId::EllipseOutline
+                | tools::ToolId::EllipseFilled
         )
     }
 
@@ -2574,7 +2573,7 @@ impl AnsiEditorCore {
 
         // Check if the current tool and the new tool share the same handler (e.g., all shape tools).
         // If so, just reconfigure the current tool instead of swapping with the registry.
-        if let tools::ToolId::Tool(new_tool_variant) = tool {
+        if let Some(new_tool_variant) = tool.as_engine_tool() {
             if self.current_tool.is_same_handler(new_tool_variant) {
                 // Reconfigure the current tool (e.g., switch Line -> Rectangle in ShapeTool)
                 if let Some(shape) = self.current_tool.as_any_mut().downcast_mut::<tools::ShapeTool>() {
@@ -2587,7 +2586,7 @@ impl AnsiEditorCore {
         // Cancels any in-progress shape preview/drag when switching tools.
         let _ = self.cancel_shape_drag();
 
-        let mut is_visble = matches!(tool, tools::ToolId::Tool(Tool::Click | Tool::Font));
+        let mut is_visble = matches!(tool, tools::ToolId::Click | tools::ToolId::Font);
         is_visble &= self.with_edit_state(|state: &mut EditState| {
             state.set_caret_visible(is_visble && state.selection().is_none());
             state.selection().is_none()
@@ -2605,12 +2604,12 @@ impl AnsiEditorCore {
         *self.canvas.terminal.cursor_icon.write() = Some(self.current_tool.cursor());
 
         // Clear tool hover preview when switching tools.
-        if !matches!(tool, tools::ToolId::Tool(Tool::Pencil)) {
+        if !matches!(tool, tools::ToolId::Pencil) {
             self.canvas.set_brush_preview(None);
         }
 
         // Update tag overlays when switching to/from Tag tool
-        if tool == tools::ToolId::Tool(Tool::Tag) {
+        if tool == tools::ToolId::Tag {
             self.update_tag_overlays();
         } else {
             // Clear tag overlays when leaving Tag tool

@@ -73,7 +73,7 @@ impl PasteTool {
         self.abort();
         // End the atomic undo group - all paste operations are now a single undo action
         self.paste_undo = None;
-        self.previous_tool.take().unwrap_or(super::ToolId::Tool(Tool::Click))
+        self.previous_tool.take().unwrap_or(super::ToolId::Click)
     }
 
     /// Check if a drag is currently active
@@ -211,7 +211,7 @@ impl PasteTool {
 
                 self.active = false;
                 self.paste_undo = None;
-                let prev = self.previous_tool.take().unwrap_or(super::ToolId::Tool(Tool::Click));
+                let prev = self.previous_tool.take().unwrap_or(super::ToolId::Click);
 
                 ToolResult::Multi(vec![
                     ToolResult::EndCapture,

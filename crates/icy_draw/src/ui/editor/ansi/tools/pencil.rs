@@ -116,7 +116,7 @@ impl PencilTool {
 
 impl ToolHandler for PencilTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(Tool::Pencil)
+        ToolId::Pencil
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

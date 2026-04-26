@@ -225,7 +225,7 @@ impl FontTool {
 
 impl ToolHandler for FontTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(Tool::Font)
+        ToolId::Font
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -161,7 +161,7 @@ impl ClickTool {
 
 impl ToolHandler for ClickTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(icy_engine_edit::tools::Tool::Click)
+        ToolId::Click
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

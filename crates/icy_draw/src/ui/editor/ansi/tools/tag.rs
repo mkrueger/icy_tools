@@ -788,7 +788,7 @@ impl TagTool {
 
 impl ToolHandler for TagTool {
     fn id(&self) -> super::ToolId {
-        super::ToolId::Tool(icy_engine_edit::tools::Tool::Tag)
+        super::ToolId::Tag
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

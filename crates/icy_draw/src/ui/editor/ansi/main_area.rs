@@ -105,7 +105,7 @@ impl AnsiEditorMainArea {
         let mut tool_registry = tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library, brush.clone());
 
         // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
-        let mut current_tool = tool_registry.take_for(tools::ToolId::Tool(Tool::Click));
+        let mut current_tool = tool_registry.take_for(tools::ToolId::Click);
         if let Some(click) = current_tool.as_any_mut().downcast_mut::<tools::ClickTool>() {
             click.sync_fkey_set_from_options(&options);
         }
@@ -261,7 +261,7 @@ impl AnsiEditorMainArea {
 
         // Switch to the previously selected tool if we can resolve its name.
         if let Some(tool) = parse_tool_name(&selected_tool_name) {
-            self.core.change_tool(&mut self.tool_panel.registry, tools::ToolId::Tool(tool));
+            self.core.change_tool(&mut self.tool_panel.registry, tools::ToolId::from(tool));
             self.tool_panel.set_tool(self.core.current_tool_for_panel());
         }
     }
@@ -274,10 +274,7 @@ impl AnsiEditorMainArea {
         let mut out = AnsiToolSessionState::default();
 
         // Selected tool — fall back to Click for Paste mode.
-        out.selected_tool = match self.core.current_tool_id() {
-            tools::ToolId::Tool(t) => t,
-            tools::ToolId::Paste => Tool::Click,
-        };
+        out.selected_tool = self.core.current_tool_id().as_engine_tool().unwrap_or(Tool::Click);
 
         // Single shared brush state — read once from the editor.
         out.brush = BrushSessionState::from(*self.core.brush().read());
@@ -1587,7 +1584,7 @@ impl AnsiEditorMainArea {
                     let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                     {
                         let reg = &mut self.tool_panel.registry;
-                        self.core.change_tool(reg, tools::ToolId::Tool(new_tool));
+                        self.core.change_tool(reg, tools::ToolId::from(new_tool));
                     }
                     // Tool changes may be blocked, so always sync from core.
                     self.tool_panel.set_tool(self.core.current_tool_for_panel());
@@ -1609,7 +1606,7 @@ impl AnsiEditorMainArea {
                 let new_tool = self.tool_panel.registry.click_tool_slot(slot, current_tool);
                 {
                     let reg = &mut self.tool_panel.registry;
-                    self.core.change_tool(reg, tools::ToolId::Tool(new_tool));
+                    self.core.change_tool(reg, tools::ToolId::from(new_tool));
                 }
                 self.tool_panel.set_tool(self.core.current_tool_for_panel());
 

@@ -94,7 +94,7 @@ impl canvas::Program<ToolMessage> for GlyphPreview {
 
 impl ToolHandler for PipetteTool {
     fn id(&self) -> ToolId {
-        ToolId::Tool(Tool::Pipette)
+        ToolId::Pipette
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -149,7 +149,7 @@ impl ToolHandler for PipetteTool {
                 }
 
                 // Switch back to Click tool after picking
-                ToolResult::SwitchTool(super::ToolId::Tool(Tool::Click))
+                ToolResult::SwitchTool(super::ToolId::Click)
             }
 
             _ => ToolResult::None,
